@@ -115,8 +115,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
         throw Exception("MySQL table " + backQuoteIfNeed(remote_database_name) + "." + backQuoteIfNeed(remote_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     auto res = StorageMySQL::create(
-        getDatabaseName(),
-        table_name,
+        StorageID(getDatabaseName(), table_name),
         std::move(pool),
         remote_database_name,
         remote_table_name,

@@ -88,7 +88,7 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const C
 
     Block res_block = sample_block.cloneWithColumns(std::move(res_columns));
 
-    auto res = StorageValues::create(getDatabaseName(), table_name, columns, res_block);
+    auto res = StorageValues::create(StorageID(getDatabaseName(), table_name), columns, res_block);
     res->startup();
     return res;
 }

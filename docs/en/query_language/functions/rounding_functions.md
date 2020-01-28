@@ -78,6 +78,89 @@ round(3.55, 1) = 3.6
 round(3.65, 1) = 3.6
 ```
 
+**See Also** 
+
+- [roundBankers](#roundbankers)
+
+## roundBankers {#roundbankers}
+
+Rounds a number to a specified decimal position.
+
+- If rounding number is a half between two numbers, the function uses banker's rounding.
+
+    Banker's rounding is a method of rounding fractional numbers. When the rounding number is a half between two numbers, it is rounded to the nearest even number. E.g. 3.5 rounds up to 4, 2.5 rounds down to 2. 
+
+- In other cases function rounds numbers to the nearest integer.
+
+Using banker's rounding, you can reduce the effect of rounding numbers on the result of summing or subtracting these numbers.
+
+For example, sum numbers 1.5, 2.5, 3.5, 4.5 with different rounding:
+
+- No rounding: 1.5 + 2.5 + 3.5 + 4.5 = 12.
+- Banker's rounding:  2 + 2 + 4 + 4 = 12.
+- Rounding to the nearest integer:  2 + 3 + 4 + 5 = 14.
+
+**Syntax** 
+
+```sql
+roundBankers(expression [, decimal_places])
+```
+
+**Parameters** 
+
+- `expression` — A number to be rounded. Can be any [expression](../syntax.md#syntax-expressions) returning the numeric [data type](../../data_types/index.md#data_types).
+- `decimal-places` — Decimal places. An integer number.
+    - `decimal-places > 0` — The function rounds the number to the given position right of the decimal point. E.g. `roundBankers(3.55, 1) = 3.6`.
+    - `decimal-places < 0` — The function rounds the number to the given position left of the decimal point. E.g. `roundBankers(24.55, -1) = 20`.
+    - `decimal-places = 0` — The function rounds the number to integer. In this case the argument can be omitted. E.g. `roundBankers(2.5) = 2`.
+
+**Returned value**
+
+A value rounded by banker's rounding method.
+
+### Examples
+
+**Example of use**
+
+Query:
+
+```sql
+ SELECT number / 2 AS x, roundBankers(x, 0) AS b fROM system.numbers limit 10
+```
+
+Result:
+
+```text
+┌───x─┬─b─┐
+│   0 │ 0 │
+│ 0.5 │ 0 │
+│   1 │ 1 │
+│ 1.5 │ 2 │
+│   2 │ 2 │
+│ 2.5 │ 2 │
+│   3 │ 3 │
+│ 3.5 │ 4 │
+│   4 │ 4 │
+│ 4.5 │ 4 │
+└─────┴───┘
+```
+
+**Examples of Banker's rounding**
+
+```text
+roundBankers(0.4) = 0
+roundBankers(-3.5) = -4
+roundBankers(4.5) = 4
+roundBankers(3.55, 1) = 3.6
+roundBankers(3.65, 1) = 3.6
+roundBankers(10.35, 1) = 10.4
+roundBankers(10.755, 2) = 11,76
+```
+
+**See Also** 
+
+- [round](#rounding_functions-round)
+
 ## roundToExp2(num)
 
 Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to the nearest (whole non-negative) degree of two.
@@ -95,9 +178,3 @@ Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rou
 Accept a number, round it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/rounding_functions/) <!--hide-->
-
-## roundBankers(x\[, N\])
-
-Rounds a value to a specified number of decimal places.
-
-The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers, the function always return the number having the nearest even digit (banker's rounding).

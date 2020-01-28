@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 
 StorageSystemTables::StorageSystemTables(const std::string & name_)
-    : name(name_)
+    : IStorage({"system", name_})
 {
     setColumns(ColumnsDescription(
     {
@@ -266,14 +266,14 @@ protected:
                     Array dependencies_database_name_array;
                     if (columns_mask[src_index] || columns_mask[src_index + 1])
                     {
-                        const auto dependencies = context.getDependencies(database_name, table_name);
+                        const auto dependencies = context.getDependencies(StorageID(database_name, table_name));
 
                         dependencies_table_name_array.reserve(dependencies.size());
                         dependencies_database_name_array.reserve(dependencies.size());
                         for (const auto & dependency : dependencies)
                         {
-                            dependencies_table_name_array.push_back(dependency.second);
-                            dependencies_database_name_array.push_back(dependency.first);
+                            dependencies_table_name_array.push_back(dependency.table_name);
+                            dependencies_database_name_array.push_back(dependency.database_name);
                         }
                     }
 

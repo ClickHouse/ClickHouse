@@ -29,11 +29,14 @@ public:
     void init(Pipe pipe); /// Simple init for single pipe
     bool initialized() { return !processors.empty(); }
 
+    /// Type of logical data stream for simple transform.
+    /// Sometimes it's important to know which part of pipeline we are working for.
+    /// Example: ExpressionTransform need special logic for totals.
     enum class StreamType
     {
-        Main = 0,
-        Totals,
-        Extremes,
+        Main = 0, /// Stream for query data. There may be several streams of this type.
+        Totals,  /// Stream for totals. No more then one.
+        Extremes, /// Stream for extremes. No more then one.
     };
 
     using ProcessorGetter = std::function<ProcessorPtr(const Block & header)>;
@@ -61,7 +64,7 @@ public:
     /// Check if resize transform was used. (In that case another distinct transform will be added).
     bool hasMixedStreams() const { return has_resize || hasMoreThanOneStream(); }
 
-    void resize(size_t num_streams, bool force = false);
+    void resize(size_t num_streams, bool force = false, bool strict = false);
 
     void enableQuotaForCurrentStreams();
 

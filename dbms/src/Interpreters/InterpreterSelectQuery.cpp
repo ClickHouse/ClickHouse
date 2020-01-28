@@ -26,7 +26,6 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/ReverseBlockInputStream.h>
 #include <DataStreams/FillingBlockInputStream.h>
-#include <DataStreams/SquashingBlockInputStream.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -75,6 +74,7 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/InflatingExpressionTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/MergingAggregatedTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
@@ -116,14 +116,11 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
-namespace
-{
-
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
-String generateFilterActions(ExpressionActionsPtr & actions, const Context & context, const StoragePtr & storage, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {})
+String InterpreterSelectQuery::generateFilterActions(ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns) const
 {
-    const auto & db_name = storage->getDatabaseName();
-    const auto & table_name = storage->getTableName();
+    const auto & db_name = table_id.getDatabaseName();
+    const auto & table_name = table_id.getTableName();
 
     /// TODO: implement some AST builders for this kind of stuff
     ASTPtr query_ast = std::make_shared<ASTSelectQuery>();
@@ -153,15 +150,13 @@ String generateFilterActions(ExpressionActionsPtr & actions, const Context & con
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
-    auto syntax_result = SyntaxAnalyzer(context).analyze(query_ast, storage->getColumns().getAllPhysical());
-    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context);
-    ExpressionActionsChain new_chain(context);
+    auto syntax_result = SyntaxAnalyzer(*context).analyze(query_ast, storage->getColumns().getAllPhysical());
+    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context);
+    ExpressionActionsChain new_chain(*context);
     analyzer.appendSelect(new_chain, false);
     actions = new_chain.getLastActions();
 
     return expr_list->children.at(0)->getColumnName();
-}
-
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -292,7 +287,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (auto view_source = context->getViewSource())
             {
                 auto & storage_values = static_cast<const StorageValues &>(*view_source);
-                if (storage_values.getDatabaseName() == database_name && storage_values.getTableName() == table_name)
+                auto tmp_table_id = storage_values.getStorageID();
+                if (tmp_table_id.database_name == database_name && tmp_table_id.table_name == table_name)
                 {
                     /// Read from view source.
                     storage = context->getViewSource();
@@ -308,7 +304,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     if (storage)
+    {
         table_lock = storage->lockStructureForShare(false, context->getInitialQueryId());
+        table_id = storage->getStorageID();
+    }
 
     auto analyze = [&] ()
     {
@@ -370,11 +369,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             source_header = storage->getSampleBlockForColumns(required_columns);
 
             /// Fix source_header for filter actions.
-            auto row_policy_filter = context->getRowPolicy()->getCondition(storage->getDatabaseName(), storage->getTableName(), RowPolicy::SELECT_FILTER);
+            auto row_policy_filter = context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
             if (row_policy_filter)
             {
                 filter_info = std::make_shared<FilterInfo>();
-                filter_info->column_name = generateFilterActions(filter_info->actions, *context, storage, row_policy_filter, required_columns);
+                filter_info->column_name = generateFilterActions(filter_info->actions, row_policy_filter, required_columns);
                 source_header = storage->getSampleBlockForColumns(filter_info->actions->getRequiredColumns());
             }
         }
@@ -424,9 +423,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     sanitizeBlock(result_header);
 
     /// Remove limits for some tables in the `system` database.
-    if (storage && (storage->getDatabaseName() == "system"))
+    if (storage && (table_id.getDatabaseName() == "system"))
     {
-        String table_name = storage->getTableName();
+        String table_name = table_id.getTableName();
         if ((table_name == "quotas") || (table_name == "quota_usage") || (table_name == "one"))
         {
             options.ignore_quota = true;
@@ -510,7 +509,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
         /// PREWHERE optimization.
         /// Turn off, if the table filter (row-level security) is applied.
-        if (!context->getRowPolicy()->getCondition(storage->getDatabaseName(), storage->getTableName(), RowPolicy::SELECT_FILTER))
+        if (!context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER))
         {
             auto optimize_prewhere = [&](auto & merge_tree)
             {
@@ -1105,7 +1104,12 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType type)
                     {
                         bool on_totals = type == QueryPipeline::StreamType::Totals;
-                        return std::make_shared<ExpressionTransform>(header, expressions.before_join, on_totals, default_totals);
+                        std::shared_ptr<IProcessor> ret;
+                        if (settings.partial_merge_join)
+                            ret = std::make_shared<InflatingExpressionTransform>(header, expressions.before_join, on_totals, default_totals);
+                        else
+                            ret = std::make_shared<ExpressionTransform>(header, expressions.before_join, on_totals, default_totals);
+                        return ret;
                     });
                 }
                 else
@@ -1113,14 +1117,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     header_before_join = pipeline.firstStream()->getHeader();
                     /// Applies to all sources except stream_with_non_joined_data.
                     for (auto & stream : pipeline.streams)
-                        stream = std::make_shared<ExpressionBlockInputStream>(stream, expressions.before_join);
-
-                    if (isMergeJoin(expressions.before_join->getTableJoinAlgo()) && settings.partial_merge_join_optimizations)
-                    {
-                        if (size_t rows_in_block = settings.partial_merge_join_rows_in_left_blocks)
-                            for (auto & stream : pipeline.streams)
-                                stream = std::make_shared<SquashingBlockInputStream>(stream, rows_in_block, 0, true);
-                    }
+                        stream = std::make_shared<InflatingExpressionBlockInputStream>(stream, expressions.before_join);
                 }
 
                 if (JoinPtr join = expressions.before_join->getTableJoinAlgo())
@@ -1366,12 +1363,12 @@ void InterpreterSelectQuery::executeFetchColumns(
     if (storage)
     {
         /// Append columns from the table filter to required
-        auto row_policy_filter = context->getRowPolicy()->getCondition(storage->getDatabaseName(), storage->getTableName(), RowPolicy::SELECT_FILTER);
+        auto row_policy_filter = context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
         if (row_policy_filter)
         {
             auto initial_required_columns = required_columns;
             ExpressionActionsPtr actions;
-            generateFilterActions(actions, *context, storage, row_policy_filter, initial_required_columns);
+            generateFilterActions(actions, row_policy_filter, initial_required_columns);
             auto required_columns_from_filter = actions->getRequiredColumns();
 
             for (const auto & column : required_columns_from_filter)
@@ -1874,7 +1871,7 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
         settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-        context->getTemporaryPath(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
+        context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
 
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.streams.size() > 1)
@@ -1940,7 +1937,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
                               allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
                               allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-                              context->getTemporaryPath(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
+                              context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
 
@@ -1950,7 +1947,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
     if (pipeline.getNumStreams() > 1)
     {
         /// Add resize transform to uniformly distribute data between aggregating streams.
-        pipeline.resize(pipeline.getNumStreams(), true);
+        if (!(storage && storage->hasEvenlyDistributedRead()))
+            pipeline.resize(pipeline.getNumStreams(), true, true);
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
         auto merge_threads = settings.aggregation_memory_efficient_merge_threads
@@ -2165,7 +2163,7 @@ void InterpreterSelectQuery::executeRollupOrCube(Pipeline & pipeline, Modificato
         false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
         SettingUInt64(0), SettingUInt64(0),
         settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-        context->getTemporaryPath(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
+        context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
 
     if (modificator == Modificator::ROLLUP)
         pipeline.firstStream() = std::make_shared<RollupBlockInputStream>(pipeline.firstStream(), params);
@@ -2194,7 +2192,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPipeline & pipeline, Modif
                               false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
                               SettingUInt64(0), SettingUInt64(0),
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-                              context->getTemporaryPath(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
+                              context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, true);
 
@@ -2278,7 +2276,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
                 sorting_stream, output_order_descr, settings.max_block_size, limit,
                 settings.max_bytes_before_remerge_sort,
                 settings.max_bytes_before_external_sort / pipeline.streams.size(),
-                context->getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
+                context->getTemporaryVolume(), settings.min_free_disk_space_for_temporary_data);
 
             stream = merging_stream;
         });
@@ -2360,7 +2358,8 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
         return std::make_shared<MergeSortingTransform>(
                 header, output_order_descr, settings.max_block_size, limit,
                 settings.max_bytes_before_remerge_sort / pipeline.getNumStreams(),
-                settings.max_bytes_before_external_sort, context->getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
+                settings.max_bytes_before_external_sort, context->getTemporaryVolume(),
+                settings.min_free_disk_space_for_temporary_data);
     });
 
     /// If there are several streams, we merge them into one

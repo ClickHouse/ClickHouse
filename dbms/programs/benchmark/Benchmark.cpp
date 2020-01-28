@@ -101,7 +101,7 @@ public:
 
     }
 
-    void initialize(Poco::Util::Application & self [[maybe_unused]])
+    void initialize(Poco::Util::Application & self [[maybe_unused]]) override
     {
         std::string home_path;
         const char * home_path_cstr = getenv("HOME");
@@ -111,7 +111,7 @@ public:
         configReadClient(config(), home_path);
     }
 
-    int main(const std::vector<std::string> &)
+    int main(const std::vector<std::string> &) override
     {
         if (!json_path.empty() && Poco::File(json_path).exists()) /// Clear file with previous results
             Poco::File(json_path).remove();
@@ -418,7 +418,7 @@ private:
             std::cerr << percent << "%\t\t";
             for (const auto & info : infos)
             {
-                std::cerr << info->sampler.quantileInterpolated(percent / 100.0) << " sec." << "\t";
+                std::cerr << info->sampler.quantileNearest(percent / 100.0) << " sec." << "\t";
             }
             std::cerr << "\n";
         };
@@ -453,7 +453,7 @@ private:
 
         auto print_percentile = [&json_out](Stats & info, auto percent, bool with_comma = true)
         {
-            json_out << "\"" << percent << "\"" << ": " << info.sampler.quantileInterpolated(percent / 100.0) << (with_comma ? ",\n" : "\n");
+            json_out << "\"" << percent << "\"" << ": " << info.sampler.quantileNearest(percent / 100.0) << (with_comma ? ",\n" : "\n");
         };
 
         json_out << "{\n";
@@ -492,7 +492,7 @@ private:
 
 public:
 
-    ~Benchmark()
+    ~Benchmark() override
     {
         shutdown = true;
     }

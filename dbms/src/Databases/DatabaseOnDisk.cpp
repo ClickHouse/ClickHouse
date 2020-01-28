@@ -68,9 +68,12 @@ std::pair<String, StoragePtr> createTableFromAST(
         ast_create_query.table,
         StorageFactory::instance().get(
             ast_create_query,
-            table_data_path_relative, ast_create_query.table, database_name, context, context.getGlobalContext(),
-            columns, constraints,
-            true, has_force_restore_data_flag)
+            table_data_path_relative,
+            context,
+            context.getGlobalContext(),
+            columns,
+            constraints,
+            has_force_restore_data_flag)
     };
 }
 
@@ -211,7 +214,7 @@ void DatabaseOnDisk::renameTable(
     if (!table)
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
-    ASTPtr ast = parseQueryFromMetadata(getObjectMetadataPath(table_name));
+    ASTPtr ast = parseQueryFromMetadata(context, getObjectMetadataPath(table_name));
     if (!ast)
         throw Exception("There is no metadata file for table " + backQuote(table_name) + ".", ErrorCodes::FILE_DOESNT_EXIST);
     auto & create = ast->as<ASTCreateQuery &>();
@@ -244,7 +247,7 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const Context & context, const St
     ASTPtr ast;
 
     auto table_metadata_path = getObjectMetadataPath(table_name);
-    ast = getCreateQueryFromMetadata(table_metadata_path, throw_on_error);
+    ast = getCreateQueryFromMetadata(context, table_metadata_path, throw_on_error);
     if (!ast && throw_on_error)
     {
         /// Handle system.* tables for which there are no table.sql files.
@@ -260,20 +263,21 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const Context & context, const St
     return ast;
 }
 
-ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
+ASTPtr DatabaseOnDisk::getCreateDatabaseQuery(const Context & context) const
 {
     ASTPtr ast;
 
+    auto settings = context.getSettingsRef();
     auto metadata_dir_path = getMetadataPath();
     auto database_metadata_path = metadata_dir_path.substr(0, metadata_dir_path.size() - 1) + ".sql";
-    ast = getCreateQueryFromMetadata(database_metadata_path, true);
+    ast = getCreateQueryFromMetadata(context, database_metadata_path, true);
     if (!ast)
     {
         /// Handle databases (such as default) for which there are no database.sql files.
         /// If database.sql doesn't exist, then engine is Ordinary
         String query = "CREATE DATABASE " + backQuoteIfNeed(getDatabaseName()) + " ENGINE = Ordinary";
         ParserCreateQuery parser;
-        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0);
+        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
     }
 
     return ast;
@@ -353,7 +357,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
     }
 }
 
-ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const String & metadata_file_path, bool throw_on_error /*= true*/, bool remove_empty /*= false*/) const
+ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const Context & context, const String & metadata_file_path, bool throw_on_error /*= true*/, bool remove_empty /*= false*/) const
 {
     String query;
 
@@ -380,11 +384,12 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const String & metadata_file_path,
         return nullptr;
     }
 
+    auto settings = context.getSettingsRef();
     ParserCreateQuery parser;
     const char * pos = query.data();
     std::string error_message;
     auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message, /* hilite = */ false,
-                             "in file " + getMetadataPath(), /* allow_multi_statements = */ false, 0);
+                             "in file " + getMetadataPath(), /* allow_multi_statements = */ false, 0, settings.max_parser_depth);
 
     if (!ast && throw_on_error)
         throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
@@ -394,9 +399,9 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const String & metadata_file_path,
     return ast;
 }
 
-ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metadata_path, bool throw_on_error) const
+ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const Context & context, const String & database_metadata_path, bool throw_on_error) const
 {
-    ASTPtr ast = parseQueryFromMetadata(database_metadata_path, throw_on_error);
+    ASTPtr ast = parseQueryFromMetadata(context, database_metadata_path, throw_on_error);
 
     if (ast)
     {

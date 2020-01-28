@@ -13,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Formats/FormatFactory.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
@@ -181,8 +182,17 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 }
 
 StorageFile::StorageFile(CommonArguments args)
-    : table_name(args.table_name), database_name(args.database_name), format_name(args.format_name)
-    , compression_method(args.compression_method), base_path(args.context.getPath())
+    : IStorage(args.table_id,
+               ColumnsDescription({
+                                      {"_path", std::make_shared<DataTypeString>()},
+                                      {"_file", std::make_shared<DataTypeString>()}
+                                  },
+                                  true    /// all_virtuals
+                                 )
+              )
+    , format_name(args.format_name)
+    , compression_method(args.compression_method)
+    , base_path(args.context.getPath())
 {
     if (args.format_name != "Distributed")
         setColumns(args.columns);
@@ -194,11 +204,12 @@ class StorageFileBlockInputStream : public IBlockInputStream
 {
 public:
     StorageFileBlockInputStream(std::shared_ptr<StorageFile> storage_,
-        const Context & context, UInt64 max_block_size,
-        std::string file_path,
-        const CompressionMethod compression_method,
+        const Context & context_, UInt64 max_block_size_,
+        std::string file_path_, bool need_path, bool need_file,
+        const CompressionMethod compression_method_,
         BlockInputStreamPtr prepared_reader = nullptr)
-        : storage(std::move(storage_)), reader(std::move(prepared_reader))
+        : storage(std::move(storage_)), reader(std::move(prepared_reader)),
+        context(context_), max_block_size(max_block_size_), compression_method(compression_method_)
     {
         if (storage->use_table_fd)
         {
@@ -218,16 +229,14 @@ public:
             }
 
             storage->table_fd_was_used = true;
-            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFileDescriptor>(storage->table_fd), compression_method);
         }
         else
         {
             shared_lock = std::shared_lock(storage->rwlock);
-            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(file_path), compression_method);
+            file_path = std::make_optional(file_path_);
+            with_file_column = need_file;
+            with_path_column = need_path;
         }
-
-        if (!reader)
-            reader = FormatFactory::instance().getInput(storage->format_name, *read_buf, storage->getSampleBlock(), context, max_block_size);
     }
 
     String getName() const override
@@ -237,26 +246,73 @@ public:
 
     Block readImpl() override
     {
-        return reader->read();
+        /// Open file lazily on first read. This is needed to avoid too many open files from different streams.
+        if (!reader)
+        {
+            read_buf = wrapReadBufferWithCompressionMethod(storage->use_table_fd
+                ? std::make_unique<ReadBufferFromFileDescriptor>(storage->table_fd)
+                : std::make_unique<ReadBufferFromFile>(file_path.value()),
+                compression_method);
+
+            reader = FormatFactory::instance().getInput(storage->format_name, *read_buf, storage->getSampleBlock(), context, max_block_size);
+            reader->readPrefix();
+        }
+
+        auto res = reader->read();
+
+        /// Enrich with virtual columns.
+        if (res && file_path)
+        {
+            if (with_path_column)
+                res.insert({DataTypeString().createColumnConst(res.rows(), file_path.value())->convertToFullColumnIfConst(),
+                        std::make_shared<DataTypeString>(), "_path"});    /// construction with const is for probably generating less code
+            if (with_file_column)
+            {
+                size_t last_slash_pos = file_path.value().find_last_of('/');
+                res.insert({DataTypeString().createColumnConst(res.rows(), file_path.value().substr(
+                        last_slash_pos + 1))->convertToFullColumnIfConst(),
+                            std::make_shared<DataTypeString>(), "_file"});
+            }
+        }
+
+        /// Close file prematurally if stream was ended.
+        if (!res)
+        {
+            reader->readSuffix();
+            reader.reset();
+            read_buf.reset();
+        }
+
+        return res;
     }
 
-    Block getHeader() const override { return reader->getHeader(); }
-
-    void readPrefixImpl() override
+    Block getHeader() const override
     {
-        reader->readPrefix();
-    }
+        auto res = storage->getSampleBlock();
 
-    void readSuffixImpl() override
-    {
-        reader->readSuffix();
+        if (res && file_path)
+        {
+            if (with_path_column)
+                res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
+            if (with_file_column)
+                res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
+        }
+
+        return res;
     }
 
 private:
     std::shared_ptr<StorageFile> storage;
+    std::optional<std::string> file_path;
+    bool with_path_column = false;
+    bool with_file_column = false;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;
     BlockInputStreamPtr reader;
+
+    const Context & context;    /// TODO Untangle potential issues with context lifetime.
+    UInt64 max_block_size;
+    const CompressionMethod compression_method;
 
     std::shared_lock<std::shared_mutex> shared_lock;
     std::unique_lock<std::shared_mutex> unique_lock;
@@ -264,7 +320,7 @@ private:
 
 
 BlockInputStreams StorageFile::read(
-    const Names & /*column_names*/,
+    const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -274,14 +330,23 @@ BlockInputStreams StorageFile::read(
     const ColumnsDescription & columns_ = getColumns();
     auto column_defaults = columns_.getDefaults();
     BlockInputStreams blocks_input;
+
     if (use_table_fd)   /// need to call ctr BlockInputStream
         paths = {""};   /// when use fd, paths are empty
     else
-    {
         if (paths.size() == 1 && !Poco::File(paths[0]).exists())
             throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
-    }
+
     blocks_input.reserve(paths.size());
+    bool need_path_column = false;
+    bool need_file_column = false;
+    for (const auto & column : column_names)
+    {
+        if (column == "_path")
+            need_path_column = true;
+        if (column == "_file")
+            need_file_column = true;
+    }
     for (const auto & file_path : paths)
     {
         BlockInputStreamPtr cur_block;
@@ -290,7 +355,7 @@ BlockInputStreams StorageFile::read(
             cur_block = StorageDistributedDirectoryMonitor::createStreamFromFile(file_path);
         else
             cur_block = std::make_shared<StorageFileBlockInputStream>(
-                std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path, chooseCompressionMethod(file_path, compression_method));
+                std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path, need_path_column, need_file_column, chooseCompressionMethod(file_path, compression_method));
 
         blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
     }
@@ -318,7 +383,7 @@ public:
         else
         {
             if (storage.paths.size() != 1)
-                throw Exception("Table '" + storage.table_name + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
+                throw Exception("Table '" + storage.getStorageID().getNameForLogs() + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
             write_buf = wrapWriteBufferWithCompressionMethod(
                 std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
                 compression_method, 3);
@@ -370,17 +435,17 @@ BlockOutputStreamPtr StorageFile::write(
 Strings StorageFile::getDataPaths() const
 {
     if (paths.empty())
-        throw Exception("Table '" + table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("Table '" + getStorageID().getNameForLogs() + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
     return paths;
 }
 
 void StorageFile::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     if (!is_db_table)
-        throw Exception("Can't rename table '" + table_name + "' binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     if (paths.size() != 1)
-        throw Exception("Can't rename table '" + table_name + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
@@ -389,14 +454,13 @@ void StorageFile::rename(const String & new_path_to_table_data, const String & n
     Poco::File(paths[0]).renameTo(path_new);
 
     paths[0] = std::move(path_new);
-    table_name = new_table_name;
-    database_name = new_database_name;
+    renameInMemory(new_database_name, new_table_name);
 }
 
 void StorageFile::truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &)
 {
     if (paths.size() != 1)
-        throw Exception("Can't truncate table '" + table_name + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("Can't truncate table '" + getStorageID().getNameForLogs() + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
@@ -431,7 +495,7 @@ void registerStorageFile(StorageFactory & factory)
         String format_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         String compression_method;
-        StorageFile::CommonArguments common_args{args.database_name, args.table_name, format_name, compression_method,
+        StorageFile::CommonArguments common_args{args.table_id, format_name, compression_method,
                                                  args.columns, args.constraints, args.context};
 
         if (engine_args.size() == 1)    /// Table in database

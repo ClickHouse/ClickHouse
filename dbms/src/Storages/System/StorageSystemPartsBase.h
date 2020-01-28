@@ -53,9 +53,6 @@ private:
 class StorageSystemPartsBase : public IStorage
 {
 public:
-    std::string getTableName() const override { return name; }
-    std::string getDatabaseName() const override { return "system"; }
-
     NameAndTypePair getColumn(const String & column_name) const override;
 
     bool hasColumn(const String & column_name) const override;
@@ -69,8 +66,6 @@ public:
             unsigned num_streams) override;
 
 private:
-    const std::string name;
-
     bool hasStateColumn(const Names & column_names) const;
 
 protected:

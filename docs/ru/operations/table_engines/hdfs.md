@@ -97,4 +97,13 @@ CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs
 CREARE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
 ```
 
+## Виртуальные столбцы
+
+- `_path` — Путь к файлу.
+- `_file` — Имя файла.
+
+**Смотрите также**
+
+- [Виртуальные столбцы](index.md#table_engines-virtual_columns)
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/hdfs/) <!--hide-->

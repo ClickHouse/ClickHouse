@@ -21,6 +21,9 @@ class Block;
 
 struct Settings;
 
+class Volume;
+using VolumePtr = std::shared_ptr<Volume>;
+
 class AnalyzedJoin
 {
     /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
@@ -40,6 +43,7 @@ class AnalyzedJoin
     const SizeLimits size_limits;
     const size_t default_max_bytes;
     const bool join_use_nulls;
+    const size_t max_joined_block_rows = 0;
     const bool partial_merge_join = false;
     const bool partial_merge_join_optimizations = false;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
@@ -61,10 +65,10 @@ class AnalyzedJoin
     /// Original name -> name. Only ranamed columns.
     std::unordered_map<String, String> renames;
 
-    String tmp_path;
+    VolumePtr tmp_volume;
 
 public:
-    AnalyzedJoin(const Settings &, const String & tmp_path);
+    AnalyzedJoin(const Settings &, VolumePtr tmp_volume);
 
     /// for StorageJoin
     AnalyzedJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
@@ -81,11 +85,12 @@ public:
     ASTTableJoin::Kind kind() const { return table_join.kind; }
     ASTTableJoin::Strictness strictness() const { return table_join.strictness; }
     const SizeLimits & sizeLimits() const { return size_limits; }
-    const String & getTemporaryPath() const { return tmp_path; }
+    VolumePtr getTemporaryVolume() { return tmp_volume; }
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
     size_t defaultMaxBytes() const { return default_max_bytes; }
+    size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
     bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
 

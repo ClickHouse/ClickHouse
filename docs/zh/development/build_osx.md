@@ -12,7 +12,7 @@ ClickHouse 支持在 Mac OS X 10.12 版本中编译。若您在用更早的操�
 ## 安装编译器，工具库
 
 ```bash
-brew install cmake ninja gcc icu4c mariadb-connector-c openssl libtool gettext readline
+brew install cmake ninja gcc icu4c mariadb-connector-c openssl libtool gettext
 ```
 
 ## 拉取 ClickHouse 源码

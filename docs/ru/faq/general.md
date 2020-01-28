@@ -21,4 +21,37 @@
 NLS_LANG=RUSSIAN_RUSSIA.UTF8
 ```
 
+## Как экспортировать данные из ClickHouse в файл? {#how-to-export-to-file}
+
+### Секция INTO OUTFILE
+
+Добавьте секцию [INTO OUTFILE](../query_language/select/#into-outfile-clause) к своему запросу.
+
+Например:
+
+```sql
+SELECT * FROM table INTO OUTFILE 'file'
+```
+
+По умолчанию, для выдачи данных ClickHouse использует формат [TabSeparated](../interfaces/formats.md#tabseparated). Чтобы выбрать [формат данных](../interfaces/formats.md), используйте [секцию FORMAT](../query_language/select/#format-clause).
+
+Например:
+
+```sql
+SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
+```
+
+### Таблица с движком File
+
+Смотрите [File](../operations/table_engines/file.md).
+
+### Перенаправление в командой строке
+
+```sql
+$ clickhouse-client --query "SELECT * from table" > result.txt
+```
+
+Смотрите [clickhouse-client](../interfaces/cli.md).
+
+
 [Оригинальная статья ](https://clickhouse.yandex/docs/en/faq/general/) <!--hide-->

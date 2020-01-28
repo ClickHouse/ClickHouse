@@ -110,7 +110,8 @@ bool PartLog::addNewParts(Context & current_context, const PartLog::MutableDataP
 
     try
     {
-        part_log = current_context.getPartLog(parts.front()->storage.getDatabaseName()); // assume parts belong to the same table
+        auto table_id = parts.front()->storage.getStorageID();
+        part_log = current_context.getPartLog(table_id.database_name); // assume parts belong to the same table
         if (!part_log)
             return false;
 
@@ -122,8 +123,8 @@ bool PartLog::addNewParts(Context & current_context, const PartLog::MutableDataP
             elem.event_time = time(nullptr);
             elem.duration_ms = elapsed_ns / 1000000;
 
-            elem.database_name = part->storage.getDatabaseName();
-            elem.table_name = part->storage.getTableName();
+            elem.database_name = table_id.database_name;
+            elem.table_name = table_id.table_name;
             elem.partition_id = part->info.partition_id;
             elem.part_name = part->name;
             elem.path_on_disk = part->getFullPath();
