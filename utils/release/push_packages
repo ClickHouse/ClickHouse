@@ -160,12 +160,8 @@ def clear_old_incoming_packages(ssh_connection, user):
     for pkg in ('deb', 'rpm', 'tgz'):
         for release_type in ('stable', 'testing', 'prestable', 'lts'):
             try:
-                if pkg != 'tgz':
-                    ssh_connection.execute("rm /home/{user}/incoming/clickhouse/{pkg}/{release_type}/*".format(
-                        user=user, pkg=pkg, release_type=release_type))
-                else:
-                    ssh_connection.execute("rm /home/{user}/incoming/clickhouse/{pkg}/*".format(
-                        user=user, pkg=pkg))
+                ssh_connection.execute("rm /home/{user}/incoming/clickhouse/{pkg}/{release_type}/*".format(
+                    user=user, pkg=pkg, release_type=release_type))
             except Exception:
                 logging.info("rm is not required")
 
