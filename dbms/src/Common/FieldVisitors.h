@@ -184,7 +184,7 @@ template <> constexpr bool isDecimalField<DecimalField<Decimal128>>() { return t
 class FieldVisitorAccurateEquals : public StaticVisitor<bool>
 {
 public:
-    bool operator() (const UInt64 & l, const Null & r)      const { return cantCompare(l, r); }
+    bool operator() (const UInt64 &, const Null &)          const { return false; }
     bool operator() (const UInt64 & l, const UInt64 & r)    const { return l == r; }
     bool operator() (const UInt64 & l, const UInt128 & r)   const { return cantCompare(l, r); }
     bool operator() (const UInt64 & l, const Int64 & r)     const { return accurate::equalsOp(l, r); }
@@ -194,7 +194,7 @@ public:
     bool operator() (const UInt64 & l, const Tuple & r)     const { return cantCompare(l, r); }
     bool operator() (const UInt64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
 
-    bool operator() (const Int64 & l, const Null & r)       const { return cantCompare(l, r); }
+    bool operator() (const Int64 &, const Null &)           const { return false; }
     bool operator() (const Int64 & l, const UInt64 & r)     const { return accurate::equalsOp(l, r); }
     bool operator() (const Int64 & l, const UInt128 & r)    const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const Int64 & r)      const { return l == r; }
@@ -204,7 +204,7 @@ public:
     bool operator() (const Int64 & l, const Tuple & r)      const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
 
-    bool operator() (const Float64 & l, const Null & r)     const { return cantCompare(l, r); }
+    bool operator() (const Float64 &, const Null &)         const { return false; }
     bool operator() (const Float64 & l, const UInt64 & r)   const { return accurate::equalsOp(l, r); }
     bool operator() (const Float64 & l, const UInt128 & r)  const { return cantCompare(l, r); }
     bool operator() (const Float64 & l, const Int64 & r)    const { return accurate::equalsOp(l, r); }
@@ -227,6 +227,8 @@ public:
             return l == r;
         if constexpr (std::is_same_v<T, UInt128>)
             return stringToUUID(l) == r;
+        if constexpr (std::is_same_v<T, Null>)
+            return false;
         return cantCompare(l, r);
     }
 
@@ -237,6 +239,8 @@ public:
             return l == r;
         if constexpr (std::is_same_v<T, String>)
             return l == stringToUUID(r);
+        if constexpr (std::is_same_v<T, Null>)
+            return false;
         return cantCompare(l, r);
     }
 
@@ -245,6 +249,8 @@ public:
     {
         if constexpr (std::is_same_v<T, Array>)
             return l == r;
+        if constexpr (std::is_same_v<T, Null>)
+            return false;
         return cantCompare(l, r);
     }
 
@@ -253,6 +259,8 @@ public:
     {
         if constexpr (std::is_same_v<T, Tuple>)
             return l == r;
+        if constexpr (std::is_same_v<T, Null>)
+            return false;
         return cantCompare(l, r);
     }
 
@@ -263,6 +271,8 @@ public:
             return l == r;
         if constexpr (std::is_same_v<U, Int64> || std::is_same_v<U, UInt64>)
             return l == DecimalField<Decimal128>(r, 0);
+        if constexpr (std::is_same_v<U, Null>)
+            return false;
         return cantCompare(l, r);
     }
 
@@ -289,11 +299,10 @@ private:
     }
 };
 
-
 class FieldVisitorAccurateLess : public StaticVisitor<bool>
 {
 public:
-    bool operator() (const UInt64 & l, const Null & r)      const { return cantCompare(l, r); }
+    bool operator() (const UInt64 &, const Null &)          const { return false; }
     bool operator() (const UInt64 & l, const UInt64 & r)    const { return l < r; }
     bool operator() (const UInt64 & l, const UInt128 & r)   const { return cantCompare(l, r); }
     bool operator() (const UInt64 & l, const Int64 & r)     const { return accurate::lessOp(l, r); }
@@ -303,7 +312,7 @@ public:
     bool operator() (const UInt64 & l, const Tuple & r)     const { return cantCompare(l, r); }
     bool operator() (const UInt64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
 
-    bool operator() (const Int64 & l, const Null & r)       const { return cantCompare(l, r); }
+    bool operator() (const Int64 &, const Null &)           const { return false; }
     bool operator() (const Int64 & l, const UInt64 & r)     const { return accurate::lessOp(l, r); }
     bool operator() (const Int64 & l, const UInt128 & r)    const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const Int64 & r)      const { return l < r; }
@@ -313,7 +322,7 @@ public:
     bool operator() (const Int64 & l, const Tuple & r)      const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
 
-    bool operator() (const Float64 & l, const Null & r)     const { return cantCompare(l, r); }
+    bool operator() (const Float64 &, const Null &)         const { return false; }
     bool operator() (const Float64 & l, const UInt64 & r)   const { return accurate::lessOp(l, r); }
     bool operator() (const Float64 & l, const UInt128 & r)  const { return cantCompare(l, r); }
     bool operator() (const Float64 & l, const Int64 & r)    const { return accurate::lessOp(l, r); }
@@ -336,6 +345,8 @@ public:
             return l < r;
         if constexpr (std::is_same_v<T, UInt128>)
             return stringToUUID(l) < r;
+        if constexpr (std::is_same_v<T, Null>)
+            return false;
         return cantCompare(l, r);
     }
 
@@ -346,6 +357,8 @@ public:
             return l < r;
         if constexpr (std::is_same_v<T, String>)
             return l < stringToUUID(r);
+        if constexpr (std::is_same_v<T, Null>)
+            return false;
         return cantCompare(l, r);
     }
 
@@ -354,6 +367,8 @@ public:
     {
         if constexpr (std::is_same_v<T, Array>)
             return l < r;
+        if constexpr (std::is_same_v<T, Null>)
+            return false;
         return cantCompare(l, r);
     }
 
@@ -362,6 +377,8 @@ public:
     {
         if constexpr (std::is_same_v<T, Tuple>)
             return l < r;
+        if constexpr (std::is_same_v<T, Null>)
+            return false;
         return cantCompare(l, r);
     }
 
@@ -370,8 +387,10 @@ public:
     {
         if constexpr (isDecimalField<U>())
             return l < r;
-        else if constexpr (std::is_same_v<U, Int64> || std::is_same_v<U, UInt64>)
+        if constexpr (std::is_same_v<U, Int64> || std::is_same_v<U, UInt64>)
             return l < DecimalField<Decimal128>(r, 0);
+        if constexpr (std::is_same_v<U, Null>)
+            return false;
         return cantCompare(l, r);
     }
 
