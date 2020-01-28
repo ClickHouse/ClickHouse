@@ -648,6 +648,12 @@ def test_materialize_ttl_in_partition(started_cluster, name, engine):
         node1.query("DROP TABLE IF EXISTS {}".format(name))
 
 
+def start_thread(*args, **kwargs):
+    thread = threading.Thread(*args, **kwargs)
+    thread.start()
+    return thread
+
+
 @pytest.mark.parametrize("name,engine,positive", [
     ("mt_test_alter_multiple_ttls_positive", "MergeTree()", True),
     ("mt_replicated_test_alter_multiple_ttls_positive", "ReplicatedMergeTree('/clickhouse/replicated_test_alter_multiple_ttls_positive', '1')", True),
@@ -678,6 +684,8 @@ limitations under the License."""
     """
     now = time.time()
     try:
+        sleeps = { delay : start_thread(target=time.sleep, args=(delay,)) for delay in [12, 22] }
+
         node1.query("""
             CREATE TABLE {name} (
                 p1 Int64,
@@ -694,8 +702,8 @@ limitations under the License."""
         node1.query("""
             ALTER TABLE {name} MODIFY
             TTL d1 + INTERVAL 0 SECOND TO DISK 'jbod2',
-                d1 + INTERVAL 5 SECOND TO VOLUME 'external',
-                d1 + INTERVAL 10 SECOND DELETE
+                d1 + INTERVAL 10 SECOND TO VOLUME 'external',
+                d1 + INTERVAL 20 SECOND DELETE
         """.format(name=name))
 
         for p in range(3):
@@ -713,14 +721,14 @@ limitations under the License."""
 
         assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["6"]
 
-        time.sleep(5)
+        sleeps[12].join()
 
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"external"} if positive else {"jbod1", "jbod2"}
 
         assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["6"]
 
-        time.sleep(5)
+        sleeps[22].join()
 
         node1.query("OPTIMIZE TABLE {name} FINAL".format(name=name))
 
