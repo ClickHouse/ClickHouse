@@ -22,7 +22,7 @@ private:
     bool block_processed = false;
     Chunk current_chunk;
 
-    UInt64 rows_before_limit_at_least = 0;
+    std::atomic<UInt64> rows_before_limit_at_least = 0;
 
     bool with_ties;
     const SortDescription description;

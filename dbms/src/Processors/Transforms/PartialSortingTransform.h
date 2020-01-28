@@ -30,7 +30,7 @@ protected:
 private:
     SortDescription description;
     UInt64 limit;
-    UInt64 read_rows = 0;
+    std::atomic<UInt64> read_rows = 0;
 
     /// Do we need calculate read_rows value?
     /// Used to skip total row when count rows_before_limit_at_least.
