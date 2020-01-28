@@ -313,7 +313,7 @@ private:
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
-            //!executeDispatch<SSDCacheDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
@@ -500,7 +500,7 @@ private:
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
-            //!executeDispatch<SSDCacheDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr))

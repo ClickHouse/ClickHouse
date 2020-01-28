@@ -279,7 +279,7 @@ size_t CachePartition::appendBlock(
 #undef DISPATCH
 
             case AttributeUnderlyingType::utString:
-                /*{
+                {
                     LOG_DEBUG(&Poco::Logger::get("kek"), "string write");
                     const auto & value = std::get<Attribute::Container<String>>(attribute.values)[index];
                     if (sizeof(UInt64) + value.size() > write_buffer->available())
@@ -294,7 +294,7 @@ size_t CachePartition::appendBlock(
                     {
                         writeStringBinary(value, *write_buffer);
                     }
-                }*/
+                }
                 break;
             }
         }
@@ -424,18 +424,17 @@ void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray
         }
     }
 
-    getValueFromMemory(indices, [&](const size_t index, ReadBuffer & buf)
+    auto set_value = [&](const size_t index, ReadBuffer & buf)
     {
-        readValueFromBuffer(attribute_index, out[index], buf);
-    });
-    getValueFromStorage(indices, [&](const size_t index, ReadBuffer & buf)
-    {
-        readValueFromBuffer(attribute_index, out[index], buf);
-    });
+        readValueFromBuffer(attribute_index, out, index, buf);
+    };
+
+    getValueFromMemory(indices, set_value);
+    getValueFromStorage(indices, set_value);
 }
 
 template <typename SetFunc>
-void CachePartition::getValueFromMemory(const PaddedPODArray<Index> & indices, SetFunc set) const
+void CachePartition::getValueFromMemory(const PaddedPODArray<Index> & indices, SetFunc & set) const
 {
     for (size_t i = 0; i < indices.size(); ++i)
     {
@@ -451,7 +450,7 @@ void CachePartition::getValueFromMemory(const PaddedPODArray<Index> & indices, S
 }
 
 template <typename SetFunc>
-void CachePartition::getValueFromStorage(const PaddedPODArray<Index> & indices, SetFunc set) const
+void CachePartition::getValueFromStorage(const PaddedPODArray<Index> & indices, SetFunc & set) const
 {
     std::vector<std::pair<Index, size_t>> index_to_out;
     for (size_t i = 0; i < indices.size(); ++i)
@@ -539,7 +538,7 @@ void CachePartition::getValueFromStorage(const PaddedPODArray<Index> & indices, 
                 ReadBufferFromMemory buf(
                         reinterpret_cast<char *>(request.aio_buf) + file_index.getAddressInBlock(),
                         block_size - file_index.getAddressInBlock());
-                set(i, buf);
+                set(out_index, buf);
             }
 
             processed[request_id] = true;
@@ -562,7 +561,7 @@ void CachePartition::getValueFromStorage(const PaddedPODArray<Index> & indices, 
 }
 
 template <typename Out>
-void CachePartition::readValueFromBuffer(const size_t attribute_index, Out & dst, ReadBuffer & buf) const
+void CachePartition::readValueFromBuffer(const size_t attribute_index, Out & dst, const size_t index, ReadBuffer & buf) const
 {
     for (size_t i = 0; i < attribute_index; ++i)
     {
@@ -590,25 +589,24 @@ void CachePartition::readValueFromBuffer(const size_t attribute_index, Out & dst
 #undef DISPATCH
 
         case AttributeUnderlyingType::utString:
-            /*{
+            {
                 size_t size = 0;
                 readVarUInt(size, buf);
                 buf.ignore(size);
-            }*/
+            }
             break;
         }
     }
 
-    //if constexpr (!std::is_same_v<ColumnString, Out>)
-    readBinary(dst, buf);
-    /*else
+    if constexpr (!std::is_same_v<ColumnString, Out>)
+        readBinary(dst[index], buf);
+    else
     {
-        LOG_DEBUG(&Poco::Logger::get("kek"), "string READ");
         UNUSED(index);
         size_t size = 0;
         readVarUInt(size, buf);
         dst.insertData(buf.position(), size);
-    }*/
+    }
 }
 
 void CachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out, std::chrono::system_clock::time_point now) const
@@ -856,11 +854,11 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
 #undef DISPATCH
 
             case AttributeUnderlyingType::utString:
-                /*{
+                {
                     new_attributes.emplace_back();
                     new_attributes.back().type = attribute_type;
                     new_attributes.back().values = CachePartition::Attribute::Container<String>();
-                }*/
+                }
                 break;
             }
         }
@@ -928,11 +926,11 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
 #undef DISPATCH
 
             case AttributeUnderlyingType::utString:
-                /*{
+                {
                     auto & to_values = std::get<CachePartition::Attribute::Container<String>>(new_attributes[i].values);
                     auto & null_value = std::get<String>(null_values[i]);
                     to_values.push_back(null_value);
-                }*/
+                }
                 break;
             }
         }
@@ -1041,7 +1039,7 @@ CachePartition::Attributes CacheStorage::createAttributesFromBlock(
 #undef DISPATCH
 
         case AttributeUnderlyingType::utString:
-            /*{
+            {
                 attributes.emplace_back();
                 CachePartition::Attribute::Container<String> values(column->size());
                 for (size_t j = 0; j < column->size(); ++j)
@@ -1052,7 +1050,7 @@ CachePartition::Attributes CacheStorage::createAttributesFromBlock(
                 }
                 attributes.back().type = structure[i];
                 attributes.back().values = std::move(values);
-            }*/
+            }
             break;
         }
     }
@@ -1245,19 +1243,12 @@ template <typename DefaultGetter>
 void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const PaddedPODArray<Key> & ids,
         ColumnString * out, DefaultGetter && get_default) const
 {
-    UNUSED(attribute_index);
-    UNUSED(ids);
-    UNUSED(out);
     const auto now = std::chrono::system_clock::now();
-    UNUSED(now);
-    UNUSED(get_default);
 
-    return;
-/*
     std::unordered_map<Key, std::vector<size_t>> not_found_ids;
 
     auto from_cache = ColumnString::create();
-    //storage.template getValue<String>(attribute_index, ids, *from_cache, not_found_ids, now);
+    storage.getValue<String>(attribute_index, ids, *from_cache, not_found_ids, now);
     if (not_found_ids.empty())
     {
         out->getChars().resize(from_cache->getChars().size());
@@ -1309,7 +1300,7 @@ void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const 
                 out->insertData(to_insert.data, to_insert.size);
             }
         }
-    }*/
+    }
 }
 
 void SSDCacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
