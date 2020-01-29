@@ -122,7 +122,7 @@ void ExpressionAnalyzer::analyzeAggregation()
         ASTPtr array_join_expression_list = select_query->array_join_expression_list(is_array_join_left);
         if (array_join_expression_list)
         {
-            getRootActions(array_join_expression_list, true, temp_actions);
+            getRootActionsNoMakeSet(array_join_expression_list, true, temp_actions, false);
             addMultipleArrayJoinAction(temp_actions, is_array_join_left);
 
             array_join_columns.clear();
@@ -134,7 +134,7 @@ void ExpressionAnalyzer::analyzeAggregation()
         const ASTTablesInSelectQueryElement * join = select_query->join();
         if (join)
         {
-            getRootActions(analyzedJoin().leftKeysList(), true, temp_actions);
+            getRootActionsNoMakeSet(analyzedJoin().leftKeysList(), true, temp_actions, false);
             addJoinAction(temp_actions);
         }
     }
@@ -155,7 +155,7 @@ void ExpressionAnalyzer::analyzeAggregation()
             for (ssize_t i = 0; i < ssize_t(group_asts.size()); ++i)
             {
                 ssize_t size = group_asts.size();
-                getRootActions(group_asts[i], true, temp_actions);
+                getRootActionsNoMakeSet(group_asts[i], true, temp_actions, false);
 
                 const auto & column_name = group_asts[i]->getColumnName();
                 const auto & block = temp_actions->getSampleBlock();
@@ -340,7 +340,18 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, 
     LogAST log;
     ActionsVisitor::Data visitor_data(context, settings.size_limits_for_set, subquery_depth,
                                    sourceColumns(), actions, prepared_sets, subqueries_for_sets,
-                                   no_subqueries, only_consts, !isRemoteStorage());
+                                   no_subqueries, false, only_consts, !isRemoteStorage());
+    ActionsVisitor(visitor_data, log.stream()).visit(ast);
+    visitor_data.updateActions(actions);
+}
+
+
+void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts)
+{
+    LogAST log;
+    ActionsVisitor::Data visitor_data(context, settings.size_limits_for_set, subquery_depth,
+                                   sourceColumns(), actions, prepared_sets, subqueries_for_sets,
+                                   no_subqueries, true, only_consts, !isRemoteStorage());
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     visitor_data.updateActions(actions);
 }
