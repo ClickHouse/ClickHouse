@@ -35,7 +35,7 @@ IProcessor::Status SourceFromInputStream::prepare()
         is_generating_finished = true;
 
         /// Read postfix and get totals if needed.
-        if (!is_stream_finished)
+        if (!is_stream_finished && !isCancelled())
             return Status::Ready;
 
         if (has_totals_port)
@@ -109,7 +109,7 @@ Chunk SourceFromInputStream::generate()
     }
 
     auto block = stream->read();
-    if (!block)
+    if (!block && !isCancelled())
     {
         stream->readSuffix();
 

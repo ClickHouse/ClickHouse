@@ -95,6 +95,7 @@ LimitTransform::Status LimitTransform::prepare()
         }
 
         /// Now, we pulled from input, and it must be empty.
+        input.setNeeded();
         return Status::NeedData;
     }
 
@@ -114,6 +115,7 @@ LimitTransform::Status LimitTransform::prepare()
         }
 
         /// Now, we pulled from input, and it must be empty.
+        input.setNeeded();
         return Status::NeedData;
     }
 
