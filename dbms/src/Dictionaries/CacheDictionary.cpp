@@ -867,8 +867,6 @@ void CacheDictionary::update(const std::vector<Key> & requested_ids, std::unorde
 
             stream->readPrefix();
 
-            const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
-
             while (const auto block = stream->read())
             {
                 const auto id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
@@ -882,6 +880,8 @@ void CacheDictionary::update(const std::vector<Key> & requested_ids, std::unorde
                 const auto column_ptrs = ext::map<std::vector>(
                         ext::range(0, attributes.size()),
                         [&block](size_t i) { return block.safeGetByPosition(i + 1).column.get(); });
+
+                const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
                 for (const auto i : ext::range(0, ids.size()))
                 {
