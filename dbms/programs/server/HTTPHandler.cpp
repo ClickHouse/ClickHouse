@@ -616,6 +616,8 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 {
     try
     {
+        response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
+
         /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
         /// to avoid reading part of the current request body in the next request.
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
