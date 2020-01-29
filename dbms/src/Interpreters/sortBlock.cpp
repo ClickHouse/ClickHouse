@@ -133,16 +133,12 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
         else if (!isColumnConst(*column))
             column->getPermutation(reverse, limit, description[0].nulls_direction, perm);
         else
-            /// we don't need to do anything with const column
             is_column_const = true;
-
         size_t columns = block.columns();
         for (size_t i = 0; i < columns; ++i)
         {
             if (!is_column_const)
                 block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
-            else if (limit != 0) // LIMIT exists
-                block.getByPosition(i).column = block.getByPosition(i).column->cut(0, limit);
         }
     }
     else
