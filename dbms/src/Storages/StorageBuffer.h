@@ -40,7 +40,7 @@ class Context;
 class StorageBuffer : public ext::shared_ptr_helper<StorageBuffer>, public IStorage
 {
 friend struct ext::shared_ptr_helper<StorageBuffer>;
-friend class BufferBlockInputStream;
+friend class BufferSource;
 friend class BufferBlockOutputStream;
 
 public:
@@ -56,7 +56,7 @@ public:
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
 
-    BlockInputStreams read(
+    Pipes readWithProcessors(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

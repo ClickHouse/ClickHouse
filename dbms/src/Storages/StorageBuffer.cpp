@@ -4,7 +4,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <DataStreams/AddingMissedBlockInputStream.h>
+#include <Processors/Transforms/AddingMissedTransform.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Databases/IDatabase.h>
@@ -27,6 +27,9 @@
 #include <ext/range.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
+#include <Processors/Transforms/ConvertingTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 
 
 namespace ProfileEvents
@@ -94,20 +97,19 @@ StorageBuffer::~StorageBuffer()
 
 
 /// Reads from one buffer (from one block) under its mutex.
-class BufferBlockInputStream : public IBlockInputStream
+class BufferSource : public SourceWithProgress
 {
 public:
-    BufferBlockInputStream(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage_)
-        : column_names(column_names_.begin(), column_names_.end()), buffer(buffer_), storage(storage_) {}
+    BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage)
+        : SourceWithProgress(storage_.getSampleBlockForColumns(column_names))
+        , column_names(column_names_.begin(), column_names_.end()), buffer(buffer_) {}
 
     String getName() const override { return "Buffer"; }
 
-    Block getHeader() const override { return storage.getSampleBlockForColumns(column_names); }
-
 protected:
-    Block readImpl() override
+    Chunk generate() override
     {
-        Block res;
+        Chunk res;
 
         if (has_been_read)
             return res;
@@ -118,8 +120,14 @@ protected:
         if (!buffer.data.rows())
             return res;
 
+        Columns columns;
+        columns.reserve(column_names.size());
+
         for (const auto & name : column_names)
-            res.insert(buffer.data.getByName(name));
+            columns.push_back(buffer.data.getByName(name).column);
+
+        UInt64 size = columns.at(0)->size();
+        res.setColumns(std::move(columns), size);
 
         return res;
     }
@@ -127,7 +135,6 @@ protected:
 private:
     Names column_names;
     StorageBuffer::Buffer & buffer;
-    const StorageBuffer & storage;
     bool has_been_read = false;
 };
 
@@ -147,7 +154,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
     return QueryProcessingStage::FetchColumns;
 }
 
-BlockInputStreams StorageBuffer::read(
+Pipes StorageBuffer::readWithProcessors(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -155,7 +162,7 @@ BlockInputStreams StorageBuffer::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    BlockInputStreams streams_from_dst;
+    Pipes pipes_from_dst;
 
     if (!no_destination)
     {
@@ -178,7 +185,7 @@ BlockInputStreams StorageBuffer::read(
                 query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(destination);
 
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
-            streams_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+            pipes_from_dst = destination->readWithProcessors(column_names, query_info, context, processed_stage, max_block_size, num_streams);
         }
         else
         {
@@ -213,49 +220,52 @@ BlockInputStreams StorageBuffer::read(
             }
             else
             {
-                streams_from_dst = destination->read(columns_intersection, query_info, context, processed_stage, max_block_size, num_streams);
-                for (auto & stream : streams_from_dst)
+                pipes_from_dst = destination->readWithProcessors(columns_intersection, query_info, context, processed_stage, max_block_size, num_streams);
+                for (auto & pipe : pipes_from_dst)
                 {
-                    stream = std::make_shared<AddingMissedBlockInputStream>(
-                        stream, header_after_adding_defaults, getColumns().getDefaults(), context);
-                    stream = std::make_shared<ConvertingBlockInputStream>(
-                        context, stream, header, ConvertingBlockInputStream::MatchColumnsMode::Name);
+                    pipe.addSimpleTransform(std::make_shared<AddingMissedTransform>(
+                            pipe.getHeader(), header_after_adding_defaults, getColumns().getDefaults(), context));
+
+                    pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
+                            pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name, context));
                 }
             }
         }
 
-        for (auto & stream : streams_from_dst)
-            stream->addTableLock(destination_lock);
+        for (auto & pipe : pipes_from_dst)
+            pipe.addTableLock(destination_lock);
     }
 
-    BlockInputStreams streams_from_buffers;
-    streams_from_buffers.reserve(num_shards);
+    Pipes pipes_from_buffers;
+    pipes_from_buffers.reserve(num_shards);
     for (auto & buf : buffers)
-        streams_from_buffers.push_back(std::make_shared<BufferBlockInputStream>(column_names, buf, *this));
+        pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, *this));
 
     /** If the sources from the table were processed before some non-initial stage of query execution,
       * then sources from the buffers must also be wrapped in the processing pipeline before the same stage.
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
-        for (auto & stream : streams_from_buffers)
-            stream = InterpreterSelectQuery(query_info.query, context, stream, SelectQueryOptions(processed_stage)).execute().in;
+        for (auto & pipe : pipes_from_buffers)
+            pipe = InterpreterSelectQuery(query_info.query, context, std::move(pipe), SelectQueryOptions(processed_stage)).executeWithProcessors().getPipe();
 
     if (query_info.prewhere_info)
     {
-        for (auto & stream : streams_from_buffers)
-            stream = std::make_shared<FilterBlockInputStream>(stream, query_info.prewhere_info->prewhere_actions,
-                    query_info.prewhere_info->prewhere_column_name, query_info.prewhere_info->remove_prewhere_column);
+        for (auto & pipe : pipes_from_buffers)
+            pipe.addSimpleTransform(std::make_shared<FilterTransform>(pipe.getHeader(), query_info.prewhere_info->prewhere_actions,
+                    query_info.prewhere_info->prewhere_column_name, query_info.prewhere_info->remove_prewhere_column));
 
         if (query_info.prewhere_info->alias_actions)
         {
-            for (auto & stream : streams_from_buffers)
-                stream = std::make_shared<ExpressionBlockInputStream>(stream, query_info.prewhere_info->alias_actions);
+            for (auto & pipe : pipes_from_buffers)
+                pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), query_info.prewhere_info->alias_actions));
 
         }
     }
 
-    streams_from_dst.insert(streams_from_dst.end(), streams_from_buffers.begin(), streams_from_buffers.end());
-    return streams_from_dst;
+    for (auto & pipe : pipes_from_buffers)
+        pipes_from_dst.emplace_back(std::move(pipe));
+
+    return pipes_from_dst;
 }
 
 
