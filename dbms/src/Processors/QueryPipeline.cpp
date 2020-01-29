@@ -63,6 +63,11 @@ void QueryPipeline::init(Pipes pipes)
     if (pipes.empty())
         throw Exception("Can't initialize pipeline with empty pipes list.", ErrorCodes::LOGICAL_ERROR);
 
+    /// Move locks from pipes to pipeline class.
+    for (auto & pipe : pipes)
+        for (auto & lock : pipe.getTableLocks())
+            table_locks.emplace_back(lock);
+
     std::vector<OutputPort *> totals;
 
     for (auto & pipe : pipes)
