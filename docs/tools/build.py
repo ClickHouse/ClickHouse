@@ -196,12 +196,42 @@ def build_single_page_version(lang, args, cfg):
                         shutil.copytree(test_dir, args.save_raw_single_page)
 
 
+def build_redirect_html(args, from_path, to_path):
+    for lang in args.lang.split(','):
+        out_path = os.path.join(args.docs_output_dir, lang, from_path.replace('.md', '/index.html'))
+        out_dir = os.path.dirname(out_path)
+        try:
+            os.makedirs(out_dir)
+        except OSError:
+            pass
+        version_prefix = args.version_prefix + '/' if args.version_prefix else '/'
+        to_url = '/docs%s%s/%s' % (version_prefix, lang, to_path.replace('.md', '/'))
+        to_url = to_url.strip()
+        with open(out_path, 'w') as f:
+            f.write('''<!DOCTYPE HTML>
+<html lang="en-US">
+    <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="refresh" content="0; url=%s">
+        <script type="text/javascript">
+            window.location.href = "%s"
+        </script>
+        <title>Page Redirection</title>
+    </head>
+    <body>
+        If you are not redirected automatically, follow this <a href="%s">link</a>.
+    </body>
+</html>''' % (to_url, to_url, to_url))
+
+
 def build_redirects(args):
     lang_re_fragment = args.lang.replace(',', '|')
     rewrites = []
+
     with open(os.path.join(args.docs_dir, 'redirects.txt'), 'r') as f:
         for line in f:
             from_path, to_path = line.split(' ', 1)
+            build_redirect_html(args, from_path, to_path)
             from_path = '^/docs/(' + lang_re_fragment + ')/' + from_path.replace('.md', '/?') + '$'
             to_path = '/docs/$1/' + to_path.replace('.md', '/')
             rewrites.append(' '.join(['rewrite', from_path, to_path, 'permanent;']))
