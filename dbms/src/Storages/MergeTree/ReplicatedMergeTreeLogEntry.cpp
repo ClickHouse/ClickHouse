@@ -70,7 +70,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << "sync_mode\n";
             out << alter_sync_mode << "\n";
             out << "mutatation_commands\n";
-            out << mutation_commands << '\n';
+            out << mutation_commands;
             break;
 
         default:
@@ -165,7 +165,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         type = ALTER_METADATA;
         in >> "sync_mode\n";
         in >> alter_sync_mode;
-        in >> "mutatation_commands\n";
+        in >> "\nmutatation_commands\n";
         in >> mutation_commands;
     }
 

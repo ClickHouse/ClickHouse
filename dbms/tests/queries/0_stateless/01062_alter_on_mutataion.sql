@@ -54,7 +54,6 @@ ALTER TABLE test_alter_on_mutation MODIFY COLUMN value UInt64;
 
 SELECT sum(value) from test_alter_on_mutation;
 
-
 DROP TABLE IF EXISTS test_alter_on_mutation;
 
 DROP TABLE IF EXISTS nested_alter;
