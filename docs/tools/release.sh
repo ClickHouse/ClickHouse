@@ -5,6 +5,9 @@ BASE_DIR=$(dirname $(readlink -f $0))
 BUILD_DIR="${BASE_DIR}/../build"
 PUBLISH_DIR="${BASE_DIR}/../publish"
 IMAGE="clickhouse/website"
+GIT_TEST_URI="git@github.com:ClickHouse/clickhouse-test.github.io.git"
+GIT_PROD_URI="git@github.com:ClickHouse/clickhouse.github.io.git"
+
 if [[ -z "$1" ]]
 then
     TAG=$(head -c 8 /dev/urandom | xxd -p)
@@ -20,14 +23,14 @@ then
     python "${BASE_DIR}/build.py" "--enable-stable-releases"
     set +e
     rm -rf "${PUBLISH_DIR}" || true
-    git clone git@github.com:ClickHouse/clickhouse.github.io.git "${PUBLISH_DIR}"
+    git clone "${GIT_TEST_URI}" "${PUBLISH_DIR}"
     cd "${PUBLISH_DIR}"
     git config user.email "robot-clickhouse@yandex-team.ru"
     git config user.name "robot-clickhouse"
     git rm -rf *
     git commit -a -m "wipe old release"
     cp -R "${BUILD_DIR}"/* .
-    echo -n "clickhouse.tech" > CNAME
+    echo -n "test.clickhouse.tech" > CNAME
     echo -n "" > README.md
     cp "${BASE_DIR}/../../LICENSE" .
     git add *
@@ -39,6 +42,24 @@ then
     docker tag "${FULL_NAME}" "${REMOTE_NAME}"
     DOCKER_HASH=$(docker push "${REMOTE_NAME}" | tail -1 | awk '{print $3;}')
     docker rmi "${FULL_NAME}"
+else
+    set +e
+    rm -rf "${BUILD_DIR}" || true
+    rm -rf "${PUBLISH_DIR}" || true
+    git clone "${GIT_TEST_URI}" "${BUILD_DIR}"
+    git clone "${GIT_PROD_URI}" "${PUBLISH_DIR}"
+    cd "${PUBLISH_DIR}"
+    git config user.email "robot-clickhouse@yandex-team.ru"
+    git config user.name "robot-clickhouse"
+    git rm -rf *
+    git commit -a -m "wipe old release"
+    rm -rf "${BUILD_DIR}/.git"
+    cp -R "${BUILD_DIR}"/* .
+    echo -n "clickhouse.tech" > CNAME
+    git add *
+    git commit -a -m "add new release at $(date)"
+    git push origin master
+    set -e
 fi
 
 QLOUD_ENDPOINT="https://platform.yandex-team.ru/api/v1"
