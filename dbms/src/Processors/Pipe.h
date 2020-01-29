@@ -33,6 +33,7 @@ public:
     /// Input will be connected with current output port, output port will be updated.
     void addSimpleTransform(ProcessorPtr transform);
 
+    const std::vector<TableStructureReadLockHolder> & getTableLocks() const { return table_locks; }
     Processors detachProcessors() && { return std::move(processors); }
 
     /// Specify quotas and limits for every ISourceWithProgress.
@@ -47,10 +48,16 @@ public:
     void setTotalsPort(OutputPort * totals_) { totals = totals_; }
     OutputPort * getTotalsPort() const { return totals; }
 
+    /// Do not allow to change the table while the processors of pipe are alive.
+    /// TODO: move it to pipeline.
+    void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
+
 private:
     Processors processors;
     OutputPort * output_port = nullptr;
     OutputPort * totals = nullptr;
+
+    std::vector<TableStructureReadLockHolder> table_locks;
 };
 
 }
