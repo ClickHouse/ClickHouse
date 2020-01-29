@@ -1168,9 +1168,8 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 }
 
 
-bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMergeTree::LogEntry & /*entry*/)
+bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMergeTree::LogEntry & entry)
 {
-    ////std::cerr << "Trying to finish alter\n";
     auto zookeeper = getZooKeeper();
 
     String columns_path = zookeeper_path + "/columns";
@@ -1191,7 +1190,6 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     const bool changed_columns_version = (columns_version_zk != columns_version);
     const bool changed_metadata_version = (metadata_version_zk != metadata_version);
 
-    ////std::cerr << "Versions changed: columns:" << changed_columns_version << " metadata:" << changed_metadata_version << std::endl;
 
     if (!(changed_columns_version || changed_metadata_version))
     {
@@ -1246,7 +1244,18 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
 
         ////std::cerr << "Nodes in zk updated\n";
     }
-    ////std::cerr << "Done\n";
+    if (!entry.mutation_commands.empty())
+    {
+        MutationCommands commands;
+        ReadBufferFromString in(entry.mutation_commands);
+        commands.readText(in);
+        if (is_leader)
+        {
+            auto mutation_entry = mutateImpl(commands);
+            waitMutation(mutation_entry, entry.alter_sync_mode);
+        }
+    }
+
     return true;
 }
 
@@ -3395,6 +3404,7 @@ void StorageReplicatedMergeTree::alter(
 
         entry.type = LogEntry::ALTER_METADATA;
         entry.source_replica = replica_name;
+        entry.alter_sync_mode = query_context.getSettingsRef().replication_alter_partitions_sync;
 
         WriteBufferFromString wb(entry.mutation_commands);
         maybe_mutation_commands.writeText(wb);
@@ -4390,10 +4400,27 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
 
 void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const Context & query_context)
 {
-    mutateImpl(commands, query_context);
+    auto entry = mutateImpl(commands);
+    waitMutation(entry, query_context.getSettingsRef().mutations_sync);
 }
 
-ReplicatedMergeTreeMutationEntry StorageReplicatedMergeTree::mutateImpl(const MutationCommands & commands, const Context & query_context)
+void StorageReplicatedMergeTree::waitMutation(const ReplicatedMergeTreeMutationEntry & entry, size_t mutations_sync) const
+{
+    auto zookeeper = getZooKeeper();
+    /// we have to wait
+    if (mutations_sync != 0)
+    {
+        Strings replicas;
+        if (mutations_sync == 2) /// wait for all replicas
+            replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+        else if (mutations_sync == 1) /// just wait for ourself
+            replicas.push_back(replica_name);
+
+        waitMutationToFinishOnReplicas(replicas, entry.znode_name);
+    }
+}
+
+ReplicatedMergeTreeMutationEntry StorageReplicatedMergeTree::mutateImpl(const MutationCommands & commands)
 {
     /// Overview of the mutation algorithm.
     ///
@@ -4497,18 +4524,6 @@ ReplicatedMergeTreeMutationEntry StorageReplicatedMergeTree::mutateImpl(const Mu
             throw Coordination::Exception("Unable to create a mutation znode", rc);
     }
 
-    /// we have to wait
-    if (query_context.getSettingsRef().mutations_sync != 0)
-    {
-        Strings replicas;
-        if (query_context.getSettingsRef().mutations_sync == 2) /// wait for all replicas
-            replicas = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
-        else if (query_context.getSettingsRef().mutations_sync == 1) /// just wait for ourself
-            replicas.push_back(replica_path);
-
-        //std::cerr << "Waiting for mutation on replicas:" << replicas.size() << std::endl;
-        waitMutationToFinishOnReplicas(replicas, entry.znode_name);
-    }
 
     return entry;
 }
