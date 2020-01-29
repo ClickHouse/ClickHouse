@@ -682,11 +682,6 @@ void Context::calculateUserSettings()
 
     /// 3) Apply settings from current user
     setProfile(profile);
-
-    quota = getAccessControlManager().createQuotaContext(
-        client_info.current_user, client_info.current_address.host(), client_info.quota_key);
-    row_policy = getAccessControlManager().getRowPolicyContext(client_info.current_user);
-    calculateAccessRights();
 }
 
 void Context::calculateAccessRights()
@@ -715,8 +710,6 @@ void Context::setUser(const String & name, const String & password, const Poco::
 {
     auto lock = getLock();
 
-    user = shared->access_control_manager.authorizeAndGetUser(name, password, address.host());
-
     client_info.current_user = name;
     client_info.current_address = address;
     client_info.current_password = password;
@@ -724,7 +717,23 @@ void Context::setUser(const String & name, const String & password, const Poco::
     if (!quota_key.empty())
         client_info.quota_key = quota_key;
 
+    user = shared->access_control_manager.authorizeAndGetUser(
+        name,
+        password,
+        address.host(),
+        [this](const UserPtr & changed_user)
+        {
+            user = changed_user;
+            calculateAccessRights();
+        },
+        &subscription_for_user_change.subscription);
+
+    quota = getAccessControlManager().createQuotaContext(
+        client_info.current_user, client_info.current_address.host(), client_info.quota_key);
+    row_policy = getAccessControlManager().getRowPolicyContext(client_info.current_user);
+
     calculateUserSettings();
+    calculateAccessRights();
 }
 
 void Context::addDependencyUnsafe(const StorageID & from, const StorageID & where)
