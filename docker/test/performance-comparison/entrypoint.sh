@@ -15,7 +15,14 @@ echo Reference tag is $ref_tag
 # We use annotated tags which have their own shas, so we have to further
 # dereference the tag to get the commit it points to, hence the '~0' thing.
 ref_sha=$(cd ch && git rev-parse $ref_tag~0)
+
+# Show what we're testing
 echo Reference SHA is $ref_sha
+(cd ch && git log -1 --decorate $ref_sha) ||:
+echo
+echo SHA to test is $SHA_TO_TEST
+(cd ch && git log -1 --decorate $SHA_TO_TEST) ||:
+echo
 
 # Set python output encoding so that we can print queries with Russian letters.
 export PYTHONIOENCODING=utf-8

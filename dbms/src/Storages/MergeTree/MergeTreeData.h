@@ -579,7 +579,7 @@ public:
 
     bool hasAnyColumnTTL() const { return !column_ttl_entries_by_name.empty(); }
     bool hasAnyMoveTTL() const { return !move_ttl_entries.empty(); }
-    bool hasRowsTTL() const { return rows_ttl_entry.isEmpty(); }
+    bool hasRowsTTL() const { return !rows_ttl_entry.isEmpty(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path);
@@ -738,7 +738,7 @@ public:
         /// Checks if given part already belongs destination disk or volume for this rule.
         bool isPartInDestination(const StoragePolicyPtr & policy, const MergeTreeDataPart & part) const;
 
-        bool isEmpty() const { return expression != nullptr; }
+        bool isEmpty() const { return expression == nullptr; }
     };
 
     std::optional<TTLEntry> selectTTLEntryForTTLInfos(const MergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
