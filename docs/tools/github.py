@@ -12,14 +12,22 @@ import util
 
 def choose_latest_releases():
     seen = collections.OrderedDict()
-    candidates = requests.get('https://api.github.com/repos/ClickHouse/ClickHouse/tags?per_page=100').json()
+    candidates = []
+    for page in range(1, 10):
+        url = 'https://api.github.com/repos/ClickHouse/ClickHouse/tags?per_page=100&page=%d' % page
+        candidates += requests.get(url).json()
+
     for tag in candidates:
         name = tag.get('name', '')
-        if ('v18' in name) or ('stable' not in name) or ('prestable' in name):
+        is_unstable = ('stable' not in name) and ('lts' not in name)
+        is_in_blacklist = ('v18' in name) or ('prestable' in name) or ('v1.1' in name)
+        if is_unstable or is_in_blacklist:
             continue
         major_version = '.'.join((name.split('.', 2))[:2])
         if major_version not in seen:
             seen[major_version] = (name, tag.get('tarball_url'),)
+            if len(seen) > 10:
+                break
             
     return seen.items()
     

@@ -50,7 +50,7 @@ For a description of parameters, see the [CREATE query description](../../query_
 !!!note "Note"
     `INDEX` is an experimental feature, see [Data Skipping Indexes](#table_engine-mergetree-data_skipping-indexes).
 
-### Query Clauses
+### Query Clauses {#mergetree-query-clauses}
 
 - `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine does not have parameters.
 
