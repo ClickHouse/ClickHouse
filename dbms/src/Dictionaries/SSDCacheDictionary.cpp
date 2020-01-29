@@ -404,6 +404,33 @@ void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray
       ResultArrayType<Out> & out, std::vector<bool> & found,
       std::chrono::system_clock::time_point now) const
 {
+    auto set_value = [&](const size_t index, ReadBuffer & buf)
+    {
+        ignoreFromBufferToIndex(attribute_index, buf);
+        readBinary(out[index], buf);
+    };
+
+    getImpl(ids, set_value, found, now);
+}
+
+void CachePartition::getString(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
+       ColumnString * out, std::vector<bool> & found, std::chrono::system_clock::time_point now) const
+{
+    auto set_value = [&](const size_t, ReadBuffer & buf)
+    {
+        ignoreFromBufferToIndex(attribute_index, buf);
+        size_t size = 0;
+        readVarUInt(size, buf);
+        out->insertData(buf.position(), size);
+    };
+
+    getImpl(ids, set_value, found, now);
+}
+
+template <typename SetFunc>
+void CachePartition::getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & set, std::vector<bool> & found,
+        std::chrono::system_clock::time_point now) const
+{
     std::shared_lock lock(rw_lock);
     PaddedPODArray<Index> indices(ids.size());
     for (size_t i = 0; i < ids.size(); ++i)
@@ -424,13 +451,8 @@ void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray
         }
     }
 
-    auto set_value = [&](const size_t index, ReadBuffer & buf)
-    {
-        readValueFromBuffer(attribute_index, out, index, buf);
-    };
-
-    getValueFromMemory(indices, set_value);
-    getValueFromStorage(indices, set_value);
+    getValueFromMemory(indices, set);
+    getValueFromStorage(indices, set);
 }
 
 template <typename SetFunc>
@@ -560,8 +582,7 @@ void CachePartition::getValueFromStorage(const PaddedPODArray<Index> & indices, 
     }
 }
 
-template <typename Out>
-void CachePartition::readValueFromBuffer(const size_t attribute_index, Out & dst, const size_t index, ReadBuffer & buf) const
+void CachePartition::ignoreFromBufferToIndex(const size_t attribute_index, ReadBuffer & buf) const
 {
     for (size_t i = 0; i < attribute_index; ++i)
     {
@@ -596,16 +617,6 @@ void CachePartition::readValueFromBuffer(const size_t attribute_index, Out & dst
             }
             break;
         }
-    }
-
-    if constexpr (!std::is_same_v<ColumnString, Out>)
-        readBinary(dst[index], buf);
-    else
-    {
-        UNUSED(index);
-        size_t size = 0;
-        readVarUInt(size, buf);
-        dst.insertData(buf.position(), size);
     }
 }
 
@@ -699,6 +710,25 @@ void CacheStorage::getValue(const size_t attribute_index, const PaddedPODArray<U
         std::shared_lock lock(rw_lock);
         for (auto & partition : partitions)
             partition->getValue<Out>(attribute_index, ids, out, found, now);
+
+        for (size_t i = 0; i < ids.size(); ++i)
+            if (!found[i])
+                not_found[ids[i]].push_back(i);
+    }
+    query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+    hit_count.fetch_add(ids.size() - not_found.size(), std::memory_order_release);
+}
+
+void CacheStorage::getString(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
+       ColumnString * out, std::unordered_map<Key, std::vector<size_t>> & not_found,
+       std::chrono::system_clock::time_point now) const
+{
+    std::vector<bool> found(ids.size(), false);
+
+    {
+        std::shared_lock lock(rw_lock);
+        for (auto & partition : partitions)
+            partition->getString(attribute_index, ids, out, found, now);
 
         for (size_t i = 0; i < ids.size(); ++i)
             if (!found[i])
@@ -1248,7 +1278,7 @@ void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const 
     std::unordered_map<Key, std::vector<size_t>> not_found_ids;
 
     auto from_cache = ColumnString::create();
-    storage.getValue<String>(attribute_index, ids, *from_cache, not_found_ids, now);
+    storage.getString(attribute_index, ids, from_cache.get(), not_found_ids, now);
     if (not_found_ids.empty())
     {
         out->getChars().resize(from_cache->getChars().size());
