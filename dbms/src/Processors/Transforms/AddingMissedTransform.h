@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
+#include <Processors/ISimpleTransform.h>
 #include <Storages/ColumnDefault.h>
 
 
@@ -14,24 +14,20 @@ namespace DB
   * 3. Columns that materialized from other columns (materialized columns)
   * All three types of columns are materialized (not constants).
   */
-class AddingMissedBlockInputStream : public IBlockInputStream
+class AddingMissedTransform : public ISimpleTransform
 {
 public:
-    AddingMissedBlockInputStream(
-        const BlockInputStreamPtr & input_,
-        const Block & header_,
+    AddingMissedTransform(
+        Block header_,
+        Block result_header_,
         const ColumnDefaults & column_defaults_,
         const Context & context_);
 
     String getName() const override { return "AddingMissed"; }
-    Block getHeader() const override { return header; }
 
 private:
-    Block readImpl() override;
+    void transform(Chunk &) override;
 
-    BlockInputStreamPtr input;
-    /// Blocks after this stream should have this structure
-    const Block header;
     const ColumnDefaults column_defaults;
     const Context & context;
 };
