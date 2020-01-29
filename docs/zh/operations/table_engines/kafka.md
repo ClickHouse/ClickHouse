@@ -8,6 +8,8 @@ Kafka 特性：
 - 容错存储机制。
 - 处理流数据。
 
+<a name="table_engine-kafka-creating-a-table"></a>
+
 老版格式：
 
 ```

@@ -79,7 +79,7 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 - Используйте таблицу как правую в секции `JOIN`.
 - Используйте функцию [joinGet](../../query_language/functions/other_functions.md#other_functions-joinget), которая позволяет извлекать данные из таблицы таким же образом как из словаря.
 
-### Ограничения и настройки
+### Ограничения и настройки {#join-limitations-and-settings}
 
 При создании таблицы, применяются следующие параметры :
 

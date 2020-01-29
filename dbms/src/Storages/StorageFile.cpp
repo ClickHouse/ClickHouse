@@ -203,11 +203,12 @@ class StorageFileBlockInputStream : public IBlockInputStream
 {
 public:
     StorageFileBlockInputStream(std::shared_ptr<StorageFile> storage_,
-        const Context & context, UInt64 max_block_size,
+        const Context & context_, UInt64 max_block_size_,
         std::string file_path_, bool need_path, bool need_file,
-        const CompressionMethod compression_method,
+        const CompressionMethod compression_method_,
         BlockInputStreamPtr prepared_reader = nullptr)
-        : storage(std::move(storage_)), reader(std::move(prepared_reader))
+        : storage(std::move(storage_)), reader(std::move(prepared_reader)),
+        context(context_), max_block_size(max_block_size_), compression_method(compression_method_)
     {
         if (storage->use_table_fd)
         {
@@ -227,7 +228,6 @@ public:
             }
 
             storage->table_fd_was_used = true;
-            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFileDescriptor>(storage->table_fd), compression_method);
         }
         else
         {
@@ -235,11 +235,7 @@ public:
             file_path = std::make_optional(file_path_);
             with_file_column = need_file;
             with_path_column = need_path;
-            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(file_path.value()), compression_method);
         }
-
-        if (!reader)
-            reader = FormatFactory::instance().getInput(storage->format_name, *read_buf, storage->getSampleBlock(), context, max_block_size);
     }
 
     String getName() const override
@@ -249,7 +245,21 @@ public:
 
     Block readImpl() override
     {
+        /// Open file lazily on first read. This is needed to avoid too many open files from different streams.
+        if (!reader)
+        {
+            read_buf = wrapReadBufferWithCompressionMethod(storage->use_table_fd
+                ? std::make_unique<ReadBufferFromFileDescriptor>(storage->table_fd)
+                : std::make_unique<ReadBufferFromFile>(file_path.value()),
+                compression_method);
+
+            reader = FormatFactory::instance().getInput(storage->format_name, *read_buf, storage->getSampleBlock(), context, max_block_size);
+            reader->readPrefix();
+        }
+
         auto res = reader->read();
+
+        /// Enrich with virtual columns.
         if (res && file_path)
         {
             if (with_path_column)
@@ -263,12 +273,22 @@ public:
                             std::make_shared<DataTypeString>(), "_file"});
             }
         }
+
+        /// Close file prematurally if stream was ended.
+        if (!res)
+        {
+            reader->readSuffix();
+            reader.reset();
+            read_buf.reset();
+        }
+
         return res;
     }
 
     Block getHeader() const override
     {
-        auto res = reader->getHeader();
+        auto res = storage->getSampleBlock();
+
         if (res && file_path)
         {
             if (with_path_column)
@@ -276,17 +296,8 @@ public:
             if (with_file_column)
                 res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
         }
+
         return res;
-    }
-
-    void readPrefixImpl() override
-    {
-        reader->readPrefix();
-    }
-
-    void readSuffixImpl() override
-    {
-        reader->readSuffix();
     }
 
 private:
@@ -297,6 +308,10 @@ private:
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;
     BlockInputStreamPtr reader;
+
+    const Context & context;    /// TODO Untangle potential issues with context lifetime.
+    UInt64 max_block_size;
+    const CompressionMethod compression_method;
 
     std::shared_lock<std::shared_mutex> shared_lock;
     std::unique_lock<std::shared_mutex> unique_lock;
@@ -314,13 +329,13 @@ BlockInputStreams StorageFile::read(
     const ColumnsDescription & columns_ = getColumns();
     auto column_defaults = columns_.getDefaults();
     BlockInputStreams blocks_input;
+
     if (use_table_fd)   /// need to call ctr BlockInputStream
         paths = {""};   /// when use fd, paths are empty
     else
-    {
         if (paths.size() == 1 && !Poco::File(paths[0]).exists())
             throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
-    }
+
     blocks_input.reserve(paths.size());
     bool need_path_column = false;
     bool need_file_column = false;

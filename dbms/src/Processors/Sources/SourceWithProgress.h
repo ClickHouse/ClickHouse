@@ -58,6 +58,8 @@ protected:
     /// Call this method to provide information about progress.
     void progress(const Progress & value);
 
+    void work() override;
+
 private:
     LocalLimits limits;
     std::shared_ptr<QuotaContext> quota;
