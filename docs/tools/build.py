@@ -11,7 +11,6 @@ import subprocess
 import sys
 import time
 
-import markdown.extensions
 import markdown.util
 
 from mkdocs import config
@@ -212,8 +211,10 @@ def build_redirects(args):
 
 
 def build_docs(args):
+    tasks = []
     for lang in args.lang.split(','):
-        build_for_lang(lang, args)
+        tasks.append((lang, args,))
+    util.run_function_in_parallel(build_for_lang, tasks, threads=True)
 
 
 def build(args):
