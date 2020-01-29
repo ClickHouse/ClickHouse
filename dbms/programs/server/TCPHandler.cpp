@@ -254,32 +254,34 @@ void TCPHandler::runImpl()
             after_check_cancelled.restart();
             after_send_progress.restart();
 
-            /// Extend executor's lifetime.
-            /// It may decrease latency in case if query pipeline is executing, but we already got the result.
-            AsyncExecutorPtr executor;
-
-            /// Does the request require receive data from client?
-            if (state.need_receive_data_for_insert)
-                processInsertQuery(connection_settings);
-            else if (state.need_receive_data_for_input)
             {
-                /// It is special case for input(), all works for reading data from client will be done in callbacks.
-                /// state.io.in is NullAndDoCopyBlockInputStream so read it once.
-                state.io.in->read();
-                state.io.onFinish();
+                /// Extend executor's lifetime.
+                /// It may decrease latency in case if query pipeline is executing, but we already got the result.
+                AsyncExecutorPtr executor;
+
+                /// Does the request require receive data from client?
+                if (state.need_receive_data_for_insert)
+                    processInsertQuery(connection_settings);
+                else if (state.need_receive_data_for_input)
+                {
+                    /// It is special case for input(), all works for reading data from client will be done in callbacks.
+                    /// state.io.in is NullAndDoCopyBlockInputStream so read it once.
+                    state.io.in->read();
+                    state.io.onFinish();
+                }
+                else if (state.io.pipeline.initialized())
+                    processOrdinaryQueryWithProcessors(query_context->getSettingsRef().max_threads, executor);
+                else
+                    processOrdinaryQuery();
+
+                /// Do it before sending end of stream, to have a chance to show log message in client.
+                query_scope->logPeakMemoryUsage();
+
+                sendLogs();
+                sendEndOfStream();
+
             }
-            else if (state.io.pipeline.initialized())
-                processOrdinaryQueryWithProcessors(query_context->getSettingsRef().max_threads, executor);
-            else
-                processOrdinaryQuery();
 
-            /// Do it before sending end of stream, to have a chance to show log message in client.
-            query_scope->logPeakMemoryUsage();
-
-            sendLogs();
-            sendEndOfStream();
-
-            executor.reset();
             query_scope.reset();
             state.reset();
         }
