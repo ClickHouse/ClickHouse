@@ -953,9 +953,8 @@ static BoolMask forAnyParallelogram(
     /// They are important; in particular, if initial_mask == BoolMask::consider_only_can_be_true
     /// (which happens when this routine is called from KeyCondition::mayBeTrueXXX),
     /// they provide significant speedup, which may be observed on merge_tree_huge_pk performance test.
-    if (result.isComplete()) {
+    if (result.isComplete())
         return result;
-    }
 
     /// [x1]       x [y1 .. +inf)
 
@@ -963,9 +962,8 @@ static BoolMask forAnyParallelogram(
     {
         parallelogram[prefix_size] = Range(key_left[prefix_size]);
         result = result | forAnyParallelogram(key_size, key_left, key_right, true, false, parallelogram, prefix_size + 1, initial_mask, callback);
-        if (result.isComplete()) {
+        if (result.isComplete())
             return result;
-        }
     }
 
     /// [x2]       x (-inf .. y2]
@@ -974,9 +972,8 @@ static BoolMask forAnyParallelogram(
     {
         parallelogram[prefix_size] = Range(key_right[prefix_size]);
         result = result | forAnyParallelogram(key_size, key_left, key_right, false, true, parallelogram, prefix_size + 1, initial_mask, callback);
-        if (result.isComplete()) {
+        if (result.isComplete())
             return result;
-        }
     }
 
     return result;
