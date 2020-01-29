@@ -245,24 +245,13 @@ void DatabaseOnDisk::renameTable(
 ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const
 {
     ASTPtr ast;
-    bool ht = tryGetTable(context, table_name) != nullptr;
-    std::cerr << "HAS_TABLE: " << ht << "\n";
+    bool has_table = tryGetTable(context, table_name) != nullptr;
+    if (!has_table && throw_on_error)
+        throw Exception{"Table " + backQuote(table_name) + " doesn't exist",
+                        ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
 
     auto table_metadata_path = getObjectMetadataPath(table_name);
-    ast = getCreateQueryFromMetadata(context, table_metadata_path, throw_on_error);
-    if (!ast && throw_on_error)
-    {
-        /// Handle system.* tables for which there are no table.sql files.
-        bool has_table = tryGetTable(context, table_name) != nullptr;
-
-        auto msg = has_table
-                   ? "There is no CREATE TABLE query for table "
-                   : "There is no metadata file for table ";
-
-        throw Exception(msg + backQuote(table_name), ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
-    }
-
-    return ast;
+    return getCreateQueryFromMetadata(context, table_metadata_path, throw_on_error);
 }
 
 ASTPtr DatabaseOnDisk::getCreateDatabaseQuery(const Context & context) const
