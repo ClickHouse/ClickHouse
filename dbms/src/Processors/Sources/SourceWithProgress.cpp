@@ -10,6 +10,15 @@ namespace ErrorCodes
 {
     extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_BYTES;
+    extern const int TIMEOUT_EXCEEDED;
+}
+
+void SourceWithProgress::work()
+{
+    if (!limits.speed_limits.checkTimeLimit(total_stopwatch.elapsed(), limits.timeout_overflow_mode))
+        cancel();
+    else
+        ISourceWithProgress::work();
 }
 
 /// Aggregated copy-paste from IBlockInputStream::progressImpl.

@@ -30,6 +30,9 @@ public:
     void setProgressCallback(const ProgressCallback & callback) final { stream->setProgressCallback(callback); }
     void addTotalRowsApprox(size_t value) final { stream->addTotalRowsApprox(value); }
 
+protected:
+    void onCancel() override { stream->cancel(false); }
+
 private:
     bool has_aggregate_functions = false;
     bool force_add_aggregating_info;
