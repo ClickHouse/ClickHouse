@@ -22,6 +22,8 @@ then
     rm -rf "${PUBLISH_DIR}" || true
     git clone git@github.com:ClickHouse/clickhouse.github.io.git "${PUBLISH_DIR}"
     cd "${PUBLISH_DIR}"
+    git config user.email "robot-clickhouse@yandex-team.ru"
+    git config user.name "robot-clickhouse"
     git rm -rf *
     git commit -a -m "wipe old release"
     cp -R "${BUILD_DIR}"/* .
