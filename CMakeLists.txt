@@ -14,6 +14,12 @@ endforeach()
 
 project(ClickHouse)
 
+option(ENABLE_COTIRE "Enable cotire unity build" ON)
+
+if (ENABLE_COTIRE)
+include (contrib/cotire/CMake/cotire.cmake)
+endif()
+
 include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)

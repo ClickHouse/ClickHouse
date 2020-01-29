@@ -277,6 +277,9 @@ macro(add_object_library name common_path)
         add_headers_and_sources(${name} ${common_path})
         add_library(${name} SHARED ${${name}_sources} ${${name}_headers})
         target_link_libraries (${name} PRIVATE -Wl,--unresolved-symbols=ignore-all)
+        if (ENABLE_COTIRE)
+            cotire (${name})
+        endif()
     endif ()
 endmacro()
 
@@ -579,6 +582,13 @@ target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_C
 
 # also for copy_headers.sh:
 target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
+
+if (ENABLE_COTIRE)
+    cotire (clickhouse_common_io)
+    if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
+        cotire (dbms)
+    endif ()
+endif()
 
 add_subdirectory (programs)
 add_subdirectory (tests)

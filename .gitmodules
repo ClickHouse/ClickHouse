@@ -144,3 +144,6 @@
 	path = contrib/avro
 	url = https://github.com/ClickHouse-Extras/avro.git
 	ignore = untracked
+[submodule "contrib/cotire"]
+	path = contrib/cotire
+	url = git@github.com:sakra/cotire.git
