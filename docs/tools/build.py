@@ -245,6 +245,7 @@ def build_docs(args):
     for lang in args.lang.split(','):
         tasks.append((lang, args,))
     util.run_function_in_parallel(build_for_lang, tasks, threads=True)
+    build_redirects(args)
 
 
 def build(args):
@@ -258,8 +259,6 @@ def build(args):
     
     from github import build_releases
     build_releases(args, build_docs)
-
-    build_redirects(args)
 
     if not args.skip_website:
         minify_website(args)
