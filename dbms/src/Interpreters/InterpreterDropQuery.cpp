@@ -60,15 +60,23 @@ BlockIO InterpreterDropQuery::executeToTable(
     String & table_name,
     ASTDropQuery::Kind kind,
     bool if_exists,
-    bool if_temporary,
+    bool is_temporary,
     bool no_ddl_lock)
 {
-    if (if_temporary || database_name_.empty())
+    if (is_temporary || database_name_.empty())
     {
         auto & session_context = context.hasSessionContext() ? context.getSessionContext() : context;
 
         if (session_context.isExternalTableExist(table_name))
             return executeToTemporaryTable(table_name, kind);
+    }
+
+    if (is_temporary)
+    {
+        if (if_exists)
+             return {};
+        throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " doesn't exist.",
+                        ErrorCodes::UNKNOWN_TABLE);
     }
 
     String database_name = database_name_.empty() ? context.getCurrentDatabase() : database_name_;
