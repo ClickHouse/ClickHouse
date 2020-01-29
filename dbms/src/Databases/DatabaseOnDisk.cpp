@@ -245,6 +245,8 @@ void DatabaseOnDisk::renameTable(
 ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const
 {
     ASTPtr ast;
+    bool ht = tryGetTable(context, table_name) != nullptr;
+    std::cerr << "HAS_TABLE: " << ht << "\n";
 
     auto table_metadata_path = getObjectMetadataPath(table_name);
     ast = getCreateQueryFromMetadata(context, table_metadata_path, throw_on_error);
