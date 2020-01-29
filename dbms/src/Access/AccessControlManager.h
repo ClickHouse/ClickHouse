@@ -2,6 +2,7 @@
 
 #include <Access/MultipleAccessStorage.h>
 #include <Poco/AutoPtr.h>
+#include <ext/scope_guard.h>
 #include <memory>
 
 
@@ -20,6 +21,7 @@ namespace Poco
 namespace DB
 {
 struct User;
+using UserPtr = std::shared_ptr<const User>;
 class QuotaContext;
 class QuotaContextFactory;
 struct QuotaUsageInfo;
@@ -40,8 +42,10 @@ public:
 
     void loadFromConfig(const Poco::Util::AbstractConfiguration & users_config);
 
-    std::shared_ptr<const User> getUser(const String & user_name) const;
-    std::shared_ptr<const User> authorizeAndGetUser(const String & user_name, const String & password, const Poco::Net::IPAddress & address) const;
+    UserPtr getUser(const String & user_name) const;
+    UserPtr getUser(const String & user_name, const std::function<void(const UserPtr &)> & on_change, ext::scope_guard * subscription) const;
+    UserPtr authorizeAndGetUser(const String & user_name, const String & password, const Poco::Net::IPAddress & address) const;
+    UserPtr authorizeAndGetUser(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const std::function<void(const UserPtr &)> & on_change, ext::scope_guard * subscription) const;
 
     std::shared_ptr<const AccessRightsContext> getAccessRightsContext(const ClientInfo & client_info, const AccessRights & granted_to_user, const Settings & settings, const String & current_database);
 

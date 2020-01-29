@@ -12,6 +12,7 @@
 #include <Common/ThreadPool.h>
 #include "config_core.h"
 #include <Storages/IStorage_fwd.h>
+#include <ext/scope_guard.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -131,6 +132,16 @@ struct IHostContext
 
 using IHostContextPtr = std::shared_ptr<IHostContext>;
 
+/// Subscription for user's change. This subscription cannot be copied with the context,
+/// that's why we had to move it into a separate structure.
+struct SubscriptionForUserChange
+{
+    ext::scope_guard subscription;
+    SubscriptionForUserChange() {}
+    SubscriptionForUserChange(const SubscriptionForUserChange &) {}
+    SubscriptionForUserChange & operator =(const SubscriptionForUserChange &) { subscription = {}; return *this; }
+};
+
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
   *  and copied part (which can be its own for each session or query).
@@ -150,6 +161,7 @@ private:
     InputBlocksReader input_blocks_reader;
 
     std::shared_ptr<const User> user;
+    SubscriptionForUserChange subscription_for_user_change;
     std::shared_ptr<const AccessRightsContext> access_rights;
     std::shared_ptr<QuotaContext> quota;           /// Current quota. By default - empty quota, that have no limits.
     std::shared_ptr<RowPolicyContext> row_policy;
