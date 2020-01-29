@@ -888,7 +888,7 @@ String KeyCondition::toString() const
   */
 
 template <typename F>
-static bool forAnyParallelogram(
+static BoolMask forAnyParallelogram(
     size_t key_size,
     const Field * key_left,
     const Field * key_right,
@@ -896,6 +896,7 @@ static bool forAnyParallelogram(
     bool right_bounded,
     std::vector<Range> & parallelogram,
     size_t prefix_size,
+    BoolMask initial_mask,
     F && callback)
 {
     if (!left_bounded && !right_bounded)
@@ -944,16 +945,27 @@ static bool forAnyParallelogram(
     for (size_t i = prefix_size + 1; i < key_size; ++i)
         parallelogram[i] = Range();
 
-    if (callback(parallelogram))
-        return true;
+
+    BoolMask result = initial_mask;
+    result = result | callback(parallelogram);
+
+    /// There are several early-exit conditions (like the one below) hereinafter.
+    /// They are important; in particular, if initial_mask == BoolMask::consider_only_can_be_true
+    /// (which happens when this routine is called from KeyCondition::mayBeTrueXXX),
+    /// they provide significant speedup, which may be observed on merge_tree_huge_pk performance test.
+    if (result.isComplete()) {
+        return result;
+    }
 
     /// [x1]       x [y1 .. +inf)
 
     if (left_bounded)
     {
         parallelogram[prefix_size] = Range(key_left[prefix_size]);
-        if (forAnyParallelogram(key_size, key_left, key_right, true, false, parallelogram, prefix_size + 1, callback))
-            return true;
+        result = result | forAnyParallelogram(key_size, key_left, key_right, true, false, parallelogram, prefix_size + 1, initial_mask, callback);
+        if (result.isComplete()) {
+            return result;
+        }
     }
 
     /// [x2]       x (-inf .. y2]
@@ -961,20 +973,23 @@ static bool forAnyParallelogram(
     if (right_bounded)
     {
         parallelogram[prefix_size] = Range(key_right[prefix_size]);
-        if (forAnyParallelogram(key_size, key_left, key_right, false, true, parallelogram, prefix_size + 1, callback))
-            return true;
+        result = result | forAnyParallelogram(key_size, key_left, key_right, false, true, parallelogram, prefix_size + 1, initial_mask, callback);
+        if (result.isComplete()) {
+            return result;
+        }
     }
 
-    return false;
+    return result;
 }
 
 
-bool KeyCondition::mayBeTrueInRange(
+BoolMask KeyCondition::checkInRange(
     size_t used_key_size,
     const Field * left_key,
     const Field * right_key,
     const DataTypes & data_types,
-    bool right_bounded) const
+    bool right_bounded,
+    BoolMask initial_mask) const
 {
     std::vector<Range> key_ranges(used_key_size, Range());
 
@@ -992,10 +1007,10 @@ bool KeyCondition::mayBeTrueInRange(
     else
         std::cerr << "+inf)\n";*/
 
-    return forAnyParallelogram(used_key_size, left_key, right_key, true, right_bounded, key_ranges, 0,
+    return forAnyParallelogram(used_key_size, left_key, right_key, true, right_bounded, key_ranges, 0, initial_mask,
         [&] (const std::vector<Range> & key_ranges_parallelogram)
     {
-        auto res = mayBeTrueInParallelogram(key_ranges_parallelogram, data_types);
+        auto res = checkInParallelogram(key_ranges_parallelogram, data_types);
 
 /*      std::cerr << "Parallelogram: ";
         for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
@@ -1006,11 +1021,11 @@ bool KeyCondition::mayBeTrueInRange(
     });
 }
 
+
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
     MonotonicFunctionsChain & functions,
-    DataTypePtr current_type
-)
+    DataTypePtr current_type)
 {
     for (auto & func : functions)
     {
@@ -1043,7 +1058,9 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     return key_range;
 }
 
-bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const
+BoolMask KeyCondition::checkInParallelogram(
+    const std::vector<Range> & parallelogram,
+    const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;
     for (size_t i = 0; i < rpn.size(); ++i)
@@ -1091,7 +1108,7 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
             if (!element.set_index)
                 throw Exception("Set for IN is not created yet", ErrorCodes::LOGICAL_ERROR);
 
-            rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(parallelogram, data_types));
+            rpn_stack.emplace_back(element.set_index->checkInRange(parallelogram, data_types));
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();
         }
@@ -1132,22 +1149,49 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::mayBeTrueInParallelogram", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected stack size in KeyCondition::checkInRange", ErrorCodes::LOGICAL_ERROR);
 
-    return rpn_stack[0].can_be_true;
+    return rpn_stack[0];
+}
+
+
+BoolMask KeyCondition::checkInRange(
+    size_t used_key_size,
+    const Field * left_key,
+    const Field * right_key,
+    const DataTypes & data_types,
+    BoolMask initial_mask) const
+{
+    return checkInRange(used_key_size, left_key, right_key, data_types, true, initial_mask);
 }
 
 
 bool KeyCondition::mayBeTrueInRange(
-    size_t used_key_size, const Field * left_key, const Field * right_key, const DataTypes & data_types) const
+    size_t used_key_size,
+    const Field * left_key,
+    const Field * right_key,
+    const DataTypes & data_types) const
 {
-    return mayBeTrueInRange(used_key_size, left_key, right_key, data_types, true);
+    return checkInRange(used_key_size, left_key, right_key, data_types, true, BoolMask::consider_only_can_be_true).can_be_true;
 }
 
-bool KeyCondition::mayBeTrueAfter(
-    size_t used_key_size, const Field * left_key, const DataTypes & data_types) const
+
+BoolMask KeyCondition::checkAfter(
+    size_t used_key_size,
+    const Field * left_key,
+    const DataTypes & data_types,
+    BoolMask initial_mask) const
 {
-    return mayBeTrueInRange(used_key_size, left_key, nullptr, data_types, false);
+    return checkInRange(used_key_size, left_key, nullptr, data_types, false, initial_mask);
+}
+
+
+bool KeyCondition::mayBeTrueAfter(
+    size_t used_key_size,
+    const Field * left_key,
+    const DataTypes & data_types) const
+{
+    return checkInRange(used_key_size, left_key, nullptr, data_types, false, BoolMask::consider_only_can_be_true).can_be_true;
 }
 
 
