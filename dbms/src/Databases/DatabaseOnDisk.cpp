@@ -246,12 +246,20 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const Context & context, const St
 {
     ASTPtr ast;
     bool has_table = tryGetTable(context, table_name) != nullptr;
-    if (!has_table && throw_on_error)
-        throw Exception{"Table " + backQuote(table_name) + " doesn't exist",
-                        ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
-
     auto table_metadata_path = getObjectMetadataPath(table_name);
-    return getCreateQueryFromMetadata(context, table_metadata_path, throw_on_error);
+    try
+    {
+        ast = getCreateQueryFromMetadata(context, table_metadata_path, throw_on_error);
+    }
+    catch (const Exception & e)
+    {
+        if (!has_table && e.code() == ErrorCodes::FILE_DOESNT_EXIST && throw_on_error)
+            throw Exception{"Table " + backQuote(table_name) + " doesn't exist",
+                            ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
+        else if (throw_on_error)
+            throw;
+    }
+    return ast;
 }
 
 ASTPtr DatabaseOnDisk::getCreateDatabaseQuery(const Context & context) const
