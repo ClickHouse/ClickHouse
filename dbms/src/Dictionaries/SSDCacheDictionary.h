@@ -95,12 +95,15 @@ public:
     ~CachePartition();
 
     template <typename T>
-    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>,
-        std::conditional_t<std::is_same_v<String, T>, ColumnString, PaddedPODArray<T>>>;
+    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
     template <typename Out>
     void getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
             ResultArrayType<Out> & out, std::vector<bool> & found,
+            std::chrono::system_clock::time_point now) const;
+
+    void getString(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
+            ColumnString * out, std::vector<bool> & found,
             std::chrono::system_clock::time_point now) const;
 
     void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out, std::chrono::system_clock::time_point now) const;
@@ -149,13 +152,16 @@ public:
 
 private:
     template <typename SetFunc>
+    void getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & set, std::vector<bool> & found,
+        std::chrono::system_clock::time_point now) const;
+
+    template <typename SetFunc>
     void getValueFromMemory(const PaddedPODArray<Index> & indices, SetFunc & set) const;
 
     template <typename SetFunc>
     void getValueFromStorage(const PaddedPODArray<Index> & indices, SetFunc & set) const;
 
-    template <typename Out>
-    void readValueFromBuffer(const size_t attribute_index, Out & dst, const size_t index, ReadBuffer & buf) const;
+    void ignoreFromBufferToIndex(const size_t attribute_index, ReadBuffer & buf) const;
 
     const size_t file_id;
     const size_t max_size;
@@ -215,6 +221,10 @@ public:
     template <typename Out>
     void getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
             ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found,
+            std::chrono::system_clock::time_point now) const;
+
+    void getString(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
+            ColumnString * out, std::unordered_map<Key, std::vector<size_t>> & not_found,
             std::chrono::system_clock::time_point now) const;
 
     void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
