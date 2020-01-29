@@ -117,6 +117,9 @@ public:
     /// Returns true if the blocks shouldn't be pushed to associated views on insert.
     virtual bool noPushingToViews() const { return false; }
 
+    /// Read query returns streams which automatically distribute data between themselves.
+    /// So, it's impossible for one stream run out of data when there is data in other streams.
+    /// Example is StorageSystemNumbers.
     virtual bool hasEvenlyDistributedRead() const { return false; }
 
     /// Optional size information of each physical column.
