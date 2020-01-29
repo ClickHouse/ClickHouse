@@ -65,6 +65,8 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
         " UNION ALL "
         "SELECT name FROM system.data_type_families"
         " UNION ALL "
+        "SELECT name FROM system.merge_tree_settings"
+        " UNION ALL "
         "SELECT name FROM system.settings"
         " UNION ALL "
         "SELECT cluster FROM system.clusters"
