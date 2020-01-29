@@ -36,7 +36,6 @@ public:
     void stop();
 
 private:
-    Poco::Logger * log;
     std::shared_ptr<TraceLog> trace_log;
     ThreadFromGlobalPool thread;
     LazyPipeFDs pipe;

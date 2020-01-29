@@ -40,7 +40,7 @@ namespace ErrorCodes
     extern const int THREAD_IS_NOT_JOINABLE;
 }
 
-TraceCollector::TraceCollector() : log(&Poco::Logger::get("TraceCollector"))
+TraceCollector::TraceCollector()
 {
     pipe.open();
 
@@ -56,7 +56,7 @@ TraceCollector::TraceCollector() : log(&Poco::Logger::get("TraceCollector"))
 TraceCollector::~TraceCollector()
 {
     if (!thread.joinable())
-        LOG_ERROR(log, "TraceCollector thread is malformed and cannot be joined");
+        LOG_ERROR(&Poco::Logger::get("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
     else
     {
         stop();
