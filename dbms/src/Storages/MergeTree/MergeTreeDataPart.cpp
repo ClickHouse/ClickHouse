@@ -345,7 +345,7 @@ MergeTreeDataPart::~MergeTreeDataPart()
                 }
             }
 
-            dir.remove(true);
+            remove();
 
             if (state == State::DeleteOnDestroy)
             {

@@ -32,7 +32,7 @@
             <a class="menu_item" href="#quick-start">Quick Start</a>
             <a class="menu_item" href="#performance">Performance</a>
             <a class="menu_item" href="docs/en/">Documentation</a>
-            <a class="menu_item" href="blog/en/">Blog</a>
+            <a class="menu_item" href="https://clickhouse.yandex/blog/en/">Blog</a>
             <a class="menu_item" href="#contacts">Contacts</a>
         </div>
 
@@ -567,7 +567,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
         });
 
         var hostParts = window.location.host.split('.');
-        if (hostParts.length > 2 && hostParts[0] != 'test') {
+        if (hostParts.length > 2 && hostParts[0] != 'test' && hostParts[1] != 'github') {
             window.location.host = hostParts[0] + '.' + hostParts[1];
         }
 

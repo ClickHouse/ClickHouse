@@ -29,11 +29,14 @@ public:
     void init(Pipe pipe); /// Simple init for single pipe
     bool initialized() { return !processors.empty(); }
 
+    /// Type of logical data stream for simple transform.
+    /// Sometimes it's important to know which part of pipeline we are working for.
+    /// Example: ExpressionTransform need special logic for totals.
     enum class StreamType
     {
-        Main = 0,
-        Totals,
-        Extremes,
+        Main = 0, /// Stream for query data. There may be several streams of this type.
+        Totals,  /// Stream for totals. No more then one.
+        Extremes, /// Stream for extremes. No more then one.
     };
 
     using ProcessorGetter = std::function<ProcessorPtr(const Block & header)>;
@@ -119,6 +122,8 @@ private:
     IOutputFormat * output_format = nullptr;
 
     size_t max_threads = 0;
+
+    QueryStatus * process_list_element = nullptr;
 
     void checkInitialized();
     void checkSource(const ProcessorPtr & source, bool can_have_totals);
