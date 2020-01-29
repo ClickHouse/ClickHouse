@@ -196,19 +196,9 @@ def build_single_page_version(lang, args, cfg):
                         shutil.copytree(test_dir, args.save_raw_single_page)
 
 
-def build_redirect_html(args, from_path, to_path):
-    for lang in args.lang.split(','):
-        out_path = os.path.join(args.docs_output_dir, lang, from_path.replace('.md', '/index.html'))
-        out_dir = os.path.dirname(out_path)
-        try:
-            os.makedirs(out_dir)
-        except OSError:
-            pass
-        version_prefix = args.version_prefix + '/' if args.version_prefix else '/'
-        to_url = '/docs%s%s/%s' % (version_prefix, lang, to_path.replace('.md', '/'))
-        to_url = to_url.strip()
-        with open(out_path, 'w') as f:
-            f.write('''<!DOCTYPE HTML>
+def write_redirect_html(out_path, to_url):
+    with open(out_path, 'w') as f:
+        f.write('''<!DOCTYPE HTML>
 <html lang="en-US">
     <head>
         <meta charset="UTF-8">
@@ -222,6 +212,20 @@ def build_redirect_html(args, from_path, to_path):
         If you are not redirected automatically, follow this <a href="%s">link</a>.
     </body>
 </html>''' % (to_url, to_url, to_url))
+
+
+def build_redirect_html(args, from_path, to_path):
+    for lang in args.lang.split(','):
+        out_path = os.path.join(args.docs_output_dir, lang, from_path.replace('.md', '/index.html'))
+        out_dir = os.path.dirname(out_path)
+        try:
+            os.makedirs(out_dir)
+        except OSError:
+            pass
+        version_prefix = args.version_prefix + '/' if args.version_prefix else '/'
+        to_url = '/docs%s%s/%s' % (version_prefix, lang, to_path.replace('.md', '/'))
+        to_url = to_url.strip()
+        write_redirect_html(out_path, to_url)
 
 
 def build_redirects(args):
@@ -262,6 +266,11 @@ def build(args):
 
     if not args.skip_website:
         minify_website(args)
+
+    write_redirect_html(
+        os.path.join(args.output_dir, 'tutorial.html'),
+        '/docs/en/getting_started/tutorial/'
+    )
 
 
 if __name__ == '__main__':
