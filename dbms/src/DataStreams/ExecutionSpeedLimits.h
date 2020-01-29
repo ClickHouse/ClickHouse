@@ -2,6 +2,7 @@
 
 #include <Poco/Timespan.h>
 #include <Core/Types.h>
+#include <DataStreams/SizeLimits.h>
 
 namespace DB
 {
@@ -23,6 +24,8 @@ public:
 
     /// Pause execution in case if speed limits were exceeded.
     void throttle(size_t read_rows, size_t read_bytes, size_t total_rows_to_read, UInt64 total_elapsed_microseconds);
+
+    bool checkTimeLimit(UInt64 elapsed_ns, OverflowMode overflow_mode);
 };
 
 }

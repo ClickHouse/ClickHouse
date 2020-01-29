@@ -18,7 +18,7 @@ if [[ -z "$1" ]]
 then
     source "${BASE_DIR}/venv/bin/activate"
     python "${BASE_DIR}/build.py" "--enable-stable-releases"
-    set +x
+    set +e
     rm -rf "${PUBLISH_DIR}" || true
     git clone git@github.com:ClickHouse/clickhouse.github.io.git "${PUBLISH_DIR}"
     cd "${PUBLISH_DIR}"
@@ -31,7 +31,7 @@ then
     git add *
     git commit -a -m "add new release at $(date)"
     git push origin master
-    set -x
+    set -e
     cd "${BUILD_DIR}"
     docker build -t "${FULL_NAME}" "${BUILD_DIR}"
     docker tag "${FULL_NAME}" "${REMOTE_NAME}"
