@@ -111,7 +111,7 @@ void LocalServer::tryInitPath()
 
     /// In case of empty path set paths to helpful directories
     std::string cd = Poco::Path::current();
-    context->setTemporaryPath(cd + "tmp");
+    context->setTemporaryStorage(cd + "tmp");
     context->setFlagsPath(cd + "flags");
     context->setUserFilesPath(""); // user's files are everywhere
 }

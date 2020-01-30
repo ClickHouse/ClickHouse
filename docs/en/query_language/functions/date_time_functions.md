@@ -366,4 +366,4 @@ Supported modifiers for Format:
 |%Y|Year|2018|
 |%%|a % sign|%|
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/date_time_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->

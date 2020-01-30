@@ -168,4 +168,4 @@ For a list of possible configuration options, see the [librdkafka configuration 
 - [Virtual columns](index.md#table_engines-virtual_columns)
 
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/kafka/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/kafka/) <!--hide-->

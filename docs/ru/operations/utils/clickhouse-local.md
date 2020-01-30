@@ -66,4 +66,4 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ...
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/utils/clickhouse-local/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/utils/clickhouse-local/) <!--hide-->
