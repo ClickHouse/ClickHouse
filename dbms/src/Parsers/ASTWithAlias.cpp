@@ -16,9 +16,11 @@ void ASTWithAlias::writeAlias(const String & name, const FormatSettings & settin
 
 void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    auto with_alias = [&]{ return settings.with_alias && !alias.empty(); };
+
     /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
     /// This is needed because the query can become extraordinary large after substitution of aliases.
-    if (!alias.empty() && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash()).second)
+    if (with_alias() && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash()).second)
     {
         settings.writeIdentifier(alias);
     }
@@ -26,12 +28,12 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
     {
         /// If there is an alias, then parentheses are required around the entire expression, including the alias.
         /// Because a record of the form `0 AS x + 0` is syntactically invalid.
-        if (frame.need_parens && !alias.empty())
+        if (frame.need_parens && with_alias())
             settings.ostr << '(';
 
         formatImplWithoutAlias(settings, state, frame);
 
-        if (!alias.empty())
+        if (with_alias())
         {
             writeAlias(alias, settings);
             if (frame.need_parens)

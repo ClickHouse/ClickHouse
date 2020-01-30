@@ -26,6 +26,7 @@ struct DatabaseAndTableWithAlias
     String alias;
 
     DatabaseAndTableWithAlias() = default;
+    DatabaseAndTableWithAlias(String database_, String table_, String alias_);
     DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
     DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database = "");
     DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database = "");
@@ -35,6 +36,11 @@ struct DatabaseAndTableWithAlias
 
     /// Check if it satisfies another db_table name. @note opterion is not symmetric.
     bool satisfies(const DatabaseAndTableWithAlias & table, bool table_may_be_an_alias);
+
+    bool operator<(const DatabaseAndTableWithAlias & rhs) const
+    {
+        return std::tie(database, table, alias) < std::tie(rhs.database, rhs.table, rhs.alias);
+    }
 };
 
 struct TableWithColumnNames

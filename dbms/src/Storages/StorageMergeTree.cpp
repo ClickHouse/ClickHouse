@@ -632,6 +632,8 @@ bool StorageMergeTree::merge(
     auto table_id = getStorageID();
     MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
 
+    increaseVersion();
+
     /// Logging
     Stopwatch stopwatch;
     MutableDataPartPtr new_part;
@@ -750,6 +752,8 @@ bool StorageMergeTree::tryMutatePart()
             break;
         }
     }
+
+    increaseVersion();
 
     if (!tagger)
         return false;

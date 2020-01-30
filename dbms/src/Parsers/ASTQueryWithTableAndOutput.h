@@ -17,6 +17,7 @@ public:
     String database;
     String table;
     UUID uuid;
+    bool query_cache;
     bool temporary{false};
 
 protected:

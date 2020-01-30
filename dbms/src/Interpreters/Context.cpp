@@ -32,6 +32,7 @@
 #include <Access/RowPolicyContext.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/UsersManager.h>
+#include <Interpreters/QueryCache.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -143,6 +144,7 @@ struct ContextShared
     std::unique_ptr<UsersManager> users_manager;            /// Known users.
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
+    mutable QueryCachePtr query_cache;                      /// Cache of query results.
     ProcessList process_list;                               /// Executing queries at the moment.
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
     ViewDependencies view_dependencies;                     /// Current dependencies
@@ -1485,6 +1487,28 @@ void Context::dropMarkCache() const
         shared->mark_cache->reset();
 }
 
+void Context::setQueryCache(size_t cache_size_in_bytes)
+{
+    auto lock = getLock();
+
+    if (shared->query_cache)
+        throw Exception("Query cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->query_cache = std::make_shared<QueryCache>(cache_size_in_bytes);
+}
+
+QueryCachePtr Context::getQueryCache() const
+{
+    auto lock = getLock();
+    return shared->query_cache;
+}
+
+void Context::dropQueryCache() const
+{
+    auto lock = getLock();
+    if (shared->query_cache)
+        shared->query_cache->reset();
+}
 
 void Context::dropCaches() const
 {
@@ -1495,6 +1519,9 @@ void Context::dropCaches() const
 
     if (shared->mark_cache)
         shared->mark_cache->reset();
+
+    if (shared->query_cache)
+        shared->query_cache->reset();
 }
 
 BackgroundProcessingPool & Context::getBackgroundPool()
