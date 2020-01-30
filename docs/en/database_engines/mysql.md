@@ -119,4 +119,4 @@ SELECT * FROM mysql_db.mysql_table
 └────────┴───────┘
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/database_engines/mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/database_engines/mysql/) <!--hide-->

@@ -59,7 +59,7 @@ nav:
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
     - 'Nothing': 'data_types/special_data_types/nothing.md'
-    - 'Interval': 'data_types/special_data_types/interval.md'    
+    - 'Interval': 'data_types/special_data_types/interval.md'
   - 'Domain类型':
     - '介绍': 'data_types/domains/overview.md'
     - 'IPv4': 'data_types/domains/ipv4.md'
@@ -209,19 +209,20 @@ nav:
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
     - 'clickhouse-benchmark': 'operations/utils/clickhouse-benchmark.md'
-    
+
 - '常见问题':
   - '一般的问题': 'faq/general.md'
 
 - '开发者指南':
   - 'hidden': 'development/index.md'
+  - '开发者指南': 'development/developer_instruction.md'
   - 'ClickHouse架构概述': 'development/architecture.md'
+  - 'ClickHouse Code Browser': 'development/browse_code.md'
   - '如何在Linux中编译ClickHouse': 'development/build.md'
   - '如何在Mac OS X中编译ClickHouse': 'development/build_osx.md'
   - '如何在Linux中编译Mac OS X ClickHouse': 'development/build_cross_osx.md'
   - '如何编写C++代码': 'development/style.md'
   - '如何运行ClickHouse测试': 'development/tests.md'
-  - '开发者指南': 'development/developer_instruction.md'
   - '使用的第三方库': 'development/contrib.md'
 
 - '新功能特性':

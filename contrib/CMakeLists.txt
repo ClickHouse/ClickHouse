@@ -306,7 +306,7 @@ if (USE_INTERNAL_AWS_S3_LIBRARY)
     # The library is large - avoid bloat.
     target_compile_options (aws_s3 PRIVATE -g0)
     target_compile_options (aws_s3_checksums PRIVATE -g0)
-    target_compile_options (libcurl PRIVATE -g0)
+    target_compile_options (curl PRIVATE -g0)
 endif ()
 
 if (USE_BASE64)
