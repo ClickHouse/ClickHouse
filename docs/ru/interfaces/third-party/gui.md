@@ -116,4 +116,4 @@
 - Подготовка данных и возможности ETL.
 - Моделирование данных с помощью SQL для их реляционного отображения.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/third-party/gui/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/gui/) <!--hide-->

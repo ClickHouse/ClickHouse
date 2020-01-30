@@ -7,4 +7,4 @@
 * [Пройти подробное руководство для начинающих](tutorial.md)
 * [Поэкспериментировать с тестовыми наборами данных](example_datasets/ontime.md)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/getting_started/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/) <!--hide-->

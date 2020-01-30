@@ -523,6 +523,8 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
 
 void QueryPipeline::setProcessListElement(QueryStatus * elem)
 {
+    process_list_element = elem;
+
     for (auto & processor : processors)
     {
         if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
@@ -630,7 +632,7 @@ PipelineExecutorPtr QueryPipeline::execute()
     if (!output_format)
         throw Exception("Cannot execute pipeline because it doesn't have output.", ErrorCodes::LOGICAL_ERROR);
 
-    return std::make_shared<PipelineExecutor>(processors);
+    return std::make_shared<PipelineExecutor>(processors, process_list_element);
 }
 
 }
