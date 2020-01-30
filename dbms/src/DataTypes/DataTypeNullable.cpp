@@ -488,6 +488,11 @@ MutableColumnPtr DataTypeNullable::createColumn() const
     return ColumnNullable::create(nested_data_type->createColumn(), ColumnUInt8::create());
 }
 
+MutableColumnPtr DataTypeNullable::createColumnWithRandomData(size_t limit) const
+{
+    return ColumnNullable::create(nested_data_type->createColumnWithRandomData(limit), DataTypeUInt8().createColumnWithRandomData(limit));
+}
+
 Field DataTypeNullable::getDefault() const
 {
     return Null();

@@ -454,6 +454,14 @@ MutableColumnPtr DataTypeTuple::createColumn() const
     return ColumnTuple::create(std::move(tuple_columns));
 }
 
+
+MutableColumnPtr DataTypeTuple::createColumnWithRandomData(size_t limit) const
+{
+    (void)limit;
+    throw Exception("Method createColumnWithRandomData() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
+
 Field DataTypeTuple::getDefault() const
 {
     return Tuple(ext::map<Tuple>(elems, [] (const DataTypePtr & elem) { return elem->getDefault(); }));

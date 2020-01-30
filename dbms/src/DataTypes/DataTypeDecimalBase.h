@@ -83,6 +83,7 @@ public:
 
     Field getDefault() const override;
     MutableColumnPtr createColumn() const override;
+    MutableColumnPtr createColumnWithRandomData(size_t) const override;
 
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return false; }
