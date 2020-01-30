@@ -32,7 +32,7 @@
             <a class="menu_item" href="#quick-start">Quick Start</a>
             <a class="menu_item" href="#performance">Performance</a>
             <a class="menu_item" href="docs/en/">Documentation</a>
-            <a class="menu_item" href="blog/en/">Blog</a>
+            <a class="menu_item" href="https://clickhouse.yandex/blog/en/">Blog</a>
             <a class="menu_item" href="#contacts">Contacts</a>
         </div>
 
@@ -398,7 +398,7 @@
 
     <p>System requirements: Linux, x86_64 with SSE 4.2.</p>
 
-    <p>Install packages for <span class="distributive_selected" id="repo_deb">Ubuntu/Debian</span> or <span class="distributive_not_selected" id="repo_rpm">CentOS/RedHat</span> or <span class="distributive_not_selected" id="repo_tgz">Other Linux</span>:</p>
+    <p>Install packages for <span class="distributive_selected" id="repo_deb">Ubuntu/Debian</span>, <span class="distributive_not_selected" id="repo_rpm">CentOS/RedHat</span> or <span class="distributive_not_selected" id="repo_tgz">other Linux</span>:</p>
 
     <code id="packages-install">
 <pre id="instruction_deb">
@@ -455,7 +455,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
             Yandex Managed Service for ClickHouse</a>.
     </p>
 
-    <p>After you got connected to your ClickHouse server, you can proceed to <strong><a href="tutorial.html">tutorial</a></strong> or <strong><a href="docs/en/">full
+    <p>After you got connected to your ClickHouse server, you can proceed to <strong><a href="/docs/en/getting_started/tutorial/">tutorial</a></strong> or <strong><a href="docs/en/">full
         documentation</a></strong>.</p>
 
     <h2 id="contacts">Contacts</h2>
@@ -567,7 +567,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
         });
 
         var hostParts = window.location.host.split('.');
-        if (hostParts.length > 2 && hostParts[0] != 'test') {
+        if (hostParts.length > 2 && hostParts[0] != 'test' && hostParts[1] != 'github') {
             window.location.host = hostParts[0] + '.' + hostParts[1];
         }
 

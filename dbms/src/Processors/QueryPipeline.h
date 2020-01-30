@@ -123,6 +123,8 @@ private:
 
     size_t max_threads = 0;
 
+    QueryStatus * process_list_element = nullptr;
+
     void checkInitialized();
     void checkSource(const ProcessorPtr & source, bool can_have_totals);
 

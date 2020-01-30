@@ -46,6 +46,8 @@ private:
     /// Remember sources that support progress.
     std::vector<ISourceWithProgress *> sources_with_progress;
 
+    QueryStatus * process_list_element = nullptr;
+
     void init();
     /// Execute tree step-by-step until root returns next chunk or execution is finished.
     void execute();

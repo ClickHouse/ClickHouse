@@ -2,8 +2,8 @@
 
 ## Q1 2020
 
-- Resource pools for more precise distribution of cluster capacity between users
-- Fine-grained authorization
+- Role-based access control
 - Integration with external authentication services
+- Resource pools for more precise distribution of cluster capacity between users
 
 [Original article](https://clickhouse.yandex/docs/en/roadmap/) <!--hide-->
