@@ -61,4 +61,4 @@ ClickHouse使用异步的多主复制技术。当数据被写入任何一个可�
 
 更多信息，参见 [数据复制](../operations/table_engines/replication.md)。
 
-[来源文章](https://clickhouse.yandex/docs/en/introduction/distinctive_features/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/introduction/distinctive_features/) <!--hide-->

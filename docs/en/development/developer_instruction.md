@@ -111,7 +111,7 @@ Official Yandex builds currently use GCC because it generates machine code of sl
 
 To install GCC on Ubuntu run: `sudo apt install gcc g++`
 
-Check the version of gcc: `gcc --version`. If it is below 9, then follow the instruction here: https://clickhouse.yandex/docs/en/development/build/#install-gcc-9.
+Check the version of gcc: `gcc --version`. If it is below 9, then follow the instruction here: https://clickhouse.tech/docs/en/development/build/#install-gcc-9.
 
 Mac OS X build is supported only for Clang. Just run `brew install llvm`
 
@@ -226,11 +226,11 @@ Just in case, it is worth mentioning that CLion creates `build` path on its own,
 
 # Writing Code
 
-The description of ClickHouse architecture can be found here: https://clickhouse.yandex/docs/en/development/architecture/
+The description of ClickHouse architecture can be found here: https://clickhouse.tech/docs/en/development/architecture/
 
-The Code Style Guide: https://clickhouse.yandex/docs/en/development/style/
+The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
 
-Writing tests: https://clickhouse.yandex/docs/en/development/tests/
+Writing tests: https://clickhouse.tech/docs/en/development/tests/
 
 List of tasks: https://github.com/yandex/ClickHouse/blob/master/dbms/tests/instructions/easy_tasks_sorted_en.md
 

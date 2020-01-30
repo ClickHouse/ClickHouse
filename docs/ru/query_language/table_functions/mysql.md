@@ -70,4 +70,4 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123')
 - [Движок таблиц 'MySQL'](../../operations/table_engines/mysql.md)
 - [Использование MySQL как источника данных для внешнего словаря](../dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/table_functions/mysql/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/mysql/) <!--hide-->

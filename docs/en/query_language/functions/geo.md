@@ -227,4 +227,4 @@ SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos
 └─────────────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/geo/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/geo/) <!--hide-->

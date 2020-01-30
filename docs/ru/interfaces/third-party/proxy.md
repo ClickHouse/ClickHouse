@@ -36,4 +36,4 @@
 
 Реализован на Go.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/third-party/proxy/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/proxy/) <!--hide-->
