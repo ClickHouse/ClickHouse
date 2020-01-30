@@ -1024,7 +1024,7 @@ If you input or output data via the [HTTP interface](../interfaces/http.md) the 
 should be located in the directory specified in [format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path)
 in the server configuration.
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/formats/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->
 
 ## Skipping Errors {#skippingerrors}
 

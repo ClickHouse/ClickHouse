@@ -72,4 +72,4 @@ DROP TABLE criteo_log;
 ```
 
 
-[Original article](https://clickhouse.yandex/docs/en/getting_started/example_datasets/criteo/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets/criteo/) <!--hide-->

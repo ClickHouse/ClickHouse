@@ -402,4 +402,4 @@ This performance test was created by Vadim Tkachenko. See:
 - <http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html>
 
 
-[Original article](https://clickhouse.yandex/docs/en/getting_started/example_datasets/ontime/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets/ontime/) <!--hide-->

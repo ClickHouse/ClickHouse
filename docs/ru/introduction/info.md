@@ -6,4 +6,4 @@
 
 <br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br>
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/introduction/info/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/introduction/info/) <!--hide-->

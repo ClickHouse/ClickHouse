@@ -773,6 +773,43 @@ WHERE changed
 └────────────────────────┴─────────────┴─────────┘
 ```
 
+## system.table_engines
+
+Contains description of table engines supported by server and their feature support information. 
+
+This table contains the following columns (the column type is shown in brackets):
+
+- `name` (String) — The name of table engine.
+- `supports_settings` (UInt8) — Flag that indicates if table engine supports `SETTINGS` clause.
+- `supports_skipping_indices` (UInt8) — Flag that indicates if table engine supports [skipping indices](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes). 
+- `supports_ttl` (UInt8) — Flag that indicates if table engine supports [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
+- `supports_sort_order` (UInt8) — Flag that indicates if table engine supports clauses `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` and `SAMPLE_BY`.  
+- `supports_replication` (UInt8) — Flag that indicates if table engine supports [data replication](table_engines/replication/).
+- `supports_duduplication` (UInt8) — Flag that indicates if table engine supports data deduplication.
+
+Example:
+
+```sql
+SELECT *
+FROM system.table_engines
+WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
+```
+
+```text
+┌─name──────────────────────────┬─supports_settings─┬─supports_skipping_indices─┬─supports_sort_order─┬─supports_ttl─┬─supports_replication─┬─supports_deduplication─┐
+│ Kafka                         │                 1 │                         0 │                   0 │            0 │                    0 │                      0 │
+│ MergeTree                     │                 1 │                         1 │                   1 │            1 │                    0 │                      0 │
+│ ReplicatedCollapsingMergeTree │                 1 │                         1 │                   1 │            1 │                    1 │                      1 │
+└───────────────────────────────┴───────────────────┴───────────────────────────┴─────────────────────┴──────────────┴──────────────────────┴────────────────────────┘
+```
+
+**See also**
+
+- MergeTree family [query clauses](table_engines/mergetree.md#mergetree-query-clauses)
+- Kafka [settings](table_engines/kafka.md#table_engine-kafka-creating-a-table)
+- Join [settings](table_engines/join.md#join-limitations-and-settings) 
+
+
 ## system.tables
 
 Contains metadata of each table that the server knows about. Detached tables are not shown in `system.tables`.
@@ -923,4 +960,4 @@ Columns:
 
 If the storage policy contains more then one volume, then information for each volume is stored in the individual row of the table.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/system_tables/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/) <!--hide-->

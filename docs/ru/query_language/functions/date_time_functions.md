@@ -166,4 +166,4 @@ SELECT
 |%Y|год, 4 цифры|2018|
 |%%|символ %|%|
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/date_time_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/date_time_functions/) <!--hide-->
