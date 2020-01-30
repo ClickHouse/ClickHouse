@@ -709,9 +709,9 @@ void registerDictionaryPolygon(DictionaryFactory & factory)
         IPolygonDictionary::PointType point_type;
         const auto key_type = (*dict_struct.key)[0].type;
         const auto f64 = std::make_shared<DataTypeFloat64>();
-        const auto multi_polygon_array = DataTypeArray(DataTypeArray(DataTypeArray(DataTypeArray(f64))));
-        const auto multi_polygon_tuple = DataTypeArray(DataTypeArray(DataTypeArray(std::make_shared<DataTypeTuple>(std::vector<DataTypePtr>{f64, f64}))));
-        const auto simple_polygon_array = DataTypeArray(DataTypeArray(f64));
+        const auto multi_polygon_array = DataTypeArray(std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(f64))));
+        const auto multi_polygon_tuple = DataTypeArray(std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(std::vector<DataTypePtr>{f64, f64}))));
+        const auto simple_polygon_array = DataTypeArray(std::make_shared<DataTypeArray>(f64));
         const auto simple_polygon_tuple = DataTypeArray(std::make_shared<DataTypeTuple>(std::vector<DataTypePtr>{f64, f64}));
         if (key_type->equals(multi_polygon_array))
         {
