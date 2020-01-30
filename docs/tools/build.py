@@ -267,10 +267,15 @@ def build(args):
     if not args.skip_website:
         minify_website(args)
 
-    write_redirect_html(
-        os.path.join(args.output_dir, 'tutorial.html'),
-        '/docs/en/getting_started/tutorial/'
-    )
+    for static_redirect in [
+        ('tutorial.html', '/docs/en/getting_started/tutorial/',),
+        ('reference_en.html', '/docs/en/single/', ),
+        ('reference_ru.html', '/docs/ru/single/',),
+    ]:
+        write_redirect_html(
+            os.path.join(args.output_dir, static_redirect[0]),
+            static_redirect[1]
+        )
 
 
 if __name__ == '__main__':
