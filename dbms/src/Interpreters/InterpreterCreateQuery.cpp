@@ -616,7 +616,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
                 throw Exception("Table " + create.database + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
         }
     }
-    else if (context.tryGetExternalTable(table_name) && create.if_not_exists)
+    else if (context.isExternalTableExist(table_name) && create.if_not_exists)
          return false;
 
     StoragePtr res;
