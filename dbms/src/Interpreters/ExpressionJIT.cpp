@@ -295,13 +295,11 @@ public:
                     throw Exception("Column " + block.getByPosition(arguments[i]).name + " is missing", ErrorCodes::LOGICAL_ERROR);
                 columns[i] = getColumnData(column);
             }
-
             columns[arguments.size()] = getColumnData(col_res.get());
             reinterpret_cast<void (*) (size_t, ColumnData *)>(function)(block_size, columns.data());
         }
 
         block.getByPosition(result).column = std::move(col_res);
-        std::cout << "=======================================" << std::endl;
     }
 };
 
