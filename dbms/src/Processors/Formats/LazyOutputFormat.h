@@ -20,14 +20,18 @@ public:
     Block getTotals();
     Block getExtremes();
 
-    bool isFinished() { return finished_processing; }
+    bool isFinished() { return finished_processing && queue.size() == 0; }
 
     BlockStreamProfileInfo & getProfileInfo() { return info; }
 
     void setRowsBeforeLimit(size_t rows_before_limit) override;
 
-    void finish() { finished_processing = true; }
-    void clearQueue() { queue.clear(); }
+    void finish()
+    {
+        finished_processing = true;
+        /// Clear queue in case if somebody is waiting lazy_format to push.
+        queue.clear();
+    }
 
 protected:
     void consume(Chunk chunk) override

@@ -146,7 +146,9 @@ run_tests
 
 # Analyze results
 result_structure="left float, right float, diff float, rd Array(float), query text"
-right/clickhouse local --file '*-report.tsv' -S "$result_structure" --query "select * from table where diff < 0.05 and rd[3] > 0.05 order by rd[3] desc" > flap-prone.tsv
-right/clickhouse local --file '*-report.tsv' -S "$result_structure" --query "select * from table where diff > 0.05 and diff > rd[3] order by diff desc" > bad-perf.tsv
-right/clickhouse local --file '*-client-time.tsv' -S "query text, client float, server float" -q "select *, floor(client/server, 3) p from table order by p desc" > client-time.tsv
+right/clickhouse local --file '*-report.tsv' -S "$result_structure" --query "select * from table where abs(diff) < 0.05 and rd[3] > 0.05 order by rd[3] desc" > unstable.tsv
+right/clickhouse local --file '*-report.tsv' -S "$result_structure" --query "select * from table where abs(diff) > 0.05 and abs(diff) > rd[3] order by diff desc" > changed-perf.tsv
+right/clickhouse local --file '*-client-time.tsv' -S "query text, client float, server float" -q "select client, server, floor(client/server, 3) p, query from table where p > 1.01 order by p desc" > slow-on-client.tsv
 grep Exception:[^:] *-err.log > run-errors.log
+
+./report.py > report.html
