@@ -11,6 +11,9 @@ RabbitMQHandler::RabbitMQHandler(const std::pair<std::string, UInt16> & parsed_h
     const Poco::Net::SocketAddress address(parsed_host_port.first, parsed_host_port.second);
     m_impl->socket.connect(address);
     m_impl->socket.setKeepAlive(true);
+
+    user_name = "guest"; /// TODO: get user_name here properly
+    password = "guest"; /// TODO: get password here properly
 }
 
 ///     These functions are to be implemented

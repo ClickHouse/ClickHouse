@@ -54,7 +54,6 @@ protected:
             Context & context_,
             const ColumnsDescription & columns_,
             const String & host_port_, const Names & routing_keys_,
-            const String & user_name_, const String & password_,
             const String & format_name_, char row_delimiter_,
             size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken);
 
@@ -63,8 +62,6 @@ private:
 
     const String host_port;
     Names routing_keys;
-    const String user_name;
-    const String password;
     RabbitMQHandler connection_handler;
     AMQP::Connection connection;
 

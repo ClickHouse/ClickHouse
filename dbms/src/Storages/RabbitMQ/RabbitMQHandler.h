@@ -31,6 +31,9 @@ public:
     RabbitMQHandler(const RabbitMQHandler&) = delete;
     RabbitMQHandler& operator=(const RabbitMQHandler&) = delete;
 
+    const String get_user_name() { return user_name; }
+    const String get_password() { return password; }
+
 private:
 
     void close();
@@ -41,6 +44,9 @@ private:
 
 private:
     std::shared_ptr<RabbitMQHandlerImpl> m_impl;
+
+    String user_name;
+    String password;
 };
 
 
