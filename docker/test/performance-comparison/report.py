@@ -87,15 +87,15 @@ params['header'] = "ClickHouse Performance Comparison"
 params['test_part'] = (table_template.format_map(
     collections.defaultdict(str,
         caption = 'Changes in performance',
-        header = table_header(['Left', 'Right', 'Diff', 'RD', 'Query']),
+        header = table_header(['Old, s', 'New, s', 'Relative difference (new&nbsp;-&nbsp;old)/old', 'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%]', 'Query']),
         rows = tsv_rows('changed-perf.tsv'))) +
     table_template.format(
         caption = 'Slow on client',
-        header = table_header(['Client', 'Server', 'Ratio', 'Query']),
+        header = table_header(['Client time, s', 'Server time, s', 'Ratio', 'Query']),
         rows = tsv_rows('slow-on-client.tsv')) +
     table_template.format(
         caption = 'Unstable',
-        header = table_header(['Left', 'Right', 'Diff', 'RD', 'Query']),
+        header = table_header(['Old, s', 'New, s', 'Relative difference (new&nbsp;-&nbsp;old)/old', 'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%]', 'Query']),
         rows = tsv_rows('unstable.tsv')) +
     table_template.format(
         caption = 'Run errors',

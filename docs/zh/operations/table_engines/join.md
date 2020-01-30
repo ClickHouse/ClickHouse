@@ -15,5 +15,16 @@ Join(ANY|ALL, LEFT|INNER, k1[, k2, ...])
 
 跟 Set 引擎类似，Join 引擎把数据存储在磁盘中。
 
+### Limitations and Settings {#join-limitations-and-settings}
+
+When creating a table, the following settings are applied:
+
+- join_use_nulls
+- max_rows_in_join
+- max_bytes_in_join
+- join_overflow_mode
+- join_any_take_last_row
+
+The `Join`-engine tables can't be used in `GLOBAL JOIN` operations.
 
 [来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/join/) <!--hide-->

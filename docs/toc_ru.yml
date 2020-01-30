@@ -138,7 +138,7 @@ nav:
     - 'mysql': 'query_language/table_functions/mysql.md'
     - 'jdbc': 'query_language/table_functions/jdbc.md'
     - 'odbc': 'query_language/table_functions/odbc.md'
-    - 'hdfs': 'query_language/table_functions/hdfs.md'    
+    - 'hdfs': 'query_language/table_functions/hdfs.md'
     - 'input': 'query_language/table_functions/input.md'
   - 'Словари':
     - 'Введение': 'query_language/dicts/index.md'
@@ -216,13 +216,14 @@ nav:
 
 - 'Разработка':
   - 'hidden': 'development/index.md'
+  - 'Инструкция для начинающего разработчика ClickHouse': 'development/developer_instruction.md'
   - 'Обзор архитектуры ClickHouse': 'development/architecture.md'
+  - 'Навигация по коду ClickHouse': 'development/browse_code.md'
   - 'Как собрать ClickHouse на Linux': 'development/build.md'
   - 'Как собрать ClickHouse на Mac OS X': 'development/build_osx.md'
   - 'Как собрать ClickHouse на Linux для Mac OS X': 'development/build_cross_osx.md'
   - 'Как писать код на C++': 'development/style.md'
   - 'Как запустить тесты': 'development/tests.md'
-  - 'Инструкция для начинающего разработчика ClickHouse': 'development/developer_instruction.md'
   - 'Сторонние библиотеки': 'development/contrib.md'
 
 - 'Что нового':
