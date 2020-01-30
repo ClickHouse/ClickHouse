@@ -332,8 +332,6 @@ private:
     using PresentIdHandler = std::function<void(Key, size_t)>;
     using AbsentIdHandler  = std::function<void(Key, size_t)>;
 
-    using FoundIdsMaskPtr = std::shared_ptr<std::unordered_map<Key, UInt8>>;
-
     struct UpdateUnit
     {
         UpdateUnit(std::vector<Key> requested_ids_,
@@ -359,23 +357,10 @@ private:
     using UpdateUnitPtr = std::shared_ptr<UpdateUnit>;
     using UpdateQueue = ConcurrentBoundedQueue<UpdateUnitPtr>;
 
-    mutable UpdateQueue update_queue;
-
-    ThreadPool update_pool;
-
-    void updateThreadFunction();
-    void tryPushToUpdateQueueOrThrow(UpdateUnitPtr update_unit_ptr) const;
-    void waitForCurrentUpdateFinish(UpdateUnitPtr update_unit_ptr) const;
-
-    mutable std::mutex update_mutex;
-    mutable std::condition_variable is_update_finished;
-
-    std::atomic<bool> finished{false};
-
     class BunchUpdateUnit
     {
     public:
-        explicit BunchUpdateUnit(std::vector<UpdateUnitPtr> update_request)
+        explicit BunchUpdateUnit(std::vector<UpdateUnitPtr> & update_request)
         {
             /// Here we prepare total count of all requested ids
             /// not to do useless allocations later.
@@ -416,19 +401,16 @@ private:
 
         void informCallersAboutAbsentId(Key id, size_t cell_idx)
         {
-            for (size_t i = 0; i < concatenated_requested_ids.size(); ++i) {
-                auto &curr = concatenated_requested_ids[i];
-                if (curr == id)
+            for (size_t i = 0; i < concatenated_requested_ids.size(); ++i)
+                if (concatenated_requested_ids[i] == id)
                     getAbsentIdHandlerForPosition(i)(id, cell_idx);
-            }
         }
 
 
     private:
         PresentIdHandler & getPresentIdHandlerForPosition(size_t position)
         {
-            auto i = getUpdateUnitNumberForRequestedIdPosition(position);
-            return present_id_handlers[i];
+            return present_id_handlers[getUpdateUnitNumberForRequestedIdPosition(position)];
         }
 
         AbsentIdHandler & getAbsentIdHandlerForPosition(size_t position)
@@ -448,8 +430,22 @@ private:
         std::vector<size_t> helper;
     };
 
+    mutable UpdateQueue update_queue;
 
-    void update(BunchUpdateUnit bunch_update_unit) const;
+    ThreadPool update_pool;
+
+    void updateThreadFunction();
+    void update(BunchUpdateUnit & bunch_update_unit) const;
+    void tryPushToUpdateQueueOrThrow(UpdateUnitPtr & update_unit_ptr) const;
+    void waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr) const;
+
+    mutable std::mutex update_mutex;
+    mutable std::condition_variable is_update_finished;
+
+    std::atomic<bool> finished{false};
+
+
+
     };
 
 }
