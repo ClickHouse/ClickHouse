@@ -54,4 +54,4 @@ $ clickhouse-client --query "SELECT * from table" > result.txt
 Смотрите [clickhouse-client](../interfaces/cli.md).
 
 
-[Оригинальная статья ](https://clickhouse.yandex/docs/en/faq/general/) <!--hide-->
+[Оригинальная статья ](https://clickhouse.tech/docs/en/faq/general/) <!--hide-->

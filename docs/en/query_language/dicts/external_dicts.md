@@ -42,4 +42,4 @@ You can [configure](external_dicts_dict.md) any number of dictionaries in the sa
 - [Functions for Working with External Dictionaries](../functions/ext_dict_functions.md)
 
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts/) <!--hide-->
