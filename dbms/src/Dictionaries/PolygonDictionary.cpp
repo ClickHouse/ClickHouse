@@ -454,8 +454,14 @@ inline void makeDifferences(IColumn::Offsets & values)
 struct Offset
 {
     Offset() = default;
-    IColumn::Offsets ring_sizes, polygon_sizes, multi_polygon_sizes;
-    IColumn::Offset  current_ring = 0, current_polygon = 0, current_multi_polygon = 0;
+
+    IColumn::Offsets ring_sizes;
+    IColumn::Offsets polygon_sizes;
+    IColumn::Offsets multi_polygon_sizes;
+
+    IColumn::Offset current_ring = 0;
+    IColumn::Offset current_polygon = 0;
+    IColumn::Offset current_multi_polygon = 0;
 };
 
 struct Data
