@@ -26,16 +26,16 @@ CREATE TABLE hits (url String, from IPv4) ENGINE = MergeTree() ORDER BY from;
 在写入与查询时，`IPv4`类型能够识别可读性更加友好的输入输出格式：
 
 ``` sql
-INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '116.253.40.133')('https://clickhouse.yandex', '183.247.232.58')('https://clickhouse.yandex/docs/en/', '116.106.34.242');
+INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '116.253.40.133')('https://clickhouse.tech', '183.247.232.58')('https://clickhouse.yandex/docs/en/', '116.106.34.242');
 
 SELECT * FROM hits;
 ```
 
 ```
 ┌─url────────────────────────────────┬───────────from─┐
-│ https://clickhouse.yandex/docs/en/ │ 116.106.34.242 │
+│ https://clickhouse.tech/docs/en/ │ 116.106.34.242 │
 │ https://wikipedia.org              │ 116.253.40.133 │
-│ https://clickhouse.yandex          │ 183.247.232.58 │
+│ https://clickhouse.tech          │ 183.247.232.58 │
 └────────────────────────────────────┴────────────────┘
 ```
 
@@ -75,4 +75,4 @@ SELECT toTypeName(i), CAST(from as UInt32) as i FROM hits LIMIT 1;
 └──────────────────────────────────┴────────────┘
 ```
 
-[来源文章](https://clickhouse.yandex/docs/en/data_types/domains/ipv4) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/data_types/domains/ipv4) <!--hide-->

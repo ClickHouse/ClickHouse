@@ -30,4 +30,4 @@
 ## greaterOrEquals, `>= operator`
 
 
-[来源文章](https://clickhouse.yandex/docs/en/query_language/functions/comparison_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/comparison_functions/) <!--hide-->

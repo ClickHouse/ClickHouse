@@ -882,4 +882,4 @@ The update is performed asynchronously, in a separate system thread.
 
 **Default value**: 15.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/server_settings/settings/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/server_settings/settings/) <!--hide-->

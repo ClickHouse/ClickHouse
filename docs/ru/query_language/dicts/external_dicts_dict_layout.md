@@ -283,4 +283,4 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 Данные хранятся в побитовом дереве (`trie`), он должен полностью помещаться в оперативной памяти.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/dicts/external_dicts_dict_layout/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_layout/) <!--hide-->
