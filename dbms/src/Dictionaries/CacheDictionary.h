@@ -381,12 +381,13 @@ private:
             /// not to do useless allocations later.
             size_t total_requested_keys_count = 0;
 
-            helper.push_back(0);
-
             for (auto & unit_ptr: update_request)
             {
                 total_requested_keys_count += unit_ptr->requested_ids.size();
-                helper.push_back(unit_ptr->requested_ids.size() + helper.back());
+                if (helper.empty())
+                    helper.push_back(unit_ptr->requested_ids.size());
+                else
+                    helper.push_back(unit_ptr->requested_ids.size() + helper.back());
                 present_id_handlers.emplace_back(unit_ptr->present_id_handler);
                 absent_id_handlers.emplace_back(unit_ptr->absent_id_handler);
             }
