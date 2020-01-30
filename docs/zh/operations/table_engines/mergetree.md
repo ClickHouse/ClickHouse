@@ -402,4 +402,4 @@ ALTER TABLE example_table
 
 ### Configuration {#table_engine-mergetree-multiple-volumes_configure}
 
-[来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/mergetree/) <!--hide-->

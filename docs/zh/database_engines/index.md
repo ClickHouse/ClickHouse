@@ -8,4 +8,4 @@
 
 - [MySQL](mysql.md)
 
-[来源文章](https://clickhouse.yandex/docs/en/database_engines/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/database_engines/) <!--hide-->
