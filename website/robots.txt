@@ -13,5 +13,5 @@ Disallow: /docs/ja/search.html
 Disallow: /docs/zh/search.html
 Disallow: /docs/fa/search.html
 Allow: /
-Host: https://clickhouse.yandex
-Sitemap: https://clickhouse.yandex/docs/sitemap.xml
+Host: https://clickhouse.tech
+Sitemap: https://clickhouse.tech/docs/sitemap.xml
