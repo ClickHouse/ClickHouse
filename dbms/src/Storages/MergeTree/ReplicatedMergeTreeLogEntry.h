@@ -113,6 +113,9 @@ struct ReplicatedMergeTreeLogEntryData
     /// Mutation commands for alter if any.
     String mutation_commands;
 
+    String columns_str;
+    String metadata_str;
+
     /// Returns a set of parts that will appear after executing the entry + parts to block
     /// selection of merges. These parts are added to queue.virtual_parts.
     Strings getVirtualPartNames() const
