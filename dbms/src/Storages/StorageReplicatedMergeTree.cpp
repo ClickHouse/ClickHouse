@@ -3330,22 +3330,6 @@ void StorageReplicatedMergeTree::alter(
     }
 
 
-    struct ChangedNode
-    {
-        ChangedNode(const String & table_path_, String name_, String new_value_)
-            : table_path(table_path_), name(std::move(name_)), shared_path(table_path + "/" + name), new_value(std::move(new_value_))
-        {
-        }
-
-        const String & table_path;
-        String name;
-
-        String shared_path;
-
-        String new_value;
-        int32_t new_version = -1; /// Initialization is to suppress (useless) false positive warning found by cppcheck.
-    };
-
     auto ast_to_str = [](ASTPtr query) -> String {
         if (!query)
             return "";
@@ -3355,8 +3339,8 @@ void StorageReplicatedMergeTree::alter(
     //std::cerr << " Columns preparation to alter:" << getColumns().getAllPhysical().toString() << std::endl;
 
     ReplicatedMergeTreeLogEntryData entry;
+    Coordination::Requests ops;
     /// /columns and /metadata nodes
-    std::vector<ChangedNode> changed_nodes;
     {
         /// Just to read current structure. Alter will be done in separate thread.
         auto table_lock = lockStructureForShare(false, query_context.getCurrentQueryId());
@@ -3368,8 +3352,9 @@ void StorageReplicatedMergeTree::alter(
         params.apply(metadata);
 
         String new_columns_str = metadata.columns.toString();
+        /// TODO(alesap) maybe check correct version
         if (new_columns_str != getColumns().toString())
-            changed_nodes.emplace_back(zookeeper_path, "columns", new_columns_str);
+            ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/columns", new_columns_str, -1));
 
         ReplicatedMergeTreeTableMetadata new_metadata(*this);
         if (ast_to_str(metadata.order_by_ast) != ast_to_str(order_by_ast))
@@ -3388,19 +3373,13 @@ void StorageReplicatedMergeTree::alter(
 
         String new_metadata_str = new_metadata.toString();
         if (new_metadata_str != ReplicatedMergeTreeTableMetadata(*this).toString())
-            changed_nodes.emplace_back(zookeeper_path, "metadata", new_metadata_str);
+            ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/metadata", new_metadata_str, -1));
 
         /// Perform settings update locally
-
         auto old_metadata = getInMemoryMetadata();
         old_metadata.settings_ast = metadata.settings_ast;
         changeSettings(metadata.settings_ast, table_lock_holder);
         global_context.getDatabase(table_id.database_name)->alterTable(query_context, table_id.table_name, old_metadata);
-
-        /// Modify shared metadata nodes in ZooKeeper.
-        Coordination::Requests ops;
-        for (const auto & node : changed_nodes)
-            ops.emplace_back(zkutil::makeSetRequest(node.shared_path, node.new_value, -1));
 
         entry.type = LogEntry::ALTER_METADATA;
         entry.source_replica = replica_name;
@@ -3415,9 +3394,6 @@ void StorageReplicatedMergeTree::alter(
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
 
         Coordination::Responses results = getZooKeeper()->multi(ops);
-
-        for (size_t i = 0; i < changed_nodes.size(); ++i)
-            changed_nodes[i].new_version = dynamic_cast<const Coordination::SetResponse &>(*results[i]).stat.version;
 
         String path_created = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
         entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
