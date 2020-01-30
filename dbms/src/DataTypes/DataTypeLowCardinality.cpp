@@ -934,6 +934,12 @@ MutableColumnPtr DataTypeLowCardinality::createColumn() const
     return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
 }
 
+MutableColumnPtr DataTypeLowCardinality::createColumnWithRandomData(size_t limit) const
+{
+    (void)limit;
+    throw Exception("Method createColumnWithRandomData() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
 Field DataTypeLowCardinality::getDefault() const
 {
     return dictionary_type->getDefault();
