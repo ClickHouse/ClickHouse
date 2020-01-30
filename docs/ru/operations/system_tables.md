@@ -727,9 +727,9 @@ WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 
 **Смотрите также**
 
-- [Секции движка](table_engines/mergetree/#sektsii-zaprosa) семейства MergeTree 
+- [Секции движка](table_engines/mergetree/#mergetree-query-clauses) семейства MergeTree 
 - [Настройки](table_engines/kafka.md#table_engine-kafka-creating-a-table) Kafka
-- [Настройки](table_engines/join/#limitations-and-settings) Join
+- [Настройки](table_engines/join/#join-limitations-and-settings) Join
 
 
 ## system.tables
