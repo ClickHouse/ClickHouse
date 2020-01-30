@@ -2,9 +2,8 @@
 <yandex>
     <profiles>
         <default>
-            <stream_poll_timeout_ms>30000</stream_poll_timeout_ms>
-            <stream_flush_interval_ms>31000</stream_flush_interval_ms>
-            <!-- TODO: time is calculated wrong (first poll during subcrible is not taken into account so real flush interval = stream_flush_interval_ms + stream_poll_timeout_ms -->>
+            <!--stream_poll_timeout_ms>1</stream_poll_timeout_ms>
+            <stream_flush_interval_ms>100</stream_flush_interval_ms-->
         </default>
     </profiles>
 
