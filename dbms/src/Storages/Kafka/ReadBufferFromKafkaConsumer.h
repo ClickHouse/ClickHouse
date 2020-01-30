@@ -25,17 +25,23 @@ public:
         size_t max_batch_size,
         size_t poll_timeout_,
         bool intermediate_commit_,
-        const std::atomic<bool> & stopped_);
+        const std::atomic<bool> & stopped_,
+        const Names & _topics
+    );
     ~ReadBufferFromKafkaConsumer() override;
 
     void allowNext() { allowed = true; } // Allow to read next message.
     void commit(); // Commit all processed messages.
-    void subscribe(const Names & topics); // Subscribe internal consumer to topics.
+    void subscribe(); // Subscribe internal consumer to topics.
     void unsubscribe(); // Unsubscribe internal consumer in case of failure.
 
     auto pollTimeout() const { return poll_timeout; }
 
     bool hasMorePolledMessages() const;
+    auto rebalanceHappened() const { return rebalance_happened; }
+
+    void storeLastReadMessageOffset();
+    void resetToLastCommitted(const char * msg);
 
     // Return values for the message that's being read.
     String currentTopic() const { return current[-1].get_topic(); }
@@ -51,6 +57,7 @@ private:
     Poco::Logger * log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
+    size_t offsets_stored = 0;
     bool stalled = false;
     bool intermediate_commit = true;
     bool allowed = true;
@@ -59,6 +66,10 @@ private:
 
     Messages messages;
     Messages::const_iterator current;
+
+    bool rebalance_happened = false;
+    cppkafka::TopicPartitionList assignment;
+    const Names topics;
 
     bool nextImpl() override;
 };
