@@ -304,6 +304,10 @@ MutableColumnPtr DataTypeAggregateFunction::createColumn() const
     return ColumnAggregateFunction::create(function);
 }
 
+MutableColumnPtr DataTypeAggregateFunction::createColumnWithRandomData(size_t) const
+{
+    throw Exception("Method createColumnWithRandomData() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
 
 /// Create empty state
 Field DataTypeAggregateFunction::getDefault() const

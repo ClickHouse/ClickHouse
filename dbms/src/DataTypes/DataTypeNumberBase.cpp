@@ -240,6 +240,13 @@ MutableColumnPtr DataTypeNumberBase<T>::createColumn() const
 }
 
 template <typename T>
+MutableColumnPtr DataTypeNumberBase<T>::createColumnWithRandomData(size_t limit) const
+{
+    (void)limit;
+    throw Exception("Method createColumnWithRandomData() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
+template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByInteger() const
 {
     return is_integral_v<T>;
