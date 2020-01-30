@@ -87,6 +87,7 @@ Block KafkaBlockInputStream::readImpl()
                     break;
 
                 case IProcessor::Status::Finished:
+                case IProcessor::Status::Cancel:
                     input_format->resetParser();
                     return new_rows;
 

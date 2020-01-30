@@ -45,6 +45,7 @@ protected:
                     break;
 
                 case IProcessor::Status::Finished:
+                case IProcessor::Status::Cancel:
                     return {};
 
                 case IProcessor::Status::PortFull:

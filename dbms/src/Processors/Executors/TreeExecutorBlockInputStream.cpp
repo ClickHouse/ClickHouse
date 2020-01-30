@@ -169,13 +169,18 @@ void TreeExecutorBlockInputStream::execute()
                                 "returned status " + IProcessor::statusToName(status) + " "
                                 "which is not supported in TreeExecutorBlockInputStream.", ErrorCodes::LOGICAL_ERROR);
             }
+            case IProcessor::Status::Cancel:
+            {
+                cancel(false);
+                return;
+            }
         }
     }
 }
 
 Block TreeExecutorBlockInputStream::readImpl()
 {
-    while (true)
+    while (!isCancelled())
     {
         if (input_port->isFinished())
             return {};
@@ -185,6 +190,8 @@ Block TreeExecutorBlockInputStream::readImpl()
 
         execute();
     }
+
+    return {};
 }
 
 void TreeExecutorBlockInputStream::setProgressCallback(const ProgressCallback & callback)
