@@ -58,7 +58,7 @@ Exception::Exception(const Exception & exc)
 using namespace DB;
 
 
-void addRootPath(String & path, const String & root_path)
+static void addRootPath(String & path, const String & root_path)
 {
     if (path.empty())
         throw Exception("Path cannot be empty", ZBADARGUMENTS);
@@ -75,7 +75,7 @@ void addRootPath(String & path, const String & root_path)
         path = root_path + path;
 }
 
-void removeRootPath(String & path, const String & root_path)
+static void removeRootPath(String & path, const String & root_path)
 {
     if (root_path.empty())
         return;

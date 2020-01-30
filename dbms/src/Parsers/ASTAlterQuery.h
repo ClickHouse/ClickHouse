@@ -3,6 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Parsers/ASTTTLElement.h>
 
 
 namespace DB
@@ -128,15 +129,9 @@ public:
 
     bool if_exists = false;     /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
 
-    enum MoveDestinationType
-    {
-        DISK,
-        VOLUME,
-    };
+    PartDestinationType move_destination_type; /// option for MOVE PART/PARTITION
 
-    MoveDestinationType move_destination_type;
-
-    String move_destination_name;
+    String move_destination_name;             /// option for MOVE PART/PARTITION
 
     /** For FETCH PARTITION - the path in ZK to the shard, from which to download the partition.
      */
@@ -151,6 +146,9 @@ public:
     String from_table;
     /// To distinguish REPLACE and ATTACH PARTITION partition FROM db.table
     bool replace = true;
+    /// MOVE PARTITION partition TO TABLE db.table
+    String to_database;
+    String to_table;
 
     String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
 

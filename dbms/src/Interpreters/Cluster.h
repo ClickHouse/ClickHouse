@@ -26,7 +26,7 @@ public:
             const String & username, const String & password,
             UInt16 clickhouse_port, bool treat_local_as_remote, bool secure = false);
 
-    Cluster(const Cluster &) = delete;
+    Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
 
     /// is used to set a limit on the size of the timeout
@@ -148,6 +148,9 @@ public:
     /// Get a subcluster consisting of one or multiple shards - indexes by count (from 0) of the shard of this cluster.
     std::unique_ptr<Cluster> getClusterWithMultipleShards(const std::vector<size_t> & indices) const;
 
+    /// Get a new Cluster that contains all servers (all shards with all replicas) from existing cluster as independent shards.
+    std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings) const;
+
 private:
     using SlotToShard = std::vector<UInt64>;
     SlotToShard slot_to_shard;
@@ -159,7 +162,12 @@ private:
     void initMisc();
 
     /// For getClusterWithMultipleShards implementation.
-    Cluster(const Cluster & from, const std::vector<size_t> & indices);
+    struct SubclusterTag {};
+    Cluster(SubclusterTag, const Cluster & from, const std::vector<size_t> & indices);
+
+    /// For getClusterWithReplicasAsShards implementation
+    struct ReplicasAsShardsTag {};
+    Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings);
 
     String hash_of_addresses;
     /// Description of the cluster shards.

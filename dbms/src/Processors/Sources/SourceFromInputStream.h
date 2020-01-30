@@ -25,10 +25,13 @@ public:
 
     /// Implementation for methods from ISourceWithProgress.
     void setLimits(const LocalLimits & limits_) final { stream->setLimits(limits_); }
-    void setQuota(QuotaForIntervals & quota_) final { stream->setQuota(quota_); }
+    void setQuota(const std::shared_ptr<QuotaContext> & quota_) final { stream->setQuota(quota_); }
     void setProcessListElement(QueryStatus * elem) final { stream->setProcessListElement(elem); }
     void setProgressCallback(const ProgressCallback & callback) final { stream->setProgressCallback(callback); }
     void addTotalRowsApprox(size_t value) final { stream->addTotalRowsApprox(value); }
+
+protected:
+    void onCancel() override { stream->cancel(false); }
 
 private:
     bool has_aggregate_functions = false;

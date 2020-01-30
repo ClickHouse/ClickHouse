@@ -217,7 +217,7 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
 
         per_part_sum_marks.push_back(sum_marks);
 
-        per_part_columns_lock.emplace_back(part.data_part->columns_lock);
+        per_part_columns_lock.emplace_back(part.data_part, part.data_part->columns_lock);
 
         auto [required_columns, required_pre_columns, should_reorder] =
             getReadTaskColumns(data, part.data_part, column_names, prewhere_info, check_columns);

@@ -31,6 +31,7 @@ public:
 
     /// Access the innards.
     HashJoinPtr & getJoin() { return join; }
+    HashJoinPtr getJoin(std::shared_ptr<AnalyzedJoin> analyzed_join) const;
 
     /// Verify that the data structure is suitable for implementing this type of JOIN.
     void assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_) const;
@@ -60,16 +61,16 @@ private:
 
 protected:
     StorageJoin(
-        const String & path_,
-        const String & database_name_,
-        const String & table_name_,
+        const String & relative_path_,
+        const StorageID & table_id_,
         const Names & key_names_,
         bool use_nulls_,
         SizeLimits limits_,
         ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        bool overwrite);
+        bool overwrite,
+        const Context & context_);
 };
 
 }

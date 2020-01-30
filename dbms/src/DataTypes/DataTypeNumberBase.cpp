@@ -153,15 +153,15 @@ Field DataTypeNumberBase<T>::getDefault() const
 template <typename T>
 void DataTypeNumberBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    /// ColumnVector<T>::value_type is a narrower type. For example, UInt8, when the Field type is UInt64
-    typename ColumnVector<T>::value_type x = get<NearestFieldType<FieldType>>(field);
+    /// ColumnVector<T>::ValueType is a narrower type. For example, UInt8, when the Field type is UInt64
+    typename ColumnVector<T>::ValueType x = get<NearestFieldType<FieldType>>(field);
     writeBinary(x, ostr);
 }
 
 template <typename T>
 void DataTypeNumberBase<T>::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
-    typename ColumnVector<T>::value_type x;
+    typename ColumnVector<T>::ValueType x;
     readBinary(x, istr);
     field = NearestFieldType<FieldType>(x);
 }
@@ -175,7 +175,7 @@ void DataTypeNumberBase<T>::serializeBinary(const IColumn & column, size_t row_n
 template <typename T>
 void DataTypeNumberBase<T>::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-    typename ColumnVector<T>::value_type x;
+    typename ColumnVector<T>::ValueType x;
     readBinary(x, istr);
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
 }
@@ -191,7 +191,7 @@ void DataTypeNumberBase<T>::serializeBinaryBulk(const IColumn & column, WriteBuf
         limit = size - offset;
 
     if (limit)
-        ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::value_type) * limit);
+        ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::ValueType) * limit);
 }
 
 template <typename T>
@@ -200,8 +200,8 @@ void DataTypeNumberBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer &
     typename ColumnVector<T>::Container & x = typeid_cast<ColumnVector<T> &>(column).getData();
     size_t initial_size = x.size();
     x.resize(initial_size + limit);
-    size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnVector<T>::value_type) * limit);
-    x.resize(initial_size + size / sizeof(typename ColumnVector<T>::value_type));
+    size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnVector<T>::ValueType) * limit);
+    x.resize(initial_size + size / sizeof(typename ColumnVector<T>::ValueType));
 }
 
 

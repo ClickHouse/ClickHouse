@@ -42,6 +42,7 @@ class ComplexKeyCacheDictionary final : public IDictionaryBase
 {
 public:
     ComplexKeyCacheDictionary(
+        const std::string & database_,
         const std::string & name_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -50,7 +51,9 @@ public:
 
     std::string getKeyDescription() const { return key_description; }
 
-    std::string getName() const override { return name; }
+    const std::string & getDatabase() const override { return database; }
+    const std::string & getName() const override { return name; }
+    const std::string & getFullName() const override { return full_name; }
 
     std::string getTypeName() const override { return "ComplexKeyCache"; }
 
@@ -71,11 +74,11 @@ public:
 
     double getLoadFactor() const override { return static_cast<double>(element_count.load(std::memory_order_relaxed)) / size; }
 
-    bool isCached() const override { return true; }
+    bool supportUpdates() const override { return false; }
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<ComplexKeyCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, size);
+        return std::make_shared<ComplexKeyCacheDictionary>(database, name, dict_struct, source_ptr->clone(), dict_lifetime, size);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -668,7 +671,9 @@ private:
 
     bool isEmptyCell(const UInt64 idx) const;
 
+    const std::string database;
     const std::string name;
+    const std::string full_name;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;

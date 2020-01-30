@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB

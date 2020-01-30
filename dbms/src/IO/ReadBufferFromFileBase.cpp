@@ -3,6 +3,11 @@
 namespace DB
 {
 
+ReadBufferFromFileBase::ReadBufferFromFileBase()
+    : BufferWithOwnMemory<ReadBuffer>(0)
+{
+}
+
 ReadBufferFromFileBase::ReadBufferFromFileBase(size_t buf_size, char * existing_memory, size_t alignment)
     : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
 {

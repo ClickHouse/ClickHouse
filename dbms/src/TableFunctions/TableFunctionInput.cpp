@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <boost/algorithm/string.hpp>
+#include "registerTableFunctions.h"
 
 
 namespace DB

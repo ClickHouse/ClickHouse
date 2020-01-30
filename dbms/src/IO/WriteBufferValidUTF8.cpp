@@ -133,4 +133,17 @@ void WriteBufferValidUTF8::finish()
         putReplacement();
 }
 
+
+WriteBufferValidUTF8::~WriteBufferValidUTF8()
+{
+    try
+    {
+        finish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
 }

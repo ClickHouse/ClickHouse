@@ -63,6 +63,8 @@ struct QueryState
     bool sent_all_data = false;
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
+    /// Temporary tables read
+    bool temporary_tables_read = false;
 
     /// Request requires data from client for function input()
     bool need_receive_data_for_input = false;
@@ -109,7 +111,7 @@ public:
         server_display_name = server.config().getString("display_name", getFQDNOrHostName());
     }
 
-    void run();
+    void run() override;
 
     /// This method is called right before the query execution.
     virtual void customizeContext(DB::Context & /*context*/) {}

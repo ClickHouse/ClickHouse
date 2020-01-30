@@ -368,12 +368,9 @@ For more information, see the section "[Creating replicated tables](../../operat
 
 ## mark_cache_size {#server-mark-cache-size}
 
-Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../../operations/table_engines/mergetree.md) family.
+Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../table_engines/mergetree.md) family.
 
 The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
-
-!!! warning "Warning"
-    This parameter could be exceeded by the [mark_cache_min_lifetime](../settings/settings.md#settings-mark_cache_min_lifetime) setting.
 
 **Example**
 
@@ -423,7 +420,7 @@ We recommend using this option in Mac OS X, since the `getrlimit()` function ret
 
 Restriction on deleting tables.
 
-If the size of a [MergeTree](../../operations/table_engines/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a DROP query.
+If the size of a [MergeTree](../table_engines/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a DROP query.
 
 If you still need to delete the table without restarting the ClickHouse server, create the `<clickhouse-path>/flags/force_drop_table` file and run the DROP query.
 
@@ -440,7 +437,7 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ## merge_tree {#server_settings-merge_tree}
 
-Fine tuning for tables in the [MergeTree](../../operations/table_engines/mergetree.md).
+Fine tuning for tables in the [MergeTree](../table_engines/mergetree.md).
 
 For more information, see the MergeTreeSettings.h header file.
 
@@ -515,7 +512,7 @@ Keys for server/client settings:
 
 ## part_log {#server_settings-part-log}
 
-Logging events that are associated with [MergeTree](../../operations/table_engines/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
+Logging events that are associated with [MergeTree](../table_engines/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
 Queries are logged in the [system.part_log](../system_tables.md#system_tables-part-log) table, not in a separate file. You can configure the name of this table in the `table` parameter (see below).
 
@@ -556,13 +553,13 @@ The path to the directory containing data.
 
 Setting for logging queries received with the [log_queries=1](../settings/settings.md) setting.
 
-Queries are logged in the [system.query_log](../system_tables.md#system_tables-query-log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
+Queries are logged in the [system.query_log](../system_tables.md#system_tables-query_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
 - `database` – Name of the database.
 - `table` – Name of the system table the queries will be logged in.
-- `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a system table.
+- `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a table.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
 If the table doesn't exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
@@ -576,6 +573,54 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
     <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </query_log>
+```
+
+## query_thread_log {#server_settings-query-thread-log}
+
+Setting for logging threads of queries received with the [log_query_threads=1](../settings/settings.md#settings-log-query-threads) setting.
+
+Queries are logged in the [system.query_thread_log](../system_tables.md#system_tables-query-thread-log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
+
+Use the following parameters to configure logging:
+
+- `database` – Name of the database.
+- `table` – Name of the system table the queries will be logged in.
+- `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a system table.
+- `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+
+If the table doesn't exist, ClickHouse will create it. If the structure of the query thread log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
+
+**Example**
+
+```xml
+<query_thread_log>
+    <database>system</database>
+    <table>query_thread_log</table>
+    <partition_by>toMonday(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+</query_thread_log>
+```
+
+## trace_log {#server_settings-trace_log}
+
+Settings for the [trace_log](../system_tables.md#system_tables-trace_log) system table operation.
+
+Parameters:
+
+- `database` — Database for storing a table.
+- `table` — Table name.
+- `partition_by` — [Custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a system table.
+- `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+
+The default server configuration file `config.xml` contains the following settings section:
+
+```xml
+<trace_log>
+    <database>system</database>
+    <table>trace_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+</trace_log>
 ```
 
 ## query_masking_rules
@@ -664,7 +709,21 @@ Positive integer.
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-## tmp_path
+## mysql_port {#server_settings-mysql_port}
+
+Port for communicating with clients over MySQL protocol.
+
+**Possible values**
+
+Positive integer.
+
+Example
+
+```xml
+<mysql_port>9004</mysql_port>
+```
+
+## tmp_path {#server-settings-tmp_path}
 
 Path to temporary data for processing large queries.
 
@@ -678,9 +737,20 @@ Path to temporary data for processing large queries.
 ```
 
 
+## tmp_policy {#server-settings-tmp_policy}
+
+Policy from [`storage_configuration`](../table_engines/mergetree.md#table_engine-mergetree-multiple-volumes) to store temporary files.
+If not set [`tmp_path`](#server-settings-tmp_path) is used, otherwise it is ignored.
+
+!!! note
+    - `move_factor` is ignored
+    - `keep_free_space_bytes` is ignored
+    - `max_data_part_size_bytes` is ignored
+    - you must have exactly one volume in that policy
+
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
-Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../operations/table_engines/mergetree.md).
+Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../table_engines/mergetree.md).
 
 There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use_uncompressed_cache](../settings/settings.md#setting-use_uncompressed_cache) is enabled.
 
@@ -731,12 +801,12 @@ This section contains the following parameters:
 
     For example:
 
-    ```xml
+```xml
     <node index="1">
         <host>example_host</host>
         <port>2181</port>
     </node>
-    ```
+```
 
     The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
 
@@ -812,4 +882,4 @@ The update is performed asynchronously, in a separate system thread.
 
 **Default value**: 15.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/server_settings/settings/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/server_settings/settings/) <!--hide-->

@@ -37,4 +37,4 @@
 
 </div>
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/third-party/proxy/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/interfaces/third-party/proxy/) <!--hide-->

@@ -1,7 +1,8 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Functions/CustomWeekTransforms.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <IO/WriteHelpers.h>
 
@@ -100,11 +101,17 @@ public:
         WhichDataType which(from_type);
 
         if (which.isDate())
-            CustomWeekTransformImpl<DataTypeDate::FieldType, typename ToDataType::FieldType, Transform>::execute(
-                block, arguments, result, input_rows_count);
+            CustomWeekTransformImpl<DataTypeDate, ToDataType>::execute(
+                block, arguments, result, input_rows_count, Transform{});
         else if (which.isDateTime())
-            CustomWeekTransformImpl<DataTypeDateTime::FieldType, typename ToDataType::FieldType, Transform>::execute(
-                block, arguments, result, input_rows_count);
+            CustomWeekTransformImpl<DataTypeDateTime, ToDataType>::execute(
+                block, arguments, result, input_rows_count, Transform{});
+        else if (which.isDateTime64())
+        {
+            CustomWeekTransformImpl<DataTypeDateTime64, ToDataType>::execute(
+                block, arguments, result, input_rows_count,
+                DateTime64BasicTransformWrapper<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
+        }
         else
             throw Exception(
                 "Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),

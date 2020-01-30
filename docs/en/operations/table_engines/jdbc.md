@@ -10,6 +10,9 @@ This engine supports the [Nullable](../../data_types/nullable.md) data type.
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
+(
+    columns list...
+)
 ENGINE = JDBC(dbms_uri, external_database, external_table)
 ```
 
@@ -79,4 +82,4 @@ FROM jdbc_table
 
 - [JDBC table function](../../query_language/table_functions/jdbc.md).
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/jdbc/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/jdbc/) <!--hide-->

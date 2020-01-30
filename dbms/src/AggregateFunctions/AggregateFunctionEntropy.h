@@ -145,8 +145,6 @@ public:
         auto & column = assert_cast<ColumnVector<Float64> &>(to);
         column.getData().push_back(this->data(place).get());
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }

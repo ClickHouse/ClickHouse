@@ -22,6 +22,9 @@ public:
 
     virtual bool canExecuteWithProcessors() const { return false; }
 
+    virtual bool ignoreQuota() const { return false; }
+    virtual bool ignoreLimits() const { return false; }
+
     virtual ~IInterpreter() {}
 };
 

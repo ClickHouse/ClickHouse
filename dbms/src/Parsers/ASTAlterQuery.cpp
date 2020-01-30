@@ -176,14 +176,30 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << " TO ";
         switch (move_destination_type)
         {
-            case MoveDestinationType::DISK:
+            case PartDestinationType::DISK:
                 settings.ostr << "DISK ";
                 break;
-            case MoveDestinationType::VOLUME:
+            case PartDestinationType::VOLUME:
                 settings.ostr << "VOLUME ";
                 break;
+            case PartDestinationType::TABLE:
+                settings.ostr << "TABLE ";
+                if (!to_database.empty())
+                {
+                    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(to_database)
+                                  << (settings.hilite ? hilite_none : "") << ".";
+                }
+                settings.ostr << (settings.hilite ? hilite_identifier : "")
+                              << backQuoteIfNeed(to_table)
+                              << (settings.hilite ? hilite_none : "");
+                return;
+            default:
+                break;
         }
-        settings.ostr << quoteString(move_destination_name);
+        if (move_destination_type != PartDestinationType::TABLE)
+        {
+            settings.ostr << quoteString(move_destination_name);
+        }
     }
     else if (type == ASTAlterCommand::REPLACE_PARTITION)
     {

@@ -31,7 +31,7 @@ public:
     void setProgressCallback(const ProgressCallback & callback) final;
     void setProcessListElement(QueryStatus * elem) final;
     void setLimits(const LocalLimits & limits_) final;
-    void setQuota(QuotaForIntervals & quota_) final;
+    void setQuota(const std::shared_ptr<QuotaContext> & quota_) final;
     void addTotalRowsApprox(size_t value) final;
 
 protected:
@@ -45,6 +45,8 @@ private:
 
     /// Remember sources that support progress.
     std::vector<ISourceWithProgress *> sources_with_progress;
+
+    QueryStatus * process_list_element = nullptr;
 
     void init();
     /// Execute tree step-by-step until root returns next chunk or execution is finished.

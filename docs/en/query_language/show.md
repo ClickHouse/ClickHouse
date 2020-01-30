@@ -3,10 +3,10 @@
 ## SHOW CREATE TABLE
 
 ```sql
-SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
+SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Returns a single `String`-type 'statement' column, which contains a single value – the `CREATE` query used for creating the specified table.
+Returns a single `String`-type 'statement' column, which contains a single value – the `CREATE` query used for creating the specified object.
 
 ## SHOW DATABASES {#show-databases}
 
@@ -61,4 +61,34 @@ SHOW TABLES FROM system LIKE '%co%' LIMIT 2
 │ aggregate_function_combinators │
 │ collations                     │
 └────────────────────────────────┘
+```
+
+## SHOW DICTIONARIES
+
+Displays a list of [external dictionaries](dicts/external_dicts.md).
+
+```sql
+SHOW DICTIONARIES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+```
+
+If the `FROM` clause is not specified, the query returns the list of dictionaries from the current database.
+
+You can get the same results as the `SHOW DICTIONARIES` query in the following way:
+
+```sql
+SELECT name FROM system.dictionaries WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+```
+
+**Example**
+
+The following query selects the first two rows from the list of tables in the `system` database, whose names contain `co`.
+
+```sql
+SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
+```
+```text
+┌─name─────────┐
+│ regions      │
+│ region_names │
+└──────────────┘
 ```

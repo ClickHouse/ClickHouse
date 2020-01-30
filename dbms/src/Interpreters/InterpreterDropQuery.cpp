@@ -79,13 +79,14 @@ BlockIO InterpreterDropQuery::executeToTable(
 
     if (database_and_table.first && database_and_table.second)
     {
+        auto table_id = database_and_table.second->getStorageID();
         if (kind == ASTDropQuery::Kind::Detach)
         {
             database_and_table.second->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
             auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
             /// Drop table from memory, don't touch data and metadata
-            database_and_table.first->detachTable(database_and_table.second->getTableName());
+            database_and_table.first->detachTable(table_id.table_name);
         }
         else if (kind == ASTDropQuery::Kind::Truncate)
         {
@@ -107,7 +108,7 @@ BlockIO InterpreterDropQuery::executeToTable(
 
             const std::string metadata_file_without_extension =
                 database_and_table.first->getMetadataPath()
-                + escapeForFileName(database_and_table.second->getTableName());
+                + escapeForFileName(table_id.table_name);
 
             const auto prev_metadata_name = metadata_file_without_extension + ".sql";
             const auto drop_metadata_name = metadata_file_without_extension + ".sql.tmp_drop";
@@ -128,17 +129,16 @@ BlockIO InterpreterDropQuery::executeToTable(
                 throw;
             }
 
+            String table_data_path_relative = database_and_table.first->getTableDataPath(table_name);
+
             /// Delete table metadata and table itself from memory
-            database_and_table.first->removeTable(context, database_and_table.second->getTableName());
+            database_and_table.first->removeTable(context, table_id.table_name);
             database_and_table.second->is_dropped = true;
 
-            String database_data_path = database_and_table.first->getDataPath();
-
             /// If it is not virtual database like Dictionary then drop remaining data dir
-            if (!database_data_path.empty())
+            if (!table_data_path_relative.empty())
             {
-                String table_data_path = database_data_path + "/" + escapeForFileName(database_and_table.second->getTableName());
-
+                String table_data_path = context.getPath() + table_data_path_relative;
                 if (Poco::File(table_data_path).exists())
                     Poco::File(table_data_path).remove(true);
             }
@@ -164,7 +164,7 @@ BlockIO InterpreterDropQuery::executeToDictionary(
 
     auto ddl_guard = (!no_ddl_lock ? context.getDDLGuard(database_name, dictionary_name) : nullptr);
 
-    DatabasePtr database = tryGetDatabase(database_name, false);
+    DatabasePtr database = tryGetDatabase(database_name, if_exists);
 
     if (!database || !database->isDictionaryExist(context, dictionary_name))
     {
@@ -269,7 +269,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQ
             database->shutdown();
 
             /// Delete the database.
-            database->drop();
+            database->drop(context);
 
             /// Old ClickHouse versions did not store database.sql files
             Poco::File database_metadata_file(context.getPath() + "metadata/" + escapeForFileName(database_name) + ".sql");

@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <Core/Types.h>
+#include <Core/NamesAndTypes.h>
 #include <Parsers/IAST_fwd.h>
 
 #include <memory>
@@ -36,14 +37,41 @@ struct DatabaseAndTableWithAlias
     bool satisfies(const DatabaseAndTableWithAlias & table, bool table_may_be_an_alias);
 };
 
-using TableWithColumnNames = std::pair<DatabaseAndTableWithAlias, Names>;
+struct TableWithColumnNames
+{
+    DatabaseAndTableWithAlias table;
+    Names columns;
+    Names hidden_columns;
+
+    TableWithColumnNames(const DatabaseAndTableWithAlias & table_, const Names & columns_)
+        : table(table_)
+        , columns(columns_)
+    {}
+
+    void addHiddenColumns(const NamesAndTypesList & addition)
+    {
+        for (auto & column : addition)
+            hidden_columns.push_back(column.name);
+    }
+
+    bool hasColumn(const String & name) const
+    {
+        if (columns_set.empty())
+        {
+            columns_set.insert(columns.begin(), columns.end());
+            columns_set.insert(hidden_columns.begin(), hidden_columns.end());
+        }
+
+        return columns_set.count(name);
+    }
+
+private:
+    mutable NameSet columns_set;
+};
 
 std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery & select_query, const String & current_database);
 std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuery & select, size_t table_number);
 
-std::vector<TableWithColumnNames> getDatabaseAndTablesWithColumnNames(const ASTSelectQuery & select_query, const Context & context);
-
-std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelectQuery & select_query);
-ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number);
+using TablesWithColumnNames = std::vector<TableWithColumnNames>;
 
 }

@@ -14,6 +14,7 @@ namespace DB
 class ReadBufferFromFileBase : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
+    ReadBufferFromFileBase();
     ReadBufferFromFileBase(size_t buf_size, char * existing_memory, size_t alignment);
     ReadBufferFromFileBase(ReadBufferFromFileBase &&) = default;
     ~ReadBufferFromFileBase() override;

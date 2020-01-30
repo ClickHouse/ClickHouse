@@ -17,9 +17,11 @@ class Context;
 class ORCBlockInputFormat: public IInputFormat
 {
 public:
-    ORCBlockInputFormat(ReadBuffer & in_, Block header_, const Context & context_);
+    ORCBlockInputFormat(ReadBuffer & in_, Block header_);
 
     String getName() const override { return "ORCBlockInputFormat"; }
+
+    void resetParser() override;
 
 protected:
     Chunk generate() override;
@@ -27,8 +29,6 @@ protected:
 private:
 
     // TODO: check that this class implements every part of its parent
-
-    const Context & context;
 
     std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
     std::string file_data;
