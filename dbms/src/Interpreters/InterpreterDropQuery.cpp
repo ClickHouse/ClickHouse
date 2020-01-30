@@ -179,7 +179,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
             }
             else if (kind == ASTDropQuery::Kind::Drop)
             {
-                context_handle.tryRemoveExternalTable(table_name);
+                context_handle.removeExternalTable(table_name);
                 table->shutdown();
                 /// If table was already dropped by anyone, an exception will be thrown
                 auto table_lock = table->lockExclusively(context.getCurrentQueryId());
@@ -278,7 +278,7 @@ void InterpreterDropQuery::checkAccess(const ASTDropQuery & drop)
     bool allow_ddl = settings.allow_ddl;
 
     /// It's allowed to drop temporary tables.
-    if ((!readonly && allow_ddl) || (drop.database.empty() && context.tryGetExternalTable(drop.table) && readonly >= 2))
+    if ((!readonly && allow_ddl) || (drop.database.empty() && context.isExternalTableExist(drop.table) && readonly >= 2))
         return;
 
     if (readonly)

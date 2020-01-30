@@ -57,6 +57,8 @@
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 
+#include <Databases/DatabaseMemory.h>
+
 namespace ProfileEvents
 {
     extern const Event ContextLock;
@@ -99,6 +101,57 @@ namespace ErrorCodes
     extern const int UNKNOWN_POLICY;
 }
 
+struct TemporaryTableHolder : boost::noncopyable
+{
+    static constexpr const char * database_name = "_temporary_and_external_tables";
+
+    TemporaryTableHolder(const Context & context_,
+                        DatabaseMemory & external_tables_,
+                        const StoragePtr & table,
+                        const ASTPtr & query = {})
+        : context(context_), external_tables(external_tables_)
+    {
+        if (query)
+        {
+            ASTCreateQuery & create = dynamic_cast<ASTCreateQuery &>(*query);
+            if (create.uuid == UUIDHelpers::Nil)
+                create.uuid = UUIDHelpers::generateV4();
+            id = create.uuid;
+        }
+        else
+            id = UUIDHelpers::generateV4();
+        external_tables.createTable(context, "_data_" + toString(id), table, query);
+    }
+
+    TemporaryTableHolder(TemporaryTableHolder && other)
+        : context(other.context), external_tables(other.external_tables), id(other.id)
+    {
+        other.id = UUIDHelpers::Nil;
+    }
+
+    ~TemporaryTableHolder()
+    {
+        external_tables.dropTable(context, "_data_" + toString(id));
+    }
+
+    StorageID getGlobalTableID() const
+    {
+        return StorageID{database_name, "_data_" + toString(id), id};
+    }
+
+    StoragePtr getTable() const
+    {
+        auto table = external_tables.tryGetTable(context, "_data_" + toString(id));
+        if (!table)
+            throw Exception("Temporary table " + getGlobalTableID().getNameForLogs() + " not found", ErrorCodes::LOGICAL_ERROR);
+        return table;
+    }
+
+    const Context & context;
+    DatabaseMemory & external_tables;
+    UUID id;
+};
+
 
 /** Set of known objects (environment), that could be used in query.
   * Shared (global) part. Order of members (especially, order of destruction) is very important.
@@ -134,6 +187,8 @@ struct ContextShared
     mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
 
     Databases databases;                                    /// List of databases and tables in them.
+    DatabaseMemory temporary_and_external_tables;
+
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
     mutable std::optional<ExternalModelsLoader> external_models_loader;
@@ -808,18 +863,10 @@ Dependencies Context::getDependencies(const StorageID & from) const
 {
     auto lock = getLock();
 
-    String db = resolveDatabase(from.database_name, current_database);
+    StorageID resolved = resolveStorageIDUnlocked(from);
+    resolved.uuid = UUIDHelpers::Nil; // FIXME see addDependencyUnsafe()
 
-    if (from.database_name.empty() && tryGetExternalTable(from.table_name))
-    {
-        /// Table is temporary. Access granted.
-    }
-    else
-    {
-        checkDatabaseAccessRightsImpl(db);
-    }
-
-    ViewDependencies::const_iterator iter = shared->view_dependencies.find(StorageID(db, from.table_name));
+    ViewDependencies::const_iterator iter = shared->view_dependencies.find(resolved);
     if (iter == shared->view_dependencies.end())
         return {};
 
@@ -859,7 +906,7 @@ bool Context::isDatabaseExist(const String & database_name) const
 
 bool Context::isExternalTableExist(const String & table_name) const
 {
-    return external_tables.end() != external_tables.find(table_name);
+    return external_tables_mapping.count(table_name);
 }
 
 
@@ -922,8 +969,8 @@ Tables Context::getExternalTables() const
     auto lock = getLock();
 
     Tables res;
-    for (auto & table : external_tables)
-        res[table.first] = table.second.first;
+    for (auto & table : external_tables_mapping)
+        res[table.first] = table.second->getTable();
 
     if (session_context && session_context != this)
     {
@@ -941,11 +988,11 @@ Tables Context::getExternalTables() const
 
 StoragePtr Context::tryGetExternalTable(const String & table_name) const
 {
-    TableAndCreateASTs::const_iterator jt = external_tables.find(table_name);
-    if (external_tables.end() == jt)
+    auto it = external_tables_mapping.find(table_name);
+    if (external_tables_mapping.end() == it)
         return StoragePtr();
 
-    return jt->second.first;
+    return it->second->getTable();
 }
 
 StoragePtr Context::getTable(const String & database_name, const String & table_name) const
@@ -1016,10 +1063,11 @@ StoragePtr Context::getTableImpl(const StorageID & table_id, std::optional<Excep
 
 void Context::addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast)
 {
-    if (external_tables.end() != external_tables.find(table_name))
+    //FIXME why without getLock()?
+    if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
         throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
-    external_tables[table_name] = std::pair(storage, ast);
+    external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(*this, shared->temporary_and_external_tables, storage, ast));
 }
 
 
@@ -1035,16 +1083,9 @@ bool Context::hasScalar(const String & name) const
 }
 
 
-StoragePtr Context::tryRemoveExternalTable(const String & table_name)
+bool Context::removeExternalTable(const String & table_name)
 {
-    TableAndCreateASTs::const_iterator it = external_tables.find(table_name);
-
-    if (external_tables.end() == it)
-        return StoragePtr();
-
-    auto storage = it->second.first;
-    external_tables.erase(it);
-    return storage;
+    return external_tables_mapping.erase(table_name);
 }
 
 
@@ -1131,11 +1172,11 @@ DatabasePtr Context::detachDatabase(const String & database_name)
 
 ASTPtr Context::getCreateExternalTableQuery(const String & table_name) const
 {
-    TableAndCreateASTs::const_iterator jt = external_tables.find(table_name);
-    if (external_tables.end() == jt)
+    auto it = external_tables_mapping.find(table_name);
+    if (external_tables_mapping.end() == it)
         throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
 
-    return jt->second.second;
+    return shared->temporary_and_external_tables.getCreateTableQuery(*this, it->second->getGlobalTableID().table_name);
 }
 
 Settings Context::getSettings() const
@@ -2197,6 +2238,27 @@ void Context::resetInputCallbacks()
 
     if (input_blocks_reader)
         input_blocks_reader = {};
+}
+
+StorageID Context::resolveStorageIDUnlocked(StorageID storage_id) const
+{
+    if (storage_id.uuid != UUIDHelpers::Nil)
+    {
+        //TODO maybe update table and db name?
+        //TODO add flag `resolved` to StorageID and check access rights if it was not previously resolved
+        return storage_id;
+    }
+    if (storage_id.database_name.empty())
+    {
+        auto it = external_tables_mapping.find(storage_id.getTableName());
+        if (it != external_tables_mapping.end())
+            return it->second->getGlobalTableID();      /// Do not check access rights for session-local table
+        if (current_database.empty())
+            throw Exception("Default database is not selected", ErrorCodes::UNKNOWN_DATABASE);
+        storage_id.database_name = current_database;
+    }
+    checkDatabaseAccessRightsImpl(storage_id.database_name);
+    return storage_id;
 }
 
 
