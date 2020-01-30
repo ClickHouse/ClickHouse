@@ -260,8 +260,6 @@ private:
     template <typename DefaultGetter>
     void getItemsString(Attribute & attribute, const PaddedPODArray<Key> & ids, ColumnString * out, DefaultGetter && get_default) const;
 
-    void update(const std::vector<Key> & requested_ids, std::unordered_map<Key, UInt8> & found_ids_mask_ptr) const;
-
     PaddedPODArray<Key> getCachedIds() const;
 
     bool isEmptyCell(const UInt64 idx) const;
@@ -331,16 +329,31 @@ private:
 
     /// Field and methods correlated with update expired and not found keys
 
+    using PresentIdHandler = std::function<void(Key, size_t)>;
+    using AbsentIdHandler  = std::function<void(Key, size_t)>;
+
     using FoundIdsMaskPtr = std::shared_ptr<std::unordered_map<Key, UInt8>>;
 
     struct UpdateUnit
     {
-        UpdateUnit(std::vector<Key> requested_ids_) : requested_ids(std::move(requested_ids_)) {}
+        UpdateUnit(std::vector<Key> requested_ids_,
+                PresentIdHandler present_id_handler_,
+                AbsentIdHandler absent_id_handler_) :
+                requested_ids(std::move(requested_ids_)),
+                present_id_handler(present_id_handler_),
+                absent_id_handler(absent_id_handler_) {}
 
-        FoundIdsMaskPtr found_ids_mask_ptr{nullptr};
+        explicit UpdateUnit(std::vector<Key> requested_ids_) :
+                requested_ids(std::move(requested_ids_)),
+                present_id_handler([](Key, size_t){}),
+                absent_id_handler([](Key, size_t){}) {}
+
+        std::vector<Key> requested_ids;
+        PresentIdHandler present_id_handler;
+        AbsentIdHandler absent_id_handler;
+
         std::atomic<bool> is_done{false};
         std::exception_ptr current_exception{nullptr};
-        std::vector<Key> requested_ids;
     };
 
     using UpdateUnitPtr = std::shared_ptr<UpdateUnit>;
@@ -359,8 +372,83 @@ private:
 
     std::atomic<bool> finished{false};
 
-    template <typename PresentIdHandler, typename AbsentIdHandler>
-    void prepareAnswer(UpdateUnitPtr, PresentIdHandler &&, AbsentIdHandler &&) const;
+    class BunchUpdateUnit
+    {
+    public:
+        explicit BunchUpdateUnit(std::vector<UpdateUnitPtr> update_request)
+        {
+            /// Here we prepare total count of all requested ids
+            /// not to do useless allocations later.
+            size_t total_requested_keys_count = 0;
+
+            helper.push_back(0);
+
+            for (auto & unit_ptr: update_request)
+            {
+                total_requested_keys_count += unit_ptr->requested_ids.size();
+                helper.push_back(unit_ptr->requested_ids.size() + helper.back());
+                present_id_handlers.emplace_back(unit_ptr->present_id_handler);
+                absent_id_handlers.emplace_back(unit_ptr->absent_id_handler);
+            }
+
+            concatenated_requested_ids.reserve(total_requested_keys_count);
+            for (auto & unit_ptr: update_request)
+                std::for_each(std::begin(unit_ptr->requested_ids), std::end(unit_ptr->requested_ids),
+                              [&] (const Key & key) {concatenated_requested_ids.push_back(key);});
+
+        }
+
+        const std::vector<Key> & getRequestedIds()
+        {
+            return concatenated_requested_ids;
+        }
+
+        void informCallersAboutPresentId(Key id, size_t cell_idx)
+        {
+            for (size_t i = 0; i < concatenated_requested_ids.size(); ++i)
+            {
+                auto & curr = concatenated_requested_ids[i];
+                if (curr == id)
+                    getPresentIdHandlerForPosition(i)(id, cell_idx);
+            }
+        }
+
+        void informCallersAboutAbsentId(Key id, size_t cell_idx)
+        {
+            for (size_t i = 0; i < concatenated_requested_ids.size(); ++i) {
+                auto &curr = concatenated_requested_ids[i];
+                if (curr == id)
+                    getAbsentIdHandlerForPosition(i)(id, cell_idx);
+            }
+        }
+
+
+    private:
+        PresentIdHandler & getPresentIdHandlerForPosition(size_t position)
+        {
+            auto i = getUpdateUnitNumberForRequestedIdPosition(position);
+            return present_id_handlers[i];
+        }
+
+        AbsentIdHandler & getAbsentIdHandlerForPosition(size_t position)
+        {
+            return absent_id_handlers[getUpdateUnitNumberForRequestedIdPosition((position))];
+        }
+
+        size_t getUpdateUnitNumberForRequestedIdPosition(size_t position)
+        {
+            return std::lower_bound(helper.begin(), helper.end(), position) - helper.begin();
+        }
+
+        std::vector<Key> concatenated_requested_ids;
+        std::vector<PresentIdHandler> present_id_handlers;
+        std::vector<AbsentIdHandler> absent_id_handlers;
+
+        std::vector<size_t> helper;
+    };
+
+
+    void update(BunchUpdateUnit bunch_update_unit) const;
     };
 
 }

@@ -137,9 +137,6 @@ void CacheDictionary::getItemsNumberImpl(
             std::begin(cache_expired_ids), std::end(cache_expired_ids),
             std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
 
-    /// Request new values
-    auto update_unit_ptr = std::make_shared<UpdateUnit>(required_ids);
-
     auto on_cell_updated = [&] (const auto id, const auto cell_idx)
     {
         const auto attribute_value = attribute_array[cell_idx];
@@ -160,9 +157,11 @@ void CacheDictionary::getItemsNumberImpl(
             out[row] = get_default(row);
     };
 
+    /// Request new values
+    auto update_unit_ptr = std::make_shared<UpdateUnit>(required_ids, on_cell_updated, on_id_not_found);
+
     tryPushToUpdateQueueOrThrow(update_unit_ptr);
     waitForCurrentUpdateFinish(update_unit_ptr);
-    prepareAnswer(update_unit_ptr, on_cell_updated, on_id_not_found);
 }
 
 template <typename DefaultGetter>
@@ -317,11 +316,10 @@ void CacheDictionary::getItemsString(
                 total_length += get_default(row).size + 1;
         };
 
-        auto update_unit_ptr = std::make_shared<UpdateUnit>(required_ids);
+        auto update_unit_ptr = std::make_shared<UpdateUnit>(required_ids, on_cell_updated, on_id_not_found);
 
         tryPushToUpdateQueueOrThrow(update_unit_ptr);
         waitForCurrentUpdateFinish(update_unit_ptr);
-        prepareAnswer(update_unit_ptr, on_cell_updated, on_id_not_found);
     }
 
     out->getChars().reserve(total_length);
@@ -333,76 +331,6 @@ void CacheDictionary::getItemsString(
 
         const auto string_ref = it != std::end(map) ? StringRef{it->second} : get_default(row);
         out->insertData(string_ref.data, string_ref.size);
-    }
-}
-
-template <typename PresentIdHandler, typename AbsentIdHandler>
-void CacheDictionary::prepareAnswer(
-        UpdateUnitPtr update_unit_ptr,
-        PresentIdHandler && on_cell_updated,
-        AbsentIdHandler && on_id_not_found) const
-{
-    const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
-
-    /// Prepare answer
-    const auto now = std::chrono::system_clock::now();
-
-    for (const auto & id : update_unit_ptr->requested_ids)
-    {
-        const auto find_result = findCellIdx(id, now);
-        assert(find_result.valid);
-        const auto & cell_idx = find_result.cell_idx;
-        auto & cell = cells[cell_idx];
-        const auto was_id_updated = update_unit_ptr->found_ids_mask_ptr->at(id);
-
-        if (was_id_updated)
-        {
-            on_cell_updated(id, find_result.cell_idx);
-            continue;
-        }
-
-        if (error_count)
-        {
-            if (find_result.outdated)
-            {
-                /// We have expired data for that `id` so we can continue using it.
-                bool was_default = cell.isDefault();
-
-                cell.setExpiresAt(backoff_end_time);
-                if (was_default)
-                    cell.setDefault();
-
-                if (was_default)
-                    on_id_not_found(id, cell_idx);
-                else
-                    on_cell_updated(id, cell_idx);
-                continue;
-            }
-            /// We don't have expired data for that `id` so all we can do is to rethrow `last_exception`.
-            std::rethrow_exception(last_exception);
-        }
-
-        /// Check if cell had not been occupied before and increment element counter if it hadn't
-        if (cell.id == 0 && cell_idx != zero_cell_idx)
-            element_count.fetch_add(1, std::memory_order_relaxed);
-
-        cell.id = id;
-
-        if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
-        {
-            std::uniform_int_distribution<UInt64> distribution{dict_lifetime.min_sec, dict_lifetime.max_sec};
-            cell.setExpiresAt(now + std::chrono::seconds{distribution(rnd_engine)});
-        }
-        else
-            cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
-
-        /// Set null_value for each attribute
-        cell.setDefault();
-        for (auto & attribute : attributes)
-            setDefaultAttributeValue(attribute, cell_idx);
-
-        /// inform caller that the cell has not been found
-        on_id_not_found(id, cell_idx);
     }
 }
 
