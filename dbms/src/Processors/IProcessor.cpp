@@ -37,6 +37,8 @@ std::string IProcessor::statusToName(Status status)
             return "Wait";
         case Status::ExpandPipeline:
             return "ExpandPipeline";
+        case Status::Cancel:
+            return "Cancel";
     }
 
     __builtin_unreachable();
