@@ -101,7 +101,7 @@ class BufferSource : public SourceWithProgress
 {
 public:
     BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage)
-        : SourceWithProgress(storage.getSampleBlockForColumns(column_names))
+        : SourceWithProgress(storage.getSampleBlockForColumns(column_names_))
         , column_names(column_names_.begin(), column_names_.end()), buffer(buffer_) {}
 
     String getName() const override { return "Buffer"; }
