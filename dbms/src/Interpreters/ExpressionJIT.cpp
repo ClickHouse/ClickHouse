@@ -247,10 +247,11 @@ struct LLVMContext
 };
 
 
-template <typename... Ts, typename F>
-static bool castToEither(IColumn * column, F && f)
+template <typename... Ts>
+static bool castToEitherWithNullable(IColumn * column)
 {
-    return ((typeid_cast<Ts *>(column) ? f(*typeid_cast<Ts *>(column)) : false) || ...);
+    return ((typeid_cast<Ts *>(column)
+            || (typeid_cast<ColumnNullable *>(column) && typeid_cast<Ts *>(&(typeid_cast<ColumnNullable *>(column)->getNestedColumn())))) || ...);
 }
 
 class LLVMExecutableFunction : public IExecutableFunctionImpl
@@ -280,12 +281,12 @@ public:
 
         if (block_size)
         {
-            if (!castToEither<
+            if (!castToEitherWithNullable<
                 ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
                 ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
-                ColumnFloat32, ColumnFloat64>(col_res.get(), [block_size](auto & col) { col.getData().resize(block_size); return true; }))
+                ColumnFloat32, ColumnFloat64>(col_res.get()))
                 throw Exception("Unexpected column in LLVMExecutableFunction: " + col_res->getName(), ErrorCodes::LOGICAL_ERROR);
-
+            col_res = col_res->cloneResized(block_size);
             std::vector<ColumnData> columns(arguments.size() + 1);
             for (size_t i = 0; i < arguments.size(); ++i)
             {
@@ -294,11 +295,13 @@ public:
                     throw Exception("Column " + block.getByPosition(arguments[i]).name + " is missing", ErrorCodes::LOGICAL_ERROR);
                 columns[i] = getColumnData(column);
             }
+
             columns[arguments.size()] = getColumnData(col_res.get());
             reinterpret_cast<void (*) (size_t, ColumnData *)>(function)(block_size, columns.data());
         }
 
         block.getByPosition(result).column = std::move(col_res);
+        std::cout << "=======================================" << std::endl;
     }
 };
 
