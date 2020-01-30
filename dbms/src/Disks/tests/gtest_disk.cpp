@@ -33,6 +33,12 @@ void destroyDisk(DB::DiskPtr & disk)
 }
 
 template <>
+void destroyDisk<DB::DiskMemory>(DB::DiskPtr & disk)
+{
+    disk.reset();
+}
+
+template <>
 void destroyDisk<DB::DiskLocal>(DB::DiskPtr & disk)
 {
     disk.reset();
