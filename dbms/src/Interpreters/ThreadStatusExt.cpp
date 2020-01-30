@@ -1,12 +1,15 @@
 #include <Common/ThreadStatus.h>
 
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Interpreters/QueryThreadLog.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadProfileEvents.h>
 #include <Common/Exception.h>
 #include <Common/QueryProfiler.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/QueryThreadLog.h>
-#include <Interpreters/ProcessList.h>
+#include <Common/ThreadProfileEvents.h>
+#include <Common/TraceCollector.h>
+
+#include <ext/singleton.h>
 
 #if defined(OS_LINUX)
 #   include <Common/hasLinuxCapability.h>
@@ -162,6 +165,10 @@ void ThreadStatus::initQueryProfiler()
 
     try
     {
+        /// Force initialization of TraceCollector instance before setting signal handlers,
+        /// because the constructor is not async-signal-safe.
+        ext::Singleton<TraceCollector> initialize __attribute__((unused));
+
         if (settings.query_profiler_real_time_period_ns > 0)
             query_profiler_real = std::make_unique<QueryProfilerReal>(
                 /* thread_id */ os_thread_id,
