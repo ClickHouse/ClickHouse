@@ -581,10 +581,12 @@ void getPointsReprByArrays(const IColumn * column, std::vector<IPolygonDictionar
     if (!ptr_coord)
         throw Exception{"Expected coordinates to be of type Float64", ErrorCodes::TYPE_MISMATCH};
     const auto & offsets = ptr_points->getOffsets();
+    IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < offsets.size(); ++i)
     {
-        if (offsets[i] - (i == 0 ? 0 : offsets[i - 1]) != 2)
+        if (offsets[i] - prev_offset != 2)
             throw Exception{"All points should be two-dimensional", ErrorCodes::BAD_ARGUMENTS};
+        prev_offset = offsets[i];
         dest.emplace_back(ptr_coord->getElement(2 * i), ptr_coord->getElement(2 * i + 1));
     }
 }
