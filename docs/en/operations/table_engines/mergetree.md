@@ -50,7 +50,7 @@ For a description of parameters, see the [CREATE query description](../../query_
 !!!note "Note"
     `INDEX` is an experimental feature, see [Data Skipping Indexes](#table_engine-mergetree-data_skipping-indexes).
 
-### Query Clauses
+### Query Clauses {#mergetree-query-clauses}
 
 - `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine does not have parameters.
 
@@ -477,7 +477,7 @@ When ClickHouse see that data is expired, it performs an off-schedule merge. To 
 
 If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query before `SELECT`.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/mergetree/) <!--hide-->
 
 
 ## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
@@ -651,4 +651,4 @@ Moving data does not interfere with data replication. Therefore, different stora
 After the completion of background merges and mutations, old parts are removed only after a certain amount of time (`old_parts_lifetime`).
 During this time, they are not moved to other volumes or disks. Therefore, until the parts are finally removed, they are still taken into account for evaluation of the occupied disk space.
 
-[Original article](https://clickhouse.yandex/docs/ru/operations/table_engines/mergetree/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/ru/operations/table_engines/mergetree/) <!--hide-->

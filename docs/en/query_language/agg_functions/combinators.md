@@ -152,4 +152,4 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/combinators/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/agg_functions/combinators/) <!--hide-->

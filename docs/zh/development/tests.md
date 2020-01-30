@@ -221,7 +221,7 @@ Yandex Cloud 部门的人员从安全角度对 ClickHouse 功能进行了一些�
 
 ## 代码风格
 
-代码风格在[这里](https://clickhouse.yandex/docs/en/development/style/) 有说明。
+代码风格在[这里](https://clickhouse.tech/docs/en/development/style/) 有说明。
 
 要检查一些常见的样式冲突，您可以使用 `utils/check-style` 脚本。
 
@@ -254,4 +254,4 @@ Yandex Cloud 部门的人员从安全角度对 ClickHouse 功能进行了一些�
 
 在 Jenkins，我们运行字典测试，指标B2B测试。 我们使用 Jenkins 来准备和发布版本。 Jenkins是一种传统的技术，所有的工作将被转移到沙箱中。
 
-[来源文章](https://clickhouse.yandex/docs/zh/development/tests/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/zh/development/tests/) <!--hide-->
