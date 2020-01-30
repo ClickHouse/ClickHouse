@@ -55,7 +55,6 @@ def process_release(args, callback, release):
 def build_releases(args, callback):
     tasks = []
     for release in args.stable_releases:
-        tasks.append((args, callback, release,))
-    util.run_function_in_parallel(process_release, tasks)
+        process_release(args, callback, release)
 
 
