@@ -13,6 +13,9 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Disks/DiskSpaceMonitor.h>
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -26,7 +29,7 @@ namespace ErrorCodes
 
 
 StorageSystemTables::StorageSystemTables(const std::string & name_)
-    : name(name_)
+    : IStorage({"system", name_})
 {
     setColumns(ColumnsDescription(
     {
@@ -77,32 +80,30 @@ static bool needLockStructure(const DatabasePtr & database, const Block & header
     return false;
 }
 
-class TablesBlockInputStream : public IBlockInputStream
+class TablesBlockSource : public SourceWithProgress
 {
 public:
-    TablesBlockInputStream(
+    TablesBlockSource(
         std::vector<UInt8> columns_mask_,
-        Block header_,
+        Block header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         const Context & context_)
-        : columns_mask(std::move(columns_mask_))
-        , header(std::move(header_))
+        : SourceWithProgress(std::move(header))
+        , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
         , context(context_) {}
 
     String getName() const override { return "Tables"; }
-    Block getHeader() const override { return header; }
 
 protected:
-    Block readImpl() override
+    Chunk generate() override
     {
         if (done)
             return {};
 
-        Block res = header;
-        MutableColumns res_columns = header.cloneEmptyColumns();
+        MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
         size_t rows_count = 0;
         while (rows_count < max_block_size)
@@ -187,15 +188,15 @@ protected:
                     }
                 }
 
-                res.setColumns(std::move(res_columns));
+                UInt64 num_rows = res_columns.at(0)->size();
                 done = true;
-                return res;
+                return Chunk(std::move(res_columns), num_rows);
             }
 
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getTablesWithDictionaryTablesIterator(context);
 
-            const bool need_lock_structure = needLockStructure(database, header);
+            const bool need_lock_structure = needLockStructure(database, getPort().getHeader());
 
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
@@ -258,21 +259,21 @@ protected:
                     res_columns[res_index++]->insert(database->getObjectMetadataPath(table_name));
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(static_cast<UInt64>(database->getObjectMetadataModificationTime(context, table_name)));
+                    res_columns[res_index++]->insert(static_cast<UInt64>(database->getObjectMetadataModificationTime(table_name)));
 
                 {
                     Array dependencies_table_name_array;
                     Array dependencies_database_name_array;
                     if (columns_mask[src_index] || columns_mask[src_index + 1])
                     {
-                        const auto dependencies = context.getDependencies(database_name, table_name);
+                        const auto dependencies = context.getDependencies(StorageID(database_name, table_name));
 
                         dependencies_table_name_array.reserve(dependencies.size());
                         dependencies_database_name_array.reserve(dependencies.size());
                         for (const auto & dependency : dependencies)
                         {
-                            dependencies_table_name_array.push_back(dependency.second);
-                            dependencies_database_name_array.push_back(dependency.first);
+                            dependencies_table_name_array.push_back(dependency.table_name);
+                            dependencies_database_name_array.push_back(dependency.database_name);
                         }
                     }
 
@@ -367,12 +368,11 @@ protected:
             }
         }
 
-        res.setColumns(std::move(res_columns));
-        return res;
+        UInt64 num_rows = res_columns.at(0)->size();
+        return Chunk(std::move(res_columns), num_rows);
     }
 private:
     std::vector<UInt8> columns_mask;
-    Block header;
     UInt64 max_block_size;
     ColumnPtr databases;
     size_t database_idx = 0;
@@ -384,7 +384,7 @@ private:
 };
 
 
-BlockInputStreams StorageSystemTables::read(
+Pipes StorageSystemTables::readWithProcessors(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -412,8 +412,12 @@ BlockInputStreams StorageSystemTables::read(
     }
 
     ColumnPtr filtered_databases_column = getFilteredDatabases(query_info.query, context);
-    return {std::make_shared<TablesBlockInputStream>(
-        std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), context)};
+
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<TablesBlockSource>(
+        std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), context));
+
+    return pipes;
 }
 
 }

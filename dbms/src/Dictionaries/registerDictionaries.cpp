@@ -3,26 +3,6 @@
 
 namespace DB
 {
-void registerDictionarySourceFile(DictionarySourceFactory & source_factory);
-void registerDictionarySourceMysql(DictionarySourceFactory & source_factory);
-void registerDictionarySourceClickHouse(DictionarySourceFactory & source_factory);
-void registerDictionarySourceMongoDB(DictionarySourceFactory & source_factory);
-void registerDictionarySourceRedis(DictionarySourceFactory & source_factory);
-void registerDictionarySourceXDBC(DictionarySourceFactory & source_factory);
-void registerDictionarySourceJDBC(DictionarySourceFactory & source_factory);
-void registerDictionarySourceExecutable(DictionarySourceFactory & source_factory);
-void registerDictionarySourceHTTP(DictionarySourceFactory & source_factory);
-void registerDictionarySourceLibrary(DictionarySourceFactory & source_factory);
-
-void registerDictionaryRangeHashed(DictionaryFactory & factory);
-void registerDictionaryComplexKeyHashed(DictionaryFactory & factory);
-void registerDictionaryComplexKeyCache(DictionaryFactory & factory);
-void registerDictionaryTrie(DictionaryFactory & factory);
-void registerDictionaryFlat(DictionaryFactory & factory);
-void registerDictionaryHashed(DictionaryFactory & factory);
-void registerDictionaryCache(DictionaryFactory & factory);
-void registerDictionaryDirect(DictionaryFactory & factory);
-
 
 void registerDictionaries()
 {
@@ -49,8 +29,6 @@ void registerDictionaries()
         registerDictionaryFlat(factory);
         registerDictionaryHashed(factory);
         registerDictionaryCache(factory);
-        /// added new dictionary type (i bet i wont forget to remove this comment)
-        registerDictionaryDirect(factory);
     }
 }
 

@@ -36,6 +36,8 @@ LAYOUT(FLAT());
 
 SELECT 'INITIALIZING DICTIONARY';
 
+SELECT dictGetUInt8('ordinary_db.dict1', 'second_column', toUInt64(100500));
+
 SELECT lifetime_min, lifetime_max FROM system.dictionaries WHERE name = 'dict1';
 
 DROP DICTIONARY IF EXISTS ordinary_db.dict1;

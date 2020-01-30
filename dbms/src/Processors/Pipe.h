@@ -8,8 +8,6 @@ namespace DB
 class Pipe;
 using Pipes = std::vector<Pipe>;
 
-class QuotaForIntervals;
-
 /// Pipe is a set of processors which represents the part of pipeline with single output.
 /// All processors in pipe are connected. All ports are connected except the output one.
 class Pipe
@@ -39,10 +37,12 @@ public:
 
     /// Specify quotas and limits for every ISourceWithProgress.
     void setLimits(const SourceWithProgress::LocalLimits & limits);
-    void setQuota(QuotaForIntervals & quota);
+    void setQuota(const std::shared_ptr<QuotaContext> & quota);
 
     /// Set information about preferred executor number for sources.
     void pinSources(size_t executor_number);
+
+    void enableQuota();
 
     void setTotalsPort(OutputPort * totals_) { totals = totals_; }
     OutputPort * getTotalsPort() const { return totals; }

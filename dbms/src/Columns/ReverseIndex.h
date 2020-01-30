@@ -116,7 +116,7 @@ namespace
                 return (*state.saved_hash_column)[index];
             else
             {
-                using ValueType = typename ColumnType::value_type;
+                using ValueType = typename ColumnType::ValueType;
                 ValueType value = unalignedLoad<ValueType>(state.index_column->getDataAt(index).data);
                 return DefaultHash<ValueType>()(value);
             }
@@ -367,7 +367,7 @@ private:
     {
         if constexpr (is_numeric_column)
         {
-            using ValueType = typename ColumnType::value_type;
+            using ValueType = typename ColumnType::ValueType;
             ValueType value = unalignedLoad<ValueType>(ref.data);
             return DefaultHash<ValueType>()(value);
         }

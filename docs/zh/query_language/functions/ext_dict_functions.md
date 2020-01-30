@@ -44,4 +44,4 @@
 - 检查字典是否存在指定的`id`。如果不存在，则返回0;如果存在，则返回1。
 
 
-[来源文章](https://clickhouse.yandex/docs/en/query_language/functions/ext_dict_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/ext_dict_functions/) <!--hide-->

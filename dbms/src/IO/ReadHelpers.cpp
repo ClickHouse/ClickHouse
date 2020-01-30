@@ -959,13 +959,13 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
 }
 
 
-void readException(Exception & e, ReadBuffer & buf, const String & additional_message)
+Exception readException(ReadBuffer & buf, const String & additional_message)
 {
     int code = 0;
     String name;
     String message;
     String stack_trace;
-    bool has_nested = false;
+    bool has_nested = false;    /// Obsolete
 
     readBinary(code, buf);
     readBinary(name, buf);
@@ -986,21 +986,12 @@ void readException(Exception & e, ReadBuffer & buf, const String & additional_me
     if (!stack_trace.empty())
         out << " Stack trace:\n\n" << stack_trace;
 
-    if (has_nested)
-    {
-        Exception nested;
-        readException(nested, buf);
-        e = Exception(out.str(), nested, code);
-    }
-    else
-        e = Exception(out.str(), code);
+    return Exception(out.str(), code);
 }
 
 void readAndThrowException(ReadBuffer & buf, const String & additional_message)
 {
-    Exception e;
-    readException(e, buf, additional_message);
-    e.rethrow();
+    readException(buf, additional_message).rethrow();
 }
 
 
@@ -1051,6 +1042,37 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
             continue;
         }
     }
+}
+
+void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
+{
+    assert(current >= in.position());
+    assert(current <= in.buffer().end());
+
+    const int old_bytes = memory.size();
+    const int additional_bytes = current - in.position();
+    const int new_bytes = old_bytes + additional_bytes;
+    /// There are no new bytes to add to memory.
+    /// No need to do extra stuff.
+    if (new_bytes == 0)
+        return;
+    memory.resize(new_bytes);
+    memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
+    in.position() = current;
+}
+
+bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current)
+{
+    assert(current <= in.buffer().end());
+
+    if (current < in.buffer().end())
+        return true;
+
+    saveUpToPosition(in, memory, current);
+    bool loaded_more = !in.eof();
+    assert(in.position() == in.buffer().begin());
+    current = in.position();
+    return loaded_more;
 }
 
 }

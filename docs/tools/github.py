@@ -3,6 +3,7 @@ import copy
 import io
 import logging
 import os
+import sys
 import tarfile
 
 import requests
@@ -12,15 +13,28 @@ import util
 
 def choose_latest_releases():
     seen = collections.OrderedDict()
-    candidates = requests.get('https://api.github.com/repos/ClickHouse/ClickHouse/tags?per_page=100').json()
+    candidates = []
+    for page in range(1, 10):
+        url = 'https://api.github.com/repos/ClickHouse/ClickHouse/tags?per_page=100&page=%d' % page
+        candidates += requests.get(url).json()
+
     for tag in candidates:
-        name = tag.get('name', '')
-        if 'v18' in name or 'stable' not in name:
-            continue
-        major_version = '.'.join((name.split('.', 2))[:2])
-        if major_version not in seen:
-            seen[major_version] = (name, tag.get('tarball_url'),)
-            
+        if isinstance(tag, dict):
+            name = tag.get('name', '')
+            is_unstable = ('stable' not in name) and ('lts' not in name)
+            is_in_blacklist = ('v18' in name) or ('prestable' in name) or ('v1.1' in name)
+            if is_unstable or is_in_blacklist:
+                continue
+            major_version = '.'.join((name.split('.', 2))[:2])
+            if major_version not in seen:
+                seen[major_version] = (name, tag.get('tarball_url'),)
+                if len(seen) > 10:
+                    break
+        else:
+            logging.fatal('Unexpected GitHub response: %s', str(candidates))
+            sys.exit(1)
+
+    logging.info('Found stable releases: %s', str(seen.keys()))
     return seen.items()
     
 
@@ -33,11 +47,13 @@ def process_release(args, callback, release):
         tar.extractall(base_dir)
         args = copy.deepcopy(args)
         args.version_prefix = name
+        args.is_stable_release = True
         args.docs_dir = os.path.join(base_dir, os.listdir(base_dir)[0], 'docs')
         callback(args)
 
 
 def build_releases(args, callback):
+    tasks = []
     for release in args.stable_releases:
         process_release(args, callback, release)
 

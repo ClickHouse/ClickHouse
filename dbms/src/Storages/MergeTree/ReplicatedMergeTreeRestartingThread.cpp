@@ -40,7 +40,7 @@ static String generateActiveNodeIdentifier()
 
 ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
-    , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreeRestartingThread)")
+    , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeRestartingThread)")
     , log(&Logger::get(log_name))
     , active_node_identifier(generateActiveNodeIdentifier())
 {
@@ -214,7 +214,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         }
         catch (const Coordination::Exception & e)
         {
-            LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n" << e.getStackTrace().toString());
+            LOG_ERROR(log, "Couldn't start replication: " << e.what() << ". " << DB::getCurrentExceptionMessage(true));
             return false;
         }
         catch (const Exception & e)
@@ -222,7 +222,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
             if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
                 throw;
 
-            LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n" << e.getStackTrace().toString());
+            LOG_ERROR(log, "Couldn't start replication: " << e.what() << ". " << DB::getCurrentExceptionMessage(true));
             return false;
         }
     }

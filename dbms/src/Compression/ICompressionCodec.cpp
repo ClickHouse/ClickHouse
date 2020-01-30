@@ -8,6 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <Compression/CompressionFactory.h>
 
+
 namespace ProfileEvents
 {
     extern const Event ReadCompressedBytes;
@@ -25,6 +26,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int CANNOT_DECOMPRESS;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int CORRUPTED_DATA;
 }
 
 
@@ -42,11 +44,16 @@ UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char
 
 UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, char * dest) const
 {
+    UInt8 header_size = getHeaderSize();
+
+    if (source_size < header_size)
+        throw Exception("Can't decompress data: the compressed data size (" + toString(source_size)
+            + ", this should include header size) is less than the header size (" + toString(header_size) + ")", ErrorCodes::CORRUPTED_DATA);
+
     UInt8 method = source[0];
     if (method != getMethodByte())
         throw Exception("Can't decompress data with codec byte " + toString(method) + " from codec with byte " + toString(method), ErrorCodes::CANNOT_DECOMPRESS);
 
-    UInt8 header_size = getHeaderSize();
     UInt32 decompressed_size = readDecompressedBlockSize(source);
     doDecompressData(&source[header_size], source_size - header_size, dest, decompressed_size);
 

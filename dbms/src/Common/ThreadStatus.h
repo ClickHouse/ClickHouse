@@ -4,7 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
 
-#include <Core/SettingsCommon.h>
+#include <Core/SettingsCollection.h>
 
 #include <IO/Progress.h>
 
@@ -203,6 +203,9 @@ protected:
 
     /// Set to non-nullptr only if we have enough capabilities.
     std::unique_ptr<TaskStatsInfoGetter> taskstats_getter;
+
+private:
+    void setupState(const ThreadGroupStatusPtr & thread_group_);
 };
 
 }

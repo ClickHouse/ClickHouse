@@ -8,10 +8,11 @@ init
 alt
 100	DEFZ
 200	DEFZ
+300	DEFZ
 -
 0	100
 0	200
-3	300
+0	300
 4	400
 opt
 100	DEFZ

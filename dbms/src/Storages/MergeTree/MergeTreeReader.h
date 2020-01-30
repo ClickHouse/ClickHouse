@@ -28,6 +28,7 @@ public:
         const MergeTreeData & storage_,
         MarkRanges all_mark_ranges_,
         size_t aio_threshold_,
+        size_t mmap_threshold_,
         size_t max_read_buffer_size_,
         ValueSizeMap avg_value_size_hints_ = ValueSizeMap{},
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = ReadBufferFromFileBase::ProfileCallback{},
@@ -81,6 +82,7 @@ private:
     const MergeTreeData & storage;
     MarkRanges all_mark_ranges;
     size_t aio_threshold;
+    size_t mmap_threshold;
     size_t max_read_buffer_size;
 
     void addStreams(const String & name, const IDataType & type,

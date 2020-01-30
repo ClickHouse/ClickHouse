@@ -40,7 +40,7 @@
 #include <Common/TerminalSize.h>
 
 
-static const char * documantation = R"(
+static const char * documentation = R"(
 Simple tool for table data obfuscation.
 
 It reads input table and produces output table, that retain some properties of input, but contains different data.
@@ -123,14 +123,14 @@ UInt64 hash(Ts... xs)
 }
 
 
-UInt64 maskBits(UInt64 x, size_t num_bits)
+static UInt64 maskBits(UInt64 x, size_t num_bits)
 {
     return x & ((1ULL << num_bits) - 1);
 }
 
 
 /// Apply Feistel network round to least significant num_bits part of x.
-UInt64 feistelRound(UInt64 x, size_t num_bits, UInt64 seed, size_t round)
+static UInt64 feistelRound(UInt64 x, size_t num_bits, UInt64 seed, size_t round)
 {
     size_t num_bits_left_half = num_bits / 2;
     size_t num_bits_right_half = num_bits - num_bits_left_half;
@@ -146,7 +146,7 @@ UInt64 feistelRound(UInt64 x, size_t num_bits, UInt64 seed, size_t round)
 
 
 /// Apply Feistel network with num_rounds to least significant num_bits part of x.
-UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds = 4)
+static UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds = 4)
 {
     UInt64 bits = maskBits(x, num_bits);
     for (size_t i = 0; i < num_rounds; ++i)
@@ -156,7 +156,7 @@ UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds 
 
 
 /// Pseudorandom permutation within set of numbers with the same log2(x).
-UInt64 transform(UInt64 x, UInt64 seed)
+static UInt64 transform(UInt64 x, UInt64 seed)
 {
     /// Keep 0 and 1 as is.
     if (x == 0 || x == 1)
@@ -199,7 +199,7 @@ public:
 
 
 /// Keep sign and apply pseudorandom permutation after converting to unsigned as above.
-Int64 transformSigned(Int64 x, UInt64 seed)
+static Int64 transformSigned(Int64 x, UInt64 seed)
 {
     if (x >= 0)
         return transform(x, seed);
@@ -298,7 +298,7 @@ public:
 
 
 /// Pseudorandom function, but keep word characters as word characters.
-void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 seed)
+static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 seed)
 {
     {
         SipHash hash;
@@ -943,6 +943,8 @@ public:
 
 }
 
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseObfuscator(int argc, char ** argv)
 try
@@ -977,7 +979,7 @@ try
         || !options.count("input-format")
         || !options.count("output-format"))
     {
-        std::cout << documantation << "\n"
+        std::cout << documentation << "\n"
             << "\nUsage: " << argv[0] << " [options] < in > out\n"
             << "\nInput must be seekable file (it will be read twice).\n"
             << "\n" << description << "\n"

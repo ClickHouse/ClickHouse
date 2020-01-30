@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <Common/FieldVisitors.h>
 #include "Sources.h"
 #include "Sinks.h"
@@ -79,8 +80,16 @@ inline ALWAYS_INLINE void writeSlice(const NumericArraySlice<T> & slice, Generic
 {
     for (size_t i = 0; i < slice.size; ++i)
     {
-        Field field = T(slice.data[i]);
-        sink.elements.insert(field);
+        if constexpr (IsDecimalNumber<T>)
+        {
+            DecimalField field(T(slice.data[i]), 0); /// TODO: Decimal scale
+            sink.elements.insert(field);
+        }
+        else
+        {
+            Field field = T(slice.data[i]);
+            sink.elements.insert(field);
+        }
     }
     sink.current_offset += slice.size;
 }
@@ -422,9 +431,18 @@ bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second,
 }
 
 template <typename T, typename U>
-bool sliceEqualElements(const NumericArraySlice<T> & first, const NumericArraySlice<U> & second, size_t first_ind, size_t second_ind)
+bool sliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
+                        const NumericArraySlice<U> & second [[maybe_unused]],
+                        size_t first_ind [[maybe_unused]],
+                        size_t second_ind [[maybe_unused]])
 {
-    return accurate::equalsOp(first.data[first_ind], second.data[second_ind]);
+    /// TODO: Decimal scale
+    if constexpr (IsDecimalNumber<T> && IsDecimalNumber<U>)
+        return accurate::equalsOp(typename T::NativeType(first.data[first_ind]), typename U::NativeType(second.data[second_ind]));
+    else if constexpr (IsDecimalNumber<T> || IsDecimalNumber<U>)
+        return false;
+    else
+        return accurate::equalsOp(first.data[first_ind], second.data[second_ind]);
 }
 
 template <typename T>

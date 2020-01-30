@@ -84,8 +84,16 @@ void NO_INLINE Set::insertFromBlockImplCase(
     for (size_t i = 0; i < rows; ++i)
     {
         if constexpr (has_null_map)
+        {
             if ((*null_map)[i])
+            {
+                if constexpr (build_filter)
+                {
+                    (*out_filter)[i] = false;
+                }
                 continue;
+            }
+        }
 
         [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
@@ -427,11 +435,10 @@ void Set::checkColumnsNumber(size_t num_key_columns) const
 
 void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const
 {
-
     if (!removeNullable(recursiveRemoveLowCardinality(data_types[set_type_idx]))->equals(*removeNullable(recursiveRemoveLowCardinality(other_type))))
         throw Exception("Types of column " + toString(set_type_idx + 1) + " in section IN don't match: "
-                        + data_types[set_type_idx]->getName() + " on the right, " + other_type->getName() +
-                        " on the left.", ErrorCodes::TYPE_MISMATCH);
+                        + other_type->getName() + " on the left, "
+                        + data_types[set_type_idx]->getName() + " on the right", ErrorCodes::TYPE_MISMATCH);
 }
 
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && index_mapping_)
@@ -474,7 +481,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::mayBeTrueInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types)
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types)
 {
     size_t tuple_size = indexes_mapping.size();
 

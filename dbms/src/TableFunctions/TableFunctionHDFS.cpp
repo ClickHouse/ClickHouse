@@ -1,4 +1,5 @@
 #include <Common/config.h>
+#include "registerTableFunctions.h"
 
 #if USE_HDFS
 #include <Storages/StorageHDFS.h>
@@ -9,20 +10,22 @@
 namespace DB
 {
 StoragePtr TableFunctionHDFS::getStorage(
-    const String & source, const String & format, const ColumnsDescription & columns, Context & global_context, const std::string & table_name) const
+    const String & source, const String & format, const ColumnsDescription & columns, Context & global_context, const std::string & table_name, const String & compression_method) const
 {
     return StorageHDFS::create(source,
-        getDatabaseName(),
-        table_name,
+        StorageID(getDatabaseName(), table_name),
         format,
         columns,
         ConstraintsDescription{},
-        global_context);
+        global_context,
+        compression_method);
 }
 
+#if USE_HDFS
 void registerTableFunctionHDFS(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionHDFS>();
 }
+#endif
 }
 #endif

@@ -6,8 +6,6 @@ The `MySQL` database engine translate queries to the MySQL server so you can per
 
 You cannot perform the following queries:
 
-- `ATTACH`/`DETACH`
-- `DROP`
 - `RENAME`
 - `CREATE TABLE`
 - `ALTER`
@@ -121,4 +119,4 @@ SELECT * FROM mysql_db.mysql_table
 └────────┴───────┘
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/database_engines/mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/database_engines/mysql/) <!--hide-->

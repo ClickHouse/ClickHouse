@@ -97,7 +97,6 @@ void registerOutputFormatProcessorPrettySpace(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettySpace", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {
@@ -107,7 +106,6 @@ void registerOutputFormatProcessorPrettySpace(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettySpaceNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {

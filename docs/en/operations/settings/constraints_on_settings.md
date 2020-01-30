@@ -65,4 +65,4 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
 
 **Note:** the `default` profile has a special handling: all the constraints defined for the `default` profile become the default constraints, so they restrict all the users until they're overriden explicitly for these users.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/settings/constraints_on_settings/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/settings/constraints_on_settings/) <!--hide-->

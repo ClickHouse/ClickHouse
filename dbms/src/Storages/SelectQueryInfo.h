@@ -20,6 +20,7 @@ struct PrewhereInfo
     ExpressionActionsPtr remove_columns_actions;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
+    bool need_filter = false;
 
     PrewhereInfo() = default;
     explicit PrewhereInfo(ExpressionActionsPtr prewhere_actions_, String prewhere_column_name_)
@@ -34,21 +35,31 @@ struct FilterInfo
     bool do_remove_column = false;
 };
 
-struct SortingInfo
+struct InputSortingInfo
 {
-    SortDescription prefix_order_descr;
+    SortDescription order_key_prefix_descr;
     int direction;
 
-    SortingInfo(const SortDescription & prefix_order_descr_, int direction_)
-        : prefix_order_descr(prefix_order_descr_), direction(direction_) {}
+    InputSortingInfo(const SortDescription & order_key_prefix_descr_, int direction_)
+        : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_) {}
+
+    bool operator ==(const InputSortingInfo & other) const
+    {
+        return order_key_prefix_descr == other.order_key_prefix_descr && direction == other.direction;
+    }
+
+    bool operator !=(const InputSortingInfo & other) const { return !(*this == other); }
 };
 
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 using FilterInfoPtr = std::shared_ptr<FilterInfo>;
-using SortingInfoPtr = std::shared_ptr<SortingInfo>;
+using InputSortingInfoPtr = std::shared_ptr<const InputSortingInfo>;
 
 struct SyntaxAnalyzerResult;
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
+
+class ReadInOrderOptimizer;
+using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 
 /** Query along with some additional data,
   *  that can be used during query processing
@@ -62,7 +73,9 @@ struct SelectQueryInfo
 
     PrewhereInfoPtr prewhere_info;
 
-    SortingInfoPtr sorting_info;
+    ReadInOrderOptimizerPtr order_by_optimizer;
+    /// We can modify it while reading from storage
+    mutable InputSortingInfoPtr input_sorting_info;
 
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)

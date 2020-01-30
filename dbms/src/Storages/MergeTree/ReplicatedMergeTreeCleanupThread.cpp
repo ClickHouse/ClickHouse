@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
-    , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreeCleanupThread)")
+    , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeCleanupThread)")
     , log(&Logger::get(log_name))
 {
     task = storage.global_context.getSchedulePool().createTask(log_name, [this]{ run(); });

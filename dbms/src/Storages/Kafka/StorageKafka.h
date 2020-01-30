@@ -28,8 +28,6 @@ class StorageKafka : public ext::shared_ptr_helper<StorageKafka>, public IStorag
     friend struct ext::shared_ptr_helper<StorageKafka>;
 public:
     std::string getName() const override { return "Kafka"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     bool supportsSettings() const override { return true; }
     bool noPushingToViews() const override { return true; }
@@ -49,8 +47,6 @@ public:
         const ASTPtr & query,
         const Context & context) override;
 
-    void rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
-
     void updateDependencies() override;
 
     void pushReadBuffer(ConsumerBufferPtr buf);
@@ -64,24 +60,26 @@ public:
     const auto & getSchemaName() const { return schema_name; }
     const auto & skipBroken() const { return skip_broken; }
 
-    void checkSettingCanBeChanged(const String & setting_name) const override;
-
 protected:
     StorageKafka(
-        const std::string & table_name_,
-        const std::string & database_name_,
+        const StorageID & table_id_,
         Context & context_,
         const ColumnsDescription & columns_,
-        const String & brokers_, const String & group_, const Names & topics_,
-        const String & format_name_, char row_delimiter_, const String & schema_name_,
-        size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken,
+        const String & brokers_,
+        const String & group_,
+        const Names & topics_,
+        const String & format_name_,
+        char row_delimiter_,
+        const String & schema_name_,
+        size_t num_consumers_,
+        UInt64 max_block_size_,
+        size_t skip_broken,
         bool intermediate_commit_);
 
 private:
     // Configuration and state
-    String table_name;
-    String database_name;
     Context global_context;
+    Context kafka_context;
     Names topics;
     const String brokers;
     const String group;
@@ -117,7 +115,7 @@ private:
 
     void threadFunc();
     bool streamToViews();
-    bool checkDependencies(const String & database_name, const String & table_name);
+    bool checkDependencies(const StorageID & table_id);
 };
 
 }

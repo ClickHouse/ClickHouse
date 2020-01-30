@@ -15,7 +15,7 @@ namespace DB
 MergeTreeData::DataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     bool require_checksums,
-    const DataTypes & primary_key_data_types,    /// Check the primary key. If it is not necessary, pass an empty array.
+    const DataTypes & primary_key_data_types,
     const MergeTreeIndices & indices = {}, /// Check skip indices
     std::function<bool()> is_cancelled = []{ return false; });
 
@@ -24,7 +24,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
     const MergeTreeIndexGranularity & index_granularity,
     const String & marks_file_extension,
     bool require_checksums,
-    const DataTypes & primary_key_data_types,    /// Check the primary key. If it is not necessary, pass an empty array.
+    const DataTypes & primary_key_data_types,
     const MergeTreeIndices & indices = {}, /// Check skip indices
     std::function<bool()> is_cancelled = []{ return false; });
 }

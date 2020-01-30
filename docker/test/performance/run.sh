@@ -11,7 +11,7 @@ install_packages() {
 }
 
 download_data() {
-    clickhouse-client --query "CREATE DATABASE IF NOT EXISTS datasets"
+    clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordinary"
     clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
     /s3downloader --dataset-names $OPEN_DATASETS
     /s3downloader --dataset-names $PRIVATE_DATASETS --url 'https://s3.mds.yandex.net/clickhouse-private-datasets'
