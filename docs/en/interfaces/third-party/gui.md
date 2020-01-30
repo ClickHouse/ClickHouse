@@ -126,4 +126,4 @@ Features:
 [Data Modeling](https://looker.com/platform/data-modeling) to support report writers and end users.
 - Powerful workflow integration via Looker's [Data Actions](https://looker.com/platform/actions).
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/third-party/gui/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/interfaces/third-party/gui/) <!--hide-->

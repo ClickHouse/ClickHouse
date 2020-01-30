@@ -54,4 +54,4 @@
 
 1
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/permissions_for_queries/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/permissions_for_queries/) <!--hide-->

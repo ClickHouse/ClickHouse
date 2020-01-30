@@ -138,4 +138,4 @@ Kafka SETTINGS
 
 有关详细配置选项列表，请参阅 [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)。在 ClickHouse 配置中使用下划线 (`_`) ，并不是使用点 (`.`)。例如，`check.crcs=true` 将是 `<check_crcs>true</check_crcs>`。
 
-[Original article](https://clickhouse.yandex/docs/zh/operations/table_engines/kafka/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/zh/operations/table_engines/kafka/) <!--hide-->
