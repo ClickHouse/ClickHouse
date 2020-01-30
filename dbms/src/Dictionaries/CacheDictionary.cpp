@@ -327,8 +327,7 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 
             auto insert_to_answer_routine = [&] ()
             {
-                const auto & cell = cells[cell_idx];
-                out[row] = !cell.isDefault();
+                out[row] = !cells[cell_idx].isDefault();
             };
 
             if (!find_result.valid)
@@ -749,7 +748,7 @@ void CacheDictionary::updateThreadFunction()
 
         if (current_queue_size > 0)
             LOG_TRACE(log, "Performing bunch of keys update in cache dictionary with "
-                            << current_queue_size+1 << " keys" );
+                            << current_queue_size + 1 << " keys");
 
         std::vector<UpdateUnitPtr> update_request;
         update_request.reserve(current_queue_size + 1);
@@ -789,7 +788,7 @@ void CacheDictionary::updateThreadFunction()
     }
 }
 
-void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr update_unit_ptr) const
+void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr) const
 {
     std::unique_lock<std::mutex> lock(update_mutex);
     const auto sleeping_result = is_update_finished.wait_for(
@@ -804,14 +803,14 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr update_unit_ptr) 
         std::rethrow_exception(update_unit_ptr->current_exception);
 }
 
-void CacheDictionary::tryPushToUpdateQueueOrThrow(UpdateUnitPtr update_unit_ptr) const
+void CacheDictionary::tryPushToUpdateQueueOrThrow(UpdateUnitPtr & update_unit_ptr) const
 {
     if (!update_queue.tryPush(update_unit_ptr, update_queue_push_timeout_milliseconds))
         throw DB::Exception("Cannot push to internal update queue. Current queue size is " +
         std::to_string(update_queue.size()), ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL);
 }
 
-void CacheDictionary::update(BunchUpdateUnit bunch_update_unit) const
+void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
 {
     CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, bunch_update_unit.getRequestedIds().size());
