@@ -268,6 +268,12 @@ MutableColumnPtr DataTypeFixedString::createColumn() const
     return ColumnFixedString::create(n);
 }
 
+MutableColumnPtr DataTypeFixedString::createColumnWithRandomData(size_t limit) const
+{
+    (void)limit;
+    throw Exception("Method createColumnWithRandomData() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
 Field DataTypeFixedString::getDefault() const
 {
     return String();
