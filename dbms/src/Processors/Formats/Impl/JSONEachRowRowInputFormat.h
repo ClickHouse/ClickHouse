@@ -9,6 +9,13 @@
 namespace DB
 {
 
+enum ParsingStages
+{
+    START,
+    PROCESS,
+    FINISH
+};
+
 class ReadBuffer;
 
 
@@ -72,6 +79,9 @@ private:
 
     /// This flag is needed to know if data is in square brackets.
     bool data_in_square_brackets = false;
+
+    /// This flag is needed to know the stage of parsing.
+    size_t parsing_stage = ParsingStages::START;
 };
 
 }
