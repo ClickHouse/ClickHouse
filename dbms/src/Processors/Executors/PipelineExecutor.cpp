@@ -258,6 +258,7 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
     auto & node = graph[pid];
 
     bool need_expand_pipeline = false;
+    bool is_cancelled = false;
 
     std::vector<Edge *> updated_back_edges;
     std::vector<Edge *> updated_direct_edges;
@@ -322,6 +323,11 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
                 need_expand_pipeline = true;
                 break;
             }
+            case IProcessor::Status::Cancel:
+            {
+                is_cancelled = true;
+                break;
+            }
         }
 
         {
@@ -342,6 +348,12 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
             node.post_updated_input_ports.clear();
             node.post_updated_output_ports.clear();
         }
+    }
+
+    if (is_cancelled)
+    {
+        cancel();
+        return true;
     }
 
     {

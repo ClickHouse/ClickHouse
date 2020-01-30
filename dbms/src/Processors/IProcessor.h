@@ -149,6 +149,9 @@ public:
         /// Processor wants to add other processors to pipeline.
         /// New processors must be obtained by expandPipeline() call.
         ExpandPipeline,
+
+        /// Cancel execution for the whole pipeline. Temporary status.
+        Cancel,
     };
 
     static std::string statusToName(Status status);
