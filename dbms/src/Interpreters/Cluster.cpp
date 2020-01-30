@@ -72,7 +72,8 @@ bool Cluster::Address::isLocal(UInt16 clickhouse_port) const
 }
 
 
-Cluster::Address::Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+Cluster::Address::Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, UInt32 shard_number_, UInt32 replica_number_) :
+    shard_number(shard_number_), replica_number(replica_number_)
 {
     host_name = config.getString(config_prefix + ".host");
     port = static_cast<UInt16>(config.getInt(config_prefix + ".port"));
@@ -137,12 +138,13 @@ std::pair<String, UInt16> Cluster::Address::fromString(const String & host_port_
 String Cluster::Address::toFullString() const
 {
     return
-        escapeForFileName(user) +
-        (password.empty() ? "" : (':' + escapeForFileName(password))) + '@' +
+        ((shard_number == 0) ? "" : "shard" + std::to_string(shard_number)) +
+        ((replica_number == 0) ? "" : "_replica" + std::to_string(replica_number)) + '@' +
         escapeForFileName(host_name) + ':' +
         std::to_string(port) +
-        (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)))
-        + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
+        (default_database.empty() ? "" : ('#' +
+        escapeForFileName(default_database))) +
+        ((secure == Protocol::Secure::Enable) ? "+secure" : "");
 }
 
 Cluster::Address Cluster::Address::fromFullString(const String & full_string)
@@ -158,8 +160,14 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
         secure = Protocol::Secure::Enable;
     }
 
+
+    const char * underscore = strchr(full_string.data(), '_');
+    const char * slash = strchr(full_string.data(), '/');
     const char * user_pw_end = strchr(full_string.data(), '@');
     const char * colon = strchr(full_string.data(), ':');
+    const bool has_shard = startsWith(full_string, "shard");
+    if (has_shard && !slash)
+        throw Exception("Incorrect [shard{shard_number}[_replica{replica_number}]]/user[:password]@host:port#default_database format " + full_string, ErrorCodes::SYNTAX_ERROR);
     if (!user_pw_end || !colon)
         throw Exception("Incorrect user[:password]@host:port#default_database format " + full_string, ErrorCodes::SYNTAX_ERROR);
 
@@ -175,9 +183,11 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
     address.secure = secure;
     address.port = parse<UInt16>(host_end + 1, port_end - (host_end + 1));
     address.host_name = unescapeForFileName(std::string(user_pw_end + 1, host_end));
-    address.user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
+    address.user = unescapeForFileName(std::string(slash + 1, has_pw ? colon : user_pw_end));
     address.password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
     address.default_database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end)) : std::string();
+    address.shard_number = has_shard ? parse<UInt32>(address_begin + 5) : 0;
+    address.replica_number = underscore ? parse<UInt32>(underscore + 8) : 0;
     return address;
 }
 
@@ -309,7 +319,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
 
                 if (startsWith(replica_key, "replica"))
                 {
-                    replica_addresses.emplace_back(config, partial_prefix + replica_key);
+                    replica_addresses.emplace_back(config, partial_prefix + replica_key, current_shard_num, current_replica_num);
                     ++current_replica_num;
 
                     if (!replica_addresses.back().is_local)
