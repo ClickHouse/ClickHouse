@@ -1394,4 +1394,4 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
 
 В других случаях использование звёздочки является издевательством над системой, так как вместо преимуществ столбцовой СУБД вы получаете недостатки. То есть использовать звёздочку не рекомендуется.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/select/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/select/) <!--hide-->

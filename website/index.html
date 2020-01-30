@@ -13,8 +13,8 @@
     <meta property="og:description"
           content="ClickHouse is an open source column-oriented database management system that allows generating analytical data reports in real time using SQL queries."/>
     <meta property="og:type" content="website"/>
-    <meta property="og:url" content="https://clickhouse.yandex"/>
-    <meta property="og:image" content="https://clickhouse.yandex/images/logo.png"/>
+    <meta property="og:url" content="https://clickhouse.tech"/>
+    <meta property="og:image" content="https://clickhouse.tech/images/logo.png"/>
 
     <meta property="twitter:title" content="ClickHouse DBMS"/>
 
@@ -32,7 +32,7 @@
             <a class="menu_item" href="#quick-start">Quick Start</a>
             <a class="menu_item" href="#performance">Performance</a>
             <a class="menu_item" href="docs/en/">Documentation</a>
-            <a class="menu_item" href="blog/en/">Blog</a>
+            <a class="menu_item" href="https://clickhouse.yandex/blog/en/">Blog</a>
             <a class="menu_item" href="#contacts">Contacts</a>
         </div>
 
@@ -398,7 +398,7 @@
 
     <p>System requirements: Linux, x86_64 with SSE 4.2.</p>
 
-    <p>Install packages for <span class="distributive_selected" id="repo_deb">Ubuntu/Debian</span> or <span class="distributive_not_selected" id="repo_rpm">CentOS/RedHat</span> or <span class="distributive_not_selected" id="repo_tgz">Other Linux</span>:</p>
+    <p>Install packages for <span class="distributive_selected" id="repo_deb">Ubuntu/Debian</span>, <span class="distributive_not_selected" id="repo_rpm">CentOS/RedHat</span> or <span class="distributive_not_selected" id="repo_tgz">other Linux</span>:</p>
 
     <code id="packages-install">
 <pre id="instruction_deb">
@@ -449,13 +449,13 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
     <p>For other operating systems the easiest way to get started is using
         <a href="https://hub.docker.com/r/yandex/clickhouse-server/" rel="external nofollow"
            target="_blank">
-            official Docker images of ClickHouse</a>, this is not the only <a href="https://clickhouse.yandex/docs/en/getting_started/">option</a> though.
+            official Docker images of ClickHouse</a>, this is not the only <a href="https://clickhouse.tech/docs/en/getting_started/">option</a> though.
         Alternatively, you can easily get a running ClickHouse instance or cluster at 
         <a href="https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link1" rel="external nofollow" target="_blank">
             Yandex Managed Service for ClickHouse</a>.
     </p>
 
-    <p>After you got connected to your ClickHouse server, you can proceed to <strong><a href="tutorial.html">tutorial</a></strong> or <strong><a href="docs/en/">full
+    <p>After you got connected to your ClickHouse server, you can proceed to <strong><a href="/docs/en/getting_started/tutorial/">tutorial</a></strong> or <strong><a href="docs/en/">full
         documentation</a></strong>.</p>
 
     <h2 id="contacts">Contacts</h2>
@@ -488,13 +488,13 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
     </p>
 
     <h2>Like ClickHouse?</h2>
-    <p>Help to spread the word about it via <a rel="external nofollow" target="_blank" href="https://www.facebook.com/sharer.php?u=https://clickhouse.yandex">Facebook</a>,
-        <a rel="external nofollow" target="_blank" href="https://twitter.com/intent/tweet?url=https://clickhouse.yandex">Twitter</a> and
-        <a rel="external nofollow" target="_blank" href="https://www.linkedin.com/shareArticle?url=https://clickhouse.yandex">LinkedIn</a>!</p>
+    <p>Help to spread the word about it via <a rel="external nofollow" target="_blank" href="https://www.facebook.com/sharer.php?u=https://clickhouse.tech">Facebook</a>,
+        <a rel="external nofollow" target="_blank" href="https://twitter.com/intent/tweet?url=https://clickhouse.tech">Twitter</a> and
+        <a rel="external nofollow" target="_blank" href="https://www.linkedin.com/shareArticle?url=https://clickhouse.tech">LinkedIn</a>!</p>
 
     <p>Also hosting ClickHouse Meetups is very appreciated, <a href="https://forms.yandex.com/surveys/meet-yandex-clickhouse-team/" target="_blank" rel="external nofollow">fill this form</a>
         if you are interested and we'll get in touch.
-        Short reports about previous meetups are <a href="https://clickhouse.yandex/blog/en?tag=meetup" target="_blank">published in official ClickHouse blog</a>.</p>
+        Short reports about previous meetups are <a href="https://clickhouse.tech/blog/en?tag=meetup" target="_blank">published in official ClickHouse blog</a>.</p>
 
     <p class="warranty"><a href="https://github.com/ClickHouse/ClickHouse/blob/master/LICENSE"
                            rel="external nofollow" target="_blank">
@@ -567,7 +567,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
         });
 
         var hostParts = window.location.host.split('.');
-        if (hostParts.length > 2 && hostParts[0] != 'test') {
+        if (hostParts.length > 2 && hostParts[0] != 'test' && hostParts[1] != 'github') {
             window.location.host = hostParts[0] + '.' + hostParts[1];
         }
 

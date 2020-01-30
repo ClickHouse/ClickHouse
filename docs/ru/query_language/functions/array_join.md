@@ -27,4 +27,4 @@ SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 └─────┴───────────┴─────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/array_join/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/array_join/) <!--hide-->

@@ -13,6 +13,7 @@
 namespace DB
 {
 
+class QueryStatus;
 
 /// Executes query pipeline.
 class PipelineExecutor
@@ -24,7 +25,7 @@ public:
     /// During pipeline execution new processors can appear. They will be added to existing set.
     ///
     /// Explicit graph representation is built in constructor. Throws if graph is not correct.
-    explicit PipelineExecutor(Processors & processors_);
+    explicit PipelineExecutor(Processors & processors_, QueryStatus * elem = nullptr);
 
     /// Execute pipeline in multiple threads. Must be called once.
     /// In case of exception during execution throws any occurred.
@@ -241,6 +242,9 @@ private:
     /// Processor ptr -> node number
     using ProcessorsMap = std::unordered_map<const IProcessor *, UInt64>;
     ProcessorsMap processors_map;
+
+    /// Now it's used to check if query was killed.
+    QueryStatus * process_list_element = nullptr;
 
     /// Graph related methods.
     bool addEdges(UInt64 node);

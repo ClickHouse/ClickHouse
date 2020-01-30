@@ -16,4 +16,4 @@ ClickHouse提供了两个网络接口（两者都可以选择包装在TLS中以�
 * [集成](third-party/integrations.md)
 * [可视界面](third-party/gui.md)
 
-[来源文章](https://clickhouse.yandex/docs/zh/interfaces/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/zh/interfaces/) <!--hide-->
