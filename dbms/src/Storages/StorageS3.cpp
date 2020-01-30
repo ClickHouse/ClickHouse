@@ -36,6 +36,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNEXPECTED_EXPRESSION;
+    extern const int S3_ERROR;
 }
 
 
@@ -208,7 +210,7 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
 {
     if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
     {
-        throw std::logic_error("Something went wrong."); /// FIXME
+        throw Exception("Expression can not have wildcards inside bucket name", ErrorCodes::UNEXPECTED_EXPRESSION);
     }
 
     const String key_prefix = globbed_uri.key.substr(0, globbed_uri.key.find_first_of("*?{"));
@@ -224,12 +226,16 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
     re2::RE2 matcher(makeRegexpPatternFromGlobs(globbed_uri.key));
     Strings result;
     Aws::S3::Model::ListObjectsOutcome outcome;
+    int page = 0;
     do
     {
+        ++page;
         outcome = client.ListObjects(request);
         if (!outcome.IsSuccess())
         {
-            throw std::runtime_error("Something went wrong"); /// FIXME
+            throw Exception("Could not list objects in bucket " + quoteString(request.GetBucket())
+                    + " with prefix " + quoteString(request.GetPrefix())
+                    + ", page " + std::to_string(page), ErrorCodes::S3_ERROR);
         }
 
         for (const auto & row : outcome.GetResult().GetContents())
