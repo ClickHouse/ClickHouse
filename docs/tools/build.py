@@ -271,6 +271,7 @@ def build(args):
         ('tutorial.html', '/docs/en/getting_started/tutorial/',),
         ('reference_en.html', '/docs/en/single/', ),
         ('reference_ru.html', '/docs/ru/single/',),
+        ('docs/index.html', '/docs/en/',),
     ]:
         write_redirect_html(
             os.path.join(args.output_dir, static_redirect[0]),
