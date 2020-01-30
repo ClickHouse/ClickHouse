@@ -18,7 +18,7 @@ class StorageSystemTables : public ext::shared_ptr_helper<StorageSystemTables>, 
 public:
     std::string getName() const override { return "SystemTables"; }
 
-    BlockInputStreams read(
+    Pipes readWithProcessors(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

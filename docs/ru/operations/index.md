@@ -17,4 +17,4 @@
   - [Настройки](settings/index.md)
   - [Утилиты](utils/index.md)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/) <!--hide-->
