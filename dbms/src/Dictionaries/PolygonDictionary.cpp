@@ -1,6 +1,8 @@
 #include <ext/map.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include "PolygonDictionary.h"
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
@@ -703,38 +705,47 @@ void registerDictionaryPolygon(DictionaryFactory & factory)
         if (dict_struct.key->size() != 1)
             throw Exception{"The 'key' should consist of a single attribute for a dictionary of layout 'polygon'",
                             ErrorCodes::BAD_ARGUMENTS};
-        // TODO: Once arrays are fully supported this should be changed to a more reasonable check.
-        const auto type_name = (*dict_struct.key)[0].type->getName();
         IPolygonDictionary::InputType input_type;
         IPolygonDictionary::PointType point_type;
-        if (type_name == "Array(Array(Array(Array(Float64))))")
+        const auto key_type = (*dict_struct.key)[0].type;
+        const auto f64 = std::make_shared<DataTypeFloat64>();
+        const auto multi_polygon_array = DataTypeArray(DataTypeArray(DataTypeArray(DataTypeArray(f64))));
+        const auto multi_polygon_tuple = DataTypeArray(DataTypeArray(DataTypeArray(std::make_shared<DataTypeTuple>(std::vector<DataTypePtr>{f64, f64}))));
+        const auto simple_polygon_array = DataTypeArray(DataTypeArray(f64));
+        const auto simple_polygon_tuple = DataTypeArray(std::make_shared<DataTypeTuple>(std::vector<DataTypePtr>{f64, f64}));
+        if (key_type->equals(multi_polygon_array))
         {
             input_type = IPolygonDictionary::InputType::MultiPolygon;
             point_type = IPolygonDictionary::PointType::Array;
         }
-        else if (type_name == "Array(Array(Array(Tuple(Float64, Float64))))")
+        else if (key_type->equals(multi_polygon_tuple))
         {
             input_type = IPolygonDictionary::InputType::MultiPolygon;
             point_type = IPolygonDictionary::PointType::Tuple;
         }
-        else if (type_name == "Array(Array(Float64))")
+        else if (key_type->equals(simple_polygon_array))
         {
             input_type = IPolygonDictionary::InputType::SimplePolygon;
             point_type = IPolygonDictionary::PointType::Array;
         }
-        else if (type_name == "Array(Tuple(Float64, Float64))")
+        else if (key_type->equals(simple_polygon_tuple))
         {
             input_type = IPolygonDictionary::InputType::SimplePolygon;
             point_type = IPolygonDictionary::PointType::Tuple;
         }
         else
-            throw Exception{"The key type is not one of the allowed types for a dictionary of layout 'polygon'",
+            throw Exception{"The key type " + key_type->getName() +
+                            " is not one of the following allowed types for a dictionary of layout 'polygon': " +
+                            multi_polygon_array.getName() + " " +
+                            multi_polygon_tuple.getName() + " " +
+                            simple_polygon_array.getName() + " " +
+                            simple_polygon_tuple.getName() + " ",
                             ErrorCodes::BAD_ARGUMENTS};
 
         if (dict_struct.range_min || dict_struct.range_max)
             throw Exception{name
-                            + ": elements .structure.range_min and .structure.range_max should be defined only "
-                              "for a dictionary of layout 'polygon'",
+                            + ": elements range_min and range_max should be defined only "
+                              "for a dictionary of layout 'range_hashed'",
                             ErrorCodes::BAD_ARGUMENTS};
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
