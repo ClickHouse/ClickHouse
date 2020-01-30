@@ -1,6 +1,7 @@
 #include <Common/ZooKeeper/Types.h>
 
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -70,7 +71,13 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << "sync_mode\n";
             out << alter_sync_mode << "\n";
             out << "mutatation_commands\n";
-            out << mutation_commands;
+            out << mutation_commands << "\n";
+            out << "columns_str_size:\n";
+            out << columns_str.size() << "\n";
+            out << columns_str << "\n";
+            out << "metadata_str_size:\n";
+            out << metadata_str.size() << "\n";
+            out << metadata_str;
             break;
 
         default:
@@ -167,6 +174,16 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         in >> alter_sync_mode;
         in >> "\nmutatation_commands\n";
         in >> mutation_commands;
+        in >> "\ncolumns_str_size:\n";
+        size_t columns_size;
+        in >> columns_size >> "\n";
+        columns_str.resize(columns_size);
+        in.readStrict(&columns_str[0], columns_size);
+        in >> "\nmetadata_str_size:\n";
+        size_t metadata_size;
+        in >> metadata_size >> "\n";
+        metadata_str.resize(metadata_size);
+        in.readStrict(&metadata_str[0], metadata_size);
     }
 
     //std::cerr << "Read backn\n";
