@@ -48,105 +48,104 @@ class ConcurrentBoundedQueue
 {
 private:
     std::queue<T> queue;
-    Poco::FastMutex mutex;
-    Poco::Semaphore fill_count;
-    Poco::Semaphore empty_count;
+    const size_t max_fill;
+    std::mutex mutex;
+    std::condition_variable changed;
 
 public:
-    ConcurrentBoundedQueue(size_t max_fill)
-        : fill_count(0, max_fill), empty_count(max_fill, max_fill) {}
+    ConcurrentBoundedQueue(size_t max_fill_)
+        : max_fill(max_fill_)
+    {
+    }
 
     void push(const T & x)
     {
-        empty_count.wait();
-        {
-            Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-            queue.push(x);
-        }
-        fill_count.set();
+        std::unique_lock<std::mutex> lock(mutex);
+        changed.wait(lock, [&] () { return queue.size() < max_fill; } );
+
+        queue.push(x);
+        changed.notify_all();
     }
 
     template <typename... Args>
     void emplace(Args &&... args)
     {
-        empty_count.wait();
-        {
-            Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-            queue.emplace(std::forward<Args>(args)...);
-        }
-        fill_count.set();
+        std::unique_lock<std::mutex> lock(mutex);
+        changed.wait(lock, [&] () { return queue.size() < max_fill; } );
+
+        queue.emplace(std::forward<Args>(args)...);
+        changed.notify_all();
     }
 
     void pop(T & x)
     {
-        fill_count.wait();
-        {
-            Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-            detail::moveOrCopyIfThrow(std::move(queue.front()), x);
-            queue.pop();
-        }
-        empty_count.set();
+        std::unique_lock<std::mutex> lock(mutex);
+        changed.wait(lock, [&] () { return queue.size() > 0; } );
+
+        detail::moveOrCopyIfThrow(std::move(queue.front()), x);
+        queue.pop();
+
+        changed.notify_all();
     }
 
     bool tryPush(const T & x, UInt64 milliseconds = 0)
     {
-        if (empty_count.tryWait(milliseconds))
+        std::unique_lock<std::mutex> lock(mutex);
+        bool result = changed.wait_for(lock,
+            std::chrono::milliseconds(milliseconds), [&] () { return queue.size() < max_fill; } );
+
+        if (result)
         {
-            {
-                Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-                queue.push(x);
-            }
-            fill_count.set();
-            return true;
+            queue.push(x);
+            changed.notify_all();
         }
-        return false;
+
+        return result;
     }
 
     template <typename... Args>
     bool tryEmplace(UInt64 milliseconds, Args &&... args)
     {
-        if (empty_count.tryWait(milliseconds))
+        std::unique_lock<std::mutex> lock(mutex);
+        bool result = changed.wait_for(lock,
+            std::chrono::milliseconds(milliseconds), [&] () { return queue.size() < max_fill; } );
+
+        if (result)
         {
-            {
-                Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-                queue.emplace(std::forward<Args>(args)...);
-            }
-            fill_count.set();
-            return true;
+            queue.emplace(std::forward<Args>(args)...);
+            changed.notify_all();
         }
-        return false;
+
+        return result;
     }
 
     bool tryPop(T & x, UInt64 milliseconds = 0)
     {
-        if (fill_count.tryWait(milliseconds))
+        std::unique_lock<std::mutex> lock(mutex);
+        bool result = changed.wait_for(lock,
+            std::chrono::milliseconds(milliseconds), [&] () { return queue.size() > 0; } );
+
+        if (result)
         {
-            {
-                Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-                detail::moveOrCopyIfThrow(std::move(queue.front()), x);
-                queue.pop();
-            }
-            empty_count.set();
-            return true;
+            detail::moveOrCopyIfThrow(std::move(queue.front()), x);
+            queue.pop();
+            changed.notify_all();
         }
-        return false;
+
+        return result;
     }
 
     size_t size()
     {
-        Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+        std::unique_lock<std::mutex> lock(mutex);
         return queue.size();
     }
 
     void clear()
     {
-        while (fill_count.tryWait(0))
-        {
-            {
-                Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-                queue.pop();
-            }
-            empty_count.set();
-        }
+        std::unique_lock<std::mutex> lock(mutex);
+        std::queue<T> to_destroy;
+        queue.swap(to_destroy);
+        changed.notify_all();
     }
 };
