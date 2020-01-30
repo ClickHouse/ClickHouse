@@ -57,6 +57,8 @@ public:
         UInt16 port;
         String user;
         String password;
+        UInt32 shard_number{};
+        UInt32 replica_number{};
         /// This database is selected when no database is specified for Distributed table
         String default_database;
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
@@ -67,9 +69,8 @@ public:
         Protocol::Secure secure = Protocol::Secure::Disable;
 
         Address() = default;
-        Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+        Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, UInt32 shard_number_ = 0, UInt32 replica_number_ = 0);
         Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port, bool secure_ = false);
-
         /// Returns 'escaped_host_name:port'
         String toString() const;
 
@@ -80,7 +81,7 @@ public:
 
         static std::pair<String, UInt16> fromString(const String & host_port_string);
 
-        /// Retrurns escaped user:password@resolved_host_address:resolved_host_port#default_database
+        /// Retrurns escaped shard{shard_number}_replica{replica_number}@resolved_host_address:resolved_host_port#default_database
         String toFullString() const;
         static Address fromFullString(const String & address_full_string);
 
