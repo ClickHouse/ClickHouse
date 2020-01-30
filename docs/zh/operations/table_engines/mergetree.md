@@ -46,6 +46,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 请求参数的描述，参考 [请求描述](../../query_language/create.md) 。
 
+<a name="mergetree-query-clauses"></a>
+
 **子句**
 
 - `ENGINE` - 引擎名和参数。 `ENGINE = MergeTree()`. `MergeTree` 引擎没有参数。
@@ -270,7 +272,7 @@ SELECT count() FROM table WHERE s < 'z'
 SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 ```
 
-#### 索引的可用类型
+#### 索引的可用类型 {#table_engine-mergetree-data_skipping-indexes}
 
 * `minmax`
 存储指定表达式的极值（如果表达式是 `tuple` ，则存储 `tuple` 中每个元素的极值），这些信息用于跳过数据块，类似主键。
