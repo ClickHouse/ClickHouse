@@ -19,7 +19,8 @@ namespace DB
 class DatabaseMemory : public DatabaseWithOwnTablesBase
 {
 public:
-    DatabaseMemory(const String & name_);
+    //FIXME default name
+    DatabaseMemory(const String & name_ = "_temporary_and_external_tables");
 
     String getEngineName() const override { return "Memory"; }
 

@@ -221,7 +221,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             }
             else if (kind == ASTDropQuery::Kind::Drop)
             {
-                context_handle.tryRemoveExternalTable(table_name);
+                context_handle.removeExternalTable(table_name);
                 table->shutdown();
                 /// If table was already dropped by anyone, an exception will be thrown
                 auto table_lock = table->lockExclusively(context.getCurrentQueryId());

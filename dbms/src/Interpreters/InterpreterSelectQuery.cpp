@@ -357,7 +357,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
             /// Save the new temporary tables in the query context
             for (const auto & it : query_analyzer->getExternalTables())
-                if (!context->tryGetExternalTable(it.first))
+                if (!context->isExternalTableExist(it.first))
                     context->addExternalTable(it.first, it.second);
         }
 
