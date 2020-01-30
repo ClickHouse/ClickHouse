@@ -29,5 +29,5 @@ set -m
 time ../compare.sh 0 $ref_sha $PR_TO_TEST $SHA_TO_TEST 2>&1 | ts | tee compare.log
 set +m
 
-7z a /output/output.7z *.log *.tsv
+7z a /output/output.7z *.log *.tsv *.html
 cp compare.log /output
