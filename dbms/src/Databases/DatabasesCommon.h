@@ -47,6 +47,9 @@ protected:
     Poco::Logger * log;
 
     DatabaseWithOwnTablesBase(const String & name_, const String & logger);
+
+    void attachTableUnlocked(const String & table_name, const StoragePtr & table, const String & relative_table_path = {});
+    StoragePtr detachTableUnlocked(const String & table_name);
 };
 
 }
