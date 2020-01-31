@@ -23,7 +23,7 @@ class MemorySource : public SourceWithProgress
 {
 public:
     MemorySource(Names column_names_, BlocksList::iterator begin_, BlocksList::iterator end_, const StorageMemory & storage)
-        : SourceWithProgress(storage.getSampleBlockForColumns(column_names))
+        : SourceWithProgress(storage.getSampleBlockForColumns(column_names_))
         , column_names(std::move(column_names_)), begin(begin_), end(end_), it(begin) {}
 
     String getName() const override { return "Memory"; }
