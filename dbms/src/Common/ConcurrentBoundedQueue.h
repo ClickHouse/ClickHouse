@@ -1,10 +1,8 @@
 #pragma once
 
+#include <condition_variable>
 #include <queue>
 #include <type_traits>
-
-#include <Poco/Mutex.h>
-#include <Poco/Semaphore.h>
 
 #include <common/Types.h>
 
