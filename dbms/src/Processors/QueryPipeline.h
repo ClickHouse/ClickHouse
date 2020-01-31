@@ -81,7 +81,7 @@ public:
 
     void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
     void addInterpreterContext(std::shared_ptr<Context> context) { interpreter_context.emplace_back(std::move(context)); }
-    void addStorageHolder(StoragePtr storage) { storage_holder.emplace_back(std::move(storage)); }
+    void addStorageHolder(StoragePtr storage) { storage_holders.emplace_back(std::move(storage)); }
 
     /// For compatibility with IBlockInputStream.
     void setProgressCallback(const ProgressCallback & callback);
@@ -92,6 +92,9 @@ public:
 
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
     size_t getMaxThreads() const { return max_threads; }
+
+    /// Convert query pipeline to single pipe.
+    Pipe getPipe() &&;
 
 private:
 
@@ -117,7 +120,7 @@ private:
     /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
     /// because QueryPipeline is alive until query is finished.
     std::vector<std::shared_ptr<Context>> interpreter_context;
-    std::vector<StoragePtr> storage_holder;
+    std::vector<StoragePtr> storage_holders;
 
     IOutputFormat * output_format = nullptr;
 
