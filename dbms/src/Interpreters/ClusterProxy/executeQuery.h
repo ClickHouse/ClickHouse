@@ -10,6 +10,9 @@ struct Settings;
 class Context;
 class Cluster;
 
+class Pipe;
+using Pipes = std::vector<Pipe>;
+
 namespace ClusterProxy
 {
 
@@ -22,7 +25,7 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
 /// Execute a distributed query, creating a vector of BlockInputStreams, from which the result can be read.
 /// `stream_factory` object encapsulates the logic of creating streams for a different type of query
 /// (currently SELECT, DESCRIBE).
-BlockInputStreams executeQuery(
+Pipes executeQuery(
     IStreamFactory & stream_factory, const ClusterPtr & cluster,
     const ASTPtr & query_ast, const Context & context, const Settings & settings);
 
