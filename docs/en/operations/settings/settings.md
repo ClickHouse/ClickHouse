@@ -804,6 +804,10 @@ The character interpreted as a delimiter in the CSV data. By default, the delimi
 
 For CSV input format enables or disables parsing of unquoted `NULL` as literal (synonym for `\N`).
 
+## output_format_csv_crlf_end_of_line {#settings-output_format_csv_crlf_end_of_line}
+
+Use DOS/Windows style line separator (CRLF) in CSV instead of Unix style (LF).
+
 ## insert_quorum {#settings-insert_quorum}
 
 Enables quorum writes.
