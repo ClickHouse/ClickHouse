@@ -22,9 +22,9 @@
 #include <DataTypes/convertMySQLDataType.h>
 
 #include <Poco/File.h>
-#include <Poco/DirectoryIterator.h>
+#include <filesystem>
 
-
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -341,7 +341,7 @@ void DatabaseMySQL::shutdown()
 
 void DatabaseMySQL::drop(const Context & /*context*/)
 {
-    Poco::File(getMetadataPath()).remove(true);
+    fs::remove_all(getMetadataPath());
 }
 
 void DatabaseMySQL::cleanOutdatedTables()
@@ -387,10 +387,10 @@ void DatabaseMySQL::attachTable(const String & table_name, const StoragePtr & st
     local_tables_cache[table_name].second = storage;
 
     remove_or_detach_tables.erase(table_name);
-    Poco::File remove_flag(getMetadataPath() + '/' + escapeForFileName(table_name) + suffix);
+    fs::path remove_flag(getMetadataPath() + '/' + escapeForFileName(table_name) + suffix);
 
-    if (remove_flag.exists())
-        remove_flag.remove();
+    if (fs::exists(remove_flag))
+        fs::remove(remove_flag);
 }
 
 StoragePtr DatabaseMySQL::detachTable(const String & table_name)
@@ -418,14 +418,13 @@ void DatabaseMySQL::loadStoredObjects(Context &, bool)
 {
 
     std::lock_guard<std::mutex> lock{mutex};
-    Poco::DirectoryIterator iterator(getMetadataPath());
+    fs::directory_iterator iterator(getMetadataPath());
 
-    for (Poco::DirectoryIterator end; iterator != end; ++iterator)
+    for (fs::directory_iterator end; iterator != end; ++iterator)
     {
-        if (iterator->isFile() && endsWith(iterator.name(), suffix))
+        if (iterator->is_regular_file() && iterator->path().extension() == suffix)
         {
-            const auto & filename = iterator.name();
-            const auto & table_name = unescapeForFileName(filename.substr(0, filename.size() - strlen(suffix)));
+            const auto & table_name = unescapeForFileName(iterator->path().filename().stem().string());
             remove_or_detach_tables.emplace(table_name);
         }
     }

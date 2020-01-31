@@ -322,7 +322,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         if (endsWith(filename_str, tmp_drop_ext))
         {
-            const std::string object_name = filename.stem().stem().string(); // dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
+            const std::string object_name = filename.stem().stem().string();
             if (Poco::File(context.getPath() + getDataPath() + '/' + object_name).exists())
             {
                 /// TODO maybe complete table drop and remove all table data (including data on other volumes and metadata in ZK)
