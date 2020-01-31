@@ -167,6 +167,6 @@ SELECT 1
 
 **Поздравляем, система работает!**
 
-Для дальнейших экспериментов можно попробовать загрузить один из тестовых наборов данных или пройти [пошаговое руководство для начинающих](https://clickhouse.yandex/tutorial.html).
+Для дальнейших экспериментов можно попробовать загрузить один из тестовых наборов данных или пройти [пошаговое руководство для начинающих](https://clickhouse.tech/tutorial.html).
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/getting_started/install/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/install/) <!--hide-->

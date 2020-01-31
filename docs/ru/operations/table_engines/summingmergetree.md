@@ -129,4 +129,4 @@ ClickHouse может слить куски данных таким образо
 
 Для вложенной структуры данных не нужно указывать её столбцы в кортеже столбцов для суммирования.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/summingmergetree/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/summingmergetree/) <!--hide-->

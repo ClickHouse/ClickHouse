@@ -661,6 +661,16 @@ TCP порт для защищённого обмена данными с кли
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
+## mysql_port {#server_settings-mysql_port}
+
+Порт для взаимодействия с клиентами по протоколу MySQL.
+
+Пример
+
+```xml
+<mysql_port>9004</mysql_port>
+```
+
 ## tmp_path
 
 Путь ко временным данным для обработки больших запросов.
@@ -807,4 +817,4 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 **Значение по умолчанию**: 15.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/server_settings/settings/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/server_settings/settings/) <!--hide-->

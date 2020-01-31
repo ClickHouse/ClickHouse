@@ -77,7 +77,7 @@ You cannot perform a `SELECT` query directly from the table. Instead, use one of
 - Place the table to the right side in a `JOIN` clause.
 - Call the [joinGet](../../query_language/functions/other_functions.md#other_functions-joinget) function, which lets you extract data from the table the same way as from a dictionary.
 
-### Limitations and Settings
+### Limitations and Settings {#join-limitations-and-settings}
 
 When creating a table, the following settings are applied:
 
@@ -95,4 +95,4 @@ The `Join`-engine tables can't be used in `GLOBAL JOIN` operations.
 
 If the server restarts incorrectly, the data block on the disk might get lost or damaged. In this case, you may need to manually delete the file with damaged data.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/join/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/join/) <!--hide-->

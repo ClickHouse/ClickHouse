@@ -101,6 +101,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
     extern const int READONLY_SETTING;
     extern const int ABORTED;
+    extern const int UNEXPECTED_AST_STRUCTURE;
 }
 
 
@@ -138,6 +139,9 @@ MergeTreeData::MergeTreeData(
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
     , parts_mover(this)
 {
+    if (relative_data_path.empty())
+        throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
+
     const auto settings = getSettings();
     setProperties(metadata);
 
@@ -626,40 +630,43 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
             {
                 auto new_ttl_entry = create_ttl_entry(ast);
                 if (!only_check)
-                    column_ttl_entries_by_name.emplace(name, new_ttl_entry);
+                    column_ttl_entries_by_name[name] = new_ttl_entry;
             }
         }
     }
 
     if (new_ttl_table_ast)
     {
+        std::vector<TTLEntry> update_move_ttl_entries;
+        TTLEntry update_rows_ttl_entry;
+
         bool seen_delete_ttl = false;
         for (auto ttl_element_ptr : new_ttl_table_ast->children)
         {
-            ASTTTLElement & ttl_element = static_cast<ASTTTLElement &>(*ttl_element_ptr);
-            if (ttl_element.destination_type == PartDestinationType::DELETE)
+            const auto * ttl_element = ttl_element_ptr->as<ASTTTLElement>();
+            if (!ttl_element)
+                throw Exception("Unexpected AST element in TTL expression", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+
+            if (ttl_element->destination_type == PartDestinationType::DELETE)
             {
                 if (seen_delete_ttl)
                 {
                     throw Exception("More than one DELETE TTL expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
                 }
 
-                auto new_ttl_table_entry = create_ttl_entry(ttl_element.children[0]);
+                auto new_rows_ttl_entry = create_ttl_entry(ttl_element->children[0]);
                 if (!only_check)
-                {
-                    ttl_table_ast = ttl_element.children[0];
-                    ttl_table_entry = new_ttl_table_entry;
-                }
+                    update_rows_ttl_entry = new_rows_ttl_entry;
 
                 seen_delete_ttl = true;
             }
             else
             {
-                auto new_ttl_entry = create_ttl_entry(ttl_element.children[0]);
+                auto new_ttl_entry = create_ttl_entry(ttl_element->children[0]);
 
                 new_ttl_entry.entry_ast = ttl_element_ptr;
-                new_ttl_entry.destination_type = ttl_element.destination_type;
-                new_ttl_entry.destination_name = ttl_element.destination_name;
+                new_ttl_entry.destination_type = ttl_element->destination_type;
+                new_ttl_entry.destination_name = ttl_element->destination_name;
                 if (!new_ttl_entry.getDestination(getStoragePolicy()))
                 {
                     String message;
@@ -671,10 +678,17 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
                 }
 
                 if (!only_check)
-                {
-                    move_ttl_entries.emplace_back(std::move(new_ttl_entry));
-                }
+                    update_move_ttl_entries.emplace_back(std::move(new_ttl_entry));
             }
+        }
+
+        if (!only_check)
+        {
+            rows_ttl_entry = update_rows_ttl_entry;
+            ttl_table_ast = new_ttl_table_ast;
+
+            auto move_ttl_entries_lock = std::lock_guard<std::mutex>(move_ttl_entries_mutex);
+            move_ttl_entries = update_move_ttl_entries;
         }
     }
 }
@@ -3293,7 +3307,7 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
     ReservationPtr reservation;
 
     auto ttl_entry = selectTTLEntryForTTLInfos(ttl_infos, time_of_move);
-    if (ttl_entry != nullptr)
+    if (ttl_entry)
     {
         SpacePtr destination_ptr = ttl_entry->getDestination(storage_policy);
         if (!destination_ptr)
@@ -3352,27 +3366,28 @@ bool MergeTreeData::TTLEntry::isPartInDestination(const StoragePolicyPtr & polic
     return false;
 }
 
-const MergeTreeData::TTLEntry * MergeTreeData::selectTTLEntryForTTLInfos(
+std::optional<MergeTreeData::TTLEntry> MergeTreeData::selectTTLEntryForTTLInfos(
         const MergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move) const
 {
-    const MergeTreeData::TTLEntry * result = nullptr;
-    /// Prefer TTL rule which went into action last.
     time_t max_max_ttl = 0;
+    std::vector<DB::MergeTreeData::TTLEntry>::const_iterator best_entry_it;
 
-    for (const auto & ttl_entry : move_ttl_entries)
+    auto lock = std::lock_guard(move_ttl_entries_mutex);
+    for (auto ttl_entry_it = move_ttl_entries.begin(); ttl_entry_it != move_ttl_entries.end(); ++ttl_entry_it)
     {
-        auto ttl_info_it = ttl_infos.moves_ttl.find(ttl_entry.result_column);
+        auto ttl_info_it = ttl_infos.moves_ttl.find(ttl_entry_it->result_column);
+        /// Prefer TTL rule which went into action last.
         if (ttl_info_it != ttl_infos.moves_ttl.end()
                 && ttl_info_it->second.max <= time_of_move
                 && max_max_ttl <= ttl_info_it->second.max)
         {
-            result = &ttl_entry;
+            best_entry_it = ttl_entry_it;
             max_max_ttl = ttl_info_it->second.max;
         }
     }
 
-    return result;
+    return max_max_ttl ? *best_entry_it : std::optional<MergeTreeData::TTLEntry>();
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const
@@ -3773,7 +3788,15 @@ bool MergeTreeData::selectPartsAndMove()
 
 bool MergeTreeData::areBackgroundMovesNeeded() const
 {
-    return storage_policy->getVolumes().size() > 1;
+    auto policy = storage_policy;
+
+    if (policy->getVolumes().size() > 1)
+        return true;
+
+    if (policy->getVolumes().size() == 1 && policy->getVolumes()[0]->disks.size() > 1 && move_ttl_entries.size() > 0)
+        return true;
+
+    return false;
 }
 
 bool MergeTreeData::movePartsToSpace(const DataPartsVector & parts, SpacePtr space)

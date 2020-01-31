@@ -234,7 +234,7 @@ void QueryPipeline::addDelayedStream(ProcessorPtr source)
     addPipe({ std::move(processor) });
 }
 
-void QueryPipeline::resize(size_t num_streams, bool force)
+void QueryPipeline::resize(size_t num_streams, bool force, bool strict)
 {
     checkInitialized();
 
@@ -243,7 +243,13 @@ void QueryPipeline::resize(size_t num_streams, bool force)
 
     has_resize = true;
 
-    auto resize = std::make_shared<ResizeProcessor>(current_header, getNumStreams(), num_streams);
+    ProcessorPtr resize;
+
+    if (strict)
+        resize = std::make_shared<StrictResizeProcessor>(current_header, getNumStreams(), num_streams);
+    else
+        resize = std::make_shared<ResizeProcessor>(current_header, getNumStreams(), num_streams);
+
     auto stream = streams.begin();
     for (auto & input : resize->getInputs())
         connect(**(stream++), input);
@@ -517,6 +523,8 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
 
 void QueryPipeline::setProcessListElement(QueryStatus * elem)
 {
+    process_list_element = elem;
+
     for (auto & processor : processors)
     {
         if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
@@ -624,7 +632,7 @@ PipelineExecutorPtr QueryPipeline::execute()
     if (!output_format)
         throw Exception("Cannot execute pipeline because it doesn't have output.", ErrorCodes::LOGICAL_ERROR);
 
-    return std::make_shared<PipelineExecutor>(processors);
+    return std::make_shared<PipelineExecutor>(processors, process_list_element);
 }
 
 }

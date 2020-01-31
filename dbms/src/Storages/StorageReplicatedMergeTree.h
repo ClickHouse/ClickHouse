@@ -84,6 +84,7 @@ public:
 
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
 
+    bool supportsParallelInsert() const override { return true; }
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
 
@@ -231,7 +232,7 @@ private:
     std::atomic<bool> is_leader {false};
     zkutil::LeaderElectionPtr leader_election;
 
-    InterserverIOEndpointHolderPtr data_parts_exchange_endpoint_holder;
+    InterserverIOEndpointPtr data_parts_exchange_endpoint;
 
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
