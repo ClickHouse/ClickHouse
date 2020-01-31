@@ -218,8 +218,8 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
         }
 
         return std::make_shared<ConnectionPool>(
-                1, address.host_name, address.port, address.default_database, address.user, address.password,
-                storage.getName() + '_' + address.user, Protocol::Compression::Enable, address.secure);
+            1, address.host_name, address.port, address.default_database, address.user, address.password,
+            storage.getName() + '_' + address.user, Protocol::Compression::Enable, address.secure);
     };
 
     auto pools = createPoolsForAddresses(name, pool_factory);
