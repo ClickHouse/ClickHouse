@@ -147,7 +147,7 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
     const char * address_begin = full_string.data();
 
     bool has_shard = startsWith("shard", full_string);
-    bool underscore = strchr(full_string.data(), '_');
+    const char * underscore = strchr(full_string.data(), '_');
 
     Address address;
     address.shard_number = has_shard ? parse<UInt32>(address_begin + 5) : 0;
