@@ -24,13 +24,15 @@ class StorageFile : public ext::shared_ptr_helper<StorageFile>, public IStorage
 public:
     std::string getName() const override { return "File"; }
 
-    BlockInputStreams read(
+    Pipes readWithProcessors(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
+
+    bool supportProcessorsPipeline() const override { return true; }
 
     BlockOutputStreamPtr write(
         const ASTPtr & query,
@@ -53,7 +55,7 @@ public:
     };
 
 protected:
-    friend class StorageFileBlockInputStream;
+    friend class StorageFileSource;
     friend class StorageFileBlockOutputStream;
 
     /// From file descriptor
