@@ -14,6 +14,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
+#include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ReadInOrderOptimizer.h>
 
@@ -112,6 +113,7 @@ StorageMaterializedView::StorageMaterializedView(
     if (query.select->list_of_selects->children.size() != 1)
         throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
+    select = query.select->clone();
     inner_query = query.select->list_of_selects->children.at(0);
 
     auto & select_query = inner_query->as<ASTSelectQuery &>();
@@ -157,6 +159,17 @@ NameAndTypePair StorageMaterializedView::getColumn(const String & column_name) c
 bool StorageMaterializedView::hasColumn(const String & column_name) const
 {
     return getTargetTable()->hasColumn(column_name);
+}
+
+StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
+{
+    return
+        {
+            .columns = getColumns(),
+            .indices = getIndices(),
+            .constraints = getConstraints(),
+            .select = getSelectQuery(),
+        };
 }
 
 QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context) const
@@ -237,6 +250,38 @@ bool StorageMaterializedView::optimize(const ASTPtr & query, const ASTPtr & part
 {
     checkStatementCanBeForwarded();
     return getTargetTable()->optimize(query, partition, final, deduplicate, context);
+}
+
+void StorageMaterializedView::alter(
+    const AlterCommands & params,
+    const Context & context,
+    TableStructureWriteLockHolder & table_lock_holder)
+{
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+    auto table_id = getStorageID();
+    StorageInMemoryMetadata metadata = getInMemoryMetadata();
+    params.apply(metadata);
+    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    setColumns(std::move(metadata.columns));
+}
+
+
+void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, const Settings & settings)
+{
+    if (settings.allow_experimental_alter_materialized_view_structure)
+    {
+        throw Exception("work in progress", ErrorCodes::NOT_IMPLEMENTED);
+    }
+    else
+    {
+        for (const auto & command : commands)
+        {
+            if (!command.isCommentAlter())
+                throw Exception(
+                    "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                    ErrorCodes::NOT_IMPLEMENTED);
+        }
+    }
 }
 
 void StorageMaterializedView::alterPartition(const ASTPtr & query, const PartitionCommands &commands, const Context &context)
