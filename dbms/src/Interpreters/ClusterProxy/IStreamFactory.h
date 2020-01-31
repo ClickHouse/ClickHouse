@@ -12,6 +12,9 @@ class Context;
 class Cluster;
 class Throttler;
 
+class Pipe;
+using Pipes = std::vector<Pipe>;
+
 namespace ClusterProxy
 {
 
@@ -26,7 +29,7 @@ public:
             const Cluster::ShardInfo & shard_info,
             const String & query, const ASTPtr & query_ast,
             const Context & context, const ThrottlerPtr & throttler,
-            BlockInputStreams & res) = 0;
+            Pipes & res) = 0;
 };
 
 }

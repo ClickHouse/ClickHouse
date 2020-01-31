@@ -340,7 +340,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
                                 : QueryProcessingStage::WithMergeableState;
 }
 
-BlockInputStreams StorageDistributed::read(
+Pipes StorageDistributed::readWithProcessors(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,

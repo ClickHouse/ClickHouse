@@ -11,6 +11,19 @@ SourceFromInputStream::SourceFromInputStream(BlockInputStreamPtr stream_, bool f
     , force_add_aggregating_info(force_add_aggregating_info_)
     , stream(std::move(stream_))
 {
+    init();
+}
+
+SourceFromInputStream::SourceFromInputStream(String name, Block header, std::function<BlockInputStreamPtr()> stream_builder_)
+    : ISourceWithProgress(std::move(header))
+    , stream_builder(std::move(stream_builder_))
+    , source_name(std::move(name))
+{
+    init();
+}
+
+void SourceFromInputStream::init()
+{
     auto & sample = getPort().getHeader();
     for (auto & type : sample.getDataTypes())
         if (typeid_cast<const DataTypeAggregateFunction *>(type.get()))
@@ -104,6 +117,9 @@ Chunk SourceFromInputStream::generate()
 
     if (!is_stream_started)
     {
+        if (!stream)
+            stream = stream_builder();
+
         stream->readPrefix();
         is_stream_started = true;
     }

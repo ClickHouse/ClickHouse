@@ -597,11 +597,14 @@ void QueryPipeline::calcRowsBeforeLimit()
 
             if (auto * source = typeid_cast<SourceFromInputStream *>(processor))
             {
-                auto & info = source->getStream().getProfileInfo();
-                if (info.hasAppliedLimit())
+                if (auto & stream = source->getStream())
                 {
-                    has_limit = visited_limit = true;
-                    rows_before_limit_at_least += info.getRowsBeforeLimit();
+                    auto & info = stream->getProfileInfo();
+                    if (info.hasAppliedLimit())
+                    {
+                        has_limit = visited_limit = true;
+                        rows_before_limit_at_least += info.getRowsBeforeLimit();
+                    }
                 }
             }
         }
