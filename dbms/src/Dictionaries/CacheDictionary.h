@@ -318,7 +318,7 @@ private:
 
     mutable std::exception_ptr last_exception;
     mutable std::atomic<size_t> error_count = 0;
-    mutable std::chrono::system_clock::time_point backoff_end_time;
+    mutable std::atomic<std::chrono::system_clock::time_point> backoff_end_time;
 
     mutable pcg64 rnd_engine;
 

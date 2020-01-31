@@ -821,7 +821,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
 
     const auto now = std::chrono::system_clock::now();
 
-    if (now > backoff_end_time)
+    if (now > backoff_end_time.load())
     {
         try
         {
@@ -902,7 +902,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
             backoff_end_time = now + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
 
             tryLogException(last_exception, log, "Could not update cache dictionary '" + getFullName() +
-                                                 "', next update is scheduled at " + ext::to_string(backoff_end_time));
+                                                 "', next update is scheduled at " + ext::to_string(backoff_end_time.load()));
         }
     }
 
