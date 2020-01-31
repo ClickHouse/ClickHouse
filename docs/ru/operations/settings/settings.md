@@ -778,7 +778,7 @@ load_balancing = first_or_random
 
 ## output_format_csv_crlf_end_of_line {#settings-output_format_csv_crlf_end_of_line}
 
-Для формата CSV заменяет перевод строки LF на CRLF.
+Использовать в качестве разделителя строк для CSV формата CRLF (DOS/Windows стиль) вместо LF (Unix стиль).
 
 ## insert_quorum {#settings-insert_quorum}
 
