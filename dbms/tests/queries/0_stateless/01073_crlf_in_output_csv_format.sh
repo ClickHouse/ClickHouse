@@ -20,4 +20,3 @@ else
 fi
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_01073_crlf_in_output_csv_format;"
-
