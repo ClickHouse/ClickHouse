@@ -27,4 +27,4 @@ Function | Description
 [odbc](odbc.md) | Creates a [ODBC](../../operations/table_engines/odbc.md)-engine table.
 [hdfs](hdfs.md) | Creates a [HDFS](../../operations/table_engines/hdfs.md)-engine table.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/table_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/) <!--hide-->

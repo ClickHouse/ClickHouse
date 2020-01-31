@@ -1,4 +1,4 @@
 # Operations 
 
 
-[Original article](https://clickhouse.yandex/docs/en/operations/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/) <!--hide-->
