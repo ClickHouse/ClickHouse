@@ -1005,4 +1005,4 @@ ClickHouse генерирует исключение
 Значение по умолчанию: 0.
 
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/settings/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

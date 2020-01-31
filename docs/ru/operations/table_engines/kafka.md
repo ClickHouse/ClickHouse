@@ -164,5 +164,5 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 - [Виртуальные столбцы](index.md#table_engines-virtual_columns)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/kafka/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/kafka/) <!--hide-->
 

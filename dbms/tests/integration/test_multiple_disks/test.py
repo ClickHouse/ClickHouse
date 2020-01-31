@@ -769,7 +769,7 @@ def test_concurrent_alter_move(start_cluster, name, engine):
             tasks.append(p.apply_async(optimize_table, (100,)))
 
         for task in tasks:
-            task.get(timeout=60)
+            task.get(timeout=120)
 
         assert node1.query("SELECT 1") == "1\n"
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "500\n"
@@ -952,7 +952,7 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
             tasks.append(p.apply_async(alter_modify, (100,)))
 
         for task in tasks:
-            task.get(timeout=60)
+            task.get(timeout=120)
 
         assert node1.query("SELECT 1") == "1\n"
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "100\n"

@@ -835,4 +835,4 @@ function(
       size_t limit)
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/development/style/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/development/style/) <!--hide-->

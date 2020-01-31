@@ -933,4 +933,4 @@ SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers 
 └────────┴────────────────────────────────┴──────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/other_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->

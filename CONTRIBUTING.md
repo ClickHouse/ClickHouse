@@ -12,7 +12,7 @@ If you want to contribute to documentation, read the [Contributing to ClickHouse
 
 ## Legal Info
 
-In order for us (YANDEX LLC) to accept patches and other contributions from you, you will have to adopt our Yandex Contributor License Agreement (the "**CLA**"). The current version of the CLA you may find here:
+In order for us (YANDEX LLC) to accept patches and other contributions from you, you may adopt our Yandex Contributor License Agreement (the "**CLA**"). The current version of the CLA you may find here:
 1) https://yandex.ru/legal/cla/?lang=en (in English) and
 2) https://yandex.ru/legal/cla/?lang=ru (in Russian).
 
@@ -37,4 +37,7 @@ Replace the bracketed text as follows:
 
 It is enough to provide us such notification once.
 
-If you don't agree with the CLA, you still can open a pull request to provide your contributions.
+As an alternative, you can provide DCO instead of CLA. You can find the text of DCO here: https://developercertificate.org/
+It is enough to read and copy it verbatim to your pull request.
+
+If you don't agree with the CLA and don't want to provide DCO, you still can open a pull request to provide your contributions.
