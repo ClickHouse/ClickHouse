@@ -226,7 +226,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 
     const auto settings = storage.global_context.getSettings();
     return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM,
-            settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
+        settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
 }
 
 
