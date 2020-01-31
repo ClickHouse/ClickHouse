@@ -776,6 +776,10 @@ load_balancing = first_or_random
 
 Для формата CSV включает или выключает парсинг неэкранированной строки `NULL` как литерала (синоним для `\N`)
 
+## output_format_csv_crlf_end_of_line {#settings-output_format_csv_crlf_end_of_line}
+
+Для формата CSV заменяет перевод строки LF на CRLF.
+
 ## insert_quorum {#settings-insert_quorum}
 
 Включает кворумную запись.
