@@ -151,7 +151,12 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     }
     if (entry->type == LogEntry::ALTER_METADATA)
     {
-        alter_znodes_in_queue.push_back(entry->znode_name);
+        alter_sequence.addMetadataAlter(entry->alter_version);
+    }
+
+    if (entry->type == LogEntry::MUTATE_PART && entry->alter_version != -1)
+    {
+        alter_sequence.addDataAlterIfEmpty(entry->alter_version);
     }
 }
 
@@ -226,12 +231,7 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
         if (entry->type == LogEntry::ALTER_METADATA)
         {
-            if (alter_znodes_in_queue.front() != entry->znode_name)
-            {
-                /// TODO(alesap) Better
-                throw Exception("Processed incorrect alter.", ErrorCodes::LOGICAL_ERROR);
-            }
-            alter_znodes_in_queue.pop_front();
+            alter_sequence.finishMetadataAlter(entry->alter_version);
         }
     }
     else
@@ -1025,7 +1025,12 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
     if (entry.type == LogEntry::ALTER_METADATA)
     {
-        return entry.znode_name == alter_znodes_in_queue.front();
+        return alter_sequence.canExecuteMetadataAlter(entry.alter_version);
+    }
+
+    if (entry.type == LogEntry::MUTATE_PART && entry.alter_version != -1)
+    {
+        return alter_sequence.canExecuteDataAlter(entry.alter_version);
     }
 
     return true;
@@ -1304,6 +1309,8 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Marking mutation " << znode << " done because it is <= mutation_pointer (" << mutation_pointer << ")");
                 mutation.is_done = true;
+                if (mutation.entry->alter_version != -1)
+                    alter_sequence.finishDataAlter(mutation.entry->alter_version);
             }
             else if (mutation.parts_to_do == 0)
             {
@@ -1340,6 +1347,8 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Mutation " << entry->znode_name << " is done");
                 it->second.is_done = true;
+                if (entry->alter_version != -1)
+                    alter_sequence.finishDataAlter(entry->alter_version);
             }
         }
     }
@@ -1703,7 +1712,7 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
 }
 
 
-std::optional<Int64> ReplicatedMergeTreeMergePredicate::getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const
+std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const
 {
     /// Assigning mutations is easier than assigning merges because mutations appear in the same order as
     /// the order of their version numbers (see StorageReplicatedMergeTree::mutate).
@@ -1726,11 +1735,22 @@ std::optional<Int64> ReplicatedMergeTreeMergePredicate::getDesiredMutationVersio
         return {};
 
     Int64 current_version = queue.getCurrentMutationVersionImpl(part->info.partition_id, part->info.getDataVersion(), lock);
-    Int64 max_version = in_partition->second.rbegin()->first;
+    Int64 max_version = in_partition->second.begin()->first;
+
+    int alter_version = -1;
+    for (auto [mutation_version, mutation_status] : in_partition->second)
+    {
+        max_version = mutation_version;
+        if (mutations_status->entry->alter_version != -1)
+        {
+            alter_version = mutations_status->entry->alter_version;
+            break;
+        }
+    }
     if (current_version >= max_version)
         return {};
 
-    return max_version;
+    return std::make_pair(max_version, alter_version);
 }
 
 

@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
+#include <Storages/MergeTree/ReplicatedQueueAlterState.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -126,10 +127,10 @@ private:
     /// Znode ID of the latest mutation that is done.
     String mutation_pointer;
 
-
     /// Provides only one simultaneous call to pullLogsToQueue.
     std::mutex pull_logs_to_queue_mutex;
 
+    AlterSequence alter_sequence;
 
     /// List of subscribers
     /// A subscriber callback is called when an entry queue is deleted
@@ -374,6 +375,11 @@ public:
     void getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const;
 
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
+
+    String getLatestMutation() const
+    {
+        return mutations_by_znode.rbegin()->first;
+    }
 };
 
 class ReplicatedMergeTreeMergePredicate
@@ -390,7 +396,7 @@ public:
 
     /// Return nonempty optional if the part can and should be mutated.
     /// Returned mutation version number is always the biggest possible.
-    std::optional<Int64> getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const;
+    std::optional<std::pair<Int64, int>> getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const;
 
     bool isMutationFinished(const ReplicatedMergeTreeMutationEntry & mutation) const;
 

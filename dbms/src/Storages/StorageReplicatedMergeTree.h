@@ -109,8 +109,9 @@ public:
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
-    ReplicatedMergeTreeMutationEntry mutateImpl(const MutationCommands & commands);
-    void waitMutation(const ReplicatedMergeTreeMutationEntry & entry, size_t mutation_sync) const;
+    ReplicatedMergeTreeMutationEntry prepareMutationEntry(zkutil::ZooKeeperPtr zk,  const MutationCommands & commands, Coordination::Requests & requests) const;
+    void mutateImpl(zkutil::ZooKeeperPtr zookeeper, const Coordination::Requests & requests, ReplicatedMergeTreeMutationEntry & entry);
+    void waitMutation(const String & znode_name, size_t mutation_sync) const;
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
     CancellationCode killMutation(const String & mutation_id) override;
 
@@ -438,7 +439,7 @@ private:
         bool force_ttl,
         ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
 
-    bool createLogEntryToMutatePart(const MergeTreeDataPart & part, Int64 mutation_version);
+    bool createLogEntryToMutatePart(const MergeTreeDataPart & part, Int64 mutation_version, int alter_version);
 
     /// Exchange parts.
 
