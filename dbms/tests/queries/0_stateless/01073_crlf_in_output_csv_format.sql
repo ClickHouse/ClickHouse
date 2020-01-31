@@ -6,4 +6,3 @@ SELECT * FROM test_01073_crlf_in_output_csv_format FORMAT CSV;
 SET output_format_csv_crlf_end_of_line = 0;
 SELECT * FROM test_01073_crlf_in_output_csv_format FORMAT CSV;
 DROP TABLE IF EXISTS test_01073_crlf_in_output_csv_format;
-
