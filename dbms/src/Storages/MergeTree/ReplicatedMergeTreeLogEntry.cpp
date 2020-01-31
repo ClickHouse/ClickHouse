@@ -64,14 +64,16 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 << source_parts.at(0) << "\n"
                 << "to\n"
                 << new_part_name;
+            out << "\nalter_version\n";
+            out << alter_version;
             break;
 
         case ALTER_METADATA: /// Just make local /metadata and /columns consistent with global
             out << "alter\n";
-            out << "sync_mode\n";
-            out << alter_sync_mode << "\n";
-            out << "mutatation_commands\n";
-            out << mutation_commands << "\n";
+            out << "alter_version\n";
+            out << alter_version<< "\n";
+            out << "have_mutation\n";
+            out << have_mutation << "\n";
             out << "columns_str_size:\n";
             out << columns_str.size() << "\n";
             out << columns_str << "\n";
@@ -166,14 +168,15 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
            >> "to\n"
            >> new_part_name;
         source_parts.push_back(source_part);
+        in >> "\nalter_version\n" >> alter_version;
     }
     else if (type_str == "alter")
     {
         type = ALTER_METADATA;
-        in >> "sync_mode\n";
-        in >> alter_sync_mode;
-        in >> "\nmutatation_commands\n";
-        in >> mutation_commands;
+        in >> "alter_version\n";
+        in >> alter_version;
+        in >> "\nhave_mutation\n";
+        in >> have_mutation;
         in >> "\ncolumns_str_size:\n";
         size_t columns_size;
         in >> columns_size >> "\n";

@@ -106,19 +106,12 @@ String ReplicatedMergeTreeTableMetadata::toString() const
 void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
 {
     in >> "metadata format version: 1\n";
-    std::cerr << "READ METADATA1\n";
     in >> "date column: " >> date_column >> "\n";
-    std::cerr << "READ METADATA2\n";
     in >> "sampling expression: " >> sampling_expression >> "\n";
-    std::cerr << "READ METADATA3\n";
     in >> "index granularity: " >> index_granularity >> "\n";
-    std::cerr << "READ METADATA4\n";
     in >> "mode: " >> merging_params_mode >> "\n";
-    std::cerr << "READ METADATA5\n";
     in >> "sign column: " >> sign_column >> "\n";
-    std::cerr << "READ METADATA6\n";
     in >> "primary key: " >> primary_key >> "\n";
-    std::cerr << "READ METADATA\n";
 
     if (in.eof())
         data_format_version = 0;
