@@ -138,8 +138,8 @@ std::pair<String, UInt16> Cluster::Address::fromString(const String & host_port_
 String Cluster::Address::toFullString() const
 {
     return
-        ((shard_number == 0) ? "" : "shard" + std::to_string(shard_number)) +
-        ((replica_number == 0) ? "" : "_replica" + std::to_string(replica_number));
+        ((shard_index == 0) ? "" : "shard" + std::to_string(shard_index)) +
+        ((replica_index == 0) ? "" : "_replica" + std::to_string(replica_index));
 }
 
 Cluster::Address Cluster::Address::fromFullString(const String & full_string)
@@ -157,7 +157,7 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
 
     const char * user_pw_end = strchr(full_string.data(), '@');
 
-    /// parsing with format [shard{shard_number}[_replica{replica_number}]]
+    /// parsing with format [shard{shard_index}[_replica{replica_index}]]
     if (!user_pw_end && startsWith("shard", full_string))
     {
         const char * underscore = strchr(full_string.data(), '_');
