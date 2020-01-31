@@ -55,13 +55,15 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
-    BlockInputStreams read(
+    Pipes readWithProcessors(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
+
+    bool supportProcessorsPipeline() const override { return true; }
 
     Strings getDataPaths() const override;
 
