@@ -817,4 +817,4 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 **Значение по умолчанию**: 15.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/server_settings/settings/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/server_settings/settings/) <!--hide-->

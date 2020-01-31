@@ -21,4 +21,4 @@
 
 Настройки, которые можно задать только в конфигурационном файле сервера, в разделе не рассматриваются.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/) <!--hide-->

@@ -10,4 +10,4 @@ You can also use the following database engines:
 
 - [Lazy](lazy.md)
 
-[Original article](https://clickhouse.yandex/docs/en/database_engines/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/database_engines/) <!--hide-->

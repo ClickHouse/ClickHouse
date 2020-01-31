@@ -1143,4 +1143,4 @@ Enable order-preserving parallel parsing of data formats. Supported only for TSV
 
 The minimum chunk size in bytes, which each thread will parse in parallel.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!-- hide -->
+[Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

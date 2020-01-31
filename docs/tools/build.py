@@ -93,7 +93,7 @@ def build_for_lang(lang, args):
             site_dir=site_dir,
             strict=not args.version_prefix,
             theme=theme_cfg,
-            copyright='©2016–2019 Yandex LLC',
+            copyright='©2016–2020 Yandex LLC',
             use_directory_urls=True,
             repo_name='ClickHouse/ClickHouse',
             repo_url='https://github.com/ClickHouse/ClickHouse/',
@@ -267,10 +267,16 @@ def build(args):
     if not args.skip_website:
         minify_website(args)
 
-    write_redirect_html(
-        os.path.join(args.output_dir, 'tutorial.html'),
-        '/docs/en/getting_started/tutorial/'
-    )
+    for static_redirect in [
+        ('tutorial.html', '/docs/en/getting_started/tutorial/',),
+        ('reference_en.html', '/docs/en/single/', ),
+        ('reference_ru.html', '/docs/ru/single/',),
+        ('docs/index.html', '/docs/en/',),
+    ]:
+        write_redirect_html(
+            os.path.join(args.output_dir, static_redirect[0]),
+            static_redirect[1]
+        )
 
 
 if __name__ == '__main__':

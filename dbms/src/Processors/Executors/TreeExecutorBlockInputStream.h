@@ -18,8 +18,18 @@ public:
     ///  * processors form a tree
     ///  * all processors are attainable from root
     ///  * there is no other connected processors
-    explicit TreeExecutorBlockInputStream(Pipe pipe) : output_port(pipe.getPort()), processors(std::move(pipe).detachProcessors())
+    explicit TreeExecutorBlockInputStream(Pipe pipe) : output_port(pipe.getPort())
     {
+        for (auto & table_lock : pipe.getTableLocks())
+            addTableLock(table_lock);
+
+        for (auto & storage : pipe.getStorageHolders())
+            storage_holders.emplace_back(storage);
+
+        for (auto & context : pipe.getContexts())
+            interpreter_context.emplace_back(context);
+
+        processors = std::move(pipe).detachProcessors();
         init();
     }
 
@@ -51,6 +61,10 @@ private:
     void init();
     /// Execute tree step-by-step until root returns next chunk or execution is finished.
     void execute();
+
+    /// Moved from pipe.
+    std::vector<std::shared_ptr<Context>> interpreter_context;
+    std::vector<StoragePtr> storage_holders;
 };
 
 }
