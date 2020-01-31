@@ -139,53 +139,17 @@ String Cluster::Address::toFullString() const
 {
     return
         ((shard_number == 0) ? "" : "shard" + std::to_string(shard_number)) +
-        ((replica_number == 0) ? "" : "_replica" + std::to_string(replica_number)) + '@' +
-        escapeForFileName(host_name) + ':' +
-        std::to_string(port) +
-        (default_database.empty() ? "" : ('#' +
-        escapeForFileName(default_database))) +
-        ((secure == Protocol::Secure::Enable) ? "+secure" : "");
+        ((replica_number == 0) ? "" : "_replica" + std::to_string(replica_number));
 }
 
 Cluster::Address Cluster::Address::fromFullString(const String & full_string)
 {
     const char * address_begin = full_string.data();
-    const char * address_end = address_begin + full_string.size();
 
-    Protocol::Secure secure = Protocol::Secure::Disable;
-    const char * secure_tag = "+secure";
-    if (endsWith(full_string, secure_tag))
-    {
-        address_end -= strlen(secure_tag);
-        secure = Protocol::Secure::Enable;
-    }
-
-
-    const char * underscore = strchr(full_string.data(), '_');
-    const char * slash = strchr(full_string.data(), '/');
-    const char * user_pw_end = strchr(full_string.data(), '@');
-    const char * colon = strchr(full_string.data(), ':');
-    const bool has_shard = startsWith(full_string, "shard");
-    if (has_shard && !slash)
-        throw Exception("Incorrect [shard{shard_number}[_replica{replica_number}]]/user[:password]@host:port#default_database format " + full_string, ErrorCodes::SYNTAX_ERROR);
-    if (!user_pw_end || !colon)
-        throw Exception("Incorrect user[:password]@host:port#default_database format " + full_string, ErrorCodes::SYNTAX_ERROR);
-
-    const bool has_pw = colon < user_pw_end;
-    const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
-    if (!host_end)
-        throw Exception("Incorrect address '" + full_string + "', it does not contain port", ErrorCodes::SYNTAX_ERROR);
-
-    const char * has_db = strchr(full_string.data(), '#');
-    const char * port_end = has_db ? has_db : address_end;
+    bool has_shard = startsWith("shard", full_string);
+    bool underscore = strchr(full_string.data(), '_');
 
     Address address;
-    address.secure = secure;
-    address.port = parse<UInt16>(host_end + 1, port_end - (host_end + 1));
-    address.host_name = unescapeForFileName(std::string(user_pw_end + 1, host_end));
-    address.user = unescapeForFileName(std::string(slash + 1, has_pw ? colon : user_pw_end));
-    address.password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
-    address.default_database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end)) : std::string();
     address.shard_number = has_shard ? parse<UInt32>(address_begin + 5) : 0;
     address.replica_number = underscore ? parse<UInt32>(underscore + 8) : 0;
     return address;
