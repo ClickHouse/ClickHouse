@@ -164,4 +164,4 @@ default
 </graphite_rollup>
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/graphitemergetree/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/graphitemergetree/) <!--hide-->

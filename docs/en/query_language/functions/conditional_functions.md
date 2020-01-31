@@ -148,4 +148,4 @@ FROM LEFT_RIGHT
 ```
 
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/conditional_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/conditional_functions/) <!--hide-->

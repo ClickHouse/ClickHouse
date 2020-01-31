@@ -402,4 +402,4 @@ LIMIT 10;
 -   <https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/>
 -   <http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html>
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/getting_started/example_datasets/ontime/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/example_datasets/ontime/) <!--hide-->

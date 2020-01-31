@@ -64,5 +64,5 @@ SELECT * FROM t_uuid
 
 Тип данных UUID не поддерживается арифметическими операциями  (например, [abs](../query_language/functions/arithmetic_functions.md#arithm_func-abs)) или агрегатными функциями, такими как [sum](../query_language/agg_functions/reference.md#agg_function-sum) и [avg](../query_language/agg_functions/reference.md#agg_function-avg).
 
-[Original article](https://clickhouse.yandex/docs/en/data_types/uuid/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data_types/uuid/) <!--hide-->
 

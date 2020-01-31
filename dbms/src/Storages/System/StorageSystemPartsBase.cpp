@@ -12,6 +12,7 @@
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -210,7 +211,7 @@ StoragesInfo StoragesInfoStream::next()
     return {};
 }
 
-BlockInputStreams StorageSystemPartsBase::read(
+Pipes StorageSystemPartsBase::readWithProcessors(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -233,11 +234,17 @@ BlockInputStreams StorageSystemPartsBase::read(
         processNextStorage(res_columns, info, has_state_column);
     }
 
-    Block block = getSampleBlock();
+    Block header = getSampleBlock();
     if (has_state_column)
-        block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
+        header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
 
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block.cloneWithColumns(std::move(res_columns))));
+    UInt64 num_rows = res_columns.at(0)->size();
+    Chunk chunk(std::move(res_columns), num_rows);
+
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+
+    return pipes;
 }
 
 NameAndTypePair StorageSystemPartsBase::getColumn(const String & column_name) const

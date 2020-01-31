@@ -111,7 +111,7 @@ ClickHouse использует для сборки некоторое коли�
 
 Для установки GCC под Ubuntu, выполните: `sudo apt install gcc g++`.
 
-Проверьте версию gcc: `gcc --version`. Если версия меньше 9, то следуйте инструкции: https://clickhouse.yandex/docs/en/development/build/#install-gcc-9
+Проверьте версию gcc: `gcc --version`. Если версия меньше 9, то следуйте инструкции: https://clickhouse.tech/docs/en/development/build/#install-gcc-9
 
 Сборка под Mac OS X поддерживается только для компилятора Clang. Чтобы установить его выполните `brew install llvm`
 
@@ -226,11 +226,11 @@ sudo -u clickhouse ClickHouse/build/dbms/programs/clickhouse server --config-fil
 
 # Написание кода
 
-Описание архитектуры ClickHouse: https://clickhouse.yandex/docs/ru/development/architecture/
+Описание архитектуры ClickHouse: https://clickhouse.tech/docs/ru/development/architecture/
 
-Стиль кода: https://clickhouse.yandex/docs/ru/development/style/
+Стиль кода: https://clickhouse.tech/docs/ru/development/style/
 
-Разработка тестов: https://clickhouse.yandex/docs/ru/development/tests/
+Разработка тестов: https://clickhouse.tech/docs/ru/development/tests/
 
 Список задач: https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/instructions/easy_tasks_sorted_ru.md
 
