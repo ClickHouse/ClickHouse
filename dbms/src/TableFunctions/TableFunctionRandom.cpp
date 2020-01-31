@@ -12,6 +12,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionRandom.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/parseColumnsListForTableFunction.h>
 
 #include "registerTableFunctions.h"
 
@@ -44,7 +45,7 @@ StoragePtr TableFunctionRandom::executeImpl(const ASTPtr & ast_function, const C
     UInt64 limit = 1;
     /// Parsing second argument if present
     if (args.size() == 2)
-        limit = args[1]->as<ASTLiteral &>().value.safeGet<Uint64>();
+        limit = args[1]->as<ASTLiteral &>().value.safeGet<UInt64>();
 
     if (!limit)
         throw Exception("Table function '" + getName() + "' limit should not be 0.", ErrorCodes::BAD_ARGUMENTS);
@@ -53,8 +54,8 @@ StoragePtr TableFunctionRandom::executeImpl(const ASTPtr & ast_function, const C
 
     Block res_block;
     for (const auto & name_type : columns.getOrdinary())
-        Column c = name_type.type->createColumnWithRandomData(limit) ;
-        res_block.insert({ c, name_type.type, name_type.name });
+        MutableColumnPtr column = name_type.type->createColumnWithRandomData(limit);
+        res_block.insert({ column, name_type.type, name_type.name });
 
     auto res = StorageValues::create(StorageID(getDatabaseName(), table_name), columns, res_block);
     res->startup();
