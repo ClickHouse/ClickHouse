@@ -57,8 +57,8 @@ public:
         UInt16 port;
         String user;
         String password;
-        UInt32 shard_number{}; /// shard serial number in configuration file
-        UInt32 replica_number{}; /// replica serial number in this shard
+        UInt32 shard_index{}; /// shard serial number in configuration file
+        UInt32 replica_index{}; /// replica serial number in this shard
 
         /// This database is selected when no database is specified for Distributed table
         String default_database;
@@ -70,7 +70,7 @@ public:
         Protocol::Secure secure = Protocol::Secure::Disable;
 
         Address() = default;
-        Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, UInt32 shard_number_ = 0, UInt32 replica_number_ = 0);
+        Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, UInt32 shard_index_ = 0, UInt32 replica_index_ = 0);
         Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port, bool secure_ = false);
         /// Returns 'escaped_host_name:port'
         String toString() const;
@@ -82,8 +82,10 @@ public:
 
         static std::pair<String, UInt16> fromString(const String & host_port_string);
 
-        /// Retrurns escaped shard{shard_number}_replica{replica_number}@resolved_host_address:resolved_host_port#default_database
+        /// Returns escaped shard{shard_index}_replica{replica_index}
         String toFullString() const;
+
+        /// Returns address with only shard index and replica index or full address without shard index and replica index
         static Address fromFullString(const String & address_full_string);
 
         /// Returns resolved address if it does resolve.
