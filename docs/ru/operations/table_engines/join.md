@@ -97,4 +97,4 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 
 При аварийном перезапуске сервера блок данных на диске может быть потерян или повреждён. В последнем случае, может потребоваться вручную удалить файл с повреждёнными данными.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/join/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/join/) <!--hide-->
