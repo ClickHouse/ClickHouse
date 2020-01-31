@@ -44,6 +44,8 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    bool supportProcessorsPipeline() const override { return true; }
+
 private:
     Block sample_block;
     const Names key_names;
