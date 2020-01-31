@@ -238,7 +238,7 @@ Pipes StorageMerge::readWithProcessors(
             throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
         auto source_pipes = createSources(
-                query_info, processed_stage, max_block_size, header, *it, real_column_names, modified_context,
+                query_info, processed_stage, max_block_size, header, table, real_column_names, modified_context,
                 current_streams, has_table_virtual_column);
 
         for (auto & pipe : source_pipes)
