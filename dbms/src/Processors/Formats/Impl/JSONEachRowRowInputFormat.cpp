@@ -217,9 +217,9 @@ void JSONEachRowRowInputFormat::readNestedData(const String & name, MutableColum
 bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
     /// Set flag data_in_square_brackets if data starts with '['.
-    if (!in.eof() && parsing_stage == ParsingStages::START)
+    if (!in.eof() && parsing_stage == ParsingStage::START)
     {
-        parsing_stage = ParsingStages::PROCESS;
+        parsing_stage = ParsingStage::PROCESS;
         skipWhitespaceIfAny(in);
         if (*in.position() == '[')
         {
@@ -244,13 +244,13 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     if (!in.eof() && *in.position() == ']' && data_in_square_brackets)
     {
         data_in_square_brackets = false;
-        parsing_stage = ParsingStages::FINISH;
+        parsing_stage = ParsingStage::FINISH;
         ++in.position();
         return false;
     }
 
     skipWhitespaceIfAny(in);
-    if (in.eof() || parsing_stage == ParsingStages::FINISH)
+    if (in.eof() || parsing_stage == ParsingStage::FINISH)
     {
         if (data_in_square_brackets)
             throw Exception("Unexpected end of data: received end of stream instead of ']'.", ErrorCodes::INCORRECT_DATA);
