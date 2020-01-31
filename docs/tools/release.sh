@@ -21,7 +21,6 @@ if [[ -z "$1" ]]
 then
     source "${BASE_DIR}/venv/bin/activate"
     python "${BASE_DIR}/build.py" "--enable-stable-releases"
-    set +e
     rm -rf "${PUBLISH_DIR}" || true
     git clone "${GIT_TEST_URI}" "${PUBLISH_DIR}"
     cd "${PUBLISH_DIR}"
@@ -36,14 +35,12 @@ then
     git add *
     git commit -a -m "add new release at $(date)"
     git push origin master
-    set -e
     cd "${BUILD_DIR}"
     docker build -t "${FULL_NAME}" "${BUILD_DIR}"
     docker tag "${FULL_NAME}" "${REMOTE_NAME}"
     DOCKER_HASH=$(docker push "${REMOTE_NAME}" | tail -1 | awk '{print $3;}')
     docker rmi "${FULL_NAME}"
 else
-    set +e
     rm -rf "${BUILD_DIR}" || true
     rm -rf "${PUBLISH_DIR}" || true
     git clone "${GIT_TEST_URI}" "${BUILD_DIR}"
@@ -59,7 +56,6 @@ else
     git add *
     git commit -a -m "add new release at $(date)"
     git push origin master
-    set -e
 fi
 
 QLOUD_ENDPOINT="https://platform.yandex-team.ru/api/v1"
