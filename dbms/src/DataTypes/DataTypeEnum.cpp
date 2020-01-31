@@ -347,6 +347,14 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
 }
 
 
+template <typename Type>
+MutableColumnPtr DataTypeEnum<Type>::createColumnWithRandomData(size_t limit) const
+{
+    (void)limit;
+    throw Exception("Method createColumnWithRandomData() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
+
 /// Explicit instantiations.
 template class DataTypeEnum<Int8>;
 template class DataTypeEnum<Int16>;

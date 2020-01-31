@@ -54,8 +54,10 @@ StoragePtr TableFunctionRandom::executeImpl(const ASTPtr & ast_function, const C
 
     Block res_block;
     for (const auto & name_type : columns.getOrdinary())
+    {
         MutableColumnPtr column = name_type.type->createColumnWithRandomData(limit);
-        res_block.insert({ column, name_type.type, name_type.name });
+        res_block.insert({std::move(column), name_type.type, name_type.name});
+    }
 
     auto res = StorageValues::create(StorageID(getDatabaseName(), table_name), columns, res_block);
     res->startup();
