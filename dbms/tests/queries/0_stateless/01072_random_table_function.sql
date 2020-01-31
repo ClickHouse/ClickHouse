@@ -1,1 +1,1 @@
-SELECT * FROM random(3)
+SELECT * FROM generate('id int', 3)
