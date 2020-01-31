@@ -15,6 +15,7 @@ INSERT INTO src VALUES (1), (2), (3);
 SET allow_experimental_alter_materialized_view_structure = 1;
 
 -- Live alter which changes query logic and adds an extra column.
+-- This is not implemented yet and this test is just a draft.
 ALTER TABLE pipe
     MODIFY QUERY
     SELECT
