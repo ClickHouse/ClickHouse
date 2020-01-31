@@ -215,10 +215,16 @@ bool AnalyzedJoin::sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y)
 
 JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block)
 {
-    bool is_left_or_inner = isLeft(table_join->kind()) || isInner(table_join->kind());
-    bool is_asof = (table_join->strictness() == ASTTableJoin::Strictness::Asof);
+    auto kind = table_join->kind();
+    auto strictness = table_join->strictness();
 
-    if (table_join->partial_merge_join && !is_asof && is_left_or_inner)
+    bool is_any = (strictness == ASTTableJoin::Strictness::Any);
+    bool is_all = (strictness == ASTTableJoin::Strictness::All);
+    bool is_semi = (strictness == ASTTableJoin::Strictness::Semi);
+
+    bool allow_merge_join = (isLeft(kind) && (is_any || is_all || is_semi)) || (isInner(kind) && is_all);
+
+    if (table_join->partial_merge_join && allow_merge_join)
         return std::make_shared<MergeJoin>(table_join, right_sample_block);
     return std::make_shared<Join>(table_join, right_sample_block);
 }
