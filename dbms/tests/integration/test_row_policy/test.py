@@ -254,3 +254,25 @@ def test_dcl_management():
 
 def test_users_xml_is_readonly():
     assert re.search("storage is readonly", instance.query_and_get_error("DROP POLICY default ON mydb.filtered_table1"))
+
+
+def test_miscellaneous_engines():
+    copy_policy_xml('normal_filters.xml')
+
+    # ReplicatedMergeTree
+    instance.query("DROP TABLE mydb.filtered_table1")
+    instance.query("CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE ReplicatedMergeTree('/clickhouse/tables/00-00/filtered_table1', 'replica1') ORDER BY a")
+    instance.query("INSERT INTO mydb.filtered_table1 values (0, 0), (0, 1), (1, 0), (1, 1)")
+    assert instance.query("SELECT * FROM mydb.filtered_table1") == "1\t0\n1\t1\n"
+
+    # CollapsingMergeTree
+    instance.query("DROP TABLE mydb.filtered_table1")
+    instance.query("CREATE TABLE mydb.filtered_table1 (a UInt8, b Int8) ENGINE CollapsingMergeTree(b) ORDER BY a")
+    instance.query("INSERT INTO mydb.filtered_table1 values (0, 1), (0, 1), (1, 1), (1, 1)")
+    assert instance.query("SELECT * FROM mydb.filtered_table1") == "1\t1\n1\t1\n"
+
+    # ReplicatedCollapsingMergeTree
+    instance.query("DROP TABLE mydb.filtered_table1")
+    instance.query("CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE ReplicatedCollapsingMergeTree('/clickhouse/tables/00-00/filtered_table1', 'replica1', b) ORDER BY a")
+    instance.query("INSERT INTO mydb.filtered_table1 values (0, 1), (0, 1), (1, 1), (1, 1)")
+    assert instance.query("SELECT * FROM mydb.filtered_table1") == "1\t1\n1\t1\n"
