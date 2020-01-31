@@ -109,6 +109,7 @@ struct ReplicatedMergeTreeLogEntryData
 
     //TODO(alesap)
     int alter_version;
+    bool have_mutation;
 
     String columns_str;
     String metadata_str;

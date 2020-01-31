@@ -109,7 +109,7 @@ public:
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
-    ReplicatedMergeTreeMutationEntry prepareMutationEntry(zkutil::ZooKeeperPtr zk,  const MutationCommands & commands, Coordination::Requests & requests) const;
+    ReplicatedMergeTreeMutationEntry prepareMutationEntry(zkutil::ZooKeeperPtr zk,  const MutationCommands & commands, Coordination::Requests & requests, int alter_version = -1) const;
     void mutateImpl(zkutil::ZooKeeperPtr zookeeper, const Coordination::Requests & requests, ReplicatedMergeTreeMutationEntry & entry);
     void waitMutation(const String & znode_name, size_t mutation_sync) const;
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
@@ -423,9 +423,6 @@ private:
 
     /// Checks if some mutations are done and marks them as done.
     void mutationsFinalizingTask();
-
-    /// finish alter after all heavy processes finished
-    void finishAlter();
 
     /** Write the selected parts to merge into the log,
       * Call when merge_selecting_mutex is locked.

@@ -123,6 +123,7 @@ private:
 
     /// Mapping from znode path to Mutations Status
     std::map<String, MutationStatus> mutations_by_znode;
+    /// Partition -> (block_number -> MutationStatus)
     std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
     /// Znode ID of the latest mutation that is done.
     String mutation_pointer;
@@ -376,10 +377,6 @@ public:
 
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
 
-    String getLatestMutation() const
-    {
-        return mutations_by_znode.rbegin()->first;
-    }
 };
 
 class ReplicatedMergeTreeMergePredicate

@@ -28,6 +28,8 @@ struct ReplicatedMergeTreeMutationEntry
 
     std::map<String, Int64> block_numbers;
     MutationCommands commands;
+
+    int alter_version = -1;
 };
 
 using ReplicatedMergeTreeMutationEntryPtr = std::shared_ptr<const ReplicatedMergeTreeMutationEntry>;
