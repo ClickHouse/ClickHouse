@@ -188,25 +188,14 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
     {
         const auto & cluster = storage.getCluster();
         const auto & shards_info = cluster->getShardsInfo();
-        const auto & shards_addresses = cluster->getShardsAddresses();
+        // const auto & shards_addresses = cluster->getShardsInfo();
 
         /// existing connections pool have a higher priority
-        for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
-        {
-            const Cluster::Addresses & replicas_addresses = shards_addresses[shard_index];
+        return shards_info[address.shard_number].per_replica_pools[address.replica_number];
 
-            for (size_t replica_index = 0; replica_index < replicas_addresses.size(); ++replica_index)
-            {
-                const Cluster::Address & replica_address = replicas_addresses[replica_index];
-
-                if (address == replica_address)
-                    return shards_info[shard_index].per_replica_pools[replica_index];
-            }
-        }
-
-        return std::make_shared<ConnectionPool>(
+        /*return std::make_shared<ConnectionPool>(
             1, address.host_name, address.port, address.default_database, address.user, address.password,
-            storage.getName() + '_' + address.user, Protocol::Compression::Enable, address.secure);
+            storage.getName() + '_' + address.user, Protocol::Compression::Enable, address.secure);*/
     };
 
     auto pools = createPoolsForAddresses(name, pool_factory);
