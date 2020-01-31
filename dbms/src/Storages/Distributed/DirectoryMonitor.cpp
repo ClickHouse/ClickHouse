@@ -188,21 +188,45 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
     {
         const auto & cluster = storage.getCluster();
         const auto & shards_info = cluster->getShardsInfo();
-        // const auto & shards_addresses = cluster->getShardsInfo();
+        const auto & shards_addresses = cluster->getShardsAddresses();
+
+        /// check format shard{shard_index}_number{number_index}
+        if (address.shard_index != 0)
+        {
+            return shards_info[address.shard_index].per_replica_pools[address.replica_index];
+        }
 
         /// existing connections pool have a higher priority
-        return shards_info[address.shard_number].per_replica_pools[address.replica_number];
+        for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
+        {
+            const Cluster::Addresses & replicas_addresses = shards_addresses[shard_index];
 
-        /*return std::make_shared<ConnectionPool>(
-            1, address.host_name, address.port, address.default_database, address.user, address.password,
-            storage.getName() + '_' + address.user, Protocol::Compression::Enable, address.secure);*/
+            for (size_t replica_index = 0; replica_index < replicas_addresses.size(); ++replica_index)
+            {
+                const Cluster::Address & replica_address = replicas_addresses[replica_index];
+
+                if (address.user == replica_address.user &&
+                    address.password == replica_address.password &&
+                    address.host_name == replica_address.host_name &&
+                    address.port == replica_address.port &&
+                    address.default_database == replica_address.default_database &&
+                    address.secure == replica_address.secure)
+                {
+                    return shards_info[shard_index].per_replica_pools[replica_index];
+                }
+            }
+        }
+
+        return std::make_shared<ConnectionPool>(
+                1, address.host_name, address.port, address.default_database, address.user, address.password,
+                storage.getName() + '_' + address.user, Protocol::Compression::Enable, address.secure);
     };
 
     auto pools = createPoolsForAddresses(name, pool_factory);
 
     const auto settings = storage.global_context.getSettings();
     return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM,
-        settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
+            settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
 }
 
 
