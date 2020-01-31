@@ -57,8 +57,9 @@ public:
         UInt16 port;
         String user;
         String password;
-        UInt32 shard_number{};
-        UInt32 replica_number{};
+        UInt32 shard_number{}; /// shard serial number in configuration file
+        UInt32 replica_number{}; /// replica serial number in this shard
+
         /// This database is selected when no database is specified for Distributed table
         String default_database;
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
