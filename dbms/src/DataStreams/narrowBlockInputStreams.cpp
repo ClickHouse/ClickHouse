@@ -20,6 +20,7 @@ namespace
             distribution[i] = i % to;
 
         std::shuffle(distribution.begin(), distribution.end(), thread_local_rng);
+        return distribution;
     }
 }
 
