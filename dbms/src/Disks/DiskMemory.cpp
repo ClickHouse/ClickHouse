@@ -39,6 +39,7 @@ private:
 
 void WriteIndirectBuffer::finalize()
 {
+    next();
     WriteBufferFromVector::finalize();
 
     auto iter = disk->files.find(path);
