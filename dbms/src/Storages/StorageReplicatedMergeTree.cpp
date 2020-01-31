@@ -404,6 +404,8 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
 
     /// ALTERs of the metadata node.
     zookeeper->createIfNotExists(replica_path + "/metadata", String());
+
+    zookeeper->createIfNotExists(zookeeper_path + "/alters", String());
 }
 
 
@@ -469,6 +471,7 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
     auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(zookeeper_path + "/columns", &columns_stat));
     //columns_version = columns_stat.version;
 
+    /// TODO(alesap) remove this trash
     const ColumnsDescription & old_columns = getColumns();
     if (columns_from_zk != old_columns || !metadata_diff.empty())
     {
@@ -2296,11 +2299,11 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     if (part->bytes_on_disk > max_source_part_size_for_mutation)
                         continue;
 
-                    std::optional<Int64> desired_mutation_version = merge_pred.getDesiredMutationVersion(part);
+                    std::optional<std::pair<Int64, int>> desired_mutation_version = merge_pred.getDesiredMutationVersion(part);
                     if (!desired_mutation_version)
                         continue;
 
-                    if (createLogEntryToMutatePart(*part, *desired_mutation_version))
+                    if (createLogEntryToMutatePart(*part, desired_mutation_version->first, desired_mutation_version->second))
                     {
                         success = true;
                         break;
@@ -2401,7 +2404,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
 }
 
 
-bool StorageReplicatedMergeTree::createLogEntryToMutatePart(const MergeTreeDataPart & part, Int64 mutation_version)
+bool StorageReplicatedMergeTree::createLogEntryToMutatePart(const MergeTreeDataPart & part, Int64 mutation_version, int alter_version)
 {
     auto zookeeper = getZooKeeper();
 
@@ -2431,6 +2434,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMutatePart(const MergeTreeDataP
     entry.source_parts.push_back(part.name);
     entry.new_part_name = new_part_name;
     entry.create_time = time(nullptr);
+    entry.alter_version = alter_version;
 
     zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
     return true;
@@ -3245,17 +3249,56 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
 
         std::cerr << "Nodes in zk updated\n";
     }
+
     if (!entry.mutation_commands.empty())
     {
+
         MutationCommands commands;
         ReadBufferFromString in(entry.mutation_commands);
         commands.readText(in);
-        if (is_leader)
+
+        String mutation_znode;
+
+        while (true)
         {
-            auto mutation_entry = mutateImpl(commands);
-            waitMutation(mutation_entry, entry.alter_sync_mode);
+            Coordination::Requests requests;
+            requests.emplace_back(zkutil::makeCreateRequest(
+                zookeeper_path + "/alters" + entry.znode_name, String(), zkutil::CreateMode::PersistentSequential));
+
+            prepareMutationEntry(zookeeper, commands, requests);
+
+            std::cerr << replica_name << " - " << "REqeusts size:" << requests.size() << std::endl;
+            Coordination::Responses responses;
+            int32_t rc = zookeeper->tryMulti(requests, responses);
+
+            if (rc == Coordination::ZOK)
+            {
+                const String & path_created = dynamic_cast<const Coordination::CreateResponse *>(responses.back().get())->path_created;
+                mutation_znode = path_created.substr(path_created.find_last_of('/') + 1);
+                std::cerr << "Created mutation\n";
+                LOG_TRACE(log, "Created mutation with ID " << mutation_znode);
+                break;
+            }
+            else if (rc == Coordination::ZNODEEXISTS)
+            {
+                queue.updateMutations(zookeeper);
+
+                mutation_znode = queue.getLatestMutation();
+
+                std::cerr << replica_name << " - " << "Found mutation in queue:" << mutation_znode;
+                LOG_TRACE(log, "Already have mutation with ID " << mutation_znode);
+                break;
+            }
+            else if (rc != Coordination::ZBADVERSION)
+            {
+                throw Coordination::Exception("Cannot create mutation for alter", rc);
+            }
+            std::cerr << "LOOOPING\n";
         }
+
+        waitMutation(mutation_znode, entry.alter_sync_mode);
     }
+
 
     return true;
 }
@@ -3295,6 +3338,8 @@ void StorageReplicatedMergeTree::alter(
             return "";
         return queryToString(query);
     };
+
+    auto zookeeper = getZooKeeper();
 
     //std::cerr << " Columns preparation to alter:" << getColumns().getAllPhysical().toString() << std::endl;
 
@@ -3354,6 +3399,11 @@ void StorageReplicatedMergeTree::alter(
         entry.create_time = time(nullptr);
 
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+        if (!entry.mutation_commands.empty())
+        {
+            prepareMutationEntry(zookeeper, entry.mutation_commands, ops);
+        }
 
         Coordination::Responses results = getZooKeeper()->multi(ops);
 
@@ -4338,11 +4388,15 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
 
 void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const Context & query_context)
 {
-    auto entry = mutateImpl(commands);
-    waitMutation(entry, query_context.getSettingsRef().mutations_sync);
+    auto zookeeper = getZooKeeper();
+    Coordination::Requests requests;
+
+    ReplicatedMergeTreeMutationEntry entry = prepareMutationEntry(zookeeper, commands, requests);
+    mutateImpl(zookeeper, requests, entry);
+    waitMutation(entry.znode_name, query_context.getSettingsRef().mutations_sync);
 }
 
-void StorageReplicatedMergeTree::waitMutation(const ReplicatedMergeTreeMutationEntry & entry, size_t mutations_sync) const
+void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t mutations_sync) const
 {
     auto zookeeper = getZooKeeper();
     /// we have to wait
@@ -4354,11 +4408,39 @@ void StorageReplicatedMergeTree::waitMutation(const ReplicatedMergeTreeMutationE
         else if (mutations_sync == 1) /// just wait for ourself
             replicas.push_back(replica_name);
 
-        waitMutationToFinishOnReplicas(replicas, entry.znode_name);
+        waitMutationToFinishOnReplicas(replicas, znode_name);
     }
 }
 
-ReplicatedMergeTreeMutationEntry StorageReplicatedMergeTree::mutateImpl(const MutationCommands & commands)
+
+ReplicatedMergeTreeMutationEntry StorageReplicatedMergeTree::prepareMutationEntry(
+    zkutil::ZooKeeperPtr zookeeper, const MutationCommands & commands, Coordination::Requests & requests) const
+{
+    String mutations_path = zookeeper_path + "/mutations";
+
+    ReplicatedMergeTreeMutationEntry entry;
+    entry.source_replica = replica_name;
+    entry.commands = commands;
+    Coordination::Stat mutations_stat;
+    zookeeper->get(mutations_path, &mutations_stat);
+
+    EphemeralLocksInAllPartitions block_number_locks(zookeeper_path + "/block_numbers", "block-", zookeeper_path + "/temp", *zookeeper);
+
+    for (const auto & lock : block_number_locks.getLocks())
+        entry.block_numbers[lock.partition_id] = lock.number;
+
+    entry.create_time = time(nullptr);
+
+    requests.emplace_back(zkutil::makeSetRequest(mutations_path, String(), mutations_stat.version));
+    requests.emplace_back(zkutil::makeCreateRequest(mutations_path + "/", entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+    return entry;
+}
+
+void StorageReplicatedMergeTree::mutateImpl(
+    zkutil::ZooKeeperPtr zookeeper,
+    const Coordination::Requests & requests,
+    ReplicatedMergeTreeMutationEntry & entry)
 {
     /// Overview of the mutation algorithm.
     ///
@@ -4413,57 +4495,25 @@ ReplicatedMergeTreeMutationEntry StorageReplicatedMergeTree::mutateImpl(const Mu
     /// After all needed parts are mutated (i.e. all active parts have the mutation version greater than
     /// the version of this mutation), the mutation is considered done and can be deleted.
 
-    ReplicatedMergeTreeMutationEntry entry;
-    entry.source_replica = replica_name;
-    entry.commands = commands;
 
-    String mutations_path = zookeeper_path + "/mutations";
+    Coordination::Responses responses;
+    int32_t rc = zookeeper->tryMulti(requests, responses);
 
-    /// Update the mutations_path node when creating the mutation and check its version to ensure that
-    /// nodes for mutations are created in the same order as the corresponding block numbers.
-    /// Should work well if the number of concurrent mutation requests is small.
-    while (true)
+    if (rc == Coordination::ZOK)
     {
-        auto zookeeper = getZooKeeper();
-
-        Coordination::Stat mutations_stat;
-        zookeeper->get(mutations_path, &mutations_stat);
-
-        EphemeralLocksInAllPartitions block_number_locks(
-            zookeeper_path + "/block_numbers", "block-", zookeeper_path + "/temp", *zookeeper);
-
-        for (const auto & lock : block_number_locks.getLocks())
-            entry.block_numbers[lock.partition_id] = lock.number;
-
-        entry.create_time = time(nullptr);
-
-        Coordination::Requests requests;
-        requests.emplace_back(zkutil::makeSetRequest(mutations_path, String(), mutations_stat.version));
-        requests.emplace_back(zkutil::makeCreateRequest(
-            mutations_path + "/", entry.toString(), zkutil::CreateMode::PersistentSequential));
-
-        Coordination::Responses responses;
-        int32_t rc = zookeeper->tryMulti(requests, responses);
-
-        if (rc == Coordination::ZOK)
-        {
-            const String & path_created =
-                dynamic_cast<const Coordination::CreateResponse *>(responses[1].get())->path_created;
-            entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
-            LOG_TRACE(log, "Created mutation with ID " << entry.znode_name);
-            break;
-        }
-        else if (rc == Coordination::ZBADVERSION)
-        {
-            LOG_TRACE(log, "Version conflict when trying to create a mutation node, retrying...");
-            continue;
-        }
-        else
-            throw Coordination::Exception("Unable to create a mutation znode", rc);
+        const String & path_created =
+            dynamic_cast<const Coordination::CreateResponse *>(responses[1].get())->path_created;
+        entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
+        LOG_TRACE(log, "Created mutation with ID " << entry.znode_name);
     }
-
-
-    return entry;
+    else if (rc == Coordination::ZBADVERSION)
+        /// This error mean, that parallel mutation is created in mutations queue (/mutations) right now.
+        /// (NOTE: concurrent mutations execution is OK, but here we have case with concurrent mutation intention from client)
+        /// We can retry this error by ourself, but mutations is not designed for highly concurrent execution.
+        /// So, if client sure that he do what he want, than he should retry.
+        throw Coordination::Exception("Parallel mutation is creating right now. Client should retry.", rc);
+    else
+        throw Coordination::Exception("Unable to create a mutation znode", rc);
 }
 
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const

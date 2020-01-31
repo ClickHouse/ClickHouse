@@ -66,7 +66,6 @@ struct ReplicatedMergeTreeLogEntryData
     void readText(ReadBuffer & in);
     String toString() const;
 
-    /// log-xxx
     String znode_name;
 
     Type type = EMPTY;
@@ -108,10 +107,8 @@ struct ReplicatedMergeTreeLogEntryData
 
     std::shared_ptr<ReplaceRangeEntry> replace_range_entry;
 
-    /// Should alter be processed sychronously, or asynchronously.
-    size_t alter_sync_mode;
-    /// Mutation commands for alter if any.
-    String mutation_commands;
+    //TODO(alesap)
+    int alter_version;
 
     String columns_str;
     String metadata_str;
