@@ -63,7 +63,6 @@ public:
     void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
     MutableColumnPtr createColumn() const override;
-    MutableColumnPtr createColumnWithRandomData(size_t) const override;
 
     Field getDefault() const override;
 

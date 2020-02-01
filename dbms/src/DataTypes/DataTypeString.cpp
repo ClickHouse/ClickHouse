@@ -360,11 +360,6 @@ MutableColumnPtr DataTypeString::createColumn() const
     return ColumnString::create();
 }
 
-MutableColumnPtr DataTypeString::createColumnWithRandomData(size_t limit) const
-{
-    (void)limit;
-    throw Exception("Method createColumnWithRandomData() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-}
 
 bool DataTypeString::equals(const IDataType & rhs) const
 {
