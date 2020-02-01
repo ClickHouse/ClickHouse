@@ -125,7 +125,7 @@ void ReplicatedMergeTreeQueue::initialize(
 
 void ReplicatedMergeTreeQueue::insertUnlocked(
     const LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed,
-    std::lock_guard<std::mutex> & /* state_lock */)
+    std::lock_guard<std::mutex> & state_lock)
 {
     for (const String & virtual_part_name : entry->getVirtualPartNames())
     {
@@ -151,19 +151,19 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     }
     if (entry->type == LogEntry::ALTER_METADATA)
     {
-        std::cerr << "INSERT AlTER:" << entry->alter_version << std::endl;
-        alter_sequence.addMetadataAlter(entry->alter_version);
+        //std::cerr << "INSERT AlTER:" << entry->alter_version << std::endl;
+        alter_sequence.addMetadataAlter(entry->alter_version, state_lock);
     }
 
     if (entry->type == LogEntry::MUTATE_PART)
     {
 
-        std::cerr << "MUTATIOn WITH VERSION:" << entry->alter_version << std::endl;
+        //std::cerr << "MUTATIOn WITH VERSION:" << entry->alter_version << std::endl;
     }
     if (entry->type == LogEntry::MUTATE_PART && entry->alter_version != -1)
     {
-        std::cerr << "INSERT MUTATE PART:" << entry->alter_version << std::endl;
-        alter_sequence.addDataAlterIfEmpty(entry->alter_version);
+        //std::cerr << "INSERT MUTATE PART:" << entry->alter_version << std::endl;
+        alter_sequence.addDataAlterIfEmpty(entry->alter_version, state_lock);
     }
 }
 
@@ -186,7 +186,7 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
     bool is_successful,
     std::optional<time_t> & min_unprocessed_insert_time_changed,
     std::optional<time_t> & max_processed_insert_time_changed,
-    std::unique_lock<std::mutex> & /* queue_lock */)
+    std::unique_lock<std::mutex> & state_lock)
 {
     /// Update insert times.
     if (entry->type == LogEntry::GET_PART)
@@ -238,8 +238,8 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
         if (entry->type == LogEntry::ALTER_METADATA)
         {
-            std::cerr << "Alter have mutation:" << entry->have_mutation << std::endl;
-            alter_sequence.finishMetadataAlter(entry->alter_version, entry->have_mutation);
+            //std::cerr << "Alter have mutation:" << entry->have_mutation << std::endl;
+            alter_sequence.finishMetadataAlter(entry->alter_version, entry->have_mutation, state_lock);
         }
     }
     else
@@ -416,7 +416,7 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
 
-    std::cerr << "Pooling logs to queue\n";
+    //std::cerr << "Pooling logs to queue\n";
     String index_str = zookeeper->get(replica_path + "/log_pointer");
     UInt64 index;
 
@@ -591,7 +591,7 @@ Names ReplicatedMergeTreeQueue::getCurrentPartNamesToMutate(ReplicatedMergeTreeM
 void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
 {
     std::lock_guard lock(update_mutations_mutex);
-    std::cerr << "UPdating mutations\n";
+    //std::cerr << "UPdating mutations\n";
 
     Strings entries_in_zk = zookeeper->getChildrenWatch(zookeeper_path + "/mutations", nullptr, watch_callback);
     StringSet entries_in_zk_set(entries_in_zk.begin(), entries_in_zk.end());
@@ -948,7 +948,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     String & out_postpone_reason,
     MergeTreeDataMergerMutator & merger_mutator,
     MergeTreeData & data,
-    std::lock_guard<std::mutex> & queue_lock) const
+    std::lock_guard<std::mutex> & state_lock) const
 {
     if (entry.type == LogEntry::MERGE_PARTS
         || entry.type == LogEntry::GET_PART
@@ -956,7 +956,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     {
         for (const String & new_part_name : entry.getBlockingPartNames())
         {
-            if (!isNotCoveredByFuturePartsImpl(new_part_name, out_postpone_reason, queue_lock))
+            if (!isNotCoveredByFuturePartsImpl(new_part_name, out_postpone_reason, state_lock))
             {
                 if (!out_postpone_reason.empty())
                     LOG_DEBUG(log, out_postpone_reason);
@@ -1026,7 +1026,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         String range_name = (entry.type == LogEntry::REPLACE_RANGE) ? entry.replace_range_entry->drop_range_part_name : entry.new_part_name;
         auto range = MergeTreePartInfo::fromPartName(range_name, format_version);
 
-        if (0 != getConflictsCountForRange(range, entry, &conflicts_description, queue_lock))
+        if (0 != getConflictsCountForRange(range, entry, &conflicts_description, state_lock))
         {
             LOG_DEBUG(log, conflicts_description);
             return false;
@@ -1035,17 +1035,17 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
     if (entry.type == LogEntry::ALTER_METADATA)
     {
-        std::cerr << "Should we execute alter:";
+        //std::cerr << "Should we execute alter:";
 
-        std::cerr << alter_sequence.canExecuteMetadataAlter(entry.alter_version) << std::endl;
-        return alter_sequence.canExecuteMetadataAlter(entry.alter_version);
+        //std::cerr << alter_sequence.canExecuteMetadataAlter(entry.alter_version, state_lock) << std::endl;
+        return alter_sequence.canExecuteMetadataAlter(entry.alter_version, state_lock);
     }
 
     if (entry.type == LogEntry::MUTATE_PART && entry.alter_version != -1)
     {
-        std::cerr << "Should we execute mutation:";
-        std::cerr << alter_sequence.canExecuteDataAlter(entry.alter_version) << std::endl;
-        return alter_sequence.canExecuteDataAlter(entry.alter_version);
+        //std::cerr << "Should we execute mutation:";
+        //std::cerr << alter_sequence.canExecuteDataAlter(entry.alter_version, state_lock) << std::endl;
+        return alter_sequence.canExecuteDataAlter(entry.alter_version, state_lock);
     }
 
     return true;
@@ -1362,7 +1362,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                 LOG_TRACE(log, "Mutation " << entry->znode_name << " is done");
                 it->second.is_done = true;
                 if (entry->alter_version != -1)
-                    alter_sequence.finishDataAlter(entry->alter_version);
+                    alter_sequence.finishDataAlter(entry->alter_version, lock);
             }
         }
     }
@@ -1753,13 +1753,13 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
 
     if (current_version >= max_version)
     {
-        std::cerr << "But current version is:" << current_version << std::endl;
+        //std::cerr << "But current version is:" << current_version << std::endl;
         return {};
     }
 
     int alter_version = -1;
 
-    std::cerr << "Looking for alter version for mutation\n";
+    //std::cerr << "Looking for alter version for mutation\n";
     String version;
     for (auto [mutation_version, mutation_status] : in_partition->second)
     {
@@ -1771,7 +1771,7 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
             break;
         }
     }
-    std::cerr << "FOUND alter version:" << alter_version << " and mutation znode name:" << version << std::endl;
+    //std::cerr << "FOUND alter version:" << alter_version << " and mutation znode name:" << version << std::endl;
 
     return std::make_pair(max_version, alter_version);
 }

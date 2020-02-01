@@ -293,7 +293,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         checkTableStructure(skip_sanity_checks, true);
         checkParts(skip_sanity_checks);
 
-        /// Temporary directories contain unfinalized results of Merges or Fetches (after forced restart)
+        /// Temporary directories contain untinalized results of Merges or Fetches (after forced restart)
         ///  and don't allow to reinitialize them, so delete each of them immediately
         clearOldTemporaryDirectories(0);
     }
@@ -444,7 +444,7 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/replicas", "",
         zkutil::CreateMode::Persistent));
 
-    std::cerr << "Creating alters node\n";
+    ////std::cerr << "Creating alters node\n";
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/alters", "",
         zkutil::CreateMode::Persistent));
 
@@ -3225,7 +3225,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parse(entry.metadata_str);
     auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this).checkAndFindDiff(metadata_from_entry, /* allow_alter = */ true);
 
-    ////std::cerr << "Metadata received\n";
+    //////std::cerr << "Metadata received\n";
 
     MergeTreeData::DataParts parts;
 
@@ -3249,11 +3249,11 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
             LOG_INFO(log, "Applied changes to the metadata of the table.");
         }
 
-        ////std::cerr << "Recalculating columns sizes\n";
+        //////std::cerr << "Recalculating columns sizes\n";
         recalculateColumnSizes();
         /// Update metadata ZK nodes for a specific replica.
 
-        std::cerr << "Nodes in zk updated\n";
+        ////std::cerr << "Nodes in zk updated\n";
     }
 
     return true;
@@ -3297,7 +3297,7 @@ void StorageReplicatedMergeTree::alter(
 
     auto zookeeper = getZooKeeper();
 
-    //std::cerr << " Columns preparation to alter:" << getColumns().getAllPhysical().toString() << std::endl;
+    ////std::cerr << " Columns preparation to alter:" << getColumns().getAllPhysical().toString() << std::endl;
 
     ReplicatedMergeTreeLogEntryData entry;
 
@@ -3321,9 +3321,9 @@ void StorageReplicatedMergeTree::alter(
 
         String path_prefix = zookeeper_path + "/alters/alter-";
         String path = zookeeper->create(path_prefix, "", zkutil::CreateMode::EphemeralSequential);
-        std::cerr << "Path for alter:" << path << std::endl;
+        ////std::cerr << "Path for alter:" << path << std::endl;
         int alter_version = parse<int>(path.c_str() + path_prefix.size(), path.size() - path_prefix.size());
-        std::cerr << "Alter version:" << alter_version << std::endl;
+        //std::cerr << "Alter version:" << alter_version << std::endl;
 
 
         String new_columns_str = metadata.columns.toString();
@@ -3351,7 +3351,7 @@ void StorageReplicatedMergeTree::alter(
 
         if (ops.empty())
         {
-            std::cerr << "Alter doesn't change anything\n";
+            //std::cerr << "Alter doesn't change anything\n";
             return;
         }
         /// Perform settings update locally
@@ -3386,28 +3386,28 @@ void StorageReplicatedMergeTree::alter(
         int32_t rc = zookeeper->tryMulti(ops, results);
         queue.pullLogsToQueue(zookeeper);
 
-        std::cerr << "Results size:" << results.size() << std::endl;
-        std::cerr << "Have mutation:" << have_mutation << std::endl;
+        //std::cerr << "Results size:" << results.size() << std::endl;
+        //std::cerr << "Have mutation:" << have_mutation << std::endl;
 
         if (rc == Coordination::ZOK)
         {
             if (have_mutation)
             {
-                std::cerr << "In have mutation\n";
-                std::cerr << "INDEX:" << results.size() - 2 << std::endl;
+                //std::cerr << "In have mutation\n";
+                //std::cerr << "INDEX:" << results.size() - 2 << std::endl;
                 String alter_path = dynamic_cast<const Coordination::CreateResponse &>(*results[results.size() - 3]).path_created;
-                std::cerr << "Alter path:" << alter_path << std::endl;
+                //std::cerr << "Alter path:" << alter_path << std::endl;
                 entry.znode_name = alter_path.substr(alter_path.find_last_of('/') + 1);
 
                 String mutation_path = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
-                std::cerr << "Mutations path:" << mutation_path << std::endl;
+                //std::cerr << "Mutations path:" << mutation_path << std::endl;
                 mutation_znode = mutation_path.substr(mutation_path.find_last_of('/') + 1);
             }
             else
             {
-                std::cerr << "Results size:" << results.size() << std::endl;
+                //std::cerr << "Results size:" << results.size() << std::endl;
                 String alter_path = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
-                std::cerr << "Alters path:" << alter_path << std::endl;
+                //std::cerr << "Alters path:" << alter_path << std::endl;
                 entry.znode_name = alter_path.substr(alter_path.find_last_of('/') + 1);
             }
         }
@@ -3421,9 +3421,9 @@ void StorageReplicatedMergeTree::alter(
 
     table_lock_holder.release();
 
-    std::cerr << "Started wait for alter\n";
+    //std::cerr << "Started wait for alter\n";
     auto unwaited = waitForAllReplicasToProcessLogEntry(entry, false);
-    std::cerr << "FInished wait for alter\n";
+    //std::cerr << "FInished wait for alter\n";
 
     if (!unwaited.empty())
     {
@@ -3432,9 +3432,9 @@ void StorageReplicatedMergeTree::alter(
 
     if (mutation_znode)
     {
-        std::cerr << "Started wait for mutation:" << *mutation_znode << std::endl;
+        //std::cerr << "Started wait for mutation:" << *mutation_znode << std::endl;
         waitMutation(*mutation_znode, query_context.getSettingsRef().replication_alter_partitions_sync);
-        std::cerr << "FInished wait for mutation\n";
+        //std::cerr << "FInished wait for mutation\n";
     }
 }
 
