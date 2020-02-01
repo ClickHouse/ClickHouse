@@ -426,14 +426,14 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
         }
         case avro::AVRO_SYMBOLIC:
         {
-            auto [it, inserted] = symbolic_skip_fn_map.emplace(root_node->name(), SkipFnHolder{});
+            auto [it, inserted] = symbolic_skip_fn_map.emplace(root_node->name(), SkipFn{});
             if (inserted)
             {
-                it->second.skip_fn = createSkipFn(avro::resolveSymbol(root_node));
+                it->second = createSkipFn(avro::resolveSymbol(root_node));
             }
-            return [&holder = it->second](avro::Decoder & decoder)
+            return [&skip_fn = it->second](avro::Decoder & decoder)
             {
-                holder.skip_fn(decoder);
+                skip_fn(decoder);
             };
         }
         default:
