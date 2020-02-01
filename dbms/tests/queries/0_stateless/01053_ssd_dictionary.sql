@@ -100,8 +100,9 @@ SELECT 'HAS';
 SELECT id FROM database_for_dict.keys_table WHERE dictHas('database_for_dict.ssd_dict', toUInt64(id)) ORDER BY id;
 
 SELECT 'VALUES NOT FROM TABLE';
--- 0 -1
-SELECT dictGetUInt64('database_for_dict.ssd_dict', 'a', toUInt64(1000000)), dictGetInt32('database_for_dict.ssd_dict', 'b', toUInt64(1000000));
+-- 0 -1 none
+SELECT dictGetUInt64('database_for_dict.ssd_dict', 'a', toUInt64(1000000)), dictGetInt32('database_for_dict.ssd_dict', 'b', toUInt64(1000000)), dictGetString('database_for_dict.ssd_dict', 'c', toUInt64(1000000));
+SELECT dictGetUInt64('database_for_dict.ssd_dict', 'a', toUInt64(1000000)), dictGetInt32('database_for_dict.ssd_dict', 'b', toUInt64(1000000)), dictGetString('database_for_dict.ssd_dict', 'c', toUInt64(1000000));
 
 SELECT 'DUPLICATE KEYS';
 SELECT arrayJoin([1, 2, 3, 3, 2, 1]) AS id, dictGetInt32('database_for_dict.ssd_dict', 'b', toUInt64(id));
