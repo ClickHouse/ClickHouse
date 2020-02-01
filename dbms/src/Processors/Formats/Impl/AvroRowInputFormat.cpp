@@ -316,7 +316,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
         case avro::AVRO_FIXED:
         {
             size_t fixed_size = root_node->fixedSize();
-            if (target.isFixedString() && target_type->getSizeOfValueInMemory() == fixed_size)
+            if ((target.isFixedString() && target_type->getSizeOfValueInMemory() == fixed_size) || target.isString())
             {
                 return [tmp_fixed = std::vector<uint8_t>(fixed_size)](IColumn & column, avro::Decoder & decoder) mutable
                 {
