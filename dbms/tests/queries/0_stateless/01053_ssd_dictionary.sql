@@ -17,6 +17,9 @@ ENGINE = MergeTree()
 ORDER BY id;
 
 INSERT INTO database_for_dict.table_for_dict VALUES (1, 100, -100, 'clickhouse'), (2, 3, 4, 'database'), (5, 6, 7, 'columns'), (10, 9, 8, '');
+INSERT INTO database_for_dict.table_for_dict SELECT number, 0, -1, 'a' FROM system.numbers WHERE number NOT IN (1, 2, 5, 10) LIMIT 370;
+INSERT INTO database_for_dict.table_for_dict SELECT number, 0, -1, 'b' FROM system.numbers LIMIT 370, 370;
+INSERT INTO database_for_dict.table_for_dict SELECT number, 0, -1, 'c' FROM system.numbers LIMIT 700, 370;
 
 DROP DICTIONARY IF EXISTS database_for_dict.ssd_dict;
 
