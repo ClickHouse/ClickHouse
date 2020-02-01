@@ -28,7 +28,6 @@ public:
 private:
     using DeserializeFn = std::function<void(IColumn & column, avro::Decoder & decoder)>;
     using SkipFn = std::function<void(avro::Decoder & decoder)>;
-    struct SkipFnHolder { SkipFn skip_fn; };
     static DeserializeFn createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type);
     SkipFn createSkipFn(avro::NodePtr root_node);
 
@@ -41,9 +40,9 @@ private:
     /// How to deserialize the corresponding field in Avro schema.
     std::vector<DeserializeFn> deserialize_fns;
 
-    /// Map from name of named Avro type (record, enum, fixed) to SkipFn holder.
+    /// Map from name of named Avro type (record, enum, fixed) to SkipFn.
     /// This is to avoid infinite recursion when  Avro schema contains self-references. e.g. LinkedList
-    std::map<avro::Name, SkipFnHolder> symbolic_skip_fn_map;
+    std::map<avro::Name, SkipFn> symbolic_skip_fn_map;
 };
 
 class AvroRowInputFormat : public IRowInputFormat
