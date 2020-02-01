@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 #include <Poco/Logger.h>
 #include <common/logger_useful.h>
+#include <boost/smart_ptr/make_shared_object.hpp>
 #include <assert.h>
 
 
@@ -81,7 +82,9 @@ namespace
 
 AccessRightsContext::AccessRightsContext()
 {
-    result_access_cache[0].emplace().grant(AccessType::ALL);
+    auto everything_granted = boost::make_shared<AccessRights>();
+    everything_granted->grant(AccessType::ALL);
+    result_access_cache[0] = std::move(everything_granted);
 }
 
 
@@ -102,9 +105,8 @@ AccessRightsContext::AccessRightsContext(const ClientInfo & client_info_, const 
 template <int mode, typename... Args>
 bool AccessRightsContext::checkImpl(Poco::Logger * log_, const AccessFlags & access, const Args &... args) const
 {
-    std::lock_guard lock{mutex};
-    const auto & result_access = calculateResultAccess();
-    bool is_granted = result_access.isGranted(access, args...);
+    auto result_access = calculateResultAccess();
+    bool is_granted = result_access->isGranted(access, args...);
 
     if (trace_log)
         LOG_TRACE(trace_log, "Access " << (is_granted ? "granted" : "denied") << ": " << (AccessRightsElement{access, args...}.toString()));
@@ -129,7 +131,7 @@ bool AccessRightsContext::checkImpl(Poco::Logger * log_, const AccessFlags & acc
             LOG_WARNING(log_, msg + formatSkippedMessage(args...));
     };
 
-    if (readonly && calculateResultAccess(false, allow_ddl, allow_introspection).isGranted(access, args...))
+    if (readonly && calculateResultAccess(false, allow_ddl, allow_introspection)->isGranted(access, args...))
     {
         if (interface == ClientInfo::Interface::HTTP && http_method == ClientInfo::HTTPMethod::GET)
             show_error(
@@ -139,11 +141,11 @@ bool AccessRightsContext::checkImpl(Poco::Logger * log_, const AccessFlags & acc
         else
             show_error("Cannot execute query in readonly mode", ErrorCodes::READONLY);
     }
-    else if (!allow_ddl && calculateResultAccess(readonly, true, allow_introspection).isGranted(access, args...))
+    else if (!allow_ddl && calculateResultAccess(readonly, true, allow_introspection)->isGranted(access, args...))
     {
         show_error("Cannot execute query. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
     }
-    else if (!allow_introspection && calculateResultAccess(readonly, allow_ddl, true).isGranted(access, args...))
+    else if (!allow_introspection && calculateResultAccess(readonly, allow_ddl, true)->isGranted(access, args...))
     {
         show_error("Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
     }
@@ -227,25 +229,32 @@ bool AccessRightsContext::isGranted(Poco::Logger * log_, const AccessRightsEleme
 bool AccessRightsContext::isGranted(Poco::Logger * log_, const AccessRightsElements & access) const { return checkImpl<LOG_WARNING_IF_ACCESS_DENIED>(log_, access); }
 
 
-const AccessRights & AccessRightsContext::calculateResultAccess() const
+boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess() const
 {
-    if (result_access_cache[0])
-        return *result_access_cache[0];
+    auto res = result_access_cache[0].load();
+    if (res)
+        return res;
     return calculateResultAccess(readonly, allow_ddl, allow_introspection);
 }
 
 
-const AccessRights & AccessRightsContext::calculateResultAccess(UInt64 readonly_, bool allow_ddl_, bool allow_introspection_) const
+boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess(UInt64 readonly_, bool allow_ddl_, bool allow_introspection_) const
 {
     size_t cache_index = static_cast<size_t>(readonly_ != readonly)
                        + static_cast<size_t>(allow_ddl_ != allow_ddl) * 2 +
                        + static_cast<size_t>(allow_introspection_ != allow_introspection) * 3;
     assert(cache_index < std::size(result_access_cache));
-    auto & cached_result = result_access_cache[cache_index];
+    auto cached = result_access_cache[cache_index].load();
+    if (cached)
+        return cached;
 
-    if (cached_result)
-        return *cached_result;
-    auto & result = cached_result.emplace();
+    std::lock_guard lock{mutex};
+    cached = result_access_cache[cache_index].load();
+    if (cached)
+        return cached;
+
+    auto result_ptr = boost::make_shared<AccessRights>();
+    auto & result = *result_ptr;
 
     result = granted_to_user;
 
@@ -272,7 +281,8 @@ const AccessRights & AccessRightsContext::calculateResultAccess(UInt64 readonly_
     if (!allow_introspection_)
         result.fullRevoke(AccessType::INTROSPECTION);
 
-    return result;
+    result_access_cache[cache_index].store(result_ptr);
+    return std::move(result_ptr);
 }
 
 }
