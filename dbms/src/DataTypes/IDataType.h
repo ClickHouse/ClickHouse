@@ -287,10 +287,6 @@ public:
       */
     virtual MutableColumnPtr createColumn() const = 0;
 
-    /** Create column for corresponding type and fill with random values.
-      */
-    virtual MutableColumnPtr createColumnWithRandomData(size_t size) const = 0;
-
     /** Create ColumnConst for corresponding type, with specified size and value.
       */
     ColumnPtr createColumnConst(size_t size, const Field & field) const;

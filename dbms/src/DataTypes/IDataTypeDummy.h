@@ -42,11 +42,6 @@ public:
         throw Exception("Method createColumn() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    MutableColumnPtr createColumnWithRandomData(size_t) const override
-    {
-        throw Exception("Method createColumnWithRandomData() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     Field getDefault() const override
     {
         throw Exception("Method getDefault() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);

@@ -487,13 +487,6 @@ MutableColumnPtr DataTypeArray::createColumn() const
 }
 
 
-MutableColumnPtr DataTypeArray::createColumnWithRandomData(size_t limit) const
-{
-    (void)limit;
-    throw Exception("Method createColumnWithRandomData() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-}
-
-
 Field DataTypeArray::getDefault() const
 {
     return Array();
