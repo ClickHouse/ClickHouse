@@ -103,7 +103,7 @@ public:
             std::chrono::system_clock::time_point now) const;
 
     void getString(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-            ColumnString * out, std::vector<bool> & found,
+            StringRefs & refs, ArenaWithFreeLists & arena, std::vector<bool> & found,
             std::chrono::system_clock::time_point now) const;
 
     void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out, std::chrono::system_clock::time_point now) const;
@@ -136,7 +136,7 @@ public:
     size_t appendBlock(const Attribute & new_keys, const Attributes & new_attributes,
             const PaddedPODArray<Metadata> & metadata, const size_t begin);
 
-    //size_t appendDefaults();
+    size_t appendDefaults(const Attribute & new_keys, const PaddedPODArray<Metadata> & metadata, const size_t begin);
 
     void flush();
 
@@ -224,7 +224,7 @@ public:
             std::chrono::system_clock::time_point now) const;
 
     void getString(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-            ColumnString * out, std::unordered_map<Key, std::vector<size_t>> & not_found,
+            StringRefs & refs, ArenaWithFreeLists & arena, std::unordered_map<Key, std::vector<size_t>> & not_found,
             std::chrono::system_clock::time_point now) const;
 
     void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,

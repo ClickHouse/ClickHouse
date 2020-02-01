@@ -205,8 +205,24 @@ CachePartition::~CachePartition()
     ::close(fd);
 }
 
+size_t CachePartition::appendDefaults(
+    const Attribute & new_keys, const PaddedPODArray<Metadata> & metadata, const size_t begin)
+{
+    std::unique_lock lock(rw_lock);
+
+    const auto & ids = std::get<Attribute::Container<UInt64>>(new_keys.values);
+    for (size_t index = begin; index < ids.size(); ++index)
+    {
+        auto & index_and_metadata = key_to_index_and_metadata[ids[index]];
+        index_and_metadata.metadata = metadata[index];
+        index_and_metadata.metadata.setDefault();
+    }
+
+    return ids.size() - begin;
+}
+
 size_t CachePartition::appendBlock(
-        const Attribute & new_keys, const Attributes & new_attributes, const PaddedPODArray<Metadata> & metadata, const size_t begin)
+    const Attribute & new_keys, const Attributes & new_attributes, const PaddedPODArray<Metadata> & metadata, const size_t begin)
 {
     std::unique_lock lock(rw_lock);
     if (current_file_block_id >= max_size)
@@ -401,8 +417,8 @@ void CachePartition::flush()
 
 template <typename Out>
 void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-      ResultArrayType<Out> & out, std::vector<bool> & found,
-      std::chrono::system_clock::time_point now) const
+    ResultArrayType<Out> & out, std::vector<bool> & found,
+    std::chrono::system_clock::time_point now) const
 {
     auto set_value = [&](const size_t index, ReadBuffer & buf)
     {
@@ -414,14 +430,17 @@ void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray
 }
 
 void CachePartition::getString(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-       ColumnString * out, std::vector<bool> & found, std::chrono::system_clock::time_point now) const
+    StringRefs & refs, ArenaWithFreeLists & arena, std::vector<bool> & found, std::chrono::system_clock::time_point now) const
 {
-    auto set_value = [&](const size_t, ReadBuffer & buf)
+    auto set_value = [&](const size_t index, ReadBuffer & buf)
     {
         ignoreFromBufferToIndex(attribute_index, buf);
         size_t size = 0;
         readVarUInt(size, buf);
-        out->insertData(buf.position(), size);
+        char * string_ptr = arena.alloc(size);
+        memcpy(string_ptr, buf.position(), size);
+        refs[index].data = string_ptr;
+        refs[index].size = size;
     };
 
     getImpl(ids, set_value, found, now);
@@ -429,7 +448,7 @@ void CachePartition::getString(const size_t attribute_index, const PaddedPODArra
 
 template <typename SetFunc>
 void CachePartition::getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & set, std::vector<bool> & found,
-        std::chrono::system_clock::time_point now) const
+    std::chrono::system_clock::time_point now) const
 {
     std::shared_lock lock(rw_lock);
     PaddedPODArray<Index> indices(ids.size());
@@ -440,7 +459,7 @@ void CachePartition::getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & set, 
             indices[i].setNotExists();
         }
         else if (auto it = key_to_index_and_metadata.find(ids[i]);
-                it != std::end(key_to_index_and_metadata) && it->second.metadata.expiresAt() > now)
+            it != std::end(key_to_index_and_metadata) && it->second.metadata.expiresAt() > now)
         {
             indices[i] = it->second.index;
             found[i] = true;
@@ -720,15 +739,15 @@ void CacheStorage::getValue(const size_t attribute_index, const PaddedPODArray<U
 }
 
 void CacheStorage::getString(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-       ColumnString * out, std::unordered_map<Key, std::vector<size_t>> & not_found,
-       std::chrono::system_clock::time_point now) const
+    StringRefs & refs, ArenaWithFreeLists & arena, std::unordered_map<Key, std::vector<size_t>> & not_found,
+    std::chrono::system_clock::time_point now) const
 {
     std::vector<bool> found(ids.size(), false);
 
     {
         std::shared_lock lock(rw_lock);
         for (auto & partition : partitions)
-            partition->getString(attribute_index, ids, out, found, now);
+            partition->getString(attribute_index, ids, refs, arena, found, now);
 
         for (size_t i = 0; i < ids.size(); ++i)
             if (!found[i])
@@ -1277,14 +1296,13 @@ void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const 
 
     std::unordered_map<Key, std::vector<size_t>> not_found_ids;
 
-    auto from_cache = ColumnString::create();
-    storage.getString(attribute_index, ids, from_cache.get(), not_found_ids, now);
+    StringRefs refs(ids.size());
+    ArenaWithFreeLists string_arena;
+    storage.getString(attribute_index, ids, refs, string_arena, not_found_ids, now);
     if (not_found_ids.empty())
     {
-        out->getChars().resize(from_cache->getChars().size());
-        memcpy(out->getChars().data(), from_cache->getChars().data(), from_cache->getChars().size() * sizeof(from_cache->getChars()[0]));
-        out->getOffsets().resize(from_cache->getOffsets().size());
-        memcpy(out->getOffsets().data(), from_cache->getOffsets().data(), from_cache->getOffsets().size() * sizeof(from_cache->getOffsets()[0]));
+        for (size_t row = 0; row < ids.size(); ++row)
+            out->insertData(refs[row].data, refs[row].size);
         return;
     }
 
@@ -1305,7 +1323,6 @@ void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const 
             null_values);
 
     LOG_DEBUG(&Poco::Logger::get("log"), "fill data");
-    size_t from_cache_counter = 0;
     for (size_t row = 0; row < ids.size(); ++row)
     {
         const auto & id = ids[row];
@@ -1313,7 +1330,7 @@ void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const 
         if (it == std::end(not_found_ids))
         {
             LOG_DEBUG(&Poco::Logger::get("log"), "fill found " << row << " " << id);
-            out->insertFrom(*from_cache, from_cache_counter++);
+            out->insertData(refs[row].data, refs[row].size);
         }
         else
         {
