@@ -65,8 +65,9 @@ namespace
             const String & bucket_,
             const String & metadata_path_,
             const String & s3_path_,
+            size_t min_upload_part_size,
             size_t buf_size_)
-            : WriteBufferFromS3(client_ptr_, bucket_, s3_path_, DEFAULT_BLOCK_SIZE, buf_size_)
+            : WriteBufferFromS3(client_ptr_, bucket_, s3_path_, min_upload_part_size, buf_size_)
             , metadata_path(metadata_path_)
             , s3_path(s3_path_)
         {
@@ -156,12 +157,14 @@ private:
 };
 
 
-DiskS3::DiskS3(String name_, std::shared_ptr<Aws::S3::S3Client> client_, String bucket_, String s3_root_path_, String metadata_path_)
+DiskS3::DiskS3(String name_, std::shared_ptr<Aws::S3::S3Client> client_, String bucket_, String s3_root_path_,
+               String metadata_path_, size_t min_upload_part_size_)
     : name(std::move(name_))
     , client(std::move(client_))
     , bucket(std::move(bucket_))
     , s3_root_path(std::move(s3_root_path_))
     , metadata_path(std::move(metadata_path_))
+    , min_upload_part_size(min_upload_part_size_)
 {
 }
 
@@ -274,13 +277,15 @@ std::unique_ptr<WriteBuffer> DiskS3::writeFile(const String & path, size_t buf_s
     if (!exists(path) || mode == WriteMode::Rewrite)
     {
         String new_s3_path = s3_root_path + getRandomName();
-        return std::make_unique<WriteIndirectBufferFromS3>(client, bucket, metadata_path + path, new_s3_path, buf_size);
+        return std::make_unique<WriteIndirectBufferFromS3>(client, bucket, metadata_path + path, new_s3_path,
+                                                           min_upload_part_size, buf_size);
     }
     else
     {
         auto old_s3_path = getS3Path(path);
         ReadBufferFromS3 read_buffer(client, bucket, old_s3_path, buf_size);
-        auto writeBuffer = std::make_unique<WriteIndirectBufferFromS3>(client, bucket, metadata_path + path, old_s3_path, buf_size);
+        auto writeBuffer = std::make_unique<WriteIndirectBufferFromS3>(client, bucket, metadata_path + path,
+                                                                       old_s3_path, min_upload_part_size, buf_size);
         std::vector<char> buffer(buf_size);
         while (!read_buffer.eof())
             writeBuffer->write(buffer.data(), read_buffer.read(buffer.data(), buf_size));
@@ -410,7 +415,8 @@ void registerDiskS3(DiskFactory & factory)
 
         String metadata_path = context.getPath() + "disks/" + name + "/";
 
-        auto s3disk = std::make_shared<DiskS3>(name, client, uri.bucket, uri.key, metadata_path);
+        auto s3disk = std::make_shared<DiskS3>(name, client, uri.bucket, uri.key, metadata_path,
+                                               context.getSettingsRef().s3_min_upload_part_size);
 
         /// This code is used only to check access to the corresponding disk.
 
