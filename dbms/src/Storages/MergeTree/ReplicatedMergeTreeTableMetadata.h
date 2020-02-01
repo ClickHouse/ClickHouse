@@ -3,6 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Core/Types.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
 {
@@ -64,5 +65,6 @@ struct ReplicatedMergeTreeTableMetadata
 private:
     bool index_granularity_bytes_found_in_zk = false;
 };
+
 
 }

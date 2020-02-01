@@ -530,6 +530,8 @@ private:
     void waitMutationToFinishOnReplicas(
         const Strings & replicas, const String & mutation_id) const;
 
+    StorageInMemoryMetadata getMetadataFromSharedZookeeper(const String & metadata_str, const String & columns_str) const;
+
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */

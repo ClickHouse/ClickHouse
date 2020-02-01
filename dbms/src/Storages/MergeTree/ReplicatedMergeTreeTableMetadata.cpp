@@ -276,4 +276,5 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
     return diff;
 }
 
+
 }
