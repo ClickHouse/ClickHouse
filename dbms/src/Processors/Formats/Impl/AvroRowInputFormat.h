@@ -4,6 +4,7 @@
 #if USE_AVRO
 
 #include <unordered_map>
+#include <map>
 #include <vector>
 
 #include <Core/Block.h>
@@ -27,8 +28,9 @@ public:
 private:
     using DeserializeFn = std::function<void(IColumn & column, avro::Decoder & decoder)>;
     using SkipFn = std::function<void(avro::Decoder & decoder)>;
+    struct SkipFnHolder { SkipFn skip_fn; };
     static DeserializeFn createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type);
-    static SkipFn createSkipFn(avro::NodePtr root_node);
+    SkipFn createSkipFn(avro::NodePtr root_node);
 
     /// Map from field index in Avro schema to column number in block header. Or -1 if there is no corresponding column.
     std::vector<int> field_mapping;
@@ -38,6 +40,10 @@ private:
 
     /// How to deserialize the corresponding field in Avro schema.
     std::vector<DeserializeFn> deserialize_fns;
+
+    /// Map from name of named Avro type (record, enum, fixed) to SkipFn holder.
+    /// This is to avoid infinite recursion when  Avro schema contains self-references. e.g. LinkedList
+    std::map<avro::Name, SkipFnHolder> symbolic_skip_fn_map;
 };
 
 class AvroRowInputFormat : public IRowInputFormat
