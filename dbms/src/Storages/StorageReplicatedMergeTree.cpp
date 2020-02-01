@@ -3233,22 +3233,25 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     {
         LOG_INFO(log, "Version of metadata nodes in ZooKeeper changed. Waiting for structure write lock.");
 
-        auto table_lock = lockExclusively(RWLockImpl::NO_QUERY);
-
-        LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
-
-        setTableStructure(std::move(columns_from_entry), metadata_diff);
-
-        LOG_INFO(log, "Applied changes to the metadata of the table.");
-
-        ////std::cerr << "Recalculating columns sizes\n";
-        recalculateColumnSizes();
-        /// Update metadata ZK nodes for a specific replica.
         Coordination::Requests requests;
         requests.emplace_back(zkutil::makeSetRequest(replica_path + "/columns", entry.columns_str, -1));
         requests.emplace_back(zkutil::makeSetRequest(replica_path + "/metadata", entry.metadata_str, -1));
 
         zookeeper->multi(requests);
+
+        {
+            auto table_lock = lockExclusively(RWLockImpl::NO_QUERY);
+
+            LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
+
+            setTableStructure(std::move(columns_from_entry), metadata_diff);
+
+            LOG_INFO(log, "Applied changes to the metadata of the table.");
+        }
+
+        ////std::cerr << "Recalculating columns sizes\n";
+        recalculateColumnSizes();
+        /// Update metadata ZK nodes for a specific replica.
 
         std::cerr << "Nodes in zk updated\n";
     }

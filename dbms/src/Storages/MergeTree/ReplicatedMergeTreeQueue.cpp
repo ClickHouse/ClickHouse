@@ -1324,8 +1324,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Marking mutation " << znode << " done because it is <= mutation_pointer (" << mutation_pointer << ")");
                 mutation.is_done = true;
-                if (mutation.entry->alter_version != -1)
-                    alter_sequence.finishDataAlter(mutation.entry->alter_version);
+                /// we don't remove alter from queue here, because this maybe called for loaded, but already finished mutation
             }
             else if (mutation.parts_to_do == 0)
             {
