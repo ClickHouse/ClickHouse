@@ -2,15 +2,14 @@
 
 #include <Access/AccessRights.h>
 #include <Interpreters/ClientInfo.h>
+#include <boost/smart_ptr/atomic_shared_ptr.hpp>
 #include <mutex>
-#include <optional>
 
 
 namespace Poco { class Logger; }
 
 namespace DB
 {
-class Exception;
 struct Settings;
 
 
@@ -63,8 +62,8 @@ private:
     template <int mode>
     bool checkImpl(Poco::Logger * log_, const AccessRightsElements & access) const;
 
-    const AccessRights & calculateResultAccess() const;
-    const AccessRights & calculateResultAccess(UInt64 readonly_, bool allow_ddl_, bool allow_introspection_) const;
+    boost::shared_ptr<const AccessRights> calculateResultAccess() const;
+    boost::shared_ptr<const AccessRights> calculateResultAccess(UInt64 readonly_, bool allow_ddl_, bool allow_introspection_) const;
 
     const String user_name;
     const AccessRights granted_to_user;
@@ -75,7 +74,7 @@ private:
     const ClientInfo::Interface interface = ClientInfo::Interface::TCP;
     const ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
     Poco::Logger * const trace_log = nullptr;
-    mutable std::optional<AccessRights> result_access_cache[4];
+    mutable boost::atomic_shared_ptr<const AccessRights> result_access_cache[4];
     mutable std::mutex mutex;
 };
 
