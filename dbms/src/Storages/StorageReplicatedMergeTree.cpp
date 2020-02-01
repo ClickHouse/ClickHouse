@@ -3299,7 +3299,6 @@ void StorageReplicatedMergeTree::alter(
     ReplicatedMergeTreeLogEntryData entry;
 
     std::optional<String> mutation_znode;
-    /// /columns and /metadata nodes
     {
         Coordination::Requests ops;
         /// Just to read current structure. Alter will be done in separate thread.
@@ -3308,8 +3307,15 @@ void StorageReplicatedMergeTree::alter(
         if (is_readonly)
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
 
-        StorageInMemoryMetadata metadata = getInMemoryMetadata();
+        Coordination::Stat metadata_stat;
+        String metadata_in_zk = zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+        Coordination::Stat columns_stat;
+        String columns_in_zk = zookeeper->get(zookeeper_path + "/columns", &columns_stat);
+
+        StorageInMemoryMetadata metadata = getMetadataFromSharedZookeeper(metadata_in_zk, columns_in_zk);
+        params.validate(metadata, query_context);
         params.apply(metadata);
+
         String path_prefix = zookeeper_path + "/alters/alter-";
         String path = zookeeper->create(path_prefix, "", zkutil::CreateMode::EphemeralSequential);
         std::cerr << "Path for alter:" << path << std::endl;
@@ -3318,9 +3324,8 @@ void StorageReplicatedMergeTree::alter(
 
 
         String new_columns_str = metadata.columns.toString();
-        /// TODO(alesap) maybe check correct version
         if (new_columns_str != getColumns().toString())
-            ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/columns", new_columns_str, -1));
+            ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/columns", new_columns_str, columns_stat.version));
 
         ReplicatedMergeTreeTableMetadata new_metadata(*this);
         if (ast_to_str(metadata.order_by_ast) != ast_to_str(order_by_ast))
@@ -3339,7 +3344,7 @@ void StorageReplicatedMergeTree::alter(
 
         String new_metadata_str = new_metadata.toString();
         if (new_metadata_str != ReplicatedMergeTreeTableMetadata(*this).toString())
-            ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/metadata", new_metadata_str, -1));
+            ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/metadata", new_metadata_str, metadata_stat.version));
 
         if (ops.empty())
         {
@@ -3361,6 +3366,8 @@ void StorageReplicatedMergeTree::alter(
         entry.create_time = time(nullptr);
         if (!maybe_mutation_commands.empty())
             entry.have_mutation = true;
+        else
+            entry.have_mutation = false;
 
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
 
@@ -5460,5 +5467,33 @@ bool StorageReplicatedMergeTree::canUseAdaptiveGranularity() const
             (!has_non_adaptive_index_granularity_parts && !other_replicas_fixed_granularity));
 }
 
+
+StorageInMemoryMetadata
+StorageReplicatedMergeTree::getMetadataFromSharedZookeeper(const String & metadata_str, const String & columns_str) const
+{
+    auto replicated_metadata = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
+    StorageInMemoryMetadata result = getInMemoryMetadata();
+    result.columns = ColumnsDescription::parse(columns_str);
+    result.constraints = ConstraintsDescription::parse(replicated_metadata.constraints);
+    result.indices = IndicesDescription::parse(replicated_metadata.skip_indices);
+
+    ParserExpression expression_p;
+
+    /// The only thing, that can be changed is ttl expression
+    if (replicated_metadata.primary_key.empty())
+        throw Exception("Primary key cannot be empty" , ErrorCodes::LOGICAL_ERROR);
+
+    if (!replicated_metadata.sorting_key.empty())
+    {
+        result.order_by_ast = parseQuery(expression_p, "(" + replicated_metadata.sorting_key + ")", 0);
+        result.primary_key_ast = parseQuery(expression_p, "(" + replicated_metadata.primary_key + ")", 0);
+    }
+    else
+    {
+        result.order_by_ast = parseQuery(expression_p, "(" + replicated_metadata.primary_key + ")", 0);
+    }
+    return result;
+
+}
 
 }
