@@ -19,7 +19,6 @@ public:
     TypeIndex getTypeId() const override { return TypeIndex::Nothing; }
 
     MutableColumnPtr createColumn() const override;
-    MutableColumnPtr createColumnWithRandomData(size_t) const override;
 
     /// These methods read and write zero bytes just to allow to figure out size of column.
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;

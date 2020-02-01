@@ -42,13 +42,6 @@ MutableColumnPtr DataTypeDecimalBase<T>::createColumn() const
 }
 
 template <typename T>
-MutableColumnPtr DataTypeDecimalBase<T>::createColumnWithRandomData(size_t limit) const
-{
-    (void)limit;
-    throw Exception("Method createColumnWithRandomData() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-}
-
-template <typename T>
 void DataTypeDecimalBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     FieldType x = get<DecimalField<T>>(field);
