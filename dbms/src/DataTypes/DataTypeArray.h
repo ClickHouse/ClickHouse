@@ -94,7 +94,6 @@ public:
                              bool & row_added) const override;
 
     MutableColumnPtr createColumn() const override;
-    MutableColumnPtr createColumnWithRandomData(size_t) const override;
 
     Field getDefault() const override;
 

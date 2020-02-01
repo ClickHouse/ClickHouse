@@ -21,10 +21,6 @@ public:
 
     // Used for expressions analysis.
     MutableColumnPtr createColumn() const override { return ColumnSet::create(0, nullptr); }
-    MutableColumnPtr createColumnWithRandomData(size_t) const override
-    {
-        throw Exception("Method createColumnWithRandomData() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
 
     // Used only for debugging, making it DUMPABLE
     Field getDefault() const override { return Tuple(); }

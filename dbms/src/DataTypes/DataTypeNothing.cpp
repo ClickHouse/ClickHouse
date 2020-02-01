@@ -14,14 +14,6 @@ MutableColumnPtr DataTypeNothing::createColumn() const
     return ColumnNothing::create(0);
 }
 
-
-MutableColumnPtr DataTypeNothing::createColumnWithRandomData(size_t limit) const
-{
-    (void)limit;
-    throw Exception("Method createColumnWithRandomData() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-}
-
-
 void DataTypeNothing::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
     size_t size = column.size();
