@@ -97,14 +97,14 @@ public:
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
-    template <typename Out>
+    template <typename Out, typename GetDefault>
     void getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-            ResultArrayType<Out> & out, std::vector<bool> & found,
+            ResultArrayType<Out> & out, std::vector<bool> & found, GetDefault & get_default,
             std::chrono::system_clock::time_point now) const;
 
     void getString(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
             StringRefs & refs, ArenaWithFreeLists & arena, std::vector<bool> & found,
-            std::chrono::system_clock::time_point now) const;
+            std::vector<size_t> & default_ids, std::chrono::system_clock::time_point now) const;
 
     void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out, std::chrono::system_clock::time_point now) const;
 
@@ -151,9 +151,9 @@ public:
     size_t getElementCount() const;
 
 private:
-    template <typename SetFunc>
-    void getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & set, std::vector<bool> & found,
-        std::chrono::system_clock::time_point now) const;
+    template <typename SetFunc, typename SetDefault>
+    void getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & set, SetDefault & set_default,
+        std::vector<bool> & found, std::chrono::system_clock::time_point now) const;
 
     template <typename SetFunc>
     void getValueFromMemory(const PaddedPODArray<Index> & indices, SetFunc & set) const;
@@ -218,14 +218,14 @@ public:
     template <typename T>
     using ResultArrayType = CachePartition::ResultArrayType<T>;
 
-    template <typename Out>
+    template <typename Out, typename GetDefault>
     void getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
             ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found,
-            std::chrono::system_clock::time_point now) const;
+            GetDefault & get_default, std::chrono::system_clock::time_point now) const;
 
     void getString(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
             StringRefs & refs, ArenaWithFreeLists & arena, std::unordered_map<Key, std::vector<size_t>> & not_found,
-            std::chrono::system_clock::time_point now) const;
+            std::vector<size_t> & default_ids, std::chrono::system_clock::time_point now) const;
 
     void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
              std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const;
@@ -233,7 +233,7 @@ public:
     template <typename PresentIdHandler, typename AbsentIdHandler>
     void update(DictionarySourcePtr & source_ptr, const std::vector<Key> & requested_ids,
             PresentIdHandler && on_updated, AbsentIdHandler && on_id_not_found,
-            const DictionaryLifetime lifetime, const std::vector<AttributeValueVariant> & null_values);
+            const DictionaryLifetime lifetime);
 
     PaddedPODArray<Key> getCachedIds() const;
 
