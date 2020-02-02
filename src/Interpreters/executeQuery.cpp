@@ -689,19 +689,7 @@ void executeQuery(
             if (set_result_details)
                 set_result_details(context.getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
 
-            if (ast->as<ASTWatchQuery>())
-            {
-                /// For Watch query, flush data if block is empty (to send data to client).
-                auto flush_callback = [&out](const Block & block)
-                {
-                    if (block.rows() == 0)
-                        out->flush();
-                };
-
-                copyData(*streams.in, *out, [](){ return false; }, std::move(flush_callback));
-            }
-            else
-                copyData(*streams.in, *out);
+            copyData(*streams.in, *out, [](){ return false; }, [&out](const Block &) { out->flush(); });
         }
 
         if (pipeline.initialized())
