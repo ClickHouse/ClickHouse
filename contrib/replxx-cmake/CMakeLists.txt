@@ -45,7 +45,7 @@ if (ENABLE_REPLXX)
         endif ()
     endif ()
 
-    if (COMPILER_GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 9)
+    if (NOT (COMPILER_GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9))
         target_compile_options(replxx PUBLIC -Wno-documentation)
     endif ()
 
