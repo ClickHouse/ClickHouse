@@ -844,11 +844,68 @@ SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) 
 
 Принимает на вход состояния агрегатной функции и возвращает столбец со значениями, которые представляют собой результат мёржа этих состояний для выборки строк из блока от первой до текущей строки. Например, принимает состояние агрегатной функции (например,  `runningAccumulate(uniqState(UserID))`), и для каждой строки блока возвращает результат агрегатной функции после мёржа состояний функции для всех предыдущих строк и текущей. Таким образом, результат зависит от разбиения данных по блокам и от порядка данных в блоке.
 
-## joinGet('join_storage_table_name', 'get_column', join_key) {#other_functions-joinget}
+## joinGet {#joinget}
 
-Получает данные из таблиц [Join](../../operations/table_engines/join.md) по ключу.
+Функция позволяет извлекать данные из таблицы таким же образом как из [словаря](../dicts/index.md).
 
-Поддержаны только таблицы, созданные запросом с `ENGINE = Join(ANY, LEFT, <join_keys>)`.
+Получает данные из таблиц [Join](../../operations/table_engines/join.md#creating-a-table) по ключу.
+
+Поддерживаются только таблицы, созданные с `ENGINE = Join(ANY, LEFT, <join_keys>)`. 
+
+**Синтаксис** 
+
+```sql
+joinGet(join_storage_table_name, `value_column`, join_keys)
+```
+
+**Параметры** 
+
+- `join_storage_table_name` — [идентификатор](../syntax.md#syntax-identifiers), который указывает, откуда производится выборка данных. Поиск по идентификатору осуществляется в базе данных по умолчанию (см. конфигурацию `default_database`). Чтобы переопределить базу данных по умолчанию, используйте команду `USE db_name`, или укажите базу данных и таблицу через разделитель `db_name.db_table`, см. пример.
+- `value_column` — столбец, из которого нужно произвести выборку данных.
+- `join_keys` — список ключей, по которым производится выборка данных.
+
+**Возвращаемое значение**
+
+Возвращает значение по списку ключей.
+
+Если значения не существует в исходной таблице, вернется `0` или `null` в соответствии с настройками [join_use_nulls](../../operations/settings/settings.md#join_use_nulls). 
+
+Подробнее о настройке `join_use_nulls` в [операциях Join](../../operations/table_engines/join.md).
+
+**Пример**
+
+Входная таблица:
+
+```sql
+CREATE DATABASE db_test
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id) SETTINGS join_use_nulls = 1
+INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
+```
+
+```text
+┌─id─┬─val─┐
+│  4 │  13 │
+│  2 │  12 │
+│  1 │  11 │
+└────┴─────┘
+```
+
+Запрос:
+
+```sql
+SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS join_use_nulls = 1
+```
+
+Результат:
+
+```text
+┌─joinGet(db_test.id_val, 'val', toUInt32(number))─┐
+│                                                0 │
+│                                               11 │
+│                                               12 │
+│                                                0 │
+└──────────────────────────────────────────────────┘
+```
 
 ## modelEvaluate(model_name, ...) {#function-modelevaluate}
 
