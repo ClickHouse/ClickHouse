@@ -22,7 +22,7 @@ private:
 public:
     static constexpr bool is_parametric = true;
 
-    DataTypeFixedString(size_t n_) : n(n_)
+    DataTypeFixedString(size_t n_, const String & type_name_ = "FixedString") : n(n_), type_name(type_name_)
     {
         if (n == 0)
             throw Exception("FixedString size must be positive", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -85,6 +85,9 @@ public:
     bool isCategorial() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
+
+private:
+    const String type_name;
 };
 
 }

@@ -28,6 +28,25 @@ class Port
     friend void connect(OutputPort &, InputPort &);
     friend class IProcessor;
 
+public:
+    struct UpdateInfo
+    {
+        std::vector<void *> * update_list = nullptr;
+        void * id = nullptr;
+        UInt64 version = 0;
+        UInt64 prev_version = 0;
+
+        void inline ALWAYS_INLINE update()
+        {
+            if (version == prev_version && update_list)
+                update_list->push_back(id);
+
+            ++version;
+        }
+
+        void inline ALWAYS_INLINE trigger() { prev_version = version; }
+    };
+
 protected:
     /// Shared state of two connected ports.
     class State
@@ -142,12 +161,17 @@ protected:
                 throw Exception("Cannot push block to port which already has data.", ErrorCodes::LOGICAL_ERROR);
         }
 
-        void ALWAYS_INLINE pull(DataPtr & data_, std::uintptr_t & flags)
+        void ALWAYS_INLINE pull(DataPtr & data_, std::uintptr_t & flags, bool set_not_needed = false)
         {
-            flags = data_.swap(data, 0, HAS_DATA);
+            uintptr_t mask = HAS_DATA;
+
+            if (set_not_needed)
+                mask |= IS_NEEDED;
+
+            flags = data_.swap(data, 0, mask);
 
             /// It's ok to check because this flag can be changed only by pulling thread.
-            if (unlikely((flags & IS_NEEDED) == 0))
+            if (unlikely((flags & IS_NEEDED) == 0) && !set_not_needed)
                 throw Exception("Cannot pull block from port which is not needed.", ErrorCodes::LOGICAL_ERROR);
 
             if (unlikely((flags & HAS_DATA) == 0))
@@ -182,11 +206,16 @@ protected:
 
     IProcessor * processor = nullptr;
 
+    /// If update_info was set, will call update() for it in case port's state have changed.
+    UpdateInfo * update_info = nullptr;
+
 public:
     using Data = State::Data;
 
     Port(Block header_) : header(std::move(header_)) {}
     Port(Block header_, IProcessor * processor_) : header(std::move(header_)), processor(processor_) {}
+
+    void setUpdateInfo(UpdateInfo * info) { update_info = info; }
 
     const Block & getHeader() const { return header; }
     bool ALWAYS_INLINE isConnected() const { return state != nullptr; }
@@ -216,6 +245,13 @@ public:
             throw Exception("Port does not belong to Processor", ErrorCodes::LOGICAL_ERROR);
         return *processor;
     }
+
+protected:
+    void inline ALWAYS_INLINE updateVersion()
+    {
+        if (likely(update_info))
+            update_info->update();
+    }
 };
 
 /// Invariants:
@@ -230,25 +266,20 @@ class InputPort : public Port
 private:
     OutputPort * output_port = nullptr;
 
-    /// If version was set, it will be increased on each pull.
-    UInt64 * version = nullptr;
-
     mutable bool is_finished = false;
 
 public:
     using Port::Port;
 
-    void setVersion(UInt64 * value) { version = value; }
-
-    Data ALWAYS_INLINE pullData()
+    Data ALWAYS_INLINE pullData(bool set_not_needed = false)
     {
-        if (version)
-            ++(*version);
+        if (!set_not_needed)
+            updateVersion();
 
         assumeConnected();
 
         std::uintptr_t flags = 0;
-        state->pull(data, flags);
+        state->pull(data, flags, set_not_needed);
 
         is_finished = flags & State::IS_FINISHED;
 
@@ -268,9 +299,9 @@ public:
         return std::move(*data);
     }
 
-    Chunk ALWAYS_INLINE pull()
+    Chunk ALWAYS_INLINE pull(bool set_not_needed = false)
     {
-        auto data_ = pullData();
+        auto data_ = pullData(set_not_needed);
 
         if (data_.exception)
             std::rethrow_exception(data_.exception);
@@ -296,8 +327,8 @@ public:
     {
         assumeConnected();
 
-        if ((state->setFlags(State::IS_NEEDED, State::IS_NEEDED) & State::IS_NEEDED) == 0 && version)
-            ++(*version);
+        if ((state->setFlags(State::IS_NEEDED, State::IS_NEEDED) & State::IS_NEEDED) == 0)
+            updateVersion();
     }
 
     void ALWAYS_INLINE setNotNeeded()
@@ -310,10 +341,21 @@ public:
     {
         assumeConnected();
 
-        if ((state->setFlags(State::IS_FINISHED, State::IS_FINISHED) & State::IS_FINISHED) == 0 && version)
-            ++(*version);
+        if ((state->setFlags(State::IS_FINISHED, State::IS_FINISHED) & State::IS_FINISHED) == 0)
+            updateVersion();
 
         is_finished = true;
+    }
+
+    void ALWAYS_INLINE reopen()
+    {
+        assumeConnected();
+
+        if (!isFinished())
+            return;
+
+        state->setFlags(0, State::IS_FINISHED);
+        is_finished = false;
     }
 
     OutputPort & getOutputPort()
@@ -342,13 +384,8 @@ class OutputPort : public Port
 private:
     InputPort * input_port = nullptr;
 
-    /// If version was set, it will be increased on each push.
-    UInt64 * version = nullptr;
-
 public:
     using Port::Port;
-
-    void setVersion(UInt64 * value) { version = value; }
 
     void ALWAYS_INLINE push(Chunk chunk)
     {
@@ -374,8 +411,7 @@ public:
             throw Exception(msg, ErrorCodes::LOGICAL_ERROR);
         }
 
-        if (version)
-            ++(*version);
+        updateVersion();
 
         assumeConnected();
 
@@ -390,8 +426,8 @@ public:
 
         auto flags = state->setFlags(State::IS_FINISHED, State::IS_FINISHED);
 
-        if (version && (flags & State::IS_FINISHED) == 0)
-            ++(*version);
+        if ((flags & State::IS_FINISHED) == 0)
+            updateVersion();
     }
 
     bool ALWAYS_INLINE isNeeded() const

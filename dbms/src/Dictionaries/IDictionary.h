@@ -25,6 +25,25 @@ struct IDictionaryBase : public IExternalLoadable
 {
     using Key = UInt64;
 
+    virtual const std::string & getDatabase() const = 0;
+    virtual const std::string & getName() const = 0;
+    virtual const std::string & getFullName() const = 0;
+
+    const std::string & getLoadableName() const override { return getFullName(); }
+
+    /// Specifies that no database is used.
+    /// Sometimes we cannot simply use an empty string for that because an empty string is
+    /// usually replaced with the current database.
+    static constexpr char NO_DATABASE_TAG[] = "<no_database>";
+
+    std::string_view getDatabaseOrNoDatabaseTag() const
+    {
+        const std::string & database = getDatabase();
+        if (!database.empty())
+            return database;
+        return NO_DATABASE_TAG;
+    }
+
     virtual std::string getTypeName() const = 0;
 
     virtual size_t getBytesAllocated() const = 0;
@@ -37,8 +56,6 @@ struct IDictionaryBase : public IExternalLoadable
 
     virtual double getLoadFactor() const = 0;
 
-    virtual bool isCached() const = 0;
-
     virtual const IDictionarySource * getSource() const = 0;
 
     virtual const DictionaryStructure & getStructure() const = 0;
@@ -47,7 +64,7 @@ struct IDictionaryBase : public IExternalLoadable
 
     virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const = 0;
 
-    bool supportUpdates() const override { return !isCached(); }
+    bool supportUpdates() const override { return true; }
 
     bool isModified() const override
     {

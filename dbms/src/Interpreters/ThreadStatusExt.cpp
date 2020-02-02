@@ -1,4 +1,5 @@
 #include <Common/ThreadStatus.h>
+
 #include <Common/CurrentThread.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/Exception.h>
@@ -7,11 +8,11 @@
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/ProcessList.h>
 
-#if defined(__linux__)
-#include <sys/time.h>
-#include <sys/resource.h>
+#if defined(OS_LINUX)
+#   include <Common/hasLinuxCapability.h>
 
-#include <Common/hasLinuxCapability.h>
+#   include <sys/time.h>
+#   include <sys/resource.h>
 #endif
 
 
@@ -37,10 +38,13 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
     if (thread_group)
     {
         std::lock_guard lock(thread_group->mutex);
+
         thread_group->query_context = query_context;
         if (!thread_group->global_context)
             thread_group->global_context = global_context;
     }
+
+    initQueryProfiler();
 }
 
 void CurrentThread::defaultThreadDeleter()
@@ -50,23 +54,63 @@ void CurrentThread::defaultThreadDeleter()
     current_thread->detachQuery(true, true);
 }
 
-void ThreadStatus::initializeQuery()
+void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
 {
     assertState({ThreadState::DetachedFromQuery}, __PRETTY_FUNCTION__);
 
-    thread_group = std::make_shared<ThreadGroupStatus>();
+    /// Attach or init current thread to thread group and copy useful information from it
+    thread_group = thread_group_;
 
     performance_counters.setParent(&thread_group->performance_counters);
     memory_tracker.setParent(&thread_group->memory_tracker);
-    thread_group->memory_tracker.setDescription("(for query)");
 
-    thread_group->thread_numbers.emplace_back(thread_number);
-    thread_group->os_thread_ids.emplace_back(os_thread_id);
-    thread_group->master_thread_number = thread_number;
-    thread_group->master_thread_os_id = os_thread_id;
+    {
+        std::lock_guard lock(thread_group->mutex);
+
+        /// NOTE: thread may be attached multiple times if it is reused from a thread pool.
+        thread_group->thread_numbers.emplace_back(thread_number);
+        thread_group->os_thread_ids.emplace_back(os_thread_id);
+
+        logs_queue_ptr = thread_group->logs_queue_ptr;
+        query_context = thread_group->query_context;
+
+        if (!global_context)
+            global_context = thread_group->global_context;
+    }
+
+    if (query_context)
+    {
+        query_id = query_context->getCurrentQueryId();
+        initQueryProfiler();
+
+#if defined(OS_LINUX)
+        /// Set "nice" value if required.
+        Int32 new_os_thread_priority = query_context->getSettingsRef().os_thread_priority;
+        if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
+        {
+            LOG_TRACE(log, "Setting nice to " << new_os_thread_priority);
+
+            if (0 != setpriority(PRIO_PROCESS, os_thread_id, new_os_thread_priority))
+                throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
+
+            os_thread_priority = new_os_thread_priority;
+        }
+#endif
+    }
 
     initPerformanceCounters();
+
     thread_state = ThreadState::AttachedToQuery;
+}
+
+void ThreadStatus::initializeQuery()
+{
+    setupState(std::make_shared<ThreadGroupStatus>());
+
+    /// No need to lock on mutex here
+    thread_group->memory_tracker.setDescription("(for query)");
+    thread_group->master_thread_number = thread_number;
+    thread_group->master_thread_os_id = os_thread_id;
 }
 
 void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool check_detached)
@@ -78,55 +122,10 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
         return;
     }
 
-    assertState({ThreadState::DetachedFromQuery}, __PRETTY_FUNCTION__);
-
     if (!thread_group_)
         throw Exception("Attempt to attach to nullptr thread group", ErrorCodes::LOGICAL_ERROR);
 
-    /// Attach current thread to thread group and copy useful information from it
-    thread_group = thread_group_;
-
-    performance_counters.setParent(&thread_group->performance_counters);
-    memory_tracker.setParent(&thread_group->memory_tracker);
-
-    {
-        std::lock_guard lock(thread_group->mutex);
-
-        logs_queue_ptr = thread_group->logs_queue_ptr;
-        query_context = thread_group->query_context;
-
-        if (!global_context)
-            global_context = thread_group->global_context;
-
-        /// NOTE: A thread may be attached multiple times if it is reused from a thread pool.
-        thread_group->thread_numbers.emplace_back(thread_number);
-        thread_group->os_thread_ids.emplace_back(os_thread_id);
-    }
-
-    if (query_context)
-        query_id = query_context->getCurrentQueryId();
-
-#if defined(__linux__)
-    /// Set "nice" value if required.
-    if (query_context)
-    {
-        Int32 new_os_thread_priority = query_context->getSettingsRef().os_thread_priority;
-        if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
-        {
-            LOG_TRACE(log, "Setting nice to " << new_os_thread_priority);
-
-            if (0 != setpriority(PRIO_PROCESS, os_thread_id, new_os_thread_priority))
-                throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
-
-            os_thread_priority = new_os_thread_priority;
-        }
-    }
-#endif
-
-    initPerformanceCounters();
-    initQueryProfiler();
-
-    thread_state = ThreadState::AttachedToQuery;
+    setupState(thread_group_);
 }
 
 void ThreadStatus::finalizePerformanceCounters()
@@ -161,15 +160,23 @@ void ThreadStatus::initQueryProfiler()
 
     const auto & settings = query_context->getSettingsRef();
 
-    if (settings.query_profiler_real_time_period_ns > 0)
-        query_profiler_real = std::make_unique<QueryProfilerReal>(
-            /* thread_id */ os_thread_id,
-            /* period */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
+    try
+    {
+        if (settings.query_profiler_real_time_period_ns > 0)
+            query_profiler_real = std::make_unique<QueryProfilerReal>(
+                /* thread_id */ os_thread_id,
+                /* period */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
 
-    if (settings.query_profiler_cpu_time_period_ns > 0)
-        query_profiler_cpu = std::make_unique<QueryProfilerCpu>(
-            /* thread_id */ os_thread_id,
-            /* period */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
+        if (settings.query_profiler_cpu_time_period_ns > 0)
+            query_profiler_cpu = std::make_unique<QueryProfilerCpu>(
+                /* thread_id */ os_thread_id,
+                /* period */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
+    }
+    catch (...)
+    {
+        /// QueryProfiler is optional.
+        tryLogCurrentException("ThreadStatus", "Cannot initialize QueryProfiler");
+    }
 }
 
 void ThreadStatus::finalizeQueryProfiler()
@@ -198,6 +205,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below.
     memory_tracker.setParent(nullptr);
 
+    query_id.clear();
     query_context = nullptr;
     thread_group.reset();
 

@@ -33,8 +33,8 @@ namespace ErrorCodes
 
 
 ValuesBlockInputFormat::ValuesBlockInputFormat(ReadBuffer & in_, const Block & header_, const RowInputFormatParams & params_,
-                                               const Context & context_, const FormatSettings & format_settings_)
-        : IInputFormat(header_, buf), buf(in_), params(params_), context(std::make_unique<Context>(context_)),
+                                               const FormatSettings & format_settings_)
+        : IInputFormat(header_, buf), buf(in_), params(params_),
           format_settings(format_settings_), num_columns(header_.columns()),
           parser_type_for_column(num_columns, ParserType::Streaming),
           attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
@@ -129,7 +129,8 @@ void ValuesBlockInputFormat::readRow(MutableColumns & columns, size_t row_num)
 bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx)
 {
     /// Try to parse expression using template if one was successfully deduced while parsing the first row
-    if (templates[column_idx]->parseExpression(buf, format_settings))
+    auto settings = context->getSettingsRef();
+    if (templates[column_idx]->parseExpression(buf, format_settings, settings))
     {
         ++rows_parsed_using_template[column_idx];
         return true;
@@ -187,6 +188,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 {
     const Block & header = getPort().getHeader();
     const IDataType & type = *header.getByPosition(column_idx).type;
+    auto settings = context->getSettingsRef();
 
     /// We need continuous memory containing the expression to use Lexer
     skipToNextRow(0, 1);
@@ -195,7 +197,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     Expected expected;
     Tokens tokens(buf.position(), buf.buffer().end());
-    IParser::Pos token_iterator(tokens);
+    IParser::Pos token_iterator(tokens, settings.max_parser_depth);
     ASTPtr ast;
 
     bool parsed = parser.parse(token_iterator, ast, expected);
@@ -265,7 +267,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 ++attempts_to_deduce_template[column_idx];
 
             buf.rollbackToCheckpoint();
-            if (templates[column_idx]->parseExpression(buf, format_settings))
+            if (templates[column_idx]->parseExpression(buf, format_settings, settings))
             {
                 ++rows_parsed_using_template[column_idx];
                 parser_type_for_column[column_idx] = ParserType::BatchTemplate;
@@ -320,7 +322,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 }
 
 /// Can be used in fileSegmentationEngine for parallel parsing of Values
-bool ValuesBlockInputFormat::skipToNextRow(size_t min_chunk_size, int balance)
+bool ValuesBlockInputFormat::skipToNextRow(size_t min_chunk_bytes, int balance)
 {
     skipWhitespaceIfAny(buf);
     if (buf.eof() || *buf.position() == ';')
@@ -328,7 +330,7 @@ bool ValuesBlockInputFormat::skipToNextRow(size_t min_chunk_size, int balance)
     bool quoted = false;
 
     size_t chunk_begin_buf_count = buf.count();
-    while (!buf.eof() && (balance || buf.count() - chunk_begin_buf_count < min_chunk_size))
+    while (!buf.eof() && (balance || buf.count() - chunk_begin_buf_count < min_chunk_bytes))
     {
         buf.position() = find_first_symbols<'\\', '\'', ')', '('>(buf.position(), buf.buffer().end());
         if (buf.position() == buf.buffer().end())
@@ -411,17 +413,23 @@ void ValuesBlockInputFormat::readSuffix()
         throw Exception("Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.", ErrorCodes::LOGICAL_ERROR);
 }
 
+void ValuesBlockInputFormat::resetParser()
+{
+    IInputFormat::resetParser();
+    // I'm not resetting parser modes here.
+    // There is a good chance that all messages have the same format.
+    total_rows = 0;
+}
 
 void registerInputFormatProcessorValues(FormatFactory & factory)
 {
     factory.registerInputFormatProcessor("Values", [](
         ReadBuffer & buf,
         const Block & header,
-        const Context & context,
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<ValuesBlockInputFormat>(buf, header, params, context, settings);
+        return std::make_shared<ValuesBlockInputFormat>(buf, header, params, settings);
     });
 }
 

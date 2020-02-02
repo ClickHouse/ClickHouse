@@ -33,6 +33,9 @@ struct BlockIO
     std::function<void(IBlockInputStream *, IBlockOutputStream *)>    finish_callback;
     std::function<void()>                                             exception_callback;
 
+    /// When it is true, don't bother sending any non-empty blocks to the out stream
+    bool null_format = false;
+
     /// Call these functions if you want to log the request.
     void onFinish()
     {
@@ -62,6 +65,8 @@ struct BlockIO
 
         finish_callback         = rhs.finish_callback;
         exception_callback      = rhs.exception_callback;
+
+        null_format             = rhs.null_format;
 
         return *this;
     }

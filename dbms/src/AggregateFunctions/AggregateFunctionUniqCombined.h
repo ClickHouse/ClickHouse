@@ -109,7 +109,7 @@ struct AggregateFunctionUniqCombinedData : public AggregateFunctionUniqCombinedD
 };
 
 
-/// For String keys, 64 bit hash is always used (both for uniqCombined and uniqCombined64), 
+/// For String keys, 64 bit hash is always used (both for uniqCombined and uniqCombined64),
 ///  because of backwards compatibility (64 bit hash was already used for uniqCombined).
 template <UInt8 K, typename HashValueType>
 struct AggregateFunctionUniqCombinedData<String, K, HashValueType> : public AggregateFunctionUniqCombinedDataWithKey<UInt64 /*always*/, K>
@@ -170,11 +170,6 @@ public:
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
-    }
-
-    const char * getHeaderFilePath() const override
-    {
-        return __FILE__;
     }
 };
 
@@ -237,11 +232,6 @@ public:
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
-    }
-
-    const char * getHeaderFilePath() const override
-    {
-        return __FILE__;
     }
 };
 

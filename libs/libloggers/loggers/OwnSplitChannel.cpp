@@ -70,34 +70,37 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
     }
 
 
-    /// Also log to system.text_log table
-    TextLogElement elem;
+    /// Also log to system.text_log table, if message is not too noisy
+    if (text_log_max_priority && msg.getPriority() <= text_log_max_priority)
+    {
+        TextLogElement elem;
 
-    elem.event_time = msg_ext.time_seconds;
-    elem.microseconds = msg_ext.time_microseconds;
+        elem.event_time = msg_ext.time_seconds;
+        elem.microseconds = msg_ext.time_microseconds;
 
-    elem.thread_name = getThreadName();
-    elem.thread_number = msg_ext.thread_number;
+        elem.thread_name = getThreadName();
+        elem.thread_number = msg_ext.thread_number;
 
-    if (CurrentThread::isInitialized())
-        elem.os_thread_id = CurrentThread::get().os_thread_id;
-    else
-        elem.os_thread_id = 0;
+        if (CurrentThread::isInitialized())
+            elem.os_thread_id = CurrentThread::get().os_thread_id;
+        else
+            elem.os_thread_id = 0;
 
-    elem.query_id = msg_ext.query_id;
+        elem.query_id = msg_ext.query_id;
 
-    elem.message = msg.getText();
-    elem.logger_name = msg.getSource();
-    elem.level = msg.getPriority();
+        elem.message = msg.getText();
+        elem.logger_name = msg.getSource();
+        elem.level = msg.getPriority();
 
-    if (msg.getSourceFile() != nullptr)
-        elem.source_file = msg.getSourceFile();
+        if (msg.getSourceFile() != nullptr)
+            elem.source_file = msg.getSourceFile();
 
-    elem.source_line = msg.getSourceLine();
+        elem.source_line = msg.getSourceLine();
 
-    std::lock_guard<std::mutex> lock(text_log_mutex);
-    if (auto log = text_log.lock())
-        log->add(elem);
+        std::lock_guard<std::mutex> lock(text_log_mutex);
+        if (auto log = text_log.lock())
+            log->add(elem);
+    }
 }
 
 
@@ -106,10 +109,11 @@ void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel)
     channels.emplace_back(std::move(channel), dynamic_cast<ExtendedLogChannel *>(channel.get()));
 }
 
-void OwnSplitChannel::addTextLog(std::shared_ptr<DB::TextLog> log)
+void OwnSplitChannel::addTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
 {
     std::lock_guard<std::mutex> lock(text_log_mutex);
     text_log = log;
+    text_log_max_priority = max_priority;
 }
 
 }

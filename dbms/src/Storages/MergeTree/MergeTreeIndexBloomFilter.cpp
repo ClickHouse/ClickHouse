@@ -12,6 +12,7 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionBloomFilter.h>
 #include <Parsers/queryToString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/BloomFilterHash.h>
 
 
@@ -72,19 +73,14 @@ static void assertIndexColumnsType(const Block & header)
 
     const DataTypes & columns_data_types = header.getDataTypes();
 
-    for (size_t index = 0; index < columns_data_types.size(); ++index)
+    for (auto & type : columns_data_types)
     {
-        WhichDataType which(columns_data_types[index]);
-
-        if (which.isArray())
-        {
-            const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(columns_data_types[index].get());
-            which = WhichDataType(array_type->getNestedType());
-        }
+        const IDataType * actual_type = BloomFilter::getPrimitiveType(type).get();
+        WhichDataType which(actual_type);
 
         if (!which.isUInt() && !which.isInt() && !which.isString() && !which.isFixedString() && !which.isFloat() &&
             !which.isDateOrDateTime() && !which.isEnum())
-            throw Exception("Unexpected type " + columns_data_types[index]->getName() + " of bloom filter index.",
+            throw Exception("Unexpected type " + type->getName() + " of bloom filter index.",
                             ErrorCodes::ILLEGAL_COLUMN);
     }
 }

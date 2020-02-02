@@ -12,7 +12,7 @@ ClickHouse 支持在 Mac OS X 10.12 版本中编译。若您在用更早的操�
 ## 安装编译器，工具库
 
 ```bash
-brew install cmake ninja gcc icu4c mariadb-connector-c openssl libtool gettext readline
+brew install cmake ninja gcc icu4c mariadb-connector-c openssl libtool gettext
 ```
 
 ## 拉取 ClickHouse 源码
@@ -80,4 +80,4 @@ $ sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 可以通过 `ulimit -n` 命令来检查是否生效。
 
 
-[来源文章](https://clickhouse.yandex/docs/en/development/build_osx/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->

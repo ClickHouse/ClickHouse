@@ -12,17 +12,7 @@
         </any_of>
     </stop_conditions>
 
-    <metrics>
-        <max_rows_per_second />
-	<max_bytes_per_second />
-	<avg_rows_per_second />
-	<avg_bytes_per_second />
-	<min_time />
-    </metrics>
 
-    <main_metric>
-        <min_time />
-    </main_metric>
 
     <preconditions>
         <table_exists>default.hits_100m_single</table_exists>

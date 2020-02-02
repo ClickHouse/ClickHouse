@@ -43,6 +43,41 @@ SELECT
 Переводит дату-с-временем в число типа UInt8, содержащее номер секунды в минуте (0-59).
 Секунды координации не учитываются.
 
+## toUnixTimestamp {#to_unix_timestamp}
+
+For DateTime argument: converts value to its internal numeric representation (Unix Timestamp).
+For String argument: parse datetime from string according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
+For Date argument: the behaviour is unspecified.
+
+**Syntax** 
+
+```sql
+toUnixTimestamp(datetime)
+toUnixTimestamp(str, [timezone])
+```
+
+**Returned value**
+
+- Returns the unix timestamp.
+
+Type: `UInt32`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
+```
+
+Result:
+
+```text
+┌─unix_timestamp─┐
+│     1509836867 │
+└────────────────┘
+```
+
 ## toStartOfYear
 Округляет дату или дату-с-временем вниз до первого дня года.
 Возвращается дата.
@@ -135,7 +170,7 @@ SELECT
 Например, `timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600)) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')]`.
 Это нужно для поиска хитов, входящих в соответствующий визит.
 
-## formatDateTime(Time, Format\[, Timezone\])
+## formatDateTime(Time, Format\[, Timezone\]) {#formatdatetime}
 Функция преобразования даты-с-временем в String согласно заданному шаблону. Важно - шаблон является константным выражением, т.е. невозможно использование разных шаблонов в одной колонке.
 
 Поддерживаемые модификаторы в шаблоне Format:
@@ -145,7 +180,7 @@ SELECT
 | ----------- | -------- | --------------- |
 |%C|номер года, поделённый на 100 (00-99)|20
 |%d|день месяца, с ведущим нулём (01-31)|02
-|%D|короткая запись %m/%d/%y|01/02/2018|
+|%D|короткая запись %m/%d/%y|01/02/18|
 |%e|день месяца, с ведущим пробелом ( 1-31)|  2|
 |%F|короткая запись %Y-%m-%d|2018-01-02
 |%H|час в 24-часовом формате (00-23)|22|
@@ -166,4 +201,4 @@ SELECT
 |%Y|год, 4 цифры|2018|
 |%%|символ %|%|
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/date_time_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/date_time_functions/) <!--hide-->

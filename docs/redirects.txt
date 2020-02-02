@@ -1,3 +1,4 @@
+introduction/ya_metrika_task.md introduction/history.md
 system_tables.md operations/system_tables.md
 system_tables/system.asynchronous_metrics.md operations/system_tables.md
 system_tables/system.clusters.md operations/system_tables.md

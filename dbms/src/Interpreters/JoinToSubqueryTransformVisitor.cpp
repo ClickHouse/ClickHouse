@@ -5,6 +5,7 @@
 #include <Interpreters/AsteriskSemantic.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -27,8 +28,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
 }
-
-NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context);
 
 namespace
 {
@@ -56,7 +55,7 @@ public:
                 }
 
                 String table_name = DatabaseAndTableWithAlias(*expr, context.getCurrentDatabase()).getQualifiedNamePrefix(false);
-                NamesAndTypesList columns = getNamesAndTypeListFromTableExpression(*expr, context);
+                NamesAndTypesList columns = getColumnsFromTableExpression(*expr, context);
                 tables_order.push_back(table_name);
                 table_columns.emplace(std::move(table_name), std::move(columns));
             }
@@ -147,14 +146,20 @@ struct ColumnAliasesMatcher
                 auto it = rev_aliases.find(long_name);
                 if (it == rev_aliases.end())
                 {
-                    bool last_table = IdentifierSemantic::canReferColumnToTable(*identifier, tables.back());
+                    bool last_table = false;
+                    {
+                        size_t best_table_pos = 0;
+                        if (IdentifierSemantic::chooseTable(*identifier, tables, best_table_pos))
+                            last_table = (best_table_pos + 1 == tables.size());
+                    }
+
                     if (!last_table)
                     {
                         String alias = hide_prefix + long_name;
                         aliases[alias] = long_name;
                         rev_aliases[long_name].push_back(alias);
 
-                        identifier->setShortName(alias);
+                        IdentifierSemantic::coverName(*identifier, alias);
                         if (is_public)
                         {
                             identifier->setAlias(long_name);
@@ -172,7 +177,7 @@ struct ColumnAliasesMatcher
                     if (is_public && allowed_long_names.count(long_name))
                         ; /// leave original name unchanged for correct output
                     else
-                        identifier->setShortName(it->second[0]);
+                        IdentifierSemantic::coverName(*identifier, it->second[0]);
                 }
             }
         }
@@ -202,17 +207,15 @@ struct ColumnAliasesMatcher
 
         bool last_table = false;
         String long_name;
-        for (auto & table : data.tables)
+
+        size_t table_pos = 0;
+        if (IdentifierSemantic::chooseTable(node, data.tables, table_pos))
         {
-            if (IdentifierSemantic::canReferColumnToTable(node, table))
-            {
-                if (!long_name.empty())
-                    throw Exception("Cannot refer column '" + node.name + "' to one table", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
-                IdentifierSemantic::setColumnLongName(node, table); /// table_name.column_name -> table_alias.column_name
-                long_name = node.name;
-                if (&table == &data.tables.back())
-                    last_table = true;
-            }
+            auto & table = data.tables[table_pos];
+            IdentifierSemantic::setColumnLongName(node, table); /// table_name.column_name -> table_alias.column_name
+            long_name = node.name;
+            if (&table == &data.tables.back())
+                last_table = true;
         }
 
         if (long_name.empty())
@@ -226,7 +229,7 @@ struct ColumnAliasesMatcher
 
             if (!last_table)
             {
-                node.setShortName(alias);
+                IdentifierSemantic::coverName(node, alias);
                 node.setAlias("");
             }
         }

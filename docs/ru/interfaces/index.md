@@ -9,7 +9,8 @@ ClickHouse предоставляет два сетевых интерфейса
 
 * [Консольный клиент](cli.md);
 * [JDBC-драйвер](jdbc.md);
-* [ODBC-драйвер](odbc.md).
+* [ODBC-драйвер](odbc.md);
+* [C++ клиентская библиотека](cpp.md).
 
 Существует также широкий спектр сторонних библиотек для работы с ClickHouse:
 
@@ -17,4 +18,4 @@ ClickHouse предоставляет два сетевых интерфейса
 * [Библиотеки для интеграции](third-party/integrations.md);
 * [Визуальные интерфейсы](third-party/gui.md).
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/) <!--hide-->

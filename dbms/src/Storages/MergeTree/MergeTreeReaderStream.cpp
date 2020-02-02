@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
+#include <Compression/CachedCompressedReadBuffer.h>
 #include <Poco/File.h>
 
 
@@ -19,7 +20,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         const MarkRanges & all_mark_ranges,
         MarkCache * mark_cache_, bool save_marks_in_cache_,
         UncompressedCache * uncompressed_cache,
-        size_t file_size, size_t aio_threshold, size_t max_read_buffer_size,
+        size_t file_size, size_t aio_threshold, size_t mmap_threshold, size_t max_read_buffer_size,
         const MergeTreeIndexGranularityInfo * index_granularity_info_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
         : path_prefix(path_prefix_), data_file_extension(data_file_extension_), marks_count(marks_count_)
@@ -79,7 +80,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            path_prefix + data_file_extension, uncompressed_cache, sum_mark_range_bytes, aio_threshold, buffer_size);
+            path_prefix + data_file_extension, uncompressed_cache, sum_mark_range_bytes, aio_threshold, mmap_threshold, buffer_size);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -90,7 +91,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            path_prefix + data_file_extension, sum_mark_range_bytes, aio_threshold, buffer_size);
+            path_prefix + data_file_extension, sum_mark_range_bytes, aio_threshold, mmap_threshold, buffer_size);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);

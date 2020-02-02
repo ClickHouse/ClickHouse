@@ -15,6 +15,7 @@ class ASTShowTablesQuery : public ASTQueryWithOutput
 {
 public:
     bool databases{false};
+    bool dictionaries{false};
     bool temporary{false};
     String from;
     String like;

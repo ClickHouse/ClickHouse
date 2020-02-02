@@ -22,14 +22,15 @@ void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, Format
     }
     else
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW " << (temporary ? "TEMPORARY " : "") << "TABLES" << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW " << (temporary ? "TEMPORARY " : "") <<
+             (dictionaries ? "DICTIONARIES" : "TABLES") << (settings.hilite ? hilite_none : "");
 
         if (!from.empty())
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "")
                 << backQuoteIfNeed(from);
 
         if (!like.empty())
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " LIKE " << (settings.hilite ? hilite_none : "")
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << (not_like ? " NOT" : "") << " LIKE " << (settings.hilite ? hilite_none : "")
                 << std::quoted(like, '\'');
 
         if (limit_length)
@@ -41,4 +42,3 @@ void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, Format
 }
 
 }
-

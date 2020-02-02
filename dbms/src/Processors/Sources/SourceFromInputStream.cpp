@@ -7,7 +7,7 @@ namespace DB
 {
 
 SourceFromInputStream::SourceFromInputStream(BlockInputStreamPtr stream_, bool force_add_aggregating_info_)
-    : ISource(stream_->getHeader())
+    : ISourceWithProgress(stream_->getHeader())
     , force_add_aggregating_info(force_add_aggregating_info_)
     , stream(std::move(stream_))
 {
@@ -35,7 +35,7 @@ IProcessor::Status SourceFromInputStream::prepare()
         is_generating_finished = true;
 
         /// Read postfix and get totals if needed.
-        if (!is_stream_finished)
+        if (!is_stream_finished && !isCancelled())
             return Status::Ready;
 
         if (has_totals_port)
@@ -109,14 +109,17 @@ Chunk SourceFromInputStream::generate()
     }
 
     auto block = stream->read();
-    if (!block)
+    if (!block && !isCancelled())
     {
         stream->readSuffix();
 
         if (auto totals_block = stream->getTotals())
         {
-            totals.setColumns(totals_block.getColumns(), 1);
-            has_totals = true;
+            if (totals_block.rows() == 1) /// Sometimes we can get empty totals. Skip it.
+            {
+                totals.setColumns(totals_block.getColumns(), 1);
+                has_totals = true;
+            }
         }
 
         is_stream_finished = true;

@@ -140,7 +140,7 @@ Out & dump(Out & out, const char * name, T && x)
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 #endif
 
-#define DUMPVAR(VAR) dump(std::cerr, #VAR, (VAR)); std::cerr << "; ";
+#define DUMPVAR(VAR) ::dump(std::cerr, #VAR, (VAR)); std::cerr << "; ";
 #define DUMPHEAD std::cerr << __FILE__ << ':' << __LINE__ << " [ " << getThreadNumber() << " ] ";
 #define DUMPTAIL std::cerr << '\n';
 

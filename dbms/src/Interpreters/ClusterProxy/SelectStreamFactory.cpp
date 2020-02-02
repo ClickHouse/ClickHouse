@@ -4,12 +4,14 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/LazyBlockInputStream.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/checkStackSize.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <common/logger_useful.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
 
 
 namespace ProfileEvents
@@ -33,11 +35,15 @@ SelectStreamFactory::SelectStreamFactory(
     const Block & header_,
     QueryProcessingStage::Enum processed_stage_,
     QualifiedTableName main_table_,
+    const Scalars & scalars_,
+    bool has_virtual_shard_num_column_,
     const Tables & external_tables_)
     : header(header_),
     processed_stage{processed_stage_},
     main_table(std::move(main_table_)),
     table_func_ptr{nullptr},
+    scalars{scalars_},
+    has_virtual_shard_num_column(has_virtual_shard_num_column_),
     external_tables{external_tables_}
 {
 }
@@ -46,10 +52,14 @@ SelectStreamFactory::SelectStreamFactory(
     const Block & header_,
     QueryProcessingStage::Enum processed_stage_,
     ASTPtr table_func_ptr_,
+    const Scalars & scalars_,
+    bool has_virtual_shard_num_column_,
     const Tables & external_tables_)
     : header(header_),
     processed_stage{processed_stage_},
     table_func_ptr{table_func_ptr_},
+    scalars{scalars_},
+    has_virtual_shard_num_column(has_virtual_shard_num_column_),
     external_tables{external_tables_}
 {
 }
@@ -57,7 +67,7 @@ SelectStreamFactory::SelectStreamFactory(
 namespace
 {
 
-BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Context & context, QueryProcessingStage::Enum processed_stage)
+BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Block & header, const Context & context, QueryProcessingStage::Enum processed_stage)
 {
     checkStackSize();
 
@@ -74,25 +84,41 @@ BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Context & 
      */
     /// return std::make_shared<MaterializingBlockInputStream>(stream);
 
-    return stream;
+    return std::make_shared<ConvertingBlockInputStream>(context, stream, header, ConvertingBlockInputStream::MatchColumnsMode::Name);
+}
+
+static String formattedAST(const ASTPtr & ast)
+{
+    if (!ast)
+        return "";
+    std::stringstream ss;
+    formatAST(*ast, ss, false, true);
+    return ss.str();
 }
 
 }
 
 void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
-    const String & query, const ASTPtr & query_ast,
+    const String &, const ASTPtr & query_ast,
     const Context & context, const ThrottlerPtr & throttler,
     BlockInputStreams & res)
 {
+    auto modified_query_ast = query_ast->clone();
+    if (has_virtual_shard_num_column)
+        VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_shard_num", shard_info.shard_num, "toUInt32");
+
     auto emplace_local_stream = [&]()
     {
-        res.emplace_back(createLocalStream(query_ast, context, processed_stage));
+        res.emplace_back(createLocalStream(modified_query_ast, header, context, processed_stage));
     };
+
+    String modified_query = formattedAST(modified_query_ast);
 
     auto emplace_remote_stream = [&]()
     {
-        auto stream = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, header, context, nullptr, throttler, external_tables, processed_stage);
+        auto stream = std::make_shared<RemoteBlockInputStream>(
+            shard_info.pool, modified_query, header, context, nullptr, throttler, scalars, external_tables, processed_stage);
         stream->setPoolMode(PoolMode::GET_MANY);
         if (!table_func_ptr)
             stream->setMainTable(main_table);
@@ -189,9 +215,9 @@ void SelectStreamFactory::createForShard(
         /// Do it lazily to avoid connecting in the main thread.
 
         auto lazily_create_stream = [
-                pool = shard_info.pool, shard_num = shard_info.shard_num, query, header = header, query_ast, context, throttler,
-                main_table = main_table, table_func_ptr = table_func_ptr, external_tables = external_tables, stage = processed_stage,
-                local_delay]()
+                pool = shard_info.pool, shard_num = shard_info.shard_num, modified_query, header = header, modified_query_ast, context, throttler,
+                main_table = main_table, table_func_ptr = table_func_ptr, scalars = scalars, external_tables = external_tables,
+                stage = processed_stage, local_delay]()
             -> BlockInputStreamPtr
         {
             auto current_settings = context.getSettingsRef();
@@ -224,7 +250,7 @@ void SelectStreamFactory::createForShard(
             }
 
             if (try_results.empty() || local_delay < max_remote_delay)
-                return createLocalStream(query_ast, context, stage);
+                return createLocalStream(modified_query_ast, header, context, stage);
             else
             {
                 std::vector<IConnectionPool::Entry> connections;
@@ -233,7 +259,7 @@ void SelectStreamFactory::createForShard(
                     connections.emplace_back(std::move(try_result.entry));
 
                 return std::make_shared<RemoteBlockInputStream>(
-                    std::move(connections), query, header, context, nullptr, throttler, external_tables, stage);
+                    std::move(connections), modified_query, header, context, nullptr, throttler, scalars, external_tables, stage);
             }
         };
 

@@ -1,16 +1,15 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/typeid_cast.h>
-
 #include <Storages/StorageMerge.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
-#include <Databases/IDatabase.h>
+#include <Access/AccessFlags.h>
 #include <TableFunctions/TableFunctionMerge.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB
@@ -33,7 +32,7 @@ static NamesAndTypesList chooseColumns(const String & source_database, const Str
 
     {
         auto database = context.getDatabase(source_database);
-        auto iterator = database->getIterator(context, table_name_match);
+        auto iterator = database->getTablesIterator(context, table_name_match);
 
         if (iterator->isValid())
             any_table = iterator->table();
@@ -69,9 +68,10 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Co
     String source_database = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     String table_name_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
+    context.checkAccess(AccessType::merge, source_database);
+
     auto res = StorageMerge::create(
-        getDatabaseName(),
-        table_name,
+        StorageID(getDatabaseName(), table_name),
         ColumnsDescription{chooseColumns(source_database, table_name_regexp, context)},
         source_database,
         table_name_regexp,

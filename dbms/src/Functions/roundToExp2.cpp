@@ -7,14 +7,14 @@ namespace DB
 {
 
 template <typename T>
-inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) <= sizeof(UInt32)), T>
+inline std::enable_if_t<is_integral_v<T> && (sizeof(T) <= sizeof(UInt32)), T>
 roundDownToPowerOfTwo(T x)
 {
     return x <= 0 ? 0 : (T(1) << (31 - __builtin_clz(x)));
 }
 
 template <typename T>
-inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) == sizeof(UInt64)), T>
+inline std::enable_if_t<is_integral_v<T> && (sizeof(T) == sizeof(UInt64)), T>
 roundDownToPowerOfTwo(T x)
 {
     return x <= 0 ? 0 : (T(1) << (63 - __builtin_clzll(x)));

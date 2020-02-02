@@ -205,6 +205,13 @@ public:
         offsets.push_back(offsets.back() + 1);
     }
 
+    virtual void insertManyDefaults(size_t length) override
+    {
+        chars.resize_fill(chars.size() + length);
+        for (size_t i = 0; i < length; ++i)
+            offsets.push_back(offsets.back() + 1);
+    }
+
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override
     {
         const ColumnString & rhs = assert_cast<const ColumnString &>(rhs_);

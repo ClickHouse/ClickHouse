@@ -105,7 +105,7 @@ public:
             if (table.end() == it)
                 return pos - data;
 
-            *pos = it->getSecond().sample(random());
+            *pos = it->getMapped().sample(random());
 
             /// Zero byte marks end of string.
             if (0 == *pos)
@@ -125,12 +125,12 @@ public:
         for (auto & elem : table)
         {
             UInt32 new_total = 0;
-            for (auto & frequency : elem.getSecond().data)
+            for (auto & frequency : elem.getMapped().data)
             {
                 frequency.count = transform(frequency.count);
                 new_total += frequency.count;
             }
-            elem.getSecond().total = new_total;
+            elem.getMapped().total = new_total;
         }
     }
 
@@ -142,10 +142,10 @@ public:
 
         for (const auto & elem : table)
         {
-            writeBinary(elem.getFirst(), out);
-            writeBinary(UInt8(elem.getSecond().data.size()), out);
+            writeBinary(elem.getKey(), out);
+            writeBinary(UInt8(elem.getMapped().data.size()), out);
 
-            for (const auto & frequency : elem.getSecond().data)
+            for (const auto & frequency : elem.getMapped().data)
             {
                 writeBinary(frequency.byte, out);
                 writeVarUInt(frequency.count, out);

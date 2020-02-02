@@ -245,11 +245,6 @@ public:
     {
         assert_cast<ColumnUInt8 &>(to).getData().push_back(getEventLevel(this->data(place)));
     }
-
-    const char * getHeaderFilePath() const override
-    {
-        return __FILE__;
-    }
 };
 
 }

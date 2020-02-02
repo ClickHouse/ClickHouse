@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<yandex>
+    <profiles>
+        <default>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <profile>default</profile>
+            <password></password>
+        </default>
+    </users>
+</yandex>

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -30,17 +31,18 @@ namespace GatherUtils
 template <typename T>
 struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 {
+    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
     using Slice = NumericArraySlice<T>;
     using Column = ColumnArray;
 
-    const typename ColumnVector<T>::Container & elements;
+    const typename ColVecType::Container & elements;
     const typename ColumnArray::Offsets & offsets;
 
     size_t row_num = 0;
     ColumnArray::Offset prev_offset = 0;
 
     explicit NumericArraySource(const ColumnArray & arr)
-            : elements(typeid_cast<const ColumnVector<T> &>(arr.getData()).getData()), offsets(arr.getOffsets())
+            : elements(typeid_cast<const ColVecType &>(arr.getData()).getData()), offsets(arr.getOffsets())
     {
     }
 
@@ -118,6 +120,11 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
         return {&elements[offsets[row_num] - offset], std::min(length, offset)};
     }
 };
+
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsuggest-override"
+#endif
 
 template <typename Base>
 struct ConstSource : public Base
@@ -197,6 +204,10 @@ struct ConstSource : public Base
     }
 };
 
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
+
 struct StringSource
 {
     using Slice = NumericArraySlice<UInt8>;
@@ -236,7 +247,7 @@ struct StringSource
 
     size_t getElementSize() const
     {
-        return offsets[row_num] - prev_offset;
+        return offsets[row_num] - prev_offset - 1;
     }
 
     Slice getWhole() const
@@ -650,7 +661,7 @@ template <typename T>
 struct NumericValueSource : ValueSourceImpl<NumericValueSource<T>>
 {
     using Slice = NumericValueSlice<T>;
-    using Column = ColumnVector<T>;
+    using Column = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
 
     const T * begin;
     size_t total_rows;

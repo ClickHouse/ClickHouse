@@ -22,4 +22,6 @@ protected:
 
 };
 
+class CompressionCodecFactory;
+void registerCodecNone(CompressionCodecFactory & factory);
 }
