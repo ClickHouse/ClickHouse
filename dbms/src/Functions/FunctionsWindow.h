@@ -4,13 +4,14 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <common/DateLUT.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <IO/WriteHelpers.h>
+#include <common/DateLUT.h>
 
 #include "IFunctionImpl.h"
 
@@ -19,25 +20,25 @@ namespace DB
 
 /** Window functions:
   *
-  * TUMBLE(time_attr, interval)
+  * TUMBLE(time_attr, interval [, timezone])
   * 
   * TUMBLE_START(window_id)
   * 
-  * TUMBLE_START(time_attr, interval)
+  * TUMBLE_START(time_attr, interval [, timezone])
   * 
   * TUMBLE_END(window_id)
   * 
-  * TUMBLE_END(time_attr, interval)
+  * TUMBLE_END(time_attr, interval [, timezone])
   * 
-  * HOP(time_attr, hop_interval, window_interval)
+  * HOP(time_attr, hop_interval, window_interval [, timezone])
   * 
   * HOP_START(window_id)
   * 
-  * HOP_START(time_attr, hop_interval, window_interval)
+  * HOP_START(time_attr, hop_interval, window_interval [, timezone])
   * 
   * HOP_END(window_id)
   * 
-  * HOP_END(time_attr, hop_interval, window_interval)
+  * HOP_END(time_attr, hop_interval, window_interval [, timezone])
   * 
   */
 enum WindowFunctionName
@@ -141,7 +142,6 @@ namespace
 
     static ColumnPtr executeWindowBound(const ColumnPtr & column, int index, const String & function_name)
     {
-        // const auto & first_column = block.getByPosition(column_index);
         if (const ColumnTuple * col_tuple = checkAndGetColumn<ColumnTuple>(column.get()); col_tuple)
         {
             if (!checkColumn<ColumnVector<UInt32>>(*col_tuple->getColumnPtr(index)))
@@ -198,12 +198,10 @@ namespace
     struct WindowImpl<TUMBLE>
     {
         static constexpr auto name = "TUMBLE";
-        static constexpr auto isVariadic = false;
-        static constexpr auto numberOfArguments = 2;
 
         [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
-            if (arguments.size() != 2)
+            if (arguments.size() != 2 && arguments.size() != 3)
             {
                 throw Exception(
                     "Number of arguments for function " + function_name + " doesn't match: passed " + toString(arguments.size())
@@ -216,17 +214,23 @@ namespace
             if (!WhichDataType(arguments[1].type).isInterval())
                 throw Exception(
                     "Illegal type of second argument of function " + function_name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
+            if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
+                throw Exception(
+                    "Illegal type " + arguments[2].type->getName() + " of argument of function " + function_name
+                        + ". This argument is optional and must be a constant string with timezone name",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             return std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeDateTime>(), std::make_shared<DataTypeDateTime>()});
         }
 
         [[maybe_unused]] static ColumnPtr
-        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const DateLUTImpl & time_zone, const String & function_name)
+        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
         {
             const auto & time_column = block.getByPosition(arguments[0]);
             const auto & interval_column = block.getByPosition(arguments[1]);
             const auto & from_datatype = *time_column.type.get();
             const auto which_type = WhichDataType(from_datatype);
             const auto * time_column_vec = checkAndGetColumn<ColumnUInt32>(time_column.column.get());
+            const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
             if (!which_type.isDateTime() || !time_column_vec)
                 throw Exception(
                     "Illegal column " + time_column.name + " of function " + function_name + ". Must contain dates or dates with time",
@@ -282,8 +286,6 @@ namespace
     struct WindowImpl<TUMBLE_START>
     {
         static constexpr auto name = "TUMBLE_START";
-        static constexpr auto isVariadic = true;
-        static constexpr auto numberOfArguments = 0;
 
         static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
@@ -294,7 +296,7 @@ namespace
                         "Illegal type of first argument of function " + function_name + " should be tuple", ErrorCodes::ILLEGAL_COLUMN);
                 return std::make_shared<DataTypeDateTime>();
             }
-            else if (arguments.size() == 2)
+            else if (arguments.size() == 2 || arguments.size() == 3)
             {
                 if (!WhichDataType(arguments[0].type).isDateTime())
                     throw Exception(
@@ -302,6 +304,11 @@ namespace
                 if (!WhichDataType(arguments[1].type).isInterval())
                     throw Exception(
                         "Illegal type of second argument of function " + function_name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
+                if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
+                    throw Exception(
+                        "Illegal type " + arguments[2].type->getName() + " of argument of function " + function_name
+                            + ". This argument is optional and must be a constant string with timezone name",
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
                 return std::make_shared<DataTypeDateTime>();
             }
             else
@@ -314,13 +321,13 @@ namespace
         }
 
         [[maybe_unused]] static ColumnPtr
-        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const DateLUTImpl & time_zone, const String & function_name)
+        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
         {
             const auto & time_column = block.getByPosition(arguments[0]);
             const auto which_type = WhichDataType(time_column.type);
             ColumnPtr result_column_;
             if (which_type.isDateTime())
-                result_column_ = WindowImpl<TUMBLE>::dispatchForColumns(block, arguments, time_zone, function_name);
+                result_column_ = WindowImpl<TUMBLE>::dispatchForColumns(block, arguments, function_name);
             else
                 result_column_ = block.getByPosition(arguments[0]).column;
             return executeWindowBound(result_column_, 0, function_name);
@@ -332,8 +339,6 @@ namespace
     struct WindowImpl<TUMBLE_END>
     {
         static constexpr auto name = "TUMBLE_END";
-        static constexpr auto isVariadic = true;
-        static constexpr auto numberOfArguments = 0;
 
         [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
@@ -341,13 +346,13 @@ namespace
         }
 
         [[maybe_unused]] static ColumnPtr
-        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const DateLUTImpl & time_zone, const String & function_name)
+        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
         {
             const auto & time_column = block.getByPosition(arguments[0]);
             const auto which_type = WhichDataType(time_column.type);
             ColumnPtr result_column_;
             if (which_type.isDateTime())
-                result_column_ = WindowImpl<TUMBLE>::dispatchForColumns(block, arguments, time_zone, function_name);
+                result_column_ = WindowImpl<TUMBLE>::dispatchForColumns(block, arguments, function_name);
             else
                 result_column_ = block.getByPosition(arguments[0]).column;
             return executeWindowBound(result_column_, 1, function_name);
@@ -358,12 +363,10 @@ namespace
     struct WindowImpl<HOP>
     {
         static constexpr auto name = "HOP";
-        static constexpr auto isVariadic = false;
-        static constexpr auto numberOfArguments = 3;
 
         [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
-            if (arguments.size() != 3)
+            if (arguments.size() != 3 && arguments.size() != 4)
             {
                 throw Exception(
                     "Number of arguments for function " + function_name + " doesn't match: passed " + toString(arguments.size())
@@ -379,18 +382,24 @@ namespace
             if (!WhichDataType(arguments[2].type).isInterval())
                 throw Exception(
                     "Illegal type of third argument of function " + function_name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
+            if (arguments.size() == 4 && !WhichDataType(arguments[3].type).isString())
+                throw Exception(
+                    "Illegal type " + arguments[3].type->getName() + " of argument of function " + function_name
+                        + ". This argument is optional and must be a constant string with timezone name",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             return std::make_shared<DataTypeArray>(
                 std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeDateTime>(), std::make_shared<DataTypeDateTime>()}));
         }
 
         static ColumnPtr
-        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const DateLUTImpl & time_zone, const String & function_name)
+        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
         {
             const auto & time_column = block.getByPosition(arguments[0]);
             const auto & hop_interval_column = block.getByPosition(arguments[1]);
             const auto & window_interval_column = block.getByPosition(arguments[2]);
             const auto & from_datatype = *time_column.type.get();
             const auto * time_column_vec = checkAndGetColumn<ColumnUInt32>(time_column.column.get());
+            const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 3, 0);
             if (!WhichDataType(from_datatype).isDateTime() || !time_column_vec)
                 throw Exception(
                     "Illegal column " + time_column.name + " argument of function " + function_name
@@ -496,8 +505,6 @@ namespace
     struct WindowImpl<HOP_START>
     {
         static constexpr auto name = "HOP_START";
-        static constexpr auto isVariadic = true;
-        static constexpr auto numberOfArguments = 0;
 
         static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
@@ -510,7 +517,7 @@ namespace
                         ErrorCodes::ILLEGAL_COLUMN);
                 return std::make_shared<DataTypeDateTime>();
             }
-            else if (arguments.size() == 3)
+            else if (arguments.size() == 3 || arguments.size() == 4)
             {
                 if (!WhichDataType(arguments[0].type).isDateTime())
                     throw Exception(
@@ -521,6 +528,11 @@ namespace
                 if (!WhichDataType(arguments[2].type).isInterval())
                     throw Exception(
                         "Illegal type of third argument of function " + function_name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
+                if (arguments.size() == 4 && !WhichDataType(arguments[3].type).isString())
+                    throw Exception(
+                        "Illegal type " + arguments[3].type->getName() + " of argument of function " + function_name
+                            + ". This argument is optional and must be a constant string with timezone name",
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
                 return std::make_shared<DataTypeDateTime>();
             }
             else
@@ -533,13 +545,13 @@ namespace
         }
 
         [[maybe_unused]] static ColumnPtr
-        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const DateLUTImpl & time_zone, const String & function_name)
+        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
         {
             const auto & time_column = block.getByPosition(arguments[0]);
             const auto which_type = WhichDataType(time_column.type);
             ColumnPtr result_column_;
             if (which_type.isDateTime())
-                result_column_ = WindowImpl<HOP>::dispatchForColumns(block, arguments, time_zone, function_name);
+                result_column_ = WindowImpl<HOP>::dispatchForColumns(block, arguments, function_name);
             else
                 result_column_ = block.getByPosition(arguments[0]).column;
             return executeWindowBound(result_column_, 0, function_name);
@@ -550,8 +562,6 @@ namespace
     struct WindowImpl<HOP_END>
     {
         static constexpr auto name = "HOP_END";
-        static constexpr auto isVariadic = true;
-        static constexpr auto numberOfArguments = 0;
 
         [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
@@ -559,13 +569,13 @@ namespace
         }
 
         [[maybe_unused]] static ColumnPtr
-        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const DateLUTImpl & time_zone, const String & function_name)
+        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
         {
             const auto & time_column = block.getByPosition(arguments[0]);
             const auto which_type = WhichDataType(time_column.type);
             ColumnPtr result_column_;
             if (which_type.isDateTime())
-                result_column_ = WindowImpl<HOP>::dispatchForColumns(block, arguments, time_zone, function_name);
+                result_column_ = WindowImpl<HOP>::dispatchForColumns(block, arguments, function_name);
             else
                 result_column_ = block.getByPosition(arguments[0]).column;
             return executeWindowBound(result_column_, 1, function_name);
@@ -580,17 +590,16 @@ public:
     static constexpr auto name = WindowImpl<type>::name;
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionWindow>(); }
     String getName() const override { return name; }
-    bool isVariadic() const override { return WindowImpl<type>::isVariadic; }
-    size_t getNumberOfArguments() const override { return WindowImpl<type>::numberOfArguments; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override { return WindowImpl<type>::getReturnType(arguments, name); }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        const DateLUTImpl & time_zone = DateLUT::instance();
-        auto result_column = WindowImpl<type>::dispatchForColumns(block, arguments, time_zone, name);
+        auto result_column = WindowImpl<type>::dispatchForColumns(block, arguments, name);
         block.getByPosition(result).column = std::move(result_column);
     }
 };
