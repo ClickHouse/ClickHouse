@@ -358,7 +358,9 @@ set_source_files_properties(
         src/Common/Elf.cpp
         src/Common/Dwarf.cpp
         src/Common/SymbolIndex.cpp
-        PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
+        PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}"
+        SKIP_PRECOMPILE_HEADERS 1
+)
 
 target_link_libraries (clickhouse_common_io
         PUBLIC
@@ -579,6 +581,124 @@ target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_C
 
 # also for copy_headers.sh:
 target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
+
+target_precompile_headers(clickhouse_common_io
+                          PRIVATE
+                          <algorithm>
+                          <any>
+                          <array>
+                          <atomic>
+                          <bitset>
+                          <cassert>
+                          <cctype>
+                          <cerrno>
+                          <chrono>
+                          <climits>
+                          <cmath>
+                          <csignal>
+                          <cstdarg>
+                          <cstddef>
+                          <cstdint>
+                          <cstdio>
+                          <cstdlib>
+                          <cstring>
+                          <ctime>
+                          <deque>
+                          <exception>
+                          <filesystem>
+                          <fstream>
+                          <functional>
+                          <future>
+                          <iomanip>
+                          <iosfwd>
+                          <iostream>
+                          <iterator>
+                          <limits>
+                          <list>
+                          <map>
+                          <memory>
+                          <mutex>
+                          <new>
+                          <numeric>
+                          <optional>
+                          <ostream>
+                          <queue>
+                          <random>
+                          <regex>
+                          <set>
+                          <sstream>
+                          <stack>
+                          <stdexcept>
+                          <streambuf>
+                          <string>
+                          <thread>
+                          <tuple>
+                          <typeindex>
+                          <typeinfo>
+                          <utility>
+                          <variant>
+                          <vector>
+
+                          <boost/algorithm/hex.hpp>
+                          <boost/algorithm/string.hpp>
+                          <boost/algorithm/string/case_conv.hpp>
+                          <boost/algorithm/string/find_iterator.hpp>
+                          <boost/algorithm/string/finder.hpp>
+                          <boost/algorithm/string/join.hpp>
+                          <boost/algorithm/string/predicate.hpp>
+                          <boost/algorithm/string/replace.hpp>
+                          <boost/algorithm/string/split.hpp>
+                          <boost/algorithm/string/trim.hpp>
+                          <boost/assert.hpp>
+                          <boost/blank.hpp>
+                          <boost/container/flat_map.hpp>
+                          <boost/core/noncopyable.hpp>
+                          <boost/format.hpp>
+                          <boost/functional/hash.hpp>
+                          <boost/geometry.hpp>
+                          <boost/geometry/algorithms/comparable_distance.hpp>
+                          <boost/geometry/geometries/multi_polygon.hpp>
+                          <boost/geometry/geometries/point_xy.hpp>
+                          <boost/geometry/geometries/polygon.hpp>
+                          <boost/geometry/geometries/segment.hpp>
+                          <boost/geometry/strategies/cartesian/distance_pythagoras.hpp>
+                          <boost/intrusive/list.hpp>
+                          <boost/intrusive/set.hpp>
+                          <boost/iterator/counting_iterator.hpp>
+                          <boost/iterator/transform_iterator.hpp>
+                          <boost/iterator_adaptors.hpp>
+                          <boost/lockfree/queue.hpp>
+                          <boost/multi_index/global_fun.hpp>
+                          <boost/multi_index/member.hpp>
+                          <boost/multi_index/ordered_index.hpp>
+                          <boost/multi_index/sequenced_index.hpp>
+                          <boost/multi_index_container.hpp>
+                          <boost/noncopyable.hpp>
+                          <boost/numeric/conversion/cast.hpp>
+                          <boost/operators.hpp>
+                          <boost/program_options.hpp>
+                          <boost/program_options/options_description.hpp>
+                          <boost/range/adaptor/filtered.hpp>
+                          <boost/range/adaptor/indexed.hpp>
+                          <boost/range/adaptor/map.hpp>
+                          <boost/range/adaptor/reversed.hpp>
+                          <boost/range/algorithm/find.hpp>
+                          <boost/range/algorithm/find_first_of.hpp>
+                          <boost/range/algorithm/for_each.hpp>
+                          <boost/range/algorithm_ext/erase.hpp>
+                          <boost/range/irange.hpp>
+                          <boost/range/iterator_range.hpp>
+                          <boost/range/iterator_range_core.hpp>
+                          <boost/range/join.hpp>
+                          <boost/rational.hpp>
+                          <boost/smart_ptr/intrusive_ptr.hpp>
+                          <boost/smart_ptr/intrusive_ref_counter.hpp>
+                          <boost/uuid/nil_generator.hpp>
+                          <boost/uuid/random_generator.hpp>
+                          <boost/uuid/uuid.hpp>
+                          )
+
+target_precompile_headers(dbms REUSE_FROM clickhouse_common_io)
 
 add_subdirectory (programs)
 add_subdirectory (tests)
