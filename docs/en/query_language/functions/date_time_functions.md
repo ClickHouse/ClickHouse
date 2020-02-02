@@ -62,9 +62,40 @@ Converts a date with time to a UInt8 number containing the number of the minute 
 Converts a date with time to a UInt8 number containing the number of the second in the minute (0-59).
 Leap seconds are not accounted for.
 
-## toUnixTimestamp
+## toUnixTimestamp {#to_unix_timestamp}
 
-Converts a date with time to a unix timestamp.
+For DateTime argument: converts value to its internal numeric representation (Unix Timestamp).
+For String argument: parse datetime from string according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
+For Date argument: the behaviour is unspecified.
+
+**Syntax** 
+
+```sql
+toUnixTimestamp(datetime)
+toUnixTimestamp(str, [timezone])
+```
+
+**Returned value**
+
+- Returns the unix timestamp.
+
+Type: `UInt32`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
+```
+
+Result:
+
+```text
+┌─unix_timestamp─┐
+│     1509836867 │
+└────────────────┘
+```
 
 ## toStartOfYear
 

@@ -43,6 +43,41 @@ SELECT
 Переводит дату-с-временем в число типа UInt8, содержащее номер секунды в минуте (0-59).
 Секунды координации не учитываются.
 
+## toUnixTimestamp {#to_unix_timestamp}
+
+For DateTime argument: converts value to its internal numeric representation (Unix Timestamp).
+For String argument: parse datetime from string according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
+For Date argument: the behaviour is unspecified.
+
+**Syntax** 
+
+```sql
+toUnixTimestamp(datetime)
+toUnixTimestamp(str, [timezone])
+```
+
+**Returned value**
+
+- Returns the unix timestamp.
+
+Type: `UInt32`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
+```
+
+Result:
+
+```text
+┌─unix_timestamp─┐
+│     1509836867 │
+└────────────────┘
+```
+
 ## toStartOfYear
 Округляет дату или дату-с-временем вниз до первого дня года.
 Возвращается дата.
