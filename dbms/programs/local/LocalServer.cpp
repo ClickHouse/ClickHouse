@@ -132,7 +132,6 @@ try
         return Application::EXIT_OK;
     }
 
-
     context = std::make_unique<Context>(Context::createGlobal());
     context->makeGlobalContext();
     context->setApplicationType(Context::ApplicationType::LOCAL);
@@ -164,7 +163,7 @@ try
     setupUsers();
 
     /// Limit on total number of concurrently executing queries.
-    /// There is no need for concurrent threads, override max_concurrent_queries.
+    /// There is no need for concurrent queries, override max_concurrent_queries.
     context->getProcessList().setMaxSize(0);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
