@@ -8,7 +8,7 @@
 
 ## system.asynchronous_metrics {#system_tables-asynchronous_metrics}
 
-Содержит метрики, которые периодически вычисляются в фоновом режиме. Например, объем используемой оперативной памяти.
+Содержит метрики, которые периодически вычисляются в фоновом режиме. Например, объём используемой оперативной памяти.
 
 Столбцы:
 
@@ -324,8 +324,8 @@ SELECT * FROM system.metrics LIMIT 10
 - `max_block_number` (`UInt64`) – максимальное число кусков, из которых состоит текущий после слияния.
 - `level` (`UInt32`) - глубина дерева слияний. Если слияний не было, то `level=0`.
 - `data_version` (`UInt64`) – число, которое используется для определения того, какие мутации необходимо применить к куску данных (мутации с версией большей, чем `data_version`).
-- `primary_key_bytes_in_memory` (`UInt64`) – объем памяти (в байтах), занимаемой значениями первичных ключей.
-- `primary_key_bytes_in_memory_allocated` (`UInt64`) – объем памяти (в байтах) выделенный для размещения первичных ключей.
+- `primary_key_bytes_in_memory` (`UInt64`) – объём памяти (в байтах), занимаемой значениями первичных ключей.
+- `primary_key_bytes_in_memory_allocated` (`UInt64`) – объём памяти (в байтах) выделенный для размещения первичных ключей.
 - `is_frozen` (`UInt8`) – Признак, показывающий существование бэкапа партиции. 1, бэкап есть. 0, бэкапа нет. Смотрите раздел [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition).
 - `database` (`String`) – имя базы данных.
 - `table` (`String`) – имя таблицы.
@@ -418,7 +418,7 @@ ClickHouse создаёт таблицу только в том случае, к
 - `read_rows` (UInt64) — количество прочитанных строк.
 - `read_bytes` (UInt64) — количество прочитанных байтов.
 - `written_rows` (UInt64) — количество записанных строк для запросов `INSERT`. Для других запросов, значение столбца 0.
-- `written_bytes` (UInt64) — объем записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
+- `written_bytes` (UInt64) — объём записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
 - `result_rows` (UInt64) — количество строк в результате.
 - `result_bytes` (UInt64) — объём результата в байтах.
 - `memory_usage` (UInt64) — потребление RAM запросом.
@@ -491,7 +491,7 @@ ClickHouse создаёт таблицу только в том случае, к
 - `read_rows` (UInt64) — количество прочитанных строк.
 - `read_bytes` (UInt64) — количество прочитанных байтов.
 - `written_rows` (UInt64) — количество записанных строк для запросов `INSERT`. Для других запросов, значение столбца 0.
-- `written_bytes` (UInt64) — объем записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
+- `written_bytes` (UInt64) — объём записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
 - `memory_usage` (Int64) — разница между выделенной и освобождённой памятью в контексте потока.
 - `peak_memory_usage` (Int64) — максимальная разница между выделенной и освобождённой памятью в контексте потока.
 - `thread_name` (String) — Имя потока.
@@ -695,6 +695,43 @@ WHERE changed
 └────────────────────────┴─────────────┴─────────┘
 ```
 
+## system.table_engines
+
+Содержит информацию про движки таблиц, поддерживаемые сервером, а также об их возможностях. 
+
+Эта таблица содержит следующие столбцы (тип столбца показан в скобках):
+
+- `name` (String) — имя движка.
+- `supports_settings` (UInt8) — флаг, показывающий поддержку секции `SETTINGS`.
+- `supports_skipping_indices` (UInt8) — флаг, показывающий поддержку [индексов пропуска данных](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes). 
+- `supports_ttl` (UInt8) — флаг, показывающий поддержку [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
+- `supports_sort_order` (UInt8) — флаг, показывающий поддержку секций `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` и `SAMPLE_BY`.  
+- `supports_replication` (UInt8) — флаг, показвыающий поддержку [репликации](table_engines/replication/).
+- `supports_duduplication` (UInt8) — флаг, показывающий наличие в движке дедупликации данных.
+
+Пример:
+
+```sql
+SELECT *
+FROM system.table_engines
+WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
+```
+
+```text
+┌─name──────────────────────────┬─supports_settings─┬─supports_skipping_indices─┬─supports_sort_order─┬─supports_ttl─┬─supports_replication─┬─supports_deduplication─┐
+│ Kafka                         │                 1 │                         0 │                   0 │            0 │                    0 │                      0 │
+│ MergeTree                     │                 1 │                         1 │                   1 │            1 │                    0 │                      0 │
+│ ReplicatedCollapsingMergeTree │                 1 │                         1 │                   1 │            1 │                    1 │                      1 │
+└───────────────────────────────┴───────────────────┴───────────────────────────┴─────────────────────┴──────────────┴──────────────────────┴────────────────────────┘
+```
+
+**Смотрите также**
+
+- [Секции движка](table_engines/mergetree/#mergetree-query-clauses) семейства MergeTree 
+- [Настройки](table_engines/kafka.md#table_engine-kafka-creating-a-table) Kafka
+- [Настройки](table_engines/join/#join-limitations-and-settings) Join
+
+
 ## system.tables
 
 Содержит метаданные каждой таблицы, о которой знает сервер. Отсоединённые таблицы не отображаются в `system.tables`.
@@ -845,4 +882,4 @@ Cодержит информацию о дисках, заданных в [ко�
 
 Если политика хранения содержит несколько томов, то каждому тому соответствует отдельная запись в таблице.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/system_tables/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/) <!--hide-->

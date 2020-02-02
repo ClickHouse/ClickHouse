@@ -20,6 +20,7 @@ struct PrewhereInfo
     ExpressionActionsPtr remove_columns_actions;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
+    bool need_filter = false;
 
     PrewhereInfo() = default;
     explicit PrewhereInfo(ExpressionActionsPtr prewhere_actions_, String prewhere_column_name_)

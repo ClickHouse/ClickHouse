@@ -29,10 +29,6 @@ public:
         return std::static_pointer_cast<const IDictionaryBase>(tryLoad(name));
     }
 
-    void addConfigRepository(
-        const std::string & repository_name,
-        std::unique_ptr<IExternalLoaderConfigRepository> config_repository);
-
 protected:
     LoadablePtr create(const std::string & name, const Poco::Util::AbstractConfiguration & config,
             const std::string & key_in_config, const std::string & repository_name) const override;

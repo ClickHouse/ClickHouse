@@ -2,6 +2,7 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateQuotaQuery.h>
+#include <Parsers/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ASTDropAccessEntityQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -14,6 +15,7 @@
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowQuotasQuery.h>
+#include <Parsers/ASTShowRowPoliciesQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -24,6 +26,7 @@
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterCreateQuotaQuery.h>
+#include <Interpreters/InterpreterCreateRowPolicyQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterDropAccessEntityQuery.h>
@@ -41,6 +44,7 @@
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterShowQuotasQuery.h>
+#include <Interpreters/InterpreterShowRowPoliciesQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
@@ -70,22 +74,6 @@ namespace ErrorCodes
 }
 
 
-static void throwIfNoAccess(Context & context)
-{
-    if (context.getSettingsRef().readonly)
-    {
-        const auto & client_info = context.getClientInfo();
-        if (client_info.interface == ClientInfo::Interface::HTTP && client_info.http_method == ClientInfo::HTTPMethod::GET)
-            throw Exception("Cannot execute query in readonly mode. "
-                "For queries over HTTP, method GET implies readonly. You should use method POST for modifying queries.", ErrorCodes::READONLY);
-        else
-            throw Exception("Cannot execute query in readonly mode", ErrorCodes::READONLY);
-    }
-    else if (!context.getSettingsRef().allow_ddl)
-        throw Exception("Cannot execute query. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
-}
-
-
 std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & context, QueryProcessingStage::Enum stage)
 {
     ProfileEvents::increment(ProfileEvents::Query);
@@ -104,23 +92,19 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else if (query->as<ASTInsertQuery>())
     {
         ProfileEvents::increment(ProfileEvents::InsertQuery);
-        /// readonly is checked inside InterpreterInsertQuery
         bool allow_materialized = static_cast<bool>(context.getSettingsRef().insert_allow_materialized_columns);
         return std::make_unique<InterpreterInsertQuery>(query, context, allow_materialized);
     }
     else if (query->as<ASTCreateQuery>())
     {
-        /// readonly and allow_ddl are checked inside InterpreterCreateQuery
         return std::make_unique<InterpreterCreateQuery>(query, context);
     }
     else if (query->as<ASTDropQuery>())
     {
-        /// readonly and allow_ddl are checked inside InterpreterDropQuery
         return std::make_unique<InterpreterDropQuery>(query, context);
     }
     else if (query->as<ASTRenameQuery>())
     {
-        throwIfNoAccess(context);
         return std::make_unique<InterpreterRenameQuery>(query, context);
     }
     else if (query->as<ASTShowTablesQuery>())
@@ -138,7 +122,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     }
     else if (query->as<ASTOptimizeQuery>())
     {
-        throwIfNoAccess(context);
         return std::make_unique<InterpreterOptimizeQuery>(query, context);
     }
     else if (query->as<ASTExistsTableQuery>())
@@ -175,7 +158,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     }
     else if (query->as<ASTAlterQuery>())
     {
-        throwIfNoAccess(context);
         return std::make_unique<InterpreterAlterQuery>(query, context);
     }
     else if (query->as<ASTCheckQuery>())
@@ -188,7 +170,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     }
     else if (query->as<ASTSystemQuery>())
     {
-        throwIfNoAccess(context);
         return std::make_unique<InterpreterSystemQuery>(query, context);
     }
     else if (query->as<ASTWatchQuery>())
@@ -198,6 +179,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else if (query->as<ASTCreateQuotaQuery>())
     {
         return std::make_unique<InterpreterCreateQuotaQuery>(query, context);
+    }
+    else if (query->as<ASTCreateRowPolicyQuery>())
+    {
+        return std::make_unique<InterpreterCreateRowPolicyQuery>(query, context);
     }
     else if (query->as<ASTDropAccessEntityQuery>())
     {
@@ -210,6 +195,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else if (query->as<ASTShowQuotasQuery>())
     {
         return std::make_unique<InterpreterShowQuotasQuery>(query, context);
+    }
+    else if (query->as<ASTShowRowPoliciesQuery>())
+    {
+        return std::make_unique<InterpreterShowRowPoliciesQuery>(query, context);
     }
     else
         throw Exception("Unknown type of query: " + query->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);

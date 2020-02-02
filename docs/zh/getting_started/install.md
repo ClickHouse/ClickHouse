@@ -149,4 +149,4 @@ SELECT 1
 为了继续进行实验，你可以尝试下载测试数据集。
 
 
-[Original article](https://clickhouse.yandex/docs/en/getting_started/install/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/getting_started/install/) <!--hide-->

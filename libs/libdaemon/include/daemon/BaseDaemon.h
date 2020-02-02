@@ -168,22 +168,11 @@ protected:
     {
         std::string file;
 
-        /// Создать объект, не создавая PID файл
-        PID() {}
-
-        /// Создать объект, создать PID файл
-        PID(const std::string & file_) { seed(file_); }
-
-        /// Создать PID файл
-        void seed(const std::string & file_);
-
-        /// Удалить PID файл
-        void clear();
-
-        ~PID() { clear(); }
+        PID(const std::string & file_);
+        ~PID();
     };
 
-    PID pid;
+    std::optional<PID> pid;
 
     std::atomic_bool is_cancelled{false};
 

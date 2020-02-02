@@ -22,13 +22,14 @@ namespace ErrorCodes
 class Exception : public Poco::Exception
 {
 public:
-    Exception() {}  /// For deferred initialization.
-    Exception(const std::string & msg, int code) : Poco::Exception(msg, code) {}
-    Exception(const std::string & msg, const Exception & nested_exception, int code)
-        : Poco::Exception(msg, nested_exception, code), trace(nested_exception.trace) {}
+    Exception();
+    Exception(const std::string & msg, int code);
 
     enum CreateFromPocoTag { CreateFromPoco };
-    Exception(CreateFromPocoTag, const Poco::Exception & exc) : Poco::Exception(exc.displayText(), ErrorCodes::POCO_EXCEPTION) {}
+    enum CreateFromSTDTag { CreateFromSTD };
+
+    Exception(CreateFromPocoTag, const Poco::Exception & exc);
+    Exception(CreateFromSTDTag, const std::exception & exc);
 
     Exception * clone() const override { return new Exception(*this); }
     void rethrow() const override { throw *this; }
@@ -38,13 +39,18 @@ public:
     /// Add something to the existing message.
     void addMessage(const std::string & arg) { extendedMessage(arg); }
 
-    const StackTrace & getStackTrace() const { return trace; }
+    std::string getStackTraceString() const;
 
 private:
+#ifndef STD_EXCEPTION_HAS_STACK_TRACE
     StackTrace trace;
+#endif
 
     const char * className() const throw() override { return "DB::Exception"; }
 };
+
+
+std::string getExceptionStackTraceString(const std::exception & e);
 
 
 /// Contains an additional member `saved_errno`. See the throwFromErrno function.

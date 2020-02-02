@@ -11,7 +11,7 @@ $ /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/inst
 ## Install Required Compilers, Tools, and Libraries
 
 ```bash
-$ brew install cmake ninja libtool gettext readline
+$ brew install cmake ninja libtool gettext
 ```
 
 ## Checkout ClickHouse Sources
@@ -82,4 +82,4 @@ Reboot.
 To check if it's working, you can use `ulimit -n` command.
 
 
-[Original article](https://clickhouse.yandex/docs/en/development/build_osx/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->

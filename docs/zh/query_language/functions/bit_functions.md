@@ -28,4 +28,4 @@
 
 
 
-[来源文章](https://clickhouse.yandex/docs/en/query_language/functions/bit_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/bit_functions/) <!--hide-->

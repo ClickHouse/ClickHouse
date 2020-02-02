@@ -16,7 +16,7 @@ After you have choosen type, you have to specify `preconditions`. It contains ta
 
 The most important part of test is `stop_conditions`. For `loop` test you should always use `min_time_not_changing_for_ms` stop condition. For `once` test you can choose between `average_speed_not_changing_for_ms` and `max_speed_not_changing_for_ms`, but first is preferable. Also you should always specify `total_time_ms` metric. Endless tests will be ignored by CI.
 
-`metrics` and `main_metric` settings are not important and can be ommited, because `loop` tests are always compared by `min_time` metric and `once` tests compared by `max_rows_per_second`.
+`loop` tests are always compared by `min_time` metric and `once` tests compared by `max_rows_per_second`.
 
 You can use `substitions`, `create`, `fill` and `drop` queries to prepare test. You can find examples in this folder.
 

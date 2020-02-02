@@ -7,4 +7,4 @@
 * [Other types of queries](misc.md)
 
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/) <!--hide-->

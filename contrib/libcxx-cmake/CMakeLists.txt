@@ -47,15 +47,19 @@ add_library(cxx ${SRCS})
 target_include_directories(cxx SYSTEM BEFORE PUBLIC $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/include>)
 target_compile_definitions(cxx PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI)
 
+# Enable capturing stack traces for all exceptions.
+if (USE_UNWIND)
+    target_compile_definitions(cxx PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
+endif ()
+
 target_compile_options(cxx PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>)
 
-check_cxx_compiler_flag(-Wreserved-id-macro HAVE_WARNING_RESERVED_ID_MACRO)
-if (HAVE_WARNING_RESERVED_ID_MACRO)
+
+if (SUPPORTS_FLAG_no_reserved_id_macro)
     target_compile_options(cxx PUBLIC -Wno-reserved-id-macro)
 endif ()
 
-check_cxx_compiler_flag(-Wctad-maybe-unsupported HAVE_WARNING_CTAD_MAYBE_UNSUPPORTED)
-if (HAVE_WARNING_CTAD_MAYBE_UNSUPPORTED)
+if (SUPPORTS_FLAG_no_ctad_maybe_unsupported)
     target_compile_options(cxx PUBLIC -Wno-ctad-maybe-unsupported)
 endif ()
 

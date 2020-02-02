@@ -7,7 +7,6 @@
 #include <Common/UnicodeBar.h>
 #include <Common/FieldVisitors.h>
 #include <IO/WriteHelpers.h>
-#include "registerFunctions.h"
 
 
 namespace DB

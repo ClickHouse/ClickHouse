@@ -89,4 +89,4 @@ SELECT * FROM mysql_table
 - [Табличная функция 'mysql'](../../query_language/table_functions/mysql.md)
 - [Использование MySQL в качестве источника для внешнего словаря](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/mysql/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/mysql/) <!--hide-->

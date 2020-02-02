@@ -1,6 +1,6 @@
 #include <Functions/FunctionMathUnary.h>
 #include <Functions/FunctionFactory.h>
-#include "registerFunctions.h"
+
 
 namespace DB
 {

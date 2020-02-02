@@ -652,15 +652,35 @@ If you want to get a list of unique items in an array, you can use arrayReduce('
 
 A special function. See the section ["ArrayJoin function"](array_join.md#functions_arrayjoin).
 
-## arrayDifference(arr) {#array_functions-arraydifference}
+## arrayDifference {#arraydifference}
 
-Takes an array, returns an array of differences between adjacent elements. The first element will be 0, the second is the difference between the second and first elements of the original array, etc. The type of elements in the resulting array is determined by the type inference rules for subtraction (e.g. UInt8 - UInt8 = Int16). UInt*/Int*/Float* types are supported (type Decimal is not supported).
+Calculates the difference between adjacent array elements. Returns an array where the first element will be 0, the second is the difference between `a[1] - a[0]`, etc. The type of elements in the resulting array is determined by the type inference rules for subtraction (e.g. `UInt8` - `UInt8` = `Int16`).
 
-Example:
+**Syntax** 
+
+```sql
+arrayDifference(array)
+```
+
+**Parameters**
+
+- `array` – [Array](https://clickhouse.yandex/docs/en/data_types/array/). 
+
+**Returned values**
+
+Returns an array of differences between adjacent elements.
+
+Type: [UInt*](https://clickhouse.yandex/docs/en/data_types/int_uint/#uint-ranges), [Int*](https://clickhouse.yandex/docs/en/data_types/int_uint/#int-ranges), [Float*](https://clickhouse.yandex/docs/en/data_types/float/).
+
+**Example**
+
+Query:
 
 ```sql
 SELECT arrayDifference([1, 2, 3, 4])
 ```
+
+Result:
 
 ```text
 ┌─arrayDifference([1, 2, 3, 4])─┐
@@ -670,9 +690,13 @@ SELECT arrayDifference([1, 2, 3, 4])
 
 Example of the overflow due to result type Int64:
 
+Query:
+
 ```sql
 SELECT arrayDifference([0, 10000000000000000000])
 ```
+
+Result:
 
 ```text
 ┌─arrayDifference([0, 10000000000000000000])─┐
@@ -680,15 +704,33 @@ SELECT arrayDifference([0, 10000000000000000000])
 └────────────────────────────────────────────┘
 ```
 
-## arrayDistinct(arr) {#array_functions-arraydistinct}
+## arrayDistinct {#arraydistinct}
 
-Takes an array, returns an array containing the distinct elements.
+Takes an array, returns an array containing the distinct elements only.
 
-Example:
+**Syntax** 
+
+```sql
+arrayDistinct(array)
+```
+
+**Parameters** 
+
+- `array` – [Array](https://clickhouse.yandex/docs/en/data_types/array/). 
+
+**Returned values**
+
+Returns an array containing the distinct elements.
+
+**Example**
+
+Query:
 
 ```sql
 SELECT arrayDistinct([1, 2, 2, 3, 1])
 ```
+
+Result:
 
 ```text
 ┌─arrayDistinct([1, 2, 2, 3, 1])─┐
@@ -794,14 +836,11 @@ Synonym for ["arrayReverse"](#array_functions-arrayreverse)
 
 ## arrayFlatten {#arrayflatten}
 
-Converts array of arrays to a flat array.
+Converts an array of arrays to a flat array.
 
 Function:
 
-- Applies for any depth of nested arrays, but all the elements should lay at the same level.
-
-    For example, the `[[[1]], [[2], [3]]]` array can be flattened, but the `[[1], [[2], [3]]]` array can't be flattened.
-
+- Applies to any depth of nested arrays.
 - Does not change arrays that are already flat.
 
 The flattened array contains all the elements from all source arrays.
@@ -900,4 +939,4 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/array_functions/) <!--hide-->

@@ -134,15 +134,15 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Настройки:
 
-- host - Сервер Graphite.
-- port - Порт сервера Graphite.
-- interval - Период отправки в секундах.
-- timeout - Таймаут отправки данных в секундах.
-- root_path - Префикс для ключей.
-- metrics - Отправка данных из таблицы [system.metrics](../system_tables.md#system_tables-metrics).
-- events - Отправка дельты данных, накопленной за промежуток времени из таблицы [system.events](../system_tables.md#system_tables-events).
-- events_cumulative - Отправка суммарных данных из таблицы [system.events](../system_tables.md#system_tables-events).
-- asynchronous_metrics - Отправка данных из таблицы [system.asynchronous_metrics](../system_tables.md#system_tables-asynchronous_metrics).
+- host – Сервер Graphite.
+- port – Порт сервера Graphite.
+- interval – Период отправки в секундах.
+- timeout – Таймаут отправки данных в секундах.
+- root_path – Префикс для ключей.
+- metrics – Отправка данных из таблицы [system.metrics](../system_tables.md#system_tables-metrics).
+- events – Отправка дельты данных, накопленной за промежуток времени из таблицы [system.events](../system_tables.md#system_tables-events).
+- events_cumulative – Отправка суммарных данных из таблицы [system.events](../system_tables.md#system_tables-events).
+- asynchronous_metrics – Отправка данных из таблицы [system.asynchronous_metrics](../system_tables.md#system_tables-asynchronous_metrics).
 
 Можно определить несколько секций `<graphite>`, например, для передачи различных данных с различной частотой.
 
@@ -167,7 +167,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Настройка прореживания данных для Graphite.
 
-Подробнее читайте в разделе [GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md).
+Подробнее читайте в разделе [GraphiteMergeTree](../table_engines/graphitemergetree.md).
 
 **Пример**
 
@@ -368,12 +368,10 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## mark_cache_size {#server-mark-cache-size}
 
-Приблизительный размер (в байтах) кэша засечек, используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
+Приблизительный размер (в байтах) кэша засечек, используемых движками таблиц семейства [MergeTree](../table_engines/mergetree.md).
 
-Кэш общий для сервера, память выделяется по мере необходимости. Кэш не может быть меньше, чем 5368709120.
+Кэш общий для сервера, память выделяется по мере необходимости.
 
-!!! warning "Внимание"
-    Этот параметр может быть превышен при большом значении настройки [mark_cache_min_lifetime](../settings/settings.md#settings-mark_cache_min_lifetime).
 
 **Пример**
 
@@ -423,7 +421,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Ограничение на удаление таблиц.
 
-Если размер таблицы семейства [MergeTree](../../operations/table_engines/mergetree.md) превышает `max_table_size_to_drop` (в байтах), то ее нельзя удалить запросом DROP.
+Если размер таблицы семейства [MergeTree](../table_engines/mergetree.md) превышает `max_table_size_to_drop` (в байтах), то ее нельзя удалить запросом DROP.
 
 Если таблицу все же необходимо удалить, не перезапуская при этом сервер ClickHouse, то необходимо создать файл `<clickhouse-path>/flags/force_drop_table` и выполнить запрос DROP.
 
@@ -440,7 +438,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## merge_tree {#server_settings-merge_tree}
 
-Тонкая настройка таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
+Тонкая настройка таблиц семейства [MergeTree](../table_engines/mergetree.md).
 
 Подробнее смотрите в заголовочном файле MergeTreeSettings.h.
 
@@ -515,7 +513,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## part_log {#server_settings-part-log}
 
-Логирование событий, связанных с данными типа [MergeTree](../../operations/table_engines/mergetree.md). Например, события добавления или мержа данных. Лог можно использовать для симуляции алгоритмов слияния, чтобы сравнивать их характеристики. Также, можно визуализировать процесс слияния.
+Логирование событий, связанных с данными типа [MergeTree](../table_engines/mergetree.md). Например, события добавления или мержа данных. Лог можно использовать для симуляции алгоритмов слияния, чтобы сравнивать их характеристики. Также, можно визуализировать процесс слияния.
 
 Запросы логируются не в отдельный файл, а в таблицу [system.part_log](../system_tables.md#system_tables-part-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
@@ -624,7 +622,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
  - [skip_unavailable_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
-## timezone
+## timezone {#server_settings-timezone}
 
 Временная зона сервера.
 
@@ -663,6 +661,16 @@ TCP порт для защищённого обмена данными с кли
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
+## mysql_port {#server_settings-mysql_port}
+
+Порт для взаимодействия с клиентами по протоколу MySQL.
+
+Пример
+
+```xml
+<mysql_port>9004</mysql_port>
+```
+
 ## tmp_path
 
 Путь ко временным данным для обработки больших запросов.
@@ -679,7 +687,7 @@ TCP порт для защищённого обмена данными с кли
 
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
-Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
+Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../table_engines/mergetree.md).
 
 Кеш единый для сервера. Память выделяется по требованию. Кеш используется в том случае, если включена опция [use_uncompressed_cache](../settings/settings.md).
 
@@ -786,7 +794,7 @@ ClickHouse использует ZooKeeper для хранения метадан
 - 0 — функциональность выключена.
 - 1 — функциональность включена.
 
-Если `use_minimalistic_part_header_in_zookeeper = 1`, то [реплицированные](../table_engines/replication.md) таблицы хранят заголовки кусков данных в компактном виде, используя только одну `znode`. Если таблица содержит много столбцов, этот метод хранения значительно уменьшает объем данных, хранящихся в Zookeeper.
+Если `use_minimalistic_part_header_in_zookeeper = 1`, то [реплицированные](../table_engines/replication.md) таблицы хранят заголовки кусков данных в компактном виде, используя только одну `znode`. Если таблица содержит много столбцов, этот метод хранения значительно уменьшает объём данных, хранящихся в Zookeeper.
 
 !!! attention "Внимание"
     После того как вы установили `use_minimalistic_part_header_in_zookeeper = 1`, невозможно откатить ClickHouse до версии, которая не поддерживает этот параметр. Будьте осторожны при обновлении ClickHouse на серверах в кластере. Не обновляйте все серверы сразу. Безопаснее проверять новые версии ClickHouse в тестовой среде или только на некоторых серверах кластера.
@@ -809,4 +817,4 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 **Значение по умолчанию**: 15.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/server_settings/settings/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/server_settings/settings/) <!--hide-->

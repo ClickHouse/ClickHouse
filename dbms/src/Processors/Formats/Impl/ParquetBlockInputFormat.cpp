@@ -45,9 +45,11 @@ namespace DB
 
             buffer = std::make_unique<arrow::Buffer>(file_data);
             // TODO: maybe use parquet::RandomAccessSource?
-            auto reader = parquet::ParquetFileReader::Open(std::make_shared<::arrow::io::BufferReader>(*buffer));
-            file_reader = std::make_unique<parquet::arrow::FileReader>(::arrow::default_memory_pool(),
-                                                                       std::move(reader));
+            auto status = parquet::arrow::FileReader::Make(
+                    ::arrow::default_memory_pool(),
+                    parquet::ParquetFileReader::Open(std::make_shared<::arrow::io::BufferReader>(*buffer)),
+                    &file_reader);
+
             row_group_total = file_reader->num_row_groups();
             row_group_current = 0;
         }

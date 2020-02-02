@@ -17,6 +17,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_SLOW;
+    extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 static void limitProgressingSpeed(size_t total_progress_size, size_t max_speed_in_seconds, UInt64 total_elapsed_microseconds)
@@ -86,6 +88,31 @@ void ExecutionSpeedLimits::throttle(
                 limitProgressingSpeed(read_bytes, max_execution_bps, total_elapsed_microseconds);
         }
     }
+}
+
+static bool handleOverflowMode(OverflowMode mode, const String & message, int code)
+{
+    switch (mode)
+    {
+        case OverflowMode::THROW:
+            throw Exception(message, code);
+        case OverflowMode::BREAK:
+            return false;
+        default:
+            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
+bool ExecutionSpeedLimits::checkTimeLimit(UInt64 elapsed_ns, OverflowMode overflow_mode)
+{
+    if (max_execution_time != 0
+        && elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
+        return handleOverflowMode(overflow_mode,
+                                  "Timeout exceeded: elapsed " + toString(static_cast<double>(elapsed_ns) / 1000000000ULL)
+                                  + " seconds, maximum: " + toString(max_execution_time.totalMicroseconds() / 1000000.0),
+                                  ErrorCodes::TIMEOUT_EXCEEDED);
+
+    return true;
 }
 
 }
