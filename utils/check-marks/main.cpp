@@ -65,7 +65,7 @@ void checkCompressedHeaders(const std::string & mrk_path, const std::string & bi
 
         out << "Mark " << mark_num << ", points to " << offset_in_compressed_file << ", " << offset_in_decompressed_block << ". ";
 
-        bin_in.seek(offset_in_compressed_file);
+        bin_in.seek(offset_in_compressed_file, SEEK_SET);
         auto sizes = stat(bin_in, out);
 
         out << "Block sizes: " << sizes.first << ", " << sizes.second << '\n' << DB::flush;

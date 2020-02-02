@@ -31,5 +31,7 @@ For compatibility with all MySQL clients, it is recommended to specify user pass
 If user password is specified using [SHA256](../operations/settings/settings_users.md#password_sha256_hex), some  clients won't be able to authenticate (mysqljs and old versions of command-line tool mysql).
 
 Restrictions:
+
 - prepared queries are not supported
+
 - some data types are sent as strings

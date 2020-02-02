@@ -762,4 +762,4 @@ struct Message {
 
 Cap'n Proto 反序列化是很高效的，通常不会增加系统的负载。
 
-[来源文章](https://clickhouse.yandex/docs/zh/interfaces/formats/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/zh/interfaces/formats/) <!--hide-->

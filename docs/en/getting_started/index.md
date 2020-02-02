@@ -5,4 +5,4 @@ If you are new to ClickHouse and want to get a hands-on feeling of it's performa
 * [Go through detailed tutorial](tutorial.md)
 * [Experiment with example datasets](example_datasets/ontime.md)
 
-[Original article](https://clickhouse.yandex/docs/en/getting_started/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/getting_started/) <!--hide-->

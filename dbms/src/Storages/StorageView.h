@@ -15,6 +15,7 @@ class StorageView : public ext::shared_ptr_helper<StorageView>, public IStorage
     friend struct ext::shared_ptr_helper<StorageView>;
 public:
     std::string getName() const override { return "View"; }
+    bool isView() const override { return true; }
 
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }

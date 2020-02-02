@@ -62,7 +62,7 @@
     Пример создания пароля в командной строке:
 
     ```
-    PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | openssl dgst -sha1 -binary | openssl dgst -sha1
+    PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
     ```
 
     Первая строка результата — пароль. Вторая строка — соответствующий ему двойной хэш SHA1.
@@ -141,4 +141,4 @@
 
 Элемент `filter` содержать любое выражение, возвращающее значение типа [UInt8](../../data_types/int_uint.md). Обычно он содержит сравнения и логические операторы. Строки `database_name.table1`, для которых фильтр возвращает 0 не выдаются пользователю. Фильтрация несовместима с операциями `PREWHERE` и отключает оптимизацию `WHERE→PREWHERE`.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/settings_users/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings_users/) <!--hide-->

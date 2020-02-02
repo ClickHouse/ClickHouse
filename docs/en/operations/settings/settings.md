@@ -47,7 +47,7 @@ If `enable_optimize_predicate_expression = 0`, then the execution time of the se
 
 ## fallback_to_stale_replicas_for_distributed_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
-Forces a query to an out-of-date replica if updated data is not available. See [Replication](../../operations/table_engines/replication.md).
+Forces a query to an out-of-date replica if updated data is not available. See [Replication](../table_engines/replication.md).
 
 ClickHouse selects the most relevant from the outdated replicas of the table.
 
@@ -61,7 +61,7 @@ Disables query execution if the index can't be used by date.
 
 Works with tables in the MergeTree family.
 
-If `force_index_by_date=1`, ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see [MergeTree](../../operations/table_engines/mergetree.md).
+If `force_index_by_date=1`, ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see [MergeTree](../table_engines/mergetree.md).
 
 
 ## force_primary_key
@@ -70,7 +70,7 @@ Disables query execution if indexing by the primary key is not possible.
 
 Works with tables in the MergeTree family.
 
-If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](../../operations/table_engines/mergetree.md).
+If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](../table_engines/mergetree.md).
 
 ## format_schema
 
@@ -382,7 +382,7 @@ See also:
 - [Join table engine](../table_engines/join.md)
 - [join_default_strictness](#settings-join_default_strictness)
 
-## join_use_nulls {#settings-join_use_nulls}
+## join_use_nulls {#join_use_nulls}
 
 Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
 
@@ -422,7 +422,7 @@ By default: 1,000,000. It only works when reading from MergeTree engines.
 
 ## merge_tree_uniform_read_distribution {#setting-merge_tree_uniform_read_distribution}
 
-ClickHouse uses multiple threads when reading from [MergeTree*](../table_engines/mergetree.md) tables. This setting turns on/off the uniform distribution of reading tasks over the working threads. The algorithm of the uniform distribution aims to make execution time for all the threads approximately equal in a `SELECT` query.
+ClickHouse uses multiple threads when reading from [MergeTree](../table_engines/mergetree.md) tables. This setting turns on/off the uniform distribution of reading tasks over the working threads. The algorithm of the uniform distribution aims to make execution time for all the threads approximately equal in a `SELECT` query.
 
 Possible values:
 
@@ -433,7 +433,7 @@ Default value: 1.
 
 ## merge_tree_min_rows_for_concurrent_read {#setting-merge_tree_min_rows_for_concurrent_read}
 
-If the number of rows to be read from a file of a [MergeTree*](../table_engines/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
+If the number of rows to be read from a file of a [MergeTree](../table_engines/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
 
 Possible values:
 
@@ -443,7 +443,7 @@ Default value: 163840.
 
 ## merge_tree_min_bytes_for_concurrent_read {#setting-merge_tree_min_bytes_for_concurrent_read}
 
-If the number of bytes to read from one file of a [MergeTree*](../table_engines/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read`, then ClickHouse tries to concurrently read from this file in several threads.
+If the number of bytes to read from one file of a [MergeTree](../table_engines/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read`, then ClickHouse tries to concurrently read from this file in several threads.
 
 Possible value:
 
@@ -588,7 +588,7 @@ Don't confuse blocks for compression (a chunk of memory consisting of bytes) wit
 
 ## min_compress_block_size
 
-For [MergeTree](../../operations/table_engines/mergetree.md)" tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least 'min_compress_block_size'. By default, 65,536.
+For [MergeTree](../table_engines/mergetree.md)" tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least 'min_compress_block_size'. By default, 65,536.
 
 The actual size of the block, if the uncompressed data is less than 'max_compress_block_size', is no less than this value and no less than the volume of data for one mark.
 
@@ -804,6 +804,10 @@ The character interpreted as a delimiter in the CSV data. By default, the delimi
 
 For CSV input format enables or disables parsing of unquoted `NULL` as literal (synonym for `\N`).
 
+## output_format_csv_crlf_end_of_line {#settings-output_format_csv_crlf_end_of_line}
+
+Use DOS/Windows style line separator (CRLF) in CSV instead of Unix style (LF).
+
 ## insert_quorum {#settings-insert_quorum}
 
 Enables quorum writes.
@@ -968,6 +972,24 @@ Possible values:
 
 Default value: 0.
 
+## optimize_skip_unused_shards {#settings-optimize_skip_unused_shards}
+
+Enables or disables skipping of unused shards for SELECT queries that has sharding key condition in PREWHERE/WHERE (assumes that the data is distributed by sharding key, otherwise do nothing).
+
+Default value: 0
+
+## force_optimize_skip_unused_shards {#settings-force_optimize_skip_unused_shards}
+
+Enables or disables query execution if [`optimize_skip_unused_shards`](#settings-optimize_skip_unused_shards) enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled exception will be thrown.
+
+Possible values:
+
+- 0 - Disabled (do not throws)
+- 1 - Disable query execution only if the table has sharding key
+- 2 - Disable query execution regardless sharding key is defined for the table
+
+Default value: 0
+
 ## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
 
 Enables or disables throwing an exception if an [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query didn't perform a merge.
@@ -1125,4 +1147,28 @@ Enable order-preserving parallel parsing of data formats. Supported only for TSV
 
 The minimum chunk size in bytes, which each thread will parse in parallel.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!-- hide -->
+## output_format_avro_codec {#settings-output_format_avro_codec}
+
+Sets the compression codec used for output Avro file.
+
+Type: string
+
+Possible values:
+
+- `null` — No compression
+- `deflate` — Compress with Deflate (zlib)
+- `snappy` — Compress with [Snappy](https://google.github.io/snappy/)
+
+Default value: `snappy` (if available) or `deflate`.
+
+## output_format_avro_sync_interval {#settings-output_format_avro_sync_interval}
+
+Sets minimum data size (in bytes) between synchronization markers for output Avro file.
+
+Type: unsigned int
+
+Possible values: 32 (32 bytes) - 1073741824 (1 GiB)
+
+Default value: 32768 (32 KiB)
+
+[Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

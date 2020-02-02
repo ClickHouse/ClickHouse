@@ -29,13 +29,17 @@ class StorageSystemNumbers : public ext::shared_ptr_helper<StorageSystemNumbers>
 public:
     std::string getName() const override { return "SystemNumbers"; }
 
-    BlockInputStreams read(
+    Pipes readWithProcessors(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
+
+    bool supportProcessorsPipeline() const override { return true; }
+
+    bool hasEvenlyDistributedRead() const override { return true; }
 
 private:
     bool multithreaded;

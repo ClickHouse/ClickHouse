@@ -7,4 +7,4 @@
 * [通过详细的教程](tutorial.md)
 * [试验示例数据集](example_datasets/ontime.md)
 
-[来源文章](https://clickhouse.yandex/docs/zh/getting_started/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/zh/getting_started/) <!--hide-->

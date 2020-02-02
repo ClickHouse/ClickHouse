@@ -264,4 +264,4 @@ You can create a query with parameters and pass values for them from the corresp
 $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/http_interface/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/interfaces/http_interface/) <!--hide-->
