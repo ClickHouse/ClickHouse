@@ -31,7 +31,7 @@ ExtendedLogMessage ExtendedLogMessage::getFrom(const Poco::Message & base)
             msg_ext.query_id.assign(query_id_ref.data, query_id_ref.size);
     }
 
-    msg_ext.thread_number = getThreadNumber();
+    msg_ext.thread_id = getThreadNumber();
 
     return msg_ext;
 }

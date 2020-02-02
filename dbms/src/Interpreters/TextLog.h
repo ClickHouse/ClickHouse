@@ -12,8 +12,7 @@ struct TextLogElement
     UInt32 microseconds;
 
     String thread_name;
-    UInt32 os_thread_id;
-    UInt32 thread_number;
+    UInt32 thread_id;
 
     Message::Priority level = Message::PRIO_TRACE;
 

@@ -63,14 +63,14 @@ namespace
                                     sizeof(UInt8) + // number of stack frames
                                     sizeof(StackTrace::Frames) + // collected stack trace, maximum capacity
                                     sizeof(TimerType) + // timer type
-                                    sizeof(UInt32); // thread_number
+                                    sizeof(UInt32); // thread_id
         char buffer[buf_size];
         WriteBufferFromFileDescriptorDiscardOnFailure out(trace_pipe.fds_rw[1], buf_size, buffer);
 
         StringRef query_id = CurrentThread::getQueryId();
         query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
 
-        UInt32 thread_number = CurrentThread::get().thread_number;
+        UInt32 thread_id = CurrentThread::get().thread_id;
 
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         const StackTrace stack_trace(signal_context);
@@ -85,7 +85,7 @@ namespace
             writePODBinary(stack_trace.getFrames()[i], out);
 
         writePODBinary(timer_type, out);
-        writePODBinary(thread_number, out);
+        writePODBinary(thread_id, out);
         out.next();
     }
 

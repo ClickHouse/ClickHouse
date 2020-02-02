@@ -15,7 +15,7 @@ struct TraceLogElement
 
     time_t event_time{};
     TimerType timer_type{};
-    UInt32 thread_number{};
+    UInt32 thread_id{};
     String query_id{};
     Array trace{};
 
