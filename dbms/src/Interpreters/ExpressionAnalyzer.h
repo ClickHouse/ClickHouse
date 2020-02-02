@@ -18,6 +18,7 @@ class Context;
 struct ExpressionActionsChain;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 
 struct ASTTableJoin;
 class IJoin;
@@ -46,6 +47,9 @@ struct ExpressionAnalyzerData
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
+
+    /// Actions by every element of ORDER BY
+    ManyExpressionActions order_by_elements_actions;
 };
 
 
@@ -119,6 +123,7 @@ protected:
     const AnalyzedJoin & analyzedJoin() const { return *syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
+    NamesAndTypesList sourceWithJoinedColumns() const;
 
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables(bool do_global);
@@ -128,6 +133,12 @@ protected:
     void addJoinAction(ExpressionActionsPtr & actions, JoinPtr = {}) const;
 
     void getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
+
+    /** Similar to getRootActions but do not make sets when analyzing IN functions. It's used in
+      * analyzeAggregation which happens earlier than analyzing PREWHERE and WHERE. If we did, the
+      * prepared sets would not be applicable for MergeTree index optimization.
+      */
+    void getRootActionsNoMakeSet(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
 
     /** Add aggregation keys to aggregation_keys, aggregate functions to aggregate_descriptions,
       * Create a set of columns aggregated_columns resulting after the aggregation, if any,
@@ -169,6 +180,8 @@ public:
 
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
 
+    const ManyExpressionActions & getOrderByActions() const { return order_by_elements_actions; }
+
     /// Tables that will need to be sent to remote servers for distributed query processing.
     const Tables & getExternalTables() const { return external_tables; }
 
@@ -201,7 +214,7 @@ public:
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
     void appendSelect(ExpressionActionsChain & chain, bool only_types);
-    bool appendOrderBy(ExpressionActionsChain & chain, bool only_types);
+    bool appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order);
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
     void appendProjectResult(ExpressionActionsChain & chain) const;

@@ -8,6 +8,9 @@
 #include <Parsers/formatAST.h>
 #include <Common/TerminalSize.h>
 
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
+
 int mainEntryClickHouseFormat(int argc, char ** argv)
 {
     using namespace DB;

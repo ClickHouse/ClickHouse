@@ -99,7 +99,7 @@ def get_processlist(client_cmd):
 
 
 def get_stacktraces(server_pid):
-    cmd = "gdb -q -ex 'set pagination off' -ex 'backtrace' -ex 'thread apply all backtrace' -ex 'detach' -ex 'quit' --pid {} 2>/dev/null".format(server_pid)
+    cmd = "gdb -batch -ex 'thread apply all backtrace' -p {}".format(server_pid)
     try:
         return subprocess.check_output(cmd, shell=True)
     except Exception as ex:
@@ -107,12 +107,11 @@ def get_stacktraces(server_pid):
 
 
 def get_server_pid(server_tcp_port):
-    cmd = "lsof -i tcp:{port} | grep '*:{port}'".format(port=server_tcp_port)
+    cmd = "lsof -i tcp:{port} -s tcp:LISTEN -Fp | awk '/^p[0-9]+$/{{print substr($0, 2)}}'".format(port=server_tcp_port)
     try:
         output = subprocess.check_output(cmd, shell=True)
         if output:
-            columns = output.strip().split(' ')
-            return int(columns[1])
+            return int(output[1:])
         else:
             return None # server dead
     except Exception as ex:
@@ -182,7 +181,11 @@ def run_tests_array(all_tests_with_params):
                     or 'global' in name):
                 print(MSG_SKIPPED + " - no shard")
                 skipped_total += 1
-            elif not args.no_long and 'long' in name:
+            elif not args.no_long and ('long' in name
+                    # Tests for races and deadlocks usually are runned in loop
+                    #  for significant amount of time
+                    or 'deadlock' in name
+                    or 'race' in name):
                 print(MSG_SKIPPED + " - no long")
                 skipped_total += 1
             else:
@@ -449,12 +452,22 @@ def main(args):
     if args.hung_check:
         processlist = get_processlist(args.client_with_database)
         if processlist:
-            server_pid = get_server_pid(os.getenv("CLICKHOUSE_PORT_TCP", '9000'))
             print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
             print(processlist)
+
+            clickhouse_tcp_port = os.getenv("CLICKHOUSE_PORT_TCP", '9000')
+            server_pid = get_server_pid(clickhouse_tcp_port)
             if server_pid:
-                print("\nStacktraces of all threads:")
+                print("\nLocated ClickHouse server process {} listening at TCP port {}".format(server_pid, clickhouse_tcp_port))
+                print("\nCollecting stacktraces from all running threads:")
                 print(get_stacktraces(server_pid))
+            else:
+                print(
+                    colored(
+                        "\nUnable to locate ClickHouse server process listening at TCP port {}. "
+                        "It must have crashed or exited prematurely!".format(clickhouse_tcp_port),
+                        args, "red", attrs=["bold"]))
+
             exit_code = 1
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))

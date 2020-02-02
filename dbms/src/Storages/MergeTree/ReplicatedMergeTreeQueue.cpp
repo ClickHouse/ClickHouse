@@ -532,10 +532,10 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
 }
 
 
-static size_t countPartsToMutate(
+static Names getPartNamesToMutate(
     const ReplicatedMergeTreeMutationEntry & mutation, const ActiveDataPartSet & parts)
 {
-    size_t count = 0;
+    Names result;
     for (const auto & pair : mutation.block_numbers)
     {
         const String & partition_id = pair.first;
@@ -549,11 +549,11 @@ static size_t countPartsToMutate(
         {
             auto part_info = MergeTreePartInfo::fromPartName(covered_part_name, parts.getFormatVersion());
             if (part_info.getDataVersion() < block_num)
-                ++count;
+                result.push_back(covered_part_name);
         }
     }
 
-    return count;
+    return result;
 }
 
 
@@ -640,7 +640,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                 }
 
                 /// Initialize `mutation.parts_to_do`. First we need to mutate all parts in `current_parts`.
-                mutation.parts_to_do += countPartsToMutate(*entry, current_parts);
+                mutation.parts_to_do += getPartNamesToMutate(*entry, current_parts).size();
 
                 /// And next we would need to mutate all parts with getDataVersion() greater than
                 /// mutation block number that would appear as a result of executing the queue.
@@ -1417,6 +1417,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
     {
         const MutationStatus & status = pair.second;
         const ReplicatedMergeTreeMutationEntry & entry = *status.entry;
+        const Names parts_to_mutate = getPartNamesToMutate(entry, current_parts);
 
         for (const MutationCommand & command : entry.commands)
         {
@@ -1428,7 +1429,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
                 ss.str(),
                 entry.create_time,
                 entry.block_numbers,
-                status.parts_to_do,
+                parts_to_mutate,
                 status.is_done,
                 status.latest_failed_part,
                 status.latest_fail_time,
@@ -1731,7 +1732,7 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
     {
         std::lock_guard lock(queue.state_mutex);
 
-        size_t suddenly_appeared_parts = countPartsToMutate(mutation, queue.virtual_parts);
+        size_t suddenly_appeared_parts = getPartNamesToMutate(mutation, queue.virtual_parts).size();
         if (suddenly_appeared_parts)
         {
             LOG_TRACE(queue.log, "Mutation " << mutation.znode_name << " is not done yet because "

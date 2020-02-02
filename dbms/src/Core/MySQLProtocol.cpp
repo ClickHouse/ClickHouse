@@ -143,7 +143,7 @@ ColumnDefinition getColumnDefinition(const String & column_name, const TypeIndex
             flags = ColumnDefinitionFlags::BINARY_FLAG;
             break;
         case TypeIndex::Float64:
-            column_type = ColumnType::MYSQL_TYPE_TINY;
+            column_type = ColumnType::MYSQL_TYPE_DOUBLE;
             flags = ColumnDefinitionFlags::BINARY_FLAG;
             break;
         case TypeIndex::Date:
@@ -155,8 +155,6 @@ ColumnDefinition getColumnDefinition(const String & column_name, const TypeIndex
             flags = ColumnDefinitionFlags::BINARY_FLAG;
             break;
         case TypeIndex::String:
-            column_type = ColumnType::MYSQL_TYPE_STRING;
-            break;
         case TypeIndex::FixedString:
             column_type = ColumnType::MYSQL_TYPE_STRING;
             break;

@@ -4,6 +4,40 @@
 
 Возвращает строку - имя хоста, на котором эта функция была выполнена. При распределённой обработке запроса, это будет имя хоста удалённого сервера, если функция выполняется на удалённом сервере.
 
+## FQDN {#fqdn}
+
+Возвращает полное имя домена.
+
+**Синтаксис**
+
+```sql
+fqdn();
+```
+
+Эта функция регистронезависимая.
+
+**Возвращаемое значение**
+
+- Полное имя домена.
+
+Тип: `String`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT FQDN();
+```
+
+Ответ:
+
+```text
+┌─FQDN()──────────────────────────┐
+│ clickhouse.ru-central1.internal │
+└─────────────────────────────────┘
+```
+
 ## basename
 
 Извлекает конечную часть строки после последнего слэша или бэкслэша. Функция часто используется для извлечения имени файла из пути.
@@ -323,16 +357,82 @@ SELECT
 ## rowNumberInAllBlocks()
 Возвращает порядковый номер строки в блоке данных. Функция учитывает только задействованные блоки данных.
 
-## neighbor(column, offset\[, default_value\])
+## neighbor {#neighbor}
 
-Функция позволяет получить доступ к значению в колонке `column`, находящемуся на смещении `offset` относительно текущей строки.
-Является частичной реализацией [оконных функций](https://en.wikipedia.org/wiki/SQL_window_function) LEAD() и LAG().
+Функция позволяет получить доступ к значению в колонке `column`, находящемуся на смещении `offset` относительно текущей строки. Является частичной реализацией [оконных функций](https://en.wikipedia.org/wiki/SQL_window_function) `LEAD()` и `LAG()`.
 
-Результат функции зависит от затронутых блоков данных и порядка данных в блоке.
-Если сделать подзапрос с ORDER BY и вызывать функцию извне подзапроса, можно будет получить ожидаемый результат.
+**Синтаксис**
 
-Если значение `offset` выходит за пределы блока данных, то берётся значение по-умолчанию для колонки `column`. Если передан параметр `default_value`, то значение берётся из него.
-Например, эта функция может использоваться чтобы оценить year-over-year значение показателя:
+```sql
+neighbor(column, offset[, default_value])
+```
+
+Результат функции зависит от затронутых блоков данных и порядка данных в блоке. Если сделать подзапрос с ORDER BY и вызывать функцию извне подзапроса, можно будет получить ожидаемый результат.
+
+**Параметры**
+
+- `column` — Имя столбца или скалярное выражение.
+- `offset` - Смещение от текущей строки `column`. [Int64](../../data_types/int_uint.md).
+- `default_value` - Опциональный параметр. Значение, которое будет возвращено, если смещение выходит за пределы блока данных.
+
+**Возвращаемое значение**
+
+- Значение `column` в смещении от текущей строки, если значение `offset` не выходит за пределы блока.
+- Значение по умолчанию для `column`, если значение `offset`  выходит за пределы блока данных. Если передан параметр `default_value`, то значение берется из него.
+
+Тип: зависит от данных в `column` или переданного значения по умолчанию в `default_value`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
+```
+
+Ответ:
+
+```text
+┌─number─┬─neighbor(number, 2)─┐
+│      0 │                   2 │
+│      1 │                   3 │
+│      2 │                   4 │
+│      3 │                   5 │
+│      4 │                   6 │
+│      5 │                   7 │
+│      6 │                   8 │
+│      7 │                   9 │
+│      8 │                   0 │
+│      9 │                   0 │
+└────────┴─────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
+```
+
+Ответ:
+
+```text
+┌─number─┬─neighbor(number, 2, 999)─┐
+│      0 │                        2 │
+│      1 │                        3 │
+│      2 │                        4 │
+│      3 │                        5 │
+│      4 │                        6 │
+│      5 │                        7 │
+│      6 │                        8 │
+│      7 │                        9 │
+│      8 │                      999 │
+│      9 │                      999 │
+└────────┴──────────────────────────┘
+```
+
+Эта функция может использоваться для оценки year-over-year значение показателя:
+
+Запрос:
 
 ```sql
 WITH toDate('2018-01-01') AS start_date
@@ -343,6 +443,8 @@ SELECT
     round(prev_year / money, 2) AS year_over_year
 FROM numbers(16)
 ```
+
+Ответ:
 
 ```text
 ┌──────month─┬─money─┬─prev_year─┬─year_over_year─┐
@@ -833,9 +935,11 @@ SELECT replicate(1, ['a', 'b', 'c']);
 └───────────────────────────────┘
 ```
 
-## filesystemAvailable {#function-filesystemavailable}
+## filesystemAvailable {#filesystemavailable}
 
-Возвращает объем оставшегося места в файловой системе, в которой расположены файлы баз данных. Смотрите описание конфигурационного параметра сервера  [path](../../operations/server_settings/settings.md#server_settings-path).
+Возвращает объём доступного для записи данных места на файловой системе. Он всегда меньше общего свободного места ([filesystemFree](#filesystemfree)), потому что некоторое пространство зарезервировано для нужд операционной системы.
+
+**Синтаксис**
 
 ```sql
 filesystemAvailable()
@@ -843,24 +947,89 @@ filesystemAvailable()
 
 **Возвращаемое значение**
 
-- Объем свободного места.
+- Объём доступного для записи данных места в байтах.
 
-Тип — [UInt64](../../data_types/int_uint.md).
+Тип: [UInt64](../../data_types/int_uint.md).
 
 **Пример**
 
+Запрос:
+
 ```sql
-SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) AS "Type"
+SELECT formatReadableSize(filesystemAvailable()) AS "Available space", toTypeName(filesystemAvailable()) AS "Type";
 ```
+
+Ответ:
+
 ```text
-┌──Free space─┬─Type───┐
-│ 18152624128 │ UInt64 │
-└─────────────┴────────┘
+┌─Available space─┬─Type───┐
+│ 30.75 GiB       │ UInt64 │
+└─────────────────┴────────┘
 ```
 
-## filesystemCapacity
+## filesystemFree {#filesystemfree}
 
-Возвращает данные о ёмкости диска.
+Возвращает объём свободного места на файловой системе. Смотрите также `filesystemAvailable`.
+
+**Синтаксис**
+
+```sql
+filesystemFree()
+```
+
+**Возвращаемое значение**
+
+- Объем свободного места в байтах.
+
+Тип: [UInt64](../../data_types/int_uint.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT formatReadableSize(filesystemFree()) AS "Free space", toTypeName(filesystemFree()) AS "Type";
+```
+
+Ответ:
+
+```text
+┌─Free space─┬─Type───┐
+│ 32.39 GiB  │ UInt64 │
+└────────────┴────────┘
+```
+
+## filesystemCapacity {#filesystemcapacity}
+
+Возвращает информацию о ёмкости файловой системы в байтах. Для оценки должен быть настроен [путь](../../operations/server_settings/settings.md#server_settings-path) к каталогу с данными.
+
+**Синтаксис**
+
+```sql
+filesystemCapacity()
+```
+
+**Возвращаемое значение**
+
+- Информация о ёмкости файловой системы в байтах.
+
+Тип: [UInt64](../../data_types/int_uint.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesystemCapacity()) AS "Type"
+```
+
+Ответ:
+
+```text
+┌─Capacity──┬─Type───┐
+│ 39.32 GiB │ UInt64 │
+└───────────┴────────┘
+```
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
@@ -870,16 +1039,75 @@ SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) 
 
 Принимает на вход состояния агрегатной функции и возвращает столбец со значениями, которые представляют собой результат мёржа этих состояний для выборки строк из блока от первой до текущей строки. Например, принимает состояние агрегатной функции (например,  `runningAccumulate(uniqState(UserID))`), и для каждой строки блока возвращает результат агрегатной функции после мёржа состояний функции для всех предыдущих строк и текущей. Таким образом, результат зависит от разбиения данных по блокам и от порядка данных в блоке.
 
-## joinGet('join_storage_table_name', 'get_column', join_key) {#other_functions-joinget}
+## joinGet {#joinget}
 
-Получает данные из таблиц [Join](../../operations/table_engines/join.md) по ключу.
+Функция позволяет извлекать данные из таблицы таким же образом как из [словаря](../dicts/index.md).
 
-Поддержаны только таблицы, созданные запросом с `ENGINE = Join(ANY, LEFT, <join_keys>)`.
+Получает данные из таблиц [Join](../../operations/table_engines/join.md#creating-a-table) по ключу.
 
-## modelEvaluate(model_name, ...)
+Поддерживаются только таблицы, созданные с `ENGINE = Join(ANY, LEFT, <join_keys>)`.
 
-Вычислить модель.
-Принимает имя модели и аргументы модели. Возвращает Float64.
+**Синтаксис**
+
+```sql
+joinGet(join_storage_table_name, `value_column`, join_keys)
+```
+
+**Параметры**
+
+- `join_storage_table_name` — [идентификатор](../syntax.md#syntax-identifiers), который указывает, откуда производится выборка данных. Поиск по идентификатору осуществляется в базе данных по умолчанию (см. конфигурацию `default_database`). Чтобы переопределить базу данных по умолчанию, используйте команду `USE db_name`, или укажите базу данных и таблицу через разделитель `db_name.db_table`, см. пример.
+- `value_column` — столбец, из которого нужно произвести выборку данных.
+- `join_keys` — список ключей, по которым производится выборка данных.
+
+**Возвращаемое значение**
+
+Возвращает значение по списку ключей.
+
+Если значения не существует в исходной таблице, вернется `0` или `null` в соответствии с настройками [join_use_nulls](../../operations/settings/settings.md#join_use_nulls).
+
+Подробнее о настройке `join_use_nulls` в [операциях Join](../../operations/table_engines/join.md).
+
+**Пример**
+
+Входная таблица:
+
+```sql
+CREATE DATABASE db_test
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id) SETTINGS join_use_nulls = 1
+INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
+```
+
+```text
+┌─id─┬─val─┐
+│  4 │  13 │
+│  2 │  12 │
+│  1 │  11 │
+└────┴─────┘
+```
+
+Запрос:
+
+```sql
+SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS join_use_nulls = 1
+```
+
+Результат:
+
+```text
+┌─joinGet(db_test.id_val, 'val', toUInt32(number))─┐
+│                                                0 │
+│                                               11 │
+│                                               12 │
+│                                                0 │
+└──────────────────────────────────────────────────┘
+```
+
+## modelEvaluate(model_name, ...) {#function-modelevaluate}
+
+Оценивает внешнюю модель.
+
+Принимает на вход имя и аргументы модели. Возвращает Float64.
+
 
 ## throwIf(x\[, custom_message\])
 
@@ -894,25 +1122,65 @@ SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
 Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 ```
 
-## identity()
+## identity {#identity}
 
-Возвращает то же значение, которое использовалось в качестве аргумента.
+Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn't look inside `identity` functions.
+
+**Syntax**
+
+```sql
+identity(x)
+```
+
+**Example**
+
+Query:
 
 ```sql
 SELECT identity(42)
 ```
+
+Result:
 
 ```text
 ┌─identity(42)─┐
 │           42 │
 └──────────────┘
 ```
-Используется для отладки и тестирования, позволяет "сломать" доступ по индексу, и получить результат и производительность запроса для полного сканирования.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/other_functions/) <!--hide-->
+## randomPrintableASCII {#randomascii}
 
-## modelEvaluate(model_name, ...) {#function-modelevaluate}
+Генерирует строку со случайным набором печатных символов [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters).
 
-Оценивает внешнюю модель.
+**Синтаксис**
 
-Принимает на вход имя и аргументы модели. Возвращает Float64.
+```sql
+randomPrintableASCII(length)
+```
+
+**Параметры**
+
+- `length` — Длина результирующей строки. Положительное целое число.
+
+    Если передать `length < 0`, то поведение функции не определено.
+
+**Возвращаемое значение**
+
+ - Строка со случайным набором печатных символов [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters).
+
+Тип: [String](../../data_types/string.md)
+
+**Пример**
+
+```sql
+SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers LIMIT 3
+```
+```text
+┌─number─┬─str────────────────────────────┬─length(randomPrintableASCII(30))─┐
+│      0 │ SuiCOSTvC0csfABSw=UcSzp2.`rv8x │                               30 │
+│      1 │ 1Ag NlJ &RCN:*>HVPG;PE-nO"SUFD │                               30 │
+│      2 │ /"+<"wUTh:=LjJ Vm!c&hI*m#XTfzz │                               30 │
+└────────┴────────────────────────────────┴──────────────────────────────────┘
+```
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->

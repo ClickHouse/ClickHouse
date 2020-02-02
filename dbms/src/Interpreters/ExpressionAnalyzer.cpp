@@ -26,7 +26,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
-#include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/AnalyzedJoin.h>
@@ -123,7 +122,7 @@ void ExpressionAnalyzer::analyzeAggregation()
         ASTPtr array_join_expression_list = select_query->array_join_expression_list(is_array_join_left);
         if (array_join_expression_list)
         {
-            getRootActions(array_join_expression_list, true, temp_actions);
+            getRootActionsNoMakeSet(array_join_expression_list, true, temp_actions, false);
             addMultipleArrayJoinAction(temp_actions, is_array_join_left);
 
             array_join_columns.clear();
@@ -135,7 +134,7 @@ void ExpressionAnalyzer::analyzeAggregation()
         const ASTTablesInSelectQueryElement * join = select_query->join();
         if (join)
         {
-            getRootActions(analyzedJoin().leftKeysList(), true, temp_actions);
+            getRootActionsNoMakeSet(analyzedJoin().leftKeysList(), true, temp_actions, false);
             addJoinAction(temp_actions);
         }
     }
@@ -156,7 +155,7 @@ void ExpressionAnalyzer::analyzeAggregation()
             for (ssize_t i = 0; i < ssize_t(group_asts.size()); ++i)
             {
                 ssize_t size = group_asts.size();
-                getRootActions(group_asts[i], true, temp_actions);
+                getRootActionsNoMakeSet(group_asts[i], true, temp_actions, false);
 
                 const auto & column_name = group_asts[i]->getColumnName();
                 const auto & block = temp_actions->getSampleBlock();
@@ -230,6 +229,16 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global)
 }
 
 
+NamesAndTypesList ExpressionAnalyzer::sourceWithJoinedColumns() const
+{
+    auto result_columns = sourceColumns();
+    result_columns.insert(result_columns.end(), array_join_columns.begin(), array_join_columns.end());
+    result_columns.insert(result_columns.end(),
+                        analyzedJoin().columnsAddedByJoin().begin(), analyzedJoin().columnsAddedByJoin().end());
+    return result_columns;
+}
+
+
 void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name)
 {
     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
@@ -277,7 +286,7 @@ SetPtr SelectQueryExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr &
 }
 
 
-/// Perfomance optimisation for IN() if storage supports it.
+/// Performance optimisation for IN() if storage supports it.
 void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
 {
     if (!node || !storage() || !storage()->supportsIndexForIn())
@@ -313,12 +322,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
             }
             else
             {
-                NamesAndTypesList temp_columns = sourceColumns();
-                temp_columns.insert(temp_columns.end(), array_join_columns.begin(), array_join_columns.end());
-                temp_columns.insert(temp_columns.end(),
-                                    analyzedJoin().columnsAddedByJoin().begin(), analyzedJoin().columnsAddedByJoin().end());
-
-                ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(temp_columns, context);
+                ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(sourceWithJoinedColumns(), context);
                 getRootActions(left_in_operand, true, temp_actions);
 
                 Block sample_block_with_calculated_columns = temp_actions->getSampleBlock();
@@ -336,7 +340,18 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, 
     LogAST log;
     ActionsVisitor::Data visitor_data(context, settings.size_limits_for_set, subquery_depth,
                                    sourceColumns(), actions, prepared_sets, subqueries_for_sets,
-                                   no_subqueries, only_consts, !isRemoteStorage());
+                                   no_subqueries, false, only_consts, !isRemoteStorage());
+    ActionsVisitor(visitor_data, log.stream()).visit(ast);
+    visitor_data.updateActions(actions);
+}
+
+
+void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts)
+{
+    LogAST log;
+    ActionsVisitor::Data visitor_data(context, settings.size_limits_for_set, subquery_depth,
+                                   sourceColumns(), actions, prepared_sets, subqueries_for_sets,
+                                   no_subqueries, true, only_consts, !isRemoteStorage());
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     visitor_data.updateActions(actions);
 }
@@ -451,10 +466,10 @@ bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, b
     return true;
 }
 
-static JoinPtr tryGetStorageJoin(const ASTTablesInSelectQueryElement & join_element, const Context & context)
+static JoinPtr tryGetStorageJoin(const ASTTablesInSelectQueryElement & join_element, std::shared_ptr<AnalyzedJoin> analyzed_join,
+                                 const Context & context)
 {
     const auto & table_to_join = join_element.table_expression->as<ASTTableExpression &>();
-    auto & join_params = join_element.table_join->as<ASTTableJoin &>();
 
     /// TODO This syntax does not support specifying a database name.
     if (table_to_join.database_and_table_name)
@@ -465,14 +480,8 @@ static JoinPtr tryGetStorageJoin(const ASTTablesInSelectQueryElement & join_elem
         if (table)
         {
             auto * storage_join = dynamic_cast<StorageJoin *>(table.get());
-
             if (storage_join)
-            {
-                storage_join->assertCompatible(join_params.kind, join_params.strictness);
-                /// TODO Check the set of keys.
-
-                return storage_join->getJoin();
-            }
+                return storage_join->getJoin(analyzed_join);
         }
     }
 
@@ -497,7 +506,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQuer
 
     /// Special case - if table name is specified on the right of JOIN, then the table has the type Join (the previously prepared mapping).
     if (!subquery_for_join.join)
-        subquery_for_join.join = tryGetStorageJoin(join_element, context);
+        subquery_for_join.join = tryGetStorageJoin(join_element, syntax->analyzed_join, context);
 
     if (!subquery_for_join.join)
     {
@@ -724,7 +733,7 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
         step.required_output.push_back(child->getColumnName());
 }
 
-bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types)
+bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order)
 {
     const auto * select_query = getSelectQuery();
 
@@ -743,6 +752,16 @@ bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain
             throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
         ASTPtr order_expression = ast->children.at(0);
         step.required_output.push_back(order_expression->getColumnName());
+    }
+
+    if (optimize_read_in_order)
+    {
+        auto all_columns = sourceWithJoinedColumns();
+        for (auto & child : select_query->orderBy()->children)
+        {
+            order_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(all_columns, context));
+            getRootActions(child, only_types, order_by_elements_actions.back());
+        }
     }
 
     return true;

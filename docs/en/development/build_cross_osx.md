@@ -1,6 +1,6 @@
 # How to Build ClickHouse on Linux for Mac OS X
 
-This is for the case when you have Linux machine and want to use it to build `clickhouse` binary that will run on OS X. This is intended for continuous integration checks that run on Linux servers. If you want to build ClickHouse directly on Mac OS X, then proceed with another instruction: https://clickhouse.yandex/docs/en/development/build_osx/
+This is for the case when you have Linux machine and want to use it to build `clickhouse` binary that will run on OS X. This is intended for continuous integration checks that run on Linux servers. If you want to build ClickHouse directly on Mac OS X, then proceed with another instruction: https://clickhouse.tech/docs/en/development/build_osx/
 
 The cross-build for Mac OS X is based on the [Build instructions](build.md), follow them first.
 
@@ -37,9 +37,9 @@ Also, we need to download MacOS X SDK into the working tree.
 
 ```bash
 cd ClickHouse
-cd cmake/toolchain/darwin-x86_64
-wget https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOSX10.14.sdk.tar.xz
-tar --strip-components=1 xJf MacOSX10.14.sdk.tar.xz
+wget 'https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOSX10.14.sdk.tar.xz'
+mkdir -p build-darwin/cmake/toolchain/darwin-x86_64
+tar xJf MacOSX10.14.sdk.tar.xz -C build-darwin/cmake/toolchain/darwin-x86_64 --strip-components=1
 ```
 
 # Build ClickHouse

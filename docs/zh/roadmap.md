@@ -1,16 +1,9 @@
 # 规划
 
-## Q3 2019
+## Q1 2020
 
-- 字典表的DDL
-- 与类S3对象存储集成
-- 冷热数据存储分离，支持JBOD
-
-## Q4 2019
-
-- JOIN 不受可用内存限制
 - 更精确的用户资源池，可以在用户之间合理分配集群资源
 - 细粒度的授权管理
 - 与外部认证服务集成
 
-[来源文章](https://clickhouse.yandex/docs/en/roadmap/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/roadmap/) <!--hide-->

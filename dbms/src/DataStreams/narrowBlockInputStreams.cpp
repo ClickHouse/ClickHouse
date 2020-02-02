@@ -1,6 +1,7 @@
 #include <random>
 #include <Common/thread_local_rng.h>
 #include <DataStreams/ConcatBlockInputStream.h>
+#include "narrowBlockInputStreams.h"
 
 
 namespace DB

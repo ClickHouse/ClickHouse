@@ -39,6 +39,8 @@
 
     Например, `<password>qwerty</password>`. Пароль можно оставить пустым.
 
+<a id="password_sha256_hex"></a>
+
 - Чтобы назначить пароль в виде SHA256, поместите хэш в элемент `password_sha256_hex`.
 
     Например, `<password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>`.
@@ -50,6 +52,20 @@
     ```
 
     Первая строка результата — пароль. Вторая строка — соответствующий ему хэш SHA256.
+
+<a id="password_double_sha1_hex"></a>
+
+- Для совместимости с клиентами MySQL, пароль можно задать с помощью двойного хэша SHA1, поместив его в элемент `password_double_sha1_hex`.
+
+    Например, `<password_double_sha1_hex>08b4a0f1de6ad37da17359e592c8d74788a83eb0</password_double_sha1_hex>`.
+
+    Пример создания пароля в командной строке:
+
+    ```
+    PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
+    ```
+
+    Первая строка результата — пароль. Вторая строка — соответствующий ему двойной хэш SHA1.
 
 ### user_name/networks
 
@@ -63,13 +79,13 @@
 
 - `<host>` — Имя хоста.
 
-    Пример: `server01.yandex.ru`.
+    Пример: `example01.host.ru`.
 
     Для проверки доступа выполняется DNS-запрос, и все возвращенные IP-адреса сравниваются с адресом клиента.
 
 - `<host_regexp>` — Регулярное выражение для имен хостов.
 
-    Пример, `^server\d\d-\d\d-\d\.yandex\.ru$`
+    Пример, `^example\d\d-\d\d-\d\.host\.ru$`
 
     Для проверки доступа выполняется [DNS запрос PTR](https://en.wikipedia.org/wiki/Reverse_DNS_lookup) для адреса клиента, а затем применяется заданное регулярное выражение. Затем, для результатов запроса PTR выполняется другой DNS-запрос и все полученные адреса сравниваются с адресом клиента. Рекомендуем завершать регулярное выражение символом $.
 
@@ -125,4 +141,4 @@
 
 Элемент `filter` содержать любое выражение, возвращающее значение типа [UInt8](../../data_types/int_uint.md). Обычно он содержит сравнения и логические операторы. Строки `database_name.table1`, для которых фильтр возвращает 0 не выдаются пользователю. Фильтрация несовместима с операциями `PREWHERE` и отключает оптимизацию `WHERE→PREWHERE`.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/settings_users/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings_users/) <!--hide-->

@@ -11,7 +11,6 @@ void registerInputFormatNative(FormatFactory & factory)
     factory.registerInputFormat("Native", [](
         ReadBuffer & buf,
         const Block & sample,
-        const Context &,
         UInt64 /* max_block_size */,
         FormatFactory::ReadCallback /* callback */,
         const FormatSettings &)
@@ -25,7 +24,6 @@ void registerOutputFormatNative(FormatFactory & factory)
     factory.registerOutputFormat("Native", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback,
         const FormatSettings &)
     {

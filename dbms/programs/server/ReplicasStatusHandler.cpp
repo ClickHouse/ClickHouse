@@ -15,8 +15,8 @@ namespace DB
 {
 
 
-ReplicasStatusHandler::ReplicasStatusHandler(Context & context_)
-    : context(context_)
+ReplicasStatusHandler::ReplicasStatusHandler(IServer & server)
+    : context(server.context())
 {
 }
 

@@ -11,7 +11,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <common/StringRef.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -204,10 +204,13 @@ private:
             tmp_arguments.push_back(i);
         }
 
+        auto impl = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(std::make_shared<FunctionTransform>()))
+                    .build(tmp_block.getColumnsWithTypeAndName());
+
         tmp_block.insert(block.getByPosition(result));
         size_t tmp_result = arguments.size();
 
-        execute(tmp_block, tmp_arguments, tmp_result, input_rows_count);
+        impl->execute(tmp_block, tmp_arguments, tmp_result, input_rows_count);
 
         block.getByPosition(result).column = tmp_block.getByPosition(tmp_result).column;
     }
@@ -793,7 +796,11 @@ private:
             table_num_to_num = std::make_unique<NumToNum>();
             auto & table = *table_num_to_num;
             for (size_t i = 0; i < size; ++i)
-                table[from[i].get<UInt64>()] = (*used_to)[i].get<UInt64>();
+            {
+                // Field may be of Float type, but for the purpose of bitwise
+                // equality we can treat them as UInt64, hence the reinterpret().
+                table[from[i].reinterpret<UInt64>()] = (*used_to)[i].reinterpret<UInt64>();
+            }
         }
         else if (from[0].getType() != Field::Types::String && to[0].getType() == Field::Types::String)
         {
@@ -803,7 +810,7 @@ private:
             {
                 const String & str_to = to[i].get<const String &>();
                 StringRef ref{string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
-                table[from[i].get<UInt64>()] = ref;
+                table[from[i].reinterpret<UInt64>()] = ref;
             }
         }
         else if (from[0].getType() == Field::Types::String && to[0].getType() != Field::Types::String)
@@ -814,7 +821,7 @@ private:
             {
                 const String & str_from = from[i].get<const String &>();
                 StringRef ref{string_pool.insert(str_from.data(), str_from.size() + 1), str_from.size() + 1};
-                table[ref] = (*used_to)[i].get<UInt64>();
+                table[ref] = (*used_to)[i].reinterpret<UInt64>();
             }
         }
         else if (from[0].getType() == Field::Types::String && to[0].getType() == Field::Types::String)

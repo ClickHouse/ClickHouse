@@ -216,15 +216,25 @@ public:
     using Lookups = std::variant<
         Entry<UInt32>::LookupPtr,
         Entry<UInt64>::LookupPtr,
+        Entry<Int32>::LookupPtr,
+        Entry<Int64>::LookupPtr,
         Entry<Float32>::LookupPtr,
-        Entry<Float64>::LookupPtr>;
+        Entry<Float64>::LookupPtr,
+        Entry<Decimal32>::LookupPtr,
+        Entry<Decimal64>::LookupPtr,
+        Entry<Decimal128>::LookupPtr>;
 
     enum class Type
     {
-        key32,
-        key64,
+        keyu32,
+        keyu64,
+        keyi32,
+        keyi64,
         keyf32,
         keyf64,
+        keyDecimal32,
+        keyDecimal64,
+        keyDecimal128,
     };
 
     AsofRowRefs() {}

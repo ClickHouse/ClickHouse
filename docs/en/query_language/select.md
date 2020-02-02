@@ -14,11 +14,11 @@ SELECT [DISTINCT] expr_list
 [GROUP BY expr_list] [WITH TOTALS]
 [HAVING expr]
 [ORDER BY expr_list]
+[LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m]
 [UNION ALL ...]
 [INTO OUTFILE filename]
 [FORMAT format]
-[LIMIT [offset_value, ]n BY columns]
 ```
 
 All the clauses are optional, except for the required list of expressions immediately after SELECT.
@@ -107,13 +107,25 @@ The `FROM` clause specifies the source to read data from:
 `ARRAY JOIN` and the regular `JOIN` may also be included (see below).
 
 Instead of a table, the `SELECT` subquery may be specified in parenthesis.
-In contrast to standard SQL, a synonym does not need to be specified after a subquery. For compatibility, it is possible to write `AS name` after a subquery, but the specified name isn't used anywhere.
+In contrast to standard SQL, a synonym does not need to be specified after a subquery.
 
 To execute a query, all the columns listed in the query are extracted from the appropriate table. Any columns not needed for the external query are thrown out of the subqueries.
 If a query does not list any columns (for example, `SELECT count() FROM t`), some column is extracted from the table anyway (the smallest one is preferred), in order to calculate the number of rows.
 
-The `FINAL` modifier can be used in the `SELECT` select query for engines from the [MergeTree](../operations/table_engines/mergetree.md) family. When you specify `FINAL`, data is selected fully "merged". Keep in mind that using `FINAL` leads to reading columns related to the primary key, in addition to the columns specified in the query. Additionally, the query will be executed in a single thread, and data will be merged during query execution. This means that when using `FINAL`, the query is processed slowly. In the most cases, avoid using `FINAL`.
-The `FINAL` modifier can be applied for all engines of MergeTree family that do data transformations in background merges (except GraphiteMergeTree).
+#### FINAL Modifier {#select-from-final}
+
+Applicable when selecting data from tables from the [MergeTree](../operations/table_engines/mergetree.md)-engine family other than `GraphiteMergeTree`. When `FINAL` is specified, ClickHouse fully merges the data before returning the result and thus performs all data transformations that happen during merges for the given table engine.
+
+Also supported for:
+- [Replicated](../operations/table_engines/replication.md) versions of `MergeTree` engines.
+- [View](../operations/table_engines/view.md), [Buffer](../operations/table_engines/buffer.md), [Distributed](../operations/table_engines/distributed.md), and [MaterializedView](../operations/table_engines/materializedview.md) engines that operate over other engines, provided they were created over `MergeTree`-engine tables.
+
+Queries that use `FINAL` are executed not as fast as similar queries that don't, because:
+
+- Query is executed in a single thread and data is merged during query execution.
+- Queries with `FINAL` read primary key columns in addition to the columns specified in the query.
+
+In most cases, avoid using `FINAL`.
 
 ### SAMPLE Clause {#select-sample-clause}
 
@@ -676,7 +688,7 @@ When any of these limits is reached, ClickHouse acts as the [join_overflow_mode]
 
 #### Processing of Empty or NULL Cells
 
-While joining tables, the empty cells may appear. The setting [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls) define how ClickHouse fills these cells.
+While joining tables, the empty cells may appear. The setting [join_use_nulls](../operations/settings/settings.md#join_use_nulls) define how ClickHouse fills these cells.
 
 If the `JOIN` keys are [Nullable](../data_types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](syntax.md#null-literal) are not joined.
 
@@ -1108,7 +1120,7 @@ The structure of results (the number and type of columns) must match for the que
 
 Queries that are parts of UNION ALL can't be enclosed in brackets. ORDER BY and LIMIT are applied to separate queries, not to the final result. If you need to apply a conversion to the final result, you can put all the queries with UNION ALL in a subquery in the FROM clause.
 
-### INTO OUTFILE Clause
+### INTO OUTFILE Clause {#into-outfile-clause}
 
 Add the `INTO OUTFILE filename` clause (where filename is a string literal) to redirect query output to the specified file.
 In contrast to MySQL, the file is created on the client side. The query will fail if a file with the same filename already exists.
@@ -1116,7 +1128,7 @@ This functionality is available in the command-line client and clickhouse-local 
 
 The default output format is TabSeparated (the same as in the command-line client batch mode).
 
-### FORMAT Clause
+### FORMAT Clause {#format-clause}
 
 Specify 'FORMAT format' to get data in any specified format.
 You can use this for convenience, or for creating dumps.
@@ -1353,4 +1365,4 @@ You can put an asterisk in any part of a query instead of an expression. When th
 
 In all other cases, we don't recommend using the asterisk, since it only gives you the drawbacks of a columnar DBMS instead of the advantages. In other words using the asterisk is not recommended.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/select/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/select/) <!--hide-->

@@ -17,7 +17,9 @@
 
 using namespace DB;
 
-String astToString(IAST * ast)
+#pragma GCC diagnostic ignored "-Wunused-function"
+
+static String astToString(IAST * ast)
 {
     std::ostringstream oss;
     dumpAST(*ast, oss);

@@ -204,7 +204,7 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
         memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
         if (size > count)
-            memset(static_cast<void *>(&new_col.data[count]), static_cast<int>(value_type()), (size - count) * sizeof(value_type));
+            memset(static_cast<void *>(&new_col.data[count]), static_cast<int>(ValueType()), (size - count) * sizeof(ValueType));
     }
 
     return res;
@@ -217,7 +217,7 @@ UInt64 ColumnVector<T>::get64(size_t n) const
 }
 
 template <typename T>
-Float64 ColumnVector<T>::getFloat64(size_t n) const
+inline Float64 ColumnVector<T>::getFloat64(size_t n) const
 {
     return static_cast<Float64>(data[n]);
 }

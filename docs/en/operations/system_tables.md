@@ -395,6 +395,35 @@ Columns:
 - `query` (String) – The query text. For `INSERT`, it doesn't include the data to insert.
 - `query_id` (String) – Query ID, if defined.
 
+## system.text_log {#system_tables-text_log}
+
+Contains logging entries. Logging level which goes to this table can be limited with `text_log.level` server setting.
+
+Columns:
+
+- `event_date` (`Date`) - Date of the entry.
+- `event_time` (`DateTime`) - Time of the entry.
+- `microseconds` (`UInt32`) - Microseconds of the entry.
+- `thread_name` (String) — Name of the thread from which the logging was done.
+- `thread_number` (UInt32) — Internal thread ID.
+- `os_thread_id` (Int32) — OS thread ID.
+- `level` (`Enum8`) - Entry level.
+    - `'Fatal' = 1`
+    - `'Critical' = 2`
+    - `'Error' = 3`
+    - `'Warning' = 4`
+    - `'Notice' = 5`
+    - `'Information' = 6`
+    - `'Debug' = 7`
+    - `'Trace' = 8`
+- `query_id` (`String`) - ID of the query.
+- `logger_name` (`LowCardinality(String)`) - Name of the logger (i.e. `DDLWorker`)
+- `message` (`String`) - The message itself.
+- `revision` (`UInt32`) - ClickHouse revision.
+- `source_file` (`LowCardinality(String)`) - Source file from which the logging was done.
+- `source_line` (`UInt64`) - Source line from which the logging was done.
+
+
 ## system.query_log {#system_tables-query_log}
 
 Contains information about execution of queries. For each query, you can see processing start time, duration of processing, error messages and other information.
@@ -551,7 +580,7 @@ You can specify an arbitrary partitioning key for the `system.query_thread_log` 
 
 Contains stack traces collected by the sampling query profiler.
 
-ClickHouse creates this table when the [trace_log](server_settings/settings.md#server_settings-trace_log) server configuration section is set. Also the `query_profiler_real_time_period_ns` and `query_profiler_cpu_time_period_ns` settings should be set.
+ClickHouse creates this table when the [trace_log](server_settings/settings.md#server_settings-trace_log) server configuration section is set. Also the [query_profiler_real_time_period_ns](settings/settings.md#query_profiler_real_time_period_ns) and [query_profiler_cpu_time_period_ns](settings/settings.md#query_profiler_cpu_time_period_ns) settings should be set.
 
 To analyze logs, use the `addressToLine`, `addressToSymbol` and `demangle` introspection functions.
 
@@ -744,6 +773,43 @@ WHERE changed
 └────────────────────────┴─────────────┴─────────┘
 ```
 
+## system.table_engines
+
+Contains description of table engines supported by server and their feature support information. 
+
+This table contains the following columns (the column type is shown in brackets):
+
+- `name` (String) — The name of table engine.
+- `supports_settings` (UInt8) — Flag that indicates if table engine supports `SETTINGS` clause.
+- `supports_skipping_indices` (UInt8) — Flag that indicates if table engine supports [skipping indices](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes). 
+- `supports_ttl` (UInt8) — Flag that indicates if table engine supports [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
+- `supports_sort_order` (UInt8) — Flag that indicates if table engine supports clauses `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` and `SAMPLE_BY`.  
+- `supports_replication` (UInt8) — Flag that indicates if table engine supports [data replication](table_engines/replication/).
+- `supports_duduplication` (UInt8) — Flag that indicates if table engine supports data deduplication.
+
+Example:
+
+```sql
+SELECT *
+FROM system.table_engines
+WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
+```
+
+```text
+┌─name──────────────────────────┬─supports_settings─┬─supports_skipping_indices─┬─supports_sort_order─┬─supports_ttl─┬─supports_replication─┬─supports_deduplication─┐
+│ Kafka                         │                 1 │                         0 │                   0 │            0 │                    0 │                      0 │
+│ MergeTree                     │                 1 │                         1 │                   1 │            1 │                    0 │                      0 │
+│ ReplicatedCollapsingMergeTree │                 1 │                         1 │                   1 │            1 │                    1 │                      1 │
+└───────────────────────────────┴───────────────────┴───────────────────────────┴─────────────────────┴──────────────┴──────────────────────┴────────────────────────┘
+```
+
+**See also**
+
+- MergeTree family [query clauses](table_engines/mergetree.md#mergetree-query-clauses)
+- Kafka [settings](table_engines/kafka.md#table_engine-kafka-creating-a-table)
+- Join [settings](table_engines/join.md#join-limitations-and-settings) 
+
+
 ## system.tables
 
 Contains metadata of each table that the server knows about. Detached tables are not shown in `system.tables`.
@@ -894,4 +960,4 @@ Columns:
 
 If the storage policy contains more then one volume, then information for each volume is stored in the individual row of the table.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/system_tables/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/) <!--hide-->

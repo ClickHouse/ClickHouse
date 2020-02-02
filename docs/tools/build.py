@@ -11,7 +11,6 @@ import subprocess
 import sys
 import time
 
-import markdown.extensions
 import markdown.util
 
 from mkdocs import config
@@ -45,6 +44,9 @@ def build_for_lang(lang, args):
     os.environ['SINGLE_PAGE'] = '0'
 
     config_path = os.path.join(args.docs_dir, 'toc_%s.yml' % lang)
+    if args.is_stable_release and not os.path.exists(config_path):
+        logging.warn('Skipping %s docs, because %s does not exist' % (lang, config_path))
+        return
 
     try:
         theme_cfg = {
@@ -63,7 +65,7 @@ def build_for_lang(lang, args):
             'logo': 'images/logo.svg',
             'favicon': 'assets/images/favicon.ico',
             'include_search_page': False,
-            'search_index_only': True,
+            'search_index_only': False,
             'static_templates': ['404.html'],
             'extra': {
                 'now': int(time.mktime(datetime.datetime.now().timetuple())) # TODO better way to avoid caching
@@ -91,7 +93,7 @@ def build_for_lang(lang, args):
             site_dir=site_dir,
             strict=not args.version_prefix,
             theme=theme_cfg,
-            copyright='©2016–2019 Yandex LLC',
+            copyright='©2016–2020 Yandex LLC',
             use_directory_urls=True,
             repo_name='ClickHouse/ClickHouse',
             repo_url='https://github.com/ClickHouse/ClickHouse/',
@@ -110,15 +112,8 @@ def build_for_lang(lang, args):
                     }
                 }
             ],
-            plugins=[{
-                'search': {
-                    'lang': ['en', 'ru'] if lang == 'ru' else ['en']
-                }
-            }],
+            plugins=[],
             extra={
-                'search': {
-                    'language': 'en,ru' if lang == 'ru' else 'en'
-                },
                 'stable_releases': args.stable_releases,
                 'version_prefix': args.version_prefix
             }
@@ -201,12 +196,46 @@ def build_single_page_version(lang, args, cfg):
                         shutil.copytree(test_dir, args.save_raw_single_page)
 
 
+def write_redirect_html(out_path, to_url):
+    with open(out_path, 'w') as f:
+        f.write('''<!DOCTYPE HTML>
+<html lang="en-US">
+    <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="refresh" content="0; url=%s">
+        <script type="text/javascript">
+            window.location.href = "%s"
+        </script>
+        <title>Page Redirection</title>
+    </head>
+    <body>
+        If you are not redirected automatically, follow this <a href="%s">link</a>.
+    </body>
+</html>''' % (to_url, to_url, to_url))
+
+
+def build_redirect_html(args, from_path, to_path):
+    for lang in args.lang.split(','):
+        out_path = os.path.join(args.docs_output_dir, lang, from_path.replace('.md', '/index.html'))
+        out_dir = os.path.dirname(out_path)
+        try:
+            os.makedirs(out_dir)
+        except OSError:
+            pass
+        version_prefix = args.version_prefix + '/' if args.version_prefix else '/'
+        to_url = '/docs%s%s/%s' % (version_prefix, lang, to_path.replace('.md', '/'))
+        to_url = to_url.strip()
+        write_redirect_html(out_path, to_url)
+
+
 def build_redirects(args):
     lang_re_fragment = args.lang.replace(',', '|')
     rewrites = []
+
     with open(os.path.join(args.docs_dir, 'redirects.txt'), 'r') as f:
         for line in f:
             from_path, to_path = line.split(' ', 1)
+            build_redirect_html(args, from_path, to_path)
             from_path = '^/docs/(' + lang_re_fragment + ')/' + from_path.replace('.md', '/?') + '$'
             to_path = '/docs/$1/' + to_path.replace('.md', '/')
             rewrites.append(' '.join(['rewrite', from_path, to_path, 'permanent;']))
@@ -216,8 +245,11 @@ def build_redirects(args):
 
 
 def build_docs(args):
+    tasks = []
     for lang in args.lang.split(','):
-        build_for_lang(lang, args)
+        tasks.append((lang, args,))
+    util.run_function_in_parallel(build_for_lang, tasks, threads=True)
+    build_redirects(args)
 
 
 def build(args):
@@ -232,10 +264,19 @@ def build(args):
     from github import build_releases
     build_releases(args, build_docs)
 
-    build_redirects(args)
-
     if not args.skip_website:
         minify_website(args)
+
+    for static_redirect in [
+        ('tutorial.html', '/docs/en/getting_started/tutorial/',),
+        ('reference_en.html', '/docs/en/single/', ),
+        ('reference_ru.html', '/docs/ru/single/',),
+        ('docs/index.html', '/docs/en/',),
+    ]:
+        write_redirect_html(
+            os.path.join(args.output_dir, static_redirect[0]),
+            static_redirect[1]
+        )
 
 
 if __name__ == '__main__':
@@ -249,6 +290,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--output-dir', default='build')
     arg_parser.add_argument('--enable-stable-releases', action='store_true')
     arg_parser.add_argument('--version-prefix', type=str, default='')
+    arg_parser.add_argument('--is-stable-release', action='store_true')
     arg_parser.add_argument('--skip-single-page', action='store_true')
     arg_parser.add_argument('--skip-pdf', action='store_true')
     arg_parser.add_argument('--skip-website', action='store_true')
@@ -260,8 +302,6 @@ if __name__ == '__main__':
     
     from github import choose_latest_releases
     args.stable_releases = choose_latest_releases() if args.enable_stable_releases else []
-    
-    
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,

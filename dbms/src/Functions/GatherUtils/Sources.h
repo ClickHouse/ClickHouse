@@ -121,6 +121,11 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
     }
 };
 
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsuggest-override"
+#endif
+
 template <typename Base>
 struct ConstSource : public Base
 {
@@ -199,6 +204,10 @@ struct ConstSource : public Base
     }
 };
 
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
+
 struct StringSource
 {
     using Slice = NumericArraySlice<UInt8>;
@@ -238,7 +247,7 @@ struct StringSource
 
     size_t getElementSize() const
     {
-        return offsets[row_num] - prev_offset;
+        return offsets[row_num] - prev_offset - 1;
     }
 
     Slice getWhole() const

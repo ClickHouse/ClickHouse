@@ -1,32 +1,50 @@
-#include <Poco/FileStream.h>
-#include <Poco/NullStream.h>
-#include <Poco/StreamCopier.h>
-#include <Poco/DeflatingStream.h>
+#include <unistd.h>
+#include <vector>
+#include <stdexcept>
+#include <zlib.h>
 
-/** This script reproduces the bug in zlib-ng library.
-  * Put the following content to "data.bin" file:
-abcdefghijklmn!@Aab#AAabcdefghijklmn$%
-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-  * There are two lines. First line make sense. Second line contains padding to make file size large enough.
-  * Compile with
-  *  cmake -D SANITIZE=address
-  * and run:
+#pragma GCC diagnostic ignored "-Wold-style-cast"
 
-./zlib_ng_bug data2.bin
-=================================================================
-==204952==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x6310000147ff at pc 0x000000596d7a bp 0x7ffd139edd50 sp 0x7ffd139edd48
-READ of size 1 at 0x6310000147ff thread T0
-  */
 
-int main(int argc, char ** argv)
+/// https://github.com/zlib-ng/zlib-ng/issues/494
+int main(int, char **)
 {
-    using namespace Poco;
+    std::vector<unsigned char> in(1048576);
+    std::vector<unsigned char> out(1048576);
 
-    std::string filename(argc >= 2 ? argv[1] : "data.bin");
-    FileInputStream istr(filename);
-    NullOutputStream ostr;
-    DeflatingOutputStream deflater(ostr, DeflatingStreamBuf::STREAM_GZIP);
-    StreamCopier::copyStream(istr, deflater);
+    ssize_t in_size = read(STDIN_FILENO, in.data(), 1048576);
+    if (in_size < 0)
+        throw std::runtime_error("Cannot read");
+    in.resize(in_size);
+
+    z_stream zstr{};
+    if (Z_OK != deflateInit2(&zstr, 1, Z_DEFLATED, 15 + 16, 8, Z_DEFAULT_STRATEGY))
+        throw std::runtime_error("Cannot deflateInit2");
+
+    zstr.next_in = in.data();
+    zstr.avail_in = in.size();
+    zstr.next_out = out.data();
+    zstr.avail_out = out.size();
+
+    while (zstr.avail_in > 0)
+        if (Z_OK != deflate(&zstr, Z_NO_FLUSH))
+            throw std::runtime_error("Cannot deflate");
+
+    while (true)
+    {
+        int rc = deflate(&zstr, Z_FINISH);
+
+        if (rc == Z_STREAM_END)
+            break;
+
+        if (rc != Z_OK)
+            throw std::runtime_error("Cannot finish deflate");
+    }
+
+    deflateEnd(&zstr);
+
+    if (ssize_t(zstr.total_out) != write(STDOUT_FILENO, out.data(), zstr.total_out))
+        throw std::runtime_error("Cannot write");
 
     return 0;
 }

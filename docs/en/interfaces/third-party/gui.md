@@ -88,18 +88,6 @@ Features:
 
 ## Commercial
 
-### Holistics Software
-
-[Holistics](https://www.holistics.io/) was listed by Gartner's Frontrunners in 2019 as one of the top 2 highest ranked business intelligence tools globally for usability. Holistics is a full-stack data platform and business intelligence tool for setting up your analytics processes, built on SQL. 
-
-Features:
-
-- Automated email, Slack and Google Sheet schedules of reports.
-- Powerful SQL editor with visualizations, version control, auto-completion, reusable query components and dynamic filters.
-- Embedded analytics of reports and dashboards via iframe.
-- Data preparation and ETL capabilities.
-- SQL data modeling support for relational mapping of data.
-
 ### DataGrip
 
 [DataGrip](https://www.jetbrains.com/datagrip/) is a database IDE from JetBrains with dedicated support for ClickHouse. It is also embedded into other IntelliJ-based tools: PyCharm, IntelliJ IDEA, GoLand, PhpStorm and others.
@@ -113,4 +101,29 @@ Features:
 - Refactorings.
 - Search and Navigation.
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/third-party/gui/) <!--hide-->
+### Holistics Software
+
+[Holistics](https://www.holistics.io/) is a full-stack data platform and business intelligence tool. 
+
+Features:
+
+- Automated email, Slack and Google Sheet schedules of reports.
+- SQL editor with visualizations, version control, auto-completion, reusable query components and dynamic filters.
+- Embedded analytics of reports and dashboards via iframe.
+- Data preparation and ETL capabilities.
+- SQL data modeling support for relational mapping of data.
+
+### Looker
+[Looker](https://looker.com) is a data platform and business intelligence tool with support for 50+ database dialects including ClickHouse. Looker is available as a SaaS platform and self-hosted. Users
+can use Looker via the browser to explore data, build visualizations and dashboards, schedule reports, and share their
+insights with colleagues. Looker provides a rich set of tools to embed these features in other applications, and an API
+to integrate data with other applications.
+
+Features:
+
+- Designed around ease of use and self-service for end users.
+- Easy and agile development using LookML, a language which supports currated 
+[Data Modeling](https://looker.com/platform/data-modeling) to support report writers and end users.
+- Powerful workflow integration via Looker's [Data Actions](https://looker.com/platform/actions).
+
+[Original article](https://clickhouse.tech/docs/en/interfaces/third-party/gui/) <!--hide-->
