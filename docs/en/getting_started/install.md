@@ -41,7 +41,7 @@ You can also download and install packages manually from here: <https://repo.yan
 
 - `clickhouse-common-static` — Installs ClickHouse compiled binary files.
 - `clickhouse-server` — Creates symbolic link for `clickhouse-server`. Installs server configuration.
-- `clickhouse-client` — Creates symbolic link for `clickhouse-client `. Installs client configurations.
+- `clickhouse-client` — Creates symbolic link for `clickhouse-client` and other client-related tools. Installs client configurations.
 - `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
 ### From RPM Packages
