@@ -737,22 +737,6 @@ Result:
 │ [1,2,3]                        │
 └────────────────────────────────┘
 ```
-Example of rounding due to result type Float64:
-
-
-Query:
-
-```sql
-SELECT arrayDistinct([1, 2, 2, 100000000000000000005566765768890])
-```
-
-Result:
-
-```text
-┌─arrayDistinct([1, 2, 2, 1e32])─┐
-│ [1,2,1e32]                     │
-└────────────────────────────────┘
-```
 
 ## arrayEnumerateDense(arr) {#array_functions-arrayenumeratedense}
 
