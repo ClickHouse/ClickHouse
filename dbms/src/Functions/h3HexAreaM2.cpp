@@ -1,17 +1,31 @@
 #include "config_functions.h"
+
 #if USE_H3
 #    include <Columns/ColumnsNumber.h>
 #    include <DataTypes/DataTypesNumber.h>
 #    include <Functions/FunctionFactory.h>
 #    include <Functions/IFunction.h>
+#    include <IO/WriteHelpers.h>
 #    include <Common/typeid_cast.h>
 #    include <ext/range.h>
 
-#    include <h3api.h>
+#    if __has_include(<h3/h3api.h>)
+#        include <h3/h3api.h>
+#        include <h3/constants.h>
+#    else
+#        include <h3api.h>
+#        include <constants.h>
+#    endif
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
 class FunctionH3HexAreaM2 : public IFunction
 {
 public:
@@ -45,7 +59,10 @@ public:
 
         for (const auto row : ext::range(0, input_rows_count))
         {
-            const int resolution = col_hindex->getUInt(row);
+            const UInt64 resolution = col_hindex->getUInt(row);
+            if (resolution > MAX_H3_RES)
+                throw Exception("The argument 'resolution' (" + toString(resolution) + ") of function " + getName()
+                    + " is out of bounds because the maximum resolution in H3 library is " + toString(MAX_H3_RES), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
             Float64 res = hexAreaM2(resolution);
 
