@@ -66,6 +66,7 @@ Leap seconds are not accounted for.
 
 For DateTime argument: converts value to it's internal numeric representation (Unix Timestamp).
 For String argument: parse datetime from string according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
+For Date argument: the behaviour is unspecified.
 
 **Syntax** 
 
