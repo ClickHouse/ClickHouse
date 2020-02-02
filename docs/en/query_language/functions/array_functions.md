@@ -941,9 +941,3 @@ Result:
 │ [('a','d'),('b','e'),('c','f')]            │
 └────────────────────────────────────────────┘
 ```
-
-<<<<<<< HEAD
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->
-=======
-## 
->>>>>>> docs(arrayDifference, arrayDistinct):The new description of `arrayDifference`, `arrayDistinct` functions ware added.
