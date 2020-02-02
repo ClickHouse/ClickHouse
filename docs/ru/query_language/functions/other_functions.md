@@ -768,46 +768,28 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 
 ## identity {#identity}
 
-Используется для отладки и тестирования, позволяет «сломать» доступ по индексу, и получить результат и производительность запроса для полного сканирования.
+Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn't look inside `identity` functions.
 
-**Синтаксис**
-
-```sql
-identity()
-```
-
-**Возвращаемое значение**
-
-Возвращает значение переданное в аргументе.
-
-**Пример**
-
-Запрос:
+**Syntax**
 
 ```sql
-SELECT identity(43)
+identity(x)
 ```
 
-Ответ:
+**Example**
+
+Query:
+
+```sql
+SELECT identity(42)
+```
+
+Result:
 
 ```text
-┌─identity(43)─┐
-│           43 │
+┌─identity(42)─┐
+│           42 │
 └──────────────┘
-```
-
-Запрос:
-
-```sql
-SELECT (SELECT toDate('2015-01-02'), 'Hello') AS x, x, identity((SELECT 1)), identity((SELECT 1) AS y);
-```
-
-Ответ:
-
-```text
-─x──────────────────────┬─x──────────────────────┬─identity(_subquery7)─┬─identity(y)─┐
-│ ('2015-01-02','Hello') │ ('2015-01-02','Hello') │                    1 │           1 │
-└────────────────────────┴────────────────────────┴──────────────────────┴─────────────┘
 ```
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/other_functions/) <!--hide-->
