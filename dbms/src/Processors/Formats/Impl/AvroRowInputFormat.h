@@ -23,7 +23,7 @@ class AvroDeserializer
 {
 public:
     AvroDeserializer(const ColumnsWithTypeAndName & columns, avro::ValidSchema schema);
-    void deserializeRow(MutableColumns & columns, avro::Decoder & decoder);
+    void deserializeRow(MutableColumns & columns, avro::Decoder & decoder) const;
 
 private:
     using DeserializeFn = std::function<void(IColumn & column, avro::Decoder & decoder)>;
@@ -58,6 +58,12 @@ private:
 };
 
 #if USE_POCO_JSON
+/// Confluent framing + Avro binary datum encoding. Mainly used for Kafka.
+/// Uses 3 caches:
+/// 1. global: schema registry cache (base_url -> SchemaRegistry)
+/// 2. SchemaRegistry: schema cache (schema_id -> schema)
+/// 3. AvroConfluentRowInputFormat: deserializer cache (schema_id -> AvroDeserializer)
+/// This is needed because KafkaStorage creates a new instance of InputFormat per a batch of messages
 class AvroConfluentRowInputFormat : public IRowInputFormat
 {
 public:
@@ -65,15 +71,13 @@ public:
     virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     String getName() const override { return "AvroConfluentRowInputFormat"; }
 
+    class SchemaRegistry;
 private:
     const ColumnsWithTypeAndName header_columns;
-
-    class SchemaRegistry;
-    std::unique_ptr<SchemaRegistry> schema_registry;
-
+    std::shared_ptr<SchemaRegistry> schema_registry;
     using SchemaId = uint32_t;
     std::unordered_map<SchemaId, AvroDeserializer> deserializer_cache;
-    AvroDeserializer & getOrCreateDeserializer(SchemaId schema_id);
+    const AvroDeserializer & getOrCreateDeserializer(SchemaId schema_id);
 
     avro::InputStreamPtr input_stream;
     avro::DecoderPtr decoder;
