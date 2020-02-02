@@ -654,7 +654,7 @@ A special function. See the section ["ArrayJoin function"](array_join.md#functio
 
 ## arrayDifference {#arraydifference}
 
-Calculates the difference between adjacent array elements. Returns an array where the first element will be 0, the second is the difference between `a[1] - a[0]`, etc. The type of elements in the resulting array is determined by the type inference rules for subtraction (e.g. `UInt8` - `UInt8` = `Int16`). The type `Decimal` is not supported.
+Calculates the difference between adjacent array elements. Returns an array where the first element will be 0, the second is the difference between `a[1] - a[0]`, etc. The type of elements in the resulting array is determined by the type inference rules for subtraction (e.g. `UInt8` - `UInt8` = `Int16`).
 
 **Syntax** 
 
@@ -720,9 +720,7 @@ arrayDistinct(array)
 
 **Returned values**
 
-Returns an array containing the distinct elements. Type of elements depends on the largest value in the array.
-
-Type: [UInt*](https://clickhouse.yandex/docs/en/data_types/int_uint/#uint-ranges), [Int*](https://clickhouse.yandex/docs/en/data_types/int_uint/#int-ranges), [Float*](https://clickhouse.yandex/docs/en/data_types/float/).
+Returns an array containing the distinct elements.
 
 **Example**
 
