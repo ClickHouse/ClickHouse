@@ -4,6 +4,20 @@
 namespace DB
 {
 
+/// Transform which can generate several chunks on every consumed.
+/// It can be assumed that class is used in following way:
+///
+///    for (chunk : input_chunks)
+///    {
+///        transform.consume(chunk);
+///
+///        while (transform.canGenerate())
+///        {
+///            transformed_chunk = transform.generate();
+///            ... (process transformed chunk)
+///        }
+///    }
+///
 class IInflatingTransform : public IProcessor
 {
 protected:

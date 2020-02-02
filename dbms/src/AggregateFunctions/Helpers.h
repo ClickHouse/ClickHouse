@@ -149,4 +149,13 @@ static IAggregateFunction * createWithTwoNumericTypes(const IDataType & first_ty
     return nullptr;
 }
 
+template <template <typename> class AggregateFunctionTemplate, typename... TArgs>
+static IAggregateFunction * createWithStringType(const IDataType & argument_type, TArgs && ... args)
+{
+    WhichDataType which(argument_type);
+    if (which.idx == TypeIndex::String) return new AggregateFunctionTemplate<String>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::FixedString) return new AggregateFunctionTemplate<String>(std::forward<TArgs>(args)...);
+    return nullptr;
+}
+
 }

@@ -112,7 +112,7 @@ void TCPHandler::runImpl()
         {
             Exception e("Database " + backQuote(default_database) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
-                << ", Stack trace:\n\n" << e.getStackTrace().toString());
+                << ", Stack trace:\n\n" << e.getStackTraceString());
             sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
             return;
         }
@@ -158,7 +158,7 @@ void TCPHandler::runImpl()
         /** An exception during the execution of request (it must be sent over the network to the client).
          *  The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
          */
-        std::unique_ptr<Exception> exception;
+        std::optional<DB::Exception> exception;
         bool network_error = false;
 
         bool send_exception_with_stack_trace = connection_context.getSettingsRef().calculate_text_stack_trace;
@@ -280,7 +280,7 @@ void TCPHandler::runImpl()
         catch (const Exception & e)
         {
             state.io.onException();
-            exception.reset(e.clone());
+            exception.emplace(e);
 
             if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
                 throw;
@@ -298,22 +298,22 @@ void TCPHandler::runImpl()
              *  We will try to send exception to the client in any case - see below.
              */
             state.io.onException();
-            exception = std::make_unique<Exception>(e.displayText(), ErrorCodes::POCO_EXCEPTION);
+            exception.emplace(Exception::CreateFromPoco, e);
         }
         catch (const Poco::Exception & e)
         {
             state.io.onException();
-            exception = std::make_unique<Exception>(e.displayText(), ErrorCodes::POCO_EXCEPTION);
+            exception.emplace(Exception::CreateFromPoco, e);
         }
         catch (const std::exception & e)
         {
             state.io.onException();
-            exception = std::make_unique<Exception>(e.what(), ErrorCodes::STD_EXCEPTION);
+            exception.emplace(Exception::CreateFromSTD, e);
         }
         catch (...)
         {
             state.io.onException();
-            exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+            exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
         }
 
         try
@@ -546,7 +546,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
     auto & pipeline = state.io.pipeline;
 
     if (pipeline.getMaxThreads())
-        num_threads = pipeline.getMaxThreads();
+        num_threads = std::min(num_threads, pipeline.getMaxThreads());
 
     /// Send header-block, to allow client to prepare output format for data to send.
     {
@@ -591,11 +591,9 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
             }
         });
 
-        /// Wait in case of exception. Delete pipeline to release memory.
+        /// Wait in case of exception happened outside of pool.
         SCOPE_EXIT(
-                /// Clear queue in case if somebody is waiting lazy_format to push.
                 lazy_format->finish();
-                lazy_format->clearQueue();
 
                 try
                 {
@@ -604,72 +602,58 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
                 catch (...)
                 {
                     /// If exception was thrown during pipeline execution, skip it while processing other exception.
+                    tryLogCurrentException(log);
                 }
-
-                pipeline = QueryPipeline()
         );
 
-        while (true)
+        while (!lazy_format->isFinished() && !exception)
         {
-            Block block;
-
-            while (true)
+            if (isQueryCancelled())
             {
-                if (isQueryCancelled())
-                {
-                    /// A packet was received requesting to stop execution of the request.
-                    executor->cancel();
-
-                    break;
-                }
-                else
-                {
-                    if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
-                    {
-                        /// Some time passed and there is a progress.
-                        after_send_progress.restart();
-                        sendProgress();
-                    }
-
-                    sendLogs();
-
-                    if ((block = lazy_format->getBlock(query_context->getSettingsRef().interactive_delay / 1000)))
-                        break;
-
-                    if (lazy_format->isFinished())
-                        break;
-
-                    if (exception)
-                    {
-                        pool.wait();
-                        break;
-                    }
-                }
-            }
-
-            /** If data has run out, we will send the profiling data and total values to
-              * the last zero block to be able to use
-              * this information in the suffix output of stream.
-              * If the request was interrupted, then `sendTotals` and other methods could not be called,
-              *  because we have not read all the data yet,
-              *  and there could be ongoing calculations in other threads at the same time.
-              */
-            if (!block && !isQueryCancelled())
-            {
-                pool.wait();
-                pipeline.finalize();
-
-                sendTotals(lazy_format->getTotals());
-                sendExtremes(lazy_format->getExtremes());
-                sendProfileInfo(lazy_format->getProfileInfo());
-                sendProgress();
-                sendLogs();
-            }
-
-            sendData(block);
-            if (!block)
+                /// A packet was received requesting to stop execution of the request.
+                executor->cancel();
                 break;
+            }
+
+            if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
+            {
+                /// Some time passed and there is a progress.
+                after_send_progress.restart();
+                sendProgress();
+            }
+
+            sendLogs();
+
+            if (auto block = lazy_format->getBlock(query_context->getSettingsRef().interactive_delay / 1000))
+            {
+                if (!state.io.null_format)
+                    sendData(block);
+            }
         }
+
+        /// Finish lazy_format before waiting. Otherwise some thread may write into it, and waiting will lock.
+        lazy_format->finish();
+        pool.wait();
+
+        /** If data has run out, we will send the profiling data and total values to
+          * the last zero block to be able to use
+          * this information in the suffix output of stream.
+          * If the request was interrupted, then `sendTotals` and other methods could not be called,
+          *  because we have not read all the data yet,
+          *  and there could be ongoing calculations in other threads at the same time.
+          */
+        if (!isQueryCancelled())
+        {
+            pipeline.finalize();
+
+            sendTotals(lazy_format->getTotals());
+            sendExtremes(lazy_format->getExtremes());
+            sendProfileInfo(lazy_format->getProfileInfo());
+            sendProgress();
+            sendLogs();
+        }
+
+        sendData({});
     }
 
     state.io.onFinish();
@@ -993,7 +977,7 @@ bool TCPHandler::receiveData(bool scalar)
                 if (!(storage = query_context->tryGetExternalTable(name)))
                 {
                     NamesAndTypesList columns = block.getNamesAndTypesList();
-                    storage = StorageMemory::create("_external", name, ColumnsDescription{columns}, ConstraintsDescription{});
+                    storage = StorageMemory::create(StorageID("_external", name), ColumnsDescription{columns}, ConstraintsDescription{});
                     storage->startup();
                     query_context->addExternalTable(name, storage);
                 }

@@ -4,4 +4,4 @@
 درایور رسمی ODBC برای ClickHouse وجود دارد. برای اطلاعات بیشتر [اینجا](https://github.com/ClickHouse/clickhouse-odbc) را ببینید.
 
 </div>
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/odbc/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/interfaces/odbc/) <!--hide-->

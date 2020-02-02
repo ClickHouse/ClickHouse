@@ -30,7 +30,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static const std::vector<String> supported_functions{"any", "anyLast", "min", "max", "sum"};
+static const std::vector<String> supported_functions{"any", "anyLast", "min", "max", "sum", "groupBitAnd", "groupBitOr", "groupBitXor"};
 
 
 String DataTypeCustomSimpleAggregateFunction::getName() const
@@ -58,7 +58,7 @@ String DataTypeCustomSimpleAggregateFunction::getName() const
 }
 
 
-static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & arguments)
+static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const String & /*type_name*/, const ASTPtr & arguments)
 {
     String function_name;
     AggregateFunctionPtr function;

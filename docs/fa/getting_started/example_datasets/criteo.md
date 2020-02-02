@@ -88,4 +88,4 @@ DROP TABLE criteo_log;
 ```
 
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/getting_started/example_datasets/criteo/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/getting_started/example_datasets/criteo/) <!--hide-->

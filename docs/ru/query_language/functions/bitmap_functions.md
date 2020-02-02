@@ -48,6 +48,44 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 └─────────────┘
 ```
 
+## bitmapSubsetLimit {#bitmapsubsetlimit}
+
+Создает подмножество битмапа с n элементами, расположенными между `range_start` и `cardinality_limit`.
+
+**Синтаксис**
+
+```sql
+bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
+```
+
+**Параметры**
+
+- `bitmap` – Битмап. [Bitmap object](#bitmap_functions-bitmapbuild).
+- `range_start` – Начальная точка подмножества. [UInt32](../../data_types/int_uint.md).
+- `cardinality_limit` – Верхний предел подмножества. [UInt32](../../data_types/int_uint.md).
+
+**Возвращаемое значение**
+
+Подмножество битмапа.
+
+Тип: `Bitmap object`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
+```
+
+Ответ:
+
+```text
+┌─res───────────────────────┐
+│ [30,31,32,33,100,200,500] │
+└───────────────────────────┘
+```
+
 ## bitmapContains {#bitmap_functions-bitmapcontains}
 
 Проверяет вхождение элемента в битовый массив.
@@ -351,4 +389,4 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 └─────┘
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/bitmap_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/bitmap_functions/) <!--hide-->

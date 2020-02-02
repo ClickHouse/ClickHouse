@@ -20,4 +20,4 @@
 - UInt64 - [0 : 18446744073709551615]
 
 </div>
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/int_uint/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/data_types/int_uint/) <!--hide-->

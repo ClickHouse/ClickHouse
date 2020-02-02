@@ -35,6 +35,8 @@ public:
     using typename Base::ColumnType;
     using Base::Base;
 
+    DataTypeDecimal(UInt32 precision_, UInt32 scale_, const String & type_name_ = "Decimal", bool only_scale_ = false);
+
     static constexpr auto family_name = "Decimal";
 
     const char * getFamilyName() const override { return family_name; }
@@ -57,6 +59,12 @@ public:
 
     static void readText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_, bool csv = false);
     static bool tryReadText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_);
+
+private:
+    /// The name of data type how the user specified it. A single data type may be referenced by various synonims.
+    const String type_name;
+    /// If the user specified it only with scale parameter but without precision.
+    bool only_scale = false;
 };
 
 template <typename T>

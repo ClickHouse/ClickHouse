@@ -8,6 +8,9 @@ namespace DB
 class Pipe;
 using Pipes = std::vector<Pipe>;
 
+class IStorage;
+using StoragePtr = std::shared_ptr<IStorage>;
+
 /// Pipe is a set of processors which represents the part of pipeline with single output.
 /// All processors in pipe are connected. All ports are connected except the output one.
 class Pipe
@@ -42,13 +45,43 @@ public:
     /// Set information about preferred executor number for sources.
     void pinSources(size_t executor_number);
 
+    void enableQuota();
+
     void setTotalsPort(OutputPort * totals_) { totals = totals_; }
     OutputPort * getTotalsPort() const { return totals; }
+
+    /// Do not allow to change the table while the processors of pipe are alive.
+    /// TODO: move it to pipeline.
+    void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
+    /// This methods are from QueryPipeline. Needed to make conversion from pipeline to pipe possible.
+    void addInterpreterContext(std::shared_ptr<Context> context) { interpreter_context.emplace_back(std::move(context)); }
+    void addStorageHolder(StoragePtr storage) { storage_holders.emplace_back(std::move(storage)); }
+
+    const std::vector<TableStructureReadLockHolder> & getTableLocks() const { return table_locks; }
+    const std::vector<std::shared_ptr<Context>> & getContexts() const { return interpreter_context; }
+    const std::vector<StoragePtr> & getStorageHolders() const { return storage_holders; }
 
 private:
     Processors processors;
     OutputPort * output_port = nullptr;
     OutputPort * totals = nullptr;
+
+    std::vector<TableStructureReadLockHolder> table_locks;
+
+    /// Some processors may implicitly use Context or temporary Storage created by Interpreter.
+    /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
+    /// because QueryPipeline is alive until query is finished.
+    std::vector<std::shared_ptr<Context>> interpreter_context;
+    std::vector<StoragePtr> storage_holders;
+
+    /// This private constructor is used only from QueryPipeline.
+    /// It is not public, because QueryPipeline checks that processors are connected and have single output,
+    ///  and therefore we can skip those checks.
+    /// Note that Pipe represents a tree if it was created using public interface. But this constructor can't assert it.
+    /// So, it's possible that TreeExecutorBlockInputStream could be unable to convert such Pipe to IBlockInputStream.
+    explicit Pipe(Processors processors_, OutputPort * output_port, OutputPort * totals);
+
+    friend class QueryPipeline;
 };
 
 }

@@ -34,6 +34,12 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
 
+    /// This code may looks strange, but previously we had only one entity: PRIMARY KEY (or ORDER BY, it doesn't matter)
+    /// Now we have two different entities ORDER BY and it's optional prefix -- PRIMARY KEY.
+    /// In most cases user doesn't specify PRIMARY KEY and semantically it's equal to ORDER BY.
+    /// So rules in zookeeper metadata is following:
+    /// - When we have only ORDER BY, than store it in "primary key:" row of /metadata
+    /// - When we have both, than store PRIMARY KEY in "primary key:" row and ORDER BY in "sorting key:" row of /metadata
     if (!data.primary_key_ast)
         primary_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.order_by_ast));
     else
@@ -48,15 +54,6 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
         partition_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.partition_by_ast));
 
     ttl_table = formattedAST(data.ttl_table_ast);
-
-    std::ostringstream ttl_move_stream;
-    for (const auto & ttl_entry : data.move_ttl_entries)
-    {
-        if (ttl_move_stream.tellp() > 0)
-            ttl_move_stream << ", ";
-        ttl_move_stream << formattedAST(ttl_entry.entry_ast);
-    }
-    ttl_move = ttl_move_stream.str();
 
     skip_indices = data.getIndices().toString();
     if (data.canUseAdaptiveGranularity())
@@ -88,9 +85,6 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 
     if (!ttl_table.empty())
         out << "ttl: " << ttl_table << "\n";
-
-    if (!ttl_move.empty())
-        out << "move ttl: " << ttl_move << "\n";
 
     if (!skip_indices.empty())
         out << "indices: " << skip_indices << "\n";
@@ -132,9 +126,6 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
 
     if (checkString("ttl: ", in))
         in >> ttl_table >> "\n";
-
-    if (checkString("move ttl: ", in))
-        in >> ttl_move >> "\n";
 
     if (checkString("indices: ", in))
         in >> skip_indices >> "\n";
@@ -243,21 +234,6 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
                     "Existing table metadata in ZooKeeper differs in TTL."
                     " Stored in ZooKeeper: " + from_zk.ttl_table +
                     ", local: " + ttl_table,
-                    ErrorCodes::METADATA_MISMATCH);
-    }
-
-    if (ttl_move != from_zk.ttl_move)
-    {
-        if (allow_alter)
-        {
-            diff.ttl_move_changed = true;
-            diff.new_ttl_move = from_zk.ttl_move;
-        }
-        else
-            throw Exception(
-                    "Existing table metadata in ZooKeeper differs in move TTL."
-                    " Stored in ZooKeeper: " + from_zk.ttl_move +
-                    ", local: " + ttl_move,
                     ErrorCodes::METADATA_MISMATCH);
     }
 

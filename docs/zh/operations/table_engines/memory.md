@@ -5,5 +5,5 @@ Memory 引擎以未压缩的形式将数据存储在 RAM 中。数据完全以�
 Memory 引擎是由系统用于临时表进行外部数据的查询（请参阅 "外部数据用于请求处理" 部分），以及用于实现 `GLOBAL IN`（请参见 "IN 运算符" 部分）。
 
 
-[Original article](https://clickhouse.yandex/docs/zh/operations/table_engines/memory/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/zh/operations/table_engines/memory/) <!--hide-->
 

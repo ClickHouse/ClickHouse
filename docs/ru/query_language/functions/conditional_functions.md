@@ -92,4 +92,4 @@ multiIf(cond_1, then_1, cond_2, then_2...else)
 └────────────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/conditional_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/conditional_functions/) <!--hide-->

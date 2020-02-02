@@ -3,7 +3,7 @@
 HTTP интерфейс позволяет использовать ClickHouse на любой платформе, из любого языка программирования. У нас он используется для работы из Java и Perl, а также из shell-скриптов. В других отделах, HTTP интерфейс используется из Perl, Python и Go. HTTP интерфейс более ограничен по сравнению с родным интерфейсом, но является более совместимым.
 
 По умолчанию, clickhouse-server слушает HTTP на порту 8123 (это можно изменить в конфиге).
-Если запросить GET / без параметров, то вернётся строка "Ok." (с переводом строки на конце). Это может быть использовано в скриптах проверки живости.
+Если запросить GET / без параметров, то вернётся строка "Ok." (с переводом строки на конце). Это может быть использовано в скриптах проверки доступности.
 
 ```bash
 $ curl 'http://localhost:8123/'
@@ -173,9 +173,9 @@ $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?data
 
 По умолчанию используется БД, которая прописана в настройках сервера, как БД по умолчанию. По умолчанию, это - БД default. Также вы всегда можете указать БД через точку перед именем таблицы.
 
-Имя пользователя и пароль могут быть указаны в одном из двух вариантов:
+Имя пользователя и пароль могут быть указаны в одном из трёх вариантов:
 
-1. С использованием HTTP Basic Authentification. Пример:
+1. С использованием HTTP Basic Authentication. Пример:
 
 ```bash
 $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
@@ -185,6 +185,12 @@ $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 
 ```bash
 $ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
+```
+
+3. С использованием заголовков ‘X-ClickHouse-User’ и ‘X-ClickHouse-Key’. Пример:
+
+```bash
+$ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: password' 'http://localhost:8123/' -d @-
 ```
 
 Если пользователь не задан,то используется `default`. Если пароль не задан, то используется пустой пароль.
@@ -221,10 +227,10 @@ X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_ro
 Возможные поля заголовка:
 
 - `read_rows` — количество прочитанных строк.
-- `read_bytes` — объем прочитанных данных в байтах.
+- `read_bytes` — объём прочитанных данных в байтах.
 - `total_rows_to_read` — общее количество строк для чтения.
 - `written_rows` — количество записанных строк.
-- `written_bytes` — объем прочитанных данных в байтах.
+- `written_bytes` — объём прочитанных данных в байтах.
 
 Запущенные запросы не останавливаются автоматически при разрыве HTTP соединения. Парсинг и форматирование данных производится на стороне сервера и использование сети может быть неэффективным.
 Может быть передан необязательный параметр query_id - идентификатор запроса, произвольная строка. Подробнее смотрите раздел "Настройки, replace_running_query".
@@ -259,5 +265,5 @@ $ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&
 $ curl -sS "<address>?param_id=2¶m_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/http_interface/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/http_interface/) <!--hide-->
 

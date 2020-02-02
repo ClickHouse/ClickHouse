@@ -166,6 +166,11 @@ public:
     {
         return has() && assert_cast<const ColVecType &>(column).getData()[row_num] == value;
     }
+
+    static bool allocatesMemoryInArena()
+    {
+        return false;
+    }
 };
 
 
@@ -384,6 +389,11 @@ public:
     {
         return has() && assert_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) == getStringRef();
     }
+
+    static bool allocatesMemoryInArena()
+    {
+        return true;
+    }
 };
 
 static_assert(
@@ -555,6 +565,11 @@ public:
     {
         return has() && to.value == value;
     }
+
+    static bool allocatesMemoryInArena()
+    {
+        return false;
+    }
 };
 
 
@@ -675,15 +690,15 @@ struct AggregateFunctionAnyHeavyData : Data
 };
 
 
-template <typename Data, bool use_arena>
-class AggregateFunctionsSingleValue final : public IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data, use_arena>>
+template <typename Data>
+class AggregateFunctionsSingleValue final : public IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>
 {
 private:
     DataTypePtr & type;
 
 public:
     AggregateFunctionsSingleValue(const DataTypePtr & type_)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data, use_arena>>({type_}, {})
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type_}, {})
         , type(this->argument_types[0])
     {
         if (StringRef(Data::name()) == StringRef("min")
@@ -724,7 +739,7 @@ public:
 
     bool allocatesMemoryInArena() const override
     {
-        return use_arena;
+        return Data::allocatesMemoryInArena();
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

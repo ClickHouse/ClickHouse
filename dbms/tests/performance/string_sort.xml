@@ -47,7 +47,4 @@
     <query><![CDATA[SELECT {str1}, {str2} FROM hits_10m_single ORDER BY {str1}, {str2} LIMIT 10]]></query>
     <query><![CDATA[SELECT {str1}, {str2} FROM hits_10m_single ORDER BY {str1}, {str2} LIMIT 9000000, 10]]></query>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
 </test>

@@ -33,11 +33,13 @@ Structure of the `users` section:
 
 ### user_name/password
 
-Password could be specified in plaintext or in SHA256 (hex format).
+Password can be specified in plaintext or in SHA256 (hex format).
 
 - To assign a password in plaintext (**not recommended**), place it in a `password` element.
 
     For example, `<password>qwerty</password>`. The password can be left blank.
+
+<a id="password_sha256_hex"></a>
 
 - To assign a password using its SHA256 hash, place it in a `password_sha256_hex` element.
 
@@ -51,6 +53,19 @@ Password could be specified in plaintext or in SHA256 (hex format).
 
     The first line of the result is the password. The second line is the corresponding SHA256 hash.
 
+<a id="password_double_sha1_hex"></a>
+
+- For compatibility with MySQL clients, password can be specified in double SHA1 hash. Place it in `password_double_sha1_hex` element.
+
+    For example, `<password_double_sha1_hex>08b4a0f1de6ad37da17359e592c8d74788a83eb0</password_double_sha1_hex>`.
+
+    Example of how to generate a password from shell:
+
+    ```
+    PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
+    ```
+
+    The first line of the result is the password. The second line is the corresponding double SHA1 hash.
 
 ### user_name/networks
 
@@ -128,4 +143,4 @@ The following configuration forces that user `user1` can only see the rows of `t
 
 The `filter` can be any expression resulting in a [UInt8](../../data_types/int_uint.md)-type value. It usually contains comparisons and logical operators. Rows from `database_name.table1` where filter results to 0 are not returned for this user. The filtering is incompatible with `PREWHERE` operations and disables `WHERE→PREWHERE` optimization.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/settings/settings_users/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/settings/settings_users/) <!--hide-->

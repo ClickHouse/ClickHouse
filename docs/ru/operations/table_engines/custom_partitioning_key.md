@@ -123,5 +123,5 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 ClickHouse позволяет производить различные манипуляции с кусками: удалять, копировать из одной таблицы в другую или создавать их резервные копии. Подробнее см. в разделе [Манипуляции с партициями и кусками](../../query_language/alter.md#alter_manipulations-with-partitions).
 
-[Оригинальная статья: ](https://clickhouse.yandex/docs/ru/operations/table_engines/custom_partitioning_key/) <!--hide-->
+[Оригинальная статья: ](https://clickhouse.tech/docs/ru/operations/table_engines/custom_partitioning_key/) <!--hide-->
 

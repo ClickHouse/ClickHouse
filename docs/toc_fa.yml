@@ -59,7 +59,7 @@ nav:
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
     - 'Nothing': 'data_types/special_data_types/nothing.md'
-    - 'Interval': 'data_types/special_data_types/interval.md'    
+    - 'Interval': 'data_types/special_data_types/interval.md'
   - 'Domains':
     - 'Overview': 'data_types/domains/overview.md'
     - 'IPv4': 'data_types/domains/ipv4.md'
@@ -167,7 +167,7 @@ nav:
     - 'jdbc': 'query_language/table_functions/jdbc.md'
     - 'odbc': 'query_language/table_functions/odbc.md'
     - 'hdfs': 'query_language/table_functions/hdfs.md'
-    - 'input': 'query_language/table_functions/input.md'   
+    - 'input': 'query_language/table_functions/input.md'
   - 'Dictionaries':
     - 'Introduction': 'query_language/dicts/index.md'
     - 'External Dictionaries':
@@ -193,6 +193,7 @@ nav:
   - 'Configuration Files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'
   - 'System Tables': 'operations/system_tables.md'
+  - 'Testing Hardware': 'operations/performance_test.md'
   - 'Server Configuration Parameters':
     - 'Introduction': 'operations/server_settings/index.md'
     - 'Server Settings': 'operations/server_settings/settings.md'
@@ -209,18 +210,19 @@ nav:
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
     - 'clickhouse-benchmark': 'operations/utils/clickhouse-benchmark.md'
-    
+
 - 'F.A.Q.':
   - 'General Questions': 'faq/general.md'
 
 - 'Development':
   - 'hidden': 'development/index.md'
+  - 'The Beginner ClickHouse Developer Instruction': 'development/developer_instruction.md'
   - 'Overview of ClickHouse Architecture': 'development/architecture.md'
+  - 'Browse ClickHouse Source Code': 'development/browse_code.md'
   - 'How to Build ClickHouse on Linux': 'development/build.md'
   - 'How to Build ClickHouse on Mac OS X': 'development/build_osx.md'
   - 'How to Write C++ code': 'development/style.md'
   - 'How to Run ClickHouse Tests': 'development/tests.md'
-  - 'The Beginner ClickHouse Developer Instruction': 'development/developer_instruction.md'
   - 'Third-Party Libraries Used': 'development/contrib.md'
 
 - 'What''s New':
