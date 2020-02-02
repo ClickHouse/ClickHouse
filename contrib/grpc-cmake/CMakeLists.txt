@@ -54,9 +54,10 @@ endif()
 
 # protobuf.cmake
 set(PROTOBUF_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../protobuf)
-if(NOT protobuf_BUILD_TESTS)
-  set(protobuf_BUILD_TESTS OFF CACHE BOOL "Build protobuf tests")
-endif()
+# if(NOT protobuf_BUILD_TESTS)
+  # set(protobuf_BUILD_TESTS OFF CACHE BOOL "Build protobuf tests")
+# endif()
+set(protobuf_BUILD_TESTS OFF CACHE BOOL "Build protobuf tests")
 if(NOT protobuf_WITH_ZLIB)
   set(protobuf_WITH_ZLIB OFF CACHE BOOL "Build protobuf with zlib.")
 endif()
