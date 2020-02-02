@@ -708,7 +708,9 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 
 ## indexHint {#indexhint}
 
-Outputs data in the range selected by the index without filtering by the expression specified as an argument. Dataset may contain some extra data due to sparse index.
+The function is indended for debugging and introspection purposes. The function ignores it's argument and always returns 1. Arguments are not even evaluated.
+
+But for the purpose of index analysis, the argument of this function is analyzed as if it was present directly without being wrapped inside `indexHint` function. This allows to select data in index ranges by the corresponding condition but without further filtering by this condition. The index in ClickHouse is sparse and using `indexHint` will yield more data than specifying the same condition directly.
 
 **Syntax** 
 
@@ -718,9 +720,7 @@ SELECT * FROM table WHERE indexHint(<expression>)
 
 **Returned value**
 
-Returns range from the index, in which given condition is true.
-
-Type: [Uint8](https://clickhouse.yandex/docs/en/data_types/int_uint/#diapazony-uint).
+1. Type: [Uint8](https://clickhouse.yandex/docs/en/data_types/int_uint/#diapazony-uint).
 
 **Example**
 
