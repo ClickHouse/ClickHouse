@@ -167,7 +167,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Настройка прореживания данных для Graphite.
 
-Подробнее читайте в разделе [GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md).
+Подробнее читайте в разделе [GraphiteMergeTree](../table_engines/graphitemergetree.md).
 
 **Пример**
 
@@ -368,7 +368,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## mark_cache_size {#server-mark-cache-size}
 
-Приблизительный размер (в байтах) кэша засечек, используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
+Приблизительный размер (в байтах) кэша засечек, используемых движками таблиц семейства [MergeTree](../table_engines/mergetree.md).
 
 Кэш общий для сервера, память выделяется по мере необходимости.
 
@@ -421,7 +421,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Ограничение на удаление таблиц.
 
-Если размер таблицы семейства [MergeTree](../../operations/table_engines/mergetree.md) превышает `max_table_size_to_drop` (в байтах), то ее нельзя удалить запросом DROP.
+Если размер таблицы семейства [MergeTree](../table_engines/mergetree.md) превышает `max_table_size_to_drop` (в байтах), то ее нельзя удалить запросом DROP.
 
 Если таблицу все же необходимо удалить, не перезапуская при этом сервер ClickHouse, то необходимо создать файл `<clickhouse-path>/flags/force_drop_table` и выполнить запрос DROP.
 
@@ -438,7 +438,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## merge_tree {#server_settings-merge_tree}
 
-Тонкая настройка таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
+Тонкая настройка таблиц семейства [MergeTree](../table_engines/mergetree.md).
 
 Подробнее смотрите в заголовочном файле MergeTreeSettings.h.
 
@@ -513,7 +513,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## part_log {#server_settings-part-log}
 
-Логирование событий, связанных с данными типа [MergeTree](../../operations/table_engines/mergetree.md). Например, события добавления или мержа данных. Лог можно использовать для симуляции алгоритмов слияния, чтобы сравнивать их характеристики. Также, можно визуализировать процесс слияния.
+Логирование событий, связанных с данными типа [MergeTree](../table_engines/mergetree.md). Например, события добавления или мержа данных. Лог можно использовать для симуляции алгоритмов слияния, чтобы сравнивать их характеристики. Также, можно визуализировать процесс слияния.
 
 Запросы логируются не в отдельный файл, а в таблицу [system.part_log](../system_tables.md#system_tables-part-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
@@ -687,7 +687,7 @@ TCP порт для защищённого обмена данными с кли
 
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
-Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
+Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../table_engines/mergetree.md).
 
 Кеш единый для сервера. Память выделяется по требованию. Кеш используется в том случае, если включена опция [use_uncompressed_cache](../settings/settings.md).
 

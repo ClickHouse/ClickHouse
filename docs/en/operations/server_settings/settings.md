@@ -168,7 +168,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
 
 Settings for thinning data for Graphite.
 
-For more details, see [GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md).
+For more details, see [GraphiteMergeTree](../table_engines/graphitemergetree.md).
 
 **Example**
 
