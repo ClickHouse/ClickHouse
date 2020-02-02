@@ -725,7 +725,7 @@ Result:
 
 ## filesystemAvailable {#filesystemavailable}
 
-Returns amount of remaining space on the filesystem where the files of the databases located. It is always smaller than total free space ([filesystemFree](#filesystemfree)) because some space is reserved for a Linux `root` user.
+Returns amount of remaining space on the filesystem where the files of the databases located. It is always smaller than total free space ([filesystemFree](#filesystemfree)) because some space is reserved for OS.
 
 **Syntax**
 
@@ -735,7 +735,7 @@ filesystemAvailable()
 
 **Returned value**
 
-- The amount of remaining space available for writing data in bytes..
+- The amount of remaining space available in bytes.
 
 Type: [UInt64](../../data_types/int_uint.md).
 
@@ -757,7 +757,7 @@ Result:
 
 ## filesystemFree {#filesystemfree}
 
-Returns total amount of the free space on the filesystem where the files of the databases located. Consist of both space reserved for a Linux `root` user and space that actual available for data.
+Returns total amount of the free space on the filesystem where the files of the databases located. See also `filesystemAvailable`
 
 **Syntax**
 
