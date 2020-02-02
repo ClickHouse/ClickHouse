@@ -707,7 +707,7 @@ SELECT replicate(1, ['a', 'b', 'c']);
 
 ## filesystemAvailable {#filesystemavailable}
 
-Возвращает объем доступного для записи данных места на файловой системе. Он всегда меньше общего свободного места ([filesystemFree](#filesystemfree)), потому что некоторое пространство зарезервировано для Linux-пользователя `root`.
+Возвращает объём доступного для записи данных места на файловой системе. Он всегда меньше общего свободного места ([filesystemFree](#filesystemfree)), потому что некоторое пространство зарезервировано для нужд операционной системы.
 
 **Синтаксис**
 
@@ -717,7 +717,7 @@ filesystemAvailable()
 
 **Возвращаемое значение**
 
-- Объем доступного для записи данных места в байтах.
+- Объём доступного для записи данных места в байтах.
 
 Тип: [UInt64](../../data_types/int_uint.md).
 
@@ -739,7 +739,7 @@ SELECT formatReadableSize(filesystemAvailable()) AS "Available space", toTypeNam
 
 ## filesystemFree {#filesystemfree}
 
-Возвращает объем свободного места на файловой системе. Состоит из пространства, зарезервированного для Linux-пользователя `root`, и пространства доступного для записи данных.
+Возвращает объём свободного места на файловой системе. Смотрите также `filesystemAvailable`.
 
 **Синтаксис**
 
@@ -771,7 +771,7 @@ SELECT formatReadableSize(filesystemFree()) AS "Free space", toTypeName(filesyst
 
 ## filesystemCapacity {#filesystemcapacity}
 
-Возвращает информацию о емкости файловой системы в байтах. Для оценки должен быть настроен [путь](../../operations/server_settings/settings.md#server_settings-path) к каталогу с данными.
+Возвращает информацию о ёмкости файловой системы в байтах. Для оценки должен быть настроен [путь](../../operations/server_settings/settings.md#server_settings-path) к каталогу с данными.
 
 **Синтаксис**
 
@@ -781,7 +781,7 @@ filesystemCapacity()
 
 **Возвращаемое значение**
 
-- Информация о емкости файловой системы в байтах.
+- Информация о ёмкости файловой системы в байтах.
 
 Тип: [UInt64](../../data_types/int_uint.md).
 
