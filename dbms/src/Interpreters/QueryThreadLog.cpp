@@ -35,10 +35,8 @@ Block QueryThreadLogElement::createBlock()
         {std::make_shared<DataTypeInt64>(),         "peak_memory_usage"},
 
         {std::make_shared<DataTypeString>(),        "thread_name"},
-        {std::make_shared<DataTypeUInt32>(),        "thread_number"},
-        {std::make_shared<DataTypeInt32>(),         "os_thread_id"},
-        {std::make_shared<DataTypeUInt32>(),        "master_thread_number"},
-        {std::make_shared<DataTypeInt32>(),         "master_os_thread_id"},
+        {std::make_shared<DataTypeUInt32>(),        "thread_id"},
+        {std::make_shared<DataTypeUInt32>(),        "master_thread_id"},
         {std::make_shared<DataTypeString>(),        "query"},
 
         {std::make_shared<DataTypeUInt8>(),         "is_initial_query"},
@@ -89,10 +87,8 @@ void QueryThreadLogElement::appendToBlock(Block & block) const
     columns[i++]->insert(peak_memory_usage);
 
     columns[i++]->insertData(thread_name.data(), thread_name.size());
-    columns[i++]->insert(thread_number);
-    columns[i++]->insert(os_thread_id);
-    columns[i++]->insert(master_thread_number);
-    columns[i++]->insert(master_os_thread_id);
+    columns[i++]->insert(thread_id);
+    columns[i++]->insert(master_thread_id);
 
     columns[i++]->insertData(query.data(), query.size());
 

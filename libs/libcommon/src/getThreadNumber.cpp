@@ -1,14 +1,12 @@
-#include <common/getThreadNumber.h>
-#include <common/likely.h>
-#include <atomic>
+#include <unistd.h>
+#include <syscall.h>
 
-static thread_local unsigned thread_number = 0;
-static std::atomic_uint threads{0};
 
+static thread_local unsigned current_tid = 0;
 unsigned getThreadNumber()
 {
-    if (unlikely(thread_number == 0))
-        thread_number = ++threads;
+    if (!current_tid)
+        current_tid = syscall(SYS_gettid); /// This call is always successful. - man gettid
 
-    return thread_number;
+    return current_tid;
 }

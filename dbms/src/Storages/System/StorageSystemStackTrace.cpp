@@ -37,7 +37,6 @@ namespace
 
     int sequence_num = 0;    /// For messages sent via pipe.
 
-    UInt32 thread_number{0};
     std::optional<StackTrace> stack_trace;
 
     static constexpr size_t max_query_id_size = 128;
@@ -60,7 +59,6 @@ namespace
         /// All these methods are signal-safe.
         const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
         stack_trace.emplace(signal_context);
-        thread_number = getThreadNumber();
 
         StringRef query_id = CurrentThread::getQueryId();
         query_id_size = std::min(query_id.size, max_query_id_size);
@@ -148,7 +146,7 @@ NamesAndTypesList StorageSystemStackTrace::getNamesAndTypes()
 {
     return
     {
-        { "thread_number", std::make_shared<DataTypeUInt32>() },
+        { "thread_id", std::make_shared<DataTypeUInt32>() },
         { "query_id", std::make_shared<DataTypeString>() },
         { "trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) }
     };
@@ -197,7 +195,7 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
             for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
                 arr.emplace_back(reinterpret_cast<intptr_t>(stack_trace->getFrames()[i]));
 
-            res_columns[0]->insert(thread_number);
+            res_columns[0]->insert(tid);
             res_columns[1]->insertData(query_id_data, query_id_size);
             res_columns[2]->insert(arr);
         }
@@ -205,7 +203,7 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
         {
             /// Cannot obtain a stack trace. But create a record in result nevertheless.
 
-            res_columns[0]->insert(tid);    /// TODO Replace all thread numbers to OS thread numbers.
+            res_columns[0]->insert(tid);
             res_columns[1]->insertDefault();
             res_columns[2]->insertDefault();
         }
