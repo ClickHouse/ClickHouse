@@ -278,9 +278,6 @@ Simply, the level value could only be 0, 1, 2, 3, it means the maxium event acti
 
 ## retention {#retention}
 
-Analytical function that shows how much 
-certain conditions, for example, retention of dynamics/level [site traffic statistics](https://yandex.ru/support/partner2/statistics/metrika-visitors-statistics.html?lang=en).
-
 The function takes as arguments a set of conditions from 1 to 32 arguments of type `UInt8` that indicate whether a certain condition was met for the event.
 Any condition can be specified as an argument (as in [WHERE](../select.md#select-where)).
 
@@ -312,7 +309,7 @@ Let's consider an example of calculating the `retention` function to determine s
 **1.** Сreate a table to illustrate an example.
 
 ```sql
-CREATE TABLE retention_test(date Date, uid Int32)ENGINE = Memory;
+CREATE TABLE retention_test(date Date, uid Int32) ENGINE = Memory;
 
 INSERT INTO retention_test SELECT '2020-01-01', number FROM numbers(5);
 INSERT INTO retention_test SELECT '2020-01-02', number FROM numbers(10);
