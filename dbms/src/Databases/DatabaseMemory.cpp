@@ -9,6 +9,7 @@ namespace DB
 
 DatabaseMemory::DatabaseMemory(const String & name_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")")
+    , data_path("data/" + escapeForFileName(database_name) + "/")
 {}
 
 void DatabaseMemory::createTable(
@@ -27,7 +28,7 @@ void DatabaseMemory::removeTable(
     detachTable(table_name);
 }
 
-ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
+ASTPtr DatabaseMemory::getCreateDatabaseQuery(const Context & /*context*/) const
 {
     auto create_query = std::make_shared<ASTCreateQuery>();
     create_query->database = database_name;

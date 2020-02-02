@@ -6,11 +6,9 @@
 #include <optional>
 
 #include <Common/escapeForFileName.h>
-
 #include <Common/Exception.h>
 
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromFile.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -30,7 +28,6 @@
 
 #include <Storages/StorageStripeLog.h>
 #include <Storages/StorageFactory.h>
-#include <Poco/DirectoryIterator.h>
 
 
 namespace DB
@@ -120,10 +117,10 @@ private:
         {
             started = true;
 
-            data_in.emplace(
-                storage.fullPath() + "data.bin", 0, 0,
-                std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size), Poco::File(storage.fullPath() + "data.bin").getSize()));
+            String data_file_path = storage.table_path + "data.bin";
+            size_t buffer_size = std::min(max_read_buffer_size, storage.disk->getFileSize(data_file_path));
 
+            data_in.emplace(fullPath(storage.disk, data_file_path), 0, 0, buffer_size);
             block_in.emplace(*data_in, 0, index_begin, index_end);
         }
     }
@@ -135,11 +132,13 @@ class StripeLogBlockOutputStream final : public IBlockOutputStream
 public:
     explicit StripeLogBlockOutputStream(StorageStripeLog & storage_)
         : storage(storage_), lock(storage.rwlock),
-        data_out_compressed(storage.fullPath() + "data.bin", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
-        data_out(data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), storage.max_compress_block_size),
-        index_out_compressed(storage.fullPath() + "index.mrk", INDEX_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
-        index_out(index_out_compressed),
-        block_out(data_out, 0, storage.getSampleBlock(), false, &index_out, Poco::File(storage.fullPath() + "data.bin").getSize())
+        data_out_file(storage.table_path + "data.bin"),
+        data_out_compressed(storage.disk->writeFile(data_out_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append)),
+        data_out(*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), storage.max_compress_block_size),
+        index_out_file(storage.table_path + "index.mrk"),
+        index_out_compressed(storage.disk->writeFile(index_out_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append)),
+        index_out(*index_out_compressed),
+        block_out(data_out, 0, storage.getSampleBlock(), false, &index_out, storage.disk->getFileSize(data_out_file))
     {
     }
 
@@ -169,12 +168,12 @@ public:
 
         block_out.writeSuffix();
         data_out.next();
-        data_out_compressed.next();
+        data_out_compressed->next();
         index_out.next();
-        index_out_compressed.next();
+        index_out_compressed->next();
 
-        FileChecker::Files files{ data_out_compressed.getFileName(), index_out_compressed.getFileName() };
-        storage.file_checker.update(files.begin(), files.end());
+        storage.file_checker.update(data_out_file);
+        storage.file_checker.update(index_out_file);
 
         done = true;
     }
@@ -183,9 +182,11 @@ private:
     StorageStripeLog & storage;
     std::unique_lock<std::shared_mutex> lock;
 
-    WriteBufferFromFile data_out_compressed;
+    String data_out_file;
+    std::unique_ptr<WriteBuffer> data_out_compressed;
     CompressedWriteBuffer data_out;
-    WriteBufferFromFile index_out_compressed;
+    String index_out_file;
+    std::unique_ptr<WriteBuffer> index_out_compressed;
     CompressedWriteBuffer index_out;
     NativeBlockOutputStream block_out;
 
@@ -194,18 +195,19 @@ private:
 
 
 StorageStripeLog::StorageStripeLog(
-    const std::string & relative_path_,
-    const std::string & database_name_,
-    const std::string & table_name_,
+    DiskPtr disk_,
+    const String & relative_path_,
+    const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     bool attach,
-    size_t max_compress_block_size_,
-    const Context & context_)
-    : base_path(context_.getPath()), path(base_path + relative_path_), table_name(table_name_), database_name(database_name_),
-    max_compress_block_size(max_compress_block_size_),
-    file_checker(path + "sizes.json"),
-    log(&Logger::get("StorageStripeLog"))
+    size_t max_compress_block_size_)
+    : IStorage(table_id_)
+    , disk(std::move(disk_))
+    , table_path(relative_path_)
+    , max_compress_block_size(max_compress_block_size_)
+    , file_checker(disk, table_path + "sizes.json")
+    , log(&Logger::get("StorageStripeLog"))
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -214,7 +216,10 @@ StorageStripeLog::StorageStripeLog(
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
     if (!attach)
-        Poco::File(path).createDirectories();
+    {
+        /// create directories if they do not exist
+        disk->createDirectories(table_path);
+    }
 }
 
 
@@ -222,14 +227,11 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Strin
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
-    /// Rename directory with data.
-    String new_path = base_path + new_path_to_table_data;
-    Poco::File(path).renameTo(new_path);
+    disk->moveDirectory(table_path, new_path_to_table_data);
 
-    path = new_path;
-    table_name = new_table_name;
-    database_name = new_database_name;
-    file_checker.setPath(path + "sizes.json");
+    table_path = new_path_to_table_data;
+    file_checker.setPath(table_path + "sizes.json");
+    renameInMemory(new_database_name, new_table_name);
 }
 
 
@@ -247,10 +249,11 @@ BlockInputStreams StorageStripeLog::read(
 
     NameSet column_names_set(column_names.begin(), column_names.end());
 
-    if (!Poco::File(fullPath() + "index.mrk").exists())
+    String index_file = table_path + "index.mrk";
+    if (!disk->exists(index_file))
         return { std::make_shared<NullBlockInputStream>(getSampleBlockForColumns(column_names)) };
 
-    CompressedReadBufferFromFile index_in(fullPath() + "index.mrk", 0, 0, 0, INDEX_BUFFER_SIZE);
+    CompressedReadBufferFromFile index_in(fullPath(disk, index_file), 0, 0, 0, INDEX_BUFFER_SIZE);
     std::shared_ptr<const IndexForNativeFormat> index{std::make_shared<IndexForNativeFormat>(index_in, column_names_set)};
 
     BlockInputStreams res;
@@ -292,16 +295,11 @@ CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, const Conte
 
 void StorageStripeLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
-    if (table_name.empty())
-        throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);
-
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
-    auto file = Poco::File(path);
-    file.remove(true);
-    file.createDirectories();
+    disk->clearDirectory(table_path);
 
-    file_checker = FileChecker{path + "sizes.json"};
+    file_checker = FileChecker{disk, table_path + "sizes.json"};
 }
 
 
@@ -315,8 +313,8 @@ void registerStorageStripeLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return StorageStripeLog::create(
-            args.relative_data_path, args.database_name, args.table_name, args.columns, args.constraints,
-            args.attach, args.context.getSettings().max_compress_block_size, args.context);
+            args.context.getDefaultDisk(), args.relative_data_path, args.table_id, args.columns, args.constraints,
+            args.attach, args.context.getSettings().max_compress_block_size);
     });
 }
 

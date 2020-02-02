@@ -6,4 +6,4 @@ type مخصوص مقادیر boolean وجود ندارد. از Uint8 و محدو
 
 </div>
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/boolean/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/data_types/boolean/) <!--hide-->

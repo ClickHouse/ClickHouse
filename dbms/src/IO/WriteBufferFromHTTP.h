@@ -29,7 +29,7 @@ public:
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     /// Receives response from the server after sending all data.
-    void finalize();
+    void finalize() override;
 };
 
 }

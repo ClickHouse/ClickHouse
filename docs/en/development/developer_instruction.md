@@ -4,6 +4,10 @@ Building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
 
 If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command line terminal in Ubuntu, please locate a program containing the word "terminal" in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
 
+# If you use 32-bit system
+
+ClickHouse cannot work or build on 32-bit system. You should acquire access to 64-bit system and you can continue reading.
+
 
 # Creating a repository on GitHub
 
@@ -96,15 +100,7 @@ Next, check the version of CMake: `cmake --version`. If it is below 3.3, you sho
 
 # Optional External Libraries
 
-ClickHouse uses several external libraries for building. Most of them do not need to be installed separately as they are built together with ClickHouse from the sources located in the submodules. You can check the list in `contrib`.
-
-There is one library that is not built from sources but is supplied by the system: Readline, and thus is recommended to be installed.
-
-Ubuntu: `sudo apt install libreadline-dev`
-
-Mac OS X: `brew install readline`
-
-However, these libraries are optional and ClickHouse can well be built without them. ICU is used for support of `COLLATE` in `ORDER BY` (i.e. for sorting in turkish alphabet). Readline is used for more convenient command input in clickhouse-client.
+ClickHouse uses several external libraries for building. All of them do not need to be installed separately as they are built together with ClickHouse from the sources located in the submodules. You can check the list in `contrib`.
 
 
 # C++ Compiler
@@ -115,7 +111,7 @@ Official Yandex builds currently use GCC because it generates machine code of sl
 
 To install GCC on Ubuntu run: `sudo apt install gcc g++`
 
-Check the version of gcc: `gcc --version`. If it is below 9, then follow the instruction here: https://clickhouse.yandex/docs/en/development/build/#install-gcc-9.
+Check the version of gcc: `gcc --version`. If it is below 9, then follow the instruction here: https://clickhouse.tech/docs/en/development/build/#install-gcc-9.
 
 Mac OS X build is supported only for Clang. Just run `brew install llvm`
 
@@ -230,11 +226,11 @@ Just in case, it is worth mentioning that CLion creates `build` path on its own,
 
 # Writing Code
 
-The description of ClickHouse architecture can be found here: https://clickhouse.yandex/docs/en/development/architecture/
+The description of ClickHouse architecture can be found here: https://clickhouse.tech/docs/en/development/architecture/
 
-The Code Style Guide: https://clickhouse.yandex/docs/en/development/style/
+The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
 
-Writing tests: https://clickhouse.yandex/docs/en/development/tests/
+Writing tests: https://clickhouse.tech/docs/en/development/tests/
 
 List of tasks: https://github.com/yandex/ClickHouse/blob/master/dbms/tests/instructions/easy_tasks_sorted_en.md
 

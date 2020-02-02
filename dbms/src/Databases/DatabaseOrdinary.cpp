@@ -122,12 +122,12 @@ void DatabaseOrdinary::loadStoredObjects(
     FileNames file_names;
 
     size_t total_dictionaries = 0;
-    iterateMetadataFiles(context, [&file_names, &total_dictionaries, this](const String & file_name)
+    iterateMetadataFiles(context, [&context, &file_names, &total_dictionaries, this](const String & file_name)
     {
         String full_path = getMetadataPath() + file_name;
         try
         {
-            auto ast = parseQueryFromMetadata(full_path, /*throw_on_error*/ true, /*remove_empty*/false);
+            auto ast = parseQueryFromMetadata(context, full_path, /*throw_on_error*/ true, /*remove_empty*/false);
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
@@ -237,7 +237,7 @@ void DatabaseOrdinary::alterTable(
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path, 0);
 
-    const auto & ast_create_query = ast->as<ASTCreateQuery &>();
+    auto & ast_create_query = ast->as<ASTCreateQuery &>();
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
     ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.indices);
@@ -246,6 +246,11 @@ void DatabaseOrdinary::alterTable(
     ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
     ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
     ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
+
+    if (metadata.select)
+    {
+        ast->replace(ast_create_query.select, metadata.select);
+    }
 
     ASTStorage & storage_ast = *ast_create_query.storage;
     /// ORDER BY may change, but cannot appear, it's required construction

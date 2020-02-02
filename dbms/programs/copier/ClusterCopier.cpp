@@ -2430,7 +2430,7 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
                           .argument("copy-fault-probability").binding("copy-fault-probability"));
     options.addOption(Poco::Util::Option("log-level", "", "sets log level")
                           .argument("log-level").binding("log-level"));
-    options.addOption(Poco::Util::Option("base-dir", "", "base directory for copiers, consequitive copier launches will populate /base-dir/launch_id/* directories")
+    options.addOption(Poco::Util::Option("base-dir", "", "base directory for copiers, consecutive copier launches will populate /base-dir/launch_id/* directories")
                           .argument("base-dir").binding("base-dir"));
 
     using Me = std::decay_t<decltype(*this)>;

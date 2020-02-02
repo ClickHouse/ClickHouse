@@ -209,6 +209,13 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_QUERY)
+    {
+        AlterCommand command;
+        command.type = AlterCommand::MODIFY_QUERY;
+        command.select = command_ast->select;
+        return command;
+    }
     else
         return {};
 }
@@ -249,6 +256,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
                 /// let's use info about old type
                 if (data_type == nullptr)
                     codec->useInfoAboutType(column.type);
+                else /// use info about new DataType
+                    codec->useInfoAboutType(data_type);
+
                 column.codec = codec;
             }
 
@@ -316,7 +326,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
 
             if (insert_it == metadata.indices.indices.end())
                 throw Exception("Wrong index name. Cannot find index " + backQuote(after_index_name) + " to insert after.",
-                        ErrorCodes::LOGICAL_ERROR);
+                        ErrorCodes::BAD_ARGUMENTS);
 
             ++insert_it;
         }
@@ -338,7 +348,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
             if (if_exists)
                 return;
             throw Exception("Wrong index name. Cannot find index " + backQuote(index_name) + " to drop.",
-                            ErrorCodes::LOGICAL_ERROR);
+                            ErrorCodes::BAD_ARGUMENTS);
         }
 
         metadata.indices.indices.erase(erase_it);
@@ -378,13 +388,17 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
             if (if_exists)
                 return;
             throw Exception("Wrong constraint name. Cannot find constraint `" + constraint_name + "` to drop.",
-                    ErrorCodes::LOGICAL_ERROR);
+                    ErrorCodes::BAD_ARGUMENTS);
         }
         metadata.constraints.constraints.erase(erase_it);
     }
     else if (type == MODIFY_TTL)
     {
         metadata.ttl_for_table_ast = ttl;
+    }
+    else if (type == MODIFY_QUERY)
+    {
+        metadata.select = select;
     }
     else if (type == MODIFY_SETTING)
     {
@@ -464,6 +478,8 @@ String alterTypeToString(const AlterCommand::Type type)
         return "MODIFY TTL";
     case AlterCommand::Type::MODIFY_SETTING:
         return "MODIFY SETTING";
+    case AlterCommand::Type::MODIFY_QUERY:
+        return "MODIFY QUERY";
     }
     __builtin_unreachable();
 }

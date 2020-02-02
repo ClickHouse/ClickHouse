@@ -1193,4 +1193,4 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 - [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
 - [Отличие линейной от логистической регрессии](https://moredez.ru/q/51225972/)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/agg_functions/reference/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/agg_functions/reference/) <!--hide-->

@@ -149,7 +149,7 @@ bool ReadBufferAIO::nextImpl()
     return true;
 }
 
-off_t ReadBufferAIO::doSeek(off_t off, int whence)
+off_t ReadBufferAIO::seek(off_t off, int whence)
 {
     off_t new_pos_in_file;
 

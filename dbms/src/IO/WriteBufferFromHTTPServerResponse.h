@@ -5,6 +5,7 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Version.h>
+#include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBufferFromOStream.h>

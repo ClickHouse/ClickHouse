@@ -10,10 +10,8 @@
 #include <Common/Stopwatch.h>
 #include <Processors/ISource.h>
 #include <Common/setThreadName.h>
+#include <Interpreters/ProcessList.h>
 
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
-#include <sched.h>
-#endif
 
 namespace DB
 {
@@ -33,12 +31,13 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED;
 }
 
-PipelineExecutor::PipelineExecutor(Processors & processors_)
+PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
     : processors(processors_)
     , cancelled(false)
     , finished(false)
     , num_processing_executors(0)
     , expand_pipeline_task(nullptr)
+    , process_list_element(elem)
 {
     buildGraph();
 }
@@ -143,8 +142,7 @@ static void executeJob(IProcessor * processor)
     catch (Exception & exception)
     {
         if (checkCanAddAdditionalInfoToException(exception))
-            exception.addMessage("While executing " + processor->getName() + " ("
-                                 + toString(reinterpret_cast<std::uintptr_t>(processor)) + ") ");
+            exception.addMessage("While executing " + processor->getName());
         throw;
     }
 }
@@ -259,14 +257,15 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
     /// In this method we have ownership on node.
     auto & node = graph[pid];
 
-    bool need_traverse = false;
     bool need_expand_pipeline = false;
 
     std::vector<Edge *> updated_back_edges;
     std::vector<Edge *> updated_direct_edges;
 
     {
-        /// Stopwatch watch;
+#ifndef N_DEBUG
+        Stopwatch watch;
+#endif
 
         std::unique_lock<std::mutex> lock(std::move(node_lock));
 
@@ -280,7 +279,9 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
             return false;
         }
 
-        /// node.execution_state->preparation_time_ns += watch.elapsed();
+#ifndef N_DEBUG
+        node.execution_state->preparation_time_ns += watch.elapsed();
+#endif
 
         node.updated_input_ports.clear();
         node.updated_output_ports.clear();
@@ -290,13 +291,11 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
             case IProcessor::Status::NeedData:
             case IProcessor::Status::PortFull:
             {
-                need_traverse = true;
                 node.status = ExecStatus::Idle;
                 break;
             }
             case IProcessor::Status::Finished:
             {
-                need_traverse = true;
                 node.status = ExecStatus::Finished;
                 break;
             }
@@ -325,7 +324,6 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
             }
         }
 
-        if (need_traverse)
         {
             for (auto & edge_id : node.post_updated_input_ports)
             {
@@ -346,7 +344,6 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
         }
     }
 
-    if (need_traverse)
     {
         for (auto & edge : updated_direct_edges)
         {
@@ -469,13 +466,16 @@ void PipelineExecutor::execute(size_t num_threads)
             if (node.execution_state->exception)
                 std::rethrow_exception(node.execution_state->exception);
     }
-    catch (Exception & exception)
+    catch (...)
     {
-        if (checkCanAddAdditionalInfoToException(exception))
-            exception.addMessage("\nCurrent state:\n" + dumpPipeline());
-
+#ifndef N_DEBUG
+        LOG_TRACE(log, "Exception while executing query. Current state:\n" << dumpPipeline());
+#endif
         throw;
     }
+
+    if (process_list_element && process_list_element->isKilled())
+        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
 
     if (cancelled)
         return;
@@ -491,28 +491,15 @@ void PipelineExecutor::execute(size_t num_threads)
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads)
 {
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
-    /// Specify CPU core for thread if can.
-    /// It may reduce the number of context swithches.
-    /*
-    if (num_threads > 1)
-    {
-        cpu_set_t cpu_set;
-        CPU_ZERO(&cpu_set);
-        CPU_SET(thread_num, &cpu_set);
+#ifndef N_DEBUG
+    UInt64 total_time_ns = 0;
+    UInt64 execution_time_ns = 0;
+    UInt64 processing_time_ns = 0;
+    UInt64 wait_time_ns = 0;
 
-        if (sched_setaffinity(0, sizeof(cpu_set_t), &cpu_set) == -1)
-            LOG_TRACE(log, "Cannot set affinity for thread " << num_threads);
-    }
-    */
+    Stopwatch total_time_watch;
 #endif
 
-//    UInt64 total_time_ns = 0;
-//    UInt64 execution_time_ns = 0;
-//    UInt64 processing_time_ns = 0;
-//    UInt64 wait_time_ns = 0;
-
-//    Stopwatch total_time_watch;
     ExecutionState * state = nullptr;
 
     auto prepare_processor = [&](UInt64 pid, Queue & queue)
@@ -543,7 +530,13 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                     if (!task_queue.empty() && !threads_queue.empty() /*&& task_queue.quota() > threads_queue.size()*/)
                     {
-                        auto thread_to_wake = threads_queue.pop_any();
+                        auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num + 1 == num_threads ? 0 : (thread_num + 1));
+
+                        if (threads_queue.has(thread_to_wake))
+                            threads_queue.pop(thread_to_wake);
+                        else
+                            thread_to_wake = threads_queue.pop_any();
+
                         lock.unlock();
                         wake_up_executor(thread_to_wake);
                     }
@@ -584,9 +577,15 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             addJob(state);
 
             {
-                // Stopwatch execution_time_watch;
+#ifndef N_DEBUG
+                Stopwatch execution_time_watch;
+#endif
+
                 state->job();
-                // execution_time_ns += execution_time_watch.elapsed();
+
+#ifndef N_DEBUG
+                execution_time_ns += execution_time_watch.elapsed();
+#endif
             }
 
             if (state->exception)
@@ -595,7 +594,9 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             if (finished)
                 break;
 
-            // Stopwatch processing_time_watch;
+#ifndef N_DEBUG
+            Stopwatch processing_time_watch;
+#endif
 
             /// Try to execute neighbour processor.
             {
@@ -627,9 +628,15 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                         queue.pop();
                     }
 
-                    if (!threads_queue.empty() /* && task_queue.quota() > threads_queue.size()*/)
+                    if (!threads_queue.empty() && !finished /* && task_queue.quota() > threads_queue.size()*/)
                     {
-                        auto thread_to_wake = threads_queue.pop_any();
+                        auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num + 1 == num_threads ? 0 : (thread_num + 1));
+
+                        if (threads_queue.has(thread_to_wake))
+                            threads_queue.pop(thread_to_wake);
+                        else
+                            thread_to_wake = threads_queue.pop_any();
+
                         lock.unlock();
 
                         wake_up_executor(thread_to_wake);
@@ -641,19 +648,22 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                     doExpandPipeline(task, false);
             }
 
-            // processing_time_ns += processing_time_watch.elapsed();
+#ifndef N_DEBUG
+            processing_time_ns += processing_time_watch.elapsed();
+#endif
         }
     }
 
-//    total_time_ns = total_time_watch.elapsed();
-//    wait_time_ns = total_time_ns - execution_time_ns - processing_time_ns;
-/*
+#ifndef N_DEBUG
+    total_time_ns = total_time_watch.elapsed();
+    wait_time_ns = total_time_ns - execution_time_ns - processing_time_ns;
+
     LOG_TRACE(log, "Thread finished."
                      << " Total time: " << (total_time_ns / 1e9) << " sec."
                      << " Execution time: " << (execution_time_ns / 1e9) << " sec."
                      << " Processing time: " << (processing_time_ns / 1e9) << " sec."
                      << " Wait time: " << (wait_time_ns / 1e9) << "sec.");
-*/
+#endif
 }
 
 void PipelineExecutor::executeImpl(size_t num_threads)
@@ -755,10 +765,18 @@ String PipelineExecutor::dumpPipeline() const
     for (auto & node : graph)
     {
         if (node.execution_state)
-            node.processor->setDescription(
-                    "(" + std::to_string(node.execution_state->num_executed_jobs) + " jobs, execution time: "
-                    + std::to_string(node.execution_state->execution_time_ns / 1e9) + " sec., preparation time: "
-                    + std::to_string(node.execution_state->preparation_time_ns / 1e9) + " sec.)");
+        {
+            WriteBufferFromOwnString buffer;
+            buffer << "(" << node.execution_state->num_executed_jobs << " jobs";
+
+#ifndef N_DEBUG
+            buffer << ", execution time: " << node.execution_state->execution_time_ns / 1e9 << " sec.";
+            buffer << ", preparation time: " << node.execution_state->preparation_time_ns / 1e9 << " sec.";
+#endif
+
+            buffer << ")";
+            node.processor->setDescription(buffer.str());
+        }
     }
 
     std::vector<IProcessor::Status> statuses;
@@ -774,7 +792,7 @@ String PipelineExecutor::dumpPipeline() const
 
     WriteBufferFromOwnString out;
     printPipeline(processors, statuses, out);
-    out.finish();
+    out.finalize();
 
     return out.str();
 }

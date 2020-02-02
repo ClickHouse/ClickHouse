@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 
@@ -49,18 +50,23 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
         if (show_query->temporary)
             create_query = context.getCreateExternalTableQuery(show_query->table);
         else
+        {
+            context.checkAccess(AccessType::SHOW, show_query->database, show_query->table);
             create_query = context.getDatabase(show_query->database)->getCreateTableQuery(context, show_query->table);
+        }
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))
     {
         if (show_query->temporary)
             throw Exception("Temporary databases are not possible.", ErrorCodes::SYNTAX_ERROR);
-        create_query = context.getDatabase(show_query->database)->getCreateDatabaseQuery();
+        context.checkAccess(AccessType::SHOW, show_query->database);
+        create_query = context.getDatabase(show_query->database)->getCreateDatabaseQuery(context);
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDictionaryQuery>()))
     {
         if (show_query->temporary)
             throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
+        context.checkAccess(AccessType::SHOW, show_query->database, show_query->table);
         create_query = context.getDatabase(show_query->database)->getCreateDictionaryQuery(context, show_query->table);
     }
 

@@ -14,6 +14,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 
+#include <Access/AccessFlags.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include "registerTableFunctions.h"
@@ -72,6 +73,8 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const C
         throw Exception("Table function '" + getName() + "' requires 2 or more arguments: structure and values.",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+    context.checkAccess(AccessType::values);
+
     /// Parsing first argument as table structure and creating a sample block
     std::string structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
@@ -88,7 +91,7 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const C
 
     Block res_block = sample_block.cloneWithColumns(std::move(res_columns));
 
-    auto res = StorageValues::create(getDatabaseName(), table_name, columns, res_block);
+    auto res = StorageValues::create(StorageID(getDatabaseName(), table_name), columns, res_block);
     res->startup();
     return res;
 }

@@ -390,7 +390,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
                 offsets_to[i] = write_buffer.count();
             }
 
-            write_buffer.finish();
+            write_buffer.finalize();
             block.getByPosition(result).column = std::move(col_to);
         }
         else
@@ -430,7 +430,7 @@ struct ConvertImplGenericToString
             offsets_to[i] = write_buffer.count();
         }
 
-        write_buffer.finish();
+        write_buffer.finalize();
         block.getByPosition(result).column = std::move(col_to);
     }
 };

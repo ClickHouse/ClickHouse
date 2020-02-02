@@ -60,4 +60,4 @@ FROM WatchLog
 
 - [Виртуальные столбцы](index.md#table_engines-virtual_columns)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/merge/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/merge/) <!--hide-->

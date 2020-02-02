@@ -42,7 +42,7 @@
         <substitution>
             <name>num_rows</name>
             <values>
-                <value>10000000</value>
+                <value>1000000</value>
             </values>
         </substitution>
     </substitutions>
@@ -50,9 +50,9 @@
     <create_query>CREATE TABLE IF NOT EXISTS codec_{seq_type}_{type}_{codec} (n {type} CODEC({codec})) ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple();</create_query>
 
     <!-- Using limit to make query finite, allowing it to be run multiple times in a loop, reducing mean error -->
-    <query>INSERT INTO codec_seq_UInt64_{codec} (n) SELECT number FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
-    <query>INSERT INTO codec_mon_UInt64_{codec} (n) SELECT number*512+(rand()%512) FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
-    <query>INSERT INTO codec_rnd_UInt64_{codec} (n) SELECT rand() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
+    <query>INSERT INTO codec_seq_{type}_{codec} (n) SELECT number FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
+    <query>INSERT INTO codec_mon_{type}_{codec} (n) SELECT number*512+(intHash64(number)%512) FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
+    <query>INSERT INTO codec_rnd_{type}_{codec} (n) SELECT intHash64(number) FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
 
     <drop_query>DROP TABLE IF EXISTS codec_{seq_type}_{type}_{codec}</drop_query>
 
