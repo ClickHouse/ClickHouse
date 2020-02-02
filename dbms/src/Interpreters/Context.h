@@ -6,13 +6,13 @@
 #include <Core/Types.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
-#include <Interpreters/Users.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
 #include "config_core.h"
 #include <Storages/IStorage_fwd.h>
+#include <ext/scope_guard.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -43,8 +43,13 @@ namespace DB
 
 struct ContextShared;
 class Context;
+struct User;
+class AccessRightsContext;
 class QuotaContext;
 class RowPolicyContext;
+class AccessFlags;
+struct AccessRightsElement;
+class AccessRightsElements;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
@@ -91,6 +96,9 @@ class StoragePolicySelector;
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
+class Volume;
+using VolumePtr = std::shared_ptr<Volume>;
+
 #if USE_EMBEDDED_COMPILER
 
 class CompiledExpressionCache;
@@ -124,6 +132,16 @@ struct IHostContext
 
 using IHostContextPtr = std::shared_ptr<IHostContext>;
 
+/// Subscription for user's change. This subscription cannot be copied with the context,
+/// that's why we had to move it into a separate structure.
+struct SubscriptionForUserChange
+{
+    ext::scope_guard subscription;
+    SubscriptionForUserChange() {}
+    SubscriptionForUserChange(const SubscriptionForUserChange &) {}
+    SubscriptionForUserChange & operator =(const SubscriptionForUserChange &) { subscription = {}; return *this; }
+};
+
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
   *  and copied part (which can be its own for each session or query).
@@ -142,10 +160,11 @@ private:
     InputInitializer input_initializer_callback;
     InputBlocksReader input_blocks_reader;
 
+    std::shared_ptr<const User> user;
+    SubscriptionForUserChange subscription_for_user_change;
+    std::shared_ptr<const AccessRightsContext> access_rights;
     std::shared_ptr<QuotaContext> quota;           /// Current quota. By default - empty quota, that have no limits.
-    bool is_quota_management_allowed = false;      /// Whether the current user is allowed to manage quotas via SQL commands.
     std::shared_ptr<RowPolicyContext> row_policy;
-    bool is_row_policy_management_allowed = false; /// Whether the current user is allowed to manage row policies via SQL commands.
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     std::shared_ptr<const SettingsConstraints> settings_constraints;
@@ -195,16 +214,18 @@ public:
     ~Context();
 
     String getPath() const;
-    String getTemporaryPath() const;
     String getFlagsPath() const;
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
 
+    VolumePtr getTemporaryVolume() const;
+
     void setPath(const String & path);
-    void setTemporaryPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
+
+    VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -214,10 +235,21 @@ public:
 
     AccessControlManager & getAccessControlManager();
     const AccessControlManager & getAccessControlManager() const;
+    std::shared_ptr<const AccessRightsContext> getAccessRights() const { return std::atomic_load(&access_rights); }
+
+    /// Checks access rights.
+    /// Empty database means the current database.
+    void checkAccess(const AccessFlags & access) const;
+    void checkAccess(const AccessFlags & access, const std::string_view & database) const;
+    void checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table) const;
+    void checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
+    void checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
+    void checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
+    void checkAccess(const AccessRightsElement & access) const;
+    void checkAccess(const AccessRightsElements & access) const;
+
     std::shared_ptr<QuotaContext> getQuota() const { return quota; }
-    void checkQuotaManagementIsAllowed();
     std::shared_ptr<RowPolicyContext> getRowPolicy() const { return row_policy; }
-    void checkRowPolicyManagementIsAllowed();
 
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
@@ -228,12 +260,10 @@ public:
 
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
+    std::shared_ptr<const User> getUser() const { return user; }
 
     /// Used by MySQL Secure Password Authentication plugin.
-    std::shared_ptr<const User> getUser(const String & user_name);
-
-    /// Compute and set actual user settings, client_info.current_user should be set
-    void calculateUserSettings();
+    std::shared_ptr<const User> getUser(const String & user_name) const;
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
@@ -267,19 +297,9 @@ public:
     bool isDatabaseExist(const String & database_name) const;
     bool isDictionaryExists(const String & database_name, const String & dictionary_name) const;
     bool isExternalTableExist(const String & table_name) const;
-    bool hasDatabaseAccessRights(const String & database_name) const;
-
-    bool hasDictionaryAccessRights(const String & dictionary_name) const;
-
-    /** The parameter check_database_access_rights exists to not check the permissions of the database again,
-      * when assertTableDoesntExist or assertDatabaseExists is called inside another function that already
-      * made this check.
-      */
-    void assertTableDoesntExist(const String & database_name, const String & table_name, bool check_database_acccess_rights = true) const;
-    void assertDatabaseExists(const String & database_name, bool check_database_acccess_rights = true) const;
-
+    void assertTableDoesntExist(const String & database_name, const String & table_name) const;
+    void assertDatabaseExists(const String & database_name) const;
     void assertDatabaseDoesntExist(const String & database_name) const;
-    void checkDatabaseAccessRights(const std::string & database_name) const;
 
     const Scalars & getScalars() const;
     const Block & getScalar(const String & name) const;
@@ -584,11 +604,18 @@ public:
 
     MySQLWireContext mysql;
 private:
+    /// Compute and set actual user settings, client_info.current_user should be set
+    void calculateUserSettings();
+    void calculateAccessRights();
+
     /** Check if the current client has access to the specified database.
       * If access is denied, throw an exception.
       * NOTE: This method should always be called when the `shared->mutex` mutex is acquired.
       */
     void checkDatabaseAccessRightsImpl(const std::string & database_name) const;
+
+    template <typename... Args>
+    void checkAccessImpl(const Args &... args) const;
 
     void setProfile(const String & profile);
 

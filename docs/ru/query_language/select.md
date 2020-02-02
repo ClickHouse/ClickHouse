@@ -696,7 +696,7 @@ ClickHouse использует алгоритм [hash join](https://en.wikipedi
 
 #### Обработка пустых ячеек и NULL
 
-При слиянии таблиц могут появляться пустые ячейки. То, каким образом ClickHouse заполняет эти ячейки, определяется настройкой [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls).
+При слиянии таблиц могут появляться пустые ячейки. То, каким образом ClickHouse заполняет эти ячейки, определяется настройкой [join_use_nulls](../operations/settings/settings.md#join_use_nulls).
 
 Если ключами `JOIN` выступают поля типа [Nullable](../data_types/nullable.md), то строки, где хотя бы один из ключей имеет значение [NULL](syntax.md#null-literal), не соединяются.
 
@@ -1394,4 +1394,4 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
 
 В других случаях использование звёздочки является издевательством над системой, так как вместо преимуществ столбцовой СУБД вы получаете недостатки. То есть использовать звёздочку не рекомендуется.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/select/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/select/) <!--hide-->

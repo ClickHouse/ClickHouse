@@ -82,4 +82,4 @@ FROM jdbc_table
 
 - [JDBC table function](../../query_language/table_functions/jdbc.md).
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/jdbc/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/jdbc/) <!--hide-->

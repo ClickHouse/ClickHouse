@@ -1,10 +1,13 @@
 #include <gtest/gtest.h>
 
-#include <Disks/DiskLocal.h>
-#include <Disks/DiskMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include "gtest_disk.h"
 
+#if !__clang__
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wsuggest-override"
+#endif
 
 template <typename T>
 DB::DiskPtr createDisk();
@@ -25,6 +28,12 @@ DB::DiskPtr createDisk<DB::DiskLocal>()
 
 template <typename T>
 void destroyDisk(DB::DiskPtr & disk)
+{
+    disk.reset();
+}
+
+template <>
+void destroyDisk<DB::DiskMemory>(DB::DiskPtr & disk)
 {
     disk.reset();
 }
@@ -85,6 +94,41 @@ TYPED_TEST(DiskTest, writeFile)
 
     EXPECT_EQ("test data", data);
     EXPECT_EQ(data.size(), disk->getFileSize("test_file"));
+}
+
+
+TYPED_TEST(DiskTest, readFile)
+{
+    const auto & disk = this->getDisk();
+
+    {
+        std::unique_ptr<DB::WriteBuffer> out = disk->writeFile("test_file");
+        writeString("test data", *out);
+    }
+
+    // Test SEEK_SET
+    {
+        DB::String data;
+        std::unique_ptr<DB::SeekableReadBuffer> in = disk->readFile("test_file");
+        in->seek(5, SEEK_SET);
+        readString(data, *in);
+        EXPECT_EQ("data", data);
+    }
+
+    // Test SEEK_CUR
+    {
+        std::unique_ptr<DB::SeekableReadBuffer> in = disk->readFile("test_file");
+        String buf(4, '0');
+
+        in->readStrict(buf.data(), 4);
+        EXPECT_EQ("test", buf);
+
+        // Skip whitespace
+        in->seek(1, SEEK_CUR);
+
+        in->readStrict(buf.data(), 4);
+        EXPECT_EQ("data", buf);
+    }
 }
 
 

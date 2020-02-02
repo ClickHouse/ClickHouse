@@ -111,6 +111,12 @@ Volume::Volume(
                       << " < " << formatReadableSizeWithBinarySuffix(MIN_PART_SIZE) << ")");
 }
 
+DiskPtr Volume::getNextDisk()
+{
+    size_t start_from = last_used.fetch_add(1u, std::memory_order_relaxed);
+    size_t index = start_from % disks.size();
+    return disks[index];
+}
 
 ReservationPtr Volume::reserve(UInt64 expected_size)
 {

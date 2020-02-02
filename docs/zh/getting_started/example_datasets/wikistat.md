@@ -26,4 +26,4 @@ $ ls -1 /opt/wikistat/ | grep gz | while read i; do echo $i; gzip -cd /opt/wikis
 ```
 
 
-[Original article](https://clickhouse.yandex/docs/en/getting_started/example_datasets/wikistat/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets/wikistat/) <!--hide-->

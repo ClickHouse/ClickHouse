@@ -34,6 +34,7 @@
                 <value>TSKV</value>
                 <value>RowBinary</value>
                 <value>Native</value>
+                <value>Avro</value>
             </values>
         </substitution>
     </substitutions>

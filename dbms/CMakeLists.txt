@@ -177,7 +177,7 @@ elseif (COMPILER_GCC)
     # Warn for suspicious length parameters to certain string and memory built-in functions if the argument uses sizeof
     add_cxx_compile_options(-Wsizeof-pointer-memaccess)
     # Warn about overriding virtual functions that are not marked with the override keyword
-    # add_cxx_compile_options(-Wsuggest-override)
+    add_cxx_compile_options(-Wsuggest-override)
     # Warn whenever a switch statement has an index of boolean type and the case values are outside the range of a boolean type
     add_cxx_compile_options(-Wswitch-bool)
     # Warn if a self-comparison always evaluates to true or false
@@ -504,6 +504,10 @@ if (USE_POCO_NETSSL)
     dbms_target_link_libraries (PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
 endif()
 
+if (USE_POCO_JSON)
+    dbms_target_link_libraries (PRIVATE ${Poco_JSON_LIBRARY})
+endif()
+
 dbms_target_link_libraries (PRIVATE ${Poco_Foundation_LIBRARY})
 
 if (USE_ICU)
@@ -520,6 +524,11 @@ if (USE_PARQUET)
     if (NOT USE_INTERNAL_PARQUET_LIBRARY OR USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
         dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${PARQUET_INCLUDE_DIR} ${ARROW_INCLUDE_DIR})
     endif ()
+endif ()
+
+if (USE_AVRO)
+    dbms_target_link_libraries(PRIVATE ${AVROCPP_LIBRARY})
+    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${AVROCPP_INCLUDE_DIR})
 endif ()
 
 if (OPENSSL_CRYPTO_LIBRARY)
