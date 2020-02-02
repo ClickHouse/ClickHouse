@@ -1,18 +1,18 @@
 # Sampling Query Profiler
 
-ClickHouse runs sampling profiler that allows to analyse query execution. Using profiler you can find source code routines that used the most frequently during a query execution. You can trace CPU time and wall-clock time spent including idle time.
+ClickHouse runs sampling profiler that allows to analyze query execution. Using profiler you can find source code routines that used the most frequently during a query execution. You can trace CPU time and wall-clock time spent including idle time.
 
 To use profiler:
 
 - Setup the [trace_log](../server_settings/settings.md#server_settings-trace_log) section of the server configuration.
 
-    This section configures the [trace_log](../system_tables.md#system_tables-trace_log) system table containing the results of the profiler functioning. It is configured by default. Remember that data in this table is valid only for running server. After the server restart, ClickHouse doesn't clean up the table and all the stored virtual memory address became invalid.
+    This section configures the [trace_log](../system_tables.md#system_tables-trace_log) system table containing the results of the profiler functioning. It is configured by default. Remember that data in this table is valid only for running server. After the server restart, ClickHouse doesn't clean up the table and all the stored virtual memory address may become invalid.
 
-- Setup the [query_profiler_cpu_time_period_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) and [query_profiler_real_time_period_ns](../settings/settings.md#query_profiler_real_time_period_ns) settings.
+- Setup the [query_profiler_cpu_time_period_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) or [query_profiler_real_time_period_ns](../settings/settings.md#query_profiler_real_time_period_ns) settings. Both settings can be used simultaneously.
 
     These settings allow you to configure profiler timers. As these are the session settings, you can get different sampling frequency for the whole server, individual users or user profiles, for your interactive session, and for each individual query.
 
-Default sampling frequency is one sample per second. This frequency allows to catch enough precise information about ClickHouse cluster operating. At the same time, working with this frequency, profiler doesn't affect ClickHouse server's efficiency. If you need to profile each individual query try to use higher sampling frequency.
+Default sampling frequency is one sample per second and both CPU and real timers are enabled. This frequency allows to collect enough information about ClickHouse cluster. At the same time, working with this frequency, profiler doesn't affect ClickHouse server's performance. If you need to profile each individual query try to use higher sampling frequency.
 
 To analyze the `trace_log` system table:
 
@@ -23,19 +23,19 @@ To analyze the `trace_log` system table:
 
 - Use the `addressToLine`, `addressToSymbol` and `demangle` [introspection functions](../../query_language/functions/introspection.md) to get function names and their positions in ClickHouse code. To get a profile for some query, you need to aggregate data from the `trace_log` table. You can aggregate data by individual functions or by the whole stack traces.
 
-If you need to visualize `trace_log` info, try [flamegraph](../../interfaces/third-party/gui/#clickhouse-flamegraph).
+If you need to visualize `trace_log` info, try [flamegraph](../../interfaces/third-party/gui/#clickhouse-flamegraph) and [speedscope](https://github.com/laplab/clickhouse-speedscope).
 
 
 ## Example
 
 In this example we:
 
-- Filtering `trace_log` data by a query identifier and a current date.
-- Counting the same traces.
-- Using introspection functions, we getting a representation which consists of:
+- Filtering `trace_log` data by a query identifier and current date.
+- Aggregating by stack trace.
+- Using introspection functions, we will get a report of:
         
     - Names of symbols and corresponding source code functions.
-    - Positions of these functions in a code (a file name and a line number).
+    - Source code locations of these functions.
 
 ```sql
 SELECT 
