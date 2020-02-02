@@ -17,7 +17,7 @@ uint64_t getThreadId()
 #if OS_LINUX
         current_tid = syscall(SYS_gettid); /// This call is always successful. - man gettid
 #else
-        if (0 != pthread_threadid_np(nullptr, &current_tid)
+        if (0 != pthread_threadid_np(nullptr, &current_tid))
             throw std::logic_error("pthread_threadid_np returned error");
 #endif
     }
