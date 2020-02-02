@@ -1,17 +1,33 @@
 #pragma once
 
-#include <Disks/IDisk.h>
-
-#include <mutex>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
+#include <utility>
+#include <Disks/IDisk.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
-
+class DiskMemory;
 class ReadBuffer;
 class WriteBuffer;
 
+// This class is responsible to update files metadata after buffer is finalized.
+class WriteIndirectBuffer : public WriteBufferFromOwnString
+{
+public:
+    WriteIndirectBuffer(DiskMemory * disk_, String path_, WriteMode mode_) : disk(disk_), path(std::move(path_)), mode(mode_) {}
+
+    ~WriteIndirectBuffer() override;
+
+    void finalize() override;
+
+private:
+    DiskMemory * disk;
+    String path;
+    WriteMode mode;
+};
 
 /** Implementation of Disk intended only for testing purposes.
   * All filesystem objects are stored in memory and lost on server restart.
@@ -22,7 +38,7 @@ class WriteBuffer;
 class DiskMemory : public IDisk
 {
 public:
-    DiskMemory(const String & name_) : name(name_), disk_path("memory://" + name_ + '/') { }
+    DiskMemory(const String & name_) : name(name_), disk_path("memory://" + name_ + '/') {}
 
     const String & getName() const override { return name; }
 
@@ -60,12 +76,10 @@ public:
 
     void copyFile(const String & from_path, const String & to_path) override;
 
-    std::unique_ptr<ReadBuffer> readFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const override;
+    std::unique_ptr<SeekableReadBuffer> readFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const override;
 
-    std::unique_ptr<WriteBuffer> writeFile(
-        const String & path,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite) override;
+    std::unique_ptr<WriteBuffer>
+    writeFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, WriteMode mode = WriteMode::Rewrite) override;
 
     void remove(const String & path) override;
 
@@ -76,6 +90,8 @@ private:
     void replaceFileImpl(const String & from_path, const String & to_path);
 
 private:
+    friend class WriteIndirectBuffer;
+
     enum class FileType
     {
         File,
@@ -87,7 +103,8 @@ private:
         FileType type;
         String data;
 
-        explicit FileData(FileType type_) : type(type_) { }
+        FileData(FileType type_, String data_) : type(type_), data(std::move(data_)) {}
+        explicit FileData(FileType type_) : type(type_), data("") {}
     };
     using Files = std::unordered_map<String, FileData>; /// file path -> file data
 
