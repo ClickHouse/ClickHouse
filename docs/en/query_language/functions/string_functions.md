@@ -163,11 +163,11 @@ concat(s1, s2, ...)
 
 **Parameters**
 
-- `si` – string or key.
+Values of type String or FixedString.
 
 **Returned values**
 
-Returns the string that results from concatenating the arguments. 
+Returns the String that results from concatenating the arguments. 
 
 If any of argument values is `NULL`, `concat` returns `NULL`. 
 
@@ -191,30 +191,16 @@ Result:
 
 Same as [concat](#concat), the difference is that you need to ensure that `concat(s1, s2, ...) → sn` is injective, it will be used for optimization of GROUP BY.
 
-**Syntax** 
-
-```sql
-concatAssumeInjective(s1, s2, ...)
-```
-
-**Parameters**
-
-- `si` – string or key.
-
-**Returned values**
-
-Returns the string that results from concatenating the arguments after using GROUP BY.
-
-If any of argument values is `NULL`, `concatAssumeInjective` returns `NULL`. 
+The function is named "injective" if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
 
 **Example**
 
 Input table:
 
 ```sql
-CREATE TABLE key_val(`key1` String, `key2` String, `value` UInt32) ENGINE = TinyLog
-INSERT INTO key_val VALUES ('Hello, ','World',1)('Hello, ','World',2)('Hello, ','World!',3)('Hello',', World!',2)
-SELECT * from key_val
+CREATE TABLE key_val(`key1` String, `key2` String, `value` UInt32) ENGINE = TinyLog;
+INSERT INTO key_val VALUES ('Hello, ','World',1), ('Hello, ','World',2), ('Hello, ','World!',3), ('Hello',', World!',2);
+SELECT * from key_val;
 ```
 
 ```text
