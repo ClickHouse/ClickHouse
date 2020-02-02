@@ -807,9 +807,11 @@ SELECT replicate(1, ['a', 'b', 'c']);
 └───────────────────────────────┘
 ```
 
-## filesystemAvailable {#function-filesystemavailable}
+## filesystemAvailable {#filesystemavailable}
 
-Возвращает объем оставшегося места в файловой системе, в которой расположены файлы баз данных. Смотрите описание конфигурационного параметра сервера  [path](../../operations/server_settings/settings.md#server_settings-path).
+Возвращает объём доступного для записи данных места на файловой системе. Он всегда меньше общего свободного места ([filesystemFree](#filesystemfree)), потому что некоторое пространство зарезервировано для нужд операционной системы.
+
+**Синтаксис**
 
 ```sql
 filesystemAvailable()
@@ -817,24 +819,89 @@ filesystemAvailable()
 
 **Возвращаемое значение**
 
-- Объем свободного места.
+- Объём доступного для записи данных места в байтах.
 
-Тип — [UInt64](../../data_types/int_uint.md).
+Тип: [UInt64](../../data_types/int_uint.md).
 
 **Пример**
 
+Запрос:
+
 ```sql
-SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) AS "Type"
+SELECT formatReadableSize(filesystemAvailable()) AS "Available space", toTypeName(filesystemAvailable()) AS "Type";
 ```
+
+Ответ:
+
 ```text
-┌──Free space─┬─Type───┐
-│ 18152624128 │ UInt64 │
-└─────────────┴────────┘
+┌─Available space─┬─Type───┐
+│ 30.75 GiB       │ UInt64 │
+└─────────────────┴────────┘
 ```
 
-## filesystemCapacity
+## filesystemFree {#filesystemfree}
 
-Возвращает данные о ёмкости диска.
+Возвращает объём свободного места на файловой системе. Смотрите также `filesystemAvailable`.
+
+**Синтаксис**
+
+```sql
+filesystemFree()
+```
+
+**Возвращаемое значение**
+
+- Объем свободного места в байтах.
+
+Тип: [UInt64](../../data_types/int_uint.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT formatReadableSize(filesystemFree()) AS "Free space", toTypeName(filesystemFree()) AS "Type";
+```
+
+Ответ:
+
+```text
+┌─Free space─┬─Type───┐
+│ 32.39 GiB  │ UInt64 │
+└────────────┴────────┘
+```
+
+## filesystemCapacity {#filesystemcapacity}
+
+Возвращает информацию о ёмкости файловой системы в байтах. Для оценки должен быть настроен [путь](../../operations/server_settings/settings.md#server_settings-path) к каталогу с данными.
+
+**Синтаксис**
+
+```sql
+filesystemCapacity()
+```
+
+**Возвращаемое значение**
+
+- Информация о ёмкости файловой системы в байтах.
+
+Тип: [UInt64](../../data_types/int_uint.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesystemCapacity()) AS "Type"
+```
+
+Ответ:
+
+```text
+┌─Capacity──┬─Type───┐
+│ 39.32 GiB │ UInt64 │
+└───────────┴────────┘
+```
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
