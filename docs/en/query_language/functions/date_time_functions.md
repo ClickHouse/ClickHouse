@@ -64,22 +64,19 @@ Leap seconds are not accounted for.
 
 ## toUnixTimestamp {#to_unix_timestamp}
 
-Converts a date with time to a Unix timestamp.
+For DateTime argument: converts value to it's internal numeric representation (Unix Timestamp).
+For String argument: parse datetime from string according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
 
 **Syntax** 
 
 ```sql
-toUnixTimestamp(datetime[, timezone])
+toUnixTimestamp(datetime)
+toUnixTimestamp(str, [timezone])
 ```
-
-**Parameters**
-
-- `datetime` — Date with time. [String](../../data_types/string.md).
-- `timezone` — Optional time zone argument. [String](../../data_types/string.md).
 
 **Returned value**
 
-- Returns the number of seconds between the specified date and the Unix epoch (1970-01-01 00:00:00 UTC).
+- Returns the unix timestamp.
 
 Type: `UInt32`.
 
