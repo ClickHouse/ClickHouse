@@ -132,9 +132,9 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
 
     {
         /// init create query.
-
-        create_table_query->table = storage->getTableName();
-        create_table_query->database = storage->getDatabaseName();
+        auto table_id = storage->getStorageID();
+        create_table_query->table = table_id.table_name;
+        create_table_query->database = table_id.database_name;
 
         for (const auto & column_type_and_name : storage->getColumns().getOrdinary())
         {
@@ -144,7 +144,7 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
             columns_expression_list->children.emplace_back(column_declaration);
         }
 
-        auto mysql_table_name = std::make_shared<ASTLiteral>(storage->getTableName());
+        auto mysql_table_name = std::make_shared<ASTLiteral>(table_id.table_name);
         auto storage_engine_arguments = table_storage_define->as<ASTStorage>()->engine->arguments;
         storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, mysql_table_name);
     }
@@ -181,7 +181,7 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
     return time_t(local_tables_cache[table_name].first);
 }
 
-ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
+ASTPtr DatabaseMySQL::getCreateDatabaseQuery(const Context & /*context*/) const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->database = database_name;
@@ -239,7 +239,7 @@ void DatabaseMySQL::fetchLatestTablesStructureIntoCache(const std::map<String, U
         }
 
         local_tables_cache[table_name] = std::make_pair(table_modification_time, StorageMySQL::create(
-            database_name, table_name, std::move(mysql_pool), database_name_in_mysql, table_name,
+            StorageID(database_name, table_name), std::move(mysql_pool), database_name_in_mysql, table_name,
             false, "", ColumnsDescription{columns_name_and_type}, ConstraintsDescription{}, global_context));
     }
 }

@@ -31,6 +31,8 @@ public:
 
     bool isSortedOutput() const override { return true; }
 
+    Block getHeader() const override  { return result_header; }
+
 protected:
     /// Can return 1 more records than max_block_size.
     Block readImpl() override;
@@ -51,6 +53,9 @@ private:
 
     SharedBlockRowRef current_key;        /// The current primary key.
     SharedBlockRowRef next_key;           /// The primary key of the next row.
+
+    Block result_header;
+    ColumnNumbers converted_lc_columns;
 
     /** We support two different cursors - with Collation and without.
      *  Templates are used instead of polymorphic SortCursor and calls to virtual functions.

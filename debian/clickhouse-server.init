@@ -20,7 +20,16 @@ CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
 CLICKHOUSE_LOGDIR_USER=root
 CLICKHOUSE_DATADIR_OLD=/opt/clickhouse
 CLICKHOUSE_DATADIR=/var/lib/clickhouse
-LOCALSTATEDIR=/var/lock
+if [ -d "/var/lock" ]; then
+    LOCALSTATEDIR=/var/lock
+else
+    LOCALSTATEDIR=/run/lock
+fi
+
+if [ ! -d "$LOCALSTATEDIR" ]; then
+    mkdir -p "$LOCALSTATEDIR"
+fi
+
 CLICKHOUSE_BINDIR=/usr/bin
 CLICKHOUSE_CRONFILE=/etc/cron.d/clickhouse-server
 CLICKHOUSE_CONFIG=$CLICKHOUSE_CONFDIR/config.xml

@@ -14,7 +14,7 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 ## Доступные варианты установки
 
-### Из DEB пакетов {#from-deb-packages}
+### Из DEB пакетов {#install-from-deb-packages}
 
 Яндекс рекомендует использовать официальные скомпилированные `deb` пакеты для Debian или Ubuntu.
 
@@ -50,7 +50,6 @@ sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/
 
 Для использования наиболее свежих версий нужно заменить `stable` на `testing` (рекомендуется для тестовых окружений).
 
-Then run these commands to actually install packages:
 Для, собственно, установки пакетов необходимо выполнить следующие команды:
 
 ```bash
@@ -58,6 +57,35 @@ sudo yum install clickhouse-server clickhouse-client
 ```
 
 Также есть возможность установить пакеты вручную, скачав отсюда: <https://repo.yandex.ru/clickhouse/rpm/stable/x86_64>.
+
+### Из tgz архивов {#from-tgz-archives}
+
+Команда ClickHouse в Яндексе рекомендует использовать предкомпилированные бинарники из `tgz` архивов для всех дистрибутивов, где невозможна установка `deb` и `rpm` пакетов.
+
+Интересующую версию архивов можно скачать вручную с помощью `curl` или `wget` из репозитория <https://repo.yandex.ru/clickhouse/tgz/>.
+После этого архивы нужно распаковать и воспользоваться скриптами установки. Пример установки самой свежей версии:
+```bash
+export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
+curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
+curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-server-$LATEST_VERSION.tgz
+curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-client-$LATEST_VERSION.tgz
+
+tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
+sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
+
+tar -xzvf clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+sudo clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh
+
+tar -xzvf clickhouse-server-$LATEST_VERSION.tgz
+sudo clickhouse-server-$LATEST_VERSION/install/doinst.sh
+sudo /etc/init.d/clickhouse-server start
+
+tar -xzvf clickhouse-client-$LATEST_VERSION.tgz
+sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
+```
+
+Для production окружений рекомендуется использовать последнюю `stable`-версию. Её номер также можно найти на github с на вкладке https://github.com/ClickHouse/ClickHouse/tags c постфиксом `-stable`.
 
 ### Из Docker образа {#from-docker-image}
 
@@ -139,6 +167,6 @@ SELECT 1
 
 **Поздравляем, система работает!**
 
-Для дальнейших экспериментов можно попробовать загрузить один из тестовых наборов данных или пройти [пошаговое руководство для начинающих](https://clickhouse.yandex/tutorial.html).
+Для дальнейших экспериментов можно попробовать загрузить один из тестовых наборов данных или пройти [пошаговое руководство для начинающих](https://clickhouse.tech/tutorial.html).
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/getting_started/install/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/install/) <!--hide-->

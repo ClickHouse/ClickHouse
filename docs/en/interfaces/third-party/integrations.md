@@ -85,4 +85,4 @@
         - [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
 
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/third-party/integrations/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->

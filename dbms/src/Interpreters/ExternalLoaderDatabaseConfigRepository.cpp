@@ -1,6 +1,7 @@
 #include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
+#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {

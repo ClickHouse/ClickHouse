@@ -869,4 +869,4 @@ SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])
 └────────────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/array_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/array_functions/) <!--hide-->

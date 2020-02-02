@@ -49,7 +49,7 @@ public:
         const AllowedMovingPredicate & can_move,
         const std::lock_guard<std::mutex> & moving_parts_lock);
 
-    /// Copies part to selected reservation in detached folder. Throws exception if part alredy exists.
+    /// Copies part to selected reservation in detached folder. Throws exception if part already exists.
     std::shared_ptr<const MergeTreeDataPart> clonePart(const MergeTreeMoveEntry & moving_part) const;
 
     /// Replaces cloned part from detached directory into active data parts set.

@@ -6,7 +6,7 @@ By going through this tutorial you'll learn how to set up basic ClickHouse clust
 
 ## Single Node Setup
 
-To postpone complexities of distributed environment, we'll start with deploying ClickHouse on a single server or virtual machine. ClickHouse is usually installed from [deb](index.md#from-deb-packages) or [rpm](index.md#from-rpm-packages) packages, but there are [alternatives](index.md#from-docker-image) for the operating systems that do no support them.
+To postpone complexities of distributed environment, we'll start with deploying ClickHouse on a single server or virtual machine. ClickHouse is usually installed from [deb](index.md#install-from-deb-packages) or [rpm](index.md#from-rpm-packages) packages, but there are [alternatives](index.md#from-docker-image) for the operating systems that do no support them.
 
 For example, you have chosen `deb` packages and executed:
 ``` bash

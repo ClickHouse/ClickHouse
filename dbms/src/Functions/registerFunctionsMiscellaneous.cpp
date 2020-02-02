@@ -36,6 +36,7 @@ void registerFunctionHasColumnInTable(FunctionFactory &);
 void registerFunctionIsFinite(FunctionFactory &);
 void registerFunctionIsInfinite(FunctionFactory &);
 void registerFunctionIsNaN(FunctionFactory &);
+void registerFunctionIfNotFinite(FunctionFactory &);
 void registerFunctionThrowIf(FunctionFactory &);
 void registerFunctionVersion(FunctionFactory &);
 void registerFunctionUptime(FunctionFactory &);
@@ -93,6 +94,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionIsFinite(factory);
     registerFunctionIsInfinite(factory);
     registerFunctionIsNaN(factory);
+    registerFunctionIfNotFinite(factory);
     registerFunctionThrowIf(factory);
     registerFunctionVersion(factory);
     registerFunctionUptime(factory);

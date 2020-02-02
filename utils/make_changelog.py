@@ -196,7 +196,7 @@ def get_users_info(pull_requests, commits_info, token, max_retries, retry_timeou
         update_user(pull_request['user'])
 
     for commit_info in commits_info.values():
-        if 'author' in commit_info and commit_info['author'] is not None:
+        if 'committer' in commit_info and commit_info['committer'] is not None and 'login' in commit_info['committer']:
             update_user(commit_info['committer']['login'])
         else:
             logging.warning('Not found author for commit %s.', commit_info['html_url'])
@@ -455,7 +455,7 @@ def make_changelog(new_tag, prev_tag, pull_requests_nums, repo, repo_folder, sta
     # Remove double whitespaces and trailing whitespaces
     changelog = re.sub(r' {2,}| +$', r''.format(repo), changelog)
 
-    print(changelog)
+    print(changelog.encode('utf-8'))
 
 
 if __name__ == '__main__':

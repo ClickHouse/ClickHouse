@@ -12,7 +12,7 @@
 #include <Access/RowPolicyContext.h>
 #include <Access/AccessControlManager.h>
 #include <ext/range.h>
-
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {

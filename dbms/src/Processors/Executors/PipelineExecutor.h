@@ -13,6 +13,7 @@
 namespace DB
 {
 
+class QueryStatus;
 
 /// Executes query pipeline.
 class PipelineExecutor
@@ -24,7 +25,7 @@ public:
     /// During pipeline execution new processors can appear. They will be added to existing set.
     ///
     /// Explicit graph representation is built in constructor. Throws if graph is not correct.
-    explicit PipelineExecutor(Processors & processors_);
+    explicit PipelineExecutor(Processors & processors_, QueryStatus * elem = nullptr);
 
     /// Execute pipeline in multiple threads. Must be called once.
     /// In case of exception during execution throws any occurred.
@@ -149,32 +150,37 @@ private:
                 ++quota_;
         }
 
-        ExecutionState * pop(size_t thread_num)
+        size_t getAnyThreadWithTasks(size_t from_thread = 0)
         {
             if (size_ == 0)
-                throw Exception("TaskQueue is not empty.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("TaskQueue is empty.", ErrorCodes::LOGICAL_ERROR);
 
             for (size_t i = 0; i < queues.size(); ++i)
             {
-                if (!queues[thread_num].empty())
-                {
-                    ExecutionState * state = queues[thread_num].front();
-                    queues[thread_num].pop();
+                if (!queues[from_thread].empty())
+                    return from_thread;
 
-                    --size_;
-
-                    if (state->has_quota)
-                        ++quota_;
-
-                    return state;
-                }
-
-                ++thread_num;
-                if (thread_num >= queues.size())
-                    thread_num = 0;
+                ++from_thread;
+                if (from_thread >= queues.size())
+                    from_thread = 0;
             }
 
-            throw Exception("TaskQueue is not empty.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("TaskQueue is empty.", ErrorCodes::LOGICAL_ERROR);
+        }
+
+        ExecutionState * pop(size_t thread_num)
+        {
+            auto thread_with_tasks = getAnyThreadWithTasks(thread_num);
+
+            ExecutionState * state = queues[thread_with_tasks].front();
+            queues[thread_with_tasks].pop();
+
+            --size_;
+
+            if (state->has_quota)
+                ++quota_;
+
+            return state;
         }
 
         size_t size() const { return size_; }
@@ -236,6 +242,9 @@ private:
     /// Processor ptr -> node number
     using ProcessorsMap = std::unordered_map<const IProcessor *, UInt64>;
     ProcessorsMap processors_map;
+
+    /// Now it's used to check if query was killed.
+    QueryStatus * process_list_element = nullptr;
 
     /// Graph related methods.
     bool addEdges(UInt64 node);

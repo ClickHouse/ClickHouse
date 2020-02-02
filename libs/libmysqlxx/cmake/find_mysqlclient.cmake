@@ -1,4 +1,4 @@
-if(OS_LINUX)
+if(OS_LINUX AND OPENSSL_FOUND)
     option(ENABLE_MYSQL "Enable MySQL" ${ENABLE_LIBRARIES})
 else ()
     option(ENABLE_MYSQL "Enable MySQL" FALSE)

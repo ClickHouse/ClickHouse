@@ -17,8 +17,6 @@ class StorageMerge : public ext::shared_ptr_helper<StorageMerge>, public IStorag
     friend struct ext::shared_ptr_helper<StorageMerge>;
 public:
     std::string getName() const override { return "Merge"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     bool isRemote() const override;
 
@@ -42,13 +40,6 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override
-    {
-        table_name = new_table_name;
-        database_name = new_database_name;
-    }
-
-
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
 
     /// you need to add and remove columns in the sub-tables manually
@@ -58,17 +49,16 @@ public:
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override;
 
 private:
-    String table_name;
-    String database_name;
     String source_database;
     OptimizedRegularExpression table_name_regexp;
     Context global_context;
 
-    using StorageListWithLocks = std::list<std::pair<StoragePtr, TableStructureReadLockHolder>>;
+    using StorageWithLockAndName = std::tuple<StoragePtr, TableStructureReadLockHolder, String>;
+    using StorageListWithLocks = std::list<StorageWithLockAndName>;
 
     StorageListWithLocks getSelectedTables(const String & query_id) const;
 
-    StorageMerge::StorageListWithLocks getSelectedTables(const ASTPtr & query, bool has_virtual_column, bool get_lock, const String & query_id) const;
+    StorageMerge::StorageListWithLocks getSelectedTables(const ASTPtr & query, bool has_virtual_column, const String & query_id) const;
 
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
@@ -77,8 +67,7 @@ private:
 
 protected:
     StorageMerge(
-        const std::string & database_name_,
-        const std::string & table_name_,
+        const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const String & source_database_,
         const String & table_name_regexp_,
@@ -88,8 +77,8 @@ protected:
                          const Context & context, QueryProcessingStage::Enum processed_stage);
 
     BlockInputStreams createSourceStreams(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
-                                          const UInt64 max_block_size, const Block & header, const StoragePtr & storage,
-                                          const TableStructureReadLockHolder & struct_lock, Names & real_column_names,
+                                          const UInt64 max_block_size, const Block & header, const StorageWithLockAndName & storage_with_lock,
+                                          Names & real_column_names,
                                           Context & modified_context, size_t streams_num, bool has_table_virtual_column,
                                           bool concat_streams = false);
 

@@ -77,6 +77,31 @@ namespace CurrentMetrics
     extern const Metric VersionInteger;
 }
 
+namespace
+{
+
+void setupTmpPath(Logger * log, const std::string & path)
+{
+    LOG_DEBUG(log, "Setting up " << path << " to store temporary data in it");
+
+    Poco::File(path).createDirectories();
+
+    /// Clearing old temporary files.
+    Poco::DirectoryIterator dir_end;
+    for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
+    {
+        if (it->isFile() && startsWith(it.name(), "tmp"))
+        {
+            LOG_DEBUG(log, "Removing old temporary file " << it->path());
+            it->remove();
+        }
+        else
+            LOG_DEBUG(log, "Skipped file in temporary path " << it->path());
+    }
+}
+
+}
+
 namespace DB
 {
 
@@ -277,15 +302,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     Poco::File(path + "data/" + default_database).createDirectories();
     Poco::File(path + "metadata/" + default_database).createDirectories();
 
-    /// Check that we have read and write access to all data paths
-    auto disk_selector = global_context->getDiskSelector();
-    for (const auto & [name, disk] : disk_selector.getDisksMap())
-    {
-        Poco::File disk_path(disk->getPath());
-        if (!disk_path.canRead() || !disk_path.canWrite())
-            throw Exception("There is no RW access to disk " + name + " (" + disk->getPath() + ")", ErrorCodes::PATH_ACCESS_DENIED);
-    }
-
     StatusFile status{path + "status"};
 
     SCOPE_EXIT({
@@ -340,22 +356,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
     DateLUT::instance();
     LOG_TRACE(log, "Initialized DateLUT with time zone '" << DateLUT::instance().getTimeZone() << "'.");
 
-    /// Directory with temporary data for processing of heavy queries.
+
+    /// Storage with temporary data for processing of heavy queries.
     {
         std::string tmp_path = config().getString("tmp_path", path + "tmp/");
-        global_context->setTemporaryPath(tmp_path);
-        Poco::File(tmp_path).createDirectories();
-
-        /// Clearing old temporary files.
-        Poco::DirectoryIterator dir_end;
-        for (Poco::DirectoryIterator it(tmp_path); it != dir_end; ++it)
-        {
-            if (it->isFile() && startsWith(it.name(), "tmp"))
-            {
-                LOG_DEBUG(log, "Removing old temporary file " << it->path());
-                it->remove();
-            }
-        }
+        std::string tmp_policy = config().getString("tmp_policy", "");
+        const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy);
+        for (const DiskPtr & disk : volume->disks)
+            setupTmpPath(log, disk->getPath());
     }
 
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
@@ -445,8 +453,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
-            setTextLog(global_context->getTextLog());
-            buildLoggers(*config, logger());
+            // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
+            // in a lot of places. For now, disable updating log configuration without server restart.
+            //setTextLog(global_context->getTextLog());
+            //buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
 
@@ -554,8 +564,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     ///
     /// It also cannot work with sanitizers.
     /// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)
-    /// And they do unwiding frequently (on every malloc/free, thread/mutex operations, etc).
-    /// They change %rbp during unwinding and it confuses libunwind if signal comes during sanitizer unwiding
+    /// And they do unwinding frequently (on every malloc/free, thread/mutex operations, etc).
+    /// They change %rbp during unwinding and it confuses libunwind if signal comes during sanitizer unwinding
     ///  and query profiler decide to unwind stack with libunwind at this moment.
     ///
     /// Symptoms: you'll get silent Segmentation Fault - without sanitizer message and without usual ClickHouse diagnostics.
@@ -724,7 +734,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setSendTimeout(settings.http_send_timeout);
                 auto handler_factory = createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPHandler-factory");
                 if (config().has("prometheus") && config().getInt("prometheus.port", 0) == 0)
-                    handler_factory->addHandler<PrometeusHandlerFactory>(async_metrics);
+                    handler_factory->addHandler<PrometheusHandlerFactory>(async_metrics);
 
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     handler_factory,
@@ -854,7 +864,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 auto handler_factory = new HTTPRequestHandlerFactoryMain(*this, "PrometheusHandler-factory");
-                handler_factory->addHandler<PrometeusHandlerFactory>(async_metrics);
+                handler_factory->addHandler<PrometheusHandlerFactory>(async_metrics);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     handler_factory,
                     server_pool,
@@ -870,6 +880,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         for (auto & server : servers)
             server->start();
+
+        {
+            String level_str = config().getString("text_log.level", "");
+            int level = level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(level_str);
+            setTextLog(global_context->getTextLog(), level);
+        }
+        buildLoggers(config(), logger());
 
         main_config_reloader->start();
         users_config_reloader->start();

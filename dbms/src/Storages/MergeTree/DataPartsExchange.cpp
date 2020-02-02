@@ -1,8 +1,6 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
-#include <Storages/IStorage.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
-#include <Common/typeid_cast.h>
 #include <IO/HTTPCommon.h>
 #include <Poco/File.h>
 #include <ext/scope_guard.h>
@@ -53,9 +51,6 @@ std::string Service::getId(const std::string & node_id) const
 
 void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*body*/, WriteBuffer & out, Poco::Net::HTTPServerResponse & response)
 {
-    if (blocker.isCancelled())
-        throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
-
     String client_protocol_version = params.get("client_protocol_version", REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE);
 
 
@@ -88,15 +83,11 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     ++data.current_table_sends;
     SCOPE_EXIT({--data.current_table_sends;});
 
-    StoragePtr owned_storage = storage.lock();
-    if (!owned_storage)
-        throw Exception("The table was already dropped", ErrorCodes::UNKNOWN_TABLE);
-
     LOG_TRACE(log, "Sending part " << part_name);
 
     try
     {
-        auto storage_lock = owned_storage->lockStructureForShare(false, RWLockImpl::NO_QUERY);
+        auto storage_lock = data.lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
         MergeTreeData::DataPartPtr part = findPart(part_name);
 

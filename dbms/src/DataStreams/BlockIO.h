@@ -66,6 +66,8 @@ struct BlockIO
         finish_callback         = rhs.finish_callback;
         exception_callback      = rhs.exception_callback;
 
+        null_format             = rhs.null_format;
+
         return *this;
     }
 };

@@ -9,4 +9,4 @@ Other settings are described in the "[Settings](../settings/index.md#settings)" 
 Before studying the settings, read the [Configuration files](../configuration_files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
 
 
-[Original article](https://clickhouse.yandex/docs/en/operations/server_settings/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/server_settings/) <!--hide-->

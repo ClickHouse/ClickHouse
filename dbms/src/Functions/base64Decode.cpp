@@ -8,7 +8,7 @@ namespace DB
 {
 void registerFunctionBase64Decode(FunctionFactory & factory)
 {
-    initializeBase64();
+    tb64ini(0, 1);
     factory.registerFunction<FunctionBase64Conversion<Base64Decode>>();
 }
 }

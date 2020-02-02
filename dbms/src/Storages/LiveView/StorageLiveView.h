@@ -48,11 +48,13 @@ friend class LiveViewBlockOutputStream;
 public:
     ~StorageLiveView() override;
     String getName() const override { return "LiveView"; }
-    String getTableName() const override { return table_name; }
-    String getDatabaseName() const override { return database_name; }
-    String getSelectDatabaseName() const { return select_database_name; }
-    String getSelectTableName() const { return select_table_name; }
-    StoragePtr getParentStorage() const { return parent_storage; }
+    bool isView() const override { return true; }
+    StorageID getSelectTableID() const { return select_table_id; }
+    StorageID getBlocksStorageID() const
+    {
+        return StorageID("", getStorageID().table_name + "_blocks");
+    }
+    StoragePtr getParentStorage() const { return global_context.getTable(select_table_id); }
 
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
@@ -64,12 +66,7 @@ public:
             return inner_subquery->clone();
         return nullptr;
     }
-    ASTPtr getInnerBlocksQuery() const
-    {
-        if (inner_blocks_query)
-            return inner_blocks_query->clone();
-        return nullptr;
-    }
+    ASTPtr getInnerBlocksQuery();
 
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
@@ -170,19 +167,15 @@ public:
         const Context & context);
 
 private:
-    String select_database_name;
-    String select_table_name;
-    String table_name;
-    String database_name;
+    StorageID select_table_id = StorageID::createEmpty();     /// Will be initialized in constructor
     ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
     ASTPtr inner_subquery; /// stored query's innermost subquery if any
     ASTPtr inner_blocks_query; /// query over the mergeable blocks to produce final result
     Context & global_context;
     std::unique_ptr<Context> live_view_context;
-    StoragePtr parent_storage;
 
     bool is_temporary = false;
-    /// Mutex to protect access to sample block
+    /// Mutex to protect access to sample block and inner_blocks_query
     mutable std::mutex sample_block_lock;
     mutable Block sample_block;
 
@@ -210,8 +203,7 @@ private:
     UInt64 temporary_live_view_timeout;
 
     StorageLiveView(
-        const String & table_name_,
-        const String & database_name_,
+        const StorageID & table_id_,
         Context & local_context,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns
