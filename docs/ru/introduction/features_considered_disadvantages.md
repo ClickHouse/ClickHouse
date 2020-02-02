@@ -5,4 +5,4 @@
 3. Разреженный индекс делает ClickHouse плохо пригодным для точечных чтений одиночных строк по своим
 ключам.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/introduction/features_considered_disadvantages/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/introduction/features_considered_disadvantages/) <!--hide-->

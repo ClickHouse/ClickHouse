@@ -196,7 +196,7 @@ def get_users_info(pull_requests, commits_info, token, max_retries, retry_timeou
         update_user(pull_request['user'])
 
     for commit_info in commits_info.values():
-        if 'author' in commit_info and commit_info['author'] is not None:
+        if 'committer' in commit_info and commit_info['committer'] is not None and 'login' in commit_info['committer']:
             update_user(commit_info['committer']['login'])
         else:
             logging.warning('Not found author for commit %s.', commit_info['html_url'])

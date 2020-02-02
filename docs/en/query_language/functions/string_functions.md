@@ -387,4 +387,4 @@ Returns the CRC64 checksum of a string, using CRC-64-ECMA polynomial.
 
 The result type is UInt64.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/string_functions/) <!--hide-->

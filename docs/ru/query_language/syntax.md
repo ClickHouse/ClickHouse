@@ -168,4 +168,4 @@ Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception
 Список выражений - одно выражение или несколько выражений через запятую.
 Функции и операторы, в свою очередь, в качестве аргументов, могут иметь произвольные выражения.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/syntax/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/syntax/) <!--hide-->

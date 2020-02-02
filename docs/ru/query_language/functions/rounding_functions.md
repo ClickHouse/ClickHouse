@@ -169,4 +169,4 @@ roundBankers(10.755, 2) = 11,76
 ## roundAge(num)
 Принимает число. Если число меньше 18 - возвращает 0. Иначе округляет число вниз до чисел из набора: 18, 25, 35, 45, 55. Эта функция специфична для Яндекс.Метрики и предназначена для реализации отчёта по возрасту посетителей.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/rounding_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/rounding_functions/) <!--hide-->
