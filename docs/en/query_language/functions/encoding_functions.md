@@ -60,13 +60,87 @@ Result:
 └───────┘
 ```
 
-## hex
+## hex {#hex}
 
-Accepts arguments of types: `String`, `unsigned integer`, `float`, `decimal`, `Date`, or `DateTime`. Returns a string containing the argument's hexadecimal representation. Uses uppercase letters `A-F`. Does not use `0x` prefixes or `h` suffixes. For strings, all bytes are simply encoded as two hexadecimal numbers. Numbers are converted to big endian ("human readable") format. For numbers, older zeros are trimmed, but only by entire bytes. For example, `hex (1) = '01'`. `Date` is encoded as the number of days since the beginning of the Unix epoch. `DateTime` is encoded as the number of seconds since the beginning of the Unix epoch. `float` and `decimal` is encoded as their hexadecimal representation in memory.
+Returns a string containing the argument's hexadecimal representation. 
+
+**Syntax**
+
+```sql
+hex(arg)
+```
+
+The function is using uppercase letters `A-F` and not using any prefixes (like `0x`) or suffixes (like `h`).
+
+For integer arguments, it prints hex digits ("nibbles") from the most significant to least significant (big endian or "human readable" order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints both digits of every byte even if leading digit is zero.
+
+Example:
+
+**Example**
+
+Query:
+
+```sql
+SELECT hex(1);
+```
+
+Result:
+
+```text
+01
+```
+
+Values of type `Date` and `DateTime` are formatted as corresponding integers (the number of days since Epoch for Date and the value of Unix Timestamp for DateTime).
+
+For `String` and `FixedString`, all bytes are simply encoded as two hexadecimal numbers. Zero bytes are not omitted.
+
+Values of floating point and Decimal types are encoded as their representation in memory. As we support little endian architecture, they are encoded in little endian. Zero leading/trailing bytes are not omitted.
+
+**Parameters**
+
+- `arg` — A value to convert to hexadecimal. Types: [String](../../data_types/string.md), [UInt](../../data_types/int_uint.md), [Float](../../data_types/float.md), [Decimal](../../data_types/decimal.md), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+
+**Returned value**
+
+- A string with the hexadecimal representation of the argument.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT hex(toFloat32(number)) as hex_presentation FROM numbers(15, 2);
+```
+
+Result:
+
+```text
+┌─hex_presentation─┐
+│ 00007041         │
+│ 00008041         │
+└──────────────────┘
+```
+
+Query:
+
+```sql
+SELECT hex(toFloat64(number)) as hex_presentation FROM numbers(15, 2);
+```
+
+Result:
+
+```text
+┌─hex_presentation─┐
+│ 0000000000002E40 │
+│ 0000000000003040 │
+└──────────────────┘
+```
 
 ## unhex(str)
 
-Accepts a string containing any number of hexadecimal digits, and returns a string containing the corresponding bytes. Supports both uppercase and lowercase letters A-F. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the younger half of the 00-0F byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn't thrown).
+Accepts a string containing any number of hexadecimal digits, and returns a string containing the corresponding bytes. Supports both uppercase and lowercase letters A-F. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the 00-0F byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn't thrown).
 If you want to convert the result to a number, you can use the 'reverse' and 'reinterpretAsType' functions.
 
 ## UUIDStringToNum(str)
