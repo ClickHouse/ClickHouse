@@ -8,6 +8,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Access/AccessRightsContext.h>
 #include <Storages/System/StorageSystemDictionaries.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Columns/ColumnString.h>
@@ -47,6 +48,9 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
 
 void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & /*query_info*/) const
 {
+    const auto access_rights = context.getAccessRights();
+    const bool check_access_for_dictionaries = !access_rights->isGranted(AccessType::SHOW);
+
     const auto & external_dictionaries = context.getExternalDictionariesLoader();
     for (const auto & load_result : external_dictionaries.getCurrentLoadResults())
     {
@@ -67,6 +71,10 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
                 short_name = short_name.substr(database.length() + 1);
             }
         }
+
+        if (check_access_for_dictionaries
+            && !access_rights->isGranted(AccessType::SHOW, database.empty() ? IDictionary::NO_DATABASE_TAG : database, short_name))
+            continue;
 
         size_t i = 0;
         res_columns[i++]->insert(database);
