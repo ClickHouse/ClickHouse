@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Common/CurrentMetrics.h>
-#include <common/getThreadNumber.h>
+#include <common/getThreadId.h>
 #include <Common/CurrentThread.h>
 
 
@@ -20,7 +20,7 @@ MergeListElement::MergeListElement(const std::string & database_, const std::str
     , result_part_path{future_part.path}
     , result_data_version{future_part.part_info.getDataVersion()}
     , num_parts{future_part.parts.size()}
-    , thread_id{getThreadNumber()}
+    , thread_id{getThreadId()}
 {
     for (const auto & source_part : future_part.parts)
     {

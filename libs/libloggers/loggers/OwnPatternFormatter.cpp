@@ -7,7 +7,7 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <sys/time.h>
 #include <Common/CurrentThread.h>
-#include <common/getThreadNumber.h>
+#include <common/getThreadId.h>
 #include "Loggers.h"
 
 
