@@ -1147,4 +1147,28 @@ Enable order-preserving parallel parsing of data formats. Supported only for TSV
 
 The minimum chunk size in bytes, which each thread will parse in parallel.
 
+## output_format_avro_codec {#settings-output_format_avro_codec}
+
+Sets the compression codec used for output Avro file.
+
+Type: string
+
+Possible values:
+
+- `null` — No compression
+- `deflate` — Compress with Deflate (zlib)
+- `snappy` — Compress with [Snappy](https://google.github.io/snappy/)
+
+Default value: `snappy` (if available) or `deflate`.
+
+## output_format_avro_sync_interval {#settings-output_format_avro_sync_interval}
+
+Sets minimum data size (in bytes) between synchronization markers for output Avro file.
+
+Type: unsigned int
+
+Possible values: 32 (32 bytes) - 1073741824 (1 GiB)
+
+Default value: 32768 (32 KiB)
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
