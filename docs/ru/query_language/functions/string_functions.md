@@ -359,4 +359,4 @@ SELECT trimBoth('     Hello, world!     ')
 
 Тип результата - UInt64.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/string_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_functions/) <!--hide-->

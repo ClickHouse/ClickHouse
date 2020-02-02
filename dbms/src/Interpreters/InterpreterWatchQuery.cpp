@@ -13,6 +13,7 @@ limitations under the License. */
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
+#include <Access/AccessFlags.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 
@@ -61,6 +62,7 @@ BlockIO InterpreterWatchQuery::execute()
 
     /// List of columns to read to execute the query.
     Names required_columns = storage->getColumns().getNamesOfPhysical();
+    context.checkAccess(AccessType::SELECT, database, table, required_columns);
 
     /// Get context settings for this query
     const Settings & settings = context.getSettingsRef();

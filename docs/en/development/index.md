@@ -1,4 +1,4 @@
 # ClickHouse Development
 
 
-[Original article](https://clickhouse.yandex/docs/en/development/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/development/) <!--hide-->

@@ -110,4 +110,4 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 ```
 
 
-[来源文章](https://clickhouse.yandex/docs/zh/interfaces/cli/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/zh/interfaces/cli/) <!--hide-->

@@ -276,8 +276,8 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             if (part->isEmpty())
                 continue;
 
-            if (minmax_idx_condition && !minmax_idx_condition->mayBeTrueInParallelogram(
-                    part->minmax_idx.parallelogram, data.minmax_idx_column_types))
+            if (minmax_idx_condition && !minmax_idx_condition->checkInParallelogram(
+                    part->minmax_idx.parallelogram, data.minmax_idx_column_types).can_be_true)
                 continue;
 
             if (max_block_numbers_to_read)
@@ -1272,8 +1272,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
         settings.merge_tree_min_rows_for_seek,
         settings.merge_tree_min_bytes_for_seek,
-        part->index_granularity_info.index_granularity_bytes,
-        part->index_granularity_info.fixed_index_granularity);
+        part->index_granularity_info.fixed_index_granularity,
+        part->index_granularity_info.index_granularity_bytes);
 
     size_t granules_dropped = 0;
 
