@@ -57,7 +57,7 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
         MarkRanges{MarkRange(0, data_part->getMarksCount())},
         /* bytes to use AIO (this is hack) */
         read_with_direct_io ? 1UL : std::numeric_limits<size_t>::max(),
-        DBMS_DEFAULT_BUFFER_SIZE);
+        0, DBMS_DEFAULT_BUFFER_SIZE);
 }
 
 

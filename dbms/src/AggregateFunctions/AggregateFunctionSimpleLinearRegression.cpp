@@ -4,6 +4,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 
 #include <Core/TypeListNumber.h>
+#include "registerAggregateFunctions.h"
 
 namespace DB
 {

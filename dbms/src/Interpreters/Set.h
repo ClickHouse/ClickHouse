@@ -45,7 +45,6 @@ public:
     /** Create a Set from expression (specified literally in the query).
       * 'types' - types of what are on the left hand side of IN.
       * 'node' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
-      * 'fill_set_elements' - if true, fill vector of elements. For primary key to work.
       */
     void createFromAST(const DataTypes & types, ASTPtr node, const Context & context);
 
@@ -56,6 +55,10 @@ public:
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
     bool insertFromBlock(const Block & block);
+    /// Call after all blocks were inserted. To get the information that set is already created.
+    void finishInsert() { is_created = true; }
+
+    bool isCreated() const { return is_created; }
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
@@ -110,6 +113,9 @@ private:
 
     /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
     bool fill_set_elements;
+
+    /// Check if set contains all the data.
+    bool is_created = false;
 
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(
@@ -174,7 +180,7 @@ using Sets = std::vector<SetPtr>;
 class IFunction;
 using FunctionPtr = std::shared_ptr<IFunction>;
 
-/// Class for mayBeTrueInRange function.
+/// Class for checkInRange function.
 class MergeTreeSetIndex
 {
 public:
@@ -192,7 +198,7 @@ public:
 
     size_t size() const { return ordered_set.at(0)->size(); }
 
-    BoolMask mayBeTrueInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
+    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
 
 private:
     Columns ordered_set;

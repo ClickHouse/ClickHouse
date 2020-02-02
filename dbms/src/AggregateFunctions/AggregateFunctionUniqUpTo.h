@@ -48,7 +48,8 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
     }
 
     /// threshold - for how many elements there is room in a `data`.
-    void insert(T x, UInt8 threshold)
+    /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
+    void ALWAYS_INLINE insert(T x, UInt8 threshold)
     {
         /// The state is already full - nothing needs to be done.
         if (count > threshold)
@@ -100,7 +101,8 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
             rb.read(reinterpret_cast<char *>(data), count * sizeof(data[0]));
     }
 
-    void add(const IColumn & column, size_t row_num, UInt8 threshold)
+    /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
+    void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
         insert(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], threshold);
     }
@@ -111,7 +113,8 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 template <>
 struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UInt64>
 {
-    void add(const IColumn & column, size_t row_num, UInt8 threshold)
+    /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
+    void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
         /// Keep in mind that calculations are approximate.
         StringRef value = column.getDataAt(row_num);
@@ -122,7 +125,8 @@ struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UIn
 template <>
 struct AggregateFunctionUniqUpToData<UInt128> : AggregateFunctionUniqUpToData<UInt64>
 {
-    void add(const IColumn & column, size_t row_num, UInt8 threshold)
+    /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
+    void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
         UInt128 value = assert_cast<const ColumnVector<UInt128> &>(column).getData()[row_num];
         insert(sipHash64(value), threshold);
@@ -155,7 +159,8 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
+    void ALWAYS_INLINE add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         this->data(place).add(*columns[0], row_num, threshold);
     }
@@ -179,8 +184,6 @@ public:
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -243,8 +246,6 @@ public:
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 

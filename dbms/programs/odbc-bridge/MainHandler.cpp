@@ -35,7 +35,7 @@ using PocoSessionPoolConstructor = std::function<std::shared_ptr<Poco::Data::Ses
 /** Is used to adjust max size of default Poco thread pool. See issue #750
   * Acquire the lock, resize pool and construct new Session.
   */
-std::shared_ptr<Poco::Data::SessionPool> createAndCheckResizePocoSessionPool(PocoSessionPoolConstructor pool_constr)
+static std::shared_ptr<Poco::Data::SessionPool> createAndCheckResizePocoSessionPool(PocoSessionPoolConstructor pool_constr)
 {
     static std::mutex mutex;
 
@@ -115,7 +115,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     catch (const Exception & ex)
     {
         process_error("Invalid 'columns' parameter in request body '" + ex.message() + "'");
-        LOG_WARNING(log, ex.getStackTrace().toString());
+        LOG_WARNING(log, ex.getStackTraceString());
         return;
     }
 
@@ -138,7 +138,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     {
         auto message = getCurrentExceptionMessage(true);
         response.setStatusAndReason(
-            Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR); // can't call process_error, bacause of too soon response sending
+            Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR); // can't call process_error, because of too soon response sending
         writeStringBinary(message, out);
         tryLogCurrentException(log);
     }

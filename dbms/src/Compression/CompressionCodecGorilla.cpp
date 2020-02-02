@@ -112,8 +112,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
         dest += sizeof(prev_value);
     }
 
-    WriteBuffer buffer(dest, dest_end - dest);
-    BitWriter writer(buffer);
+    BitWriter writer(dest, dest_end - dest);
 
     while (source < source_end)
     {
@@ -148,7 +147,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     writer.flush();
 
-    return sizeof(items_count) + sizeof(prev_value) + buffer.count();
+    return sizeof(items_count) + sizeof(prev_value) + writer.count() / 8;
 }
 
 template <typename T>
@@ -174,8 +173,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
         dest += sizeof(prev_value);
     }
 
-    ReadBufferFromMemory buffer(source, source_size - sizeof(items_count) - sizeof(prev_value));
-    BitReader reader(buffer);
+    BitReader reader(source, source_size - sizeof(items_count) - sizeof(prev_value));
 
     binary_value_info prev_xored_info{0, 0, 0};
 

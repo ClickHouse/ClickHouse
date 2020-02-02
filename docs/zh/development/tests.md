@@ -166,7 +166,7 @@ clickhouse benchmark --concurrency 16 < queries.tsv
 当我们扩展 ClickHouse 网络协议时，我们手动测试旧的 clickhouse-client 与新的 clickhouse-server 和新的clickhouse-client 一起使用旧的 clickhouse-server (只需从相应的包中运行二进制文件)
 
 
-## 来自编译器的帮助
+## 来自编译器的提示
 
 ClickHouse 主要的代码 (位于`dbms`目录中) 使用 `-Wall -Wextra -Werror` 构建，并带有一些其他已启用的警告。 虽然没有为第三方库启用这些选项。
 
@@ -221,7 +221,7 @@ Yandex Cloud 部门的人员从安全角度对 ClickHouse 功能进行了一些�
 
 ## 代码风格
 
-代码风格在[这里](https://clickhouse.yandex/docs/en/development/style/) 有说明。
+代码风格在[这里](https://clickhouse.tech/docs/en/development/style/) 有说明。
 
 要检查一些常见的样式冲突，您可以使用 `utils/check-style` 脚本。
 
@@ -254,4 +254,4 @@ Yandex Cloud 部门的人员从安全角度对 ClickHouse 功能进行了一些�
 
 在 Jenkins，我们运行字典测试，指标B2B测试。 我们使用 Jenkins 来准备和发布版本。 Jenkins是一种传统的技术，所有的工作将被转移到沙箱中。
 
-[来源文章](https://clickhouse.yandex/docs/zh/development/tests/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/zh/development/tests/) <!--hide-->

@@ -37,6 +37,13 @@ SELECT '';
 SELECT joinGet('join_any_left_null', 's', number) FROM numbers(3);
 SELECT '';
 
+-- Using identifier as the first argument
+
+SELECT joinGet(join_any_left, 's', number) FROM numbers(3);
+SELECT '';
+SELECT joinGet(test.join_any_left_null, 's', number) FROM numbers(3);
+SELECT '';
+
 CREATE TABLE test.join_string_key (s String, x Array(UInt8), k UInt64) ENGINE = Join(ANY, LEFT, s);
 INSERT INTO test.join_string_key VALUES ('abc', [0], 1), ('def', [1, 2], 2);
 SELECT joinGet('join_string_key', 'x', 'abc'), joinGet('join_string_key', 'k', 'abc');

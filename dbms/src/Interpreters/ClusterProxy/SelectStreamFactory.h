@@ -19,6 +19,7 @@ public:
         QueryProcessingStage::Enum processed_stage_,
         QualifiedTableName main_table_,
         const Scalars & scalars_,
+        bool has_virtual_shard_num_column_,
         const Tables & external_tables);
 
     /// TableFunction in a query.
@@ -27,6 +28,7 @@ public:
         QueryProcessingStage::Enum processed_stage_,
         ASTPtr table_func_ptr_,
         const Scalars & scalars_,
+        bool has_virtual_shard_num_column_,
         const Tables & external_tables_);
 
     void createForShard(
@@ -41,6 +43,7 @@ private:
     QualifiedTableName main_table;
     ASTPtr table_func_ptr;
     Scalars scalars;
+    bool has_virtual_shard_num_column = false;
     Tables external_tables;
 };
 

@@ -1,7 +1,7 @@
 #include <Processors/Sources/SourceWithProgress.h>
 
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/Quota.h>
+#include <Access/QuotaContext.h>
 
 namespace DB
 {
@@ -10,12 +10,30 @@ namespace ErrorCodes
 {
     extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_BYTES;
+    extern const int TIMEOUT_EXCEEDED;
+}
+
+void SourceWithProgress::work()
+{
+    if (!limits.speed_limits.checkTimeLimit(total_stopwatch.elapsed(), limits.timeout_overflow_mode))
+        cancel();
+    else
+    {
+        was_progress_called = false;
+
+        ISourceWithProgress::work();
+
+        if (!was_progress_called && has_input)
+            progress({ current_chunk.chunk.getNumRows(), current_chunk.chunk.bytes() });
+    }
 }
 
 /// Aggregated copy-paste from IBlockInputStream::progressImpl.
 /// Most of this must be done in PipelineExecutor outside. Now it's done for compatibility with IBlockInputStream.
 void SourceWithProgress::progress(const Progress & value)
 {
+    was_progress_called = true;
+
     if (total_rows_approx != 0)
     {
         Progress total_rows_progress = {0, 0, total_rows_approx};
@@ -72,10 +90,8 @@ void SourceWithProgress::progress(const Progress & value)
         /// It is here for compatibility with IBlockInputsStream.
         limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
 
-        if (quota != nullptr && limits.mode == LimitsMode::LIMITS_TOTAL)
-        {
-            quota->checkAndAddReadRowsBytes(time(nullptr), value.read_rows, value.read_bytes);
-        }
+        if (quota && limits.mode == LimitsMode::LIMITS_TOTAL)
+            quota->used({Quota::READ_ROWS, value.read_rows}, {Quota::READ_BYTES, value.read_bytes});
     }
 }
 

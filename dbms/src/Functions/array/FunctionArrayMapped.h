@@ -8,7 +8,7 @@
 #include <Columns/ColumnFunction.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -54,7 +54,7 @@ public:
 
     /// Called if at least one function argument is a lambda expression.
     /// For argument-lambda expressions, it defines the types of arguments of these expressions.
-    void getLambdaArgumentTypesImpl(DataTypes & arguments) const override
+    void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
         if (arguments.size() < 1)
             throw Exception("Function " + getName() + " needs at least one argument; passed "

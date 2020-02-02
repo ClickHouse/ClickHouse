@@ -30,4 +30,4 @@
 - [structure](external_dicts_dict_structure.md) - Структура словаря. Ключ и атрибуты, которые можно получить по ключу.
 - [lifetime](external_dicts_dict_lifetime.md) - Периодичность обновления словарей.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/dicts/external_dicts_dict/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict/) <!--hide-->

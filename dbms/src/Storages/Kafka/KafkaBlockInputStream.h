@@ -33,8 +33,7 @@ private:
     UInt64 max_block_size;
 
     ConsumerBufferPtr buffer;
-    MutableColumns virtual_columns;
-    bool broken = true, claimed = false, commit_in_suffix;
+    bool broken = true, finished = false, claimed = false, commit_in_suffix;
 
     const Block non_virtual_header, virtual_header;
 };

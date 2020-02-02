@@ -16,6 +16,8 @@ public:
 
     String getDiagnosticInfo() override;
 
+    void resetParser() override;
+
 protected:
     void updateDiagnosticInfo();
     bool deserializeFieldAndPrintDiagnosticInfo(const String & col_name, const DataTypePtr & type, IColumn & column,

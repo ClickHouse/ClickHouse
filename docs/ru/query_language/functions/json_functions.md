@@ -199,9 +199,9 @@ SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8')
 
 ## JSONExtractRaw(json[, indices_or_keys]...)
 
-Возвращает часть JSON.
+Возвращает часть JSON в виде строки, содержащей неразобранную подстроку.
 
-Если значение не существует или имеет неверный тип, то возвращается пустая строка.
+Если значение не существует, то возвращается пустая строка.
 
 Пример:
 
@@ -209,4 +209,16 @@ SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8')
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/json_functions/) <!--hide-->
+## JSONExtractArrayRaw(json[, indices_or_keys]...)
+
+Возвращает массив из элементов JSON массива, каждый из которых представлен в виде строки с неразобранными подстроками из JSON.
+
+Если значение не существует или не является массивом, то возвращается пустой массив.
+
+Пример:
+
+```sql
+SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') = ['-100', '200.0', '"hello"']'
+```
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/json_functions/) <!--hide-->
