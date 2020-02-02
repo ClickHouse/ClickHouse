@@ -14,7 +14,7 @@ namespace DB
 struct User : public IAccessEntity
 {
     Authentication authentication;
-    AllowedClientHosts allowed_client_hosts;
+    AllowedClientHosts allowed_client_hosts{AllowedClientHosts::AnyHostTag{}};
     AccessRights access;
     String profile;
 
