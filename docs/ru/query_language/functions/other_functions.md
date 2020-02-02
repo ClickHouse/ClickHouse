@@ -927,20 +927,31 @@ SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
 Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 ```
 
-## identity()
+## identity {#identity}
 
-Возвращает то же значение, которое использовалось в качестве аргумента.
+Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn't look inside `identity` functions.
+
+**Syntax**
+
+```sql
+identity(x)
+```
+
+**Example**
+
+Query:
 
 ```sql
 SELECT identity(42)
 ```
+
+Result:
 
 ```text
 ┌─identity(42)─┐
 │           42 │
 └──────────────┘
 ```
-Используется для отладки и тестирования, позволяет "сломать" доступ по индексу, и получить результат и производительность запроса для полного сканирования.
 
 ## randomPrintableASCII {#randomascii}
 
