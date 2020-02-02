@@ -64,7 +64,7 @@ private:
     TableProperties setProperties(ASTCreateQuery & create) const;
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
     void setEngine(ASTCreateQuery & create) const;
-    void checkAccess(const ASTCreateQuery & create);
+    AccessRightsElements getRequiredAccess() const;
 
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
     bool doCreateTable(const ASTCreateQuery & create, const TableProperties & properties);

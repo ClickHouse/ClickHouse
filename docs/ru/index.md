@@ -129,4 +129,4 @@ SELECT CounterID, count() FROM hits GROUP BY CounterID ORDER BY count() DESC LIM
 
 Стоит заметить, что для эффективности по CPU требуется, чтобы язык запросов был декларативным (SQL, MDX) или хотя бы векторным (J, K). То есть, чтобы запрос содержал циклы только в неявном виде, открывая возможности для оптимизации.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/) <!--hide-->

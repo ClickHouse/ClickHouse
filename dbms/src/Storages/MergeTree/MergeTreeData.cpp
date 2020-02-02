@@ -1502,6 +1502,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                 "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax",
                 ErrorCodes::BAD_ARGUMENTS);
         }
+        if (command.type == AlterCommand::ADD_INDEX && !is_custom_partitioned)
+        {
+            throw Exception(
+                "ALTER ADD INDEX is not supported for tables with the old syntax",
+                ErrorCodes::BAD_ARGUMENTS);
+        }
         else if (command.isModifyingData())
         {
             if (columns_alter_type_forbidden.count(command.column_name))

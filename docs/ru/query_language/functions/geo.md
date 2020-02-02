@@ -381,4 +381,4 @@ SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index
 ```
 
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/geo/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/geo/) <!--hide-->

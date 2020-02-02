@@ -119,4 +119,4 @@ command line برا پایه 'replxx' می باشد. به عبارت دیگر، 
 ```
 
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/cli/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/interfaces/cli/) <!--hide-->

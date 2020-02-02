@@ -24,7 +24,8 @@ echo = logical_types
 cat $DATA_DIR/logical_types.avro | ${CLICKHOUSE_LOCAL}  --input-format Avro --output-format CSV -S "a_date Date, b_timestamp_millis DateTime64(3, 'UTC'), c_timestamp_micros DateTime64(6, 'UTC')" -q 'select * from table'
 cat $DATA_DIR/logical_types.avro | ${CLICKHOUSE_LOCAL}  --input-format Avro --output-format CSV -S 'a_date Int32, b_timestamp_millis Int64, c_timestamp_micros Int64' -q 'select * from table'
 
-
+echo = references
+cat $DATA_DIR/references.avro | ${CLICKHOUSE_LOCAL}  --input-format Avro --output-format CSV -S "a String, c String" -q 'select * from table'
 
 echo = compression
 cat $DATA_DIR/simple.null.avro | ${CLICKHOUSE_LOCAL}  --input-format Avro --output-format CSV -S 'a Int64' -q 'select count() from table'

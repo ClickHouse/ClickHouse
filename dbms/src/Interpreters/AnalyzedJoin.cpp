@@ -213,12 +213,34 @@ bool AnalyzedJoin::sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y)
         && x->columns_added_by_join == y->columns_added_by_join;
 }
 
+bool AnalyzedJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTTableJoin::Kind kind_) const
+{
+    if (strictness_ == strictness() && kind_ == kind())
+        return true;
+
+    /// Compatibility: old ANY INNER == new SEMI LEFT
+    if (strictness_ == ASTTableJoin::Strictness::Semi && isLeft(kind_) &&
+        strictness() == ASTTableJoin::Strictness::RightAny && isInner(kind()))
+        return true;
+    if (strictness() == ASTTableJoin::Strictness::Semi && isLeft(kind()) &&
+        strictness_ == ASTTableJoin::Strictness::RightAny && isInner(kind_))
+        return true;
+
+    return false;
+}
+
 JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block)
 {
-    bool is_left_or_inner = isLeft(table_join->kind()) || isInner(table_join->kind());
-    bool is_asof = (table_join->strictness() == ASTTableJoin::Strictness::Asof);
+    auto kind = table_join->kind();
+    auto strictness = table_join->strictness();
 
-    if (table_join->partial_merge_join && !is_asof && is_left_or_inner)
+    bool is_any = (strictness == ASTTableJoin::Strictness::Any);
+    bool is_all = (strictness == ASTTableJoin::Strictness::All);
+    bool is_semi = (strictness == ASTTableJoin::Strictness::Semi);
+
+    bool allow_merge_join = (isLeft(kind) && (is_any || is_all || is_semi)) || (isInner(kind) && is_all);
+
+    if (table_join->partial_merge_join && allow_merge_join)
         return std::make_shared<MergeJoin>(table_join, right_sample_block);
     return std::make_shared<Join>(table_join, right_sample_block);
 }

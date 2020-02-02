@@ -460,4 +460,4 @@ ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
 
 Записи о последних выполненных мутациях удаляются не сразу (количество сохраняемых мутаций определяется параметром движка таблиц `finished_mutations_to_keep`). Более старые записи удаляются.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/alter/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/) <!--hide-->
