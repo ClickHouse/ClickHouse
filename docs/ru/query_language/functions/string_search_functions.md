@@ -15,40 +15,38 @@
 
 ## multiSearchAllPositions {#multiSearchAllPositions}
 
-Такая же, как и [position](#position), только возвращает массив позиций (в байтах) найденных подстрок в строке, начиная с 1.
+The same as [position](#position) but returns `Array` of positions (in bytes) of the found corresponding substrings in the string. Positions are indexed starting from 1.
 
-Работает при допущении, что строка содержит набор байт, представляющий текст в однобайтовой кодировке. Если допущение не выполнено — то возвращает неопределенный результат (не кидает исключение). Если символ может быть представлен с помощью двух байтов, он будет представлен двумя байтами и так далее.
+The search is performed on sequences of bytes without respect to string encoding and collation.
 
-- Для поиска без учета регистра, используйте функцию `multiSearchAllPositionsCaseInsensitive`.
-- Для поиска в кодировке UTF-8, используйте функцию [multiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
+- For case-insensitive ASCII search, use the function `multiSearchAllPositionsCaseInsensitive`.
+- For search in UTF-8, use the function [multiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
+- For case-insensitive UTF-8 search, use the function multiSearchAllPositionsCaseInsensitiveUTF8.
 
-**Синтаксис**
+**Syntax** 
 
 ```sql
 multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 ```
 
-**Параметры**
+**Parameters**
 
-- `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
-- `needle` —  подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+- `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
+- `needle` —  substring to be searched. [String](../syntax.md#syntax-string-literal).
 
-**Возвращаемые значения**
+**Returned values**
 
-- Массив начальных позиций в байтах (начиная с 1), если подстроки найдены.
-- 0, если подстрока не найдена.
+- Array of starting positions in bytes (counting from 1), if the corresponding substring was found and 0 if not found.
 
-Тип: `Integers[]`.
+**Example**
 
-**Пример**
-
-Запрос:
+Query:
 
 ```sql
 SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])
 ```
 
-Ответ:
+Result:
 
 ```text
 ┌─multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])─┐
@@ -58,45 +56,7 @@ SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])
 
 ## multiSearchAllPositionsUTF8 {#multiSearchAllPositionsUTF8}
 
-Такая же, как и  [positionUTF8](#positionutf8),  но возвращает массив позиций (в кодовых точках Unicode) найденных подстрок в строке, начиная с 1.
-
-Работает при допущении, что строка содержит набор кодовых точек, представляющий текст в кодировке UTF-8. Если допущение не выполнено — то возвращает неопределенный результат (не кидает исключение). Если символ может быть представлен с помощью двух кодовых точек, он будет представлен двумя и так далее.
-
-Для поиска без учета регистра используйте функцию `multiSearchAllPositionsCaseInsensitiveUTF8`.
-
-**Синтаксис**
-
-```sql
-multiSearchAllPositionsUTF8(haystack, [needle1, needle2, ..., needlen])
-```
-
-**Параметры**
-
-- `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
-- `needle` —  подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
-
-**Возвращаемые значения**
-
-- Массив начальных позиций в кодовых точках Unicode (начиная с 1), если подстроки найдены.
-- Массив 0, если подстроки не найдены.
-
-Тип: `Integers[]`.
-
-**Пример**
-
-Запрос:
-
-```sql
-SELECT multiSearchAllPositionsUTF8('Привет, мир!', ['Привет', '!', ','])
-```
-
-Ответ:
-
-```text
-┌─multiSearchAllPositionsUTF8('Привет, мир!', ['Привет', '!', ','])─┐
-│ [1,12,7]                                                          │
-└───────────────────────────────────────────────────────────────────┘
-```
+Смотрите `multiSearchAllPositions`.
 
 ## multiSearchFirstPosition(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
 
