@@ -3,7 +3,7 @@
 #include <sys/time.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <common/getThreadNumber.h>
+#include <common/getThreadId.h>
 
 
 namespace DB
@@ -31,7 +31,7 @@ ExtendedLogMessage ExtendedLogMessage::getFrom(const Poco::Message & base)
             msg_ext.query_id.assign(query_id_ref.data, query_id_ref.size);
     }
 
-    msg_ext.thread_id = getThreadNumber();
+    msg_ext.thread_id = getThreadId();
 
     return msg_ext;
 }

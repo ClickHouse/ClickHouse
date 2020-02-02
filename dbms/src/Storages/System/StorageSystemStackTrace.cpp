@@ -14,7 +14,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
 #include <Common/PipeFDs.h>
-#include <common/getThreadNumber.h>
+#include <common/getThreadId.h>
 
 
 namespace DB
