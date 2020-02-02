@@ -217,7 +217,7 @@ UInt64 ColumnVector<T>::get64(size_t n) const
 }
 
 template <typename T>
-Float64 ColumnVector<T>::getFloat64(size_t n) const
+inline Float64 ColumnVector<T>::getFloat64(size_t n) const
 {
     return static_cast<Float64>(data[n]);
 }

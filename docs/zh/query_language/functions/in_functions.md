@@ -17,4 +17,4 @@
 执行该函数没有任何成本。
 
 
-[来源文章](https://clickhouse.yandex/docs/en/query_language/functions/in_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/in_functions/) <!--hide-->

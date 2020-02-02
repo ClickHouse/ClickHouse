@@ -59,12 +59,6 @@ export CC=gcc-9
 export CXX=g++-9
 ```
 
-## 安装所需的工具依赖库
-
-```bash
-sudo apt-get install libreadline-dev
-```
-
 ## 拉取 ClickHouse 源码
 
 ```bash
@@ -90,4 +84,4 @@ cd ..
 这个命令会使得 `dbms/programs/clickhouse` 文件可执行，您可以使用 `client` or `server` 参数运行。
 
 
-[来源文章](https://clickhouse.yandex/docs/en/development/build/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/development/build/) <!--hide-->

@@ -9,7 +9,6 @@
 #include <Interpreters/castColumn.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
-#include "registerFunctionsArray.h"
 
 
 namespace DB

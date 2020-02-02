@@ -131,9 +131,98 @@ SELECT format('{} {}', 'Hello', 'World')
 └───────────────────────────────────┘
 ```
 
+## concat
 
-## concat(s1, s2, ...)
-Склеивает строки, перечисленные в аргументах, без разделителей.
+Склеивает строки переданные в аргументы в одну строку без разделителей.
+
+**Cинтаксис** 
+
+```sql
+concat(s1, s2, ...)
+```
+
+**Параметры**
+
+Значения типа String или FixedString.
+
+**Возвращаемое значение**
+
+Возвращает строку, полученную в результате склейки аргументов. 
+
+Если любой из аргументов имеет значение `NULL`, `concat` возвращает значение `NULL`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT concat('Hello, ', 'World!')
+```
+
+Ответ:
+
+```text
+┌─concat('Hello, ', 'World!')─┐
+│ Hello, World!               │
+└─────────────────────────────┘
+```
+
+## concatAssumeInjective {#concatassumeinjective}
+
+Аналогична [concat](#concat). Разница заключается в том, что вам нужно убедиться, что `concat(s1, s2, ...) → sn` является инъективным, так как это предположение будет использоваться для оптимизации GROUP BY.
+
+Функция называется "инъективной", если она возвращает разные значения для разных аргументов. Или, иными словами, функция никогда не выдаёт одно и то же значение, если аргументы разные.
+
+**Синтаксис** 
+
+```sql
+concatAssumeInjective(s1, s2, ...)
+```
+
+**Параметры**
+
+Значения типа String или FixedString.
+
+**Возвращаемые значения**
+
+Возвращает строку, полученную в результате объединения аргументов. 
+
+Если любой из аргументов имеет значение `NULL`, `concatAssumeInjective` возвращает значение `NULL`.
+
+**Пример**
+
+Вводная таблица:
+
+```sql
+CREATE TABLE key_val(`key1` String, `key2` String, `value` UInt32) ENGINE = TinyLog
+INSERT INTO key_val VALUES ('Hello, ','World',1)('Hello, ','World',2)('Hello, ','World!',3)('Hello',', World!',2)
+SELECT * from key_val
+```
+
+```text
+┌─key1────┬─key2─────┬─value─┐
+│ Hello,  │ World    │     1 │
+│ Hello,  │ World    │     2 │
+│ Hello,  │ World!   │     3 │
+│ Hello   │ , World! │     2 │
+└─────────┴──────────┴───────┘
+```
+
+Запрос:
+
+```sql
+SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2)
+```
+
+Ответ:
+
+```text
+┌─concat(key1, key2)─┬─sum(value)─┐
+│ Hello, World!      │          3 │
+│ Hello, World!      │          2 │
+│ Hello, World       │          3 │
+└────────────────────┴────────────┘
+```
 
 ## substring(s, offset, length)
 Возвращает подстроку, начиная с байта по индексу offset, длины length байт. Индексация символов - начиная с единицы (как в стандартном SQL). Аргументы offset и length должны быть константами.
@@ -189,6 +278,44 @@ SELECT startsWith('Hello, world!', 'He');
 └───────────────────────────────────┘
 ```
 
+## trim {#trim}
+
+Удаляет все указанные символы с начала или окончания строки.
+По умолчанию удаляет все последовательные вхождения обычных пробелов (32 символ ASCII) с обоих концов строки.
+
+**Синтаксис**
+
+```sql
+trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
+```
+
+**Параметры**
+
+- `trim_character` — один или несколько символов, подлежащие удалению. [String](../../data_types/string.md).
+- `input_string` — строка для обрезки. [String](../../data_types/string.md).
+
+**Возвращаемое значение**
+
+Исходную строку после обрезки с левого и (или) правого концов строки.
+
+Тип: `String`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT trim(BOTH ' ()' FROM '(   Hello, world!   )')
+```
+
+Ответ:
+
+```text
+┌─trim(BOTH ' ()' FROM '(   Hello, world!   )')─┐
+│ Hello, world!                                 │
+└───────────────────────────────────────────────┘
+```
+
 ## trimLeft {#trimleft}
 
 Удаляет все последовательные вхождения обычных пробелов (32 символ ASCII) с левого конца строки. Не удаляет другие виды пробелов (табуляция, пробел без разрыва и т. д.).
@@ -196,14 +323,14 @@ SELECT startsWith('Hello, world!', 'He');
 **Синтаксис** 
 
 ```sql
-trimLeft()
+trimLeft(input_string)
 ```
 
-Алиас: `ltrim`.
+Алиас: `ltrim(input_string)`.
 
 **Параметры**
 
-- `string` — строка для обрезки. [String](../../data_types/string.md).
+- `input_string` — строка для обрезки. [String](../../data_types/string.md).
 
 **Возвращаемое значение**
 
@@ -234,14 +361,14 @@ SELECT trimLeft('     Hello, world!     ')
 **Синтаксис** 
 
 ```sql
-trimRight()
+trimRight(input_string)
 ```
 
-Алиас: `rtrim`.
+Алиас: `rtrim(input_string)`.
 
 **Параметры**
 
-- `string` — строка для обрезки. [String](../../data_types/string.md).
+- `input_string` — строка для обрезки. [String](../../data_types/string.md).
 
 **Возвращаемое значение**
 
@@ -272,14 +399,14 @@ SELECT trimRight('     Hello, world!     ')
 **Синтаксис** 
 
 ```sql
-trimBoth()
+trimBoth(input_string)
 ```
 
-Алиас: `trim`.
+Алиас: `trim(input_string)`.
 
 **Параметры**
 
-- `string` — строка для обрезки. [String](../../data_types/string.md).
+- `input_string` — строка для обрезки. [String](../../data_types/string.md).
 
 **Возвращаемое значение**
 
@@ -321,4 +448,4 @@ SELECT trimBoth('     Hello, world!     ')
 
 Тип результата - UInt64.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/string_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_functions/) <!--hide-->

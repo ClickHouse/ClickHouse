@@ -100,7 +100,18 @@ public:
     void create(AggregateDataPtr place) const override
     {
         for (size_t i = 0; i < total; ++i)
-            nested_function->create(place + i * size_of_data);
+        {
+            try
+            {
+                nested_function->create(place + i * size_of_data);
+            }
+            catch (...)
+            {
+                for (size_t j = 0; j < i; ++j)
+                    nested_function->destroy(place + j * size_of_data);
+                throw;
+            }
+        }
     }
 
     void destroy(AggregateDataPtr place) const noexcept override

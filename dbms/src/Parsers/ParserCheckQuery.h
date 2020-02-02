@@ -10,8 +10,8 @@ namespace DB
 class ParserCheckQuery : public IParserBase
 {
 protected:
-    const char * getName() const { return "ALTER query"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+    const char * getName() const  override{ return "ALTER query"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 }

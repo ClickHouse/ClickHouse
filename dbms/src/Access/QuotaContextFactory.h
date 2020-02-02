@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/QuotaContext.h>
-#include <Access/IAccessStorage.h>
+#include <ext/scope_guard.h>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -56,7 +56,7 @@ private:
     mutable std::mutex mutex;
     std::unordered_map<UUID /* quota id */, QuotaInfo> all_quotas;
     bool all_quotas_read = false;
-    IAccessStorage::SubscriptionPtr subscription;
+    ext::scope_guard subscription;
     std::vector<std::weak_ptr<QuotaContext>> contexts;
 };
 }

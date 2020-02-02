@@ -818,22 +818,6 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## arrayFlatten(arr) {#array_functions-arrayflatten}
-
-Функция `arrayFlatten` (или `flatten`) соеденит вложенные массивы и вернет массив из их элементов.
-
-Пример:
-
-```sql
-SELECT arrayFlatten([[1, 2, 3], [4, 5]])
-```
-
-```text
-┌─arrayFlatten([[1, 2, 3], [4, 5]])─┐
-│                       [1,2,3,4,5] │
-└───────────────────────────────────┘
-```
-
 ## arrayReverse(arr) {#array_functions-arrayreverse}
 
 Возвращает массив того же размера, что и исходный массив, содержащий элементы в обратном порядке.
@@ -853,6 +837,41 @@ SELECT arrayReverse([1, 2, 3])
 
 Синоним для ["arrayReverse"](#array_functions-arrayreverse)
 
+
+## arrayFlatten {#arrayflatten}
+
+Преобразует массив массивов в плоский массив.
+
+Функция:
+
+- Оперирует с массивами любой вложенности.
+- Не изменяет массив, если он уже плоский.
+
+Результирующий массив содержит все элементы исходных массивов.
+
+**Синтаксис** 
+
+```sql
+flatten(array_of_arrays)
+```
+
+Синоним: `flatten`.
+
+
+**Параметры**
+
+- `array_of_arrays` — [Массивов](../../data_types/array.md) массивов. Например, `[[1,2,3], [4,5]]`.
+
+**Примеры**
+
+```sql
+SELECT flatten([[[1]], [[2], [3]]])
+```
+```text
+┌─flatten(array(array([1]), array([2], [3])))─┐
+│ [1,2,3]                                     │
+└─────────────────────────────────────────────┘
+```
 
 ## arrayCompact {#arraycompact}
 
@@ -890,4 +909,4 @@ SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])
 └────────────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/array_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/array_functions/) <!--hide-->

@@ -56,4 +56,4 @@ All of the parameters excepting `ver` have the same meaning as in `MergeTree`.
 - `ver` - column with the version. Optional parameter. For a description, see the text above.
 </details>
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/replacingmergetree/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/replacingmergetree/) <!--hide-->

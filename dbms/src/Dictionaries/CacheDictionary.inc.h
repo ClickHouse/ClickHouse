@@ -333,7 +333,7 @@ void CacheDictionary::update(
             last_exception = std::current_exception();
             backoff_end_time = now + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
 
-            tryLogException(last_exception, log, "Could not update cache dictionary '" + getName() +
+            tryLogException(last_exception, log, "Could not update cache dictionary '" + getFullName() +
                             "', next update is scheduled at " + ext::to_string(backoff_end_time));
         }
     }

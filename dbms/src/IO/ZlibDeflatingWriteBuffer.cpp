@@ -5,6 +5,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ZLIB_DEFLATE_FAILED;
+}
+
+
 ZlibDeflatingWriteBuffer::ZlibDeflatingWriteBuffer(
         std::unique_ptr<WriteBuffer> out_,
         CompressionMethod compression_method,
@@ -83,6 +89,21 @@ void ZlibDeflatingWriteBuffer::finish()
         return;
 
     next();
+
+    /// https://github.com/zlib-ng/zlib-ng/issues/494
+    do
+    {
+        out->nextIfAtEnd();
+        zstr.next_out = reinterpret_cast<unsigned char *>(out->position());
+        zstr.avail_out = out->buffer().end() - out->position();
+
+        int rc = deflate(&zstr, Z_FULL_FLUSH);
+        out->position() = out->buffer().end() - zstr.avail_out;
+
+        if (rc != Z_OK)
+            throw Exception(std::string("deflate failed: ") + zError(rc), ErrorCodes::ZLIB_DEFLATE_FAILED);
+    }
+    while (zstr.avail_out == 0);
 
     while (true)
     {
