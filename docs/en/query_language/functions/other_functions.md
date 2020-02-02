@@ -708,7 +708,7 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 
 ## indexHint {#indexhint}
 
-The function is indended for debugging and introspection purposes. The function ignores it's argument and always returns 1. Arguments are not even evaluated.
+The function is intended for debugging and introspection purposes. The function ignores it's argument and always returns 1. Arguments are not even evaluated.
 
 But for the purpose of index analysis, the argument of this function is analyzed as if it was present directly without being wrapped inside `indexHint` function. This allows to select data in index ranges by the corresponding condition but without further filtering by this condition. The index in ClickHouse is sparse and using `indexHint` will yield more data than specifying the same condition directly.
 
