@@ -54,12 +54,14 @@ mysql> select * from test;
 Creating a table in ClickHouse server and selecting data from it:
 
 ```sql
-CREATE TABLE jdbc_table(
+CREATE TABLE jdbc_table
+(
     `int_id` Int32,
     `int_nullable` Nullable(Int32),
     `float` Float32,
     `float_nullable` Nullable(Float32)
-)ENGINE JDBC('jdbc:mysql://localhost:3306/?user=root&password=root', 'test', 'test')
+)
+ENGINE JDBC('jdbc:mysql://localhost:3306/?user=root&password=root', 'test', 'test')
 ```
 ```sql
 SELECT *
