@@ -688,7 +688,7 @@ When any of these limits is reached, ClickHouse acts as the [join_overflow_mode]
 
 #### Processing of Empty or NULL Cells
 
-While joining tables, the empty cells may appear. The setting [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls) define how ClickHouse fills these cells.
+While joining tables, the empty cells may appear. The setting [join_use_nulls](../operations/settings/settings.md#join_use_nulls) define how ClickHouse fills these cells.
 
 If the `JOIN` keys are [Nullable](../data_types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](syntax.md#null-literal) are not joined.
 
