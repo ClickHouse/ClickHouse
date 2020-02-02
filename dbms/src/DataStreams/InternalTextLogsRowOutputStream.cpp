@@ -24,7 +24,7 @@ void InternalTextLogsRowOutputStream::write(const Block & block)
     auto & column_host_name = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
     auto & column_query_id = typeid_cast<const ColumnString &>(*block.getByName("query_id").column);
 
-    auto & array_thread_id = typeid_cast<const ColumnUInt32 &>(*block.getByName("thread_id").column).getData();
+    auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
     auto & array_priority = typeid_cast<const ColumnInt8 &>(*block.getByName("priority").column).getData();
     auto & column_source = typeid_cast<const ColumnString &>(*block.getByName("source").column);
     auto & column_text = typeid_cast<const ColumnString &>(*block.getByName("text").column);
@@ -59,7 +59,7 @@ void InternalTextLogsRowOutputStream::write(const Block & block)
             writeCString("}", wb);
         }
 
-        UInt32 thread_id = array_thread_id[row_num];
+        UInt64 thread_id = array_thread_id[row_num];
         writeCString(" [ ", wb);
         writeIntText(thread_id, wb);
         writeCString(" ] <", wb);

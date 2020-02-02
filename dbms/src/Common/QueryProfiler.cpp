@@ -63,14 +63,14 @@ namespace
                                     sizeof(UInt8) + // number of stack frames
                                     sizeof(StackTrace::Frames) + // collected stack trace, maximum capacity
                                     sizeof(TimerType) + // timer type
-                                    sizeof(UInt32); // thread_id
+                                    sizeof(UInt64); // thread_id
         char buffer[buf_size];
         WriteBufferFromFileDescriptorDiscardOnFailure out(trace_pipe.fds_rw[1], buf_size, buffer);
 
         StringRef query_id = CurrentThread::getQueryId();
         query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
 
-        UInt32 thread_id = CurrentThread::get().thread_id;
+        UInt64 thread_id = CurrentThread::get().thread_id;
 
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         const StackTrace stack_trace(signal_context);
@@ -103,7 +103,7 @@ namespace ErrorCodes
 }
 
 template <typename ProfilerImpl>
-QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const int clock_type, UInt32 period, const int pause_signal_)
+QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const int clock_type, UInt32 period, const int pause_signal_)
     : log(&Logger::get("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
@@ -200,7 +200,7 @@ void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 template class QueryProfilerBase<QueryProfilerReal>;
 template class QueryProfilerBase<QueryProfilerCpu>;
 
-QueryProfilerReal::QueryProfilerReal(const Int32 thread_id, const UInt32 period)
+QueryProfilerReal::QueryProfilerReal(const UInt64 thread_id, const UInt32 period)
     : QueryProfilerBase(thread_id, CLOCK_REALTIME, period, SIGUSR1)
 {}
 
@@ -209,7 +209,7 @@ void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
     writeTraceInfo(TimerType::Real, sig, info, context);
 }
 
-QueryProfilerCpu::QueryProfilerCpu(const Int32 thread_id, const UInt32 period)
+QueryProfilerCpu::QueryProfilerCpu(const UInt64 thread_id, const UInt32 period)
     : QueryProfilerBase(thread_id, CLOCK_THREAD_CPUTIME_ID, period, SIGUSR2)
 {}
 

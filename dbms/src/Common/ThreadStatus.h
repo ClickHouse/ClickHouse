@@ -60,10 +60,10 @@ public:
 
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
 
-    std::vector<UInt32> thread_ids;
+    std::vector<UInt64> thread_ids;
 
     /// The first thread created this thread group
-    Int32 master_thread_id = -1;
+    UInt64 master_thread_id = 0;
 
     LogsLevel client_logs_level = LogsLevel::none;
 
@@ -88,7 +88,7 @@ public:
     ~ThreadStatus();
 
     /// Linux's PID (or TGID) (the same id is shown by ps util)
-    UInt32 thread_id = 0;
+    UInt64 thread_id = 0;
     /// Also called "nice" value. If it was changed to non-zero (when attaching query) - will be reset to zero when query is detached.
     Int32 os_thread_priority = 0;
 

@@ -29,7 +29,7 @@ NamesAndTypesList StorageSystemMerges::getNamesAndTypes()
         {"rows_written", std::make_shared<DataTypeUInt64>()},
         {"columns_written", std::make_shared<DataTypeUInt64>()},
         {"memory_usage", std::make_shared<DataTypeUInt64>()},
-        {"thread_id", std::make_shared<DataTypeUInt32>()},
+        {"thread_id", std::make_shared<DataTypeUInt64>()},
     };
 }
 

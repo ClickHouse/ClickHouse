@@ -57,7 +57,7 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
         {"peak_memory_usage", std::make_shared<DataTypeInt64>()},
         {"query", std::make_shared<DataTypeString>()},
 
-        {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>())},
+        {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
         {"ProfileEvents.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"ProfileEvents.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
         {"Settings.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
@@ -115,7 +115,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, const Contex
         {
             Array threads_array;
             threads_array.reserve(process.thread_ids.size());
-            for (const UInt32 thread_id : process.thread_ids)
+            for (const UInt64 thread_id : process.thread_ids)
                 threads_array.emplace_back(thread_id);
             res_columns[i++]->insert(threads_array);
         }

@@ -32,8 +32,8 @@ struct QueryThreadLogElement
     Int64 peak_memory_usage{};
 
     String thread_name;
-    UInt32 thread_id{};
-    UInt32 master_thread_id{};
+    UInt64 thread_id{};
+    UInt64 master_thread_id{};
 
     String query;
     ClientInfo client_info;
