@@ -134,15 +134,15 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Настройки:
 
-- host - Сервер Graphite.
-- port - Порт сервера Graphite.
-- interval - Период отправки в секундах.
-- timeout - Таймаут отправки данных в секундах.
-- root_path - Префикс для ключей.
-- metrics - Отправка данных из таблицы [system.metrics](../system_tables.md#system_tables-metrics).
-- events - Отправка дельты данных, накопленной за промежуток времени из таблицы [system.events](../system_tables.md#system_tables-events).
-- events_cumulative - Отправка суммарных данных из таблицы [system.events](../system_tables.md#system_tables-events).
-- asynchronous_metrics - Отправка данных из таблицы [system.asynchronous_metrics](../system_tables.md#system_tables-asynchronous_metrics).
+- host – Сервер Graphite.
+- port – Порт сервера Graphite.
+- interval – Период отправки в секундах.
+- timeout – Таймаут отправки данных в секундах.
+- root_path – Префикс для ключей.
+- metrics – Отправка данных из таблицы [system.metrics](../system_tables.md#system_tables-metrics).
+- events – Отправка дельты данных, накопленной за промежуток времени из таблицы [system.events](../system_tables.md#system_tables-events).
+- events_cumulative – Отправка суммарных данных из таблицы [system.events](../system_tables.md#system_tables-events).
+- asynchronous_metrics – Отправка данных из таблицы [system.asynchronous_metrics](../system_tables.md#system_tables-asynchronous_metrics).
 
 Можно определить несколько секций `<graphite>`, например, для передачи различных данных с различной частотой.
 
