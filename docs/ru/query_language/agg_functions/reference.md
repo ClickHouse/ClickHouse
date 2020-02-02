@@ -1012,35 +1012,36 @@ FROM ontime
 
 ## topKWeighted {#topkweighted}
 
-Возвращает массив наиболее часто встречающихся значений в указанном столбце. Результирующий массив упорядочен по убыванию веса значения. Если передан опциональный параметр `N`, то будет создан срез с n элементами.
+Similar to `topK` but takes one additional argument of integer type - `weight`. Every value is accounted `weight` times for frequency calculation.
 
-Рекомендуем использовать значения `N < 10`, при больших `N` снижается производительность. Максимально возможное значение `N = 65536`.
-
-**Синтаксис**
+**Syntax**
 
 ```sql
 topKWeighted(N)(x, weight)
 ```
 
-**Параметры**
+**Parameters**
 
-- `N` — Количество возвращаемых значений. Опциональный параметр. [UInt8](../../data_types/int_uint.md).
-- `x` — Столбец.
-- `weight` — Вес. [UInt8](../../data_types/int_uint.md).
+- `N` — The number of elements to return.
 
-**Возвращаемое значение**
+**Arguments**
 
-Возвращает массив наиболее часто встречающихся значений.
+- `x` – The value.
+- `weight` — The weight. [UInt8](../../data_types/int_uint.md).
 
-**Пример**
+**Returned value**
 
-Запрос:
+Returns an array of the values with maximum approximate sum of weights.
+
+**Example**
+
+Query:
 
 ```sql
 SELECT topKWeighted(10)(number, number) FROM numbers(1000)
 ```
 
-Ответ:
+Result:
 
 ```text
 ┌─topKWeighted(10)(number, number)──────────┐
