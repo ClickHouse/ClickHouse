@@ -787,46 +787,28 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 
 ## identity {#identity}
 
-Used for debugging and testing, allows to "break" access by index, and get the result and query performance for a full scan.
+Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn't look inside `identity` functions.
 
 **Syntax**
 
 ```sql
-identity()
+identity(x)
 ```
-
-**Returned value**
-
-Returns the same value that was used as its argument. 
 
 **Example**
 
 Query:
 
 ```sql
-SELECT identity(43)
+SELECT identity(42)
 ```
 
 Result:
 
 ```text
-┌─identity(43)─┐
-│           43 │
+┌─identity(42)─┐
+│           42 │
 └──────────────┘
-```
-
-Query:
-
-```sql
-SELECT (SELECT toDate('2015-01-02'), 'Hello') AS x, x, identity((SELECT 1)), identity((SELECT 1) AS y);
-```
-
-Result:
-
-```text
-─x──────────────────────┬─x──────────────────────┬─identity(_subquery7)─┬─identity(y)─┐
-│ ('2015-01-02','Hello') │ ('2015-01-02','Hello') │                    1 │           1 │
-└────────────────────────┴────────────────────────┴──────────────────────┴─────────────┘
 ```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/other_functions/) <!--hide-->
