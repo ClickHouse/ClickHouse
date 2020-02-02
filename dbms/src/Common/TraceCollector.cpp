@@ -105,7 +105,7 @@ void TraceCollector::run()
         TimerType timer_type;
         readPODBinary(timer_type, in);
 
-        UInt32 thread_id;
+        UInt64 thread_id;
         readPODBinary(thread_id, in);
 
         TraceLogElement element{std::time(nullptr), timer_type, thread_id, query_id, trace};

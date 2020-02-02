@@ -146,7 +146,7 @@ NamesAndTypesList StorageSystemStackTrace::getNamesAndTypes()
 {
     return
     {
-        { "thread_id", std::make_shared<DataTypeUInt32>() },
+        { "thread_id", std::make_shared<DataTypeUInt64>() },
         { "query_id", std::make_shared<DataTypeString>() },
         { "trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) }
     };

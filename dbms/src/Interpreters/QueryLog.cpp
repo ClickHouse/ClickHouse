@@ -76,7 +76,7 @@ Block QueryLogElement::createBlock()
 
         {std::make_shared<DataTypeUInt32>(),                                  "revision"},
 
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()), "thread_ids"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "thread_ids"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents.Names"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents.Values"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Names"},
@@ -118,8 +118,8 @@ void QueryLogElement::appendToBlock(Block & block) const
     {
         Array threads_array;
         threads_array.reserve(thread_ids.size());
-        for (const UInt32 thread_id : thread_ids)
-            threads_array.emplace_back(UInt64(thread_id));
+        for (const UInt64 thread_id : thread_ids)
+            threads_array.emplace_back(thread_id);
         columns[i++]->insert(threads_array);
     }
 

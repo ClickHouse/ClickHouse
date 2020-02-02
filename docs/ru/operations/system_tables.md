@@ -495,10 +495,8 @@ ClickHouse создаёт таблицу только в том случае, к
 - `memory_usage` (Int64) — разница между выделенной и освобождённой памятью в контексте потока.
 - `peak_memory_usage` (Int64) — максимальная разница между выделенной и освобождённой памятью в контексте потока.
 - `thread_name` (String) — Имя потока.
-- `thread_number` (UInt32) — Внутренний ID потока.
-- `os_thread_id` (Int32) — tid (ID потока операционной системы).
-- `master_thread_number` (UInt32) — Внутренний ID главного потока.
-- `master_os_thread_id` (Int32) — tid (ID потока операционной системы) главного потока.
+- `thread_id` (UInt64) — tid (ID потока операционной системы).
+- `master_thread_id` (UInt64) — tid (ID потока операционной системы) главного потока.
 - `query` (String) — текст запроса.
 - `is_initial_query` (UInt8) — вид запроса. Возможные значения:
     - 1 — запрос был инициирован клиентом.
@@ -697,15 +695,15 @@ WHERE changed
 
 ## system.table_engines
 
-Содержит информацию про движки таблиц, поддерживаемые сервером, а также об их возможностях. 
+Содержит информацию про движки таблиц, поддерживаемые сервером, а также об их возможностях.
 
 Эта таблица содержит следующие столбцы (тип столбца показан в скобках):
 
 - `name` (String) — имя движка.
 - `supports_settings` (UInt8) — флаг, показывающий поддержку секции `SETTINGS`.
-- `supports_skipping_indices` (UInt8) — флаг, показывающий поддержку [индексов пропуска данных](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes). 
+- `supports_skipping_indices` (UInt8) — флаг, показывающий поддержку [индексов пропуска данных](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes).
 - `supports_ttl` (UInt8) — флаг, показывающий поддержку [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
-- `supports_sort_order` (UInt8) — флаг, показывающий поддержку секций `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` и `SAMPLE_BY`.  
+- `supports_sort_order` (UInt8) — флаг, показывающий поддержку секций `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` и `SAMPLE_BY`.
 - `supports_replication` (UInt8) — флаг, показвыающий поддержку [репликации](table_engines/replication/).
 - `supports_duduplication` (UInt8) — флаг, показывающий наличие в движке дедупликации данных.
 
@@ -727,7 +725,7 @@ WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 
 **Смотрите также**
 
-- [Секции движка](table_engines/mergetree/#mergetree-query-clauses) семейства MergeTree 
+- [Секции движка](table_engines/mergetree/#mergetree-query-clauses) семейства MergeTree
 - [Настройки](table_engines/kafka.md#table_engine-kafka-creating-a-table) Kafka
 - [Настройки](table_engines/join/#join-limitations-and-settings) Join
 
@@ -856,7 +854,7 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 ## system.disks {#system_tables-disks}
 
-Cодержит информацию о дисках, заданных в [конфигурации сервера](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure). 
+Cодержит информацию о дисках, заданных в [конфигурации сервера](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
 Столбцы:
 

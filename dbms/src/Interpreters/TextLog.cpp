@@ -32,7 +32,7 @@ Block TextLogElement::createBlock()
         {std::make_shared<DataTypeUInt32>(),                                                  "microseconds"},
 
         {std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),        "thread_name"},
-        {std::make_shared<DataTypeUInt32>(),                                                  "thread_id"},
+        {std::make_shared<DataTypeUInt64>(),                                                  "thread_id"},
 
         {std::move(priority_datatype),                                                        "level"},
         {std::make_shared<DataTypeString>(),                                                  "query_id"},

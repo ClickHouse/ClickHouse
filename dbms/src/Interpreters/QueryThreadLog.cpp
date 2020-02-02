@@ -35,8 +35,8 @@ Block QueryThreadLogElement::createBlock()
         {std::make_shared<DataTypeInt64>(),         "peak_memory_usage"},
 
         {std::make_shared<DataTypeString>(),        "thread_name"},
-        {std::make_shared<DataTypeUInt32>(),        "thread_id"},
-        {std::make_shared<DataTypeUInt32>(),        "master_thread_id"},
+        {std::make_shared<DataTypeUInt64>(),        "thread_id"},
+        {std::make_shared<DataTypeUInt64>(),        "master_thread_id"},
         {std::make_shared<DataTypeString>(),        "query"},
 
         {std::make_shared<DataTypeUInt8>(),         "is_initial_query"},
