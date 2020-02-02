@@ -14,6 +14,8 @@
 #include <Parsers/IAST.h>
 
 #include <type_traits>
+#include "DataTypesDecimal.h"
+
 
 namespace DB
 {
@@ -31,7 +33,12 @@ template <typename T>
 std::string DataTypeDecimal<T>::doGetName() const
 {
     std::stringstream ss;
-    ss << "Decimal(" << this->precision << ", " << this->scale << ")";
+    ss << type_name << "(";
+
+    if (!only_scale)
+        ss << this->precision << ", ";
+
+    ss << this->scale << ")";
     return ss.str();
 }
 
@@ -135,8 +142,14 @@ void DataTypeDecimal<T>::deserializeProtobuf(IColumn & column, ProtobufReader & 
         container.back() = decimal;
 }
 
+template<typename T>
+DataTypeDecimal<T>::DataTypeDecimal(UInt32 precision_, UInt32 scale_, const String & type_name_, bool only_scale_)
+    : Base(precision_, scale_), type_name(type_name_), only_scale(only_scale_)
+{
+}
 
-static DataTypePtr create(const ASTPtr & arguments)
+
+static DataTypePtr create(const String & type_name, const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 2)
         throw Exception("Decimal data type family must have exactly two arguments: precision and scale",
@@ -152,11 +165,11 @@ static DataTypePtr create(const ASTPtr & arguments)
     UInt64 precision_value = precision->value.get<UInt64>();
     UInt64 scale_value = scale->value.get<UInt64>();
 
-    return createDecimal<DataTypeDecimal>(precision_value, scale_value);
+    return createDecimal<DataTypeDecimal>(precision_value, scale_value, type_name);
 }
 
 template <typename T>
-static DataTypePtr createExact(const ASTPtr & arguments)
+static DataTypePtr createExact(const String & type_name, const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
         throw Exception("Decimal data type family must have exactly two arguments: precision and scale",
@@ -170,7 +183,7 @@ static DataTypePtr createExact(const ASTPtr & arguments)
     UInt64 precision = DecimalUtils::maxPrecision<T>();
     UInt64 scale = scale_arg->value.get<UInt64>();
 
-    return createDecimal<DataTypeDecimal>(precision, scale);
+    return createDecimal<DataTypeDecimal>(precision, scale, type_name, true);
 }
 
 void registerDataTypeDecimal(DataTypeFactory & factory)

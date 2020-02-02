@@ -49,7 +49,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 !!!note "Note"
     `INDEX` — экспериментальная возможность, смотрите [Индексы пропуска данных](#table_engine-mergetree-data_skipping-indexes).
 
-### Секции запроса
+### Секции запроса {#mergetree-query-clauses}
 
 - `ENGINE` — имя и параметры движка. `ENGINE = MergeTree()`. `MergeTree` не имеет параметров.
 
@@ -84,7 +84,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     - `index_granularity_bytes` — максимальный размер гранул данных в байтах. По умолчанию — 10Mb. Чтобы ограничить размер гранул только количеством строк, установите значение 0 (не рекомендовано). Смотрите [Хранение данных](#mergetree-data-storage).
     - `enable_mixed_granularity_parts` — включает или выключает переход к ограничению размера гранул с помощью настройки `index_granularity_bytes`. До версии 19.11, размер гранул ограничивался только настройкой `index_granularity`. Настройка `index_granularity_bytes` улучшает производительность ClickHouse при выборке данных из таблиц с большими (десятки и сотни мегабайтов) строками. Если у вас есть таблицы с большими строками, можно включить эту настройку, чтобы повысить эффективность запросов `SELECT`.
     - `use_minimalistic_part_header_in_zookeeper` — Способ хранения заголовков кусков данных в ZooKeeper. Если  `use_minimalistic_part_header_in_zookeeper = 1`, то ZooKeeper хранит меньше данных. Подробнее читайте в [описании настройки](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) в разделе "Конфигурационные параметры сервера".
-    - `min_merge_bytes_to_use_direct_io` — минимальный объем данных при слиянии, необходимый для прямого (небуферизованного) чтения/записи (direct I/O) на диск. При слиянии частей данных ClickHouse вычисляет общий объем хранения всех данных, подлежащих слиянию. Если общий объем хранения всех данных для чтения превышает `min_bytes_to_use_direct_io` байт, тогда ClickHouse  использует флаг `O_DIRECT` при чтении данных с диска. Если `min_merge_bytes_to_use_direct_io = 0`, тогда прямой ввод-вывод отключен. Значение по умолчанию: `10 * 1024 * 1024 * 1024` байтов.
+    - `min_merge_bytes_to_use_direct_io` — минимальный объём данных при слиянии, необходимый для прямого (небуферизованного) чтения/записи (direct I/O) на диск. При слиянии частей данных ClickHouse вычисляет общий объём хранения всех данных, подлежащих слиянию. Если общий объём хранения всех данных для чтения превышает `min_bytes_to_use_direct_io` байт, тогда ClickHouse  использует флаг `O_DIRECT` при чтении данных с диска. Если `min_merge_bytes_to_use_direct_io = 0`, тогда прямой ввод-вывод отключен. Значение по умолчанию: `10 * 1024 * 1024 * 1024` байтов.
     <a name="mergetree_setting-merge_with_ttl_timeout"></a>
     - `merge_with_ttl_timeout` — минимальное время в секундах перед повторным слиянием с TTL. По умолчанию — 86400 (1 день).
     - `write_final_mark` — включает или отключает запись последней засечки индекса в конце куска данных. По умолчанию — 1. Не отключайте её.
@@ -267,7 +267,7 @@ INDEX index_name expr TYPE type(...) GRANULARITY granularity_value
 
 Для таблиц семейства `*MergeTree` можно задать дополнительные индексы в секции столбцов.
 
-Индексы агрегируют для заданного выражения некоторые данные, а потом при `SELECT` запросе используют для пропуска блоков данных (пропускаемый блок состоит из гранул данных в количестве равном гранулярности данного индекса), на которых секция `WHERE` не может быть выполнена, тем самым уменьшая объем данных читаемых с диска.
+Индексы агрегируют для заданного выражения некоторые данные, а потом при `SELECT` запросе используют для пропуска блоков данных (пропускаемый блок состоит из гранул данных в количестве равном гранулярности данного индекса), на которых секция `WHERE` не может быть выполнена, тем самым уменьшая объём данных читаемых с диска.
 
 **Пример**
 
@@ -471,7 +471,7 @@ ALTER TABLE example_table
 
 ### Введение
 
-Движки таблиц семейства `MergeTree` могут хранить данные на нескольких блочных устройствах. Это может оказаться полезным, например, при неявном разделении данных одной таблицы на "горячие" и "холодные". Наиболее свежая часть занимает малый объем и запрашивается регулярно, а большой хвост исторических данных запрашивается редко. При наличии в системе нескольких дисков, "горячая" часть данных может быть размещена на быстрых дисках (например, на NVMe SSD или в памяти), а холодная на более медленных (например, HDD).
+Движки таблиц семейства `MergeTree` могут хранить данные на нескольких блочных устройствах. Это может оказаться полезным, например, при неявном разделении данных одной таблицы на "горячие" и "холодные". Наиболее свежая часть занимает малый объём и запрашивается регулярно, а большой хвост исторических данных запрашивается редко. При наличии в системе нескольких дисков, "горячая" часть данных может быть размещена на быстрых дисках (например, на NVMe SSD или в памяти), а холодная на более медленных (например, HDD).
 
 Минимальной перемещаемой единицей для `MergeTree` является кусок данных (data part). Данные одного куска могут находится только на одном диске. Куски могут перемещаться между дисками в фоне, согласно пользовательским настройкам, а также с помощью запросов [ALTER](../../query_language/alter.md#alter_move-partition).
 
@@ -491,21 +491,25 @@ ALTER TABLE example_table
 Структура конфигурации:
 
 ```xml
-<disks>
-    <disk_name_1> <!-- disk name -->
-        <path>/mnt/fast_ssd/clickhouse</path>
-    </disk_name_1>
-    <disk_name_2>
-        <path>/mnt/hdd1/clickhouse</path>
-        <keep_free_space_bytes>10485760</keep_free_space_bytes>_
-    </disk_name_2>
-    <disk_name_3>
-        <path>/mnt/hdd2/clickhouse</path>
-        <keep_free_space_bytes>10485760</keep_free_space_bytes>_
-    </disk_name_3>
+<storage_configuration>
+    <disks>
+        <disk_name_1> <!-- disk name -->
+            <path>/mnt/fast_ssd/clickhouse</path>
+        </disk_name_1>
+        <disk_name_2>
+            <path>/mnt/hdd1/clickhouse</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_2>
+        <disk_name_3>
+            <path>/mnt/hdd2/clickhouse</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_3>
 
+        ...
+    </disks>
+    
     ...
-</disks>
+</storage_configuration>
 ```
 
 Теги:
@@ -519,26 +523,30 @@ ALTER TABLE example_table
 Общий вид конфигурации политик хранения:
 
 ```xml
-<policies>
-    <policy_name_1>
-        <volumes>
-            <volume_name_1>
-                <disk>disk_name_from_disks_configuration</disk>
-                <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
-            </volume_name_1>
-            <volume_name_2>
-                <!-- configuration -->
-            </volume_name_2>
-            <!-- more volumes -->
-        </volumes>
-        <move_factor>0.2</move_factor>
-    </policy_name_1>
-    <policy_name_2>
-        <!-- configuration -->
-    </policy_name_2>
+<storage_configuration>
+    ...
+    <policies>
+        <policy_name_1>
+            <volumes>
+                <volume_name_1>
+                    <disk>disk_name_from_disks_configuration</disk>
+                    <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
+                </volume_name_1>
+                <volume_name_2>
+                    <!-- configuration -->
+                </volume_name_2>
+                <!-- more volumes -->
+            </volumes>
+            <move_factor>0.2</move_factor>
+        </policy_name_1>
+        <policy_name_2>
+            <!-- configuration -->
+        </policy_name_2>
 
-    <!-- more policies -->
-</policies>
+        <!-- more policies -->
+    </policies>
+    ...
+</storage_configuration>
 ```
 
 Тэги:
@@ -552,29 +560,33 @@ ALTER TABLE example_table
 Примеры конфигураций:
 
 ```xml
-<policies>
-    <hdd_in_order> <!-- policy name -->
-        <volumes>
-            <single> <!-- volume name -->
-                <disk>disk1</disk>
-                <disk>disk2</disk>
-            </single>
-        </volumes>
-    </hdd_in_order>
+<storage_configuration>
+    ...
+    <policies>
+        <hdd_in_order> <!-- policy name -->
+            <volumes>
+                <single> <!-- volume name -->
+                    <disk>disk1</disk>
+                    <disk>disk2</disk>
+                </single>
+            </volumes>
+        </hdd_in_order>
 
-    <moving_from_ssd_to_hdd>
-        <volumes>
-            <hot>
-                <disk>fast_ssd</disk>
-                <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
-            </hot>
-            <cold>
-                <disk>disk1</disk>
-            </cold>            
-        </volumes>
-        <move_factor>0.2</move_factor>
-    </moving_from_ssd_to_hdd>
-</policies>
+        <moving_from_ssd_to_hdd>
+            <volumes>
+                <hot>
+                    <disk>fast_ssd</disk>
+                    <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
+                </hot>
+                <cold>
+                    <disk>disk1</disk>
+                </cold>            
+            </volumes>
+            <move_factor>0.2</move_factor>
+        </moving_from_ssd_to_hdd>
+    </policies>
+    ...
+</storage_configuration>
 ```
 
 В приведенном примере, политика `hdd_in_order` реализует прицип [round-robin](https://ru.wikipedia.org/wiki/Round-robin_(%D0%B0%D0%BB%D0%B3%D0%BE%D1%80%D0%B8%D1%82%D0%BC)). Так как в политике есть всего один том (`single`), то все записи производятся на его диски по круговому циклу. Такая политика может быть полезна при наличии в системе нескольких похожих дисков, но при этом не сконфигурирован RAID. Учтите, что каждый отдельный диск ненадёжен и чтобы не потерять важные данные это необходимо скомпенсировать за счет хранения данных в трёх копиях.
@@ -623,4 +635,4 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 После выполнения фоновых слияний или мутаций старые куски не удаляются сразу, а через некоторое время (табличная настройка `old_parts_lifetime`). Также они не перемещаются на другие тома или диски, поэтому до момента удаления они продолжают учитываться при подсчёте занятого дискового пространства.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/mergetree/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/mergetree/) <!--hide-->

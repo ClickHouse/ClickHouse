@@ -2,8 +2,6 @@
 
 #include <Functions/IFunctionAdaptors.h>
 #include <Common/IFactoryWithAliases.h>
-#include "URL/registerFunctionsURL.h"
-#include "registerFunctions.h"
 
 #include <functional>
 #include <memory>

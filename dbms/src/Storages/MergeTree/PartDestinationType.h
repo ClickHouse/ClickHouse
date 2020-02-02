@@ -8,6 +8,7 @@ enum class PartDestinationType
 {
     DISK,
     VOLUME,
+    TABLE,
     DELETE,
 };
 

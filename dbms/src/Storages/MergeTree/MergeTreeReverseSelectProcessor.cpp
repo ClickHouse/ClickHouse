@@ -43,6 +43,7 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     const PrewhereInfoPtr & prewhere_info_,
     bool check_columns,
     size_t min_bytes_to_use_direct_io_,
+    size_t min_bytes_to_use_mmap_io_,
     size_t max_read_buffer_size_,
     bool save_marks_in_cache_,
     const Names & virt_column_names_,
@@ -52,7 +53,7 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     MergeTreeBaseSelectProcessor{
         replaceTypes(storage_.getSampleBlockForColumns(required_columns_), owned_data_part_),
         storage_, prewhere_info_, max_block_size_rows_,
-        preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, min_bytes_to_use_direct_io_,
+        preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, min_bytes_to_use_direct_io_, min_bytes_to_use_mmap_io_,
         max_read_buffer_size_, use_uncompressed_cache_, save_marks_in_cache_, virt_column_names_},
     required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
@@ -93,13 +94,13 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     reader = std::make_unique<MergeTreeReader>(
         path, data_part, task_columns.columns, owned_uncompressed_cache.get(),
         owned_mark_cache.get(), save_marks_in_cache, storage,
-        all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size);
+        all_mark_ranges, min_bytes_to_use_direct_io, min_bytes_to_use_mmap_io, max_read_buffer_size);
 
     if (prewhere_info)
         pre_reader = std::make_unique<MergeTreeReader>(
             path, data_part, task_columns.pre_columns, owned_uncompressed_cache.get(),
             owned_mark_cache.get(), save_marks_in_cache, storage,
-            all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size);
+            all_mark_ranges, min_bytes_to_use_direct_io, min_bytes_to_use_mmap_io, max_read_buffer_size);
 }
 
 bool MergeTreeReverseSelectProcessor::getNewTask()
@@ -111,7 +112,7 @@ try
         return false;
     }
 
-    /// We have some blocks to return in buffer. 
+    /// We have some blocks to return in buffer.
     /// Return true to continue reading, but actually don't create a task.
     if (all_mark_ranges.empty())
         return true;

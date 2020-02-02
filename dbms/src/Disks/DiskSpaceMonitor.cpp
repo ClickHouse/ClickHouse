@@ -111,6 +111,12 @@ Volume::Volume(
                       << " < " << formatReadableSizeWithBinarySuffix(MIN_PART_SIZE) << ")");
 }
 
+DiskPtr Volume::getNextDisk()
+{
+    size_t start_from = last_used.fetch_add(1u, std::memory_order_relaxed);
+    size_t index = start_from % disks.size();
+    return disks[index];
+}
 
 ReservationPtr Volume::reserve(UInt64 expected_size)
 {
@@ -205,6 +211,30 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
             throw Exception("Volumes names must be unique (" + volumes[i]->getName() + " duplicated).", ErrorCodes::UNKNOWN_POLICY);
         volumes_names[volumes[i]->getName()] = i;
     }
+}
+
+
+bool StoragePolicy::isDefaultPolicy() const
+{
+    /// Guessing if this policy is default, not 100% correct though.
+
+    if (getName() != "default")
+        return false;
+
+    if (volumes.size() != 1)
+        return false;
+
+    if (volumes[0]->getName() != "default")
+        return false;
+
+    const auto & disks = volumes[0]->disks;
+    if (disks.size() != 1)
+        return false;
+
+    if (disks[0]->getName() != "default")
+        return false;
+
+    return true;
 }
 
 

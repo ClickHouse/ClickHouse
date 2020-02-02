@@ -31,7 +31,9 @@
 - 监控
     - [Graphite](https://graphiteapp.org)
         - [graphouse](https://github.com/yandex/graphouse)
-        - [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse)
+        - [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
+        - [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
+        - [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md#graphitemergetree) if rules from [rollup configuration](../../operations/table_engines/graphitemergetree.md#rollup-configuration) could be applied
     - [Grafana](https://grafana.com/)
         - [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     - [Prometheus](https://prometheus.io/)
@@ -79,4 +81,4 @@
     - [Ecto](https://github.com/elixir-ecto/ecto)
         - [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
 
-[来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party/integrations/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/zh/interfaces/third-party/integrations/) <!--hide-->

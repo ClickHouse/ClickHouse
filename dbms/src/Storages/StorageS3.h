@@ -28,8 +28,7 @@ public:
     StorageS3(const S3::URI & uri,
         const String & access_key_id,
         const String & secret_access_key,
-        const String & database_name_,
-        const String & table_name_,
+        const StorageID & table_id_,
         const String & format_name_,
         UInt64 min_upload_part_size_,
         const ColumnsDescription & columns_,
@@ -47,11 +46,6 @@ public:
         return getSampleBlock();
     }
 
-    String getTableName() const override
-    {
-        return table_name;
-    }
-
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -62,15 +56,11 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
-
 private:
     S3::URI uri;
     const Context & context_global;
 
     String format_name;
-    String database_name;
-    String table_name;
     UInt64 min_upload_part_size;
     String compression_method;
     std::shared_ptr<Aws::S3::S3Client> client;

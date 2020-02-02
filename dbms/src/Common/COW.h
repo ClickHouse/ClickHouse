@@ -15,7 +15,7 @@
     private:
         friend class COW<Column>;
 
-        /// Leave all constructors in private section. They will be avaliable through 'create' method.
+        /// Leave all constructors in private section. They will be available through 'create' method.
         Column();
 
         /// Provide 'clone' method. It can be virtual if you want polymorphic behaviour.

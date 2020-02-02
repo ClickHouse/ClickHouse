@@ -949,7 +949,7 @@ bool DataTypeLowCardinality::equals(const IDataType & rhs) const
 }
 
 
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr create(const String & /*type_name*/, const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
         throw Exception("LowCardinality data type family must have single argument - type of elements",

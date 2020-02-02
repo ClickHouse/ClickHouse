@@ -39,10 +39,11 @@
 - C#
     - [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
     - [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
+    - [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
 - Elixir
     - [clickhousex](https://github.com/appodeal/clickhousex/)
 - Nim
     - [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 
 
-[来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party/client_libraries/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/zh/interfaces/third-party/client_libraries/) <!--hide-->

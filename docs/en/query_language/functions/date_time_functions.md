@@ -62,9 +62,40 @@ Converts a date with time to a UInt8 number containing the number of the minute 
 Converts a date with time to a UInt8 number containing the number of the second in the minute (0-59).
 Leap seconds are not accounted for.
 
-## toUnixTimestamp
+## toUnixTimestamp {#to_unix_timestamp}
 
-Converts a date with time to a unix timestamp.
+For DateTime argument: converts value to its internal numeric representation (Unix Timestamp).
+For String argument: parse datetime from string according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
+For Date argument: the behaviour is unspecified.
+
+**Syntax** 
+
+```sql
+toUnixTimestamp(datetime)
+toUnixTimestamp(str, [timezone])
+```
+
+**Returned value**
+
+- Returns the unix timestamp.
+
+Type: `UInt32`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
+```
+
+Result:
+
+```text
+┌─unix_timestamp─┐
+│     1509836867 │
+└────────────────┘
+```
 
 ## toStartOfYear
 
@@ -311,22 +342,58 @@ SELECT
 └──────────────────────────┴───────────────────────────────┘
 ```
 
-## dateDiff('unit', t1, t2, \[timezone\])
+## dateDiff {#datediff}
 
-Return the difference between two times expressed in 'unit' e.g. `'hours'`. 't1' and 't2' can be Date or DateTime, If 'timezone' is specified, it applied to both arguments. If not, timezones from datatypes 't1' and 't2' are used. If that timezones are not the same, the result is unspecified.
+Returns the difference between two Date or DateTime values.
 
-Supported unit values:
+**Syntax**
 
-| unit   |
-| ------ |
-|second  |
-|minute  |
-|hour    |
-|day     |
-|week    |
-|month   |
-|quarter |
-|year    |
+```sql
+dateDiff('unit', startdate, enddate, [timezone])
+```
+
+**Parameters**
+
+- `unit` — Time unit, in which the returned value is expressed. [String](../syntax.md#syntax-string-literal). 
+
+    Supported values:
+
+    | unit   |
+    | ------ |
+    |second  |
+    |minute  |
+    |hour    |
+    |day     |
+    |week    |
+    |month   |
+    |quarter |
+    |year    |
+
+- `startdate` — The first time value to compare. [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+- `enddate` — The second time value to compare. [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+- `timezone` — Optional parameter. If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [Time Zone](../../data_types/datetime.md#time-zones).
+
+**Returned value**
+
+Difference between `startdate` and `enddate` expressed in `unit`.
+
+Type: `int`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'));
+```
+
+Result:
+
+```text
+┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
+│                                                                                     25 │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## timeSlots(StartTime, Duration,\[, Size\])
 
@@ -366,4 +433,4 @@ Supported modifiers for Format:
 |%Y|Year|2018|
 |%%|a % sign|%|
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/date_time_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->

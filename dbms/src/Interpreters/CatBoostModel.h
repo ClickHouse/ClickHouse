@@ -60,7 +60,7 @@ public:
 
     const ExternalLoadableLifetime & getLifetime() const override;
 
-    std::string getName() const override { return name; }
+    const std::string & getLoadableName() const override { return name; }
 
     bool supportUpdates() const override { return true; }
 
@@ -69,7 +69,7 @@ public:
     std::shared_ptr<const IExternalLoadable> clone() const override;
 
 private:
-    std::string name;
+    const std::string name;
     std::string model_path;
     std::string lib_path;
     ExternalLoadableLifetime lifetime;

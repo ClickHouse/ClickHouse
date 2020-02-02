@@ -12,11 +12,13 @@
 #include <utility>
 #include <vector>
 
+
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 struct FormatImpl
@@ -44,11 +46,11 @@ struct FormatImpl
         for (UInt64 pos = l; pos < r; pos++)
         {
             if (!isNumericASCII(description[pos]))
-                throw Exception("Not a number in curly braces at position " + std::to_string(pos), ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Not a number in curly braces at position " + std::to_string(pos), ErrorCodes::BAD_ARGUMENTS);
             res = res * 10 + description[pos] - '0';
             if (res >= argument_threshold)
                 throw Exception(
-                    "Too big number for arguments, must be at most " + std::to_string(argument_threshold), ErrorCodes::LOGICAL_ERROR);
+                    "Too big number for arguments, must be at most " + std::to_string(argument_threshold), ErrorCodes::BAD_ARGUMENTS);
         }
     }
 
@@ -60,7 +62,7 @@ struct FormatImpl
         UInt64 * index_positions_ptr,
         std::vector<String> & substrings)
     {
-        /// Is current position is after open curly brace.
+        /// Is current position after open curly brace.
         bool is_open_curly = false;
         /// The position of last open token.
         size_t last_open = -1;
@@ -113,7 +115,7 @@ struct FormatImpl
                 }
 
                 if (is_open_curly)
-                    throw Exception("Two open curly braces without close one at position " + std::to_string(i), ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("Two open curly braces without close one at position " + std::to_string(i), ErrorCodes::BAD_ARGUMENTS);
 
                 String to_add = String(pattern.data() + start_pos, i - start_pos);
                 double_brace_removal(to_add);
@@ -136,7 +138,7 @@ struct FormatImpl
                 }
 
                 if (!is_open_curly)
-                    throw Exception("Closed curly brace without open one at position " + std::to_string(i), ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("Closed curly brace without open one at position " + std::to_string(i), ErrorCodes::BAD_ARGUMENTS);
 
                 is_open_curly = false;
 
@@ -144,17 +146,17 @@ struct FormatImpl
                 {
                     if (is_plain_numbering && !*is_plain_numbering)
                         throw Exception(
-                            "Cannot switch from automatic field numbering to manual field specification", ErrorCodes::LOGICAL_ERROR);
+                            "Cannot switch from automatic field numbering to manual field specification", ErrorCodes::BAD_ARGUMENTS);
                     is_plain_numbering = true;
                     if (index_if_plain >= argument_number)
-                        throw Exception("Argument is too big for formatting", ErrorCodes::LOGICAL_ERROR);
+                        throw Exception("Argument is too big for formatting", ErrorCodes::BAD_ARGUMENTS);
                     *index_positions_ptr = index_if_plain++;
                 }
                 else
                 {
                     if (is_plain_numbering && *is_plain_numbering)
                         throw Exception(
-                            "Cannot switch from automatic field numbering to manual field specification", ErrorCodes::LOGICAL_ERROR);
+                            "Cannot switch from automatic field numbering to manual field specification", ErrorCodes::BAD_ARGUMENTS);
                     is_plain_numbering = false;
 
                     UInt64 arg;
@@ -162,7 +164,7 @@ struct FormatImpl
 
                     if (arg >= argument_number)
                         throw Exception(
-                            "Argument is too big for formatting. Note that indexing starts from zero", ErrorCodes::LOGICAL_ERROR);
+                            "Argument is too big for formatting. Note that indexing starts from zero", ErrorCodes::BAD_ARGUMENTS);
 
                     *index_positions_ptr = arg;
                 }
@@ -182,7 +184,7 @@ struct FormatImpl
         }
 
         if (is_open_curly)
-            throw Exception("Last open curly brace is not closed", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Last open curly brace is not closed", ErrorCodes::BAD_ARGUMENTS);
 
         String to_add = String(pattern.data() + start_pos, pattern.size() - start_pos);
         double_brace_removal(to_add);

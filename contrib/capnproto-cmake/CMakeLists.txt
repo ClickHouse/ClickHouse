@@ -1,5 +1,7 @@
 set (CAPNPROTO_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/capnproto/c++/src)
 
+set (CMAKE_CXX_STANDARD 17)
+
 set (KJ_SRCS
     ${CAPNPROTO_SOURCE_DIR}/kj/array.c++
     ${CAPNPROTO_SOURCE_DIR}/kj/common.c++

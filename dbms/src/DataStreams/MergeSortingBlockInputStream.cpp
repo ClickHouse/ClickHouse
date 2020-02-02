@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/sortBlock.h>
+#include <Disks/DiskSpaceMonitor.h>
 
 
 namespace ProfileEvents
@@ -21,10 +22,10 @@ namespace DB
 MergeSortingBlockInputStream::MergeSortingBlockInputStream(
     const BlockInputStreamPtr & input, SortDescription & description_,
     size_t max_merged_block_size_, UInt64 limit_, size_t max_bytes_before_remerge_,
-    size_t max_bytes_before_external_sort_, const std::string & tmp_path_, size_t min_free_disk_space_)
+    size_t max_bytes_before_external_sort_, VolumePtr tmp_volume_, size_t min_free_disk_space_)
     : description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
     max_bytes_before_remerge(max_bytes_before_remerge_),
-    max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_),
+    max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_volume(tmp_volume_),
     min_free_disk_space(min_free_disk_space_)
 {
     children.push_back(input);
@@ -78,10 +79,14 @@ Block MergeSortingBlockInputStream::readImpl()
               */
             if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
             {
-                if (!enoughSpaceInDirectory(tmp_path, sum_bytes_in_blocks + min_free_disk_space))
-                    throw Exception("Not enough space for external sort in " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
+                size_t size = sum_bytes_in_blocks + min_free_disk_space;
+                auto reservation = tmp_volume->reserve(size);
+                if (!reservation)
+                    throw Exception("Not enough space for external sort in temporary storage", ErrorCodes::NOT_ENOUGH_SPACE);
 
+                const std::string tmp_path(reservation->getDisk()->getPath());
                 temporary_files.emplace_back(createTemporaryFile(tmp_path));
+
                 const std::string & path = temporary_files.back()->path();
                 MergeSortingBlocksBlockInputStream block_in(blocks, description, max_merged_block_size, limit);
 
@@ -150,10 +155,12 @@ MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
 
     blocks.swap(nonempty_blocks);
 
-    if (!has_collation)
+    if (has_collation)
+        queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
+    else if (description.size() > 1)
         queue_without_collation = SortingHeap<SortCursor>(cursors);
     else
-        queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
+        queue_simple = SortingHeap<SimpleSortCursor>(cursors);
 }
 
 
@@ -169,9 +176,12 @@ Block MergeSortingBlocksBlockInputStream::readImpl()
         return res;
     }
 
-    return !has_collation
-        ? mergeImpl(queue_without_collation)
-        : mergeImpl(queue_with_collation);
+    if (has_collation)
+        return mergeImpl(queue_with_collation);
+    else if (description.size() > 1)
+        return mergeImpl(queue_without_collation);
+    else
+        return mergeImpl(queue_simple);
 }
 
 
@@ -179,9 +189,18 @@ template <typename TSortingHeap>
 Block MergeSortingBlocksBlockInputStream::mergeImpl(TSortingHeap & queue)
 {
     size_t num_columns = header.columns();
-
     MutableColumns merged_columns = header.cloneEmptyColumns();
-    /// TODO: reserve (in each column)
+
+    /// Reserve
+    if (queue.isValid() && !blocks.empty())
+    {
+        /// The expected size of output block is the same as input block
+        size_t size_to_reserve = blocks[0].rows();
+        for (auto & column : merged_columns)
+            column->reserve(size_to_reserve);
+    }
+
+    /// TODO: Optimization when a single block left.
 
     /// Take rows from queue in right order and push to 'merged'.
     size_t merged_rows = 0;
@@ -209,6 +228,9 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(TSortingHeap & queue)
         if (merged_rows == max_merged_block_size)
             break;
     }
+
+    if (!queue.isValid())
+        blocks.clear();
 
     if (merged_rows == 0)
         return {};

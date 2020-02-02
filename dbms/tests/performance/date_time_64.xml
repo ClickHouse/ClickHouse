@@ -21,9 +21,6 @@
         </any_of>
     </stop_conditions>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
 
 
     <query>SELECT count() FROM dt where not ignore(x)</query>
