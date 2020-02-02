@@ -159,7 +159,7 @@ SetPtr makeExplicitSet(
 
     auto throw_unsupported_type = [](const auto & type)
     {
-        throw Exception("Unsupported value type at the right-side of IN:"
+        throw Exception("Unsupported value type at the right-side of IN: "
             + type->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     };
 
