@@ -40,11 +40,11 @@ public:
     std::string getFileName() const override { return filename; }
     int getFD() const override { return fd; }
 
+    off_t seek(off_t off, int whence) override;
+
 private:
     ///
     bool nextImpl() override;
-    ///
-    off_t doSeek(off_t off, int whence) override;
     /// Synchronously read the data.
     void synchronousRead();
     /// Get data from an asynchronous request.
