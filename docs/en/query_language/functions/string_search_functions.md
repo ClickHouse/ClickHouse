@@ -17,12 +17,13 @@ For a case-insensitive search, use the function `positionCaseInsensitiveUTF8`.
 
 ## multiSearchAllPositions {#multiSearchAllPositions}
 
-The same as [position](#position) but returns `Array` of positions (in bytes) of the found substrings in the string, starting from 1.
+The same as [position](#position) but returns `Array` of positions (in bytes) of the found corresponding substrings in the string. Positions are indexed starting from 1.
 
-Works under the assumption that the string contains a set of bytes representing a single-byte encoded text. If this assumption is not met and a character can't be represented using a single byte, the function doesn't throw an exception and returns some unexpected result. If character can be represented using two bytes, it will use two bytes and so on.
+The search is performed on sequences of bytes without respect to string encoding and collation.
 
-- For a case-insensitive search, use the function `multiSearchAllPositionsCaseInsensitive`.
-- For search in UTF-8 format, use the function [multiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
+- For case-insensitive ASCII search, use the function `multiSearchAllPositionsCaseInsensitive`.
+- For search in UTF-8, use the function [multiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
+- For case-insensitive UTF-8 search, use the function multiSearchAllPositionsCaseInsensitiveUTF8.
 
 **Syntax** 
 
@@ -37,10 +38,7 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 
 **Returned values**
 
-- Array of starting positions in bytes (counting from 1), if substrings were found.
-- 0, if the substring was not found.
-
-Type: `Integers[]`.
+- Array of starting positions in bytes (counting from 1), if the corresponding substring was found and 0 if not found.
 
 **Example**
 
@@ -60,45 +58,7 @@ Result:
 
 ## multiSearchAllPositionsUTF8 {#multiSearchAllPositionsUTF8}
 
-The same as [positionUTF8](#positionutf8), but returns the array of positions (in Unicode points) of the found substrings in the string, starting from 1.
-
-Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, the function doesn't throw an exception and returns some unexpected result. If character can be represented using two Unicode points, it will use two and so on.
-
-For a case-insensitive search, use the function `multiSearchAllPositionsCaseInsensitiveUTF8`.
-
-**Syntax** 
-
-```sql
-multiSearchAllPositionsUTF8(haystack, [needle1, needle2, ..., needlen])
-```
-
-**Parameters** 
-
-- `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
-- `needle` —  substring to be searched. [String](../syntax.md#syntax-string-literal).
-
-**Returned values**
-
-- Array of starting positions in Unicode points (counting from 1), if substrings were found.
-- 0, if the substring was not found.
-
-Type: `Integers[]`.
-
-**Example**
-
-Query:
-
-```sql
-SELECT multiSearchAllPositionsUTF8('Привет, мир!', ['Привет', '!', ','])
-```
-
-Result:
-
-```text
-┌─multiSearchAllPositionsUTF8('Привет, мир!', ['Привет', '!', ','])─┐
-│ [1,12,7]                                                          │
-└───────────────────────────────────────────────────────────────────┘
-```
+See `multiSearchAllPositions`.
 
 ## multiSearchFirstPosition(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>]) {#multiSearchFirstPosition}
 
