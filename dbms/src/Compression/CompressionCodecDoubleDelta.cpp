@@ -26,7 +26,7 @@ extern const int CANNOT_DECOMPRESS;
 namespace
 {
 
-Int64 getMaxValueForByteSize(UInt8 byte_size)
+inline Int64 getMaxValueForByteSize(Int8 byte_size)
 {
     switch (byte_size)
     {
@@ -51,11 +51,56 @@ struct WriteSpec
     const UInt8 data_bits;
 };
 
-const std::array<UInt8, 5> DELTA_SIZES{7, 9, 12, 32, 64};
+// delta size prefix and data lengths based on few high bits peeked from binary stream
+static const WriteSpec WRITE_SPEC_LUT[32] = {
+    // 0b0 - 1-bit prefix, no data to read
+    /* 00000 */ {1, 0b0, 0},
+    /* 00001 */ {1, 0b0, 0},
+    /* 00010 */ {1, 0b0, 0},
+    /* 00011 */ {1, 0b0, 0},
+    /* 00100 */ {1, 0b0, 0},
+    /* 00101 */ {1, 0b0, 0},
+    /* 00110 */ {1, 0b0, 0},
+    /* 00111 */ {1, 0b0, 0},
+    /* 01000 */ {1, 0b0, 0},
+    /* 01001 */ {1, 0b0, 0},
+    /* 01010 */ {1, 0b0, 0},
+    /* 01011 */ {1, 0b0, 0},
+    /* 01100 */ {1, 0b0, 0},
+    /* 01101 */ {1, 0b0, 0},
+    /* 01110 */ {1, 0b0, 0},
+    /* 01111 */ {1, 0b0, 0},
+
+    // 0b10 - 2 bit prefix, 7 bits of data
+    /* 10000 */ {2, 0b10, 7},
+    /* 10001 */ {2, 0b10, 7},
+    /* 10010 */ {2, 0b10, 7},
+    /* 10011 */ {2, 0b10, 7},
+    /* 10100 */ {2, 0b10, 7},
+    /* 10101 */ {2, 0b10, 7},
+    /* 10110 */ {2, 0b10, 7},
+    /* 10111 */ {2, 0b10, 7},
+
+    // 0b110 - 3 bit prefix, 9 bits of data
+    /* 11000 */ {3, 0b110, 9},
+    /* 11001 */ {3, 0b110, 9},
+    /* 11010 */ {3, 0b110, 9},
+    /* 11011 */ {3, 0b110, 9},
+
+    // 0b1110 - 4 bit prefix, 12 bits of data
+    /* 11100 */ {4, 0b1110, 12},
+    /* 11101 */ {4, 0b1110, 12},
+
+    // 5-bit prefixes
+    /* 11110 */ {5, 0b11110, 32},
+    /* 11111 */ {5, 0b11111, 64},
+};
+
 
 template <typename T>
 WriteSpec getDeltaWriteSpec(const T & value)
 {
+    // TODO: to speed up things a bit by counting number of leading zeroes instead of doing lots of comparisons
     if (value > -63 && value < 64)
     {
         return WriteSpec{2, 0b10, 7};
@@ -107,14 +152,15 @@ UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
 template <typename ValueType>
 UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
-    // Since only unsinged int has granted 2-compliment overflow handling, we are doing math here on unsigned types.
-    // To simplify and booletproof code, we operate enforce ValueType to be unsigned too.
+    // Since only unsinged int has granted 2-complement overflow handling,
+    // we are doing math here only on unsigned types.
+    // To simplify and booletproof code, we enforce ValueType to be unsigned too.
     static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
     using UnsignedDeltaType = ValueType;
 
     // We use signed delta type to turn huge unsigned values into smaller signed:
     // ffffffff => -1
-    using SignedDeltaType = typename std::make_signed<UnsignedDeltaType>::type;
+    using SignedDeltaType = typename std::make_signed_t<UnsignedDeltaType>;
 
     if (source_size % sizeof(ValueType) != 0)
         throw Exception("Cannot compress, data size " + toString(source_size)
@@ -149,8 +195,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
         prev_value = curr_value;
     }
 
-    WriteBuffer buffer(dest, getCompressedDataSize(sizeof(ValueType), source_size - sizeof(ValueType)*2));
-    BitWriter writer(buffer);
+    BitWriter writer(dest, getCompressedDataSize(sizeof(ValueType), source_size - sizeof(ValueType)*2));
 
     int item = 2;
     for (; source < source_end; source += sizeof(ValueType), ++item)
@@ -170,7 +215,8 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
         else
         {
             const SignedDeltaType signed_dd = static_cast<SignedDeltaType>(double_delta);
-            const auto sign = std::signbit(signed_dd);
+            const auto sign = signed_dd < 0;
+
             // -1 shirnks dd down to fit into number of bits, and there can't be 0, so it is OK.
             const auto abs_value = static_cast<UnsignedDeltaType>(std::abs(signed_dd) - 1);
             const auto write_spec = getDeltaWriteSpec(signed_dd);
@@ -183,7 +229,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 
     writer.flush();
 
-    return sizeof(items_count) + sizeof(prev_value) + sizeof(prev_delta) + buffer.count();
+    return sizeof(items_count) + sizeof(prev_value) + sizeof(prev_delta) + writer.count() / 8;
 }
 
 template <typename ValueType>
@@ -220,35 +266,28 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
         dest += sizeof(prev_value);
     }
 
-    ReadBufferFromMemory buffer(source, source_size - sizeof(prev_value) - sizeof(prev_delta) - sizeof(items_count));
-    BitReader reader(buffer);
+    BitReader reader(source, source_size - sizeof(prev_value) - sizeof(prev_delta) - sizeof(items_count));
 
     // since data is tightly packed, up to 1 bit per value, and last byte is padded with zeroes,
     // we have to keep track of items to avoid reading more that there is.
     for (UInt32 items_read = 2; items_read < items_count && !reader.eof(); ++items_read)
     {
         UnsignedDeltaType double_delta = 0;
-        if (reader.readBit() == 1)
-        {
-            UInt8 i = 0;
-            for (; i < sizeof(DELTA_SIZES) - 1; ++i)
-            {
-                const auto next_bit = reader.readBit();
-                if (next_bit == 0)
-                {
-                    break;
-                }
-            }
 
+        static_assert(sizeof(WRITE_SPEC_LUT)/sizeof(WRITE_SPEC_LUT[0]) == 32); // 5-bit prefix lookup table
+        const auto write_spec = WRITE_SPEC_LUT[reader.peekByte() >> (8 - 5)]; // only 5 high bits of peeked byte value
+
+        reader.skipBufferedBits(write_spec.prefix_bits); // discard the prefix value, since we've already used it
+        if (write_spec.data_bits != 0)
+        {
             const UInt8 sign = reader.readBit();
-            SignedDeltaType signed_dd = static_cast<SignedDeltaType>(reader.readBits(DELTA_SIZES[i] - 1) + 1);
+            SignedDeltaType signed_dd = static_cast<SignedDeltaType>(reader.readBits(write_spec.data_bits - 1) + 1);
             if (sign)
             {
                 signed_dd *= -1;
             }
             double_delta = static_cast<UnsignedDeltaType>(signed_dd);
         }
-        // else if first bit is zero, no need to read more data.
 
         const UnsignedDeltaType delta = double_delta + prev_delta;
         const ValueType curr_value = prev_value + delta;

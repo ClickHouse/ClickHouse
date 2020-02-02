@@ -37,6 +37,8 @@
     M(CreatedReadBufferOrdinary, "") \
     M(CreatedReadBufferAIO, "") \
     M(CreatedReadBufferAIOFailed, "") \
+    M(CreatedReadBufferMMap, "") \
+    M(CreatedReadBufferMMapFailed, "") \
     M(CreatedWriteBufferOrdinary, "") \
     M(CreatedWriteBufferAIO, "") \
     M(CreatedWriteBufferAIOFailed, "") \

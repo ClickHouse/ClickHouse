@@ -195,7 +195,7 @@ const DecimalType<U> decimalResultType(const DataTypeNumber<T> &, const DecimalT
 }
 
 template <template <typename> typename DecimalType>
-DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
+DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value, const String & type_name = "Decimal", bool only_scale = false)
 {
     if (precision_value < DecimalUtils::minPrecision() || precision_value > DecimalUtils::maxPrecision<Decimal128>())
         throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -204,10 +204,10 @@ DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
         throw Exception("Negative scales and scales larger than precision are not supported", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     if (precision_value <= DecimalUtils::maxPrecision<Decimal32>())
-        return std::make_shared<DecimalType<Decimal32>>(precision_value, scale_value);
+        return std::make_shared<DecimalType<Decimal32>>(precision_value, scale_value, type_name, only_scale);
     else if (precision_value <= DecimalUtils::maxPrecision<Decimal64>())
-        return std::make_shared<DecimalType<Decimal64>>(precision_value, scale_value);
-    return std::make_shared<DecimalType<Decimal128>>(precision_value, scale_value);
+        return std::make_shared<DecimalType<Decimal64>>(precision_value, scale_value, type_name, only_scale);
+    return std::make_shared<DecimalType<Decimal128>>(precision_value, scale_value, type_name, only_scale);
 }
 
 }

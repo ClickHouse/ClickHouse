@@ -74,7 +74,7 @@ $ clickhouse client
     ROLE_FAMILY UInt32, 
     ROLE_CODE UInt32
 )
-ENGINE = MergeTree()
+ENGINE = MergeTree ORDER BY date
 ```
 
 **3.** Exit from ClickHouse console client:

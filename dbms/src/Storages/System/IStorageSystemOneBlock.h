@@ -1,9 +1,10 @@
 #pragma once
-#include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <ext/shared_ptr_helper.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Pipe.h>
 
 namespace DB
 {
@@ -20,15 +21,12 @@ protected:
     virtual void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const = 0;
 
 public:
-    IStorageSystemOneBlock(const String & name_) : name(name_)
+    IStorageSystemOneBlock(const String & name_) : IStorage({"system", name_})
     {
         setColumns(ColumnsDescription(Self::getNamesAndTypes()));
     }
 
-    std::string getTableName() const override { return name; }
-    std::string getDatabaseName() const override { return "system"; }
-
-    BlockInputStreams read(const Names & column_names,
+    Pipes readWithProcessors(const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum /*processed_stage*/,
@@ -41,11 +39,14 @@ public:
         MutableColumns res_columns = sample_block.cloneEmptyColumns();
         fillData(res_columns, context, query_info);
 
-        return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns))));
-    }
+        UInt64 num_rows = res_columns.at(0)->size();
+        Chunk chunk(std::move(res_columns), num_rows);
 
-private:
-    const String name;
+        Pipes pipes;
+        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(sample_block, std::move(chunk)));
+
+        return pipes;
+    }
 };
 
 }

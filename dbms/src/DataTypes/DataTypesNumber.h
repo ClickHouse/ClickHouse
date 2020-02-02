@@ -25,6 +25,13 @@ class DataTypeNumber final : public DataTypeNumberBase<T>
         using PromotedType = DataTypeNumber<NearestFieldType<T>>;
         return std::make_shared<PromotedType>();
     }
+
+public:
+    DataTypeNumber(const String & type_name_ = TypeName<T>::get()) : type_name(type_name_) {}
+
+    String doGetName() const override { return type_name; }
+private:
+    const String type_name;
 };
 
 using DataTypeUInt8 = DataTypeNumber<UInt8>;

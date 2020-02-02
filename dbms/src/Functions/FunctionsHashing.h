@@ -371,7 +371,7 @@ struct JavaHashUTF16LEImpl
         }
 
         if (size % 2 != 0)
-            throw Exception("Arguments for javaHashUTF16LE must be in the form of UTF-16", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Arguments for javaHashUTF16LE must be in the form of UTF-16", ErrorCodes::BAD_ARGUMENTS);
 
         UInt32 h = 0;
         for (size_t i = 0; i < size; i += 2)

@@ -429,21 +429,30 @@ IProcessor::Status SortingAggregatedTransform::prepare()
             continue;
         }
 
-        all_finished = false;
+        //all_finished = false;
 
         in->setNeeded();
 
         if (!in->hasData())
         {
             need_data = true;
+            all_finished = false;
             continue;
         }
 
         auto chunk = in->pull();
-        /// If chunk was pulled, then we need data from this port.
-        need_data = true;
-
         addChunk(std::move(chunk), input_num);
+
+        if (in->isFinished())
+        {
+            is_input_finished[input_num] = true;
+        }
+        else
+        {
+            /// If chunk was pulled, then we need data from this port.
+            need_data = true;
+            all_finished = false;
+        }
     }
 
     if (pushed_to_output)

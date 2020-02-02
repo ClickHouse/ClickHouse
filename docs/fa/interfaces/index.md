@@ -19,4 +19,4 @@ ClickHouse دو اینترفیس شبکه را فراهم می کند (هر دو
 * [رابط های بصری](third-party/gui.md)
 
 </div>
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/interfaces/) <!--hide-->

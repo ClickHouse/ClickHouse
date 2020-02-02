@@ -72,4 +72,6 @@ private:
 std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery & select_query, const String & current_database);
 std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuery & select, size_t table_number);
 
+using TablesWithColumnNames = std::vector<TableWithColumnNames>;
+
 }

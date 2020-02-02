@@ -49,7 +49,7 @@ protected:
 class DataTypeDateTime final : public DataTypeNumberBase<UInt32>, public TimezoneMixin
 {
 public:
-    explicit DataTypeDateTime(const String & time_zone_name = "");
+    explicit DataTypeDateTime(const String & time_zone_name = "", const String & type_name_ = "DateTime");
     explicit DataTypeDateTime(const TimezoneMixin & time_zone);
 
     static constexpr auto family_name = "DateTime";
@@ -75,6 +75,8 @@ public:
     bool canBeInsideNullable() const override { return true; }
 
     bool equals(const IDataType & rhs) const override;
+private:
+    const String type_name;
 };
 
 }

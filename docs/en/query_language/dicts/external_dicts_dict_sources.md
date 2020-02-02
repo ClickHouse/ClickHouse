@@ -137,9 +137,9 @@ Setting fields:
 
 - `url` – The source URL.
 - `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
-- `credentials` – Basic HTTP authentification. Optional parameter.
-    - `user` – Username required for the authentification.
-    - `password` – Password required for the authentification.
+- `credentials` – Basic HTTP authentication. Optional parameter.
+    - `user` – Username required for the authentication.
+    - `password` – Password required for the authentication.
 - `headers` – All custom HTTP headers entries used for the HTTP request. Optional parameter.
     - `header` – Single HTTP header entry.
         - `name` – Identifiant name used for the header send on the request.
@@ -435,22 +435,16 @@ SOURCE(MYSQL(
 Setting fields:
 
 - `port` – The port on the MySQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
-
 - `user` – Name of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
-
 - `password` – Password of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
-
 - `replica` – Section of replica configurations. There can be multiple sections.
-    - `replica/host` – The MySQL host.
 
-    \* `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+    - `replica/host` – The MySQL host.
+    - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
 
 - `db` – Name of the database.
-
 - `table` – Name of the table.
-
-- `where ` – The selection criteria. Optional parameter.
-
+- `where ` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in MySQL, for example, `id > 10 AND id < 20`. Optional parameter.
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
 
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
@@ -605,4 +599,4 @@ Setting fields:
 - `storage_type` – The structure of internal Redis storage using for work with keys. `simple` is for simple sources and for hashed single key sources, `hash_map` is for hashed sources with two keys. Ranged sources and cache sources with complex key are unsupported. May be omitted, default value is `simple`.
 - `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

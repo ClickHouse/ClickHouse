@@ -1,4 +1,3 @@
-#include "registerFunctions.h"
 #if 0
 
 #include <Functions/IFunction.h>
@@ -124,6 +123,10 @@ public:
                 std::thread t2([&]{ ++x; });
                 t1.join();
                 t2.join();
+            }
+            else if (mode == "throw exception")
+            {
+                std::vector<int>().at(0);
             }
             else if (mode == "access context")
             {

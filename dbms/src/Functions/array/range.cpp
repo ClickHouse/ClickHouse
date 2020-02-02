@@ -8,7 +8,6 @@
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
 #include <numeric>
-#include "registerFunctionsArray.h"
 
 
 namespace DB
