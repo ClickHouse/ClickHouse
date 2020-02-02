@@ -239,7 +239,7 @@ windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
 
 **Parameters**
 
-- `window` — Length of the sliding window in seconds.[UInt](../../data_types/int_uint.md).
+- `window` — Length of the sliding window in seconds.
 - `mode` - It is an optional argument. 
   - `'strict'` - When the `'strict'` is set, the windowFunnel() applies conditions only for the unique values.
 - `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md#data_type-datetime)  and other unsigned integer types (note that even though timestamp supports the `UInt64` type, it's value can't exceed the Int64 maximum, which is 2^63 - 1).
