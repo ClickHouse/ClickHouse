@@ -2,7 +2,7 @@
 
 ## char {#char}
 
-Returns the string with the length as the number of passed arguments and each byte has the value of corresponding argument. Accepts multiple arguments of numeric types.
+Returns the string with the length as the number of passed arguments and each byte has the value of corresponding argument. Accepts multiple arguments of numeric types. If the value of argument is out of range of UInt8 data type, it is converted to UInt8 with possible rounding and overflow.
 
 **Syntax**
 
@@ -16,7 +16,7 @@ char(number_1, [number_2, ..., number_n]);
 
 **Returned value**
 
-- UTF-8 string consisting of the characters given by the code values of corresponding argument.
+- a string of given bytes.
 
 Type: `String`.
 
@@ -33,6 +33,8 @@ Result:
 │ hello │
 └───────┘
 ```
+
+You can construct a string of arbitrary encoding by passing the corresponding bytes. Here is example for UTF-8:
 
 Query:
 ```sql
