@@ -822,34 +822,101 @@ Result:
 └───────────────────────────────┘
 ```
 
-## filesystemAvailable {#function-filesystemavailable}
+## filesystemAvailable {#filesystemavailable}
 
-Returns the amount of remaining space in the filesystem where the files of the databases located. See the [path](../../operations/server_settings/settings.md#server_settings-path) server setting description.
+Returns amount of remaining space on the filesystem where the files of the databases located. It is always smaller than total free space ([filesystemFree](#filesystemfree)) because some space is reserved for OS.
+
+**Syntax**
 
 ```sql
 filesystemAvailable()
 ```
 
-**Returned values**
+**Returned value**
 
-- Amount of remaining space in bytes.
+- The amount of remaining space available in bytes.
 
 Type: [UInt64](../../data_types/int_uint.md).
 
 **Example**
 
+Query:
+
 ```sql
-SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) AS "Type"
+SELECT formatReadableSize(filesystemAvailable()) AS "Available space", toTypeName(filesystemAvailable()) AS "Type";
 ```
+
+Result:
+
 ```text
-┌──Free space─┬─Type───┐
-│ 18152624128 │ UInt64 │
-└─────────────┴────────┘
+┌─Available space─┬─Type───┐
+│ 30.75 GiB       │ UInt64 │
+└─────────────────┴────────┘
 ```
 
-## filesystemCapacity
+## filesystemFree {#filesystemfree}
 
-Returns the capacity information of the disk, in bytes. This information is evaluated using the configured by path.
+Returns total amount of the free space on the filesystem where the files of the databases located. See also `filesystemAvailable`
+
+**Syntax**
+
+```sql
+filesystemFree()
+```
+
+**Returned value**
+
+- Amount of free space in bytes.
+
+Type: [UInt64](../../data_types/int_uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT formatReadableSize(filesystemFree()) AS "Free space", toTypeName(filesystemFree()) AS "Type";
+```
+
+Result:
+
+```text
+┌─Free space─┬─Type───┐
+│ 32.39 GiB  │ UInt64 │
+└────────────┴────────┘
+```
+
+## filesystemCapacity {#filesystemcapacity}
+
+Returns the capacity of the filesystem in bytes. For evaluation, the [path](../../operations/server_settings/settings.md#server_settings-path) to the data directory must be configured.
+
+**Syntax**
+
+```sql
+filesystemCapacity()
+```
+
+**Returned value**
+
+- Capacity information of the filesystem in bytes.
+
+Type: [UInt64](../../data_types/int_uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesystemCapacity()) AS "Type"
+```
+
+Result:
+
+```text
+┌─Capacity──┬─Type───┐
+│ 39.32 GiB │ UInt64 │
+└───────────┴────────┘
+```
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
