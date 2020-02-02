@@ -72,6 +72,7 @@ public:
         PreparedSets & prepared_sets;
         SubqueriesForSets & subqueries_for_sets;
         bool no_subqueries;
+        bool no_makeset;
         bool only_consts;
         bool no_storage_or_local;
         size_t visit_depth;
@@ -80,7 +81,7 @@ public:
         Data(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
                 const NamesAndTypesList & source_columns_, const ExpressionActionsPtr & actions,
                 PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
-                bool no_subqueries_, bool only_consts_, bool no_storage_or_local_)
+                bool no_subqueries_, bool no_makeset_, bool only_consts_, bool no_storage_or_local_)
         :   context(context_),
             set_size_limit(set_size_limit_),
             subquery_depth(subquery_depth_),
@@ -88,6 +89,7 @@ public:
             prepared_sets(prepared_sets_),
             subqueries_for_sets(subqueries_for_sets_),
             no_subqueries(no_subqueries_),
+            no_makeset(no_makeset_),
             only_consts(only_consts_),
             no_storage_or_local(no_storage_or_local_),
             visit_depth(0),

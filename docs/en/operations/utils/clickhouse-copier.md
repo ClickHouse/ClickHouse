@@ -144,7 +144,7 @@ Parameters:
 
                  NOTE: In spite of this section is optional (if it is not specified, all partitions will be copied),
                  it is strictly recommended to specify them explicitly.
-                 If you already have some ready paritions on destination cluster they
+                 If you already have some ready partitions on destination cluster they
                  will be removed at the start of the copying since they will be interpeted
                  as unfinished data from the previous copying!!!
             -->
@@ -167,4 +167,4 @@ Parameters:
 `clickhouse-copier` tracks the changes in `/task/path/description` and applies them on the fly. For instance, if you change the value of `max_workers`, the number of processes running tasks will also change.
 
 
-[Original article](https://clickhouse.yandex/docs/en/operations/utils/clickhouse-copier/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/utils/clickhouse-copier/) <!--hide-->

@@ -15,9 +15,6 @@
         </any_of>
     </stop_conditions>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
 
 <settings>
     <max_threads>5</max_threads>

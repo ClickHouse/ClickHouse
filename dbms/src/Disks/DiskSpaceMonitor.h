@@ -67,6 +67,13 @@ public:
         const String & config_prefix,
         const DiskSelector & disk_selector);
 
+    /// Next disk (round-robin)
+    ///
+    /// - Used with policy for temporary data
+    /// - Ignores all limitations
+    /// - Shares last access with reserve()
+    DiskPtr getNextDisk();
+
     /// Uses Round-robin to choose disk for reservation.
     /// Returns valid reservation or nullptr if there is no space left on any disk.
     ReservationPtr reserve(UInt64 bytes) override;
@@ -102,6 +109,8 @@ public:
     StoragePolicy(String name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const DiskSelector & disks);
 
     StoragePolicy(String name_, Volumes volumes_, double move_factor_);
+
+    bool isDefaultPolicy() const;
 
     /// Returns disks ordered by volumes priority
     Disks getDisks() const;

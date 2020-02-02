@@ -105,7 +105,7 @@ public:
         if (node.name == NameAnd::name)
         {
             if (!node.arguments || node.arguments->children.empty())
-                throw Exception("Logical error: function requires argiment", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Logical error: function requires argument", ErrorCodes::LOGICAL_ERROR);
 
             for (auto & child : node.arguments->children)
             {

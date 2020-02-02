@@ -28,6 +28,7 @@
 #include <common/config_common.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
+#include <Disks/DiskSpaceMonitor.h>
 
 
 namespace ProfileEvents
@@ -157,7 +158,7 @@ Aggregator::Aggregator(const Params & params_)
     total_size_of_aggregate_states = 0;
     all_aggregates_has_trivial_destructor = true;
 
-    // aggreate_states will be aligned as below:
+    // aggregate_states will be aligned as below:
     // |<-- state_1 -->|<-- pad_1 -->|<-- state_2 -->|<-- pad_2 -->| .....
     //
     // pad_N will be used to match alignment requirement for each next state.
@@ -168,7 +169,7 @@ Aggregator::Aggregator(const Params & params_)
 
         total_size_of_aggregate_states += params.aggregates[i].function->sizeOfData();
 
-        // aggreate states are aligned based on maximum requirement
+        // aggregate states are aligned based on maximum requirement
         align_aggregate_states = std::max(align_aggregate_states, params.aggregates[i].function->alignOfData());
 
         // If not the last aggregate_state, we need pad it so that next aggregate_state will be aligned.
@@ -681,22 +682,25 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
         && worth_convert_to_two_level)
     {
-        if (!enoughSpaceInDirectory(params.tmp_path, current_memory_usage + params.min_free_disk_space))
-            throw Exception("Not enough space for external aggregation in " + params.tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
+        size_t size = current_memory_usage + params.min_free_disk_space;
+        auto reservation = params.tmp_volume->reserve(size);
+        if (!reservation)
+            throw Exception("Not enough space for external aggregation in temporary storage", ErrorCodes::NOT_ENOUGH_SPACE);
 
-        writeToTemporaryFile(result);
+        const std::string tmp_path(reservation->getDisk()->getPath());
+        writeToTemporaryFile(result, tmp_path);
     }
 
     return true;
 }
 
 
-void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
+void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, const String & tmp_path)
 {
     Stopwatch watch;
     size_t rows = data_variants.size();
 
-    auto file = createTemporaryFile(params.tmp_path);
+    auto file = createTemporaryFile(tmp_path);
     const std::string & path = file->path();
     WriteBufferFromFile file_buf(path);
     CompressedWriteBuffer compressed_buf(file_buf);
@@ -753,6 +757,10 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
         << (uncompressed_bytes / elapsed_seconds / 1048576.0) << " MiB/sec. uncompressed, "
         << (compressed_bytes / elapsed_seconds / 1048576.0) << " MiB/sec. compressed)");
 }
+void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
+{
+    return writeToTemporaryFile(data_variants, params.tmp_volume->getNextDisk()->getPath());
+}
 
 
 template <typename Method>
@@ -781,7 +789,8 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     ManyAggregatedDataVariants & variants,
     Arena * arena,
     bool final,
-    size_t bucket) const
+    size_t bucket,
+    std::atomic<bool> * is_cancelled) const
 {
     auto & merged_data = *variants[0];
     auto method = merged_data.type;
@@ -792,6 +801,8 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     else if (method == AggregatedDataVariants::Type::NAME) \
     { \
         mergeBucketImpl<decltype(merged_data.NAME)::element_type>(variants, bucket, arena); \
+        if (is_cancelled && is_cancelled->load(std::memory_order_seq_cst)) \
+            return {}; \
         block = convertOneBucketToBlock(merged_data, *merged_data.NAME, final, bucket); \
     }
 
@@ -1482,12 +1493,15 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 
 template <typename Method>
 void NO_INLINE Aggregator::mergeBucketImpl(
-    ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena) const
+    ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena, std::atomic<bool> * is_cancelled) const
 {
     /// We merge all aggregation results to the first.
     AggregatedDataVariantsPtr & res = data[0];
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
+        if (is_cancelled && is_cancelled->load(std::memory_order_seq_cst))
+            return;
+
         AggregatedDataVariants & current = *data[result_num];
 
         mergeDataImpl<Method>(

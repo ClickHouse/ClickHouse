@@ -28,7 +28,9 @@ private:
     const Context & context;
 
     BlockInputStreamPtr executeImpl();
+    ASTPtr getCreateQuery(const ASTShowCreateAccessEntityQuery & show_query) const;
     ASTPtr getCreateQuotaQuery(const ASTShowCreateAccessEntityQuery & show_query) const;
+    ASTPtr getCreateRowPolicyQuery(const ASTShowCreateAccessEntityQuery & show_query) const;
 };
 
 

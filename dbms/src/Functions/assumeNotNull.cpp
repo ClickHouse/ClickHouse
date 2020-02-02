@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/ColumnNumbers.h>
 #include <Columns/ColumnNullable.h>
-#include "registerFunctions.h"
 
 
 namespace DB

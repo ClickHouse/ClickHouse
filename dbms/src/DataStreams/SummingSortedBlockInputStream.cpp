@@ -156,7 +156,7 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
                 || endsWith(name, "Key")
                 || endsWith(name, "Type"))
             {
-                if (!nested_type.isValueRepresentedByInteger())
+                if (!nested_type.isValueRepresentedByInteger() && !isStringOrFixedString(nested_type))
                     break;
 
                 map_desc.key_col_nums.push_back(*column_num_it);
@@ -314,14 +314,14 @@ Block SummingSortedBlockInputStream::readImpl()
 }
 
 
-void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
+void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, SortingHeap<SortCursor> & queue)
 {
     merged_rows = 0;
 
     /// Take the rows in needed order and put them in `merged_columns` until rows no more than `max_block_size`
-    while (!queue.empty())
+    while (queue.isValid())
     {
-        SortCursor current = queue.top();
+        SortCursor current = queue.current();
 
         setPrimaryKeyRef(next_key, current);
 
@@ -383,12 +383,9 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
                     current_row_is_zero = false;
         }
 
-        queue.pop();
-
         if (!current->isLast())
         {
-            current->next();
-            queue.push(current);
+            queue.next();
         }
         else
         {

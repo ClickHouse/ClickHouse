@@ -18,6 +18,8 @@
 
 #include <Columns/ColumnTuple.h>
 
+#include <IO/WriteHelpers.h>
+
 namespace DB
 {
 
