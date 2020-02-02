@@ -809,7 +809,7 @@ SELECT replicate(1, ['a', 'b', 'c']);
 
 ## filesystemAvailable {#function-filesystemavailable}
 
-Возвращает объем оставшегося места в файловой системе, в которой расположены файлы баз данных. Смотрите описание конфигурационного параметра сервера  [path](../../operations/server_settings/settings.md#server_settings-path).
+Возвращает объём оставшегося места в файловой системе, в которой расположены файлы баз данных. Смотрите описание конфигурационного параметра сервера  [path](../../operations/server_settings/settings.md#server_settings-path).
 
 ```sql
 filesystemAvailable()
@@ -817,7 +817,7 @@ filesystemAvailable()
 
 **Возвращаемое значение**
 
-- Объем свободного места.
+- Объём свободного места.
 
 Тип — [UInt64](../../data_types/int_uint.md).
 
