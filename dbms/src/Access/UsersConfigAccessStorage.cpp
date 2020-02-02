@@ -90,15 +90,16 @@ namespace
         {
             Poco::Util::AbstractConfiguration::Keys keys;
             config.keys(networks_config, keys);
+            user->allowed_client_hosts.clear();
             for (const String & key : keys)
             {
                 String value = config.getString(networks_config + "." + key);
                 if (key.starts_with("ip"))
                     user->allowed_client_hosts.addSubnet(value);
                 else if (key.starts_with("host_regexp"))
-                    user->allowed_client_hosts.addHostRegexp(value);
+                    user->allowed_client_hosts.addNameRegexp(value);
                 else if (key.starts_with("host"))
-                    user->allowed_client_hosts.addHostName(value);
+                    user->allowed_client_hosts.addName(value);
                 else
                     throw Exception("Unknown address pattern type: " + key, ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE);
             }
