@@ -474,6 +474,11 @@ public:
         cannotConvertType("DateTime");
     }
 
+    bool readDateTime64(DateTime64 &, UInt32) override
+    {
+        cannotConvertType("DateTime64");
+    }
+
     bool readDecimal32(Decimal32 &, UInt32, UInt32) override
     {
         cannotConvertType("Decimal32");
@@ -603,6 +608,15 @@ public:
             return false;
         ReadBufferFromString buf(temp_string);
         readDateTimeText(tm, buf);
+        return true;
+    }
+
+    bool readDateTime64(DateTime64 & date_time, UInt32 scale) override
+    {
+        if (!readTempString())
+            return false;
+        ReadBufferFromString buf(temp_string);
+        readDateTime64Text(date_time, scale, buf);
         return true;
     }
 
@@ -741,6 +755,11 @@ public:
         return true;
     }
 
+    bool readDateTime64(DateTime64 & date_time, UInt32 scale) override
+    {
+        return readDecimal(date_time, scale);
+    }
+
     bool readDecimal32(Decimal32 & decimal, UInt32, UInt32 scale) override { return readDecimal(decimal, scale); }
     bool readDecimal64(Decimal64 & decimal, UInt32, UInt32 scale) override { return readDecimal(decimal, scale); }
     bool readDecimal128(Decimal128 & decimal, UInt32, UInt32 scale) override { return readDecimal(decimal, scale); }
@@ -759,7 +778,7 @@ private:
     template<typename EnumType>
     bool readEnum(EnumType & value)
     {
-        if constexpr (!std::is_integral_v<FromType>)
+        if constexpr (!is_integral_v<FromType>)
             cannotConvertType("Enum"); // It's not correct to convert floating point to enum.
         FromType number;
         if (!readField(number))

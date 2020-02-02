@@ -27,6 +27,8 @@ public:
         std::vector<IConnectionPool::Entry> && connections,
         const Settings & settings_, const ThrottlerPtr & throttler_);
 
+    /// Send all scalars to replicas.
+    void sendScalarsData(Scalars & data);
     /// Send all content of external tables to replicas.
     void sendExternalTablesData(std::vector<ExternalTablesData> & data);
 
@@ -40,7 +42,7 @@ public:
         bool with_pending_data = false);
 
     /// Get packet from any replica.
-    Connection::Packet receivePacket();
+    Packet receivePacket();
 
     /// Break all active connections.
     void disconnect();
@@ -52,7 +54,7 @@ public:
       * Returns EndOfStream if no exception has been received. Otherwise
       * returns the last received packet of type Exception.
       */
-    Connection::Packet drain();
+    Packet drain();
 
     /// Get the replica addresses as a string.
     std::string dumpAddresses() const;
@@ -67,7 +69,7 @@ public:
 
 private:
     /// Internal version of `receivePacket` function without locking.
-    Connection::Packet receivePacketUnlocked();
+    Packet receivePacketUnlocked();
 
     /// Internal version of `dumpAddresses` function without locking.
     std::string dumpAddressesUnlocked() const;

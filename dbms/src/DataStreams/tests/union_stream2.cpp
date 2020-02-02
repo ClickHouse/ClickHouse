@@ -57,6 +57,6 @@ catch (const Exception & e)
     std::cerr << e.what() << ", " << e.displayText() << std::endl
         << std::endl
         << "Stack trace:" << std::endl
-        << e.getStackTrace().toString();
+        << e.getStackTraceString();
     return 1;
 }

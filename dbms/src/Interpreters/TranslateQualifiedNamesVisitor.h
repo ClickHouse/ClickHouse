@@ -35,6 +35,11 @@ public:
             , has_columns(has_columns_)
         {}
 
+        bool hasColumn(const String & name) const { return source_columns.count(name); }
+        bool hasTable() const { return !tables.empty(); }
+        bool processAsterisks() const { return hasTable() && has_columns; }
+        bool unknownColumn(size_t table_pos, const ASTIdentifier & node) const;
+
         static std::vector<TableWithColumnNames> tablesOnly(const std::vector<DatabaseAndTableWithAlias> & tables)
         {
             std::vector<TableWithColumnNames> tables_with_columns;
@@ -44,8 +49,6 @@ public:
                 tables_with_columns.emplace_back(TableWithColumnNames{table, {}});
             return tables_with_columns;
         }
-
-        bool processAsterisks() const { return !tables.empty() && has_columns; }
     };
 
     static void visit(ASTPtr & ast, Data & data);

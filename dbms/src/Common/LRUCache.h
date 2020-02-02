@@ -23,11 +23,10 @@ struct TrivialWeightFunction
 };
 
 
-/// Thread-safe cache that evicts entries which are not used for a long time or are expired.
+/// Thread-safe cache that evicts entries which are not used for a long time.
 /// WeightFunction is a functor that takes Mapped as a parameter and returns "weight" (approximate size)
 /// of that value.
-/// Cache starts to evict entries when their total weight exceeds max_size and when expiration time of these
-/// entries is due.
+/// Cache starts to evict entries when their total weight exceeds max_size.
 /// Value weight should not change after insertion.
 template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = TrivialWeightFunction<TMapped>>
 class LRUCache
@@ -36,15 +35,13 @@ public:
     using Key = TKey;
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
-    using Delay = std::chrono::seconds;
 
 private:
     using Clock = std::chrono::steady_clock;
-    using Timestamp = Clock::time_point;
 
 public:
-    LRUCache(size_t max_size_, const Delay & expiration_delay_ = Delay::zero())
-        : max_size(std::max(static_cast<size_t>(1), max_size_)), expiration_delay(expiration_delay_) {}
+    LRUCache(size_t max_size_)
+        : max_size(std::max(static_cast<size_t>(1), max_size_)) {}
 
     MappedPtr get(const Key & key)
     {
@@ -167,16 +164,9 @@ protected:
 
     struct Cell
     {
-        bool expired(const Timestamp & last_timestamp, const Delay & delay) const
-        {
-            return (delay == Delay::zero()) ||
-                ((last_timestamp > timestamp) && ((last_timestamp - timestamp) > delay));
-        }
-
         MappedPtr value;
         size_t size;
         LRUQueueIterator queue_iterator;
-        Timestamp timestamp;
     };
 
     using Cells = std::unordered_map<Key, Cell, HashFunction>;
@@ -257,7 +247,6 @@ private:
     /// Total weight of values.
     size_t current_size = 0;
     const size_t max_size;
-    const Delay expiration_delay;
 
     std::atomic<size_t> hits {0};
     std::atomic<size_t> misses {0};
@@ -273,7 +262,6 @@ private:
         }
 
         Cell & cell = it->second;
-        updateCellTimestamp(cell);
 
         /// Move the key to the end of the queue. The iterator remains valid.
         queue.splice(queue.end(), queue, cell.queue_iterator);
@@ -303,18 +291,11 @@ private:
         cell.value = mapped;
         cell.size = cell.value ? weight_function(*cell.value) : 0;
         current_size += cell.size;
-        updateCellTimestamp(cell);
 
-        removeOverflow(cell.timestamp);
+        removeOverflow();
     }
 
-    void updateCellTimestamp(Cell & cell)
-    {
-        if (expiration_delay != Delay::zero())
-            cell.timestamp = Clock::now();
-    }
-
-    void removeOverflow(const Timestamp & last_timestamp)
+    void removeOverflow()
     {
         size_t current_weight_lost = 0;
         size_t queue_size = cells.size();
@@ -330,8 +311,6 @@ private:
             }
 
             const auto & cell = it->second;
-            if (!cell.expired(last_timestamp, expiration_delay))
-                break;
 
             current_size -= cell.size;
             current_weight_lost += cell.size;

@@ -68,7 +68,7 @@ protected:
 public:
     using Configuration = Poco::Util::AbstractConfiguration;
 
-    Context & context;
+    const Context & context;
     const Configuration & config;
 
     static constexpr inline auto DEFAULT_HOST = "localhost";
@@ -79,7 +79,7 @@ public:
     static constexpr inline auto IDENTIFIER_QUOTE_HANDLER = "/identifier_quote";
     static constexpr inline auto PING_OK_ANSWER = "Ok.";
 
-    XDBCBridgeHelper(Context & global_context_, const Poco::Timespan & http_timeout_, const std::string & connection_string_)
+    XDBCBridgeHelper(const Context & global_context_, const Poco::Timespan & http_timeout_, const std::string & connection_string_)
         : http_timeout(http_timeout_), connection_string(connection_string_), context(global_context_), config(context.getConfigRef())
     {
         size_t bridge_port = config.getUInt(BridgeHelperMixin::configPrefix() + ".port", DEFAULT_PORT);

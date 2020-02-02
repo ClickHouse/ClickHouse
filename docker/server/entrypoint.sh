@@ -1,16 +1,27 @@
 #!/bin/bash
 
-# set some vars
-CLICKHOUSE_CONFIG="${CLICKHOUSE_CONFIG:-/etc/clickhouse-server/config.xml}"
+DO_CHOWN=1
+if [ "$CLICKHOUSE_DO_NOT_CHOWN" = 1 ]; then
+    DO_CHOWN=0
+fi
+
+CLICKHOUSE_UID="${CLICKHOUSE_UID:-"$(id -u clickhouse)"}"
+CLICKHOUSE_GID="${CLICKHOUSE_GID:-"$(id -g clickhouse)"}"
+
+# support --user
 if [ x"$UID" == x0 ]; then
-    USER="$(id -u clickhouse)"
-    GROUP="$(id -g clickhouse)"
+    USER=$CLICKHOUSE_UID
+    GROUP=$CLICKHOUSE_GID
     gosu="gosu $USER:$GROUP"
 else
     USER="$(id -u)"
     GROUP="$(id -g)"
     gosu=""
+    DO_CHOWN=0
 fi
+
+# set some vars
+CLICKHOUSE_CONFIG="${CLICKHOUSE_CONFIG:-/etc/clickhouse-server/config.xml}"
 
 # port is needed to check if clickhouse-server is ready for connections
 HTTP_PORT="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=http_port)"
@@ -41,7 +52,7 @@ do
         exit 1
     fi
 
-    if [ x"$UID" == x0 ] && [ "$CLICKHOUSE_DO_NOT_CHOWN" != "1" ]; then
+    if [ "$DO_CHOWN" = "1" ]; then
         # ensure proper directories permissions
         chown -R "$USER:$GROUP" "$dir"
     elif [ "$(stat -c %u "$dir")" != "$USER" ]; then

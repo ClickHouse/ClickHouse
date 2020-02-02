@@ -1,11 +1,9 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/registerFunctions.h>
+
 
 namespace DB
 {
-/** These functions are defined in a separate translation units.
-  * This is done in order to reduce the consumption of RAM during build, and to speed up the parallel build.
-  */
+
 void registerFunctionsArithmetic(FunctionFactory &);
 void registerFunctionsArray(FunctionFactory &);
 void registerFunctionsTuple(FunctionFactory &);
@@ -39,8 +37,8 @@ void registerFunctionsIntrospection(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsFindCluster(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
-void registerFunctionsIntrospection(FunctionFactory &);
 void registerFunctionsConsistentHashing(FunctionFactory & factory);
+
 
 void registerFunctions()
 {

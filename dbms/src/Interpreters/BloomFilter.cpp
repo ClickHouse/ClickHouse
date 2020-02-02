@@ -1,5 +1,11 @@
 #include <Interpreters/BloomFilter.h>
 #include <city.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -81,6 +87,39 @@ bool BloomFilter::findHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed
 {
     size_t pos = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(hash, hash_seed)) % (8 * size);
     return bool(filter[pos / (8 * sizeof(UnderType))] & (1ULL << (pos % (8 * sizeof(UnderType)))));
+}
+
+DataTypePtr BloomFilter::getPrimitiveType(const DataTypePtr & data_type)
+{
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get()))
+    {
+        if (!typeid_cast<const DataTypeArray *>(array_type->getNestedType().get()))
+            return getPrimitiveType(array_type->getNestedType());
+        else
+            throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(data_type.get()))
+        return getPrimitiveType(nullable_type->getNestedType());
+
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_type.get()))
+        return getPrimitiveType(low_cardinality_type->getDictionaryType());
+
+    return data_type;
+}
+
+ColumnPtr BloomFilter::getPrimitiveColumn(const ColumnPtr & column)
+{
+    if (const auto * array_col = typeid_cast<const ColumnArray *>(column.get()))
+        return getPrimitiveColumn(array_col->getDataPtr());
+
+    if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(column.get()))
+        return getPrimitiveColumn(nullable_col->getNestedColumnPtr());
+
+    if (const auto * low_cardinality_col = typeid_cast<const ColumnLowCardinality *>(column.get()))
+        return getPrimitiveColumn(low_cardinality_col->convertToFullColumnIfLowCardinality());
+
+    return column;
 }
 
 }

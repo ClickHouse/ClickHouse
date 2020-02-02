@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Common/CpuId.h>
+#include <Common/quoteString.h>
 #include <common/getMemoryAmount.h>
 #include <DataStreams/copyData.h>
 #include <DataStreams/NullBlockOutputStream.h>
@@ -35,7 +36,7 @@ void waitQuery(Connection & connection)
         if (!connection.poll(1000000))
             continue;
 
-        Connection::Packet packet = connection.receivePacket();
+        Packet packet = connection.receivePacket();
         switch (packet.type)
         {
             case Protocol::Server::EndOfStream:
@@ -84,16 +85,6 @@ bool PerformanceTest::checkPreconditions() const
 
     for (const std::string & precondition : preconditions)
     {
-        if (precondition == "flush_disk_cache")
-        {
-            if (system(
-                    "(>&2 echo 'Flushing disk cache...') && (sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches') && (>&2 echo 'Flushed.')"))
-            {
-                LOG_WARNING(log, "Failed to flush disk cache");
-                return false;
-            }
-        }
-
         if (precondition == "ram_size")
         {
             size_t ram_size_needed = config->getUInt64("preconditions.ram_size");
@@ -120,7 +111,7 @@ bool PerformanceTest::checkPreconditions() const
 
             while (true)
             {
-                Connection::Packet packet = connection.receivePacket();
+                Packet packet = connection.receivePacket();
 
                 if (packet.type == Protocol::Server::Data)
                 {
@@ -142,7 +133,7 @@ bool PerformanceTest::checkPreconditions() const
 
             if (!exist)
             {
-                LOG_WARNING(log, "Table " << table_to_check << " doesn't exist");
+                LOG_WARNING(log, "Table " << backQuote(table_to_check) << " doesn't exist");
                 return false;
             }
         }
@@ -324,7 +315,7 @@ void PerformanceTest::runQueries(
                     stop_conditions.reportIterations(iteration);
                     if (stop_conditions.areFulfilled())
                     {
-                        LOG_INFO(log, "Stop conditions fullfilled");
+                        LOG_INFO(log, "Stop conditions fulfilled");
                         break;
                     }
 
@@ -336,7 +327,7 @@ void PerformanceTest::runQueries(
         {
             statistics.exception = "Code: " + std::to_string(e.code()) + ", e.displayText() = " + e.displayText();
             LOG_WARNING(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
-                << ", Stack trace:\n\n" << e.getStackTrace().toString());
+                << ", Stack trace:\n\n" << e.getStackTraceString());
         }
 
         if (!statistics.got_SIGINT)

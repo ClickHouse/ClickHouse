@@ -20,6 +20,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_tables("TABLES");
     ParserKeyword s_databases("DATABASES");
+    ParserKeyword s_dictionaries("DICTIONARIES");
     ParserKeyword s_from("FROM");
     ParserKeyword s_not("NOT");
     ParserKeyword s_like("LIKE");
@@ -45,33 +46,36 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (s_temporary.ignore(pos))
             query->temporary = true;
 
-        if (s_tables.ignore(pos, expected))
+        if (!s_tables.ignore(pos, expected))
         {
-            if (s_from.ignore(pos, expected))
-            {
-                if (!name_p.parse(pos, database, expected))
-                    return false;
-            }
-
-            if (s_not.ignore(pos, expected))
-                query->not_like = true;
-
-            if (s_like.ignore(pos, expected))
-            {
-                if (!like_p.parse(pos, like, expected))
-                    return false;
-            }
-            else if (query->not_like)
+            if (s_dictionaries.ignore(pos, expected))
+                query->dictionaries = true;
+            else
                 return false;
-
-            if (s_limit.ignore(pos, expected))
-            {
-                if (!limit_p.parse(pos, query->limit_length, expected))
-                    return false;
-            }
         }
-        else
+
+        if (s_from.ignore(pos, expected))
+        {
+            if (!name_p.parse(pos, database, expected))
+                return false;
+        }
+
+        if (s_not.ignore(pos, expected))
+            query->not_like = true;
+
+        if (s_like.ignore(pos, expected))
+        {
+            if (!like_p.parse(pos, like, expected))
+                return false;
+        }
+        else if (query->not_like)
             return false;
+
+        if (s_limit.ignore(pos, expected))
+        {
+            if (!limit_p.parse(pos, query->limit_length, expected))
+                return false;
+        }
     }
 
     tryGetIdentifierNameInto(database, query->from);

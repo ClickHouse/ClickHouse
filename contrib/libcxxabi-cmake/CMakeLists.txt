@@ -32,6 +32,11 @@ target_compile_definitions(cxxabi PRIVATE -D_LIBCPP_BUILDING_LIBRARY)
 target_compile_options(cxxabi PRIVATE -nostdinc++ -fno-sanitize=undefined -Wno-macro-redefined) # If we don't disable UBSan, infinite recursion happens in dynamic_cast.
 target_link_libraries(cxxabi PUBLIC ${EXCEPTION_HANDLING_LIBRARY})
 
+# Enable capturing stack traces for all exceptions.
+if (USE_UNWIND)
+    target_compile_definitions(cxxabi PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
+endif ()
+
 install(
     TARGETS cxxabi
     EXPORT global

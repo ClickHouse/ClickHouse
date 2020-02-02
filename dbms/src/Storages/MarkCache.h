@@ -38,8 +38,8 @@ private:
     using Base = LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>;
 
 public:
-    MarkCache(size_t max_size_in_bytes, const Delay & expiration_delay_)
-        : Base(max_size_in_bytes, expiration_delay_) {}
+    MarkCache(size_t max_size_in_bytes)
+        : Base(max_size_in_bytes) {}
 
     /// Calculate key from path to file and offset.
     static UInt128 hash(const String & path_to_file)

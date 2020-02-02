@@ -28,6 +28,8 @@ namespace ErrorCodes
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_ROWS;
+    extern const int TOO_MANY_BYTES;
 }
 
 

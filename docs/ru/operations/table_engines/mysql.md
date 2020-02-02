@@ -63,7 +63,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Таблица в ClickHouse, которая получает данные из таблицы MySQL:
+Таблица в ClickHouse, которая получает данные из созданной ранее таблицы MySQL:
 
 ```sql
 CREATE TABLE mysql_table
@@ -75,7 +75,7 @@ ENGINE = MySQL('localhost:3306', 'test', 'test', 'bayonet', '123')
 ```
 
 ```sql
-SELECT * FROM mysql_table6
+SELECT * FROM mysql_table
 ```
 
 ```text
@@ -89,4 +89,4 @@ SELECT * FROM mysql_table6
 - [Табличная функция 'mysql'](../../query_language/table_functions/mysql.md)
 - [Использование MySQL в качестве источника для внешнего словаря](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/mysql/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/mysql/) <!--hide-->

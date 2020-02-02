@@ -894,7 +894,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
     if (isColumnedAsNumber(type))
     {
         MutableColumnUniquePtr column;
-        TypeListNumbers::forEach(CreateColumnVector(column, *type, creator));
+        TypeListNativeNumbers::forEach(CreateColumnVector(column, *type, creator));
 
         if (!column)
             throw Exception("Unexpected numeric type: " + type->getName(), ErrorCodes::LOGICAL_ERROR);
@@ -949,7 +949,7 @@ bool DataTypeLowCardinality::equals(const IDataType & rhs) const
 }
 
 
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr create(const String & /*type_name*/, const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
         throw Exception("LowCardinality data type family must have single argument - type of elements",

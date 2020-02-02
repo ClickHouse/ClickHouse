@@ -78,7 +78,6 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
             const Block & sample,
-            const Context &,
             FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
@@ -91,7 +90,6 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
             const Block & sample,
-            const Context &,
             FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
@@ -104,7 +102,6 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
             const Block & sample,
-            const Context &,
             FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
@@ -117,7 +114,6 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
             const Block & sample,
-            const Context &,
             FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {

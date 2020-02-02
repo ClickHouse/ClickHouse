@@ -1,3 +1,2 @@
-dbms/* @ClickHouse/core-assigner
 docs/* @ClickHouse/docs
 docs/zh/* @ClickHouse/docs-zh

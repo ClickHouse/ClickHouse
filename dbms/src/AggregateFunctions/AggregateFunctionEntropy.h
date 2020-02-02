@@ -55,7 +55,7 @@ struct EntropyData
     void merge(const EntropyData & rhs)
     {
         for (const auto & pair : rhs.map)
-            map[pair.getFirst()] += pair.getSecond();
+            map[pair.getKey()] += pair.getMapped();
     }
 
     void serialize(WriteBuffer & buf) const
@@ -77,12 +77,12 @@ struct EntropyData
     {
         UInt64 total_value = 0;
         for (const auto & pair : map)
-            total_value += pair.getSecond();
+            total_value += pair.getMapped();
 
         Float64 shannon_entropy = 0;
         for (const auto & pair : map)
         {
-            Float64 frequency = Float64(pair.getSecond()) / total_value;
+            Float64 frequency = Float64(pair.getMapped()) / total_value;
             shannon_entropy -= frequency * log2(frequency);
         }
 
@@ -145,8 +145,6 @@ public:
         auto & column = assert_cast<ColumnVector<Float64> &>(to);
         column.getData().push_back(this->data(place).get());
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }

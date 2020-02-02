@@ -65,9 +65,9 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
 
     if (prev_positions.size() > key_index
         && prev_positions[key_index]
-        && name == *lookupResultGetKey(prev_positions[key_index]))
+        && name == prev_positions[key_index]->getKey())
     {
-        return *lookupResultGetMapped(prev_positions[key_index]);
+        return prev_positions[key_index]->getMapped();
     }
     else
     {
@@ -78,7 +78,7 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
             if (key_index < prev_positions.size())
                 prev_positions[key_index] = it;
 
-            return *lookupResultGetMapped(it);
+            return it->getMapped();
         }
         else
             return UNKNOWN_FIELD;
@@ -216,6 +216,18 @@ void JSONEachRowRowInputFormat::readNestedData(const String & name, MutableColum
 
 bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
+    /// Set flag data_in_square_brackets if data starts with '['.
+    if (!in.eof() && parsing_stage == ParsingStage::START)
+    {
+        parsing_stage = ParsingStage::PROCESS;
+        skipWhitespaceIfAny(in);
+        if (*in.position() == '[')
+        {
+            data_in_square_brackets = true;
+            ++in.position();
+        }
+    }
+
     skipWhitespaceIfAny(in);
 
     /// We consume ;, or \n before scanning a new row, instead scanning to next row at the end.
@@ -227,9 +239,23 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     if (!in.eof() && (*in.position() == ',' || *in.position() == ';'))
         ++in.position();
 
+    /// Finish reading rows if data is in square brackets and ']' received.
     skipWhitespaceIfAny(in);
-    if (in.eof())
+    if (!in.eof() && *in.position() == ']' && data_in_square_brackets)
+    {
+        data_in_square_brackets = false;
+        parsing_stage = ParsingStage::FINISH;
+        ++in.position();
         return false;
+    }
+
+    skipWhitespaceIfAny(in);
+    if (in.eof() || parsing_stage == ParsingStage::FINISH)
+    {
+        if (data_in_square_brackets)
+            throw Exception("Unexpected end of data: received end of stream instead of ']'.", ErrorCodes::INCORRECT_DATA);
+        return false;
+    }
 
     size_t num_columns = columns.size();
 
@@ -256,18 +282,91 @@ void JSONEachRowRowInputFormat::syncAfterError()
     skipToUnescapedNextLineOrEOF(in);
 }
 
+void JSONEachRowRowInputFormat::resetParser()
+{
+    IRowInputFormat::resetParser();
+    nested_prefix_length = 0;
+    read_columns.clear();
+    seen_columns.clear();
+    prev_positions.clear();
+}
+
 
 void registerInputFormatProcessorJSONEachRow(FormatFactory & factory)
 {
     factory.registerInputFormatProcessor("JSONEachRow", [](
         ReadBuffer & buf,
         const Block & sample,
-        const Context &,
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
         return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings);
     });
+}
+
+static bool fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+{
+    skipWhitespaceIfAny(in);
+
+    char * pos = in.position();
+    size_t balance = 0;
+    bool quotes = false;
+
+    while (loadAtPosition(in, memory, pos)  && (balance || memory.size() + static_cast<size_t>(pos - in.position()) < min_chunk_size))
+    {
+        if (quotes)
+        {
+            pos = find_first_symbols<'\\', '"'>(pos, in.buffer().end());
+            if (pos == in.buffer().end())
+                continue;
+            if (*pos == '\\')
+            {
+                ++pos;
+                if (loadAtPosition(in, memory, pos))
+                    ++pos;
+            }
+            else if (*pos == '"')
+            {
+                ++pos;
+                quotes = false;
+            }
+        }
+        else
+        {
+            pos = find_first_symbols<'{', '}', '\\', '"'>(pos, in.buffer().end());
+            if (pos == in.buffer().end())
+                continue;
+            if (*pos == '{')
+            {
+                ++balance;
+                ++pos;
+            }
+            else if (*pos == '}')
+            {
+                --balance;
+                ++pos;
+            }
+            else if (*pos == '\\')
+            {
+                ++pos;
+                if (loadAtPosition(in, memory, pos))
+                    ++pos;
+            }
+            else if (*pos == '"')
+            {
+                quotes = true;
+                ++pos;
+            }
+        }
+    }
+
+    saveUpToPosition(in, memory, pos);
+    return loadAtPosition(in, memory, pos);
+}
+
+void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
+{
+    factory.registerFileSegmentationEngine("JSONEachRow", &fileSegmentationEngineJSONEachRowImpl);
 }
 
 }

@@ -215,10 +215,11 @@ ASTPtr tryParseQuery(
     bool hilite,
     const std::string & query_description,
     bool allow_multi_statements,
-    size_t max_query_size)
+    size_t max_query_size,
+    size_t max_parser_depth)
 {
     Tokens tokens(pos, end, max_query_size);
-    IParser::Pos token_iterator(tokens);
+    IParser::Pos token_iterator(tokens, max_parser_depth);
 
     if (token_iterator->isEnd()
         || token_iterator->type == TokenType::Semicolon)
@@ -297,10 +298,11 @@ ASTPtr parseQueryAndMovePosition(
     const char * end,
     const std::string & query_description,
     bool allow_multi_statements,
-    size_t max_query_size)
+    size_t max_query_size,
+    size_t max_parser_depth)
 {
     std::string error_message;
-    ASTPtr res = tryParseQuery(parser, pos, end, error_message, false, query_description, allow_multi_statements, max_query_size);
+    ASTPtr res = tryParseQuery(parser, pos, end, error_message, false, query_description, allow_multi_statements, max_query_size, max_parser_depth);
 
     if (res)
         return res;
@@ -314,10 +316,11 @@ ASTPtr parseQuery(
     const char * begin,
     const char * end,
     const std::string & query_description,
-    size_t max_query_size)
+    size_t max_query_size,
+    size_t max_parser_depth)
 {
     auto pos = begin;
-    return parseQueryAndMovePosition(parser, pos, end, query_description, false, max_query_size);
+    return parseQueryAndMovePosition(parser, pos, end, query_description, false, max_query_size, max_parser_depth);
 }
 
 

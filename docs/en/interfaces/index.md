@@ -10,6 +10,7 @@ In most cases it is recommended to use appropriate tool or library instead of in
 * [Command-line client](cli.md)
 * [JDBC driver](jdbc.md)
 * [ODBC driver](odbc.md)
+* [C++ client library](cpp.md)
 
 There are also a wide range of third-party libraries for working with ClickHouse:
 
@@ -17,4 +18,4 @@ There are also a wide range of third-party libraries for working with ClickHouse
 * [Integrations](third-party/integrations.md)
 * [Visual interfaces](third-party/gui.md)
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/interfaces/) <!--hide-->

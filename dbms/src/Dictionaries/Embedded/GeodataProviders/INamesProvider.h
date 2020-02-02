@@ -42,6 +42,7 @@ using ILanguageRegionsNamesDataSourcePtr = std::unique_ptr<ILanguageRegionsNames
 class IRegionsNamesDataProvider
 {
 public:
+    /// Returns nullptr if the language data does not exist.
     virtual ILanguageRegionsNamesDataSourcePtr getLanguageRegionsNamesSource(const std::string & language) const = 0;
 
     virtual ~IRegionsNamesDataProvider() {}

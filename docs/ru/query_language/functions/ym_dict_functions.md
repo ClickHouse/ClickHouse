@@ -115,4 +115,4 @@ LIMIT 15
 
 `ua` и `uk` обозначают одно и то же - украинский язык.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/ym_dict_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/ym_dict_functions/) <!--hide-->

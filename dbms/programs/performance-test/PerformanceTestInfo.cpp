@@ -45,21 +45,11 @@ namespace fs = std::filesystem;
 
 PerformanceTestInfo::PerformanceTestInfo(
     XMLConfigurationPtr config,
-    const std::string & profiles_file_,
     const Settings & global_settings_)
-    : profiles_file(profiles_file_)
-    , settings(global_settings_)
+    : settings(global_settings_)
 {
     path = config->getString("path");
     test_name = fs::path(path).stem().string();
-    if (config->has("main_metric"))
-    {
-        Strings main_metrics;
-        config->keys("main_metric", main_metrics);
-        if (main_metrics.size())
-            main_metric = main_metrics[0];
-    }
-
     applySettings(config);
     extractQueries(config);
     extractAuxiliaryQueries(config);
@@ -75,38 +65,8 @@ void PerformanceTestInfo::applySettings(XMLConfigurationPtr config)
         SettingsChanges settings_to_apply;
         Strings config_settings;
         config->keys("settings", config_settings);
-
-        auto settings_contain = [&config_settings] (const std::string & setting)
-        {
-            auto position = std::find(config_settings.begin(), config_settings.end(), setting);
-            return position != config_settings.end();
-
-        };
-        /// Preprocess configuration file
-        if (settings_contain("profile"))
-        {
-            if (!profiles_file.empty())
-            {
-                std::string profile_name = config->getString("settings.profile");
-                XMLConfigurationPtr profiles_config(new XMLConfiguration(profiles_file));
-
-                Strings profile_settings;
-                profiles_config->keys("profiles." + profile_name, profile_settings);
-
-                extractSettings(profiles_config, "profiles." + profile_name, profile_settings, settings_to_apply);
-            }
-        }
-
         extractSettings(config, "settings", config_settings, settings_to_apply);
         settings.applyChanges(settings_to_apply);
-
-        if (settings_contain("average_rows_speed_precision"))
-            TestStats::avg_rows_speed_precision =
-                config->getDouble("settings.average_rows_speed_precision");
-
-        if (settings_contain("average_bytes_speed_precision"))
-            TestStats::avg_bytes_speed_precision =
-                config->getDouble("settings.average_bytes_speed_precision");
     }
 }
 

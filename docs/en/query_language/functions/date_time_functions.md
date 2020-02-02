@@ -62,9 +62,40 @@ Converts a date with time to a UInt8 number containing the number of the minute 
 Converts a date with time to a UInt8 number containing the number of the second in the minute (0-59).
 Leap seconds are not accounted for.
 
-## toUnixTimestamp
+## toUnixTimestamp {#to_unix_timestamp}
 
-Converts a date with time to a unix timestamp.
+For DateTime argument: converts value to its internal numeric representation (Unix Timestamp).
+For String argument: parse datetime from string according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
+For Date argument: the behaviour is unspecified.
+
+**Syntax** 
+
+```sql
+toUnixTimestamp(datetime)
+toUnixTimestamp(str, [timezone])
+```
+
+**Returned value**
+
+- Returns the unix timestamp.
+
+Type: `UInt32`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
+```
+
+Result:
+
+```text
+┌─unix_timestamp─┐
+│     1509836867 │
+└────────────────┘
+```
 
 ## toStartOfYear
 
@@ -334,7 +365,7 @@ For a time interval starting at 'StartTime' and continuing for 'Duration' second
 For example, `timeSlots(toDateTime('2012-01-01 12:20:00'), 600) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')]`.
 This is necessary for searching for pageviews in the corresponding session.
 
-## formatDateTime(Time, Format\[, Timezone\])
+## formatDateTime(Time, Format\[, Timezone\]) {#formatdatetime}
 
 Function formats a Time according given Format string. N.B.: Format is a constant expression, e.g. you can not have multiple formats for single result column.
 
@@ -345,7 +376,7 @@ Supported modifiers for Format:
 | ----------- | -------- | --------------- |
 |%C|year divided by 100 and truncated to integer (00-99)|20
 |%d|day of the month, zero-padded (01-31)|02
-|%D|Short MM/DD/YY date, equivalent to %m/%d/%y|01/02/2018|
+|%D|Short MM/DD/YY date, equivalent to %m/%d/%y|01/02/18|
 |%e|day of the month, space-padded ( 1-31)|  2|
 |%F|short YYYY-MM-DD date, equivalent to %Y-%m-%d|2018-01-02
 |%H|hour in 24h format (00-23)|22|
@@ -366,4 +397,4 @@ Supported modifiers for Format:
 |%Y|Year|2018|
 |%%|a % sign|%|
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/date_time_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->
