@@ -14,7 +14,7 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
-
+#include <Poco/URI.h>
 
 namespace DB
 {
@@ -68,7 +68,15 @@ static FormatSettings getInputFormatSetting(const Settings & settings, const Con
     format_settings.custom.row_before_delimiter = settings.format_custom_row_before_delimiter;
     format_settings.custom.row_after_delimiter = settings.format_custom_row_after_delimiter;
     format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
-    format_settings.avro.schema_registry_url = settings.input_format_avro_schema_registry_url;
+
+    /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
+    if (context.hasGlobalContext() && (context.getGlobalContext().getApplicationType() == Context::ApplicationType::SERVER))
+    {
+        const Poco::URI & avro_schema_registry_url = settings.format_avro_schema_registry_url;
+        if (!avro_schema_registry_url.empty())
+            context.getRemoteHostFilter().checkURL(avro_schema_registry_url);
+    }
+    format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
 
     return format_settings;
 }
