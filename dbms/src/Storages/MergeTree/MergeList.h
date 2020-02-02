@@ -45,7 +45,7 @@ struct MergeInfo
     UInt64 rows_written;
     UInt64 columns_written;
     UInt64 memory_usage;
-    UInt64 thread_number;
+    UInt32 thread_id;
 };
 
 struct FutureMergedMutatedPart;
@@ -87,8 +87,7 @@ struct MergeListElement : boost::noncopyable
     MemoryTracker * background_thread_memory_tracker;
     MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
 
-    /// Poco thread number used in logs
-    UInt32 thread_number;
+    UInt32 thread_id;
 
 
     MergeListElement(const std::string & database, const std::string & table, const FutureMergedMutatedPart & future_part);
