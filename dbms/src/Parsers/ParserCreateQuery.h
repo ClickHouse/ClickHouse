@@ -324,8 +324,8 @@ protected:
 class ParserCreateWindowViewQuery : public IParserBase
 {
 protected:
-    const char * getName() const { return "CREATE WINDOW VIEW query"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+    const char * getName() const override { return "CREATE WINDOW VIEW query"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 /// CREATE|ATTACH DATABASE db [ENGINE = engine]
