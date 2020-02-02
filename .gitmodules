@@ -107,6 +107,7 @@
 [submodule "contrib/grpc"]
 	path = contrib/grpc
 	url = https://github.com/grpc/grpc.git
+	branch = v1.25.0
 [submodule "contrib/aws"]
 	path = contrib/aws
 	url = https://github.com/aws/aws-sdk-cpp.git
