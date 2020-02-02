@@ -28,6 +28,7 @@ public:
         const PrewhereInfoPtr & prewhere_info,
         bool check_columns,
         size_t min_bytes_to_use_direct_io,
+        size_t min_bytes_to_use_mmap_io,
         size_t max_read_buffer_size,
         bool save_marks_in_cache,
         const Names & virt_column_names = {},

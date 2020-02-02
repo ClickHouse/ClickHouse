@@ -52,7 +52,7 @@ private:
     /// Sources of rows with the current primary key.
     PODArray<RowSourcePart> current_row_sources;
 
-    void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
+    void merge(MutableColumns & merged_columns, SortingHeap<SortCursor> & queue);
 
     /// Output into result the rows for current primary key.
     void insertRow(MutableColumns & merged_columns);

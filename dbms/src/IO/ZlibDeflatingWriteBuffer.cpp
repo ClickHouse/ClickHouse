@@ -5,6 +5,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ZLIB_DEFLATE_FAILED;
+}
+
+
 ZlibDeflatingWriteBuffer::ZlibDeflatingWriteBuffer(
         std::unique_ptr<WriteBuffer> out_,
         CompressionMethod compression_method,
@@ -71,12 +77,6 @@ void ZlibDeflatingWriteBuffer::nextImpl()
         int rc = deflate(&zstr, Z_NO_FLUSH);
         out->position() = out->buffer().end() - zstr.avail_out;
 
-        // Unpoison the result of deflate explicitly. It uses some custom SSE algo
-        // for computing CRC32, and it looks like msan is unable to comprehend
-        // it fully, so it complains about the resulting value depending on the
-        // uninitialized padding of the input buffer.
-        __msan_unpoison(out->position(), zstr.avail_out);
-
         if (rc != Z_OK)
             throw Exception(std::string("deflate failed: ") + zError(rc), ErrorCodes::ZLIB_DEFLATE_FAILED);
     }
@@ -90,6 +90,21 @@ void ZlibDeflatingWriteBuffer::finish()
 
     next();
 
+    /// https://github.com/zlib-ng/zlib-ng/issues/494
+    do
+    {
+        out->nextIfAtEnd();
+        zstr.next_out = reinterpret_cast<unsigned char *>(out->position());
+        zstr.avail_out = out->buffer().end() - out->position();
+
+        int rc = deflate(&zstr, Z_FULL_FLUSH);
+        out->position() = out->buffer().end() - zstr.avail_out;
+
+        if (rc != Z_OK)
+            throw Exception(std::string("deflate failed: ") + zError(rc), ErrorCodes::ZLIB_DEFLATE_FAILED);
+    }
+    while (zstr.avail_out == 0);
+
     while (true)
     {
         out->nextIfAtEnd();
@@ -98,12 +113,6 @@ void ZlibDeflatingWriteBuffer::finish()
 
         int rc = deflate(&zstr, Z_FINISH);
         out->position() = out->buffer().end() - zstr.avail_out;
-
-        // Unpoison the result of deflate explicitly. It uses some custom SSE algo
-        // for computing CRC32, and it looks like msan is unable to comprehend
-        // it fully, so it complains about the resulting value depending on the
-        // uninitialized padding of the input buffer.
-        __msan_unpoison(out->position(), zstr.avail_out);
 
         if (rc == Z_STREAM_END)
         {

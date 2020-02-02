@@ -13,11 +13,11 @@ SELECT [DISTINCT] expr_list
     [GROUP BY expr_list] [WITH TOTALS]
     [HAVING expr]
     [ORDER BY expr_list]
+    [LIMIT n BY columns]
     [LIMIT [n, ]m]
     [UNION ALL ...]
     [INTO OUTFILE filename]
     [FORMAT format]
-    [LIMIT n BY columns]
 ```
 
 所有的子句都是可选的，除了SELECT之后的表达式列表(expr_list)。
@@ -975,4 +975,4 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
 
 在所有的其他情况下，我们不建议使用星号，因为它是列式数据库的缺点而不是优点。
 
-[来源文章](https://clickhouse.yandex/docs/zh/query_language/select/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/zh/query_language/select/) <!--hide-->

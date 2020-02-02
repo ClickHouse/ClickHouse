@@ -4,8 +4,39 @@
 
 Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
 
-## FQDN(), fullHostName()
-Returns the Fully qualified domain name aka [FQDN](https://en.wikipedia.org/wiki/Fully_qualified_domain_name).
+## FQDN {#fqdn}
+
+Returns the fully qualified domain name.
+
+**Syntax**
+
+```sql
+fqdn();
+```
+
+This function is case-insensitive.
+
+**Returned value**
+
+- String with the fully qualified domain name.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT FQDN();
+```
+
+Result:
+
+```text
+┌─FQDN()──────────────────────────┐
+│ clickhouse.ru-central1.internal │
+└─────────────────────────────────┘
+```
 
 ## basename
 
@@ -348,16 +379,83 @@ Returns the ordinal number of the row in the data block. Different data blocks a
 
 Returns the ordinal number of the row in the data block. This function only considers the affected data blocks.
 
-## neighbor(column, offset\[, default_value\])
+## neighbor {#neighbor}
 
-Returns value for `column`, in `offset` distance from current row.
-This function is a partial implementation of [window functions](https://en.wikipedia.org/wiki/SQL_window_function) LEAD() and LAG().
+The window function that provides access to a row at a specified offset which comes before or after the current row of a given column.
+
+**Syntax**
+
+```sql
+neighbor(column, offset[, default_value])
+```
 
 The result of the function depends on the affected data blocks and the order of data in the block.
 If you make a subquery with ORDER BY and call the function from outside the subquery, you can get the expected result.
 
-If `offset` value is outside block bounds, a default value for `column` returned. If `default_value` is given, then it will be used.
+**Parameters**
+
+- `column` — A column name or scalar expression.
+- `offset` — The number of rows forwards or backwards from the current row of `column`. [Int64](../../data_types/int_uint.md).
+- `default_value` — Optional. The value to be returned if offset goes beyond the scope of the block. Type of data blocks affected.
+
+**Returned values**
+
+- Value for `column` in `offset` distance from current row if `offset` value is not outside block bounds.
+- Default value for `column` if `offset` value is outside block bounds. If `default_value` is given, then it will be used.
+
+Type: type of data blocks affected or default value type.
+
+**Example**
+
+Query:
+
+```sql
+SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
+```
+
+Result:
+
+```text
+┌─number─┬─neighbor(number, 2)─┐
+│      0 │                   2 │
+│      1 │                   3 │
+│      2 │                   4 │
+│      3 │                   5 │
+│      4 │                   6 │
+│      5 │                   7 │
+│      6 │                   8 │
+│      7 │                   9 │
+│      8 │                   0 │
+│      9 │                   0 │
+└────────┴─────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
+```
+
+Result:
+
+```text
+┌─number─┬─neighbor(number, 2, 999)─┐
+│      0 │                        2 │
+│      1 │                        3 │
+│      2 │                        4 │
+│      3 │                        5 │
+│      4 │                        6 │
+│      5 │                        7 │
+│      6 │                        8 │
+│      7 │                        9 │
+│      8 │                      999 │
+│      9 │                      999 │
+└────────┴──────────────────────────┘
+```
+
 This function can be used to compute year-over-year metric value:
+
+Query:
 
 ```sql
 WITH toDate('2018-01-01') AS start_date
@@ -368,6 +466,8 @@ SELECT
     round(prev_year / money, 2) AS year_over_year
 FROM numbers(16)
 ```
+
+Result:
 
 ```text
 ┌──────month─┬─money─┬─prev_year─┬─year_over_year─┐
@@ -389,7 +489,6 @@ FROM numbers(16)
 │ 2019-04-01 │    87 │        22 │           0.25 │
 └────────────┴───────┴───────────┴────────────────┘
 ```
-
 
 ## runningDifference(x) {#other_functions-runningdifference}
 
@@ -446,7 +545,7 @@ WHERE diff != 1
 └────────┴──────┘
 ```
 ```sql
-set max_block_size=100000 -- default value is 65536! 
+set max_block_size=100000 -- default value is 65536!
 
 SELECT
     number,
@@ -748,34 +847,101 @@ Result:
 └───────────────────────────────┘
 ```
 
-## filesystemAvailable {#function-filesystemavailable}
+## filesystemAvailable {#filesystemavailable}
 
-Returns the amount of remaining space in the filesystem where the files of the databases located. See the [path](../../operations/server_settings/settings.md#server_settings-path) server setting description.
+Returns amount of remaining space on the filesystem where the files of the databases located. It is always smaller than total free space ([filesystemFree](#filesystemfree)) because some space is reserved for OS.
+
+**Syntax**
 
 ```sql
 filesystemAvailable()
 ```
 
-**Returned values**
+**Returned value**
 
-- Amount of remaining space in bytes.
+- The amount of remaining space available in bytes.
 
 Type: [UInt64](../../data_types/int_uint.md).
 
 **Example**
 
+Query:
+
 ```sql
-SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) AS "Type"
+SELECT formatReadableSize(filesystemAvailable()) AS "Available space", toTypeName(filesystemAvailable()) AS "Type";
 ```
+
+Result:
+
 ```text
-┌──Free space─┬─Type───┐
-│ 18152624128 │ UInt64 │
-└─────────────┴────────┘
+┌─Available space─┬─Type───┐
+│ 30.75 GiB       │ UInt64 │
+└─────────────────┴────────┘
 ```
 
-## filesystemCapacity
+## filesystemFree {#filesystemfree}
 
-Returns the capacity information of the disk, in bytes. This information is evaluated using the configured by path.
+Returns total amount of the free space on the filesystem where the files of the databases located. See also `filesystemAvailable`
+
+**Syntax**
+
+```sql
+filesystemFree()
+```
+
+**Returned value**
+
+- Amount of free space in bytes.
+
+Type: [UInt64](../../data_types/int_uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT formatReadableSize(filesystemFree()) AS "Free space", toTypeName(filesystemFree()) AS "Type";
+```
+
+Result:
+
+```text
+┌─Free space─┬─Type───┐
+│ 32.39 GiB  │ UInt64 │
+└────────────┴────────┘
+```
+
+## filesystemCapacity {#filesystemcapacity}
+
+Returns the capacity of the filesystem in bytes. For evaluation, the [path](../../operations/server_settings/settings.md#server_settings-path) to the data directory must be configured.
+
+**Syntax**
+
+```sql
+filesystemCapacity()
+```
+
+**Returned value**
+
+- Capacity information of the filesystem in bytes.
+
+Type: [UInt64](../../data_types/int_uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesystemCapacity()) AS "Type"
+```
+
+Result:
+
+```text
+┌─Capacity──┬─Type───┐
+│ 39.32 GiB │ UInt64 │
+└───────────┴────────┘
+```
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
@@ -787,11 +953,68 @@ Takes the states of the aggregate function and returns a column with values, are
 For example, takes state of aggregate function (example runningAccumulate(uniqState(UserID))), and for each row of block, return result of aggregate function on merge of states of all previous rows and current row.
 So, result of function depends on partition of data to blocks and on order of data in block.
 
-## joinGet('join_storage_table_name', 'get_column', join_key) {#other_functions-joinget}
+## joinGet {#joinget}
 
-Gets data from [Join](../../operations/table_engines/join.md) tables using the specified join key.
+The function lets you extract data from the table the same way as from a [dictionary](../dicts/index.md).
+
+Gets data from [Join](../../operations/table_engines/join.md#creating-a-table) tables using the specified join key.
 
 Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
+
+**Syntax**
+
+```sql
+joinGet(join_storage_table_name, `value_column`, join_keys)
+```
+
+**Parameters**
+
+- `join_storage_table_name` — an [identifier](../syntax.md#syntax-identifiers) indicates where search is performed. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE db_name` or specify the database and the table through the separator `db_name.db_table`, see the example.
+- `value_column` — name of the column of the table that contains required data.
+- `join_keys` — list of keys.
+
+**Returned value**
+
+Returns list of values corresponded to list of keys.
+
+If certain doesn't exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting. 
+
+More info about `join_use_nulls` in [Join operation](../../operations/table_engines/join.md).
+
+**Example**
+
+Input table:
+
+```sql
+CREATE DATABASE db_test
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id) SETTINGS join_use_nulls = 1
+INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
+```
+
+```text
+┌─id─┬─val─┐
+│  4 │  13 │
+│  2 │  12 │
+│  1 │  11 │
+└────┴─────┘
+```
+
+Query:
+
+```sql
+SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS join_use_nulls = 1
+```
+
+Result:
+
+```text
+┌─joinGet(db_test.id_val, 'val', toUInt32(number))─┐
+│                                                0 │
+│                                               11 │
+│                                               12 │
+│                                                0 │
+└──────────────────────────────────────────────────┘
+```
 
 ## modelEvaluate(model_name, ...) {#function-modelevaluate}
 Evaluate external model.
@@ -810,18 +1033,65 @@ SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
 Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 ```
 
-## identity()
+## identity {#identity}
 
-Returns the same value that was used as its argument. 
+Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn't look inside `identity` functions.
+
+**Syntax**
+
+```sql
+identity(x)
+```
+
+**Example**
+
+Query:
 
 ```sql
 SELECT identity(42)
 ```
+
+Result:
+
 ```text
 ┌─identity(42)─┐
 │           42 │
 └──────────────┘
 ```
-Used for debugging and testing, allows to "break" access by index, and get the result and query performance for a full scan.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/other_functions/) <!--hide-->
+## randomPrintableASCII {#randomascii}
+
+Generates a string with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
+
+**Syntax**
+
+```sql
+randomPrintableASCII(length)
+```
+
+**Parameters**
+
+- `length` — Resulting string length. Positive integer.
+
+    If you pass `length < 0`, behavior of the function is undefined.
+
+**Returned value**
+
+ - String with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
+
+Type: [String](../../data_types/string.md)
+
+**Example**
+
+```sql
+SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers LIMIT 3
+```
+```text
+┌─number─┬─str────────────────────────────┬─length(randomPrintableASCII(30))─┐
+│      0 │ SuiCOSTvC0csfABSw=UcSzp2.`rv8x │                               30 │
+│      1 │ 1Ag NlJ &RCN:*>HVPG;PE-nO"SUFD │                               30 │
+│      2 │ /"+<"wUTh:=LjJ Vm!c&hI*m#XTfzz │                               30 │
+└────────┴────────────────────────────────┴──────────────────────────────────┘
+```
+
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->

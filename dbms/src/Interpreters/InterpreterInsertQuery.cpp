@@ -14,6 +14,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Access/AccessFlags.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -46,7 +47,7 @@ InterpreterInsertQuery::InterpreterInsertQuery(
 }
 
 
-StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
+StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 {
     if (query.table_function)
     {
@@ -57,6 +58,8 @@ StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
     }
 
     /// Into what table to write.
+    if (query.database.empty() && !context.isExternalTableExist(query.table))
+        query.database = context.getCurrentDatabase();
     return context.getTable(query.database, query.table);
 }
 
@@ -96,65 +99,96 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
 
 BlockIO InterpreterInsertQuery::execute()
 {
-    const auto & query = query_ptr->as<ASTInsertQuery &>();
-    checkAccess(query);
+    const Settings & settings = context.getSettingsRef();
+    auto & query = query_ptr->as<ASTInsertQuery &>();
 
     BlockIO res;
-    StoragePtr table = getTable(query);
-    res.pipeline.addStorageHolder(table);
 
+    StoragePtr table = getTable(query);
     auto table_lock = table->lockStructureForShare(true, context.getInitialQueryId());
 
-    /// We create a pipeline of several streams, into which we will write data.
-    BlockOutputStreamPtr out;
-
-    /// NOTE: we explicitly ignore bound materialized views when inserting into Kafka Storage.
-    ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
-    if (table->noPushingToViews() && !no_destination)
-        out = table->write(query_ptr, context);
-    else
-        out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, no_destination);
-
-    /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
-    /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
-    if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()) && !no_squash)
-    {
-        out = std::make_shared<SquashingBlockOutputStream>(
-            out, out->getHeader(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
-    }
     auto query_sample_block = getSampleBlock(query, table);
+    if (!query.table.empty() && !query.database.empty() /* always allow access to temporary tables */)
+        context.checkAccess(AccessType::INSERT, query.database, query.table, query_sample_block.getNames());
 
-    /// Actually we don't know structure of input blocks from query/table,
-    /// because some clients break insertion protocol (columns != header)
-    out = std::make_shared<AddingDefaultBlockOutputStream>(
-        out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
-
-    if (const auto & constraints = table->getConstraints(); !constraints.empty())
-        out = std::make_shared<CheckConstraintsBlockOutputStream>(query.table,
-            out, query_sample_block, table->getConstraints(), context);
-
-    auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
-    out_wrapper->setProcessListElement(context.getProcessListElement());
-    out = std::move(out_wrapper);
-
-    res.out = std::move(out);
-
-    /// What type of query: INSERT or INSERT SELECT?
+    BlockInputStreams in_streams;
+    size_t out_streams_size = 1;
     if (query.select)
     {
         /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
         InterpreterSelectWithUnionQuery interpreter_select{query.select, context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
 
-        res.in = interpreter_select.execute().in;
+        if (table->supportsParallelInsert() && settings.max_insert_threads > 0)
+        {
+            in_streams = interpreter_select.executeWithMultipleStreams(res.pipeline);
+            out_streams_size = std::min(size_t(settings.max_insert_threads), in_streams.size());
+        }
+        else
+        {
+            res = interpreter_select.execute();
+            in_streams.emplace_back(res.in);
+            res.in = nullptr;
+            res.out = nullptr;
+        }
+    }
 
-        res.in = std::make_shared<ConvertingBlockInputStream>(context, res.in, res.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Position);
-        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
+    BlockOutputStreams out_streams;
 
-        res.out = nullptr;
+    for (size_t i = 0; i < out_streams_size; i++)
+    {
+        /// We create a pipeline of several streams, into which we will write data.
+        BlockOutputStreamPtr out;
+
+        /// NOTE: we explicitly ignore bound materialized views when inserting into Kafka Storage.
+        ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
+        if (table->noPushingToViews() && !no_destination)
+            out = table->write(query_ptr, context);
+        else
+            out = std::make_shared<PushingToViewsBlockOutputStream>(table, context, query_ptr, no_destination);
+
+        /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
+        /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
+        if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()) && !no_squash)
+        {
+            out = std::make_shared<SquashingBlockOutputStream>(
+                out, out->getHeader(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+        }
+
+        /// Actually we don't know structure of input blocks from query/table,
+        /// because some clients break insertion protocol (columns != header)
+        out = std::make_shared<AddingDefaultBlockOutputStream>(
+            out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
+
+        if (const auto & constraints = table->getConstraints(); !constraints.empty())
+            out = std::make_shared<CheckConstraintsBlockOutputStream>(query.table,
+             out, query_sample_block, table->getConstraints(), context);
+
+        auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
+        out_wrapper->setProcessListElement(context.getProcessListElement());
+        out = std::move(out_wrapper);
+        out_streams.emplace_back(std::move(out));
+    }
+
+    /// What type of query: INSERT or INSERT SELECT?
+    if (query.select)
+    {
+        for (auto & in_stream : in_streams)
+        {
+            in_stream = std::make_shared<ConvertingBlockInputStream>(
+                context, in_stream, out_streams.at(0)->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Position);
+        }
+
+        Block in_header = in_streams.at(0)->getHeader();
+        if (in_streams.size() > 1)
+        {
+            for (size_t i = 1; i < in_streams.size(); ++i)
+                assertBlocksHaveEqualStructure(in_streams[i]->getHeader(), in_header, "INSERT SELECT");
+        }
+
+        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(in_streams, out_streams);
 
         if (!allow_materialized)
         {
-            Block in_header = res.in->getHeader();
             for (const auto & column : table->getColumns())
                 if (column.default_desc.kind == ColumnDefaultKind::Materialized && in_header.has(column.name))
                     throw Exception("Cannot insert column " + column.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
@@ -162,27 +196,17 @@ BlockIO InterpreterInsertQuery::execute()
     }
     else if (query.data && !query.has_tail) /// can execute without additional data
     {
+        // res.out = std::move(out_streams.at(0));
         res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, query_sample_block, context, nullptr);
-        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
-        res.out = nullptr;
+        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, out_streams.at(0));
     }
+    else
+        res.out = std::move(out_streams.at(0));
+    res.pipeline.addStorageHolder(table);
 
     return res;
 }
 
-
-void InterpreterInsertQuery::checkAccess(const ASTInsertQuery & query)
-{
-    const Settings & settings = context.getSettingsRef();
-    auto readonly = settings.readonly;
-
-    if (!readonly || (query.database.empty() && context.tryGetExternalTable(query.table) && readonly >= 2))
-    {
-        return;
-    }
-
-    throw Exception("Cannot insert into table in readonly mode", ErrorCodes::READONLY);
-}
 
 std::pair<String, String> InterpreterInsertQuery::getDatabaseTable() const
 {

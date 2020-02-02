@@ -15,7 +15,7 @@
 #include <Common/Stopwatch.h>
 
 
-UInt64 rdtsc()
+static UInt64 rdtsc()
 {
 #if defined(__x86_64__)
     UInt64 val;

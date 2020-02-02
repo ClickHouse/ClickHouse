@@ -1,8 +1,10 @@
 #pragma once
+
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <string>
 #include <type_traits>
-#include <algorithm>
 
 using Int8 = int8_t;
 using Int16 = int16_t;
@@ -13,6 +15,8 @@ using UInt8 = uint8_t;
 using UInt16 = uint16_t;
 using UInt32 = uint32_t;
 using UInt64 = uint64_t;
+
+using String = std::string;
 
 /// The standard library type traits, such as std::is_arithmetic, with one exception
 /// (std::common_type), are "set in stone". Attempting to specialize them causes undefined behavior.
@@ -52,4 +56,3 @@ struct is_arithmetic
 
 template <typename T>
 inline constexpr bool is_arithmetic_v = is_arithmetic<T>::value;
-

@@ -1,12 +1,12 @@
 #include "QueryProfiler.h"
 
 #include <random>
-#include <common/Pipe.h>
 #include <common/phdr_cache.h>
 #include <common/config_common.h>
-#include <Common/StackTrace.h>
 #include <common/StringRef.h>
 #include <common/logger_useful.h>
+#include <Common/PipeFDs.h>
+#include <Common/StackTrace.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
@@ -22,7 +22,7 @@ namespace ProfileEvents
 namespace DB
 {
 
-extern LazyPipe trace_pipe;
+extern LazyPipeFDs trace_pipe;
 
 namespace
 {
@@ -141,7 +141,15 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const 
         sev._sigev_un._tid = thread_id;
 #endif
         if (timer_create(clock_type, &sev, &timer_id))
+        {
+            /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.
+            /// https://mybranch.dev/posts/clickhouse-on-cloud-run/
+            if (errno == 0)
+                throw Exception("Failed to create thread timer. The function 'timer_create' returned non-zero but didn't set errno. This is bug in your OS.",
+                    ErrorCodes::CANNOT_CREATE_TIMER);
+
             throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
+        }
 
         /// Randomize offset as uniform random value from 0 to period - 1.
         /// It will allow to sample short queries even if timer period is large.

@@ -3,7 +3,7 @@
 The HTTP interface lets you use ClickHouse on any platform from any programming language. We use it for working from Java and Perl, as well as shell scripts. In other departments, the HTTP interface is used from Perl, Python, and Go. The HTTP interface is more limited than the native interface, but it has better compatibility.
 
 By default, clickhouse-server listens for HTTP on port 8123 (this can be changed in the config).
-If you make a GET / request without parameters, it returns the string "Ok" (with a line feed at the end). You can use this in health-check scripts.
+If you make a GET / request without parameters, it returns the string "Ok." (with a line feed at the end). You can use this in health-check scripts.
 
 ```bash
 $ curl 'http://localhost:8123/'
@@ -172,7 +172,7 @@ $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?data
 
 By default, the database that is registered in the server settings is used as the default database. By default, this is the database called 'default'. Alternatively, you can always specify the database using a dot before the table name.
 
-The username and password can be indicated in one of two ways:
+The username and password can be indicated in one of three ways:
 
 1. Using HTTP Basic Authentication. Example:
 
@@ -186,10 +186,16 @@ $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 $ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
 ```
 
+3. Using ‘X-ClickHouse-User’ and ‘X-ClickHouse-Key’ headers. Example:
+
+```bash
+$ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: password' 'http://localhost:8123/' -d @-
+```
+
 If the user name is not specified, the `default` name is used. If the password is not specified, the empty password is used.
 You can also use the URL parameters to specify any settings for processing a single query, or entire profiles of settings. Example:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
-For more information, see the [Settings][../operations/settings/index.md] section.
+For more information, see the [Settings](../operations/settings/index.md) section.
 
 ```bash
 $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:8123/?' --data-binary @-
@@ -258,4 +264,4 @@ You can create a query with parameters and pass values for them from the corresp
 $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/http_interface/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/interfaces/http_interface/) <!--hide-->

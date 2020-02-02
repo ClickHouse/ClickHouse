@@ -1010,6 +1010,45 @@ FROM ontime
 └─────────────────────┘
 ```
 
+## topKWeighted {#topkweighted}
+
+Similar to `topK` but takes one additional argument of integer type - `weight`. Every value is accounted `weight` times for frequency calculation.
+
+**Syntax**
+
+```sql
+topKWeighted(N)(x, weight)
+```
+
+**Parameters**
+
+- `N` — The number of elements to return.
+
+**Arguments**
+
+- `x` – The value.
+- `weight` — The weight. [UInt8](../../data_types/int_uint.md).
+
+**Returned value**
+
+Returns an array of the values with maximum approximate sum of weights.
+
+**Example**
+
+Query:
+
+```sql
+SELECT topKWeighted(10)(number, number) FROM numbers(1000)
+```
+
+Result:
+
+```text
+┌─topKWeighted(10)(number, number)──────────┐
+│ [999,998,997,996,995,994,993,992,991,990] │
+└───────────────────────────────────────────┘
+```
+
 ## covarSamp(x, y)
 
 Вычисляет величину `Σ((x - x̅)(y - y̅)) / (n - 1)`.
@@ -1193,4 +1232,4 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 - [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
 - [Отличие линейной от логистической регрессии](https://moredez.ru/q/51225972/)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/agg_functions/reference/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/agg_functions/reference/) <!--hide-->

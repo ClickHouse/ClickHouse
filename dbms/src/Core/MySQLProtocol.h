@@ -7,6 +7,7 @@
 #include <Common/PODArray.h>
 #include <Core/Types.h>
 #include <Interpreters/Context.h>
+#include <Access/User.h>
 #include <IO/copyData.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -953,10 +954,7 @@ public:
 
         auto user = context.getUser(user_name);
 
-        if (user->authentication.getType() != DB::Authentication::DOUBLE_SHA1_PASSWORD)
-            throw Exception("Cannot use " + getName() + " auth plugin for user " + user_name + " since its password isn't specified using double SHA1.", ErrorCodes::UNKNOWN_EXCEPTION);
-
-        Poco::SHA1Engine::Digest double_sha1_value = user->authentication.getPasswordHashBinary();
+        Poco::SHA1Engine::Digest double_sha1_value = user->authentication.getPasswordDoubleSHA1();
         assert(double_sha1_value.size() == Poco::SHA1Engine::DIGEST_SIZE);
 
         Poco::SHA1Engine engine;
@@ -1033,6 +1031,7 @@ public:
             LOG_TRACE(log, "Authentication method match.");
         }
 
+        bool sent_public_key = false;
         if (auth_response == "\1")
         {
             LOG_TRACE(log, "Client requests public key.");
@@ -1043,13 +1042,17 @@ public:
                 throw Exception("Failed to write public key to memory. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
             }
             char * pem_buf = nullptr;
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wold-style-cast"
             long pem_size = BIO_get_mem_data(mem, &pem_buf);
+#    pragma GCC diagnostic pop
             String pem(pem_buf, pem_size);
 
             LOG_TRACE(log, "Key: " << pem);
 
             AuthMoreData data(pem);
             packet_sender->sendPacket(data, true);
+            sent_public_key = true;
 
             AuthSwitchResponse response;
             packet_sender->receivePacket(response);
@@ -1069,13 +1072,15 @@ public:
          */
         if (!is_secure_connection && !auth_response->empty() && auth_response != String("\0", 1))
         {
-            LOG_TRACE(log, "Received nonempty password");
+            LOG_TRACE(log, "Received nonempty password.");
             auto ciphertext = reinterpret_cast<unsigned char *>(auth_response->data());
 
             unsigned char plaintext[RSA_size(&private_key)];
             int plaintext_size = RSA_private_decrypt(auth_response->size(), ciphertext, plaintext, &private_key, RSA_PKCS1_OAEP_PADDING);
             if (plaintext_size == -1)
             {
+                if (!sent_public_key)
+                    LOG_WARNING(log, "Client could have encrypted password with different public key since it didn't request it from server.");
                 throw Exception("Failed to decrypt auth data. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
             }
 

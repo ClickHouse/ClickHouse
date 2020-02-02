@@ -5,13 +5,13 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/executeQuery.h>
 #include <Common/isLocalAddress.h>
-#include <ext/range.h>
 #include <common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
 #include "readInvalidateQuery.h"
 #include "writeParenthesisedString.h"
+#include "DictionaryFactory.h"
 
 
 namespace DB
@@ -76,6 +76,9 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     context.setUser(user, password, Poco::Net::SocketAddress("127.0.0.1", 0), {});
     /// Processors are not supported here yet.
     context.getSettingsRef().experimental_use_processors = false;
+    /// Query context is needed because some code in executeQuery function may assume it exists.
+    /// Current example is Context::getSampleBlockCache from InterpreterSelectWithUnionQuery::getSampleBlock.
+    context.makeQueryContext();
 }
 
 
@@ -100,6 +103,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionar
     , pool{is_local ? nullptr : createPool(host, port, secure, db, user, password)}
     , load_all_query{other.load_all_query}
 {
+    context.makeQueryContext();
 }
 
 std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
@@ -210,7 +214,8 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & context) -> DictionarySourcePtr
+                                 const Context & context,
+                                 bool /* check_config */) -> DictionarySourcePtr
     {
         return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse", sample_block, context);
     };

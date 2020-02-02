@@ -47,7 +47,8 @@ std::ostream & operator<<(std::ostream & stream, const IDataType & what)
 
 std::ostream & operator<<(std::ostream & stream, const IStorage & what)
 {
-    stream << "IStorage(name = " << what.getName() << ", tableName = " << what.getTableName() << ") {"
+    auto table_id = what.getStorageID();
+    stream << "IStorage(name = " << what.getName() << ", tableName = " << table_id.table_name << ") {"
            << what.getColumns().getAllPhysical().toString() << "}";
     return stream;
 }
@@ -58,7 +59,7 @@ std::ostream & operator<<(std::ostream & stream, const TableStructureReadLock &)
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const IFunctionBuilder & what)
+std::ostream & operator<<(std::ostream & stream, const IFunctionOverloadResolver & what)
 {
     stream << "IFunction(name = " << what.getName() << ", variadic = " << what.isVariadic() << ", args = " << what.getNumberOfArguments()
            << ")";

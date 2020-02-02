@@ -22,7 +22,14 @@ Compressed data for `INSERT` and `ALTER` queries is replicated (for more informa
 - The `DROP TABLE` query deletes the replica located on the server where the query is run.
 - The `RENAME` query renames the table on one of the replicas. In other words, replicated tables can have different names on different replicas.
 
-To use replication, set the addresses of the ZooKeeper cluster in the config file. Example:
+ClickHouse uses [Apache ZooKeeper](https://zookeeper.apache.org) for storing replicas meta information. Use ZooKeeper version 3.4.5 or newer.
+
+To use replication, set parameters in the [zookeeper](../server_settings/settings.md#server-settings_zookeeper) server configuration section.
+
+!!! attention "Attention"
+    Don't neglect the securiry setting. ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem.
+
+Example of setting the addresses of the ZooKeeper cluster:
 
 ```xml
 <zookeeper>
@@ -40,9 +47,7 @@ To use replication, set the addresses of the ZooKeeper cluster in the config fil
     </node>
 </zookeeper>
 ```
-
-Use ZooKeeper version 3.4.5 or later.
-
+ 
 You can specify any existing ZooKeeper cluster and the system will use a directory on it for its own data (the directory is specified when creating a replicatable table).
 
 If ZooKeeper isn't set in the config file, you can't create replicated tables, and any existing replicated tables will be read-only.
@@ -203,4 +208,4 @@ After this, you can launch the server, create a `MergeTree` table, move the data
 
 If the data in ZooKeeper was lost or damaged, you can save data by moving it to an unreplicated table as described above.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/replication/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/replication/) <!--hide-->

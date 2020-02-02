@@ -245,6 +245,51 @@ def test_create_reserved(test_cluster):
     test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS test_as_reserved ON CLUSTER cluster")
 
 
+def test_rename(test_cluster):
+    instance = test_cluster.instances['ch1']
+    rules = test_cluster.pm_random_drops.pop_rules()
+    test_cluster.ddl_check_query(instance, "CREATE TABLE rename_shard ON CLUSTER cluster (id Int64, sid String DEFAULT concat('old', toString(id))) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/staging/test_shard', '{replica}') ORDER BY (id)")
+    test_cluster.ddl_check_query(instance, "CREATE TABLE rename_new ON CLUSTER cluster AS rename_shard ENGINE = Distributed(cluster, default, rename_shard, id % 2)")
+    test_cluster.ddl_check_query(instance, "RENAME TABLE rename_new TO rename ON CLUSTER cluster;")
+
+
+    for i in range(10):
+        instance.query("insert into rename (id) values ({})".format(i))
+
+    # FIXME ddl_check_query doesnt work for replicated DDDL if replace_hostnames_with_ips=True
+    # because replicas use wrong host name of leader (and wrong path in zk) to check if it has executed query
+    # so ddl query will always fail on some replicas even if query was actually executed by leader
+    # Also such inconsistency in cluster configuration may lead to query duplication if leader suddenly changed
+    # because path of lock in zk contains shard name, which is list of host names of replicas
+    instance.query("ALTER TABLE rename_shard ON CLUSTER cluster MODIFY COLUMN sid String DEFAULT concat('new', toString(id))", ignore_error=True)
+    time.sleep(1)
+
+    test_cluster.ddl_check_query(instance, "CREATE TABLE rename_new ON CLUSTER cluster AS rename_shard ENGINE = Distributed(cluster, default, rename_shard, id % 2)")
+
+    instance.query("system stop distributed sends rename")
+
+    for i in range(10, 20):
+        instance.query("insert into rename (id) values ({})".format(i))
+
+    test_cluster.ddl_check_query(instance, "RENAME TABLE rename TO rename_old, rename_new TO rename ON CLUSTER cluster")
+
+    for i in range(20, 30):
+        instance.query("insert into rename (id) values ({})".format(i))
+
+    instance.query("system flush distributed rename")
+    for name in ['ch1', 'ch2', 'ch3', 'ch4']:
+        test_cluster.instances[name].query("system sync replica rename_shard")
+
+    # system stop distributed sends does not affect inserts into local shard,
+    # so some ids in range (10, 20) will be inserted into rename_shard
+    assert instance.query("select count(id), sum(id) from rename").rstrip() == "25\t360"
+    #assert instance.query("select count(id), sum(id) from rename").rstrip() == "20\t290"
+    assert instance.query("select count(id), sum(id) from rename where sid like 'old%'").rstrip() == "15\t115"
+    #assert instance.query("select count(id), sum(id) from rename where sid like 'old%'").rstrip() == "10\t45"
+    assert instance.query("select count(id), sum(id) from rename where sid like 'new%'").rstrip() == "10\t245"
+    test_cluster.pm_random_drops.push_rules(rules)
+
+
 if __name__ == '__main__':
     with contextmanager(test_cluster)() as ctx_cluster:
        for name, instance in ctx_cluster.instances.items():

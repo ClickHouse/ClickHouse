@@ -244,8 +244,6 @@ public:
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -300,8 +298,6 @@ public:
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }

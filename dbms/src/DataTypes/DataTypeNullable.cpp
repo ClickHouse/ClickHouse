@@ -505,7 +505,7 @@ bool DataTypeNullable::equals(const IDataType & rhs) const
 }
 
 
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr create(const String & /*type_name*/, const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
         throw Exception("Nullable data type family must have exactly one argument - nested type", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);

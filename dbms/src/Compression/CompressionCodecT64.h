@@ -53,4 +53,7 @@ private:
     Variant variant;
 };
 
+class CompressionCodecFactory;
+void registerCodecT64(CompressionCodecFactory & factory);
+
 }

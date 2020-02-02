@@ -6,7 +6,7 @@ import ssl
 import csv
 
 
-# Decorator used to see if authentification works for external dictionary who use a HTTP source.
+# Decorator used to see if authentication works for external dictionary who use a HTTP source.
 def check_auth(fn):
     def wrapper(req):
         auth_header = req.headers.get('authorization', None)

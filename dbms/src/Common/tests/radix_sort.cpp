@@ -9,17 +9,17 @@
 
 using Key = double;
 
-void NO_INLINE sort1(Key * data, size_t size)
+static void NO_INLINE sort1(Key * data, size_t size)
 {
     std::sort(data, data + size);
 }
 
-void NO_INLINE sort2(Key * data, size_t size)
+static void NO_INLINE sort2(Key * data, size_t size)
 {
     radixSortLSD(data, size);
 }
 
-void NO_INLINE sort3(Key * data, size_t size)
+static void NO_INLINE sort3(Key * data, size_t size)
 {
     std::sort(data, data + size, [](Key a, Key b)
     {

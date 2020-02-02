@@ -292,4 +292,4 @@ ORDER BY level
 Решение: пишем в запросе GROUP BY SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/agg_functions/parametric_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/agg_functions/parametric_functions/) <!--hide-->

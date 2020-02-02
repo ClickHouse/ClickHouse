@@ -84,8 +84,16 @@ void NO_INLINE Set::insertFromBlockImplCase(
     for (size_t i = 0; i < rows; ++i)
     {
         if constexpr (has_null_map)
+        {
             if ((*null_map)[i])
+            {
+                if constexpr (build_filter)
+                {
+                    (*out_filter)[i] = false;
+                }
                 continue;
+            }
+        }
 
         [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
@@ -219,7 +227,6 @@ static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, c
     else
         throw Exception("Incorrect element of set. Must be literal or constant expression.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 }
-
 
 void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & context)
 {
@@ -473,7 +480,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::mayBeTrueInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types)
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types)
 {
     size_t tuple_size = indexes_mapping.size();
 

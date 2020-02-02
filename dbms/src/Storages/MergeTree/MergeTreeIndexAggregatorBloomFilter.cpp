@@ -7,6 +7,7 @@
 #include <Common/HashTable/Hash.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/BloomFilterHash.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

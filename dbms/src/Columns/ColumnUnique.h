@@ -263,7 +263,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
         return getNullValueIndex();
 
     if (size_of_value_if_fixed)
-        return uniqueInsertData(&x.get<char>(), size_of_value_if_fixed);
+        return uniqueInsertData(&x.reinterpret<char>(), size_of_value_if_fixed);
 
     auto & val = x.get<String>();
     return uniqueInsertData(val.data(), val.size());

@@ -1,10 +1,16 @@
+#include <Common/config.h>
+
+#if USE_AWS_S3
+
+#include <IO/S3Common.h>
 #include <Storages/StorageS3.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionS3.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Poco/URI.h>
+#include "registerTableFunctions.h"
 
 namespace DB
 {
@@ -56,6 +62,8 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & ast_function, const Conte
     else
         compression_method = "auto";
 
+    context.checkAccess(AccessType::s3);
+
     ColumnsDescription columns = parseColumnsListFromString(structure, context);
 
     /// Create table
@@ -76,9 +84,11 @@ StoragePtr TableFunctionS3::getStorage(
     const std::string & table_name,
     const String & compression_method) const
 {
-    Poco::URI uri(source);
+    Poco::URI uri (source);
+    S3::URI s3_uri (uri);
+
     UInt64 min_upload_part_size = global_context.getSettingsRef().s3_min_upload_part_size;
-    return StorageS3::create(uri, access_key_id, secret_access_key, getDatabaseName(), table_name, format, min_upload_part_size, columns, ConstraintsDescription{}, global_context, compression_method);
+    return StorageS3::create(s3_uri, access_key_id, secret_access_key, StorageID(getDatabaseName(), table_name), format, min_upload_part_size, columns, ConstraintsDescription{}, global_context, compression_method);
 }
 
 void registerTableFunctionS3(TableFunctionFactory & factory)
@@ -87,3 +97,5 @@ void registerTableFunctionS3(TableFunctionFactory & factory)
 }
 
 }
+
+#endif

@@ -534,6 +534,8 @@ services:
             {app_net}
                 {ipv4_address}
                 {ipv6_address}
+                {net_aliases}
+                    {net_alias1}
 '''
 
 
@@ -625,14 +627,27 @@ class ClickHouseInstance:
         return self.client.query_and_get_answer_with_error(sql, stdin, timeout, settings, user)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
-    def http_query(self, sql, data=None):
-        return urllib.urlopen("http://" + self.ip_address + ":8123/?query=" + urllib.quote(sql, safe=''), data).read()
+    def http_query(self, sql, data=None, params=None, user=None):
+        if params is None:
+            params = {}
+        else:
+            params = params.copy()
 
-    def restart_clickhouse(self, stop_start_wait_sec=5):
+        params["query"] = sql
+
+        auth = ""
+        if user:
+            auth = "{}@".format(user)
+
+        url = "http://" + auth + self.ip_address + ":8123/?" + urllib.urlencode(params)
+
+        return urllib.urlopen(url, data).read()
+
+    def restart_clickhouse(self, stop_start_wait_sec=5, kill=False):
         if not self.stay_alive:
             raise Exception("clickhouse can be restarted only with stay_alive=True instance")
 
-        self.exec_in_container(["bash", "-c", "pkill clickhouse"], user='root')
+        self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
         time.sleep(stop_start_wait_sec)
         self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
 
@@ -683,6 +698,10 @@ class ClickHouseInstance:
                 break
             time.sleep(0.5)
             local_counter += 1
+
+        # force kill if server hangs
+        if self.get_process_pid("clickhouse server"):
+            self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(9)], user='root')
 
         if callback_onstop:
             callback_onstop(self)
@@ -883,17 +902,17 @@ class ClickHouseInstance:
         if self.stay_alive:
             entrypoint_cmd = CLICKHOUSE_STAY_ALIVE_COMMAND
 
-        ipv4_address = ipv6_address = ""
-        if self.ipv4_address is None and self.ipv6_address is None:
-            networks = ""
-            app_net = ""
-        else:
+        networks = app_net = ipv4_address = ipv6_address = net_aliases = net_alias1 = ""
+        if self.ipv4_address is not None or self.ipv6_address is not None or self.hostname != self.name:
             networks = "networks:"
             app_net = "default:"
             if self.ipv4_address is not None:
                 ipv4_address = "ipv4_address: " + self.ipv4_address
             if self.ipv6_address is not None:
                 ipv6_address = "ipv6_address: " + self.ipv6_address
+            if self.hostname != self.name:
+                net_aliases = "aliases:"
+                net_alias1 = "- " + self.hostname
 
         if not self.with_installed_binary:
             binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse"
@@ -923,6 +942,8 @@ class ClickHouseInstance:
                 app_net=app_net,
                 ipv4_address=ipv4_address,
                 ipv6_address=ipv6_address,
+                net_aliases = net_aliases,
+                net_alias1 = net_alias1,
             ))
 
     def destroy_dir(self):
