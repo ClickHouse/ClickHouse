@@ -213,6 +213,22 @@ bool AnalyzedJoin::sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y)
         && x->columns_added_by_join == y->columns_added_by_join;
 }
 
+bool AnalyzedJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTTableJoin::Kind kind_) const
+{
+    if (strictness_ == strictness() && kind_ == kind())
+        return true;
+
+    /// Compatibility: old ANY INNER == new SEMI LEFT
+    if (strictness_ == ASTTableJoin::Strictness::Semi && isLeft(kind_) &&
+        strictness() == ASTTableJoin::Strictness::RightAny && isInner(kind()))
+        return true;
+    if (strictness() == ASTTableJoin::Strictness::Semi && isLeft(kind()) &&
+        strictness_ == ASTTableJoin::Strictness::RightAny && isInner(kind_))
+        return true;
+
+    return false;
+}
+
 JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block)
 {
     auto kind = table_join->kind();
