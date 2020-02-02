@@ -21,7 +21,6 @@ If the condition `cond` evaluates to a non-zero value, returns the result of the
 **Returned values**
 
 The function executes `then` and `else` expressions and returns its result, depending on whether the condition `cond` ended up being zero or not.
-If the condition is NULL, returns NULL.
 
 **Example**
 
