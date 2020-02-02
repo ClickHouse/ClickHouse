@@ -70,17 +70,31 @@ Returns a string containing the argument's hexadecimal representation.
 hex(arg)
 ```
 
-The result of the function depends on the type of argument. Uses uppercase letters `A-F`. Does not use `0x` prefixes or `h` suffixes. 
+The function is using uppercase letters `A-F` and not using any prefixes (like `0x`) or suffixes (like `h`).
 
-For strings, all bytes are simply encoded as two hexadecimal numbers. 
+For integer arguments, it prints hex digits ("nibbles") from the most significant to least significant (big endian or "human readable" order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints both digits of every byte even if leading digit is zero.
 
-Numbers are converted to big endian ("human readable") format. For numbers, older zeros are trimmed, but only by entire bytes.
+Example:
 
-For example:
+**Example**
 
-- `Date` is encoded as the number of days since the beginning of the Unix epoch. 
-- `DateTime` is encoded as the number of seconds since the beginning of the Unix epoch. 
-- `Float` and `Decimal` is encoded as their hexadecimal representation in memory.
+Query:
+
+```sql
+SELECT hex(1);
+```
+
+Result:
+
+```text
+01
+```
+
+Values of type `Date` and `DateTime` are formatted as corresponding integers (the number of days since Epoch for Date and the value of Unix Timestamp for DateTime).
+
+For `String` and `FixedString`, all bytes are simply encoded as two hexadecimal numbers. Zero bytes are not omitted.
+
+Values of floating point and Decimal types are encoded as their representation in memory. As we support little endian architecture, they are encoded in little endian. Zero leading/trailing bytes are not omitted.
 
 **Parameters**
 
@@ -126,7 +140,7 @@ Result:
 
 ## unhex(str)
 
-Accepts a string containing any number of hexadecimal digits, and returns a string containing the corresponding bytes. Supports both uppercase and lowercase letters A-F. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the younger half of the 00-0F byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn't thrown).
+Accepts a string containing any number of hexadecimal digits, and returns a string containing the corresponding bytes. Supports both uppercase and lowercase letters A-F. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the 00-0F byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn't thrown).
 If you want to convert the result to a number, you can use the 'reverse' and 'reinterpretAsType' functions.
 
 ## UUIDStringToNum(str)
