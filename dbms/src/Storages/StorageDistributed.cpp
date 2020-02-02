@@ -399,7 +399,7 @@ BlockInputStreams StorageDistributed::read(
             if (force)
             {
                 std::stringstream exception_message;
-                if (has_sharding_key)
+                if (!has_sharding_key)
                     exception_message << "No sharding key";
                 else
                     exception_message << "Sharding key " << sharding_key_column_name << " is not used";

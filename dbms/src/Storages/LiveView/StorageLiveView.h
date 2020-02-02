@@ -48,6 +48,7 @@ friend class LiveViewBlockOutputStream;
 public:
     ~StorageLiveView() override;
     String getName() const override { return "LiveView"; }
+    bool isView() const override { return true; }
     StorageID getSelectTableID() const { return select_table_id; }
     StorageID getBlocksStorageID() const
     {

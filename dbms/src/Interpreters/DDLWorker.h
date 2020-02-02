@@ -17,12 +17,13 @@ namespace DB
 {
 
 class ASTAlterQuery;
+class AccessRightsElements;
 struct DDLLogEntry;
 struct DDLTask;
 
 
 /// Pushes distributed DDL query to the queue
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, NameSet && query_databases);
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_required_access);
 
 
 class DDLWorker

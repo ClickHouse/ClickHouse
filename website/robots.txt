@@ -12,6 +12,7 @@ Disallow: /docs/ru/search.html
 Disallow: /docs/ja/search.html
 Disallow: /docs/zh/search.html
 Disallow: /docs/fa/search.html
+Disallow: /cdn-cgi/
 Allow: /
 Host: https://clickhouse.tech
 Sitemap: https://clickhouse.tech/docs/sitemap.xml

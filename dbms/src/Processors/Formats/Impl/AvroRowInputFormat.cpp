@@ -44,6 +44,7 @@
 #include <avro/Reader.hh>
 #include <avro/Schema.hh>
 #include <avro/Specific.hh>
+#include <avro/Types.hh>
 #include <avro/ValidSchema.hh>
 #include <avro/Writer.hh>
 
@@ -149,6 +150,12 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
     }
 }
 
+static std::string nodeToJson(avro::NodePtr root_node)
+{
+    std::ostringstream ss;
+    root_node->printJson(ss, 0);
+    return ss.str();
+}
 
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type)
 {
@@ -316,7 +323,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
         case avro::AVRO_FIXED:
         {
             size_t fixed_size = root_node->fixedSize();
-            if (target.isFixedString() && target_type->getSizeOfValueInMemory() == fixed_size)
+            if ((target.isFixedString() && target_type->getSizeOfValueInMemory() == fixed_size) || target.isString())
             {
                 return [tmp_fixed = std::vector<uint8_t>(fixed_size)](IColumn & column, avro::Decoder & decoder) mutable
                 {
@@ -326,6 +333,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             }
             break;
         }
+        case avro::AVRO_SYMBOLIC:
+            return createDeserializeFn(avro::resolveSymbol(root_node), target_type);
         case avro::AVRO_MAP: [[fallthrough]];
         case avro::AVRO_RECORD: [[fallthrough]];
         default:
@@ -333,7 +342,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
     }
 
     throw Exception(
-        "Type " + target_type->getName() + " is not compatible with Avro " + avro::ValidSchema(root_node).toJson(false),
+        "Type " + target_type->getName() + " is not compatible with Avro " + avro::toString(root_node->type()) + ":\n" + nodeToJson(root_node),
         ErrorCodes::ILLEGAL_COLUMN);
 }
 
@@ -413,6 +422,18 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
             {
                 for (auto & skip_fn : field_skip_fns)
                     skip_fn(decoder);
+            };
+        }
+        case avro::AVRO_SYMBOLIC:
+        {
+            auto [it, inserted] = symbolic_skip_fn_map.emplace(root_node->name(), SkipFn{});
+            if (inserted)
+            {
+                it->second = createSkipFn(avro::resolveSymbol(root_node));
+            }
+            return [&skip_fn = it->second](avro::Decoder & decoder)
+            {
+                skip_fn(decoder);
             };
         }
         default:
