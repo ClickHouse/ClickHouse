@@ -101,7 +101,7 @@ bool DiskLocal::tryReserve(UInt64 bytes)
 
 UInt64 DiskLocal::getTotalSpace() const
 {
-    auto fs = getStatVFS(disk_path);
+    auto fs = getStatVFS(disk_path + "data/");
     UInt64 total_size = fs.f_blocks * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
@@ -264,7 +264,7 @@ void registerDiskLocal(DiskFactory & factory)
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
                       const Context & context) -> DiskPtr {
-        String path = config.getString(config_prefix + ".path", "") + "data/";
+        String path = config.getString(config_prefix + ".path", "");
         if (name == "default")
         {
             if (!path.empty())
