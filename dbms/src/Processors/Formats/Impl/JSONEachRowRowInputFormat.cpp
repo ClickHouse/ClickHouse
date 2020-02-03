@@ -217,15 +217,13 @@ void JSONEachRowRowInputFormat::readNestedData(const String & name, MutableColum
 bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
     /// Set flag data_in_square_brackets if data starts with '['.
-    if (!in.eof() && parsing_stage == ParsingStage::START)
+    if (parsing_stage == ParsingStage::START)
     {
         parsing_stage = ParsingStage::PROCESS;
+
         skipWhitespaceIfAny(in);
-        if (*in.position() == '[')
-        {
+        if (checkChar('[', in))
             data_in_square_brackets = true;
-            ++in.position();
-        }
     }
 
     skipWhitespaceIfAny(in);
@@ -241,15 +239,14 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 
     /// Finish reading rows if data is in square brackets and ']' received.
     skipWhitespaceIfAny(in);
-    if (!in.eof() && *in.position() == ']' && data_in_square_brackets)
+
+    if (data_in_square_brackets && checkChar(']', in))
     {
         data_in_square_brackets = false;
         parsing_stage = ParsingStage::FINISH;
-        ++in.position();
         return false;
     }
 
-    skipWhitespaceIfAny(in);
     if (in.eof() || parsing_stage == ParsingStage::FINISH)
     {
         if (data_in_square_brackets)
