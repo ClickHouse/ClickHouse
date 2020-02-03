@@ -34,8 +34,8 @@ private:
     };
 
 
-    std::deque<AlterInQueue> queue;
 public:
+    std::deque<AlterInQueue> queue;
 
     bool empty() const {
         return queue.empty();
@@ -51,13 +51,13 @@ public:
         if (queue.empty())
             queue.emplace_back(alter_version, AlterState::APPLY_DATA_CHANGES);
 
-        if (queue.front().alter_version != alter_version)
-        {
-            throw Exception(
-                "Alter head has another version number "
-                + std::to_string(queue.front().alter_version) + " than ours " + std::to_string(alter_version),
-                ErrorCodes::LOGICAL_ERROR);
-        }
+        //if (queue.front().alter_version != alter_version)
+        //{
+        //    throw Exception(
+        //        "Alter head has another version number "
+        //        + std::to_string(queue.front().alter_version) + " than ours " + std::to_string(alter_version),
+        //        ErrorCodes::LOGICAL_ERROR);
+        //}
     }
 
     void finishMetadataAlter(int alter_version, bool have_data_alter, std::unique_lock <std::mutex> & /*state_lock*/)

@@ -2333,6 +2333,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
 void StorageReplicatedMergeTree::mutationsFinalizingTask()
 {
+    LOG_DEBUG(log, "Trying to finalize mutations");
     bool needs_reschedule = false;
 
     try
@@ -3384,13 +3385,13 @@ void StorageReplicatedMergeTree::alter(
 
         Coordination::Responses results;
         int32_t rc = zookeeper->tryMulti(ops, results);
-        queue.pullLogsToQueue(zookeeper);
 
         //std::cerr << "Results size:" << results.size() << std::endl;
         //std::cerr << "Have mutation:" << have_mutation << std::endl;
 
         if (rc == Coordination::ZOK)
         {
+            queue.pullLogsToQueue(zookeeper);
             if (have_mutation)
             {
                 //std::cerr << "In have mutation\n";
