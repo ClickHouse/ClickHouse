@@ -1013,4 +1013,4 @@ $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT OR
 Если для ввода/вывода данных используется [HTTP-интерфейс](../interfaces/http.md), то файл со схемой должен располагаться на сервере в каталоге,
 указанном в параметре [format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path) конфигурации сервера.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/formats/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/formats/) <!--hide-->

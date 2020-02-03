@@ -129,7 +129,7 @@ Defines storage time for values. Can be specified only for MergeTree-family tabl
 
 ### Column Compression Codecs {#codecs}
 
-By default, ClickHouse applies the compression method, defined in [server settings](../operations/server_settings/settings.md#compression), to columns. You can also define the compression method for each individual column in the `CREATE TABLE` query.
+By default, ClickHouse applies the `lz4` compression method. For `MergeTree`-engine family you can change the default compression method in the [compression](../operations/server_settings/settings.md#server-settings-compression) section of a server configuration. You can also define the compression method for each individual column in the `CREATE TABLE` query.
 
 ```sql
 CREATE TABLE codec_example
@@ -151,10 +151,10 @@ If a codec is specified, the default codec doesn't apply. Codecs can be combined
 
 Compression is supported for the following table engines:
 
-- [MergeTree](../operations/table_engines/mergetree.md) family
-- [Log](../operations/table_engines/log_family.md) family
-- [Set](../operations/table_engines/set.md)
-- [Join](../operations/table_engines/join.md)
+- [MergeTree](../operations/table_engines/mergetree.md) family. Supports column compression codecs and selecting the default compression method by [compression](../operations/server_settings/settings.md#server-settings-compression) settings.
+- [Log](../operations/table_engines/log_family.md) family. Uses the `lz4` compression method by default and supports column compression codecs.
+- [Set](../operations/table_engines/set.md). Only supported the default compression.
+- [Join](../operations/table_engines/join.md). Only supported the default compression.
 
 ClickHouse supports common purpose codecs and specialized codecs.
 
@@ -275,7 +275,7 @@ Views look the same as normal tables. For example, they are listed in the result
 
 There isn't a separate query for deleting views. To delete a view, use `DROP TABLE`.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/create/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/create/) <!--hide-->
 
 ## CREATE DICTIONARY {#create-dictionary-query}
 

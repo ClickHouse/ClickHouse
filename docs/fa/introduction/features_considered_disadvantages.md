@@ -8,4 +8,4 @@
 
 </div>
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/introduction/features_considered_disadvantages/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/introduction/features_considered_disadvantages/) <!--hide-->

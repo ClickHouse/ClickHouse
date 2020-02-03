@@ -7,4 +7,4 @@
 توابع کمتری نسبت به String برای FixedString(N) وجود دارد، و برای استفاده کمتر مناسب است.
 
 </div>
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/fixedstring/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/data_types/fixedstring/) <!--hide-->
