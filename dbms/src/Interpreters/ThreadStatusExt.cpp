@@ -68,8 +68,7 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
         std::lock_guard lock(thread_group->mutex);
 
         /// NOTE: thread may be attached multiple times if it is reused from a thread pool.
-        thread_group->thread_numbers.emplace_back(thread_number);
-        thread_group->os_thread_ids.emplace_back(os_thread_id);
+        thread_group->thread_ids.emplace_back(thread_id);
 
         logs_queue_ptr = thread_group->logs_queue_ptr;
         query_context = thread_group->query_context;
@@ -90,7 +89,7 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
         {
             LOG_TRACE(log, "Setting nice to " << new_os_thread_priority);
 
-            if (0 != setpriority(PRIO_PROCESS, os_thread_id, new_os_thread_priority))
+            if (0 != setpriority(PRIO_PROCESS, thread_id, new_os_thread_priority))
                 throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
 
             os_thread_priority = new_os_thread_priority;
@@ -109,8 +108,7 @@ void ThreadStatus::initializeQuery()
 
     /// No need to lock on mutex here
     thread_group->memory_tracker.setDescription("(for query)");
-    thread_group->master_thread_number = thread_number;
-    thread_group->master_thread_os_id = os_thread_id;
+    thread_group->master_thread_id = thread_id;
 }
 
 void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool check_detached)
@@ -163,13 +161,11 @@ void ThreadStatus::initQueryProfiler()
     try
     {
         if (settings.query_profiler_real_time_period_ns > 0)
-            query_profiler_real = std::make_unique<QueryProfilerReal>(
-                /* thread_id */ os_thread_id,
+            query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
                 /* period */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
 
         if (settings.query_profiler_cpu_time_period_ns > 0)
-            query_profiler_cpu = std::make_unique<QueryProfilerCpu>(
-                /* thread_id */ os_thread_id,
+            query_profiler_cpu = std::make_unique<QueryProfilerCpu>(thread_id,
                 /* period */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
     }
     catch (...)
@@ -216,7 +212,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     {
         LOG_TRACE(log, "Resetting nice");
 
-        if (0 != setpriority(PRIO_PROCESS, os_thread_id, 0))
+        if (0 != setpriority(PRIO_PROCESS, thread_id, 0))
             LOG_ERROR(log, "Cannot 'setpriority' back to zero: " << errnoToString(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, errno));
 
         os_thread_priority = 0;
@@ -242,17 +238,14 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     elem.peak_memory_usage = memory_tracker.getPeak();
 
     elem.thread_name = getThreadName();
-    elem.thread_number = thread_number;
-    elem.os_thread_id = os_thread_id;
+    elem.thread_id = thread_id;
 
     if (thread_group)
     {
         {
             std::lock_guard lock(thread_group->mutex);
 
-            elem.master_thread_number = thread_group->master_thread_number;
-            elem.master_os_thread_id = thread_group->master_thread_os_id;
-
+            elem.master_thread_id = thread_group->master_thread_id;
             elem.query = thread_group->query;
         }
     }

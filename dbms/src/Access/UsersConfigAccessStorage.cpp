@@ -1,6 +1,8 @@
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/Quota.h>
 #include <Access/RowPolicy.h>
+#include <Access/User.h>
+#include <Dictionaries/IDictionary.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -10,10 +12,19 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_ADDRESS_PATTERN_TYPE;
+}
+
+
 namespace
 {
     char getTypeChar(std::type_index type)
     {
+        if (type == typeid(User))
+            return 'U';
         if (type == typeid(Quota))
             return 'Q';
         if (type == typeid(RowPolicy))
@@ -36,6 +47,139 @@ namespace
 
 
     UUID generateID(const IAccessEntity & entity) { return generateID(entity.getType(), entity.getFullName()); }
+
+    UserPtr parseUser(const Poco::Util::AbstractConfiguration & config, const String & user_name)
+    {
+        auto user = std::make_shared<User>();
+        user->setName(user_name);
+
+        String user_config = "users." + user_name;
+
+        bool has_password = config.has(user_config + ".password");
+        bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
+        bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
+
+        if (has_password + has_password_sha256_hex + has_password_double_sha1_hex > 1)
+            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex' is used to specify password for user " + user_name + ". Must be only one of them.",
+                ErrorCodes::BAD_ARGUMENTS);
+
+        if (!has_password && !has_password_sha256_hex && !has_password_double_sha1_hex)
+            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
+
+        if (has_password)
+        {
+            user->authentication = Authentication{Authentication::PLAINTEXT_PASSWORD};
+            user->authentication.setPassword(config.getString(user_config + ".password"));
+        }
+        else if (has_password_sha256_hex)
+        {
+            user->authentication = Authentication{Authentication::SHA256_PASSWORD};
+            user->authentication.setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"));
+        }
+        else if (has_password_double_sha1_hex)
+        {
+            user->authentication = Authentication{Authentication::DOUBLE_SHA1_PASSWORD};
+            user->authentication.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
+        }
+
+        user->profile = config.getString(user_config + ".profile");
+
+        /// Fill list of allowed hosts.
+        const auto networks_config = user_config + ".networks";
+        if (config.has(networks_config))
+        {
+            Poco::Util::AbstractConfiguration::Keys keys;
+            config.keys(networks_config, keys);
+            for (const String & key : keys)
+            {
+                String value = config.getString(networks_config + "." + key);
+                if (key.starts_with("ip"))
+                    user->allowed_client_hosts.addSubnet(value);
+                else if (key.starts_with("host_regexp"))
+                    user->allowed_client_hosts.addHostRegexp(value);
+                else if (key.starts_with("host"))
+                    user->allowed_client_hosts.addHostName(value);
+                else
+                    throw Exception("Unknown address pattern type: " + key, ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE);
+            }
+        }
+
+        /// Fill list of allowed databases.
+        const auto databases_config = user_config + ".allow_databases";
+        std::optional<Strings> databases;
+        if (config.has(databases_config))
+        {
+            Poco::Util::AbstractConfiguration::Keys keys;
+            config.keys(databases_config, keys);
+            databases.emplace();
+            databases->reserve(keys.size());
+            for (const auto & key : keys)
+            {
+                const auto database_name = config.getString(databases_config + "." + key);
+                databases->push_back(database_name);
+            }
+        }
+
+        /// Fill list of allowed dictionaries.
+        const auto dictionaries_config = user_config + ".allow_dictionaries";
+        std::optional<Strings> dictionaries;
+        if (config.has(dictionaries_config))
+        {
+            Poco::Util::AbstractConfiguration::Keys keys;
+            config.keys(dictionaries_config, keys);
+            dictionaries.emplace();
+            dictionaries->reserve(keys.size());
+            for (const auto & key : keys)
+            {
+                const auto dictionary_name = config.getString(dictionaries_config + "." + key);
+                dictionaries->push_back(dictionary_name);
+            }
+        }
+
+        user->access.grant(AccessType::ALL); /// By default all databases are accessible.
+
+        if (databases)
+        {
+            user->access.fullRevoke(AccessFlags::databaseLevel());
+            for (const String & database : *databases)
+                user->access.grant(AccessFlags::databaseLevel(), database);
+            user->access.grant(AccessFlags::databaseLevel(), "system"); /// Anyone has access to the "system" database.
+        }
+
+        if (dictionaries)
+        {
+            user->access.fullRevoke(AccessType::dictGet, IDictionary::NO_DATABASE_TAG);
+            for (const String & dictionary : *dictionaries)
+                user->access.grant(AccessType::dictGet, IDictionary::NO_DATABASE_TAG, dictionary);
+        }
+        else if (databases)
+            user->access.grant(AccessType::dictGet, IDictionary::NO_DATABASE_TAG);
+
+        return user;
+    }
+
+
+    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
+    {
+        Poco::Util::AbstractConfiguration::Keys user_names;
+        config.keys("users", user_names);
+
+        std::vector<AccessEntityPtr> users;
+        users.reserve(user_names.size());
+        for (const auto & user_name : user_names)
+        {
+            try
+            {
+                users.push_back(parseUser(config, user_name));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Could not parse user " + backQuote(user_name));
+            }
+        }
+        return users;
+    }
+
 
     QuotaPtr parseQuota(const Poco::Util::AbstractConfiguration & config, const String & quota_name, const Strings & user_names)
     {
@@ -192,6 +336,8 @@ UsersConfigAccessStorage::~UsersConfigAccessStorage() {}
 void UsersConfigAccessStorage::loadFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
+    for (const auto & entity : parseUsers(config, getLogger()))
+        all_entities.emplace_back(generateID(*entity), entity);
     for (const auto & entity : parseQuotas(config, getLogger()))
         all_entities.emplace_back(generateID(*entity), entity);
     for (const auto & entity : parseRowPolicies(config, getLogger()))
@@ -250,13 +396,13 @@ void UsersConfigAccessStorage::updateImpl(const UUID & id, const UpdateFunc &)
 }
 
 
-IAccessStorage::SubscriptionPtr UsersConfigAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
+ext::scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
     return memory_storage.subscribeForChanges(id, handler);
 }
 
 
-IAccessStorage::SubscriptionPtr UsersConfigAccessStorage::subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const
+ext::scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const
 {
     return memory_storage.subscribeForChanges(type, handler);
 }

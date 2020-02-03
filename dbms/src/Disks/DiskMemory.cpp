@@ -2,6 +2,7 @@
 #include "DiskFactory.h"
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 
@@ -36,6 +37,36 @@ private:
     std::vector<String>::iterator iter;
 };
 
+void WriteIndirectBuffer::finalize()
+{
+    next();
+    WriteBufferFromVector::finalize();
+
+    auto iter = disk->files.find(path);
+
+    if (iter == disk->files.end())
+        throw Exception("File '" + path + "' does not exist", ErrorCodes::FILE_DOESNT_EXIST);
+
+    // Resize to the actual number of bytes written to string.
+    value.resize(count());
+
+    if (mode == WriteMode::Rewrite)
+        disk->files.insert_or_assign(path, DiskMemory::FileData{iter->second.type, value});
+    else if (mode == WriteMode::Append)
+        disk->files.insert_or_assign(path, DiskMemory::FileData{iter->second.type, iter->second.data + value});
+}
+
+WriteIndirectBuffer::~WriteIndirectBuffer()
+{
+    try
+    {
+        finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
 
 ReservationPtr DiskMemory::reserve(UInt64 /*bytes*/)
 {
@@ -94,7 +125,7 @@ size_t DiskMemory::getFileSize(const String & path) const
     if (iter == files.end())
         throw Exception("File '" + path + "' does not exist", ErrorCodes::FILE_DOESNT_EXIST);
 
-    return iter->second.data.size();
+    return iter->second.data.length();
 }
 
 void DiskMemory::createDirectory(const String & path)
@@ -218,7 +249,7 @@ void DiskMemory::copyFile(const String & /*from_path*/, const String & /*to_path
     throw Exception("Method copyFile is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-std::unique_ptr<ReadBuffer> DiskMemory::readFile(const String & path, size_t /*buf_size*/) const
+std::unique_ptr<SeekableReadBuffer> DiskMemory::readFile(const String & path, size_t /*buf_size*/) const
 {
     std::lock_guard lock(mutex);
 
@@ -241,13 +272,10 @@ std::unique_ptr<WriteBuffer> DiskMemory::writeFile(const String & path, size_t /
             throw Exception(
                 "Failed to create file '" + path + "'. Directory " + parent_path + " does not exist", ErrorCodes::DIRECTORY_DOESNT_EXIST);
 
-        iter = files.emplace(path, FileData{FileType::File}).first;
+        files.emplace(path, FileData{FileType::File});
     }
 
-    if (mode == WriteMode::Append)
-        return std::make_unique<WriteBufferFromString>(iter->second.data, WriteBufferFromString::AppendModeTag{});
-    else
-        return std::make_unique<WriteBufferFromString>(iter->second.data);
+    return std::make_unique<WriteIndirectBuffer>(this, path, mode);
 }
 
 void DiskMemory::remove(const String & path)

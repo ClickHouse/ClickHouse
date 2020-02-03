@@ -12,6 +12,7 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 ##可用的安装选项
 
+<a name="install-from-deb-packages"></a>
 ### 为Debian/Ubuntu安装 {#from-deb-packages}
 
 在`/etc/apt/sources.list` (或创建`/etc/apt/sources.list.d/clickhouse.list`文件)中添加仓库：
@@ -149,4 +150,4 @@ SELECT 1
 为了继续进行实验，你可以尝试下载测试数据集。
 
 
-[Original article](https://clickhouse.yandex/docs/en/getting_started/install/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/getting_started/install/) <!--hide-->

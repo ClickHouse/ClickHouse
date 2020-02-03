@@ -62,4 +62,4 @@ SET profile = 'web'
 
 Профили настроек могут наследоваться от друг-друга - это реализуется указанием одной или нескольких настроек `profile` перед остальными настройками, перечисленными в профиле. Если одна настройка указана в нескольких профилях, используется последнее из значений.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/settings_profiles/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings_profiles/) <!--hide-->
