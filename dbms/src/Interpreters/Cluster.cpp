@@ -158,7 +158,7 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
     const char * user_pw_end = strchr(full_string.data(), '@');
 
     /// parsing with format [shard{shard_index}[_replica{replica_index}]]
-    if (!user_pw_end && startsWith("shard", full_string))
+    if (!user_pw_end && startsWith(full_string, "shard"))
     {
         const char * underscore = strchr(full_string.data(), '_');
 
