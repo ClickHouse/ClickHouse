@@ -74,9 +74,15 @@ size_t MergeTreeIndexGranularityInfo::getMarkSizeInBytes(size_t columns_num) con
     if (type == MergeTreeDataPartType::WIDE)
         return is_adaptive ? getAdaptiveMrkSizeWide() : getNonAdaptiveMrkSizeWide();
     else if (type == MergeTreeDataPartType::COMPACT)
-        return sizeof(UInt64) * (columns_num * 2 + 1);
+        return getAdaptiveMrkSizeCompact(columns_num);
     else
         throw Exception("Unknown part type", ErrorCodes::UNKNOWN_PART_TYPE);
+}
+
+size_t getAdaptiveMrkSizeCompact(size_t columns_num)
+{
+    /// Each mark contains number of rows in granule and two offsets for every column.
+    return sizeof(UInt64) * (columns_num * 2 + 1);
 }
 
 std::string getAdaptiveMrkExtension(MergeTreeDataPartType part_type)

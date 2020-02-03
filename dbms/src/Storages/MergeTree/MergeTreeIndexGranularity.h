@@ -95,8 +95,10 @@ public:
     /// Add new mark with rows_count
     void appendMark(size_t rows_count);
 
+    /// Extends last mark by rows_count.
     void addRowsToLastMark(size_t rows_count);
 
+    /// Drops last mark if any exists.
     void popMark();
 
     /// Add `size` of marks with `fixed_granularity` rows
