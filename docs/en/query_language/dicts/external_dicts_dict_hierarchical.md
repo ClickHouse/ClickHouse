@@ -1,6 +1,6 @@
 # Hierarchical Dictionaries
 
-ClickHouse supports hierarchical dictionaries with [numeric key](external_dicts_dict_structure.md#ext_dict-numeric-key).
+ClickHouse supports hierarchical dictionaries with a [numeric key](external_dicts_dict_structure.md#ext_dict-numeric-key).
 
 Look at the following hierarchical structure:
 
@@ -28,8 +28,8 @@ Key | Ancestor key | Name
 4 | 0 | Great Britain
 5 | 4 | London
 
-This table contains an attribute that equals to the key of a nearest ancestor for the element.
+This table contains an attribute that equals the key of the nearest ancestor for the element.
 
-Using the [hierarchical](external_dicts_dict_structure.md#hierarchical-dict-attr) configuration property you can define the hierarchical dictionary of such kind in ClickHouse.
+Using the [hierarchical](external_dicts_dict_structure.md#hierarchical-dict-attr) configuration property, you can define the hierarchical dictionary of such kind in ClickHouse.
 
-Using the [dictGetHierarchy](../functions/ext_dict_functions.md#dictgethierarchy) function you can get all the ancestors of an element.
+The [dictGetHierarchy](../functions/ext_dict_functions.md#dictgethierarchy) function allows you to get all the ancestors of an element.
