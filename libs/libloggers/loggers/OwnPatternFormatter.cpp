@@ -4,6 +4,7 @@
 #include <optional>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Common/HashTable/Hash.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <sys/time.h>
 #include <Common/CurrentThread.h>
@@ -11,8 +12,40 @@
 #include "Loggers.h"
 
 
-OwnPatternFormatter::OwnPatternFormatter(const Loggers * loggers_, OwnPatternFormatter::Options options_)
-    : Poco::PatternFormatter(""), loggers(loggers_), options(options_)
+static const char * setColor(UInt64 num)
+{
+    static constexpr auto num_colors = 15;
+    static const char * colors[num_colors] =
+    {
+        "\033[0;31m",
+        "\033[0;32m",
+        "\033[0;33m",
+        "\033[0;34m",
+        "\033[0;35m",
+        "\033[0;36m",
+        "\033[0;37m",
+        "\033[1;30m",
+        "\033[1;31m",
+        "\033[1;32m",
+        "\033[1;33m",
+        "\033[1;34m",
+        "\033[1;35m",
+        "\033[1;36m",
+        "\033[1;37m",
+    };
+
+    return colors[num % num_colors];
+}
+
+static const char * resetColor()
+{
+    return "\033[0m";
+}
+
+
+
+OwnPatternFormatter::OwnPatternFormatter(const Loggers * loggers_, OwnPatternFormatter::Options options_, bool color_)
+    : Poco::PatternFormatter(""), loggers(loggers_), options(options_), color(color_)
 {
 }
 
@@ -48,13 +81,21 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
     DB::writeChar('0' + ((msg_ext.time_microseconds / 1) % 10), wb);
 
     writeCString(" [ ", wb);
+    if (color)
+        writeCString(setColor(intHash64(msg_ext.thread_id)), wb);
     DB::writeIntText(msg_ext.thread_id, wb);
+    if (color)
+        writeCString(resetColor(), wb);
     writeCString(" ] ", wb);
 
     /// We write query_id even in case when it is empty (no query context)
     /// just to be convenient for various log parsers.
     writeCString("{", wb);
+    if (color)
+        writeCString(setColor(std::hash<std::string>()(msg_ext.query_id)), wb);
     DB::writeString(msg_ext.query_id, wb);
+    if (color)
+        writeCString(resetColor(), wb);
     writeCString("} ", wb);
 
     writeCString("<", wb);
