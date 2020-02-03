@@ -14,13 +14,16 @@
 
 static const char * setColor(UInt64 num)
 {
-    static constexpr auto num_colors = 15;
+    /// ANSI escape sequences to set foreground font color in terminal.
+
+    static constexpr auto num_colors = 14;
     static const char * colors[num_colors] =
     {
+        /// Black on black is meaningless
         "\033[0;31m",
         "\033[0;32m",
         "\033[0;33m",
-        "\033[0;34m",
+        /// Low intense blue on black is too dark.
         "\033[0;35m",
         "\033[0;36m",
         "\033[0;37m",
@@ -31,10 +34,32 @@ static const char * setColor(UInt64 num)
         "\033[1;34m",
         "\033[1;35m",
         "\033[1;36m",
-        "\033[1;37m",
+        "\033[1m",  /// Not as white but just as high intense - for readability on white background.
     };
 
     return colors[num % num_colors];
+}
+
+static const char * setColorForLogPriority(int priority)
+{
+    if (priority < 1 || priority > 8)
+        return "";
+
+    static const char * colors[] =
+    {
+        /// Black on black is meaningless and low intense blue on black is too dark.
+        "",
+        "\033[1;41m",   /// Fatal
+        "\033[0;41m",   /// Critical
+        "\033[1;31m",   /// Error
+        "\033[0;31m",   /// Warning
+        "\033[0;33m",   /// Notice
+        "\033[1m",      /// Information
+        "\033[0;32m",   /// Debug
+        "\033[1;30m",   /// Trace
+    };
+
+    return colors[priority];
 }
 
 static const char * resetColor()
@@ -99,7 +124,11 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
     writeCString("} ", wb);
 
     writeCString("<", wb);
+    if (color)
+        writeCString(setColorForLogPriority(priority), wb);
     DB::writeString(getPriorityName(static_cast<int>(msg.getPriority())), wb);
+    if (color)
+        writeCString(resetColor(), wb);
     writeCString("> ", wb);
     DB::writeString(msg.getSource(), wb);
     writeCString(": ", wb);
