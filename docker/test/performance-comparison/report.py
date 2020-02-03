@@ -77,7 +77,7 @@ def table_header(r):
 
 def tsv_rows(n):
     result = ''
-    with open(n) as fd:
+    with open(n, encoding='utf-8') as fd:
         for row in csv.reader(fd, delimiter="\t", quotechar='"'):
             result += table_row(row)
     return result
