@@ -33,7 +33,7 @@ public:
     DatabaseOnDisk(const String & name, const String & metadata_path_, const String & logger)
     : DatabaseWithOwnTablesBase(name, logger)
     , metadata_path(metadata_path_)
-    , data_path("data/" + escapeForFileName(database_name) + "/") {}
+    , data_path(escapeForFileName(database_name) + "/") {}
 
     void createTable(
         const Context & context,
