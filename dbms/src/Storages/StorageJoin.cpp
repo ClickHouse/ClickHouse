@@ -354,7 +354,7 @@ private:
                 res_columns.emplace_back(std::move(columns[i]));
 
         UInt64 num_rows = res_columns.at(0)->size();
-        return Chunk(std::move(columns), num_rows);
+        return Chunk(std::move(res_columns), num_rows);
     }
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Map>
