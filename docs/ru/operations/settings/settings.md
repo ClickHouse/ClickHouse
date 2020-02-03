@@ -493,7 +493,7 @@ ClickHouse использует этот параметр при чтении д
 
 Установка логирования запроса.
 
-Запросы, переданные в ClickHouse с этой установкой, логируются согласно правилам конфигурационного параметра сервера [query_log](../server_settings/settings.md#server_settings-query-log).
+Запросы, переданные в ClickHouse с этой установкой, логируются согласно правилам конфигурационного параметра сервера [query_log](../../operations/server_settings/settings.md#server_settings-query-log).
 
 Пример:
 
@@ -1029,7 +1029,7 @@ Default value: 1000000000 nanoseconds (once a second).
 
 See also:
 
-- System table [trace_log](../system_tables.md#system_tables-trace_log)
+- System table [trace_log](../../operations/system_tables.md#system_tables-trace_log)
 
 ## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
@@ -1052,7 +1052,7 @@ Default value: 1000000000 nanoseconds.
 
 See also:
 
-- System table [trace_log](../system_tables.md#system_tables-trace_log)
+- System table [trace_log](../../operations/system_tables.md#system_tables-trace_log)
 
 ## allow_introspection_functions {#settings-allow_introspection_functions}
 
@@ -1068,6 +1068,6 @@ Default value: 0.
 **See Also**
 
 - [Sampling Query Profiler](../performance/sampling_query_profiler.md)
-- System table [trace_log](../system_tables.md#system_tables-trace_log)
+- System table [trace_log](../../operations/system_tables.md#system_tables-trace_log)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

@@ -934,7 +934,7 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesy
 
 ## joinGet {#joinget}
 
-Функция позволяет извлекать данные из таблицы таким же образом как из [словаря](../dicts/index.md).
+Функция позволяет извлекать данные из таблицы таким же образом как из [словаря](../../query_language/dicts/index.md).
 
 Получает данные из таблиц [Join](../../operations/table_engines/join.md#creating-a-table) по ключу.
 
