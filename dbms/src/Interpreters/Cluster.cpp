@@ -139,7 +139,8 @@ String Cluster::Address::toFullString() const
 {
     return
         ((shard_index == 0) ? "" : "shard" + std::to_string(shard_index)) +
-        ((replica_index == 0) ? "" : "_replica" + std::to_string(replica_index));
+        ((replica_index == 0) ? "" : "_replica" + std::to_string(replica_index)) +
+        ((secure == Protocol::Secure::Enable) ? "+secure" : "");
 }
 
 Cluster::Address Cluster::Address::fromFullString(const String & full_string)
