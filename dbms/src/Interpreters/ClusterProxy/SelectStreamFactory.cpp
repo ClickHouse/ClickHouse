@@ -272,7 +272,13 @@ void SelectStreamFactory::createForShard(
             }
         };
 
-        res.emplace_back(std::make_shared<SourceFromInputStream>("LazyShardWithLocalReplica", header, lazily_create_stream));
+        auto add_totals = processed_stage == QueryProcessingStage::Complete;
+        auto source = std::make_shared<SourceFromInputStream>("LazyShardWithLocalReplica", header, lazily_create_stream);
+
+        if (add_totals)
+            source->addTotalsPort();
+
+        res.emplace_back(std::move(source));
     }
     else
         emplace_remote_stream();
