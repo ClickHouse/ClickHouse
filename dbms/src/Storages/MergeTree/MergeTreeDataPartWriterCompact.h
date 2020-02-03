@@ -3,6 +3,7 @@
 namespace DB
 {
 
+/// Writes data part in compact format.
 class MergeTreeDataPartWriterCompact : public IMergeTreeDataPartWriter
 {
 public:

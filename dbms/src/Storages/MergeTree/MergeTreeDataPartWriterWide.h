@@ -3,6 +3,7 @@
 namespace DB
 {
 
+/// Writes data part in wide format.
 class MergeTreeDataPartWriterWide : public IMergeTreeDataPartWriter
 {
 public:

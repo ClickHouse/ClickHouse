@@ -12,6 +12,9 @@
 namespace DB
 {
 
+
+/// Writes data part to disk in different formats.
+/// Calculates and serializes primary and skip indices if needed.
 class IMergeTreeDataPartWriter : private boost::noncopyable
 {
 public:
