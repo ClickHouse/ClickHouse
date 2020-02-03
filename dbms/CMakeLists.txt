@@ -564,11 +564,14 @@ if (USE_JEMALLOC)
     dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # used in Interpreters/AsynchronousMetrics.cpp
     target_include_directories (clickhouse_new_delete SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR})
 
-    if(NOT MAKE_STATIC_LIBRARIES AND ${JEMALLOC_LIBRARIES} MATCHES "${CMAKE_STATIC_LIBRARY_SUFFIX}$")
-        # mallctl in dbms/src/Interpreters/AsynchronousMetrics.cpp
-        # Actually we link JEMALLOC to almost all libraries.
-        # This is just hotfix for some uninvestigated problem.
-        target_link_libraries(clickhouse_interpreters PRIVATE ${JEMALLOC_LIBRARIES})
+    if(NOT MAKE_STATIC_LIBRARIES)
+        target_link_libraries(clickhouse_common_io PRIVATE ${JEMALLOC_LIBRARIES})
+	    if (${JEMALLOC_LIBRARIES} MATCHES "${CMAKE_STATIC_LIBRARY_SUFFIX}$")
+            # mallctl in dbms/src/Interpreters/AsynchronousMetrics.cpp
+            # Actually we link JEMALLOC to almost all libraries.
+            # This is just hotfix for some uninvestigated problem.
+            target_link_libraries(clickhouse_interpreters PRIVATE ${JEMALLOC_LIBRARIES})
+        endif()
     endif()
 endif ()
 
