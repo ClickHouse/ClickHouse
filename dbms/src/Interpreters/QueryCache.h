@@ -27,6 +27,7 @@ struct RefTable
     String alias;
     UInt64 version;
 };
+
 using RefTables = std::vector<RefTable>;
 using RefTablesPtr = std::shared_ptr<RefTables>;
 

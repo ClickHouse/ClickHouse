@@ -128,7 +128,7 @@ BlockInputStreams StorageLiveView::blocksToInputStreams(BlocksPtrs blocks, Block
     BlockInputStreams streams;
     for (auto & blocks_ : *blocks)
     {
-        BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks_), sample_block);
+        BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(blocks_, sample_block);
         streams.push_back(std::move(stream));
     }
     return streams;
@@ -536,7 +536,7 @@ BlockInputStreams StorageLiveView::read(
             if (getNewBlocks())
                 condition.notify_all();
         }
-        stream = std::make_shared<BlocksBlockInputStream>(blocks_ptr, getHeader());
+        stream = std::make_shared<BlocksBlockInputStream>(*blocks_ptr, getHeader());
     }
     return { stream };
 }

@@ -253,6 +253,7 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
         auto cache = context.getQueryCache()->getCache(key, context);
         if (cache)
         {
+            /// If prepared set is already in cache.
             prepared_sets[set_key] = cache->set;
             return;
         }

@@ -798,7 +798,7 @@ protected:
 
     String relative_data_path;
 
-    std::atomic<UInt64> data_version{9};
+    std::atomic<UInt64> data_version{};
 
     /// Current column sizes in compressed and uncompressed form.
     ColumnSizeByName column_sizes;

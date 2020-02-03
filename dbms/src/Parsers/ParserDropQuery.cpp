@@ -58,7 +58,6 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
     ParserKeyword s_table("TABLE");
     ParserKeyword s_dictionary("DICTIONARY");
     ParserKeyword s_database("DATABASE");
-    ParserKeyword s_query_cache("QUERY_CACHE");
     ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_if_exists("IF EXISTS");
     ParserIdentifier name_p;
@@ -69,7 +68,6 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
     bool if_exists = false;
     bool temporary = false;
     bool is_dictionary = false;
-    bool is_query_cache = false;
 
     if (s_database.ignore(pos, expected))
     {
@@ -84,10 +82,6 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
             if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
                 return false;
         }
-    }
-    else if (s_query_cache.ignore(pos, expected))
-    {
-        is_query_cache = true;
     }
     else
     {
@@ -131,8 +125,6 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
 
     tryGetIdentifierNameInto(database, query->database);
     tryGetIdentifierNameInto(table, query->table);
-    if (is_query_cache)
-        query->query_cache = true;
 
     query->cluster = cluster_str;
 

@@ -47,8 +47,6 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
 
     if (table.empty() && !database.empty())
         settings.ostr << "DATABASE ";
-    else if (query_cache)
-        settings.ostr << "QUERY_CACHE ";
     else if (!is_dictionary)
         settings.ostr << "TABLE ";
     else
@@ -61,7 +59,7 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
 
     if (table.empty() && !database.empty())
         settings.ostr << backQuoteIfNeed(database);
-    else if (!query_cache)
+    else
         settings.ostr << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
 
     formatOnCluster(settings);

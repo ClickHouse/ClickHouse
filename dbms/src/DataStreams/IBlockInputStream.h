@@ -230,11 +230,12 @@ public:
     /// Enable calculation of minimums and maximums by the result columns.
     void enableExtremes() { enabled_extremes = true; }
 
-    void enableQueryCache(const String key, std::shared_ptr<std::vector<RefTable>> tables, std::shared_ptr<QueryCache> cache)
+    /// Collect resulting blocks to the cache.
+    void enableQueryCache(String key, std::shared_ptr<std::vector<RefTable>> tables, std::shared_ptr<QueryCache> cache)
     {
-        query_cache_key = key;
-        query_cache_tables = tables;
-        query_cache = cache;
+        query_cache_key = std::move(key);
+        query_cache_tables = std::move(tables);
+        query_cache = std::move(cache);
     }
 
 protected:

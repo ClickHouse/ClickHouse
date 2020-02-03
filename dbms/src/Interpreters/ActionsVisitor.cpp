@@ -16,7 +16,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/FieldToDataType.h>
 
-#include <DataStreams/CacheBlockInputStream.h>
+#include <DataStreams/BlocksBlockInputStream.h>
 #include <DataStreams/LazyBlockInputStream.h>
 
 #include <Columns/ColumnSet.h>
@@ -43,6 +43,7 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/QueryCache.h>
+
 
 namespace DB
 {
@@ -678,7 +679,8 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         if (!subquery_for_set.source && data.no_storage_or_local)
         {
             auto interpreter = interpretSubquery(right_in_operand, data.context, data.subquery_depth, {});
-            auto create_stream = [&] {
+            auto create_stream = [&]
+            {
                 return std::make_shared<LazyBlockInputStream>(
                     interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().in; });
             };
@@ -690,10 +692,12 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
                 auto cache = query_cache->getCache(key, data.context);
                 if (cache)
                 {
-                    subquery_for_set.source = std::make_shared<CacheBlockInputStream>(*cache->blocks);
+                    /// There is cache - use it to fill the set.
+                    subquery_for_set.source = std::make_shared<BlocksBlockInputStream>(cache->blocks, Block());
                 }
                 else
                 {
+                    /// No data in cache, will execute query and collect the result to the cache.
                     subquery_for_set.source = create_stream();
                     auto tables = QueryCache::getRefTables(*right_in_operand, data.context);
                     if (tables)

@@ -23,8 +23,12 @@ class BlocksBlockInputStream : public IBlockInputStream
 {
 public:
     /// Acquires shared ownership of the blocks vector
-    BlocksBlockInputStream(const std::shared_ptr<BlocksPtr> & blocks_ptr_, Block header_)
-        : blocks(*blocks_ptr_), it((*blocks_ptr_)->begin()), end((*blocks_ptr_)->end()), header(std::move(header_)) {}
+    BlocksBlockInputStream(BlocksPtr blocks_ptr_, Block header_)
+        : blocks(std::move(blocks_ptr_)), it(blocks->begin()), end(blocks->end()), header(std::move(header_))
+    {
+        if (!header && !blocks->empty())
+            header = blocks->front().cloneEmpty();
+    }
 
     String getName() const override { return "Blocks"; }
 

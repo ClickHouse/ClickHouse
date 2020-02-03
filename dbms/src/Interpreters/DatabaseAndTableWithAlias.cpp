@@ -14,8 +14,10 @@
 namespace DB
 {
 
-DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(String database_, String table_, String alias_) :
-    database(database_), table(table_), alias(alias_) {}
+DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(String database_, String table_, String alias_)
+    : database(std::move(database_)), table(std::move(table_)), alias(std::move(alias_))
+{
+}
 
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database)
 {

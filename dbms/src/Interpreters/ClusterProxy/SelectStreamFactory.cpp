@@ -1,7 +1,7 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/QueryCache.h>
-#include <DataStreams/CacheBlockInputStream.h>
+#include <DataStreams/BlocksBlockInputStream.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/LazyBlockInputStream.h>
@@ -76,7 +76,7 @@ BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Block & he
         auto key = QueryCache::getKey(*query_ast, 0, processed_stage);
         auto cache = context.getQueryCache()->getCache(key, context);
         if (cache)
-            return std::make_shared<CacheBlockInputStream>(*cache->blocks);
+            return std::make_shared<BlocksBlockInputStream>(cache->blocks, Block());
     }
 
     checkStackSize();
@@ -141,7 +141,7 @@ void SelectStreamFactory::createForShard(
             auto cache = context.getQueryCache()->getCache(key, context);
             if (cache)
             {
-                res.emplace_back(std::make_shared<CacheBlockInputStream>(*cache->blocks));
+                res.emplace_back(std::make_shared<BlocksBlockInputStream>(cache->blocks, Block()));
                 return;
             }
         }
