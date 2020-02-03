@@ -279,5 +279,8 @@ def test_miscellaneous_engines():
     assert instance.query("SELECT * FROM mydb.filtered_table1") == "1\t1\n1\t1\n"
 
     # DistributedMergeTree
-    # instance.query("DROP TABLE mydb.filtered_table1")
-    # instance.query("CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE Distributed('test_local_cluster', mydb, local)")
+    instance.query("DROP TABLE mydb.filtered_table1")
+    instance.query("CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE Distributed('test_local_cluster', mydb, local)")
+    instance.query("CREATE TABLE mydb.local (a UInt8, b UInt8) ENGINE MergeTree ORDER BY a")
+    instance.query("INSERT INTO mydb.local values (0, 1), (0, 1), (1, 1), (1, 1)")
+    assert instance.query("SELECT * FROM mydb.filtered_table1") == "1\t1\n1\t1\n"
