@@ -7,7 +7,7 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <sys/time.h>
 #include <Common/CurrentThread.h>
-#include <common/getThreadNumber.h>
+#include <common/getThreadId.h>
 #include "Loggers.h"
 
 
@@ -48,7 +48,7 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
     DB::writeChar('0' + ((msg_ext.time_microseconds / 1) % 10), wb);
 
     writeCString(" [ ", wb);
-    DB::writeIntText(msg_ext.thread_number, wb);
+    DB::writeIntText(msg_ext.thread_id, wb);
     writeCString(" ] ", wb);
 
     /// We write query_id even in case when it is empty (no query context)

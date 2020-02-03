@@ -37,7 +37,7 @@
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
 #include <common/argsToConfig.h>
-#include <common/getThreadNumber.h>
+#include <common/getThreadId.h>
 #include <common/coverage.h>
 
 #include <IO/WriteBufferFromFile.h>
@@ -123,7 +123,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     DB::writePODBinary(*info, out);
     DB::writePODBinary(signal_context, out);
     DB::writePODBinary(stack_trace, out);
-    DB::writeBinary(UInt32(getThreadNumber()), out);
+    DB::writeBinary(UInt32(getThreadId()), out);
     DB::writeStringBinary(query_id, out);
 
     out.next();
@@ -301,7 +301,7 @@ static void terminate_handler()
     DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
 
     DB::writeBinary(static_cast<int>(SignalListener::StdTerminate), out);
-    DB::writeBinary(UInt32(getThreadNumber()), out);
+    DB::writeBinary(UInt32(getThreadId()), out);
     DB::writeBinary(log_message, out);
     out.next();
 
