@@ -46,7 +46,6 @@ private:
     size_t next_mark = 0;
     std::optional<std::pair<size_t, size_t>> last_read_granule;
 
-    void initMarksLoader();
     void seekToMark(size_t row_index, size_t column_index);
 
     void readData(const String & name, IColumn & column, const IDataType & type,
