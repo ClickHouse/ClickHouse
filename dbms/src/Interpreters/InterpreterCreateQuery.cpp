@@ -555,10 +555,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
     {
+        bool if_not_exists = create.if_not_exists;
         // Table SQL definition is available even if the table is detached
         auto query = context.getDatabase(create.database)->getCreateTableQuery(context, create.table);
         create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
         create.attach = true;
+        create.if_not_exists = if_not_exists;
     }
 
     String current_database = context.getCurrentDatabase();
