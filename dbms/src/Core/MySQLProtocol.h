@@ -7,6 +7,7 @@
 #include <Common/PODArray.h>
 #include <Core/Types.h>
 #include <Interpreters/Context.h>
+#include <Access/User.h>
 #include <IO/copyData.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>

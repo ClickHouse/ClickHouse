@@ -1070,7 +1070,7 @@ try
         if (!silent)
             std::cerr << "Generating data\n";
 
-        file_in.seek(0);
+        file_in.seek(0, SEEK_SET);
 
         BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
         BlockOutputStreamPtr output = context.getOutputFormat(output_format, file_out, header);

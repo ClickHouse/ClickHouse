@@ -6,6 +6,7 @@
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
+#include <Access/AccessRightsContext.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/queryToString.h>
@@ -105,6 +106,9 @@ protected:
 
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
+        const auto access_rights = context.getAccessRights();
+        const bool check_access_for_databases = !access_rights->isGranted(AccessType::SHOW);
+
         size_t rows_count = 0;
         while (rows_count < max_block_size)
         {
@@ -116,7 +120,7 @@ protected:
                 database_name = databases->getDataAt(database_idx).toString();
                 database = context.tryGetDatabase(database_name);
 
-                if (!database || !context.hasDatabaseAccessRights(database_name))
+                if (!database)
                 {
                     /// Database was deleted just now or the user has no access.
                     ++database_idx;
@@ -193,6 +197,8 @@ protected:
                 return Chunk(std::move(res_columns), num_rows);
             }
 
+            const bool check_access_for_tables = check_access_for_databases && !access_rights->isGranted(AccessType::SHOW, database_name);
+
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getTablesWithDictionaryTablesIterator(context);
 
@@ -201,8 +207,10 @@ protected:
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
                 auto table_name = tables_it->name();
-                StoragePtr table = nullptr;
+                if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW, database_name, table_name))
+                    continue;
 
+                StoragePtr table = nullptr;
                 TableStructureReadLockHolder lock;
 
                 try
