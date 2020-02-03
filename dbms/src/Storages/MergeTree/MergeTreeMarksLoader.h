@@ -28,7 +28,7 @@ private:
     size_t marks_count;
     const MergeTreeIndexGranularityInfo & index_granularity_info;
     bool save_marks_in_cache = false;
-    size_t columns_num_in_mark_;
+    size_t columns_in_mark;
     MarkCache::MappedPtr marks;
 
     void loadMarks();
