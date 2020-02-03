@@ -655,6 +655,9 @@ Pipe QueryPipeline::getPipe() &&
     for (auto & storage : storage_holders)
         pipe.addStorageHolder(storage);
 
+    if (totals_having_port)
+        pipe.setTotalsPort(totals_having_port);
+
     return pipe;
 }
 
