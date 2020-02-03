@@ -29,7 +29,7 @@ Attributes are described in the elements:
 DDL query:
 
 ```sql
-CREATE DICTIONARY (
+CREATE DICTIONARY dict_name (
     Id UInt64,
     -- attributes
 )

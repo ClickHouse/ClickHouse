@@ -30,6 +30,6 @@ Key | Ancestor key | Name
 
 This table contains an attribute that equals the key of the nearest ancestor for the element.
 
-Using the [hierarchical](external_dicts_dict_structure.md#hierarchical-dict-attr) configuration property, you can define the hierarchical dictionary of such kind in ClickHouse.
+You can configure an hierarchical dictionary by setting the [hierarchical] (external_dict_dict_structure.md#hierarchical-dict-attr) property for the attribute that must contain the ancestor key.
 
-The [dictGetHierarchy](../functions/ext_dict_functions.md#dictgethierarchy) function allows you to get all the ancestors of an element.
+The [dictGetHierarchy](../functions/ext_dict_functions.md#dictgethierarchy) function allows you to get the ancestor chain of an element.
