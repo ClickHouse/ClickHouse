@@ -222,7 +222,11 @@ public:
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
     bool isCancelled() const { return is_cancelled; }
-    void cancel() { is_cancelled = true; }
+    void cancel()
+    {
+        is_cancelled = true;
+        onCancel();
+    }
 
     virtual ~IProcessor() = default;
 
@@ -274,6 +278,9 @@ public:
 
     void enableQuota() { has_quota = true; }
     bool hasQuota() const { return has_quota; }
+
+protected:
+    virtual void onCancel() {}
 
 private:
     std::atomic<bool> is_cancelled{false};

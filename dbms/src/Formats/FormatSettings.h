@@ -29,6 +29,7 @@ struct FormatSettings
         bool allow_double_quotes = true;
         bool unquoted_null_literal_as_null = false;
         bool empty_as_default = false;
+        bool crlf_end_of_line = false;
     };
 
     CSV csv;
@@ -110,6 +111,16 @@ struct FormatSettings
     };
 
     Custom custom;
+
+    struct Avro
+    {
+        String schema_registry_url;
+        String output_codec;
+        UInt64 output_sync_interval = 16 * 1024;
+    };
+
+    Avro avro;
+
 };
 
 }

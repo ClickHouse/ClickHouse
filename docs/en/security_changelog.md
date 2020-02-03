@@ -66,4 +66,4 @@ Incorrect configuration in deb package could lead to unauthorized use of the dat
 
 Credits: the UK's National Cyber Security Centre (NCSC)
 
-[Original article](https://clickhouse.yandex/docs/en/security_changelog/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/security_changelog/) <!--hide-->

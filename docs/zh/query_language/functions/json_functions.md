@@ -193,4 +193,4 @@ SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8')
 select JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
 ```
 
-[来源文章](https://clickhouse.yandex/docs/en/query_language/functions/json_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/json_functions/) <!--hide-->

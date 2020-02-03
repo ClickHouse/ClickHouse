@@ -18,4 +18,4 @@ Fixed-length integers, with or without a sign.
 - UInt64 - [0 : 18446744073709551615]
 
 
-[Original article](https://clickhouse.yandex/docs/en/data_types/int_uint/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data_types/int_uint/) <!--hide-->

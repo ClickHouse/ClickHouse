@@ -83,7 +83,7 @@ $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM test.dst_r2;"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO test_block_numbers SELECT max(max_block_number) AS m FROM system.parts WHERE database='test' AND  table='dst_r1' AND active AND name LIKE '1_%';"
 $CLICKHOUSE_CLIENT --query="SELECT (max(m) - min(m) > 1) AS new_block_is_generated FROM test_block_numbers;"
-$CLICKHOUSE_CLIENT --query="DROP TEMPORARY TABLE test_block_numbers;"
+$CLICKHOUSE_CLIENT --query="DROP TABLE test_block_numbers;"
 
 
 $CLICKHOUSE_CLIENT --query="SELECT 'ATTACH FROM';"

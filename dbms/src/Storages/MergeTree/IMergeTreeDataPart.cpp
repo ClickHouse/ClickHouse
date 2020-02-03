@@ -267,7 +267,7 @@ void IMergeTreeDataPart::removeIfNeeded()
                 }
             }
 
-            dir.remove(true);
+            remove();
 
             if (state == State::DeleteOnDestroy)
             {
