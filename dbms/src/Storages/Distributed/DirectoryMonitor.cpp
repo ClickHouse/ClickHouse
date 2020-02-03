@@ -218,15 +218,15 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
         }
 
         return std::make_shared<ConnectionPool>(
-                1, address.host_name, address.port, address.default_database, address.user, address.password,
-                storage.getName() + '_' + address.user, Protocol::Compression::Enable, address.secure);
+            1, address.host_name, address.port, address.default_database, address.user, address.password,
+            storage.getName() + '_' + address.user, Protocol::Compression::Enable, address.secure);
     };
 
     auto pools = createPoolsForAddresses(name, pool_factory);
 
     const auto settings = storage.global_context.getSettings();
     return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM,
-            settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
+        settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
 }
 
 
