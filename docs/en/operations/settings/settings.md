@@ -797,6 +797,10 @@ For CSV input format enables or disables parsing of unquoted `NULL` as literal (
 
 Use DOS/Windows style line separator (CRLF) in CSV instead of Unix style (LF).
 
+## output_format_tsv_crlf_end_of_line {#settings-output_format_tsv_crlf_end_of_line}
+
+Use DOC/Windows style line separator (CRLF) in TSV instead of Unix style (LF).
+
 ## insert_quorum {#settings-insert_quorum}
 
 Enables quorum writes.
