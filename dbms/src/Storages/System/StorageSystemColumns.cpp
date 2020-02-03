@@ -9,7 +9,9 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Access/AccessRightsContext.h>
 #include <Databases/IDatabase.h>
+#include <Processors/Sources/NullSource.h>
 
 
 namespace DB
@@ -51,35 +53,37 @@ namespace
 }
 
 
-class ColumnsBlockInputStream : public IBlockInputStream
+class ColumnsSource : public SourceWithProgress
 {
 public:
-    ColumnsBlockInputStream(
-        const std::vector<UInt8> & columns_mask_,
-        const Block & header_,
+    ColumnsSource(
+        std::vector<UInt8> columns_mask_,
+        Block header_,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ColumnPtr tables_,
         Storages storages_,
+        const std::shared_ptr<const AccessRightsContext> & access_rights_,
         String query_id_)
-        : columns_mask(columns_mask_), header(header_), max_block_size(max_block_size_)
-        , databases(databases_), tables(tables_), storages(std::move(storages_))
-        , query_id(std::move(query_id_)), total_tables(tables->size())
+        : SourceWithProgress(header_)
+        , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
+        , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
+        , query_id(std::move(query_id_)), total_tables(tables->size()), access_rights(access_rights_)
     {
     }
 
     String getName() const override { return "Columns"; }
-    Block getHeader() const override { return header; }
 
 protected:
-    Block readImpl() override
+    Chunk generate() override
     {
         if (db_table_num >= total_tables)
             return {};
 
-        Block res = header;
-        MutableColumns res_columns = header.cloneEmptyColumns();
+        MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
         size_t rows_count = 0;
+
+        const bool check_access_for_tables = !access_rights->isGranted(AccessType::SHOW);
 
         while (rows_count < max_block_size && db_table_num < total_tables)
         {
@@ -125,9 +129,14 @@ protected:
                 column_sizes = storage->getColumnSizes();
             }
 
+            bool check_access_for_columns = check_access_for_tables && !access_rights->isGranted(AccessType::SHOW, database_name, table_name);
+
             for (const auto & column : columns)
             {
                 if (column.is_virtual)
+                    continue;
+
+                if (check_access_for_columns && !access_rights->isGranted(AccessType::SHOW, database_name, table_name, column.name))
                     continue;
 
                 size_t src_index = 0;
@@ -210,13 +219,11 @@ protected:
             }
         }
 
-        res.setColumns(std::move(res_columns));
-        return res;
+        return Chunk(std::move(res_columns), rows_count);
     }
 
 private:
     std::vector<UInt8> columns_mask;
-    Block header;
     UInt64 max_block_size;
     ColumnPtr databases;
     ColumnPtr tables;
@@ -224,10 +231,11 @@ private:
     String query_id;
     size_t db_table_num = 0;
     size_t total_tables;
+    std::shared_ptr<const AccessRightsContext> access_rights;
 };
 
 
-BlockInputStreams StorageSystemColumns::read(
+Pipes StorageSystemColumns::readWithProcessors(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -242,7 +250,7 @@ BlockInputStreams StorageSystemColumns::read(
     NameSet names_set(column_names.begin(), column_names.end());
 
     Block sample_block = getSampleBlock();
-    Block res_block;
+    Block header;
 
     std::vector<UInt8> columns_mask(sample_block.columns());
     for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
@@ -250,12 +258,13 @@ BlockInputStreams StorageSystemColumns::read(
         if (names_set.count(sample_block.getByPosition(i).name))
         {
             columns_mask[i] = 1;
-            res_block.insert(sample_block.getByPosition(i));
+            header.insert(sample_block.getByPosition(i));
         }
     }
 
     Block block_to_filter;
     Storages storages;
+    Pipes pipes;
 
     {
         Databases databases = context.getDatabases();
@@ -267,8 +276,7 @@ BlockInputStreams StorageSystemColumns::read(
             /// We are skipping "Lazy" database because we cannot afford initialization of all its tables.
             /// This should be documented.
 
-            if (context.hasDatabaseAccessRights(database.first)
-                && database.second->getEngineName() != "Lazy")
+            if (database.second->getEngineName() != "Lazy")
                 database_column_mut->insert(database.first);
         }
 
@@ -278,7 +286,10 @@ BlockInputStreams StorageSystemColumns::read(
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
 
         if (!block_to_filter.rows())
-            return {std::make_shared<NullBlockInputStream>(res_block)};
+        {
+            pipes.emplace_back(std::make_shared<NullSource>(header));
+            return pipes;
+        }
 
         ColumnPtr & database_column = block_to_filter.getByName("database").column;
         size_t rows = database_column->size();
@@ -311,15 +322,20 @@ BlockInputStreams StorageSystemColumns::read(
     VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
 
     if (!block_to_filter.rows())
-        return {std::make_shared<NullBlockInputStream>(res_block)};
+    {
+        pipes.emplace_back(std::make_shared<NullSource>(header));
+        return pipes;
+    }
 
     ColumnPtr filtered_database_column = block_to_filter.getByName("database").column;
     ColumnPtr filtered_table_column = block_to_filter.getByName("table").column;
 
-    return {std::make_shared<ColumnsBlockInputStream>(
-        std::move(columns_mask), std::move(res_block), max_block_size,
-        std::move(filtered_database_column), std::move(filtered_table_column), std::move(storages),
-        context.getCurrentQueryId())};
+    pipes.emplace_back(std::make_shared<ColumnsSource>(
+            std::move(columns_mask), std::move(header), max_block_size,
+            std::move(filtered_database_column), std::move(filtered_table_column), std::move(storages),
+            context.getAccessRights(), context.getCurrentQueryId()));
+
+    return pipes;
 }
 
 }

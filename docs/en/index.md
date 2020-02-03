@@ -37,7 +37,7 @@ The data access scenario refers to what queries are made, how often, and in what
 
 The higher the load on the system, the more important it is to customize the system set up to match the requirements of the usage scenario, and the more fine grained this customization becomes. There is no system that is equally well-suited to significantly different scenarios. If a system is adaptable to a wide set of scenarios, under a high load, the system will handle all the scenarios equally poorly, or will work well for just one or few of possible scenarios.
 
-## Key Properties of the OLAP scenario
+## Key Properties of OLAP Scenario
 
 - The vast majority of requests are for read access.
 - Data is updated in fairly large batches (> 1000 rows), not by single rows; or it is not updated at all.
@@ -129,4 +129,4 @@ This is not done in "normal" databases, because it doesn't make sense when runni
 
 Note that for CPU efficiency, the query language must be declarative (SQL or MDX), or at least a vector (J, K). The query should only contain implicit loops, allowing for optimization.
 
-[Original article](https://clickhouse.yandex/docs/en/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/) <!--hide-->

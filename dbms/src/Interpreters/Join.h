@@ -158,7 +158,7 @@ public:
     /** Join data from the map (that was previously built by calls to addJoinedBlock) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
-    void joinBlock(Block & block) override;
+    void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
 
     /// Infer the return type for joinGet function
     DataTypePtr joinGetReturnType(const String & column_name) const;

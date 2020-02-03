@@ -1,5 +1,6 @@
 import json
 import logging
+import random
 
 import pytest
 
@@ -190,6 +191,27 @@ def test_put_get_with_redirect(cluster):
         ["1", "1", "1", "1"],
         ["11", "11", "11", "1331"],
     ]
+
+
+def test_put_get_with_globs(cluster):
+    # type: (ClickHouseCluster) -> None
+
+    bucket = cluster.minio_bucket
+    instance = cluster.instances["dummy"]  # type: ClickHouseInstance
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    max_path = ""
+    for i in range(10):
+        for j in range(10):
+            path = "{}_{}/{}.csv".format(i, random.choice(['a', 'b', 'c', 'd']), j)
+            max_path = max(path, max_path)
+            values = "({},{},{})".format(i, j, i+j)
+            query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+                cluster.minio_host, cluster.minio_port, bucket, path, table_format, values)
+            run_query(instance, query)
+
+    query = "select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from s3('http://{}:{}/{}/*_{{a,b,c,d}}/%3f.csv', 'CSV', '{}')".format(
+        cluster.minio_redirect_host, cluster.minio_redirect_port, bucket, table_format)
+    assert run_query(instance, query).splitlines() == ["450\t450\t900\t0.csv\t{bucket}/{max_path}".format(bucket=bucket, max_path=max_path)]
 
 
 # Test multipart put.

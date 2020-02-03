@@ -10,14 +10,14 @@ if (DEFINED APPLE_HAVE_CLOCK_GETTIME)
     target_compile_definitions(apple_rt PUBLIC -DAPPLE_HAVE_CLOCK_GETTIME=${APPLE_HAVE_CLOCK_GETTIME})
 endif ()
 
-add_library (common
+set (COMMON_SRCS
     src/argsToConfig.cpp
     src/coverage.cpp
     src/DateLUT.cpp
     src/DateLUTImpl.cpp
     src/demangle.cpp
     src/getMemoryAmount.cpp
-    src/getThreadNumber.cpp
+    src/getThreadId.cpp
     src/JSON.cpp
     src/LineReader.cpp
     src/mremap.cpp
@@ -36,7 +36,7 @@ add_library (common
     include/common/ErrorHandlers.h
     include/common/find_symbols.h
     include/common/getMemoryAmount.h
-    include/common/getThreadNumber.h
+    include/common/getThreadId.h
     include/common/JSON.h
     include/common/likely.h
     include/common/LineReader.h
@@ -61,11 +61,24 @@ add_library (common
     include/ext/function_traits.h
     include/ext/identity.h
     include/ext/map.h
+    include/ext/push_back.h
     include/ext/range.h
     include/ext/scope_guard.h
     include/ext/size.h
     include/ext/unlock_guard.h
+)
 
+if (ENABLE_REPLXX)
+    set (COMMON_SRCS
+        src/ReplxxLineReader.cpp
+        include/common/ReplxxLineReader.h
+
+        ${COMMON_SRCS}
+    )
+endif ()
+
+add_library (common
+    ${COMMON_SRCS}
     ${CONFIG_COMMON})
 
 if (USE_INTERNAL_MEMCPY)
@@ -92,8 +105,8 @@ if(CCTZ_LIBRARY)
     target_link_libraries(common PRIVATE ${CCTZ_LIBRARY})
 endif()
 
-if (USE_REPLXX)
-    target_link_libraries(common PRIVATE replxx)
+if (ENABLE_REPLXX)
+    target_link_libraries(common PUBLIC replxx)
 endif ()
 
 target_link_libraries (common
