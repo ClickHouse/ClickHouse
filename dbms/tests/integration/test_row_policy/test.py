@@ -7,7 +7,8 @@ import time
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                config_dir="configs")
+                                config_dir="configs",
+                                with_zookeeper=True)
 
 
 def copy_policy_xml(local_file_name, reload_immediately = True):
@@ -273,6 +274,10 @@ def test_miscellaneous_engines():
 
     # ReplicatedCollapsingMergeTree
     instance.query("DROP TABLE mydb.filtered_table1")
-    instance.query("CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE ReplicatedCollapsingMergeTree('/clickhouse/tables/00-00/filtered_table1', 'replica1', b) ORDER BY a")
+    instance.query("CREATE TABLE mydb.filtered_table1 (a UInt8, b Int8) ENGINE ReplicatedCollapsingMergeTree('/clickhouse/tables/00-00/filtered_table1', 'replica1', b) ORDER BY a")
     instance.query("INSERT INTO mydb.filtered_table1 values (0, 1), (0, 1), (1, 1), (1, 1)")
     assert instance.query("SELECT * FROM mydb.filtered_table1") == "1\t1\n1\t1\n"
+
+    # DistributedMergeTree
+    # instance.query("DROP TABLE mydb.filtered_table1")
+    # instance.query("CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE Distributed('test_local_cluster', mydb, local)")
