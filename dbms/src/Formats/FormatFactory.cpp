@@ -14,7 +14,7 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
-
+#include <Poco/URI.h>
 
 namespace DB
 {
@@ -68,7 +68,15 @@ static FormatSettings getInputFormatSetting(const Settings & settings, const Con
     format_settings.custom.row_before_delimiter = settings.format_custom_row_before_delimiter;
     format_settings.custom.row_after_delimiter = settings.format_custom_row_after_delimiter;
     format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
-    format_settings.avro.schema_registry_url = settings.input_format_avro_schema_registry_url;
+
+    /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
+    if (context.hasGlobalContext() && (context.getGlobalContext().getApplicationType() == Context::ApplicationType::SERVER))
+    {
+        const Poco::URI & avro_schema_registry_url = settings.format_avro_schema_registry_url;
+        if (!avro_schema_registry_url.empty())
+            context.getRemoteHostFilter().checkURL(avro_schema_registry_url);
+    }
+    format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
 
     return format_settings;
 }
@@ -82,6 +90,7 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
+    format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.color = settings.output_format_pretty_color;

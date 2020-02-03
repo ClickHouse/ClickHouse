@@ -393,4 +393,4 @@ SELECT
 ```
 
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/type_conversion_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/type_conversion_functions/) <!--hide-->

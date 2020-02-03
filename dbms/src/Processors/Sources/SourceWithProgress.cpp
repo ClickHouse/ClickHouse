@@ -18,13 +18,22 @@ void SourceWithProgress::work()
     if (!limits.speed_limits.checkTimeLimit(total_stopwatch.elapsed(), limits.timeout_overflow_mode))
         cancel();
     else
+    {
+        was_progress_called = false;
+
         ISourceWithProgress::work();
+
+        if (!was_progress_called && has_input)
+            progress({ current_chunk.chunk.getNumRows(), current_chunk.chunk.bytes() });
+    }
 }
 
 /// Aggregated copy-paste from IBlockInputStream::progressImpl.
 /// Most of this must be done in PipelineExecutor outside. Now it's done for compatibility with IBlockInputStream.
 void SourceWithProgress::progress(const Progress & value)
 {
+    was_progress_called = true;
+
     if (total_rows_approx != 0)
     {
         Progress total_rows_progress = {0, 0, total_rows_approx};
