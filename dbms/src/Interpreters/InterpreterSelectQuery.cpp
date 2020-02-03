@@ -37,6 +37,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
+#include <Access/AccessFlags.h>
 #include <Access/RowPolicyContext.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -95,6 +96,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataStreams/materializeBlock.h>
 #include <Processors/Pipe.h>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 
 namespace DB
@@ -164,7 +166,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const Context & context_,
     const SelectQueryOptions & options_,
     const Names & required_result_column_names_)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, nullptr, options_, required_result_column_names_)
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, std::nullopt, nullptr, options_, required_result_column_names_)
 {
 }
 
@@ -173,7 +175,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const Context & context_,
     const BlockInputStreamPtr & input_,
     const SelectQueryOptions & options_)
-    : InterpreterSelectQuery(query_ptr_, context_, input_, nullptr, options_.copy().noSubquery())
+    : InterpreterSelectQuery(query_ptr_, context_, input_, std::nullopt, nullptr, options_.copy().noSubquery())
+{}
+
+InterpreterSelectQuery::InterpreterSelectQuery(
+        const ASTPtr & query_ptr_,
+        const Context & context_,
+        Pipe input_pipe_,
+        const SelectQueryOptions & options_)
+        : InterpreterSelectQuery(query_ptr_, context_, nullptr, std::move(input_pipe_), nullptr, options_.copy().noSubquery())
 {}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -181,7 +191,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const Context & context_,
     const StoragePtr & storage_,
     const SelectQueryOptions & options_)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, storage_, options_.copy().noSubquery())
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, std::nullopt, storage_, options_.copy().noSubquery())
 {}
 
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
@@ -217,6 +227,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
     const BlockInputStreamPtr & input_,
+    std::optional<Pipe> input_pipe_,
     const StoragePtr & storage_,
     const SelectQueryOptions & options_,
     const Names & required_result_column_names)
@@ -226,6 +237,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , context(std::make_shared<Context>(context_))
     , storage(storage_)
     , input(input_)
+    , input_pipe(std::move(input_pipe_))
     , log(&Logger::get("InterpreterSelectQuery"))
 {
     checkStackSize();
@@ -247,6 +259,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     auto & query = getSelectQuery();
 
     ASTPtr table_expression = extractTableExpression(query, 0);
+    String database_name, table_name;
 
     bool is_table_func = false;
     bool is_subquery = false;
@@ -260,6 +273,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         /// Read from prepared input.
         source_header = input->getHeader();
+    }
+    else if (input_pipe)
+    {
+        /// Read from prepared input.
+        source_header = input_pipe_->getHeader();
     }
     else if (is_subquery)
     {
@@ -279,9 +297,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
         else
         {
-            String database_name;
-            String table_name;
-
             getDatabaseAndTableNames(query, database_name, table_name, *context);
 
             if (auto view_source = context->getViewSource())
@@ -327,14 +342,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         if (!options.only_analyze)
         {
-            if (query.sample_size() && (input || !storage || !storage->supportsSampling()))
+            if (query.sample_size() && (input || input_pipe || !storage || !storage->supportsSampling()))
                 throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
-            if (query.final() && (input || !storage || !storage->supportsFinal()))
-                throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
+            if (query.final() && (input || input_pipe || !storage || !storage->supportsFinal()))
+                throw Exception((!input && !input_pipe && storage) ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
 
-            if (query.prewhere() && (input || !storage || !storage->supportsPrewhere()))
-                throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
+            if (query.prewhere() && (input || input_pipe || !storage || !storage->supportsPrewhere()))
+                throw Exception((!input && !input_pipe && storage) ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
 
             /// Save the new temporary tables in the query context
             for (const auto & it : query_analyzer->getExternalTables())
@@ -418,21 +433,20 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (query.prewhere() && !query.where())
         analysis_result.prewhere_info->need_filter = true;
 
+    if (!table_name.empty() && !database_name.empty() /* always allow access to temporary tables */)
+        context->checkAccess(AccessType::SELECT, database_name, table_name, required_columns);
+
+    /// Remove limits for some tables in the `system` database.
+    if (database_name == "system" && ((table_name == "quotas") || (table_name == "quota_usage") || (table_name == "one")))
+    {
+        options.ignore_quota = true;
+        options.ignore_limits = true;
+    }
+
     /// Blocks used in expression analysis contains size 1 const columns for constant folding and
     ///  null non-const columns to avoid useless memory allocations. However, a valid block sample
     ///  requires all columns to be of size 0, thus we need to sanitize the block here.
     sanitizeBlock(result_header);
-
-    /// Remove limits for some tables in the `system` database.
-    if (storage && (table_id.getDatabaseName() == "system"))
-    {
-        String table_name = table_id.getTableName();
-        if ((table_name == "quotas") || (table_name == "quota_usage") || (table_name == "one"))
-        {
-            options.ignore_quota = true;
-            options.ignore_limits = true;
-        }
-    }
 }
 
 
@@ -444,7 +458,7 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(const ASTSelectQuery & que
         database_name = db_and_table->database;
 
         /// If the database is not specified - use the current database.
-        if (database_name.empty() && !context.tryGetTable("", table_name))
+        if (database_name.empty() && !context.isExternalTableExist(table_name))
             database_name = context.getCurrentDatabase();
     }
     else /// If the table is not specified - use the table `system.one`.
@@ -465,7 +479,7 @@ BlockIO InterpreterSelectQuery::execute()
 {
     Pipeline pipeline;
     BlockIO res;
-    executeImpl(pipeline, input, res.pipeline);
+    executeImpl(pipeline, input, std::move(input_pipe), res.pipeline);
     executeUnion(pipeline, getSampleBlock());
 
     res.in = pipeline.firstStream();
@@ -478,7 +492,7 @@ BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams(QueryPipeli
 {
     ///FIXME pipeline must be alive until query is finished
     Pipeline pipeline;
-    executeImpl(pipeline, input, parent_pipeline);
+    executeImpl(pipeline, input, std::move(input_pipe), parent_pipeline);
     unifyStreams(pipeline, getSampleBlock());
     parent_pipeline.addInterpreterContext(context);
     parent_pipeline.addStorageHolder(storage);
@@ -488,7 +502,7 @@ BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams(QueryPipeli
 QueryPipeline InterpreterSelectQuery::executeWithProcessors()
 {
     QueryPipeline query_pipeline;
-    executeImpl(query_pipeline, input, query_pipeline);
+    executeImpl(query_pipeline, input, std::move(input_pipe), query_pipeline);
     query_pipeline.setMaxThreads(max_streams);
     query_pipeline.addInterpreterContext(context);
     query_pipeline.addStorageHolder(storage);
@@ -958,7 +972,7 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
 
 
 template <typename TPipeline>
-void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, QueryPipeline & save_context_and_storage)
+void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe, QueryPipeline & save_context_and_storage)
 {
     /** Streams of data. When the query is executed in parallel, we have several data streams.
      *  If there is no GROUP BY, then perform all operations before ORDER BY and LIMIT in parallel, then
@@ -1024,6 +1038,13 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 pipeline.init(Pipe(std::make_shared<SourceFromInputStream>(prepared_input)));
             else
                 pipeline.streams.push_back(prepared_input);
+        }
+        else if (prepared_pipe)
+        {
+            if constexpr (pipeline_with_processors)
+                pipeline.init(std::move(*prepared_pipe));
+            else
+                pipeline.streams.push_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(*prepared_pipe)));
         }
 
         if (from_stage == QueryProcessingStage::WithMergeableState &&

@@ -13,13 +13,13 @@ namespace DB
   */
 class MMapReadBufferFromFileDescriptor : public ReadBufferFromFileBase
 {
+public:
+    off_t seek(off_t off, int whence) override;
+
 protected:
     MMapReadBufferFromFileDescriptor() {}
-
     void init(int fd_, size_t offset, size_t length_);
     void init(int fd_, size_t offset);
-
-    off_t doSeek(off_t off, int whence) override;
 
 public:
     MMapReadBufferFromFileDescriptor(int fd_, size_t offset_, size_t length_);

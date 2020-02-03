@@ -76,7 +76,7 @@ LimitTransform::Status LimitTransform::prepare()
     if (!input.hasData())
         return Status::NeedData;
 
-    current_chunk = input.pull();
+    current_chunk = input.pull(true);
     has_block = true;
 
     auto rows = current_chunk.getNumRows();
@@ -95,6 +95,7 @@ LimitTransform::Status LimitTransform::prepare()
         }
 
         /// Now, we pulled from input, and it must be empty.
+        input.setNeeded();
         return Status::NeedData;
     }
 
@@ -114,6 +115,7 @@ LimitTransform::Status LimitTransform::prepare()
         }
 
         /// Now, we pulled from input, and it must be empty.
+        input.setNeeded();
         return Status::NeedData;
     }
 
