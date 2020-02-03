@@ -131,7 +131,10 @@ void SelectStreamFactory::createForShard(
         if (!table_func_ptr)
             stream->setMainTable(main_table);
 
-        res.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
+        auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
+        source->addTotalsPort();
+
+        res.emplace_back(std::move(source));
     };
 
     const auto & settings = context.getSettingsRef();
@@ -272,11 +275,8 @@ void SelectStreamFactory::createForShard(
             }
         };
 
-        auto add_totals = processed_stage == QueryProcessingStage::Complete;
         auto source = std::make_shared<SourceFromInputStream>("LazyShardWithLocalReplica", header, lazily_create_stream);
-
-        if (add_totals)
-            source->addTotalsPort();
+        source->addTotalsPort();
 
         res.emplace_back(std::move(source));
     }
