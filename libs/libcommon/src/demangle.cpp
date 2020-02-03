@@ -21,28 +21,29 @@ std::string demangle(const char * name, int & status)
 #include <stdlib.h>
 #include <cxxabi.h>
 
+static DemangleResult try_demangle(const char * name, int & status)
+{
+    DemangleResult result;
+    result.data = abi::__cxa_demangle(name, nullptr, &result.size, &status);
+    return result;
+}
+
+DemangleResult try_demangle(const char * name)
+{
+    int status = 0;
+    return try_demangle(name, status);
+}
+
 std::string demangle(const char * name, int & status)
 {
-    std::string res;
-
-    char * demangled_str = abi::__cxa_demangle(name, 0, 0, &status);
-    if (demangled_str)
+    auto result = try_demangle(name, status);
+    if (result.data)
     {
-        try
-        {
-            res = demangled_str;
-        }
-        catch (...)
-        {
-            free(demangled_str);
-            throw;
-        }
-        free(demangled_str);
+        return std::string(result.data, result.size - 1);
     }
-    else
-        res = name;
 
-    return res;
+    return name;
 }
+
 
 #endif

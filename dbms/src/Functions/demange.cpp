@@ -73,9 +73,15 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             StringRef source = column_concrete->getDataAt(i);
-            int status = 0;
-            std::string demangled = demangle(source.data, status);
-            result_column->insertDataWithTerminatingZero(demangled.data(), demangled.size() + 1);
+            auto demangled = try_demangle(source.data);
+            if (demangled.data)
+            {
+                result_column->insertDataWithTerminatingZero(demangled.data, demangled.size);
+            }
+            else
+            {
+                result_column->insertDataWithTerminatingZero(source.data, source.size);
+            }
         }
 
         block.getByPosition(result).column = std::move(result_column);
