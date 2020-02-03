@@ -23,7 +23,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <common/logger_useful.h>
-#include <common/getThreadNumber.h>
+#include <common/getThreadId.h>
 #include <ext/range.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
@@ -387,7 +387,7 @@ public:
         }
 
         /// We distribute the load on the shards by the stream number.
-        const auto start_shard_num = getThreadNumber() % storage.num_shards;
+        const auto start_shard_num = getThreadId() % storage.num_shards;
 
         /// We loop through the buffers, trying to lock mutex. No more than one lap.
         auto shard_num = start_shard_num;
