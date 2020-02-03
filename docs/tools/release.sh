@@ -31,8 +31,10 @@ then
     cp -R "${BUILD_DIR}"/* .
     echo -n "test.clickhouse.tech" > CNAME
     echo -n "" > README.md
+    echo -n "" > ".nojekyll"
     cp "${BASE_DIR}/../../LICENSE" .
     git add *
+    git add ".nojekyll"
     git commit -a -m "add new release at $(date)"
     git push origin master
     cd "${BUILD_DIR}"
