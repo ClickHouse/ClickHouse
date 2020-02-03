@@ -156,17 +156,13 @@ void ThreadStatus::finalizePerformanceCounters()
 void ThreadStatus::initQueryProfiler()
 {
     /// query profilers are useless without trace collector
-    if (!global_context)
+    if (!global_context || !ext::Singleton<TraceCollector>::isInitialized())
         return;
 
     const auto & settings = query_context->getSettingsRef();
 
     try
     {
-        /// Force initialization of TraceCollector instance before setting signal handlers,
-        /// because the constructor is not async-signal-safe.
-        ext::Singleton<TraceCollector> initialize __attribute__((unused));
-
         if (settings.query_profiler_real_time_period_ns > 0)
             query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
                 /* period */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));

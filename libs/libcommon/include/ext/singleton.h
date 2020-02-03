@@ -1,33 +1,18 @@
 #pragma once
 
 #include <memory>
-#include <type_traits>
 
 namespace ext {
 
-template <class T, typename DefaultConstructable = void>
-class Singleton;
-
-/// For default-constructable type we don't need to implement |create()|
-/// and may use "arrow" operator immediately.
 template <class T>
-class Singleton<T, std::enable_if_t<std::is_default_constructible_v<T>>>
+class Singleton
 {
 public:
-    T * operator->()
+    Singleton()
     {
-        static T instance;
-        return &instance;
+        if (!instance)
+            instance.reset(new T);
     }
-};
-
-/// For custom-constructed type we have to construct |Singleton| object with non-default constructor once
-/// before any use of "arrow" operator.
-template <class T>
-class Singleton<T, std::enable_if_t<!std::is_default_constructible_v<T>>>
-{
-public:
-    Singleton() = default;
 
     template <typename ... Args>
     Singleton(const Args & ... args)
@@ -39,6 +24,10 @@ public:
     T * operator->()
     {
         return instance.get();
+    }
+
+    static bool isInitialized() {
+        return !!instance;
     }
 
 private:
