@@ -55,7 +55,7 @@ static const char * setColorForLogPriority(int priority)
         "\033[0;31m",   /// Warning
         "\033[0;33m",   /// Notice
         "\033[1m",      /// Information
-        "\033[0;32m",   /// Debug
+        "",             /// Debug
         "\033[1;30m",   /// Trace
     };
 
