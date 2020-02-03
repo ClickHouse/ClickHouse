@@ -18,4 +18,4 @@ structure - структура таблицы в форме `'UserID UInt64, Nam
 SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32') LIMIT 3
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/table_functions/url/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/url/) <!--hide-->

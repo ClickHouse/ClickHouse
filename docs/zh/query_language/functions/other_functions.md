@@ -660,4 +660,4 @@ SELECT replicate(1, ['a', 'b', 'c'])
 
 如果参数不为零则抛出异常。
 
-[来源文章](https://clickhouse.yandex/docs/en/query_language/functions/other_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->

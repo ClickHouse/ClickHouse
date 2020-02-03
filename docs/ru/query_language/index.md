@@ -6,4 +6,4 @@
 * [ALTER](alter.md#query_language_queries_alter)
 * [Прочие виды запросов](misc.md)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/) <!--hide-->

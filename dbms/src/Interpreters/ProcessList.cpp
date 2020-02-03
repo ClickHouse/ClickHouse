@@ -449,8 +449,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         if (get_thread_list)
         {
             std::lock_guard lock(thread_group->mutex);
-            res.thread_numbers = thread_group->thread_numbers;
-            res.os_thread_ids = thread_group->os_thread_ids;
+            res.thread_ids = thread_group->thread_ids;
         }
 
         if (get_profile_events)

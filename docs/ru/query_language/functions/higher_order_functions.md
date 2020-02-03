@@ -157,4 +157,4 @@ SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 
 Подробная информация о методе `arrayReverseSort` приведена в разделе [Функции по работе с массивами](array_functions.md#array_functions-reverse-sort).
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/higher_order_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/higher_order_functions/) <!--hide-->
