@@ -21,7 +21,8 @@ class DiskS3 : public IDisk
 public:
     friend class DiskS3Reservation;
 
-    DiskS3(String name_, std::shared_ptr<Aws::S3::S3Client> client_, String bucket_, String s3_root_path_, String metadata_path_);
+    DiskS3(String name_, std::shared_ptr<Aws::S3::S3Client> client_, String bucket_, String s3_root_path_,
+           String metadata_path_, size_t min_upload_part_size_);
 
     const String & getName() const override { return name; }
 
@@ -61,7 +62,7 @@ public:
 
     void copyFile(const String & from_path, const String & to_path) override;
 
-    std::unique_ptr<ReadBuffer> readFile(const String & path, size_t buf_size) const override;
+    std::unique_ptr<SeekableReadBuffer> readFile(const String & path, size_t buf_size) const override;
 
     std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
 
@@ -70,8 +71,6 @@ public:
     void removeRecursive(const String & path) override;
 
 private:
-    String getS3Path(const String & path) const;
-
     String getRandomName() const;
 
     bool tryReserve(UInt64 bytes);
@@ -82,6 +81,7 @@ private:
     const String bucket;
     const String s3_root_path;
     const String metadata_path;
+    size_t min_upload_part_size;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;

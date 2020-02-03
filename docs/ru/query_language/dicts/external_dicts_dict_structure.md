@@ -113,4 +113,4 @@ ClickHouse поддерживает следующие виды ключей:
 | `injective` | Признак [инъективности](https://ru.wikipedia.org/wiki/Инъекция_(математика)) отображения `id -> attribute`. <br/>Если `true`, то обращения к словарям с включенной инъективностью могут быть автоматически переставлены ClickHouse за стадию `GROUP BY`, что как правило существенно сокращает их количество.<br/><br/>Значение по умолчанию: `false`. | Нет |
 | `is_object_id` | Признак того, что запрос выполняется к документу MongoDB по `ObjectID`.<br/><br/>Значение по умолчанию: `false`. | Нет |
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/dicts/external_dicts_dict_structure/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

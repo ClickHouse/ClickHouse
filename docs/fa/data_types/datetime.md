@@ -14,4 +14,4 @@
 
 </div>
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/datetime/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/data_types/datetime/) <!--hide-->

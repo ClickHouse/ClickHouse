@@ -218,4 +218,4 @@ Example:
 SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') = ['-100', '200.0', '"hello"']'
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/json_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/json_functions/) <!--hide-->

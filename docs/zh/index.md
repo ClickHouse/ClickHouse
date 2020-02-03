@@ -138,4 +138,4 @@ LIMIT 20
 
 请注意，为了提高CPU效率，查询语言必须是声明型的(SQL或MDX)， 或者至少一个向量(J，K)。 查询应该只包含隐式循环，允许进行优化。
 
-[来源文章](https://clickhouse.yandex/docs/zh/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/zh/) <!--hide-->

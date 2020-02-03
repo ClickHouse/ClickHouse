@@ -196,4 +196,4 @@ SELECT 1
 برای ادامه آزمایشات، شما میتوانید دیتاست های تستی را دریافت و امتحان کنید.
 
 </div>
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/getting_started/install/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/getting_started/install/) <!--hide-->
