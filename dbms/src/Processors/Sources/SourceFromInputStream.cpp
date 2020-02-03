@@ -14,8 +14,10 @@ SourceFromInputStream::SourceFromInputStream(BlockInputStreamPtr stream_, bool f
     init();
 }
 
-SourceFromInputStream::SourceFromInputStream(String name, Block header, std::function<BlockInputStreamPtr()> stream_builder_)
+SourceFromInputStream::SourceFromInputStream(
+    String name, Block header, std::function<BlockInputStreamPtr()> stream_builder_, bool force_add_aggregating_info_)
     : ISourceWithProgress(std::move(header))
+    , force_add_aggregating_info(force_add_aggregating_info_)
     , stream_builder(std::move(stream_builder_))
     , source_name(std::move(name))
 {
