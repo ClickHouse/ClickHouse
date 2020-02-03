@@ -226,6 +226,13 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_QUERY)
+    {
+        AlterCommand command;
+        command.type = AlterCommand::MODIFY_QUERY;
+        command.select = command_ast->select;
+        return command;
+    }
     else
         return {};
 }
@@ -405,6 +412,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
     else if (type == MODIFY_TTL)
     {
         metadata.ttl_for_table_ast = ttl;
+    }
+    else if (type == MODIFY_QUERY)
+    {
+        metadata.select = select;
     }
     else if (type == MODIFY_SETTING)
     {
@@ -591,6 +602,8 @@ String alterTypeToString(const AlterCommand::Type type)
         return "MODIFY TTL";
     case AlterCommand::Type::MODIFY_SETTING:
         return "MODIFY SETTING";
+    case AlterCommand::Type::MODIFY_QUERY:
+        return "MODIFY QUERY";
     }
     __builtin_unreachable();
 }

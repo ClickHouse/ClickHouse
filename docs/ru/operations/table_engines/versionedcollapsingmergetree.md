@@ -3,7 +3,7 @@
 Движок:
 
 - Позволяет быстро записывать постоянно изменяющиеся состояния объектов.
-- Удаляет старые состояния объектов в фоновом режиме. Это значительно сокращает объем хранения.
+- Удаляет старые состояния объектов в фоновом режиме. Это значительно сокращает объём хранения.
 
 Подробнее читайте в разделе [Collapsing](#table_engines_versionedcollapsingmergetree).
 
@@ -226,4 +226,4 @@ SELECT * FROM UAct FINAL
 
 Это очень неэффективный способ выбора данных. Не используйте его для больших таблиц.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->

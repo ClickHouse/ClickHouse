@@ -34,6 +34,7 @@ struct AlterCommand
         DROP_CONSTRAINT,
         MODIFY_TTL,
         MODIFY_SETTING,
+        MODIFY_QUERY,
     };
 
     Type type;
@@ -88,6 +89,9 @@ struct AlterCommand
 
     /// For MODIFY SETTING
     SettingsChanges settings_changes;
+
+    /// For MODIFY_QUERY
+    ASTPtr select = nullptr;
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 

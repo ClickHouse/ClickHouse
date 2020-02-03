@@ -44,4 +44,4 @@ ClickHouse полностью или частично хранит словар�
 - [Ключ и поля словаря](external_dicts_dict_structure.md)
 - [Функции для работы с внешними словарями](../functions/ext_dict_functions.md#ext_dict_functions)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/dicts/external_dicts/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts/) <!--hide-->

@@ -86,13 +86,15 @@ round(3.65, 1) = 3.6
 
 Rounds a number to a specified decimal position.
 
-- If rounding number is a half between two numbers, the function uses banker's rounding.
+- If the rounding number is halfway between two numbers, the function uses banker's rounding.
 
-    Banker's rounding is a method of rounding fractional numbers. When the rounding number is a half between two numbers, it is rounded to the nearest even number. E.g. 3.5 rounds up to 4, 2.5 rounds down to 2. 
+    Banker's rounding is a method of rounding fractional numbers. When the rounding number is halfway between two numbers, it's rounded to the nearest even digit at the specified decimal position. For example: 3.5 rounds up to 4, 2.5 rounds down to 2.
+    
+    It's the default rounding method for floating point numbers defined in [IEEE 754](https://en.wikipedia.org/wiki/IEEE_754#Roundings_to_nearest). The [round](#rounding_functions-round) function performs the same rounding for floating point numbers. The `roundBankers` function also rounds integers the same way, for example, `roundBankers(45, -1) = 40`.
 
-- In other cases function rounds numbers to the nearest integer.
+- In other cases, the function rounds numbers to the nearest integer.
 
-Using banker's rounding, you can reduce the effect of rounding numbers on the result of summing or subtracting these numbers.
+Using banker's rounding, you can reduce the effect that rounding numbers has on the results of summing or subtracting these numbers.
 
 For example, sum numbers 1.5, 2.5, 3.5, 4.5 with different rounding:
 
@@ -110,13 +112,13 @@ roundBankers(expression [, decimal_places])
 
 - `expression` — A number to be rounded. Can be any [expression](../syntax.md#syntax-expressions) returning the numeric [data type](../../data_types/index.md#data_types).
 - `decimal-places` — Decimal places. An integer number.
-    - `decimal-places > 0` — The function rounds the number to the given position right of the decimal point. E.g. `roundBankers(3.55, 1) = 3.6`.
-    - `decimal-places < 0` — The function rounds the number to the given position left of the decimal point. E.g. `roundBankers(24.55, -1) = 20`.
-    - `decimal-places = 0` — The function rounds the number to integer. In this case the argument can be omitted. E.g. `roundBankers(2.5) = 2`.
+    - `decimal-places > 0` — The function rounds the number to the given position right of the decimal point. Example: `roundBankers(3.55, 1) = 3.6`.
+    - `decimal-places < 0` — The function rounds the number to the given position left of the decimal point. Example: `roundBankers(24.55, -1) = 20`.
+    - `decimal-places = 0` — The function rounds the number to an integer. In this case the argument can be omitted. Example: `roundBankers(2.5) = 2`.
 
 **Returned value**
 
-A value rounded by banker's rounding method.
+A value rounded by the banker's rounding method.
 
 ### Examples
 
@@ -167,7 +169,7 @@ Accepts a number. If the number is less than one, it returns 0. Otherwise, it ro
 
 ## roundDuration(num)
 
-Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to numbers from the set: 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000. This function is specific to Yandex.Metrica and used for implementing the report on session length
+Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to numbers from the set: 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000. This function is specific to Yandex.Metrica and used for implementing the report on session length.
 
 ## roundAge(num)
 
@@ -175,6 +177,6 @@ Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rou
 
 ## roundDown(num, arr)
 
-Accept a number, round it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
+Accepts a number and rounds it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/rounding_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/rounding_functions/) <!--hide-->

@@ -19,7 +19,7 @@
 #include <Poco/Version.h>
 #include <common/Types.h>
 #include <common/logger_useful.h>
-#include <common/getThreadNumber.h>
+#include <common/getThreadId.h>
 #include <daemon/GraphiteWriter.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <loggers/Loggers.h>

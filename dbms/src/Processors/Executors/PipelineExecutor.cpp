@@ -10,6 +10,7 @@
 #include <Common/Stopwatch.h>
 #include <Processors/ISource.h>
 #include <Common/setThreadName.h>
+#include <Interpreters/ProcessList.h>
 
 
 namespace DB
@@ -30,12 +31,13 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED;
 }
 
-PipelineExecutor::PipelineExecutor(Processors & processors_)
+PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
     : processors(processors_)
     , cancelled(false)
     , finished(false)
     , num_processing_executors(0)
     , expand_pipeline_task(nullptr)
+    , process_list_element(elem)
 {
     buildGraph();
 }
@@ -471,6 +473,9 @@ void PipelineExecutor::execute(size_t num_threads)
 #endif
         throw;
     }
+
+    if (process_list_element && process_list_element->isKilled())
+        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
 
     if (cancelled)
         return;
