@@ -955,7 +955,7 @@ So, result of function depends on partition of data to blocks and on order of da
 
 ## joinGet {#joinget}
 
-The function lets you extract data from the table the same way as from a [dictionary](../dicts/index.md).
+The function lets you extract data from the table the same way as from a [dictionary](../../query_language/dicts/index.md).
 
 Gets data from [Join](../../operations/table_engines/join.md#creating-a-table) tables using the specified join key.
 
