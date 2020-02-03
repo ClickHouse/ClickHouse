@@ -22,11 +22,6 @@ void QueryResult::add(const std::shared_ptr<QueryResult> & res)
     blocks->insert(blocks->end(), res->blocks->begin(), res->blocks->end());
 }
 
-size_t QueryResult::operator()(const QueryResult & x) const
-{
-    return x.blocks->size() || x.set;
-}
-
 size_t QueryResult::size() const
 {
     size_t bytes = 0;

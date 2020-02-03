@@ -42,7 +42,6 @@ struct QueryResult
     QueryResult(RefTablesPtr tables_, SetPtr set_) : tables(tables_), blocks(std::make_shared<Blocks>()), set(set_) {}
 
     void add(const std::shared_ptr<QueryResult> & res);
-    size_t operator()(const QueryResult & x) const;
     size_t size() const;
 };
 using QueryResultPtr = std::shared_ptr<QueryResult>;

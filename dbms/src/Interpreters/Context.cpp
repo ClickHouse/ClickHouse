@@ -1453,6 +1453,8 @@ void Context::setQueryCache(size_t cache_size_in_bytes)
 QueryCachePtr Context::getQueryCache() const
 {
     auto lock = getLock();
+    if (!shared->query_cache)
+        throw Exception("Query cache is not set.", ErrorCodes::LOGICAL_ERROR);
     return shared->query_cache;
 }
 

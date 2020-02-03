@@ -537,7 +537,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         LOG_INFO(log, "Query cache size was lowered to " << formatReadableSizeWithBinarySuffix(query_cache_size)
             << " because the system has low amount of memory");
     }
-    global_context->setQueryCache(query_cache_size);
+    if (query_cache_size)
+        global_context->setQueryCache(query_cache_size);
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);
