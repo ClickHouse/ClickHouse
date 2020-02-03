@@ -898,7 +898,7 @@ Result:
 ```
 ## arrayAUC(arr_scores, arr_labels)
 
-Returns AUC(Area Under the Curve, which is a concept in machine learning, see more details: https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc); 
+Returns AUC (Area Under the Curve, which is a concept in machine learning, see more details: https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc).
 
 `arr_scores` represents scores prediction model gives, while `arr_labels` represents labels of samples, usually 1 for positive sample and 0 for negtive sample.
 
