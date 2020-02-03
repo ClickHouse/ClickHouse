@@ -603,6 +603,34 @@ SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
 └───┘
 ```
 
+## blockSerializedSize
+
+Returns size on disk (without taking into account compression).
+
+
+```sql
+blockSerializedSize(value[, value[, ...]])
+```
+
+**Parameters:**
+
+- `value` — Any value.
+
+**Returned values**
+
+- The number of bytes that will be written to disk for block of values (without compression).
+
+**Example**
+
+```sql
+SELECT blockSerializedSize(maxState(1)) as x
+```
+```text
+┌─x─┐
+│ 2 │
+└───┘
+```
+
 ## toColumnTypeName
 
 Returns the name of the class that represents the data type of the column in RAM.
