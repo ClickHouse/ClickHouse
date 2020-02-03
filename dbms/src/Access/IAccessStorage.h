@@ -3,6 +3,7 @@
 #include <Access/IAccessEntity.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
+#include <ext/scope_guard.h>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -109,26 +110,19 @@ public:
     /// Updates multiple entities in the storage. Returns the list of successfully updated.
     std::vector<UUID> tryUpdate(const std::vector<UUID> & ids, const UpdateFunc & update_func);
 
-    class Subscription
-    {
-    public:
-        virtual ~Subscription() {}
-    };
-
-    using SubscriptionPtr = std::unique_ptr<Subscription>;
     using OnChangedHandler = std::function<void(const UUID & /* id */, const AccessEntityPtr & /* new or changed entity, null if removed */)>;
 
     /// Subscribes for all changes.
     /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
-    SubscriptionPtr subscribeForChanges(std::type_index type, const OnChangedHandler & handler) const;
+    ext::scope_guard subscribeForChanges(std::type_index type, const OnChangedHandler & handler) const;
 
     template <typename EntityType>
-    SubscriptionPtr subscribeForChanges(OnChangedHandler handler) const { return subscribeForChanges(typeid(EntityType), handler); }
+    ext::scope_guard subscribeForChanges(OnChangedHandler handler) const { return subscribeForChanges(typeid(EntityType), handler); }
 
     /// Subscribes for changes of a specific entry.
     /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
-    SubscriptionPtr subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
-    SubscriptionPtr subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
+    ext::scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
+    ext::scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
 
     bool hasSubscription(std::type_index type) const;
     bool hasSubscription(const UUID & id) const;
@@ -142,8 +136,8 @@ protected:
     virtual UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) = 0;
     virtual void removeImpl(const UUID & id) = 0;
     virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) = 0;
-    virtual SubscriptionPtr subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const = 0;
-    virtual SubscriptionPtr subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const = 0;
+    virtual ext::scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const = 0;
+    virtual ext::scope_guard subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const = 0;
     virtual bool hasSubscriptionImpl(const UUID & id) const = 0;
     virtual bool hasSubscriptionImpl(std::type_index type) const = 0;
 

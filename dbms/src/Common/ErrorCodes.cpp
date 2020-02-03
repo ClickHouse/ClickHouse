@@ -479,7 +479,9 @@ namespace ErrorCodes
     extern const int CANNOT_DELETE_DIRECTORY = 505;
     extern const int UNEXPECTED_ERROR_CODE = 506;
     extern const int UNABLE_TO_SKIP_UNUSED_SHARDS = 507;
-    extern const int CACHE_DICTIONARY_UPDATE_FAIL = 508;
+    extern const int UNKNOWN_ACCESS_TYPE = 508;
+    extern const int INVALID_GRANT = 509;
+    extern const int CACHE_DICTIONARY_UPDATE_FAIL = 510;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

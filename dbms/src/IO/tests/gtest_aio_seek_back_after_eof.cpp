@@ -50,7 +50,7 @@ TEST(ReadBufferAIOTest, TestReadAfterAIO)
     EXPECT_TRUE(testbuf.eof());
 
 
-    testbuf.seek(data.length() - 100);
+    testbuf.seek(data.length() - 100, SEEK_SET);
 
     std::string smalldata;
     smalldata.resize(100);
@@ -59,7 +59,7 @@ TEST(ReadBufferAIOTest, TestReadAfterAIO)
     EXPECT_TRUE(testbuf.eof());
 
 
-    testbuf.seek(0);
+    testbuf.seek(0, SEEK_SET);
     std::string repeatdata;
     repeatdata.resize(data.length());
     size_t read_after_eof_big = testbuf.read(repeatdata.data(), repeatdata.size());
