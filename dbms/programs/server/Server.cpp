@@ -41,6 +41,7 @@
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/SystemLog.cpp>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
@@ -551,6 +552,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
         /// Then, load remaining databases
         loadMetadata(*global_context);
+        global_context->getDatabaseCatalog().loadDatabases();
     }
     catch (...)
     {

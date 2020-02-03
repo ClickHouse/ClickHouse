@@ -12,6 +12,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -200,6 +201,7 @@ try
         loadMetadataSystem(*context);
         attachSystemTables();
         loadMetadata(*context);
+        context->getDatabaseCatalog().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }
     else
