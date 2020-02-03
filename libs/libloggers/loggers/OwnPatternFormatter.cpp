@@ -47,7 +47,6 @@ static const char * setColorForLogPriority(int priority)
 
     static const char * colors[] =
     {
-        /// Black on black is meaningless and low intense blue on black is too dark.
         "",
         "\033[1;41m",   /// Fatal
         "\033[0;41m",   /// Critical
