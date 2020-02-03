@@ -1067,7 +1067,7 @@ Default value: 0.
 
 ## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
 
-Sets the period for a real clock timer of the [query profiler](../performance/sampling_query_profiler.md). Real clock timer counts wall-clock time.
+Sets the period for a real clock timer of the [query profiler](../../operations/performance/sampling_query_profiler.md). Real clock timer counts wall-clock time.
 
 Possible values:
 
