@@ -113,7 +113,7 @@ Type: `UInt8`.
 
 ## dictGetHierarchy {#dictgethierarchy}
 
-Creates an array, containing all the ancestors of a key in the [hierarchical dictionary](../dicts/external_dicts_dict_structure.md#hierarchical-external-dicts).
+Creates an array, containing all the ancestors of a key in the [hierarchical dictionary](../dicts/external_dicts_dict_hierarchical.md).
 
 **Syntax**
 
