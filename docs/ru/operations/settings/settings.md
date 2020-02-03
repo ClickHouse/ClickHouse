@@ -1037,7 +1037,7 @@ See also:
 
 ## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
-Sets the period for a CPU clock timer of the [query profiler](../performance/sampling_query_profiler.md). This timer counts only CPU time.
+Sets the period for a CPU clock timer of the [query profiler](../../operations/performance/sampling_query_profiler.md). This timer counts only CPU time.
 
 Possible values:
 
