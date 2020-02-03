@@ -144,6 +144,8 @@ struct SubscriptionForUserChange
 };
 
 struct TemporaryTableHolder;
+class DatabaseCatalog;
+using DatabaseCatalogPtr = std::shared_ptr<DatabaseCatalog>;
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
@@ -300,6 +302,8 @@ public:
     void addDependencyUnsafe(const StorageID & from, const StorageID & where);
     void removeDependencyUnsafe(const StorageID & from, const StorageID & where);
 
+    DatabaseCatalog & getDatabaseCatalog() const;
+
     /// Checking the existence of the table/database. Database can be empty - in this case the current database is used.
     bool isTableExist(const String & database_name, const String & table_name) const;
     bool isDatabaseExist(const String & database_name) const;
@@ -307,7 +311,12 @@ public:
     bool isExternalTableExist(const String & table_name) const;
     void assertTableDoesntExist(const String & database_name, const String & table_name) const;
     void assertDatabaseExists(const String & database_name) const;
-    void assertDatabaseDoesntExist(const String & database_name) const;
+
+    String resolveDatabase(const String & database_name) const;
+    String resolveDatabaseAndCheckAccess(const String & database_name) const;
+    //StorageID resolveDatabase(StorageID table_id) const;
+    StorageID resolveStorageID(StorageID storage_id) const;
+    StorageID resolveStorageIDUnlocked(StorageID storage_id) const;
 
     const Scalars & getScalars() const;
     const Block & getScalar(const String & name) const;
@@ -321,7 +330,6 @@ public:
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
     bool removeExternalTable(const String & table_name);
-    StorageID resolveStorageIDUnlocked(StorageID storage_id) const;
 
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 
@@ -410,13 +418,10 @@ public:
     /// Get query for the CREATE table.
     ASTPtr getCreateExternalTableQuery(const String & table_name) const;
 
-    const DatabasePtr getDatabase(const String & database_name) const;
-    DatabasePtr getDatabase(const String & database_name);
-    const DatabasePtr tryGetDatabase(const String & database_name) const;
-    DatabasePtr tryGetDatabase(const String & database_name);
+    DatabasePtr getDatabase(const String & database_name) const;
+    DatabasePtr tryGetDatabase(const String & database_name) const;
 
-    const Databases getDatabases() const;
-    Databases getDatabases();
+    Databases getDatabases() const;
 
     std::shared_ptr<Context> acquireSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check) const;
     void releaseSession(const String & session_id, std::chrono::steady_clock::duration timeout);
@@ -616,12 +621,6 @@ private:
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateUserSettings();
     void calculateAccessRights();
-
-    /** Check if the current client has access to the specified database.
-      * If access is denied, throw an exception.
-      * NOTE: This method should always be called when the `shared->mutex` mutex is acquired.
-      */
-    void checkDatabaseAccessRightsImpl(const std::string & database_name) const;
 
     template <typename... Args>
     void checkAccessImpl(const Args &... args) const;
