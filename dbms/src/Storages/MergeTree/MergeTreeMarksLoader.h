@@ -3,19 +3,20 @@
 namespace DB
 {
 
+struct MergeTreeIndexGranularityInfo;
+
 class MergeTreeMarksLoader
 {
 public:
     using MarksPtr = MarkCache::MappedPtr;
-    using LoadFunc = std::function<MarksPtr(const String &)>;
 
-    MergeTreeMarksLoader() {}
-
-    MergeTreeMarksLoader(MarkCache * mark_cache_,
-        const String & mrk_path_,
-        const LoadFunc & load_func_,
+    MergeTreeMarksLoader(
+        MarkCache * mark_cache_,
+        const String & mrk_path,
+        size_t marks_count_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         bool save_marks_in_cache_,
-        size_t columns_num_ = 1);
+        size_t columns_num_in_mark_ = 1);
 
     const MarkInCompressedFile & getMark(size_t row_index, size_t column_index = 0);
 
@@ -24,12 +25,14 @@ public:
 private:
     MarkCache * mark_cache = nullptr;
     String mrk_path;
-    LoadFunc load_func;
+    size_t marks_count;
+    const MergeTreeIndexGranularityInfo & index_granularity_info;
     bool save_marks_in_cache = false;
-    size_t columns_num;
-    MarksPtr marks;
+    size_t columns_num_in_mark_;
+    MarkCache::MappedPtr marks;
 
     void loadMarks();
+    MarkCache::MappedPtr loadMarksImpl();
 };
 
 }

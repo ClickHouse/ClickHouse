@@ -19,11 +19,14 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(const MergeTreeData::DataPartPtr 
     const NamesAndTypesList & columns_, UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_,
     const MarkRanges & mark_ranges_, const MergeTreeReaderSettings & settings_, const ValueSizeMap & avg_value_size_hints_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_)
-    : IMergeTreeReader(data_part_, columns_
-    , uncompressed_cache_, mark_cache_, mark_ranges_
-    , settings_, avg_value_size_hints_)
+    : IMergeTreeReader(data_part_, columns_,
+        uncompressed_cache_, mark_cache_, mark_ranges_,
+        settings_, avg_value_size_hints_)
+    , marks_loader(mark_cache,
+        data_part->index_granularity_info.getMarksFilePath(path + MergeTreeDataPartCompact::DATA_FILE_NAME),
+        data_part->getMarksCount(), data_part->index_granularity_info,
+        settings.save_marks_in_cache, data_part->getColumns().size())
 {
-    initMarksLoader();
     size_t buffer_size = settings.max_read_buffer_size;
     const String full_data_path = path + MergeTreeDataPartCompact::DATA_FILE_NAME + MergeTreeDataPartCompact::DATA_FILE_EXTENSION;
 
@@ -193,51 +196,6 @@ void MergeTreeReaderCompact::readData(
         last_read_granule.emplace(from_mark, column_position);
 }
 
-
-void MergeTreeReaderCompact::initMarksLoader()
-{
-    if (marks_loader.initialized())
-        return;
-
-    size_t columns_num = data_part->getColumns().size();
-
-    auto load = [this, columns_num](const String & mrk_path) -> MarkCache::MappedPtr
-    {
-        size_t file_size = Poco::File(mrk_path).getSize();
-        size_t marks_count = data_part->getMarksCount();
-        size_t mark_size_in_bytes = data_part->index_granularity_info.getMarkSizeInBytes(columns_num);
-
-        size_t expected_file_size = mark_size_in_bytes * marks_count;
-        if (expected_file_size != file_size)
-            throw Exception(
-                "Bad size of marks file '" + mrk_path + "': " + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
-                ErrorCodes::CORRUPTED_DATA);
-
-        /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
-        auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
-
-        auto res = std::make_shared<MarksInCompressedFile>(marks_count * columns_num);
-
-        ReadBufferFromFile buffer(mrk_path, file_size);
-        size_t i = 0;
-
-        while (!buffer.eof())
-        {
-            buffer.readStrict(reinterpret_cast<char *>(res->data() + i * columns_num), sizeof(MarkInCompressedFile) * columns_num);
-            buffer.seek(sizeof(size_t), SEEK_CUR);
-            ++i;
-        }
-
-        if (i * mark_size_in_bytes != file_size)
-            throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
-
-        res->protect();
-        return res;
-    };
-
-    auto mrk_path = data_part->index_granularity_info.getMarksFilePath(path + MergeTreeDataPartCompact::DATA_FILE_NAME);
-    marks_loader = MergeTreeMarksLoader{mark_cache, std::move(mrk_path), load, settings.save_marks_in_cache, columns_num};
-}
 
 void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)
 {

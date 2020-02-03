@@ -31,8 +31,6 @@ public:
     ReadBuffer * data_buffer;
 
 private:
-    void initMarksLoader();
-
     std::string path_prefix;
     std::string data_file_extension;
 

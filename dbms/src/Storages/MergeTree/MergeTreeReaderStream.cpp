@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 
 MergeTreeReaderStream::MergeTreeReaderStream(
-        const String & path_prefix_,const String & data_file_extension_, size_t marks_count_,
+        const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
         const MarkRanges & all_mark_ranges,
         const MergeTreeReaderSettings & settings,
         MarkCache * mark_cache_,
@@ -26,14 +26,12 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         : path_prefix(path_prefix_), data_file_extension(data_file_extension_), marks_count(marks_count_)
         , mark_cache(mark_cache_), save_marks_in_cache(settings.save_marks_in_cache)
         , index_granularity_info(index_granularity_info_)
+        , marks_loader(mark_cache, index_granularity_info->getMarksFilePath(path_prefix),
+            marks_count, *index_granularity_info, save_marks_in_cache)
 {
     /// Compute the size of the buffer.
     size_t max_mark_range_bytes = 0;
     size_t sum_mark_range_bytes = 0;
-
-    /// Care should be taken to not load marks when the part is empty (marks_count == 0).
-
-    initMarksLoader();
 
     for (const auto & mark_range : all_mark_ranges)
     {
@@ -103,58 +101,6 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         non_cached_buffer = std::move(buffer);
         data_buffer = non_cached_buffer.get();
     }
-}
-
-
-void MergeTreeReaderStream::initMarksLoader()
-{
-    if (marks_loader.initialized())
-        return;
-
-    auto load = [this](const String & mrk_path) -> MarkCache::MappedPtr
-    {
-        /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
-        auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
-
-        size_t file_size = Poco::File(mrk_path).getSize();
-        size_t mark_size = index_granularity_info->getMarkSizeInBytes();
-
-        size_t expected_file_size = mark_size * marks_count;
-        if (expected_file_size != file_size)
-            throw Exception(
-                "Bad size of marks file '" + mrk_path + "': " + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
-                ErrorCodes::CORRUPTED_DATA);
-
-        auto res = std::make_shared<MarksInCompressedFile>(marks_count);
-
-        if (!index_granularity_info->is_adaptive)
-        {
-            /// Read directly to marks.
-            ReadBufferFromFile buffer(mrk_path, file_size, -1, reinterpret_cast<char *>(res->data()));
-
-            if (buffer.eof() || buffer.buffer().size() != file_size)
-                throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
-        }
-        else
-        {
-            ReadBufferFromFile buffer(mrk_path, file_size, -1);
-            size_t i = 0;
-            while (!buffer.eof())
-            {
-                readIntBinary((*res)[i].offset_in_compressed_file, buffer);
-                readIntBinary((*res)[i].offset_in_decompressed_block, buffer);
-                buffer.seek(sizeof(size_t), SEEK_CUR);
-                ++i;
-            }
-            if (i * mark_size != file_size)
-                throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
-        }
-        res->protect();
-        return res;
-    };
-
-    auto mrk_path = index_granularity_info->getMarksFilePath(path_prefix);
-    marks_loader = MergeTreeMarksLoader{mark_cache, std::move(mrk_path), load, save_marks_in_cache};
 }
 
 
