@@ -29,7 +29,7 @@ NamesAndTypesList StorageSystemMerges::getNamesAndTypes()
         {"rows_written", std::make_shared<DataTypeUInt64>()},
         {"columns_written", std::make_shared<DataTypeUInt64>()},
         {"memory_usage", std::make_shared<DataTypeUInt64>()},
-        {"thread_number", std::make_shared<DataTypeUInt64>()},
+        {"thread_id", std::make_shared<DataTypeUInt64>()},
     };
 }
 
@@ -64,7 +64,7 @@ void StorageSystemMerges::fillData(MutableColumns & res_columns, const Context &
         res_columns[i++]->insert(merge.rows_written);
         res_columns[i++]->insert(merge.columns_written);
         res_columns[i++]->insert(merge.memory_usage);
-        res_columns[i++]->insert(merge.thread_number);
+        res_columns[i++]->insert(merge.thread_id);
     }
 }
 
