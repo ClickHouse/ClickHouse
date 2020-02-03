@@ -74,22 +74,6 @@ namespace ErrorCodes
 }
 
 
-static void throwIfNoAccess(Context & context)
-{
-    if (context.getSettingsRef().readonly)
-    {
-        const auto & client_info = context.getClientInfo();
-        if (client_info.interface == ClientInfo::Interface::HTTP && client_info.http_method == ClientInfo::HTTPMethod::GET)
-            throw Exception("Cannot execute query in readonly mode. "
-                "For queries over HTTP, method GET implies readonly. You should use method POST for modifying queries.", ErrorCodes::READONLY);
-        else
-            throw Exception("Cannot execute query in readonly mode", ErrorCodes::READONLY);
-    }
-    else if (!context.getSettingsRef().allow_ddl)
-        throw Exception("Cannot execute query. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
-}
-
-
 std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & context, QueryProcessingStage::Enum stage)
 {
     ProfileEvents::increment(ProfileEvents::Query);
@@ -108,23 +92,19 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else if (query->as<ASTInsertQuery>())
     {
         ProfileEvents::increment(ProfileEvents::InsertQuery);
-        /// readonly is checked inside InterpreterInsertQuery
         bool allow_materialized = static_cast<bool>(context.getSettingsRef().insert_allow_materialized_columns);
         return std::make_unique<InterpreterInsertQuery>(query, context, allow_materialized);
     }
     else if (query->as<ASTCreateQuery>())
     {
-        /// readonly and allow_ddl are checked inside InterpreterCreateQuery
         return std::make_unique<InterpreterCreateQuery>(query, context);
     }
     else if (query->as<ASTDropQuery>())
     {
-        /// readonly and allow_ddl are checked inside InterpreterDropQuery
         return std::make_unique<InterpreterDropQuery>(query, context);
     }
     else if (query->as<ASTRenameQuery>())
     {
-        throwIfNoAccess(context);
         return std::make_unique<InterpreterRenameQuery>(query, context);
     }
     else if (query->as<ASTShowTablesQuery>())
@@ -142,7 +122,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     }
     else if (query->as<ASTOptimizeQuery>())
     {
-        throwIfNoAccess(context);
         return std::make_unique<InterpreterOptimizeQuery>(query, context);
     }
     else if (query->as<ASTExistsTableQuery>())
@@ -179,7 +158,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     }
     else if (query->as<ASTAlterQuery>())
     {
-        throwIfNoAccess(context);
         return std::make_unique<InterpreterAlterQuery>(query, context);
     }
     else if (query->as<ASTCheckQuery>())
@@ -192,7 +170,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     }
     else if (query->as<ASTSystemQuery>())
     {
-        throwIfNoAccess(context);
         return std::make_unique<InterpreterSystemQuery>(query, context);
     }
     else if (query->as<ASTWatchQuery>())

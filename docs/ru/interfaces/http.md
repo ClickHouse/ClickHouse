@@ -227,10 +227,10 @@ X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_ro
 Возможные поля заголовка:
 
 - `read_rows` — количество прочитанных строк.
-- `read_bytes` — объем прочитанных данных в байтах.
+- `read_bytes` — объём прочитанных данных в байтах.
 - `total_rows_to_read` — общее количество строк для чтения.
 - `written_rows` — количество записанных строк.
-- `written_bytes` — объем прочитанных данных в байтах.
+- `written_bytes` — объём прочитанных данных в байтах.
 
 Запущенные запросы не останавливаются автоматически при разрыве HTTP соединения. Парсинг и форматирование данных производится на стороне сервера и использование сети может быть неэффективным.
 Может быть передан необязательный параметр query_id - идентификатор запроса, произвольная строка. Подробнее смотрите раздел "Настройки, replace_running_query".
@@ -265,5 +265,5 @@ $ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&
 $ curl -sS "<address>?param_id=2¶m_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/http_interface/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/http_interface/) <!--hide-->
 

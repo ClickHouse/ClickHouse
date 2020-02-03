@@ -16,7 +16,7 @@ struct TraceLogElement
 
     time_t event_time;
     TraceType trace_type;
-    UInt32 thread_number;
+    UInt64 thread_id;
     String query_id;
     Array trace;
 

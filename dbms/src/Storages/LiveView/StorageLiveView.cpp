@@ -39,6 +39,7 @@ limitations under the License. */
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Access/AccessFlags.h>
 
 
 namespace DB

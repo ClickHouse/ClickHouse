@@ -478,8 +478,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         << formatReadableSizeWithBinarySuffix(elem.read_bytes / elapsed_seconds) << "/sec.");
                 }
 
-                elem.thread_numbers = std::move(info.thread_numbers);
-                elem.os_thread_ids = std::move(info.os_thread_ids);
+                elem.thread_ids = std::move(info.thread_ids);
                 elem.profile_counters = std::move(info.profile_counters);
 
                 if (log_queries)
@@ -517,8 +516,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                     elem.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 
-                    elem.thread_numbers = std::move(info.thread_numbers);
-                    elem.os_thread_ids = std::move(info.os_thread_ids);
+                    elem.thread_ids = std::move(info.thread_ids);
                     elem.profile_counters = std::move(info.profile_counters);
                 }
 

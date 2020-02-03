@@ -59,4 +59,4 @@ curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+count(
 对于分布式查询，将临时表发送到所有远程服务器。
 
 
-[Original article](https://clickhouse.yandex/docs/zh/operations/table_engines/external_data/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/zh/operations/table_engines/external_data/) <!--hide-->

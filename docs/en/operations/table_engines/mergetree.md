@@ -331,10 +331,10 @@ Function (operator) / Index | primary key | minmax | ngrambf_v1 | tokenbf_v1 | b
 [equals (=, ==)](../../query_language/functions/comparison_functions.md#function-equals) | ✔ | ✔ | ✔ | ✔ | ✔ 
 [notEquals(!=, <>)](../../query_language/functions/comparison_functions.md#function-notequals) | ✔ | ✔ | ✔ | ✔ | ✔
 [like](../../query_language/functions/string_search_functions.md#function-like) | ✔ | ✔ | ✔ | ✗ |  ✗
-[notLike](../../query_language/functions/string_search_functions.md#function-notlike) | ✔ | ✔ | ✔ | ✔ | ✗
+[notLike](../../query_language/functions/string_search_functions.md#function-notlike) | ✔ | ✔ | ✔ | ✗ | ✗
 [startsWith](../../query_language/functions/string_functions.md#function-startswith) | ✔ | ✔ | ✔ | ✔ | ✗
 [endsWith](../../query_language/functions/string_functions.md#function-endswith) | ✗ | ✗ | ✔ | ✔ | ✗
-[multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany) | ✗ | ✗ | ✔ | ✔ | ✗
+[multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany) | ✗ | ✗ | ✔ | ✗ | ✗
 [in](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
 [notIn](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
 [less (<)](../../query_language/functions/comparison_functions.md#function-less) | ✔ | ✔ | ✗ | ✗ | ✗
@@ -477,7 +477,7 @@ When ClickHouse see that data is expired, it performs an off-schedule merge. To 
 
 If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query before `SELECT`.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/mergetree/) <!--hide-->
 
 
 ## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
@@ -651,4 +651,4 @@ Moving data does not interfere with data replication. Therefore, different stora
 After the completion of background merges and mutations, old parts are removed only after a certain amount of time (`old_parts_lifetime`).
 During this time, they are not moved to other volumes or disks. Therefore, until the parts are finally removed, they are still taken into account for evaluation of the occupied disk space.
 
-[Original article](https://clickhouse.yandex/docs/ru/operations/table_engines/mergetree/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/ru/operations/table_engines/mergetree/) <!--hide-->

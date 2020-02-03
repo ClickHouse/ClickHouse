@@ -476,4 +476,4 @@ A mutation query returns immediately after the mutation entry is added (in case 
 
 Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter). Older mutation entries are deleted.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/alter/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->

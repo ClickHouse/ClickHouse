@@ -49,7 +49,7 @@ namespace ErrorCodes
 }
 
 template <typename ProfilerImpl>
-QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const int clock_type, UInt32 period, const int pause_signal_)
+QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const int clock_type, UInt32 period, const int pause_signal_)
     : log(&Logger::get("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
@@ -146,7 +146,7 @@ void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 template class QueryProfilerBase<QueryProfilerReal>;
 template class QueryProfilerBase<QueryProfilerCpu>;
 
-QueryProfilerReal::QueryProfilerReal(const Int32 thread_id, const UInt32 period)
+QueryProfilerReal::QueryProfilerReal(const UInt64 thread_id, const UInt32 period)
     : QueryProfilerBase(thread_id, CLOCK_REALTIME, period, SIGUSR1)
 {}
 
@@ -155,7 +155,7 @@ void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
     writeTraceInfo(TraceType::REAL_TIME, sig, info, context);
 }
 
-QueryProfilerCpu::QueryProfilerCpu(const Int32 thread_id, const UInt32 period)
+QueryProfilerCpu::QueryProfilerCpu(const UInt64 thread_id, const UInt32 period)
     : QueryProfilerBase(thread_id, CLOCK_THREAD_CPUTIME_ID, period, SIGUSR2)
 {}
 

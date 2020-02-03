@@ -91,7 +91,7 @@ void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trac
         sizeof(UInt8) +                        // number of stack frames
         sizeof(StackTrace::Frames) +           // collected stack trace, maximum capacity
         sizeof(TraceType) +                    // trace type
-        sizeof(UInt32) +                       // thread_number
+        sizeof(UInt64) +                       // thread_id
         sizeof(Int64);                         // size
     char buffer[buf_size];
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
@@ -99,7 +99,7 @@ void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trac
     StringRef query_id = CurrentThread::getQueryId();
     query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
 
-    UInt32 thread_number = CurrentThread::get().thread_number;
+    auto thread_id = CurrentThread::get().thread_id;
 
     writeChar(false, out);
     writeStringBinary(query_id, out);
@@ -111,7 +111,7 @@ void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trac
         writePODBinary(stack_trace.getFrames()[i], out);
 
     writePODBinary(trace_type, out);
-    writePODBinary(thread_number, out);
+    writePODBinary(thread_id, out);
     writePODBinary(Int64(0), out);
 
     out.next();
@@ -125,7 +125,7 @@ void TraceCollector::collect(UInt64 size)
         sizeof(UInt8) +                        // number of stack frames
         sizeof(StackTrace::Frames) +           // collected stack trace, maximum capacity
         sizeof(TraceType) +                    // trace type
-        sizeof(UInt32) +                       // thread_number
+        sizeof(UInt64) +                       // thread_id
         sizeof(UInt64);                        // size
     char buffer[buf_size];
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
@@ -133,7 +133,7 @@ void TraceCollector::collect(UInt64 size)
     StringRef query_id = CurrentThread::getQueryId();
     query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
 
-    UInt32 thread_number = CurrentThread::get().thread_number;
+    auto thread_id = CurrentThread::get().thread_id;
 
     writeChar(false, out);
     writeStringBinary(query_id, out);
@@ -147,7 +147,7 @@ void TraceCollector::collect(UInt64 size)
         writePODBinary(stack_trace.getFrames()[i], out);
 
     writePODBinary(TraceType::MEMORY, out);
-    writePODBinary(thread_number, out);
+    writePODBinary(thread_id, out);
     writePODBinary(size, out);
 
     out.next();
@@ -200,15 +200,15 @@ void TraceCollector::run()
         TraceType trace_type;
         readPODBinary(trace_type, in);
 
-        UInt32 thread_number;
-        readPODBinary(thread_number, in);
+        UInt64 thread_id;
+        readPODBinary(thread_id, in);
 
         Int64 size;
         readPODBinary(size, in);
 
         if (trace_log)
         {
-            TraceLogElement element{std::time(nullptr), trace_type, thread_number, query_id, trace, size};
+            TraceLogElement element{std::time(nullptr), trace_type, thread_id, query_id, trace, size};
             trace_log->add(element);
         }
     }

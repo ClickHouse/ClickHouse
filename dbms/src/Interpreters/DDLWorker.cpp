@@ -16,6 +16,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Access/AccessRightsElement.h>
 #include <Common/DNSResolver.h>
 #include <Common/Macros.h>
 #include <Common/getFQDNOrHostName.h>
@@ -1242,7 +1243,7 @@ private:
 };
 
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context, NameSet && query_databases)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context, AccessRightsElements && query_required_access)
 {
     /// Remove FORMAT <fmt> and INTO OUTFILE <file> if exists
     ASTPtr query_ptr = query_ptr_->clone();
@@ -1271,51 +1272,77 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     ClusterPtr cluster = context.getCluster(query->cluster);
     DDLWorker & ddl_worker = context.getDDLWorker();
 
-    /// Check database access rights, assume that all servers have the same users config
-    NameSet databases_to_access;
-    const String & current_database = context.getCurrentDatabase();
-
+    /// Enumerate hosts which will be used to send query.
     Cluster::AddressesWithFailover shards = cluster->getShardsAddresses();
-
     std::vector<HostID> hosts;
-    bool use_shard_default_db = false;
-    bool use_local_default_db = false;
     for (const auto & shard : shards)
     {
         for (const auto & addr : shard)
-        {
             hosts.emplace_back(addr);
+    }
 
-            /// Expand empty database name to shards' default (o current) database name
-            for (const String & database : query_databases)
+    if (hosts.empty())
+        throw Exception("No hosts defined to execute distributed DDL query", ErrorCodes::LOGICAL_ERROR);
+
+    /// The current database in a distributed query need to be replaced with either
+    /// the local current database or a shard's default database.
+    bool need_replace_current_database
+        = (std::find_if(
+               query_required_access.begin(),
+               query_required_access.end(),
+               [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); })
+           != query_required_access.end());
+
+    if (need_replace_current_database)
+    {
+        bool use_local_default_database = false;
+        Strings shard_default_databases;
+        for (const auto & shard : shards)
+        {
+            for (const auto & addr : shard)
             {
-                if (database.empty())
-                {
-                    bool has_shard_default_db = !addr.default_database.empty();
-                    use_shard_default_db |= has_shard_default_db;
-                    use_local_default_db |= !has_shard_default_db;
-                    databases_to_access.emplace(has_shard_default_db ? addr.default_database : current_database);
-                }
+                if (!addr.default_database.empty())
+                    shard_default_databases.push_back(addr.default_database);
                 else
-                    databases_to_access.emplace(database);
+                    use_local_default_database = true;
+            }
+        }
+        std::sort(shard_default_databases.begin(), shard_default_databases.end());
+        shard_default_databases.erase(std::unique(shard_default_databases.begin(), shard_default_databases.end()), shard_default_databases.end());
+        assert(use_local_default_database || !shard_default_databases.empty());
+
+        if (use_local_default_database && !shard_default_databases.empty())
+            throw Exception("Mixed local default DB and shard default DB in DDL query", ErrorCodes::NOT_IMPLEMENTED);
+
+        if (use_local_default_database)
+        {
+            const String & current_database = context.getCurrentDatabase();
+            AddDefaultDatabaseVisitor visitor(current_database);
+            visitor.visitDDL(query_ptr);
+
+            query_required_access.replaceEmptyDatabase(current_database);
+        }
+        else
+        {
+            size_t old_num_elements = query_required_access.size();
+            for (size_t i = 0; i != old_num_elements; ++i)
+            {
+                auto & element = query_required_access[i];
+                if (element.isEmptyDatabase())
+                {
+                    element.setDatabase(shard_default_databases[0]);
+                    for (size_t j = 1; j != shard_default_databases.size(); ++j)
+                    {
+                        query_required_access.push_back(element);
+                        query_required_access.back().setDatabase(shard_default_databases[j]);
+                    }
+                }
             }
         }
     }
 
-    if (use_shard_default_db && use_local_default_db)
-        throw Exception("Mixed local default DB and shard default DB in DDL query", ErrorCodes::NOT_IMPLEMENTED);
-
-    if (databases_to_access.empty())
-        throw Exception("No databases to access in distributed DDL query", ErrorCodes::LOGICAL_ERROR);
-
-    for (const String & database : databases_to_access)
-        context.checkDatabaseAccessRights(database);
-
-    if (use_local_default_db)
-    {
-        AddDefaultDatabaseVisitor visitor(current_database);
-        visitor.visitDDL(query_ptr);
-    }
+    /// Check access rights, assume that all servers have the same users config
+    context.checkAccess(query_required_access);
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);
