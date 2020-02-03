@@ -142,4 +142,4 @@ When the max_parallel_replicas option is enabled, query processing is paralleliz
 - [Virtual columns](index.md#table_engines-virtual_columns)
 
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/distributed/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/distributed/) <!--hide-->

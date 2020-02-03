@@ -1,7 +1,8 @@
 #pragma once
 
-#include <utility>
 #include <functional>
+#include <memory>
+#include <utility>
 
 
 namespace ext
@@ -11,14 +12,28 @@ class [[nodiscard]] basic_scope_guard
 {
 public:
     constexpr basic_scope_guard() = default;
-    constexpr basic_scope_guard(basic_scope_guard && src) : function{std::exchange(src.function, F{})} {}
+    constexpr basic_scope_guard(basic_scope_guard && src) : function{std::exchange(src.function, {})} {}
 
     constexpr basic_scope_guard & operator=(basic_scope_guard && src)
     {
         if (this != &src)
         {
             invoke();
-            function = std::exchange(src.function, F{});
+            function = std::exchange(src.function, {});
+        }
+        return *this;
+    }
+
+    template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
+    constexpr basic_scope_guard(basic_scope_guard<G> && src) : function{std::exchange(src.function, {})} {}
+
+    template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
+    constexpr basic_scope_guard & operator=(basic_scope_guard<G> && src)
+    {
+        if (this != &src)
+        {
+            invoke();
+            function = std::exchange(src.function, {});
         }
         return *this;
     }
@@ -31,6 +46,34 @@ public:
 
     ~basic_scope_guard() { invoke(); }
 
+    explicit operator bool() const
+    {
+        if constexpr (std::is_constructible_v<bool, F>)
+            return static_cast<bool>(function);
+        return true;
+    }
+
+    void reset() { function = {}; }
+
+    template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
+    basic_scope_guard<F> & join(basic_scope_guard<G> && other)
+    {
+        if (other.function)
+        {
+            if (function)
+            {
+                function = [x = std::make_shared<std::pair<F, G>>(std::move(function), std::exchange(other.function, {}))]()
+                {
+                    std::move(x->first)();
+                    std::move(x->second)();
+                };
+            }
+            else
+                function = std::exchange(other.function, {});
+        }
+        return *this;
+    }
+
 private:
     void invoke()
     {
@@ -39,8 +82,7 @@ private:
             if (!function)
                 return;
         }
-
-        function();
+        std::move(function)();
     }
 
     F function = F{};

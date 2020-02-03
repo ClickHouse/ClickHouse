@@ -28,4 +28,4 @@ SELECT alphaTokens('abca1abc')
 │ ['abca','abc']          │
 └─────────────────────────┘
 ```
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/splitting_merging_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/splitting_merging_functions/) <!--hide-->

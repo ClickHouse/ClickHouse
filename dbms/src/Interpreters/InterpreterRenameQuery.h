@@ -8,6 +8,7 @@ namespace DB
 {
 
 class Context;
+class AccessRightsElements;
 
 
 /** Rename one table
@@ -20,9 +21,10 @@ public:
     BlockIO execute() override;
 
 private:
+    AccessRightsElements getRequiredAccess() const;
+
     ASTPtr query_ptr;
     Context & context;
 };
-
 
 }
