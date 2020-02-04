@@ -942,15 +942,6 @@ protected:
 
     void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);
 
-    /// out_rename_map maps column files for the out_expression onto new table files.
-    /// out_force_update_metadata denotes if metadata must be changed even if out_rename_map is empty (used
-    /// for transformation-free changing of Enum values list).
-    /// Files to be deleted are mapped to an empty string in out_rename_map.
-    /// If part == nullptr, just checks that all type conversions are possible.
-    // void createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-    //                              const IndicesASTs & old_indices, const IndicesASTs & new_indices,
-    //                              ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const;
-
     /// Calculates column sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
     void calculateColumnSizesImpl();
     /// Adds or subtracts the contribution of the part to compressed column sizes.

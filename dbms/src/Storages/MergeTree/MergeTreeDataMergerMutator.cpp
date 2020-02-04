@@ -990,15 +990,17 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     auto new_data_part = data.createPart(
         future_part.name,
+        source_part->getType(),
         future_part.part_info,
         space_reservation->getDisk(),
-        std::move(new_columns),
-        source_part->bytes_on_disk,
-        source_part->rows_count,
         "tmp_mut_" + future_part.name);
 
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;
+
+    /// It shouldn't be changed by mutation.
+    new_data_part->index_granularity_info = source_part->index_granularity_info;
+    new_data_part->setColumns(new_columns);
 
     String new_part_tmp_path = new_data_part->getFullPath();
 
