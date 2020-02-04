@@ -31,7 +31,7 @@ public:
         ADD_LAYER_TAG = 1 << 0
     };
 
-    OwnPatternFormatter(const Loggers * loggers_, Options options_ = ADD_NOTHING);
+    OwnPatternFormatter(const Loggers * loggers_, Options options_ = ADD_NOTHING, bool color_ = false);
 
     void format(const Poco::Message & msg, std::string & text) override;
     void formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text);
@@ -39,4 +39,5 @@ public:
 private:
     const Loggers * loggers;
     Options options;
+    bool color;
 };

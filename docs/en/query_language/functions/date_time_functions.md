@@ -371,7 +371,7 @@ dateDiff('unit', startdate, enddate, [timezone])
 
 - `startdate` — The first time value to compare. [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
 - `enddate` — The second time value to compare. [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
-- `timezone` — Optional parameter. If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [Time Zone](../../data_types/datetime.md#time-zones).
+- `timezone` — Optional parameter. If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified.
 
 **Returned value**
 
