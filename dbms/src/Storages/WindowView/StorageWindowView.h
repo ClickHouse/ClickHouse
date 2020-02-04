@@ -32,12 +32,8 @@ public:
 
     bool isTemporary() { return is_temporary; }
 
-    /// Check we have any active readers
-    /// must be called with mutex locked
     bool hasActiveUsers() { return active_ptr.use_count() > 1; }
 
-    /// Background thread for temporary tables
-    /// which drops this table if there are no users
     void startNoUsersThread(const UInt64 & timeout);
     std::mutex no_users_thread_wakeup_mutex;
     bool no_users_thread_wakeup{false};

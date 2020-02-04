@@ -538,7 +538,7 @@ BlockInputStreamPtr StorageWindowView::getNewBlocksInputStreamPtr()
     }
 
     BlockInputStreams from;
-    auto sample_block_ = mergeable_blocks->front()->front().cloneEmpty(); //TODO: 改为全局
+    auto sample_block_ = mergeable_blocks->front()->front().cloneEmpty();
     BlockInputStreamPtr stream = std::make_shared<WindowViewBlocksBlockInputStream>(mergeable_blocks, sample_block_, mutex);
     from.push_back(std::move(stream));
     auto proxy_storage = std::make_shared<WindowViewProxyStorage>(
