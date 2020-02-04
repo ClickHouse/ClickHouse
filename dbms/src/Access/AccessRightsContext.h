@@ -11,6 +11,8 @@ namespace Poco { class Logger; }
 namespace DB
 {
 struct Settings;
+struct User;
+using UserPtr = std::shared_ptr<const User>;
 
 
 class AccessRightsContext
@@ -19,7 +21,7 @@ public:
     /// Default constructor creates access rights' context which allows everything.
     AccessRightsContext();
 
-    AccessRightsContext(const ClientInfo & client_info_, const AccessRights & granted_to_user, const Settings & settings, const String & current_database_);
+    AccessRightsContext(const UserPtr & user_, const ClientInfo & client_info_, const Settings & settings, const String & current_database_);
 
     /// Checks if a specified access granted, and throws an exception if not.
     /// Empty database means the current database.
@@ -65,8 +67,7 @@ private:
     boost::shared_ptr<const AccessRights> calculateResultAccess() const;
     boost::shared_ptr<const AccessRights> calculateResultAccess(UInt64 readonly_, bool allow_ddl_, bool allow_introspection_) const;
 
-    const String user_name;
-    const AccessRights granted_to_user;
+    const UserPtr user;
     const UInt64 readonly = 0;
     const bool allow_ddl = true;
     const bool allow_introspection = true;
