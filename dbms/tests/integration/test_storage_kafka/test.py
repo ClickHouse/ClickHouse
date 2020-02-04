@@ -789,6 +789,55 @@ def test_kafka_virtual_columns2(kafka_cluster):
     assert TSV(result) == TSV(expected)
 
 
+
+@pytest.mark.timeout(240)
+def test_kafka_produce_key_timestamp(kafka_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.kafka_writer (key UInt64, value UInt64, _key String, _timestamp DateTime)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'insert3',
+                     kafka_group_name = 'insert3',
+                     kafka_format = 'TSV',
+                     kafka_row_delimiter = '\\n';
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64, inserted_key String, inserted_timestamp DateTime)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'insert3',
+                     kafka_group_name = 'insert3',
+                     kafka_format = 'TSV',
+                     kafka_row_delimiter = '\\n';
+
+        CREATE MATERIALIZED VIEW test.view Engine=Log AS
+            SELECT key, value, inserted_key, toUnixTimestamp(inserted_timestamp), _key, _topic, _partition, _offset, toUnixTimestamp(_timestamp) FROM test.kafka;
+    ''')
+
+    instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({}))".format(1,1,'k1',1577836801))
+    instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({}))".format(2,2,'k2',1577836802))
+    instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({})),({},{},'{}',toDateTime({}))".format(3,3,'k3',1577836803,4,4,'k4',1577836804))
+    instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({}))".format(5,5,'k5',1577836805))
+
+    time.sleep(10)
+
+    result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
+
+    print(result)
+
+    expected = '''\
+1	1	k1	1577836801	k1	insert3	0	0	1577836801
+2	2	k2	1577836802	k2	insert3	0	1	1577836802
+3	3	k3	1577836803	k3	insert3	0	2	1577836803
+4	4	k4	1577836804	k4	insert3	0	3	1577836804
+5	5	k5	1577836805	k5	insert3	0	4	1577836805
+'''
+
+    assert TSV(result) == TSV(expected)
+
+
+
 @pytest.mark.timeout(600)
 def test_kafka_flush_by_time(kafka_cluster):
     instance.query('''
@@ -876,9 +925,9 @@ def test_kafka_flush_by_block_size(kafka_cluster):
     time.sleep(1)
 
     result = instance.query('SELECT count() FROM test.view')
-    print(result)
+    # print(result)
 
-   # kafka_cluster.open_bash_shell('instance')
+    # kafka_cluster.open_bash_shell('instance')
 
     instance.query('''
         DROP TABLE test.consumer;
