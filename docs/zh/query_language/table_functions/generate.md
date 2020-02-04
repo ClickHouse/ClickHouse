@@ -1,1 +1,1 @@
-en/query_language/table_functions/generate.md
+../../../en/query_language/table_functions/generate.md
