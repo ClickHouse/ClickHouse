@@ -130,7 +130,7 @@ function run_tests
     rm left/performance/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
 
     # Run the tests
-    for test in left/performance/*.xml
+    for test in left/performance/${CHPC_TEST_GLOB:-*.xml}
     do
         test_name=$(basename $test ".xml")
         echo test $test_name

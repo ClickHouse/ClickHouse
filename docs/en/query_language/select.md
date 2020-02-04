@@ -107,7 +107,7 @@ The `FROM` clause specifies the source to read data from:
 `ARRAY JOIN` and the regular `JOIN` may also be included (see below).
 
 Instead of a table, the `SELECT` subquery may be specified in parenthesis.
-In contrast to standard SQL, a synonym does not need to be specified after a subquery. For compatibility, it is possible to write `AS name` after a subquery, but the specified name isn't used anywhere.
+In contrast to standard SQL, a synonym does not need to be specified after a subquery.
 
 To execute a query, all the columns listed in the query are extracted from the appropriate table. Any columns not needed for the external query are thrown out of the subqueries.
 If a query does not list any columns (for example, `SELECT count() FROM t`), some column is extracted from the table anyway (the smallest one is preferred), in order to calculate the number of rows.
@@ -688,7 +688,7 @@ When any of these limits is reached, ClickHouse acts as the [join_overflow_mode]
 
 #### Processing of Empty or NULL Cells
 
-While joining tables, the empty cells may appear. The setting [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls) define how ClickHouse fills these cells.
+While joining tables, the empty cells may appear. The setting [join_use_nulls](../operations/settings/settings.md#join_use_nulls) define how ClickHouse fills these cells.
 
 If the `JOIN` keys are [Nullable](../data_types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](syntax.md#null-literal) are not joined.
 
@@ -704,7 +704,7 @@ For `ON`, `WHERE`, and `GROUP BY` clauses:
 - Arbitrary expressions cannot be used in `ON`, `WHERE`, and `GROUP BY` clauses, but you can define an expression in a `SELECT` clause and then use it in these clauses via an alias.
 
 
-### WHERE Clause
+### WHERE Clause {#select-where}
 
 If there is a WHERE clause, it must contain an expression with the UInt8 type. This is usually an expression with comparison and logical operators.
 This expression will be used for filtering data before all other transformations.

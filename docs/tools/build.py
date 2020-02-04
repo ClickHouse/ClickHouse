@@ -248,7 +248,7 @@ def build_docs(args):
     tasks = []
     for lang in args.lang.split(','):
         tasks.append((lang, args,))
-    util.run_function_in_parallel(build_for_lang, tasks, threads=True)
+    util.run_function_in_parallel(build_for_lang, tasks, threads=False)
     build_redirects(args)
 
 
