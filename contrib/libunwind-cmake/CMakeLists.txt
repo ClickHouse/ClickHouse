@@ -30,6 +30,7 @@ set(LIBUNWIND_SOURCES
     ${LIBUNWIND_ASM_SOURCES})
 
 add_library(unwind ${LIBUNWIND_SOURCES})
+set_property(TARGET unwind PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(unwind SYSTEM BEFORE PUBLIC $<BUILD_INTERFACE:${LIBUNWIND_SOURCE_DIR}/include>)
 target_compile_definitions(unwind PRIVATE -D_LIBUNWIND_NO_HEAP=1 -D_DEBUG -D_LIBUNWIND_IS_NATIVE_ONLY)
