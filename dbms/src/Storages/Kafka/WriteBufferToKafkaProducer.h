@@ -22,7 +22,7 @@ public:
         size_t rows_per_message,
         size_t chunk_size_,
         std::chrono::milliseconds poll_timeout,
-        Block header);
+        const Block & header);
     ~WriteBufferToKafkaProducer() override;
 
     void count_row(const Columns & columns, size_t row);
