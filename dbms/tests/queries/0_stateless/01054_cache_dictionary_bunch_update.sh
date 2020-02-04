@@ -62,10 +62,10 @@ export -f thread4;
 TIMEOUT=10
 
 # shellcheck disable=SC2188
-timeout $TIMEOUT bash -c thread1 > 01054_output_thread1.txt 2>&1 &
-timeout $TIMEOUT bash -c thread2 > 01054_output_thread2.txt 2>&1 &
-timeout $TIMEOUT bash -c thread3 > 01054_output_thread3.txt 2>&1 &
-timeout $TIMEOUT bash -c thread4 > 01054_output_thread4.txt 2>&1 &
+timeout $TIMEOUT bash -c thread1 > /dev/null 2>&1 &
+timeout $TIMEOUT bash -c thread2 > /dev/null 2>&1 &
+timeout $TIMEOUT bash -c thread3 > /dev/null 2>&1 &
+timeout $TIMEOUT bash -c thread4 > /dev/null 2>&1 &
 
 wait
 
