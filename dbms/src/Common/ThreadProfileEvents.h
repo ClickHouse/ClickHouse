@@ -2,7 +2,7 @@
 
 #include <Core/Types.h>
 #include <Common/ProfileEvents.h>
-#include <sys/time.h>
+#include <ctime>
 #include <sys/resource.h>
 #include <pthread.h>
 
@@ -34,6 +34,18 @@ namespace ProfileEvents
     extern const Event OSWriteChars;
     extern const Event OSReadBytes;
     extern const Event OSWriteBytes;
+
+    extern const Event PERF_COUNT_SW_CPU_CLOCK;
+    extern const Event PERF_COUNT_SW_TASK_CLOCK;
+    extern const Event PERF_COUNT_SW_PAGE_FAULTS;
+    extern const Event PERF_COUNT_SW_CONTEXT_SWITCHES;
+    extern const Event PERF_COUNT_SW_CPU_MIGRATIONS;
+    extern const Event PERF_COUNT_SW_PAGE_FAULTS_MIN;
+    extern const Event PERF_COUNT_SW_PAGE_FAULTS_MAJ;
+    extern const Event PERF_COUNT_SW_ALIGNMENT_FAULTS;
+    extern const Event PERF_COUNT_SW_EMULATION_FAULTS;
+    extern const Event PERF_COUNT_SW_DUMMY;
+    extern const Event PERF_COUNT_SW_BPF_OUTPUT;
 #endif
 }
 
@@ -117,6 +129,23 @@ struct RUsageCounters
     }
 };
 
+struct PerfEventsCounters
+{
+    // cat /proc/sys/kernel/perf_event_paranoid - if perf_event_paranoid is set to 3, all calls to `perf_event_open` are rejected (even for the current process)
+    // https://lwn.net/Articles/696234/
+    // -1: Allow use of (almost) all events by all users
+    // >=0: Disallow raw tracepoint access by users without CAP_IOC_LOCK
+    // >=1: Disallow CPU event access by users without CAP_SYS_ADMIN
+    // >=2: Disallow kernel profiling by users without CAP_SYS_ADMIN
+    // >=3: Disallow all event access by users without CAP_SYS_ADMIN
+
+    // https://lwn.net/Articles/696216/
+    // It adds a another value that can be set for the sysctl parameter (i.e. kernel.perf_event_paranoid=3)
+    // that restricts perf_event_open() to processes with the CAP_SYS_ADMIN capability
+    // todo: check whether perf_event_open() is available with CAP_SYS_ADMIN
+
+    static void updateProfileEvents(ProfileEvents::Counters & profile_events);
+};
 
 #if defined(__linux__)
 

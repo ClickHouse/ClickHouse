@@ -105,6 +105,7 @@ void ThreadStatus::updatePerformanceCounters()
     try
     {
         RUsageCounters::updateProfileEvents(*last_rusage, performance_counters);
+        PerfEventsCounters::updateProfileEvents(performance_counters);
         if (taskstats_getter)
             TasksStatsCounters::updateProfileEvents(*last_taskstats, performance_counters);
     }
