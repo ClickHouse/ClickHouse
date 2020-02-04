@@ -144,7 +144,6 @@ namespace
             user->access.fullRevoke(AccessFlags::databaseLevel());
             for (const String & database : *databases)
                 user->access.grant(AccessFlags::databaseLevel(), database);
-            user->access.grant(AccessFlags::databaseLevel(), "system"); /// Anyone has access to the "system" database.
         }
 
         if (dictionaries)
@@ -155,6 +154,8 @@ namespace
         }
         else if (databases)
             user->access.grant(AccessType::dictGet, IDictionary::NO_DATABASE_TAG);
+
+        user->access_with_grant_option = user->access;
 
         return user;
     }
