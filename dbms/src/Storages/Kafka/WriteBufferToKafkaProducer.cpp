@@ -12,7 +12,7 @@ WriteBufferToKafkaProducer::WriteBufferToKafkaProducer(
     size_t rows_per_message,
     size_t chunk_size_,
     std::chrono::milliseconds poll_timeout,
-    Block header
+    const Block & header
     )
     : WriteBuffer(nullptr, 0)
     , producer(producer_)
@@ -48,12 +48,22 @@ void WriteBufferToKafkaProducer::count_row(const Columns & columns, size_t curre
 
     if (++rows % max_rows == 0)
     {
+        const std::string & last_chunk = chunks.back();
+        size_t last_chunk_size = offset();
+
+        // if last character of last chunk is delimeter - we don't need it
+        if (delim && last_chunk[last_chunk_size - 1] == delim)
+            --last_chunk_size;
+
         std::string payload;
-        payload.reserve((chunks.size() - 1) * chunk_size + offset());
+        payload.reserve((chunks.size() - 1) * chunk_size + last_chunk_size);
+
+        // concat all chunks except the last one
         for (auto i = chunks.begin(), e = --chunks.end(); i != e; ++i)
             payload.append(*i);
-        int trunk_delim = delim && chunks.back()[offset() - 1] == delim ? 1 : 0;
-        payload.append(chunks.back(), 0, offset() - trunk_delim);
+
+        // add last one
+        payload.append(last_chunk, 0, last_chunk_size);
 
         cppkafka::MessageBuilder builder(topic);
         builder.payload(payload);
@@ -77,7 +87,6 @@ void WriteBufferToKafkaProducer::count_row(const Columns & columns, size_t curre
         {
             try
             {
-
                 producer->produce(builder);
             }
             catch (cppkafka::HandleException & e)
