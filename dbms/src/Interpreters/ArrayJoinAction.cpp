@@ -15,12 +15,10 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-ArrayJoinAction::ArrayJoinAction(const NameSet & array_joined_columns_, bool array_join_is_left, const Context & context,
-                                 FunctionOverloadResolverPtr & function_builder_)
+ArrayJoinAction::ArrayJoinAction(const NameSet & array_joined_columns_, bool array_join_is_left, const Context & context)
     : columns(array_joined_columns_)
     , is_left(array_join_is_left)
     , is_unaligned(context.getSettingsRef().enable_unaligned_array_join)
-    , function_builder(function_builder_)
 {
     if (columns.empty())
         throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);

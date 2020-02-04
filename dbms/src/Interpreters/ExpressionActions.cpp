@@ -143,7 +143,7 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
 {
     ExpressionAction a;
     a.type = ARRAY_JOIN;
-    a.array_join = std::make_shared<ArrayJoinAction>(array_joined_columns, array_join_is_left, context, a.function_builder);
+    a.array_join = std::make_shared<ArrayJoinAction>(array_joined_columns, array_join_is_left, context);
     return a;
 }
 

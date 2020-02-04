@@ -82,7 +82,7 @@ public:
     /// For ADD_COLUMN.
     ColumnPtr added_column;
 
-    /// For APPLY_FUNCTION and LEFT ARRAY JOIN.
+    /// For APPLY_FUNCTION.
     /// OverloadResolver is used before action was added to ExpressionActions (when we don't know types of arguments).
     FunctionOverloadResolverPtr function_builder;
 
