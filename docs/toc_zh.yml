@@ -167,6 +167,7 @@ nav:
     - 'odbc': 'query_language/table_functions/odbc.md'
     - 'hdfs': 'query_language/table_functions/hdfs.md'
     - 'input': 'query_language/table_functions/input.md'
+    - 'generate': 'query_language/table_functions/generate.md'
   - '字典':
     - '介绍': 'query_language/dicts/index.md'
     - '外部字典':

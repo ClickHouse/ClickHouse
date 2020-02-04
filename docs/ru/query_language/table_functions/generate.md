@@ -2,7 +2,7 @@
 
 Генерирует случайные данные с заданной схемой.
 Позволяет заполнять тестовые таблицы данными.
-Поддерживает все типы данных, которые могут храниться в таблице, за исключением LowCardinality, AggregateFunction.
+Поддерживает все типы данных, которые могут храниться в таблице, за исключением `LowCardinality` и `AggregateFunction`.
 
 ```sql
 generate('name TypeName[, name TypeName]...', 'limit'[, 'max_array_length'[, 'max_string_length'[, 'random_seed']]]);

@@ -2,7 +2,7 @@
 
 Generates random data with given schema.
 Allows to populate test tables with data.
-Supports all data types that can be stored in table except LowCardinality, AggregateFunction.
+Supports all data types that can be stored in table except `LowCardinality` and `AggregateFunction`.
 
 ```sql
 generate('name TypeName[, name TypeName]...', 'limit'[, 'max_array_length'[, 'max_string_length'[, 'random_seed']]]);
