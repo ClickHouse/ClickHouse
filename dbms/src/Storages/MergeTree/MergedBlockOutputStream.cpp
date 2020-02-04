@@ -16,14 +16,11 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const NamesAndTypesList & columns_list_,
     CompressionCodecPtr default_codec,
     bool blocks_are_granules_size)
-    : IMergedBlockOutputStream(data_part)
-    , columns_list(columns_list_)
+    : MergedBlockOutputStream(
+        data_part, columns_list_, default_codec, {},
+        data_part->storage.global_context.getSettings().min_bytes_to_use_direct_io,
+        blocks_are_granules_size)
 {
-    MergeTreeWriterSettings writer_settings(data_part->storage.global_context.getSettings(),
-        data_part->storage.canUseAdaptiveGranularity(), blocks_are_granules_size);
-
-    writer = data_part->getWriter(columns_list, data_part->storage.getSkipIndices(), default_codec, std::move(writer_settings));
-    init();
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
@@ -37,8 +34,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , columns_list(columns_list_)
 {
     MergeTreeWriterSettings writer_settings(data_part->storage.global_context.getSettings(),
-        data_part->storage.canUseAdaptiveGranularity(), blocks_are_granules_size);
-    writer_settings.aio_threshold = aio_threshold;
+        data_part->storage.canUseAdaptiveGranularity(), aio_threshold, blocks_are_granules_size);
 
     if (aio_threshold > 0 && !merged_column_to_size.empty())
     {
@@ -50,9 +46,11 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         }
     }
 
-    writer = data_part->getWriter(columns_list,
-        data_part->storage.getSkipIndices(), default_codec, writer_settings);
-    init();
+    Poco::File(part_path).createDirectories();
+
+    writer = data_part->getWriter(columns_list, data_part->storage.getSkipIndices(), default_codec, writer_settings);
+    writer->initPrimaryIndex();
+    writer->initSkipIndices();
 }
 
 std::string MergedBlockOutputStream::getPartPath() const
@@ -144,14 +142,6 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->bytes_on_disk = checksums.getTotalSizeOnDisk();
     new_part->index_granularity = writer->getIndexGranularity();
 }
-
-void MergedBlockOutputStream::init()
-{
-    Poco::File(part_path).createDirectories();
-    writer->initPrimaryIndex();
-    writer->initSkipIndices();
-}
-
 
 void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation)
 {

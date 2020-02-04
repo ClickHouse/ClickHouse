@@ -14,9 +14,12 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     : IMergedBlockOutputStream(data_part),
     header(header_), sync(sync_)
 {
+    const auto & global_settings = data_part->storage.global_context.getSettings();
     MergeTreeWriterSettings writer_settings(
-        data_part->storage.global_context.getSettings(),
-        index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity());
+        global_settings,
+        index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity(),
+        global_settings.min_bytes_to_use_direct_io);
+
     writer_settings.filename_suffix = filename_suffix;
     writer_settings.skip_offsets = skip_offsets_;
 
