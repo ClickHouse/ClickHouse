@@ -16,6 +16,7 @@ struct User : public IAccessEntity
     Authentication authentication;
     AllowedClientHosts allowed_client_hosts{AllowedClientHosts::AnyHostTag{}};
     AccessRights access;
+    AccessRights access_with_grant_option;
     String profile;
 
     bool equal(const IAccessEntity & other) const override;
