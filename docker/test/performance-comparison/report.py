@@ -84,11 +84,16 @@ def tsv_rows(n):
 
 params = collections.defaultdict(str)
 params['header'] = "ClickHouse Performance Comparison"
-params['test_part'] = (table_template.format_map(
-    collections.defaultdict(str,
+params['test_part'] = (
+    table_template.format(
+        caption = 'Tested commits',
+        header = table_header(['Old', 'New']),
+        rows = table_row([open('left-commit.txt').read(), open('right-commit.txt').read()])
+        ) +
+    table_template.format(
         caption = 'Changes in performance',
         header = table_header(['Old, s', 'New, s', 'Relative difference (new&nbsp;-&nbsp;old)/old', 'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%]', 'Query']),
-        rows = tsv_rows('changed-perf.tsv'))) +
+        rows = tsv_rows('changed-perf.tsv')) +
     table_template.format(
         caption = 'Slow on client',
         header = table_header(['Client time, s', 'Server time, s', 'Ratio', 'Query']),
