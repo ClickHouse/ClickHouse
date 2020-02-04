@@ -33,7 +33,6 @@ class QueryProfilerCpu;
 class QueryThreadLog;
 struct TasksStatsCounters;
 struct RUsageCounters;
-struct PerfEventsCounters;
 class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
@@ -196,7 +195,6 @@ protected:
 
     /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RUsageCounters> last_rusage;
-    std::unique_ptr<PerfEventsCounters> last_perf_events;
     std::unique_ptr<TasksStatsCounters> last_taskstats;
 
     /// Set to non-nullptr only if we have enough capabilities.
