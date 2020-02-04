@@ -177,6 +177,19 @@
     M(OSWriteBytes, "Number of bytes written to disks or block devices. Doesn't include bytes that are in page cache dirty pages. May not include data that was written by OS asynchronously.") \
     M(OSReadChars, "Number of bytes read from filesystem, including page cache.") \
     M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
+    \
+    M(PERF_COUNT_SW_CPU_CLOCK, "") \
+    M(PERF_COUNT_SW_TASK_CLOCK, "") \
+    M(PERF_COUNT_SW_PAGE_FAULTS, "") \
+    M(PERF_COUNT_SW_CONTEXT_SWITCHES, "") \
+    M(PERF_COUNT_SW_CPU_MIGRATIONS, "") \
+    M(PERF_COUNT_SW_PAGE_FAULTS_MIN, "") \
+    M(PERF_COUNT_SW_PAGE_FAULTS_MAJ, "") \
+    M(PERF_COUNT_SW_ALIGNMENT_FAULTS, "") \
+    M(PERF_COUNT_SW_EMULATION_FAULTS, "") \
+    M(PERF_COUNT_SW_DUMMY, "") \
+    M(PERF_COUNT_SW_BPF_OUTPUT, "") \
+    \
     M(CreatedHTTPConnections, "Total amount of created HTTP connections (closed or opened).") \
     \
     M(CannotWriteToWriteBufferDiscard, "Number of stack traces dropped by query profiler or signal handler because pipe is full or cannot write to pipe.") \
