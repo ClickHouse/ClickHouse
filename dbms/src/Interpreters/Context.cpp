@@ -701,11 +701,6 @@ void Context::setProfile(const String & profile)
     settings_constraints = std::move(new_constraints);
 }
 
-std::shared_ptr<const User> Context::getUser(const String & user_name) const
-{
-    return shared->access_control_manager.getUser(user_name);
-}
-
 std::shared_ptr<const User> Context::getUser() const
 {
     if (!user)
