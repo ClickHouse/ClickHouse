@@ -38,4 +38,4 @@ struct DemangleResult
     }
 };
 
-DemangleResult try_demangle(const char * name);
+DemangleResult tryDemangle(const char * name);

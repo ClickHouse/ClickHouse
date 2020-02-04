@@ -73,7 +73,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             StringRef source = column_concrete->getDataAt(i);
-            auto demangled = try_demangle(source.data);
+            auto demangled = tryDemangle(source.data);
             if (demangled.data)
             {
                 result_column->insertDataWithTerminatingZero(demangled.data, demangled.size);
