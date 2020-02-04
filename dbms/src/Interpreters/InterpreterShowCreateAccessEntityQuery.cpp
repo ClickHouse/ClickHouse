@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTCreateUserQuery.h>
 #include <Parsers/ASTCreateQuotaQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
@@ -9,6 +10,7 @@
 #include <Parsers/parseQuery.h>
 #include <Access/AccessControlManager.h>
 #include <Access/QuotaContext.h>
+#include <Access/User.h>
 #include <Columns/ColumnString.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
@@ -58,10 +60,32 @@ ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(const ASTShowCreat
     using Kind = ASTShowCreateAccessEntityQuery::Kind;
     switch (show_query.kind)
     {
+        case Kind::USER: return getCreateUserQuery(show_query);
         case Kind::QUOTA: return getCreateQuotaQuery(show_query);
         case Kind::ROW_POLICY: return getCreateRowPolicyQuery(show_query);
     }
     __builtin_unreachable();
+}
+
+
+ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateUserQuery(const ASTShowCreateAccessEntityQuery & show_query) const
+{
+    UserPtr user;
+    if (show_query.current_user)
+        user = context.getUser();
+    else
+        user = context.getAccessControlManager().getUser(show_query.name);
+
+    auto create_query = std::make_shared<ASTCreateUserQuery>();
+    create_query->name = user->getName();
+
+    if (!user->allowed_client_hosts.containsAnyHost())
+        create_query->hosts = user->allowed_client_hosts;
+
+    if (!user->profile.empty())
+        create_query->profile = user->profile;
+
+    return create_query;
 }
 
 
