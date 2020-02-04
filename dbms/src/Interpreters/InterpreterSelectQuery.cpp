@@ -341,18 +341,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         if (!options.only_analyze)
         {
-            bool read_from_storage = storage && !input && !input_pipe;
-
-            if (query.sample_size() && (!read_from_storage || !storage->supportsSampling()))
+            if (query.sample_size() && (input || input_pipe || !storage || !storage->supportsSampling()))
                 throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
-            if (query.final() && (!read_from_storage || !storage->supportsFinal()))
-                throw Exception(read_from_storage ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL",
-                                ErrorCodes::ILLEGAL_FINAL);
+            if (query.final() && (input || input_pipe || !storage || !storage->supportsFinal()))
+                throw Exception((!input && !input_pipe && storage) ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
 
-            if (query.prewhere() && (!read_from_storage || !storage->supportsPrewhere()))
-                throw Exception(read_from_storage ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE",
-                                ErrorCodes::ILLEGAL_PREWHERE);
+            if (query.prewhere() && (input || input_pipe || !storage || !storage->supportsPrewhere()))
+                throw Exception((!input && !input_pipe && storage) ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
 
             /// Save the new temporary tables in the query context
             for (const auto & it : query_analyzer->getExternalTables())
@@ -762,8 +758,11 @@ InterpreterSelectQuery::analyzeExpressions(
             res.before_where = chain.getLastActions();
             if (!hasIgnore(*res.before_where))
             {
-                /// TODO: it could contain lambdas as ColumnFunction
-                Block before_where_sample(res.before_where->getRequiredColumnsWithTypes());
+                Block before_where_sample;
+                if (chain.steps.size() > 1)
+                    before_where_sample = chain.steps[chain.steps.size() - 2].actions->getSampleBlock();
+                else
+                    before_where_sample = source_header;
                 sanitizeBlock(before_where_sample);
                 res.before_where->execute(before_where_sample);
                 auto & column_elem = before_where_sample.getByName(query.where()->getColumnName());

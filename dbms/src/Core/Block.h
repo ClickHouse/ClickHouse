@@ -40,7 +40,6 @@ public:
     Block() = default;
     Block(std::initializer_list<ColumnWithTypeAndName> il);
     Block(const ColumnsWithTypeAndName & data_);
-    Block(const NamesAndTypesList & names_and_types);
 
     /// insert the column at the specified position
     void insert(size_t position, const ColumnWithTypeAndName & elem);

@@ -38,12 +38,6 @@ Block::Block(const ColumnsWithTypeAndName & data_) : data{data_}
     initializeIndexByName();
 }
 
-Block::Block(const NamesAndTypesList & names_and_types)
-{
-    for (const auto & name_and_type : names_and_types)
-        data.emplace_back(ColumnWithTypeAndName{nullptr, name_and_type.type, name_and_type.name});
-    initializeIndexByName();
-}
 
 void Block::initializeIndexByName()
 {
