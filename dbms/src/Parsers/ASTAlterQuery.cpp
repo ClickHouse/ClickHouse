@@ -280,10 +280,6 @@ void ASTAlterCommand::formatImpl(
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REFRESH " << (settings.hilite ? hilite_none : "");
     }
-    else if (type == ASTAlterCommand::WINDOW_VIEW_REFRESH)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REFRESH " << (settings.hilite ? hilite_none : "");
-    }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
@@ -338,8 +334,6 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
 
     if (is_live_view)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER LIVE VIEW " << (settings.hilite ? hilite_none : "");
-    else if (is_window_view)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER WINDOW VIEW " << (settings.hilite ? hilite_none : "");
     else
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER TABLE " << (settings.hilite ? hilite_none : "");
 
