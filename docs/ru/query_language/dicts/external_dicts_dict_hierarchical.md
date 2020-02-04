@@ -30,6 +30,6 @@ ClickHouse поддерживает иерархические словари с
 
 Таблица содержит атрибут, равный ключу ближайшего предка для текущего элемента.
 
-Иерархический словарь можно задать, установив свойств [hierarchical](external_dicts_dict_structure.md#hierarchical-dict-attr) для атрибута, который должен содержать ключ предка.
+Иерархический словарь можно задать, установив свойство [hierarchical](external_dicts_dict_structure.md#hierarchical-dict-attr) для атрибута, который должен содержать ключ предка.
 
 С помощью функции [dictGetHierarchy](../functions/ext_dict_functions.md#dictgethierarchy) можно получить цепочку предков элемента.
