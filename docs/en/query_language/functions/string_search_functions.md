@@ -2,7 +2,7 @@
 
 The search is case-sensitive by default in all these functions. There are separate variants for case insensitive search.
 
-## position(haystack, needle), locate(haystack, needle)
+## position(haystack, needle), locate(haystack, needle) {#position}
 
 Search for the substring `needle` in the string `haystack`.
 Returns the position (in bytes) of the found substring, starting from 1, or returns 0 if the substring was not found.
@@ -15,13 +15,52 @@ The same as `position`, but the position is returned in Unicode code points. Wor
 
 For a case-insensitive search, use the function `positionCaseInsensitiveUTF8`.
 
-## multiSearchAllPositions(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
+## multiSearchAllPositions {#multiSearchAllPositions}
 
-The same as `position`, but returns `Array` of the `position`s for all needle<sub>i</sub>.
+The same as [position](string_search_functions.md#position) but returns `Array` of positions (in bytes) of the found corresponding substrings in the string. Positions are indexed starting from 1.
 
-For a case-insensitive search or/and in UTF-8 format use functions `multiSearchAllPositionsCaseInsensitive, multiSearchAllPositionsUTF8, multiSearchAllPositionsCaseInsensitiveUTF8`.
+The search is performed on sequences of bytes without respect to string encoding and collation.
 
-## multiSearchFirstPosition(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
+- For case-insensitive ASCII search, use the function `multiSearchAllPositionsCaseInsensitive`.
+- For search in UTF-8, use the function [multiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
+- For case-insensitive UTF-8 search, use the function multiSearchAllPositionsCaseInsensitiveUTF8.
+
+**Syntax** 
+
+```sql
+multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
+```
+
+**Parameters**
+
+- `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
+- `needle` —  substring to be searched. [String](../syntax.md#syntax-string-literal).
+
+**Returned values**
+
+- Array of starting positions in bytes (counting from 1), if the corresponding substring was found and 0 if not found.
+
+**Example**
+
+Query:
+
+```sql
+SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])
+```
+
+Result:
+
+```text
+┌─multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])─┐
+│ [0,13,0]                                                          │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+## multiSearchAllPositionsUTF8 {#multiSearchAllPositionsUTF8}
+
+See `multiSearchAllPositions`.
+
+## multiSearchFirstPosition(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>]) {#multiSearchFirstPosition}
 
 The same as `position` but returns the leftmost offset of the string `haystack` that is matched to some of the needles.
 

@@ -185,41 +185,21 @@ void MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
 }
 
 
-IAccessStorage::SubscriptionPtr MultipleAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
+ext::scope_guard MultipleAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
     auto storage = findStorage(id);
     if (!storage)
-        return nullptr;
+        return {};
     return storage->subscribeForChanges(id, handler);
 }
 
 
-IAccessStorage::SubscriptionPtr MultipleAccessStorage::subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const
+ext::scope_guard MultipleAccessStorage::subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const
 {
-    std::vector<SubscriptionPtr> subscriptions;
+    ext::scope_guard subscriptions;
     for (const auto & nested_storage : nested_storages)
-    {
-        auto subscription = nested_storage->subscribeForChanges(type, handler);
-        if (subscription)
-            subscriptions.emplace_back(std::move(subscription));
-    }
-
-    if (subscriptions.empty())
-        return nullptr;
-
-    if (subscriptions.size() == 1)
-        return std::move(subscriptions[0]);
-
-    class SubscriptionImpl : public Subscription
-    {
-    public:
-        SubscriptionImpl(std::vector<SubscriptionPtr> subscriptions_)
-            : subscriptions(std::move(subscriptions_)) {}
-    private:
-        std::vector<SubscriptionPtr> subscriptions;
-    };
-
-    return std::make_unique<SubscriptionImpl>(std::move(subscriptions));
+        subscriptions.join(nested_storage->subscribeForChanges(type, handler));
+    return subscriptions;
 }
 
 

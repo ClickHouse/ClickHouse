@@ -122,6 +122,7 @@ nav:
     - 'Функции для работы с географическими координатами': 'query_language/functions/geo.md'
     - 'Функции c Nullable аргументами': 'query_language/functions/functions_for_nulls.md'
     - 'Функции машинного обучения': 'query_language/functions/machine_learning_functions.md'
+    - 'Функции для интроспекции': 'query_language/functions/introspection.md'
     - 'Прочие функции': 'query_language/functions/other_functions.md'
   - 'Агрегатные функции':
     - 'Введение': 'query_language/agg_functions/index.md'
@@ -197,6 +198,8 @@ nav:
   - 'Конфигурационные файлы': 'operations/configuration_files.md'
   - 'Квоты': 'operations/quotas.md'
   - 'Системные таблицы': 'operations/system_tables.md'
+  - 'Оптимизация производительности':
+    - 'Профилирование запросов': 'operations/performance/sampling_query_profiler.md'
   - 'Тестирование оборудования': 'operations/performance_test.md'
   - 'Конфигурационные параметры сервера':
     - 'Введение': 'operations/server_settings/index.md'

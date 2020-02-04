@@ -2,7 +2,7 @@
 
 Подготовленная структура данных для использования в операциях [JOIN](../../query_language/select.md#select-join).
 
-## Создание таблицы
+## Создание таблицы {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -77,19 +77,21 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 Из таблиц нельзя выбрать данные с помощью запроса `SELECT`. Вместо этого, используйте один из следующих методов:
 
 - Используйте таблицу как правую в секции `JOIN`.
-- Используйте функцию [joinGet](../../query_language/functions/other_functions.md#other_functions-joinget), которая позволяет извлекать данные из таблицы таким же образом как из словаря.
+- Используйте функцию [joinGet](../../query_language/functions/other_functions.md#joinget), которая позволяет извлекать данные из таблицы таким же образом как из словаря.
 
 ### Ограничения и настройки {#join-limitations-and-settings}
 
 При создании таблицы, применяются следующие параметры :
 
-- [join_use_nulls](../settings/settings.md#settings-join_use_nulls)
+- [join_use_nulls](../settings/settings.md#join_use_nulls)
 - [max_rows_in_join](../settings/query_complexity.md#settings-max_rows_in_join)
 - [max_bytes_in_join](../settings/query_complexity.md#settings-max_bytes_in_join)
 - [join_overflow_mode](../settings/query_complexity.md#settings-join_overflow_mode)
 - [join_any_take_last_row](../settings/settings.md#settings-join_any_take_last_row)
 
 Таблицы с движком `Join` нельзя использовать в операциях `GLOBAL JOIN`.
+
+Движок `Join` позволяет использовать параметр [join_use_nulls](../settings/settings.md#join_use_nulls) в запросе `CREATE TABLE`, который также можно использовать в запросе [SELECT](../../query_language/select.md). Если у вас разные настройки `join_use_nulls`, вы можете получить сообщение об ошибке при объединении таблиц. Это зависит от типа соединения. Когда вы используете функцию [joinGet](../../query_language/functions/other_functions.md#joinget), вам необходимо использовать один и тот же параметр `join_use_nulls` в запросах `CRATE TABLE` и `SELECT`.
 
 ## Хранение данных
 

@@ -17,12 +17,16 @@ echo Reference tag is $ref_tag
 ref_sha=$(cd ch && git rev-parse $ref_tag~0)
 
 # Show what we're testing
-echo Reference SHA is $ref_sha
-(cd ch && git log -1 --decorate $ref_sha) ||:
-echo
-echo SHA to test is $SHA_TO_TEST
-(cd ch && git log -1 --decorate $SHA_TO_TEST) ||:
-echo
+(
+    echo Reference SHA is $ref_sha
+    (cd ch && git log -1 --decorate $ref_sha) ||:
+    echo
+) | tee left-commit.txt
+(
+    echo SHA to test is $SHA_TO_TEST
+    (cd ch && git log -1 --decorate $SHA_TO_TEST) ||:
+    echo
+) | tee right-commit.txt
 
 # Set python output encoding so that we can print queries with Russian letters.
 export PYTHONIOENCODING=utf-8
@@ -36,5 +40,5 @@ set -m
 time ../compare.sh 0 $ref_sha $PR_TO_TEST $SHA_TO_TEST 2>&1 | ts | tee compare.log
 set +m
 
-7z a /output/output.7z *.log *.tsv *.html
+7z a /output/output.7z *.log *.tsv *.html *.txt
 cp compare.log /output
