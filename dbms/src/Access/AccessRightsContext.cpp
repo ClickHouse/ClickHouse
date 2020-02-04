@@ -1,4 +1,5 @@
 #include <Access/AccessRightsContext.h>
+#include <Access/User.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
@@ -88,16 +89,15 @@ AccessRightsContext::AccessRightsContext()
 }
 
 
-AccessRightsContext::AccessRightsContext(const ClientInfo & client_info_, const AccessRights & granted_to_user_, const Settings & settings, const String & current_database_)
-    : user_name(client_info_.current_user)
-    , granted_to_user(granted_to_user_)
+AccessRightsContext::AccessRightsContext(const UserPtr & user_, const ClientInfo & client_info_, const Settings & settings, const String & current_database_)
+    : user(user_)
     , readonly(settings.readonly)
     , allow_ddl(settings.allow_ddl)
     , allow_introspection(settings.allow_introspection_functions)
     , current_database(current_database_)
     , interface(client_info_.interface)
     , http_method(client_info_.http_method)
-    , trace_log(&Poco::Logger::get("AccessRightsContext (" + user_name + ")"))
+    , trace_log(&Poco::Logger::get("AccessRightsContext (" + user_->getName() + ")"))
 {
 }
 
@@ -126,9 +126,9 @@ bool AccessRightsContext::checkImpl(Poco::Logger * log_, const AccessFlags & acc
     auto show_error = [&](const String & msg, [[maybe_unused]] int error_code)
     {
         if constexpr (mode == THROW_IF_ACCESS_DENIED)
-            throw Exception(msg, error_code);
+            throw Exception(user->getName() + ": " + msg, error_code);
         else if constexpr (mode == LOG_WARNING_IF_ACCESS_DENIED)
-            LOG_WARNING(log_, msg + formatSkippedMessage(args...));
+            LOG_WARNING(log_, user->getName() + ": " + msg + formatSkippedMessage(args...));
     };
 
     if (readonly && calculateResultAccess(false, allow_ddl, allow_introspection)->isGranted(access, args...))
@@ -152,13 +152,14 @@ bool AccessRightsContext::checkImpl(Poco::Logger * log_, const AccessFlags & acc
     else
     {
         show_error(
-            user_name + ": Not enough privileges. To perform this operation you should have grant "
+            "Not enough privileges. To execute this query it's necessary to have the grant "
                 + AccessRightsElement{access, args...}.toString(),
             ErrorCodes::ACCESS_DENIED);
     }
 
     return false;
 }
+
 
 template <int mode>
 bool AccessRightsContext::checkImpl(Poco::Logger * log_, const AccessRightsElement & element) const
@@ -231,9 +232,6 @@ bool AccessRightsContext::isGranted(Poco::Logger * log_, const AccessRightsEleme
 
 boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess() const
 {
-    auto res = result_access_cache[0].load();
-    if (res)
-        return res;
     return calculateResultAccess(readonly, allow_ddl, allow_introspection);
 }
 
@@ -256,7 +254,7 @@ boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess
     auto result_ptr = boost::make_shared<AccessRights>();
     auto & result = *result_ptr;
 
-    result = granted_to_user;
+    result = user->access;
 
     static const AccessFlags table_ddl = AccessType::CREATE_DATABASE | AccessType::CREATE_TABLE | AccessType::CREATE_VIEW
         | AccessType::ALTER_TABLE | AccessType::ALTER_VIEW | AccessType::DROP_DATABASE | AccessType::DROP_TABLE | AccessType::DROP_VIEW
@@ -282,7 +280,11 @@ boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess
         result.fullRevoke(AccessType::INTROSPECTION);
 
     result_access_cache[cache_index].store(result_ptr);
-    return std::move(result_ptr);
+
+    if (trace_log && (readonly == readonly_) && (allow_ddl == allow_ddl_) && (allow_introspection == allow_introspection_))
+        LOG_TRACE(trace_log, "List of all grants: " << result_ptr->toString());
+
+    return result_ptr;
 }
 
 }
