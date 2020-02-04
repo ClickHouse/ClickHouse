@@ -224,12 +224,14 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
             {
                 pcg32 generator(random_seed);
                 offsets.resize(limit);
-                for (UInt64 i = 0; i < limit; ++i) {
+                for (UInt64 i = 0; i < limit; ++i)
+                {
                     offset += 1 + static_cast<UInt64>(generator()) % max_string_length;
                     offsets[i] = offset - 1;
                 }
                 chars.resize(offset);
-                for (UInt64 i = 0; i < offset; ++i) {
+                for (UInt64 i = 0; i < offset; ++i)
+                {
                     chars[i] = 32 + generator() % 95;
                 }
                 // add terminating zero char
@@ -250,7 +252,8 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
             {
                 pcg32 generator(random_seed);
                 chars.resize(num_chars);
-                for (UInt64 i = 0; i < num_chars; ++i) {
+                for (UInt64 i = 0; i < num_chars; ++i)
+                {
                     chars[i] = static_cast<UInt8>(generator());
                 }
             }
@@ -327,7 +330,8 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
             auto & data = typeid_cast<ColumnVector<UInt128> &>(column).getData();
             data.resize(limit);
             pcg64 generator(random_seed);
-            for (UInt64 i = 0; i < limit; ++i) {
+            for (UInt64 i = 0; i < limit; ++i)
+            {
                 auto x = UInt128(generator(), generator());
                 data[i] = x;
             }
@@ -345,7 +349,8 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
             {
                 pcg32 generator(random_seed);
                 offsets.resize(limit);
-                for (UInt64 i = 0; i < limit; ++i) {
+                for (UInt64 i = 0; i < limit; ++i)
+                {
                     offset += static_cast<UInt64>(generator()) % max_array_length;
                     offsets[i] = offset;
                 }
@@ -380,7 +385,8 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
 
                 pcg32 generator(random_seed);
                 null_map.resize(limit);
-                for (UInt64 i = 0; i < limit; ++i) {
+                for (UInt64 i = 0; i < limit; ++i)
+                {
                     null_map[i] = generator() < 1024;
                 }
                 break;
