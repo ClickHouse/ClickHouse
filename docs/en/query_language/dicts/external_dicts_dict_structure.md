@@ -166,4 +166,4 @@ Tag | Description | Required
 
 - [Functions for working with external dictionaries](../functions/ext_dict_functions.md).
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_structure/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

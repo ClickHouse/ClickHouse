@@ -43,4 +43,4 @@ LIFETIME(...) -- Lifetime of dictionary in memory
 - [structure](external_dicts_dict_structure.md) — Structure of the dictionary . A key and attributes that can be retrieved by this key.
 - [lifetime](external_dicts_dict_lifetime.md) — Frequency of dictionary updates.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict/) <!--hide-->

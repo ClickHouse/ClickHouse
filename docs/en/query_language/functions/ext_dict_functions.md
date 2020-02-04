@@ -20,7 +20,7 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 **Returned value**
 
-- If ClickHouse parses the attribute successfully in the [attribute's data type](../dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
+- If ClickHouse parses the attribute successfully in the [attribute's data type](../../query_language/dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
 - If there is no the key, corresponding to `id_expr`, in the dictionary, then:
 
     - `dictGet` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
@@ -186,7 +186,7 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 **Returned value**
 
-- If ClickHouse parses the attribute successfully in the [attribute's data type](../dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
+- If ClickHouse parses the attribute successfully in the [attribute's data type](../../query_language/dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
 - If there is no requested `id_expr` in the dictionary then:
 
     - `dictGet[Type]` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
@@ -194,4 +194,4 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value doesn't match the attribute data type.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/ext_dict_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/ext_dict_functions/) <!--hide-->

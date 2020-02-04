@@ -8,7 +8,7 @@
 #include <Poco/Message.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
-#include <common/getThreadNumber.h>
+#include <common/getThreadId.h>
 #include <Common/SensitiveDataMasker.h>
 
 namespace DB
@@ -61,7 +61,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         columns[i++]->insert(msg_ext.time_microseconds);
         columns[i++]->insert(DNSResolver::instance().getHostName());
         columns[i++]->insert(msg_ext.query_id);
-        columns[i++]->insert(msg_ext.thread_number);
+        columns[i++]->insert(msg_ext.thread_id);
         columns[i++]->insert(Int64(msg.getPriority()));
         columns[i++]->insert(msg.getSource());
         columns[i++]->insert(msg.getText());
@@ -79,12 +79,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         elem.microseconds = msg_ext.time_microseconds;
 
         elem.thread_name = getThreadName();
-        elem.thread_number = msg_ext.thread_number;
-
-        if (CurrentThread::isInitialized())
-            elem.os_thread_id = CurrentThread::get().os_thread_id;
-        else
-            elem.os_thread_id = 0;
+        elem.thread_id = msg_ext.thread_id;
 
         elem.query_id = msg_ext.query_id;
 

@@ -3,6 +3,7 @@ import copy
 import io
 import logging
 import os
+import sys
 import tarfile
 
 import requests
@@ -18,17 +19,22 @@ def choose_latest_releases():
         candidates += requests.get(url).json()
 
     for tag in candidates:
-        name = tag.get('name', '')
-        is_unstable = ('stable' not in name) and ('lts' not in name)
-        is_in_blacklist = ('v18' in name) or ('prestable' in name) or ('v1.1' in name)
-        if is_unstable or is_in_blacklist:
-            continue
-        major_version = '.'.join((name.split('.', 2))[:2])
-        if major_version not in seen:
-            seen[major_version] = (name, tag.get('tarball_url'),)
-            if len(seen) > 10:
-                break
-            
+        if isinstance(tag, dict):
+            name = tag.get('name', '')
+            is_unstable = ('stable' not in name) and ('lts' not in name)
+            is_in_blacklist = ('v18' in name) or ('prestable' in name) or ('v1.1' in name)
+            if is_unstable or is_in_blacklist:
+                continue
+            major_version = '.'.join((name.split('.', 2))[:2])
+            if major_version not in seen:
+                seen[major_version] = (name, tag.get('tarball_url'),)
+                if len(seen) > 10:
+                    break
+        else:
+            logging.fatal('Unexpected GitHub response: %s', str(candidates))
+            sys.exit(1)
+
+    logging.info('Found stable releases: %s', str(seen.keys()))
     return seen.items()
     
 
@@ -47,6 +53,7 @@ def process_release(args, callback, release):
 
 
 def build_releases(args, callback):
+    tasks = []
     for release in args.stable_releases:
         process_release(args, callback, release)
 

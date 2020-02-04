@@ -750,4 +750,4 @@ struct Message {
 
 </div>
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/formats/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/interfaces/formats/) <!--hide-->

@@ -135,4 +135,4 @@ ClickHouse поддерживает следующие виды ключей:
 
  - [Функции для работы с внешними словарями](../functions/ext_dict_functions.md).
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/dicts/external_dicts_dict_structure/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

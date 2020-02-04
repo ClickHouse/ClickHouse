@@ -151,13 +151,82 @@ SELECT format('{} {}', 'Hello', 'World')
 └───────────────────────────────────┘
 ```
 
-## concat(s1, s2, ...)
+## concat {#concat}
 
 Concatenates the strings listed in the arguments, without a separator.
 
-## concatAssumeInjective(s1, s2, ...)
+**Syntax** 
 
-Same as [concat](./string_functions.md#concat-s1-s2), the difference is that you need to ensure that concat(s1, s2, s3) -> s4 is injective, it will be used for optimization of GROUP BY
+```sql
+concat(s1, s2, ...)
+```
+
+**Parameters**
+
+Values of type String or FixedString.
+
+**Returned values**
+
+Returns the String that results from concatenating the arguments. 
+
+If any of argument values is `NULL`, `concat` returns `NULL`. 
+
+**Example**
+
+Query:
+
+```sql
+SELECT concat('Hello, ', 'World!')
+```
+
+Result:
+
+```text
+┌─concat('Hello, ', 'World!')─┐
+│ Hello, World!               │
+└─────────────────────────────┘
+```
+
+## concatAssumeInjective {#concatassumeinjective}
+
+Same as [concat](#concat), the difference is that you need to ensure that `concat(s1, s2, ...) → sn` is injective, it will be used for optimization of GROUP BY.
+
+The function is named "injective" if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
+
+**Example**
+
+Input table:
+
+```sql
+CREATE TABLE key_val(`key1` String, `key2` String, `value` UInt32) ENGINE = TinyLog;
+INSERT INTO key_val VALUES ('Hello, ','World',1), ('Hello, ','World',2), ('Hello, ','World!',3), ('Hello',', World!',2);
+SELECT * from key_val;
+```
+
+```text
+┌─key1────┬─key2─────┬─value─┐
+│ Hello,  │ World    │     1 │
+│ Hello,  │ World    │     2 │
+│ Hello,  │ World!   │     3 │
+│ Hello   │ , World! │     2 │
+└─────────┴──────────┴───────┘
+```
+
+Query:
+
+```sql
+SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2)
+```
+
+Result:
+
+```text
+┌─concat(key1, key2)─┬─sum(value)─┐
+│ Hello, World!      │          3 │
+│ Hello, World!      │          2 │
+│ Hello, World       │          3 │
+└────────────────────┴────────────┘
+```
 
 ## substring(s, offset, length), mid(s, offset, length), substr(s, offset, length)
 
@@ -387,4 +456,4 @@ Returns the CRC64 checksum of a string, using CRC-64-ECMA polynomial.
 
 The result type is UInt64.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/string_functions/) <!--hide-->
