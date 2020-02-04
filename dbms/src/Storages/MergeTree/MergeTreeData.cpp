@@ -3927,7 +3927,7 @@ void MergeTreeData::checkCanUsePolymorphicParts(bool no_throw)
 
         if (no_throw)
         {
-            message << " Settings 'min_bytes_for_wide_part' and 'min_bytes_for_wide_part' will be ignored further.";
+            message << " Settings 'min_rows_for_wide_part' and 'min_bytes_for_wide_part' will be ignored further.";
             LOG_WARNING(log, message.str());
         }
         else

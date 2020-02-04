@@ -14,18 +14,18 @@ class MergedBlockOutputStream final : public IMergedBlockOutputStream
 {
 public:
     MergedBlockOutputStream(
-        const MergeTreeDataPartPtr & data_part_,
+        const MergeTreeDataPartPtr & data_part,
         const NamesAndTypesList & columns_list_,
-        CompressionCodecPtr default_codec_,
-        bool blocks_are_granules_size_ = false);
+        CompressionCodecPtr default_codec,
+        bool blocks_are_granules_size = false);
 
     MergedBlockOutputStream(
-        const MergeTreeDataPartPtr & data_part_,
+        const MergeTreeDataPartPtr & data_part,
         const NamesAndTypesList & columns_list_,
-        CompressionCodecPtr default_codec_,
-        const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
-        size_t aio_threshold_,
-        bool blocks_are_granules_size_ = false);
+        CompressionCodecPtr default_codec,
+        const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size,
+        size_t aio_threshold,
+        bool blocks_are_granules_size = false);
 
     std::string getPartPath() const;
 
@@ -48,8 +48,6 @@ public:
             MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 
 private:
-    void init();
-
     /** If `permutation` is given, it rearranges the values in the columns when writing.
       * This is necessary to not keep the whole block in the RAM to sort it.
       */
