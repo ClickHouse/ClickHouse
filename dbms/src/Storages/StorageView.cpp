@@ -15,6 +15,7 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 
 #include <Common/typeid_cast.h>
+#include "StorageView.h"
 
 
 namespace DB
@@ -56,31 +57,7 @@ BlockInputStreams StorageView::read(
     ASTPtr current_inner_query = inner_query;
 
     if (context.getSettings().enable_optimize_predicate_expression)
-    {
-        auto new_inner_query = inner_query->clone();
-        auto new_outer_query = query_info.query->clone();
-        auto * new_outer_select = new_outer_query->as<ASTSelectQuery>();
-
-        /// TODO: remove getTableExpressions and getTablesWithColumns
-        {
-            const auto & table_expressions = getTableExpressions(*new_outer_select);
-            const auto & tables_with_columns = getDatabaseAndTablesWithColumnNames(table_expressions, context);
-
-            replaceTableNameWithSubquery(new_outer_select, new_inner_query);
-
-            auto & settings = context.getSettingsRef();
-            if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
-            {
-                for (auto & pr : tables_with_columns)
-                    if (pr.table.table.empty() && pr.table.alias.empty())
-                        throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
-                            ErrorCodes::ALIAS_REQUIRED);
-            }
-
-            if (PredicateExpressionsOptimizer(context, tables_with_columns, context.getSettings()).optimize(*new_outer_select))
-                current_inner_query = new_inner_query;
-        }
-    }
+        current_inner_query = getRuntimeViewQuery(*query_info.query->as<const ASTSelectQuery>(), context);
 
     QueryPipeline pipeline;
     /// FIXME res may implicitly use some objects owned be pipeline, but them will be destructed after return
@@ -92,6 +69,41 @@ BlockInputStreams StorageView::read(
         stream = std::make_shared<MaterializingBlockInputStream>(stream);
 
     return res;
+}
+
+ASTPtr StorageView::getRuntimeViewQuery(const ASTSelectQuery & outer_query, const Context & context)
+{
+    auto temp_outer_query = outer_query.clone();
+    auto * new_outer_select = temp_outer_query->as<ASTSelectQuery>();
+    return getRuntimeViewQuery(new_outer_select, context, false);
+}
+
+
+
+ASTPtr StorageView::getRuntimeViewQuery(ASTSelectQuery * outer_query, const Context & context, bool normalize)
+{
+    auto runtime_view_query = inner_query->clone();
+
+    /// TODO: remove getTableExpressions and getTablesWithColumns
+    {
+        const auto & table_expressions = getTableExpressions(*outer_query);
+        const auto & tables_with_columns = getDatabaseAndTablesWithColumnNames(table_expressions, context);
+
+        replaceTableNameWithSubquery(outer_query, runtime_view_query);
+        if (context.getSettingsRef().joined_subquery_requires_alias && tables_with_columns.size() > 1)
+        {
+            for (auto & pr : tables_with_columns)
+                if (pr.table.table.empty() && pr.table.alias.empty())
+                    throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
+                                    ErrorCodes::ALIAS_REQUIRED);
+        }
+
+        if (PredicateExpressionsOptimizer(context, tables_with_columns, context.getSettings()).optimize(*outer_query) && normalize)
+            InterpreterSelectWithUnionQuery(
+                runtime_view_query, context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify(), {});
+    }
+
+    return runtime_view_query;
 }
 
 void StorageView::replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery)
@@ -109,7 +121,8 @@ void StorageView::replaceTableNameWithSubquery(ASTSelectQuery * select_query, AS
     const auto alias = table_expression->database_and_table_name->tryGetAlias();
     table_expression->database_and_table_name = {};
     table_expression->subquery = std::make_shared<ASTSubquery>();
-    table_expression->children.push_back(subquery);
+    table_expression->subquery->children.push_back(subquery);
+    table_expression->children.push_back(table_expression->subquery);
     if (!alias.empty())
         table_expression->subquery->setAlias(alias);
 }
