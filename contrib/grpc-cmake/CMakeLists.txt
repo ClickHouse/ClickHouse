@@ -15,8 +15,8 @@ endif()
 
 set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${_gRPC_C_CXX_FLAGS}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_gRPC_C_CXX_FLAGS}")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${_gRPC_C_CXX_FLAGS} -w")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_gRPC_C_CXX_FLAGS} -w")
 
 set(_gRPC_PROTOBUF_LIBRARY_NAME "libprotobuf")
 
@@ -96,9 +96,9 @@ set(_gRPC_UPB_GRPC_GENERATED_DIR "${GRPC_SOURCE_DIR}/src/core/ext/upb-generated"
 set(_gRPC_UPB_LIBRARIES upb)
 
 # zlib.cmake
-set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib)
+set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib-ng)
 include_directories("${ZLIB_ROOT_DIR}")
-add_subdirectory(${ZLIB_ROOT_DIR} ${ZLIB_ROOT_DIR})
+# add_subdirectory(${ZLIB_ROOT_DIR} ${ZLIB_ROOT_DIR})
 set(_gRPC_ZLIB_LIBRARIES zlibstatic)
 set(_gRPC_ZLIB_INCLUDE_DIR "${ZLIB_ROOT_DIR}")
 
@@ -1333,7 +1333,7 @@ add_library(grpc++
   ${GRPC_SOURCE_DIR}/src/cpp/codegen/codegen_init.cc
 )
 
-target_compile_options(grpc++ PUBLIC -Wno-error=shadow)
+target_compile_options(grpc++ PUBLIC -w)
 
 target_include_directories(grpc++
   PUBLIC ${GRPC_INCLUDE_DIR}
@@ -1406,7 +1406,7 @@ add_library(grpc++_unsecure
   ${GRPC_SOURCE_DIR}/src/cpp/codegen/codegen_init.cc
 )
 
-target_compile_options(grpc++_unsecure PUBLIC -Wno-error=shadow)
+target_compile_options(grpc++_unsecure PUBLIC -w)
 
 target_include_directories(grpc++_unsecure
   PUBLIC ${GRPC_INCLUDE_DIR}
