@@ -14,6 +14,8 @@ namespace DB
 
 struct Null {};
 
+/// @warning Append only enum! Ids in this enum could be serialized in data.
+/// You MUST NOT change the order, insert or remove ids in the middle.
 enum class TypeIndex
 {
     Nothing = 0,
@@ -31,7 +33,6 @@ enum class TypeIndex
     Float64,
     Date,
     DateTime,
-    DateTime64,
     String,
     FixedString,
     Enum8,
@@ -48,6 +49,7 @@ enum class TypeIndex
     Function,
     AggregateFunction,
     LowCardinality,
+    DateTime64,
 };
 
 using UInt8 = uint8_t;
