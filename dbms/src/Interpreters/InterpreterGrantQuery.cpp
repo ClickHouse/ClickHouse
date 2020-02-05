@@ -32,6 +32,12 @@ BlockIO InterpreterGrantQuery::execute()
             if (query.grant_option)
                 updated_user->access_with_grant_option.grant(query.access_rights_elements, current_database);
         }
+        else if (context.getSettingsRef().partial_revokes)
+        {
+            updated_user->access_with_grant_option.partialRevoke(query.access_rights_elements, current_database);
+            if (!query.grant_option)
+                updated_user->access.partialRevoke(query.access_rights_elements, current_database);
+        }
         else
         {
             updated_user->access_with_grant_option.revoke(query.access_rights_elements, current_database);
