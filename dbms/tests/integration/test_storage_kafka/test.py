@@ -824,7 +824,7 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
 
     result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
 
-    print(result)
+    # print(result)
 
     expected = '''\
 1	1	k1	1577836801	k1	insert3	0	0	1577836801
