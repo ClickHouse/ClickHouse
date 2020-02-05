@@ -78,9 +78,6 @@ private:
 
     time_t last_queue_update = 0;
 
-    /// This vector is used for sequential execution of alters
-    std::deque<String> alter_znodes_in_queue;
-
     /// parts that will appear as a result of actions performed right now by background threads (these actions are not in the queue).
     /// Used to block other actions on parts in the range covered by future_parts.
     using FuturePartsSet = std::map<String, LogEntryPtr>;
