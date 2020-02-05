@@ -61,12 +61,12 @@ BlockInputStreams StorageView::read(
         auto new_outer_query = query_info.query->clone();
         auto * new_outer_select = new_outer_query->as<ASTSelectQuery>();
 
-        replaceTableNameWithSubquery(new_outer_select, new_inner_query);
-
         /// TODO: remove getTableExpressions and getTablesWithColumns
         {
             const auto & table_expressions = getTableExpressions(*new_outer_select);
             const auto & tables_with_columns = getDatabaseAndTablesWithColumnNames(table_expressions, context);
+
+            replaceTableNameWithSubquery(new_outer_select, new_inner_query);
 
             auto & settings = context.getSettingsRef();
             if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
@@ -109,7 +109,7 @@ void StorageView::replaceTableNameWithSubquery(ASTSelectQuery * select_query, AS
     const auto alias = table_expression->database_and_table_name->tryGetAlias();
     table_expression->database_and_table_name = {};
     table_expression->subquery = std::make_shared<ASTSubquery>();
-    table_expression->subquery->children.push_back(subquery);
+    table_expression->children.push_back(subquery);
     if (!alias.empty())
         table_expression->subquery->setAlias(alias);
 }
