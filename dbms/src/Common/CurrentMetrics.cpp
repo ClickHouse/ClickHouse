@@ -15,7 +15,8 @@
     M(DiskSpaceReservedForMerge, "Disk space reserved for currently running background merges. It is slightly more than the total size of currently merging parts.") \
     M(DistributedSend, "Number of connections to remote servers sending data that was INSERTed into Distributed tables. Both synchronous and asynchronous mode.") \
     M(QueryPreempted, "Number of queries that are stopped and waiting due to 'priority' setting.") \
-    M(TCPConnection, "Number of connections to TCP server (clients with native interface)") \
+    M(TCPConnection, "Number of connections to TCP server (clients with native interface), also included server-server distributed query connections") \
+    M(MySQLConnection, "Number of connections of clients over MySQL wire protocol") \
     M(HTTPConnection, "Number of connections to HTTP server") \
     M(InterserverConnection, "Number of connections from other replicas to fetch parts") \
     M(OpenFileForRead, "Number of files open for reading") \
