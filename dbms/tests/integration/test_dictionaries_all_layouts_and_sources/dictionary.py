@@ -293,16 +293,13 @@ class DictionaryStructure(object):
 
 
 class Dictionary(object):
-    def __init__(self, name, structure, source, config_path,
-                 table_name, fields, min_lifetime=3, max_lifetime=5):
+    def __init__(self, name, structure, source, config_path, table_name, fields):
         self.name = name
         self.structure = copy.deepcopy(structure)
         self.source = copy.deepcopy(source)
         self.config_path = config_path
         self.table_name = table_name
         self.fields = fields
-        self.min_lifetime = min_lifetime
-        self.max_lifetime = max_lifetime
 
     def generate_config(self):
         with open(self.config_path, 'w') as result:
@@ -310,8 +307,8 @@ class Dictionary(object):
             <yandex>
                <dictionary>
                    <lifetime>
-                       <min>{min_lifetime}</min>
-                       <max>{max_lifetime}</max>
+                       <min>3</min>
+                       <max>5</max>
                    </lifetime>
                    <name>{name}</name>
                    {structure}
@@ -321,8 +318,6 @@ class Dictionary(object):
                </dictionary>
             </yandex>
             '''.format(
-                min_lifetime=self.min_lifetime,
-                max_lifetime=self.max_lifetime,
                 name=self.name,
                 structure=self.structure.get_structure_str(),
                 source=self.source.get_source_str(self.table_name),
