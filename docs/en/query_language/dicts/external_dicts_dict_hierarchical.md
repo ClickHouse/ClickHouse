@@ -59,3 +59,5 @@ For our example, the structure of dictionary can be the following:
     </structure>
 </dictionary>
 ```
+
+[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_hierarchical/) <!--hide-->
