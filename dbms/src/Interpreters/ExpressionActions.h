@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Interpreters/ArrayJoinAction.h>
 
 
 namespace DB
@@ -81,14 +82,9 @@ public:
     /// For ADD_COLUMN.
     ColumnPtr added_column;
 
-    /// For APPLY_FUNCTION and LEFT ARRAY JOIN.
+    /// For APPLY_FUNCTION.
     /// OverloadResolver is used before action was added to ExpressionActions (when we don't know types of arguments).
     FunctionOverloadResolverPtr function_builder;
-
-    /// For unaligned [LEFT] ARRAY JOIN
-    FunctionOverloadResolverPtr function_length;
-    FunctionOverloadResolverPtr function_greatest;
-    FunctionOverloadResolverPtr function_arrayResize;
 
     /// Can be used after action was added to ExpressionActions if we want to get function signature or properties like monotonicity.
     FunctionBasePtr function_base;
@@ -97,10 +93,8 @@ public:
     Names argument_names;
     bool is_function_compiled = false;
 
-    /// For ARRAY_JOIN
-    NameSet array_joined_columns;
-    bool array_join_is_left = false;
-    bool unaligned_array_join = false;
+    /// For ARRAY JOIN
+    std::shared_ptr<ArrayJoinAction> array_join;
 
     /// For JOIN
     std::shared_ptr<const AnalyzedJoin> table_join;
