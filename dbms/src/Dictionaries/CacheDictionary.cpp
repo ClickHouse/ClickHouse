@@ -67,7 +67,6 @@ CacheDictionary::CacheDictionary(
     bool allow_read_expired_keys_,
     size_t max_update_queue_size_,
     size_t update_queue_push_timeout_milliseconds_,
-    size_t each_update_finish_timeout_seconds_,
     size_t max_threads_for_updates_)
     : database(database_)
     , name(name_)
@@ -78,7 +77,6 @@ CacheDictionary::CacheDictionary(
     , allow_read_expired_keys(allow_read_expired_keys_)
     , max_update_queue_size(max_update_queue_size_)
     , update_queue_push_timeout_milliseconds(update_queue_push_timeout_milliseconds_)
-    , each_update_finish_timeout_seconds(each_update_finish_timeout_seconds_)
     , max_threads_for_updates(max_threads_for_updates_)
     , log(&Logger::get("ExternalDictionaries"))
     , size{roundUpToPowerOfTwoOrZero(std::max(size_, size_t(max_collision_length)))}
@@ -710,12 +708,6 @@ void registerDictionaryCache(DictionaryFactory & factory)
             throw Exception{name + ": dictionary of layout 'cache' have too little update_queue_push_timeout",
                             ErrorCodes::BAD_ARGUMENTS};
 
-        const size_t each_update_finish_timeout_seconds =
-                config.getUInt64(layout_prefix + ".each_update_finish_timeout_seconds", 600);
-        if (each_update_finish_timeout_seconds == 0)
-            throw Exception{name + ": dictionary of layout 'cache' cannot have timeout equals to zero.",
-                            ErrorCodes::BAD_ARGUMENTS};
-
         const size_t max_threads_for_updates =
                 config.getUInt64(layout_prefix + ".max_threads_for_updates", 4);
         if (max_threads_for_updates == 0)
@@ -725,7 +717,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
         return std::make_unique<CacheDictionary>(
                 database, name, dict_struct, std::move(source_ptr), dict_lifetime, size,
                 allow_read_expired_keys, max_update_queue_size, update_queue_push_timeout_milliseconds,
-                each_update_finish_timeout_seconds, max_threads_for_updates);
+                max_threads_for_updates);
     };
     factory.registerLayout("cache", create_layout, false);
 }
@@ -791,13 +783,18 @@ void CacheDictionary::updateThreadFunction()
 void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr) const
 {
     std::unique_lock<std::mutex> lock(update_mutex);
-    const auto sleeping_result = is_update_finished.wait_for(
-            lock,
-            std::chrono::seconds(each_update_finish_timeout_seconds),
-            [&] {return update_unit_ptr->is_done || update_unit_ptr->current_exception; });
 
-    if (!sleeping_result)
-        throw DB::Exception("Keys updating timed out", ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL);
+    /*
+     * We wait here without any timeout to avoid SEGFAULT's.
+     * Consider timeout for wait had expired and main query's thread ended with exception
+     * or some other error. But the UpdateUnit with callbacks is left in the queue.
+     * It has these callback that capture god knows what from the current thread
+     * (most of the variables lies on the stack of finished thread) that
+     * intended to do a synchronous update. AsyncUpdate thread can touch deallocated memory and explode.
+     * */
+    is_update_finished.wait(
+            lock,
+            [&] {return update_unit_ptr->is_done || update_unit_ptr->current_exception; });
 
     if (update_unit_ptr->current_exception)
         std::rethrow_exception(update_unit_ptr->current_exception);
