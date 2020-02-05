@@ -124,7 +124,7 @@ dictGetHierarchy('dict_name', key)
 **Параметры**
 
 - `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
-- `key` — значение ключа. [UInt64](../../data_types/int_uint.md).
+- `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../data_types/int_uint.md).
 
 **Возвращаемое значение**
 

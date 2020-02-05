@@ -113,7 +113,7 @@ Type: `UInt8`.
 
 ## dictGetHierarchy {#dictgethierarchy}
 
-Creates an array, containing all the ancestors of a key in the [hierarchical dictionary](../dicts/external_dicts_dict_hierarchical.md).
+Creates an array, containing all the parents of a key in the [hierarchical dictionary](../dicts/external_dicts_dict_hierarchical.md).
 
 **Syntax**
 
@@ -124,11 +124,11 @@ dictGetHierarchy('dict_name', key)
 **Parameters**
 
 - `dict_name` — Name of the dictionary. [String literal](../syntax.md#syntax-string-literal).
-- `key` — Key value. [UInt64](../../data_types/int_uint.md).
+- `key` — Key value. [Expression](../syntax.md#syntax-expressions) returning a [UInt64](../../data_types/int_uint.md)-type value.
 
 **Returned value**
 
-- Ancestors for the passed key.
+- Parents for the key.
 
 Type: [Array(UInt64)](../../data_types/array.md).
 

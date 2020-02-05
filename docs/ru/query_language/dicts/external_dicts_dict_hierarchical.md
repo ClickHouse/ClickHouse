@@ -5,7 +5,7 @@ ClickHouse поддерживает иерархические словари с
 Рассмотрим следующую структуру:
 
 ```text
-0 (Common ancestor)
+0 (Common  parent)
 │
 ├── 1 (Russia)
 │   │
@@ -20,7 +20,7 @@ ClickHouse поддерживает иерархические словари с
 
 Эту иерархию можно выразить в виде следующей таблицы-словаря.
 
-Ключ | Ключ предка | Имя
+region_id | parent_region | region_name
 ----|--------------|------
 1 | 0 | Russia
 2 | 1 | Moscow
@@ -28,8 +28,35 @@ ClickHouse поддерживает иерархические словари с
 4 | 0 | Great Britain
 5 | 4 | London
 
-Таблица содержит атрибут, равный ключу ближайшего предка для текущего элемента.
+Таблица содержит столбец `parent_region`, содержащий ключ ближайшего предка для текущего элемента.
 
-Иерархический словарь можно задать, установив свойство [hierarchical](external_dicts_dict_structure.md#hierarchical-dict-attr) для атрибута, который должен содержать ключ предка.
+ClickHouse поддерживает свойство [hierarchical](external_dicts_dict_structure.md#hierarchical-dict-attr) для атрибутов [внешнего словаря](index.md). Это свойство позволяет конфигурировать словари, подобные описанному выше.
 
 С помощью функции [dictGetHierarchy](../functions/ext_dict_functions.md#dictgethierarchy) можно получить цепочку предков элемента.
+
+Структура словаря для нашего примера может выглядеть следующим образом:
+
+```xml
+<dictionary>
+    <structure>
+        <id>
+            <name>region_id</name>
+        </id>
+
+        <attribute>
+            <name>parent_region</name>
+            <type>UInt64</type>
+            <null_value>0</null_value>
+            <hierarchical>true</hierarchical>
+        </attribute>
+
+        <attribute>
+            <name>region_name</name>
+            <type>String</type>
+            <null_value></null_value>
+        </attribute>
+
+    </structure>
+</dictionary>
+```
+

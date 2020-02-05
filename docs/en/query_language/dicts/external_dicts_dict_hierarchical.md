@@ -5,7 +5,7 @@ ClickHouse supports hierarchical dictionaries with a [numeric key](external_dict
 Look at the following hierarchical structure:
 
 ```text
-0 (Common ancestor)
+0 (Common parent)
 │
 ├── 1 (Russia)
 │   │
@@ -20,7 +20,7 @@ Look at the following hierarchical structure:
 
 This hierarchy can be expressed as the following dictionary table.
 
-Key | Ancestor key | Name
+region_id | parent_region | region_name
 ----|--------------|------
 1 | 0 | Russia
 2 | 1 | Moscow
@@ -28,8 +28,34 @@ Key | Ancestor key | Name
 4 | 0 | Great Britain
 5 | 4 | London
 
-This table contains an attribute that equals the key of the nearest ancestor for the element.
+This table contains a column `parent_region` that contains the key of the nearest parent for the element.
 
-You can configure an hierarchical dictionary by setting the [hierarchical] (external_dict_dict_structure.md#hierarchical-dict-attr) property for the attribute that must contain the ancestor key.
+ClickHouse supports the [hierarchical](external_dicts_dict_structure.md#hierarchical-dict-attr) property for [external dictionary](index.md) attributes. This property allows you to configure the hierarchical dictionary similar to described above.
 
-The [dictGetHierarchy](../functions/ext_dict_functions.md#dictgethierarchy) function allows you to get the ancestor chain of an element.
+The [dictGetHierarchy](../functions/ext_dict_functions.md#dictgethierarchy) function allows you to get the parent chain of an element.
+
+For our example, the structure of dictionary can be the following:
+
+```xml
+<dictionary>
+    <structure>
+        <id>
+            <name>region_id</name>
+        </id>
+
+        <attribute>
+            <name>parent_region</name>
+            <type>UInt64</type>
+            <null_value>0</null_value>
+            <hierarchical>true</hierarchical>
+        </attribute>
+
+        <attribute>
+            <name>region_name</name>
+            <type>String</type>
+            <null_value></null_value>
+        </attribute>
+
+    </structure>
+</dictionary>
+```
