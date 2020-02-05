@@ -7,6 +7,8 @@
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
 
+#include <numeric>
+
 namespace DB
 {
 
@@ -445,23 +447,52 @@ void IPolygonDictionary::getItemsImpl(
 namespace
 {
 
-inline void makeDifferences(IColumn::Offsets & values)
-{
-    for (size_t i = 1; i < values.size(); ++i)
-        values[i] -= values[i - 1];
-}
-
 struct Offset
 {
     Offset() = default;
 
-    IColumn::Offsets ring_sizes;
-    IColumn::Offsets polygon_sizes;
-    IColumn::Offsets multi_polygon_sizes;
+    IColumn::Offsets ring_offsets;
+    IColumn::Offsets polygon_offsets;
+    IColumn::Offsets multi_polygon_offsets;
 
+    IColumn::Offset points_added = 0;
     IColumn::Offset current_ring = 0;
     IColumn::Offset current_polygon = 0;
     IColumn::Offset current_multi_polygon = 0;
+
+    Offset& operator++()
+    {
+        ++points_added;
+        if (points_added <= ring_offsets[current_ring])
+            return *this;
+
+        ++current_ring;
+        if (current_ring < polygon_offsets[current_polygon])
+            return *this;
+
+        ++current_polygon;
+        if (current_polygon < multi_polygon_offsets[current_multi_polygon])
+            return *this;
+
+        ++current_multi_polygon;
+        return *this;
+    }
+
+    bool atLastPolygonOfMultiPolygon() { return current_polygon + 1 == multi_polygon_offsets[current_multi_polygon]; }
+    bool atLastRingOfPolygon() { return current_ring + 1 == polygon_offsets[current_polygon]; }
+    bool atLastPointOfRing() { return points_added == ring_offsets[current_ring]; }
+
+    bool allRingsHaveAPositiveArea()
+    {
+        IColumn::Offset prev_offset = 0;
+        for (const auto offset : ring_offsets)
+        {
+            if (offset - prev_offset < 3)
+                return false;
+            prev_offset = offset;
+        }
+        return true;
+    }
 };
 
 struct Data
@@ -474,72 +505,32 @@ struct Data
         dest.emplace_back();
         ids.push_back((ids.empty() ? 0 : ids.back() + new_multi_polygon));
     }
+
+    void addPoint(Float64 x, Float64 y)
+    {
+        auto & last_polygon = dest.back();
+        auto & last_ring = (last_polygon.inners().empty() ? last_polygon.outer() : last_polygon.inners().back());
+        last_ring.emplace_back(x, y);
+    }
 };
 
-void addNewMultiPolygon(Data &, Offset & offset)
+void addNewPoint(Float64 x, Float64 y, Data & data, Offset & offset)
 {
-    ++offset.current_multi_polygon;
-    if (offset.current_multi_polygon == offset.multi_polygon_sizes.size())
-        throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
-}
-
-void addNewPolygon(Data & data, Offset & offset)
-{
-    ++offset.current_polygon;
-    if (offset.current_polygon == offset.polygon_sizes.size())
-        throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
-
-    if (--offset.multi_polygon_sizes[offset.current_multi_polygon] == 0)
+    if (offset.atLastPointOfRing())
     {
-        addNewMultiPolygon(data, offset);
-        data.addPolygon(true);
+        if (offset.atLastRingOfPolygon())
+            data.addPolygon(offset.atLastPolygonOfMultiPolygon());
+        else
+        {
+            /** An outer ring is added automatically with a new polygon, thus we need the else statement here.
+             *  This also implies that if we are at this point we have to add an inner ring.
+             */
+            auto & last_polygon = data.dest.back();
+            last_polygon.inners().emplace_back();
+        }
     }
-    else
-        data.addPolygon();
-}
-
-void addNewRing(Data & data, Offset & offset)
-{
-    ++offset.current_ring;
-    if (offset.current_ring == offset.ring_sizes.size())
-        throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
-
-    if (--offset.polygon_sizes[offset.current_polygon] == 0)
-        addNewPolygon(data, offset);
-    else
-    {
-        /** An outer ring is added automatically with a new polygon, thus we need the else statement here.
-         *  This also implies that if we are at this point we have to add an inner ring.
-         */
-        auto & last_polygon = data.dest.back();
-        last_polygon.inners().emplace_back();
-    }
-}
-
-void addNewPointFromMultiPolygon(const IPolygonDictionary::Point & pt, Data & data, Offset & offset)
-{
-    if (offset.ring_sizes[offset.current_ring] == 0)
-        addNewRing(data, offset);
-
-    auto & last_polygon = data.dest.back();
-    auto & last_ring = (last_polygon.inners().empty() ? last_polygon.outer() : last_polygon.inners().back());
-    last_ring.push_back(pt);
-
-    --offset.ring_sizes[offset.current_ring];
-}
-
-void addNewPointFromSimplePolygon(const IPolygonDictionary::Point & pt, Data & data, Offset & offset)
-{
-    if (offset.polygon_sizes[offset.current_polygon] == 0)
-    {
-        ++offset.current_polygon;
-        if (offset.current_polygon == offset.polygon_sizes.size())
-            throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
-
-    }
-    auto & last_polygon = data.dest.back();
-    last_polygon.outer().push_back(pt);
-    --offset.polygon_sizes[offset.current_polygon];
+    data.addPoint(x, y);
+    ++offset;
 }
 
 const IColumn * unrollMultiPolygons(const ColumnPtr & column, Offset & offset)
@@ -547,20 +538,17 @@ const IColumn * unrollMultiPolygons(const ColumnPtr & column, Offset & offset)
     const auto ptr_multi_polygons = typeid_cast<const ColumnArray*>(column.get());
     if (!ptr_multi_polygons)
         throw Exception{"Expected a column containing arrays of polygons", ErrorCodes::TYPE_MISMATCH};
-    offset.multi_polygon_sizes.assign(ptr_multi_polygons->getOffsets());
-    makeDifferences(offset.multi_polygon_sizes);
+    offset.multi_polygon_offsets.assign(ptr_multi_polygons->getOffsets());
 
     const auto ptr_polygons = typeid_cast<const ColumnArray*>(&ptr_multi_polygons->getData());
     if (!ptr_polygons)
         throw Exception{"Expected a column containing arrays of rings when reading polygons", ErrorCodes::TYPE_MISMATCH};
-    offset.polygon_sizes.assign(ptr_polygons->getOffsets());
-    makeDifferences(offset.polygon_sizes);
+    offset.polygon_offsets.assign(ptr_polygons->getOffsets());
 
     const auto ptr_rings = typeid_cast<const ColumnArray*>(&ptr_polygons->getData());
     if (!ptr_rings)
         throw Exception{"Expected a column containing arrays of points when reading rings", ErrorCodes::TYPE_MISMATCH};
-    offset.ring_sizes.assign(ptr_rings->getOffsets());
-    makeDifferences(offset.ring_sizes);
+    offset.ring_offsets.assign(ptr_rings->getOffsets());
 
     return ptr_rings->getDataPtr().get();
 }
@@ -570,11 +558,14 @@ const IColumn * unrollSimplePolygons(const ColumnPtr & column, Offset & offset)
     const auto ptr_polygons = typeid_cast<const ColumnArray*>(column.get());
     if (!ptr_polygons)
         throw Exception{"Expected a column containing arrays of points", ErrorCodes::TYPE_MISMATCH};
-    offset.polygon_sizes.assign(ptr_polygons->getOffsets());
+    offset.ring_offsets.assign(ptr_polygons->getOffsets());
+    std::iota(offset.polygon_offsets.begin(), offset.polygon_offsets.end(), 1);
+    offset.multi_polygon_offsets.assign(offset.polygon_offsets);
+
     return ptr_polygons->getDataPtr().get();
 }
 
-void getPointsReprByArrays(const IColumn * column, std::vector<IPolygonDictionary::Point> & dest)
+void handlePointsReprByArrays(const IColumn * column, Data & data, Offset & offset)
 {
     const auto ptr_points = typeid_cast<const ColumnArray*>(column);
     const auto ptr_coord = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getData());
@@ -587,11 +578,11 @@ void getPointsReprByArrays(const IColumn * column, std::vector<IPolygonDictionar
         if (offsets[i] - prev_offset != 2)
             throw Exception{"All points should be two-dimensional", ErrorCodes::BAD_ARGUMENTS};
         prev_offset = offsets[i];
-        dest.emplace_back(ptr_coord->getElement(2 * i), ptr_coord->getElement(2 * i + 1));
+        addNewPoint(ptr_coord->getElement(2 * i), ptr_coord->getElement(2 * i + 1), data, offset);
     }
 }
 
-void getPointReprByTuples(const IColumn * column, std::vector<IPolygonDictionary::Point> & dest)
+void handlePointsReprByTuples(const IColumn * column, Data & data, Offset & offset)
 {
     const auto ptr_points = typeid_cast<const ColumnTuple*>(column);
     if (!ptr_points)
@@ -604,7 +595,7 @@ void getPointReprByTuples(const IColumn * column, std::vector<IPolygonDictionary
         throw Exception{"Expected coordinates to be of type Float64", ErrorCodes::TYPE_MISMATCH};
     for (size_t i = 0; i < column_x->size(); ++i)
     {
-        dest.emplace_back(column_x->getElement(i), column_y->getElement(i));
+        addNewPoint(column_x->getElement(i), column_y->getElement(i), data, offset);
     }
 }
 
@@ -626,30 +617,21 @@ void IPolygonDictionary::extractPolygons(const ColumnPtr &column)
             break;
     }
 
+    if (!offset.allRingsHaveAPositiveArea())
+        throw Exception{"Every ring included in a polygon or excluded from it should contain at least 3 points",
+                        ErrorCodes::BAD_ARGUMENTS};
+
     /** Adding the first empty polygon */
     data.addPolygon(true);
 
-    std::vector<Point> points;
     switch (point_type)
     {
         case PointType::Array:
-            getPointsReprByArrays(points_collection, points);
+            handlePointsReprByArrays(points_collection, data, offset);
             break;
         case PointType::Tuple:
-            getPointReprByTuples(points_collection, points);
+            handlePointsReprByTuples(points_collection, data, offset);
             break;
-    }
-    for (auto & point : points)
-    {
-        switch (input_type)
-        {
-            case InputType::MultiPolygon:
-                addNewPointFromMultiPolygon(point, data, offset);
-                break;
-            case InputType::SimplePolygon:
-                addNewPointFromSimplePolygon(point, data, offset);
-                break;
-        }
     }
 }
 
