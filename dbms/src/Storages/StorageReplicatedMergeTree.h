@@ -180,6 +180,10 @@ public:
     /// Checks ability to use granularity
     bool canUseAdaptiveGranularity() const override;
 
+    int getMetadataVersion() const {
+        return metadata_version;
+    }
+
 private:
 
     /// Get a sequential consistent view of current parts.
@@ -255,6 +259,7 @@ private:
     /// Limiting parallel fetches per one table
     std::atomic_uint current_table_fetches {0};
 
+    int metadata_version = 0;
     /// Threads.
 
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.

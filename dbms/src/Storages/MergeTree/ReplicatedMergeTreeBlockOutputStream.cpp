@@ -255,6 +255,8 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         log_entry.toString(),
         zkutil::CreateMode::PersistentSequential));
 
+    ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/columns", storage.getMetadataVersion()));
+
     /// Deletes the information that the block number is used for writing.
     block_number_lock->getUnlockOps(ops);
 
@@ -308,6 +310,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         transaction.commit();
         storage.merge_selecting_task->schedule();
 
+        LOG_DEBUG(log, "COMMITED INSERT WITH VERSION:" << storage.getMetadataVersion() << " of part " << part_name);
         /// Lock nodes have been already deleted, do not delete them in destructor
         block_number_lock->assumeUnlocked();
     }

@@ -24,6 +24,7 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
     , format_version(storage.format_version)
     , current_parts(format_version)
     , virtual_parts(format_version)
+    , alter_sequence(&Logger::get(storage_.getStorageID().table_name))
 {}
 
 
@@ -151,7 +152,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     }
     if (entry->type == LogEntry::ALTER_METADATA)
     {
-        //std::cerr << "INSERT AlTER:" << entry->alter_version << std::endl;
+        LOG_DEBUG(log, "ADDING METADATA ENTRY WITH ALTER VERSION:" << entry->alter_version);
         alter_sequence.addMetadataAlter(entry->alter_version, state_lock);
     }
 
@@ -162,6 +163,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     }
     if (entry->type == LogEntry::MUTATE_PART && entry->alter_version != -1)
     {
+        //LOG_DEBUG(log, "ADDING DATA ENTRY WITH ALTER VERSION:" << entry->alter_version);
         //std::cerr << "INSERT MUTATE PART:" << entry->alter_version << std::endl;
         alter_sequence.addDataAlterIfEmpty(entry->alter_version, state_lock);
     }
@@ -217,11 +219,16 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
         {
             Strings replaced_parts;
             current_parts.add(virtual_part_name, &replaced_parts);
+            virtual_parts.add(virtual_part_name, &replaced_parts);
+            LOG_DEBUG(log, "Replaced parts size for new part:" << virtual_part_name << " is " << replaced_parts.size());
 
             /// Each part from `replaced_parts` should become Obsolete as a result of executing the entry.
             /// So it is one less part to mutate for each mutation with block number greater than part_info.getDataVersion()
             for (const String & replaced_part_name : replaced_parts)
+            {
+                LOG_DEBUG(log, "REMOVING REPLACED PART FROM MUTATIONS:" << replaced_part_name);
                 updateMutationsPartsToDo(replaced_part_name, /* add = */ false);
+            }
         }
 
         String drop_range_part_name;
@@ -240,6 +247,12 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
         {
             //std::cerr << "Alter have mutation:" << entry->have_mutation << std::endl;
             alter_sequence.finishMetadataAlter(entry->alter_version, entry->have_mutation, state_lock);
+
+            LOG_DEBUG(log, "FIN ALTER FOR PART with ALTER VERSION:" << entry->alter_version);
+        }
+        if (entry->type == LogEntry::MUTATE_PART)
+        {
+            LOG_DEBUG(log, "FIN MUTATION FOR PART:" << entry->source_parts[0] << " with ALTER VERSION:" << entry->alter_version);
         }
     }
     else
@@ -248,6 +261,7 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
         {
             /// Because execution of the entry is unsuccessful, `virtual_part_name` will never appear
             /// so we won't need to mutate it.
+            LOG_DEBUG(log, "REMOVING PART FROM MUTATIONS:" << virtual_part_name);
             updateMutationsPartsToDo(virtual_part_name, /* add = */ false);
         }
     }
@@ -256,20 +270,41 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
 void ReplicatedMergeTreeQueue::updateMutationsPartsToDo(const String & part_name, bool add)
 {
+    LOG_DEBUG(log, "Updating mutations parts to do with flag " << add << " and part " << part_name);
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
     auto in_partition = mutations_by_partition.find(part_info.partition_id);
     if (in_partition == mutations_by_partition.end())
+    {
+        LOG_DEBUG(log, "Not found partition in mutations for part:" << part_name);
         return;
+    }
 
     bool some_mutations_are_probably_done = false;
 
     auto from_it = in_partition->second.upper_bound(part_info.getDataVersion());
+    if (from_it != in_partition->second.end())
+    {
+        LOG_DEBUG(log, "FIRST MUTATION FOR PART "<<part_name<<" IS:" << from_it->second->entry->znode_name);
+    }
+    else
+    {
+        LOG_DEBUG(log, "NO MUTATIONS FOUND FOR PART:" << part_name << " maximum block number is " << in_partition->second.rbegin()->first);
+    }
     for (auto it = from_it; it != in_partition->second.end(); ++it)
     {
         MutationStatus & status = *it->second;
+
+        if (!add)
+            LOG_DEBUG(log, "DECREMENTING parts to do for mutation:" << status.entry->znode_name << " because of part " << part_name);
+        else
+            LOG_DEBUG(log, "INCREMENTING parts to do for mutation:" << status.entry->znode_name << " because of part " << part_name);
         status.parts_to_do += (add ? +1 : -1);
+        LOG_DEBUG(log, "Parts left:" << status.parts_to_do << " for mutation " << status.entry->znode_name << " after " << part_name);
         if (status.parts_to_do <= 0)
+        {
+            LOG_DEBUG(log, "ALL PARTS ARE LEFT FOR MUTATION:" << status.entry->znode_name << " because of part " << part_name);
             some_mutations_are_probably_done = true;
+        }
 
         if (!add && !status.latest_failed_part.empty() && part_info.contains(status.latest_failed_part_info))
         {
@@ -672,7 +707,13 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                 }
 
                 /// Initialize `mutation.parts_to_do`. First we need to mutate all parts in `current_parts`.
-                mutation.parts_to_do += getPartNamesToMutate(*entry, current_parts).size();
+                auto cur_parts = getPartNamesToMutate(*entry, current_parts);
+                mutation.parts_to_do += cur_parts.size();
+                String parts;
+                for (auto & part : cur_parts)
+                {
+                    parts += part + ",";
+                }
 
                 /// And next we would need to mutate all parts with getDataVersion() greater than
                 /// mutation block number that would appear as a result of executing the queue.
@@ -683,9 +724,17 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                         auto part_info = MergeTreePartInfo::fromPartName(produced_part_name, format_version);
                         auto it = entry->block_numbers.find(part_info.partition_id);
                         if (it != entry->block_numbers.end() && it->second > part_info.getDataVersion())
+                        {
                             ++mutation.parts_to_do;
+                            parts += produced_part_name + ",";
+                        }
                     }
                 }
+
+                LOG_DEBUG(
+                    log,
+                    "MUTATION ENTRY " << entry->znode_name << " blocks " << entry->block_numbers.begin()->second << " alter version "
+                    << entry->alter_version << " parts to do " << mutation.parts_to_do << " parts:" << parts);
 
                 if (mutation.parts_to_do == 0)
                     some_mutations_are_probably_done = true;
@@ -1034,18 +1083,29 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     }
 
     if (entry.type == LogEntry::ALTER_METADATA)
-    {
-        //std::cerr << "Should we execute alter:";
+    {       //std::cerr << "Should we execute alter:";
 
         //std::cerr << alter_sequence.canExecuteMetadataAlter(entry.alter_version, state_lock) << std::endl;
-        return alter_sequence.canExecuteMetadataAlter(entry.alter_version, state_lock);
+        if (!alter_sequence.canExecuteMetadataAlter(entry.alter_version, state_lock) || queue.front()->znode_name != entry.znode_name)
+        {
+            out_postpone_reason = "Cannot execute alter metadata with version: " + std::to_string(entry.alter_version)
+                + " because current head is " + std::to_string(alter_sequence.queue.front().alter_version)
+                + " with state: " + std::to_string(alter_sequence.queue.front().state);
+            return false;
+        }
     }
 
     if (entry.type == LogEntry::MUTATE_PART && entry.alter_version != -1)
     {
         //std::cerr << "Should we execute mutation:";
         //std::cerr << alter_sequence.canExecuteDataAlter(entry.alter_version, state_lock) << std::endl;
-        return alter_sequence.canExecuteDataAlter(entry.alter_version, state_lock);
+        if (!alter_sequence.canExecuteDataAlter(entry.alter_version, state_lock))
+        {
+            out_postpone_reason = "Cannot execute alter data with version: " + std::to_string(entry.alter_version)
+                + " because current head is " + std::to_string(alter_sequence.queue.front().alter_version)
+                + " with state: " + std::to_string(alter_sequence.queue.front().state);
+            return false;
+        }
     }
 
     return true;
@@ -1362,7 +1422,10 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                 LOG_TRACE(log, "Mutation " << entry->znode_name << " is done");
                 it->second.is_done = true;
                 if (entry->alter_version != -1)
+                {
+                    LOG_TRACE(log, "Finishing data alter with version " << entry->alter_version << " for entry " << entry->znode_name);
                     alter_sequence.finishDataAlter(entry->alter_version, lock);
+                }
             }
         }
     }
@@ -1467,7 +1530,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
     {
         const MutationStatus & status = pair.second;
         const ReplicatedMergeTreeMutationEntry & entry = *status.entry;
-        const Names parts_to_mutate = getPartNamesToMutate(entry, current_parts);
+        const Names parts_to_mutate = getPartNamesToMutate(entry, virtual_parts);
 
         for (const MutationCommand & command : entry.commands)
         {
@@ -1735,24 +1798,35 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
     /// the part (checked by querying queue.virtual_parts), we can confidently assign a mutation to
     /// version X for this part.
 
+    LOG_DEBUG(queue.log, "LOOKING for desired mutation version for part:" << part->name);
     if (last_quorum_parts.find(part->name) != last_quorum_parts.end()
         || part->name == inprogress_quorum_part)
+    {
+        LOG_DEBUG(queue.log, "PART " << part->name  <<" NAME NOT IN QUORUM");
         return {};
+    }
 
     std::lock_guard lock(queue.state_mutex);
 
     if (queue.virtual_parts.getContainingPart(part->info) != part->name)
+    {
+        LOG_DEBUG(queue.log, "VIRTUAL PARTS HAVE CONTAINING PART " << part->name);
         return {};
+    }
 
     auto in_partition = queue.mutations_by_partition.find(part->info.partition_id);
     if (in_partition == queue.mutations_by_partition.end())
+    {
+        LOG_DEBUG(queue.log, "NO PARTITION FOR MUTATION FOR PART " << part->name);
         return {};
+    }
 
     Int64 current_version = queue.getCurrentMutationVersionImpl(part->info.partition_id, part->info.getDataVersion(), lock);
     Int64 max_version = in_partition->second.rbegin()->first;
 
     if (current_version >= max_version)
     {
+        LOG_DEBUG(queue.log, "PART VERSION FOR " << part->name << " IS BIGGER THAN MAX");
         //std::cerr << "But current version is:" << current_version << std::endl;
         return {};
     }
@@ -1772,6 +1846,12 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
         }
     }
     //std::cerr << "FOUND alter version:" << alter_version << " and mutation znode name:" << version << std::endl;
+    if (current_version >= max_version)
+    {
+        LOG_DEBUG(queue.log, "PART VERSION FOR " << part->name << " IS BIGGER THAN MAX AFTER ALTER");
+        return {};
+    }
+
 
     return std::make_pair(max_version, alter_version);
 }

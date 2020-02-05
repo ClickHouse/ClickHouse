@@ -444,14 +444,20 @@ MergeTreeData::DataPart::Checksums checkDataPart(
     const MergeTreeIndices & indices,
     std::function<bool()> is_cancelled)
 {
-    return checkDataPart(
-        data_part->getFullPath(),
-        data_part->index_granularity,
-        data_part->index_granularity_info.marks_file_extension,
-        require_checksums,
-        primary_key_data_types,
-        indices,
-        is_cancelled);
+    try {
+        return checkDataPart(
+            data_part->getFullPath(),
+            data_part->index_granularity,
+            data_part->index_granularity_info.marks_file_extension,
+            require_checksums,
+            primary_key_data_types,
+            indices,
+            is_cancelled);
+    }catch (...)
+   {
+       tryLogCurrentException("PartChecker");
+       std::terminate();
+   }
 }
 
 

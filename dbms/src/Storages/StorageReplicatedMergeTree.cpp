@@ -300,6 +300,10 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     createNewZooKeeperNodes();
 
+    Coordination::Stat metadata_stat;
+    current_zookeeper->get(zookeeper_path + "/columns", &metadata_stat);
+    metadata_version = metadata_stat.version;
+
     other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
 }
 
@@ -772,8 +776,16 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
     if (part_name.empty())
         part_name = part->name;
 
-    check(part->columns);
-    //int expected_columns_version = columns_version;
+    try
+    {
+        check(part->columns);
+    }
+    catch (...)
+    {
+        LOG_DEBUG(log, "EXCEPTION ADDING PART:" << part_name << " VERSION:" << getMetadataVersion());
+        throw;
+    }
+
 
     auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
         part->columns, part->checksums);
@@ -3246,8 +3258,9 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
             LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
             setTableStructure(std::move(columns_from_entry), metadata_diff);
+            metadata_version = entry.alter_version;
 
-            LOG_INFO(log, "Applied changes to the metadata of the table.");
+            LOG_INFO(log, "Applied changes to the metadata of the table. Setting metadata version:" << metadata_version);
         }
 
         //////std::cerr << "Recalculating columns sizes\n";
@@ -3313,23 +3326,17 @@ void StorageReplicatedMergeTree::alter(
 
         Coordination::Stat metadata_stat;
         String metadata_in_zk = zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
-        Coordination::Stat columns_stat;
-        String columns_in_zk = zookeeper->get(zookeeper_path + "/columns", &columns_stat);
 
-        StorageInMemoryMetadata metadata = getMetadataFromSharedZookeeper(metadata_in_zk, columns_in_zk);
-        params.validate(metadata, query_context);
+        StorageInMemoryMetadata metadata = getInMemoryMetadata();
         params.apply(metadata);
 
-        String path_prefix = zookeeper_path + "/alters/alter-";
-        String path = zookeeper->create(path_prefix, "", zkutil::CreateMode::EphemeralSequential);
         ////std::cerr << "Path for alter:" << path << std::endl;
-        int alter_version = parse<int>(path.c_str() + path_prefix.size(), path.size() - path_prefix.size());
+        //int alter_version = columns_stat.version;
         //std::cerr << "Alter version:" << alter_version << std::endl;
 
 
         String new_columns_str = metadata.columns.toString();
-        if (new_columns_str != getColumns().toString())
-            ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/columns", new_columns_str, columns_stat.version));
+        ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/columns", new_columns_str, metadata_version));
 
         ReplicatedMergeTreeTableMetadata new_metadata(*this);
         if (ast_to_str(metadata.order_by_ast) != ast_to_str(order_by_ast))
@@ -3347,14 +3354,8 @@ void StorageReplicatedMergeTree::alter(
             new_metadata.constraints = new_constraints_str;
 
         String new_metadata_str = new_metadata.toString();
-        if (new_metadata_str != ReplicatedMergeTreeTableMetadata(*this).toString())
-            ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/metadata", new_metadata_str, metadata_stat.version));
+        ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/metadata", new_metadata_str, metadata_stat.version));
 
-        if (ops.empty())
-        {
-            //std::cerr << "Alter doesn't change anything\n";
-            return;
-        }
         /// Perform settings update locally
         auto old_metadata = getInMemoryMetadata();
         old_metadata.settings_ast = metadata.settings_ast;
@@ -3365,7 +3366,7 @@ void StorageReplicatedMergeTree::alter(
         entry.source_replica = replica_name;
         entry.metadata_str = new_metadata_str;
         entry.columns_str = new_columns_str;
-        entry.alter_version = alter_version;
+        entry.alter_version = metadata_version + 1;
 
         entry.create_time = time(nullptr);
         if (!maybe_mutation_commands.empty())
@@ -3377,9 +3378,42 @@ void StorageReplicatedMergeTree::alter(
 
 
         bool have_mutation = false;
+        std::optional<EphemeralLocksInAllPartitions> lock_holder;
+        size_t partitions_count = 0;
         if (!maybe_mutation_commands.empty())
         {
-            prepareMutationEntry(zookeeper, maybe_mutation_commands, ops, alter_version);
+            String mutations_path = zookeeper_path + "/mutations";
+
+            ReplicatedMergeTreeMutationEntry mutation_entry;
+            mutation_entry.source_replica = replica_name;
+            mutation_entry.commands = maybe_mutation_commands;
+            mutation_entry.alter_version = metadata_version +  1;
+            Coordination::Stat mutations_stat;
+            zookeeper->get(mutations_path, &mutations_stat);
+
+            lock_holder.emplace(
+                    zookeeper_path + "/block_numbers", "block-", zookeeper_path + "/temp", *zookeeper);
+
+            Coordination::Stat block_numbers_version;
+            zookeeper->get(zookeeper_path + "/block_numbers", &block_numbers_version);
+
+            for (const auto & lock : lock_holder->getLocks())
+            {
+                Coordination::Stat partition_stat;
+                mutation_entry.block_numbers[lock.partition_id] = lock.number;
+                zookeeper->get(zookeeper_path + "/block_numbers/" + lock.partition_id, &partition_stat);
+                ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/block_numbers/" + lock.partition_id, partition_stat.version));
+                partitions_count++;
+            }
+
+            mutation_entry.create_time = time(nullptr);
+            /// We have to be sure, that no inserts happened
+            ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/block_numbers", block_numbers_version.version));
+
+            ops.emplace_back(zkutil::makeSetRequest(mutations_path, String(), mutations_stat.version));
+            ops.emplace_back(
+                zkutil::makeCreateRequest(mutations_path + "/", mutation_entry.toString(), zkutil::CreateMode::PersistentSequential));
+
             have_mutation = true;
         }
 
@@ -3396,7 +3430,7 @@ void StorageReplicatedMergeTree::alter(
             {
                 //std::cerr << "In have mutation\n";
                 //std::cerr << "INDEX:" << results.size() - 2 << std::endl;
-                String alter_path = dynamic_cast<const Coordination::CreateResponse &>(*results[results.size() - 3]).path_created;
+                String alter_path = dynamic_cast<const Coordination::CreateResponse &>(*results[results.size() - 4 - partitions_count]).path_created;
                 //std::cerr << "Alter path:" << alter_path << std::endl;
                 entry.znode_name = alter_path.substr(alter_path.find_last_of('/') + 1);
 
@@ -3422,8 +3456,12 @@ void StorageReplicatedMergeTree::alter(
 
     table_lock_holder.release();
 
+    std::vector<String> unwaited;
     //std::cerr << "Started wait for alter\n";
-    auto unwaited = waitForAllReplicasToProcessLogEntry(entry, false);
+    if (query_context.getSettingsRef().replication_alter_partitions_sync == 2)
+        unwaited = waitForAllReplicasToProcessLogEntry(entry, false);
+    else if (query_context.getSettingsRef().replication_alter_partitions_sync == 1)
+        waitForReplicaToProcessLogEntry(replica_name, entry);
     //std::cerr << "FInished wait for alter\n";
 
     if (!unwaited.empty())
