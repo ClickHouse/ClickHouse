@@ -22,20 +22,26 @@ WriteBufferToKafkaProducer::WriteBufferToKafkaProducer(
     , chunk_size(chunk_size_)
     , timeout(poll_timeout)
 {
-    for (size_t i = 0; i < header.columns(); ++i)
+    if (header.has("_key"))
     {
-        auto column_info = header.getByPosition(i);
-
-        if (column_info.name == "_key" && isString(column_info.type) )
+        auto column_index = header.getPositionByName("_key");
+        auto column_info = header.getByPosition(column_index);
+        if (isString(column_info.type))
         {
-            key_column_index = i;
+            key_column_index = column_index;
         }
-        else if (column_info.name == "_timestamp" && isDateTime(column_info.type)) {
-            timestamp_column_index = i;
-        }
+        // else ? (not sure it's a good place to report smth to user)
     }
 
-
+    if (header.has("_timestamp"))
+    {
+        auto column_index = header.getPositionByName("_timestamp");
+        auto column_info = header.getByPosition(column_index);
+        if (isDateTime(column_info.type))
+        {
+            timestamp_column_index = column_index;
+        }
+    }
 }
 
 WriteBufferToKafkaProducer::~WriteBufferToKafkaProducer()
