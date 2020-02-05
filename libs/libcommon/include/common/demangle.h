@@ -17,25 +17,15 @@ inline std::string demangle(const char * name)
 
 // abi::__cxa_demangle returns a C string of known size that should be deleted
 // with free().
-struct DemangleResult
+struct FreeingDeleter
 {
-    char * data = nullptr;
-    size_t size = 0;
-
-    DemangleResult() = default;
-    DemangleResult(DemangleResult &) = delete;
-    DemangleResult(DemangleResult && other)
+    template <typename PointerType>
+    void operator() (PointerType ptr)
     {
-        std::swap(data, other.data);
-        std::swap(size, other.size);
-    }
-    ~DemangleResult()
-    {
-        if (data)
-        {
-            free(data);
-        }
+        std::free(ptr);
     }
 };
+
+typedef std::unique_ptr<char, FreeingDeleter> DemangleResult;
 
 DemangleResult tryDemangle(const char * name);

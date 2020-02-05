@@ -28,9 +28,7 @@ std::string demangle(const char * name, int & status)
 
 static DemangleResult tryDemangle(const char * name, int & status)
 {
-    DemangleResult result;
-    result.data = abi::__cxa_demangle(name, nullptr, &result.size, &status);
-    return result;
+    return DemangleResult(abi::__cxa_demangle(name, nullptr, nullptr, &status));
 }
 
 DemangleResult tryDemangle(const char * name)
@@ -42,9 +40,9 @@ DemangleResult tryDemangle(const char * name)
 std::string demangle(const char * name, int & status)
 {
     auto result = tryDemangle(name, status);
-    if (result.data)
+    if (result)
     {
-        return std::string(result.data, result.size - 1);
+        return std::string(result.get());
     }
 
     return name;
