@@ -121,7 +121,6 @@ to integrate data with other applications.
 
 Features:
 
-- Designed around ease of use and self-service for end users.
 - Easy and agile development using LookML, a language which supports currated 
 [Data Modeling](https://looker.com/platform/data-modeling) to support report writers and end users.
 - Powerful workflow integration via Looker's [Data Actions](https://looker.com/platform/actions).
