@@ -643,22 +643,6 @@ class ClickHouseInstance:
 
         return urllib.urlopen(url, data).read()
 
-    def kill_clickhouse(self, stop_start_wait_sec=5):
-        pid = self.get_process_pid("clickhouse")
-        if not pid:
-            raise Exception("No clickhouse found")
-        self.exec_in_container(["bash",  "-c", "kill -9 {}".format(pid)], user='root')
-        time.sleep(stop_start_wait_sec)
-
-    def restore_clickhouse(self, retries=100):
-        pid = self.get_process_pid("clickhouse")
-        if pid:
-            raise Exception("ClickHouse has already started")
-        self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
-        from helpers.test_tools import assert_eq_with_retry
-        # wait start
-        assert_eq_with_retry(self, "select 1", "1", retry_count=retries)
-
     def restart_clickhouse(self, stop_start_wait_sec=5, kill=False):
         if not self.stay_alive:
             raise Exception("clickhouse can be restarted only with stay_alive=True instance")
@@ -965,14 +949,3 @@ class ClickHouseInstance:
     def destroy_dir(self):
         if p.exists(self.path):
             shutil.rmtree(self.path)
-
-
-class ClickHouseKiller(object):
-    def __init__(self, clickhouse_node):
-        self.clickhouse_node = clickhouse_node
-
-    def __enter__(self):
-        self.clickhouse_node.kill_clickhouse()
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.clickhouse_node.restore_clickhouse()
