@@ -6,9 +6,8 @@ import re
 import time
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance',
-                                config_dir="configs",
-                                with_zookeeper=True)
+instance = cluster.add_instance('instance1', config_dir="configs", with_zookeeper=True)
+instance2 = cluster.add_instance('instance2', config_dir="configs", with_zookeeper=True)
 
 
 def copy_policy_xml(local_file_name, reload_immediately = True):
@@ -24,6 +23,24 @@ def started_cluster():
         cluster.start()
 
         instance.query('''
+            CREATE DATABASE mydb;
+
+            CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE MergeTree ORDER BY a;
+            INSERT INTO mydb.filtered_table1 values (0, 0), (0, 1), (1, 0), (1, 1);
+
+            CREATE TABLE mydb.table (a UInt8, b UInt8) ENGINE MergeTree ORDER BY a;
+            INSERT INTO mydb.table values (0, 0), (0, 1), (1, 0), (1, 1);
+
+            CREATE TABLE mydb.filtered_table2 (a UInt8, b UInt8, c UInt8, d UInt8) ENGINE MergeTree ORDER BY a;
+            INSERT INTO mydb.filtered_table2 values (0, 0, 0, 0), (1, 2, 3, 4), (4, 3, 2, 1), (0, 0, 6, 0);
+
+            CREATE TABLE mydb.filtered_table3 (a UInt8, b UInt8, c UInt16 ALIAS a + b) ENGINE MergeTree ORDER BY a;
+            INSERT INTO mydb.filtered_table3 values (0, 0), (0, 1), (1, 0), (1, 1);
+
+            CREATE TABLE mydb.`.filtered_table4` (a UInt8, b UInt8, c UInt16 ALIAS a + b) ENGINE MergeTree ORDER BY a;
+            INSERT INTO mydb.`.filtered_table4` values (0, 0), (0, 1), (1, 0), (1, 1);
+        ''')
+        instance2.query('''
             CREATE DATABASE mydb;
 
             CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE MergeTree ORDER BY a;
@@ -282,5 +299,8 @@ def test_miscellaneous_engines():
     instance.query("DROP TABLE mydb.filtered_table1")
     instance.query("CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE Distributed('test_local_cluster', mydb, local)")
     instance.query("CREATE TABLE mydb.local (a UInt8, b UInt8) ENGINE MergeTree ORDER BY a")
-    instance.query("INSERT INTO mydb.local values (0, 1), (0, 1), (1, 1), (1, 1)")
-    assert instance.query("SELECT * FROM mydb.filtered_table1") == "1\t1\n1\t1\n"
+    instance2.query("CREATE TABLE mydb.local (a UInt8, b UInt8) ENGINE MergeTree ORDER BY a")
+    instance.query("INSERT INTO mydb.local values (2, 0), (2, 1), (1, 0), (1, 1)")
+    instance2.query("INSERT INTO mydb.local values (2, 0), (2, 1), (1, 0), (1, 1)")
+    assert instance.query("SELECT * FROM mydb.filtered_table1") == "1\t0\n1\t1\n1\t0\n1\t1\n"
+    assert instance.query("SELECT sum(a), b FROM mydb.filtered_table1 GROUP BY b ORDER BY b") == "2\t0\n2\t1\n"

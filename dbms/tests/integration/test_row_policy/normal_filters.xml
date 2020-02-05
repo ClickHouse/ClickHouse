@@ -9,6 +9,9 @@
                     <filtered_table1>
                         <filter>a = 1</filter>
                     </filtered_table1>
+                    <local>
+                        <filter>a = 1</filter>
+                    </local>
 
                     <!-- Complex expression filter -->
                     <filtered_table2>

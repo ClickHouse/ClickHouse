@@ -3,7 +3,13 @@
         <test_local_cluster>
             <shard>
                 <replica>
-                    <host>localhost</host>
+                    <host>instance1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>instance2</host>
                     <port>9000</port>
                 </replica>
             </shard>
