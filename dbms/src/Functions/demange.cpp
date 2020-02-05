@@ -74,9 +74,9 @@ public:
         {
             StringRef source = column_concrete->getDataAt(i);
             auto demangled = tryDemangle(source.data);
-            if (demangled.data)
+            if (demangled)
             {
-                result_column->insertDataWithTerminatingZero(demangled.data, demangled.size);
+                result_column->insertDataWithTerminatingZero(demangled.get(), strlen(demangled.get()));
             }
             else
             {
