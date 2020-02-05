@@ -704,7 +704,7 @@ For `ON`, `WHERE`, and `GROUP BY` clauses:
 - Arbitrary expressions cannot be used in `ON`, `WHERE`, and `GROUP BY` clauses, but you can define an expression in a `SELECT` clause and then use it in these clauses via an alias.
 
 
-### WHERE Clause
+### WHERE Clause {#select-where}
 
 If there is a WHERE clause, it must contain an expression with the UInt8 type. This is usually an expression with comparison and logical operators.
 This expression will be used for filtering data before all other transformations.
