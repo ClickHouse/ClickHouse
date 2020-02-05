@@ -101,6 +101,31 @@ world
 
 [NULL](../query_language/syntax.md) форматируется как `\N`.
 
+Элементы структур типа [Nested](../data_types/nested_data_structures/nested.md) форматируются каждый как отдельный массив.
+
+Например:
+
+```sql
+CREATE TABLE nestedt
+(
+    `id` UInt8, 
+    `aux` Nested(
+    a UInt8, 
+    b String)
+)
+ENGINE = TinyLog
+```
+```sql
+INSERT INTO nestedt FORMAT JSONEachRow {"id": 1, "aux.a":[1], "aux.b":["a"]}
+```
+```sql
+SELECT * FROM nestedt FORMAT TSV
+```
+```text
+1	[1]	['a']
+```
+
+
 ## TabSeparatedRaw {#tabseparatedraw}
 
 Отличается от формата `TabSeparated` тем, что строки выводятся без экранирования.
