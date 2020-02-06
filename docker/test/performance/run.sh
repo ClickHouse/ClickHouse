@@ -32,6 +32,7 @@ fi
 
 clickhouse-client --query "select * from system.settings where name = 'log_queries'"
 tree /etc/clickhouse-server
-cat /etc/clickhouse-server/preprocessed/config.xml
+cat /var/lib/clickhouse/preprocessed_configs/config.xml
+cat /var/lib/clickhouse/preprocessed_configs/users.xml
 
 run
