@@ -315,7 +315,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
         table_lock = storage->lockStructureForShare(false, context->getInitialQueryId());
 
-    auto analyze = [&] ()
+    auto analyze = [&] (bool try_move_to_prewhere = true)
     {
         syntax_analyzer_result = SyntaxAnalyzer(*context, options).analyze(
                 query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage, NamesAndTypesList());
@@ -388,7 +388,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
 
         /// Calculate structure of the result.
-        result_header = getSampleBlockImpl();
+        result_header = getSampleBlockImpl(try_move_to_prewhere);
     };
 
     analyze();
@@ -416,8 +416,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         query.setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", query.prewhere()->clone(), query.where()->clone()));
         need_analyze_again = true;
     }
+
     if (need_analyze_again)
-        analyze();
+    {
+        /// Do not try move conditions to PREWHERE for the second time.
+        /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
+        analyze(/* try_move_to_prewhere = */ false);
+    }
 
     /// If there is no WHERE, filter blocks as usual
     if (query.prewhere() && !query.where())
@@ -501,7 +506,7 @@ QueryPipeline InterpreterSelectQuery::executeWithProcessors()
 }
 
 
-Block InterpreterSelectQuery::getSampleBlockImpl()
+Block InterpreterSelectQuery::getSampleBlockImpl(bool try_move_to_prewhere)
 {
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
@@ -525,7 +530,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
                 current_info.sets = query_analyzer->getPreparedSets();
 
                 /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
-                if (settings.optimize_move_to_prewhere && query.where() && !query.prewhere() && !query.final())
+                if (settings.optimize_move_to_prewhere && try_move_to_prewhere && query.where() && !query.prewhere() && !query.final())
                     MergeTreeWhereOptimizer{current_info, *context, merge_tree,
                                             syntax_analyzer_result->requiredSourceColumns(), log};
             };
