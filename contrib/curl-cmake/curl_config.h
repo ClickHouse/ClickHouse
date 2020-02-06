@@ -34,5 +34,8 @@
 #define HAVE_ERRNO_H
 #define HAVE_FCNTL_H
 #define HAVE_NETDB_H
+#define HAVE_NETINET_IN_H
 #define HAVE_SYS_STAT_H
 #define HAVE_UNISTD_H
+
+#define USE_OPENSSL
