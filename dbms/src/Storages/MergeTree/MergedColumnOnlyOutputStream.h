@@ -21,7 +21,7 @@ public:
         WrittenOffsetColumns * offset_columns_ = nullptr,
         const MergeTreeIndexGranularity & index_granularity = {},
         const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr,
-        const String & filename_suffix = "");
+        bool is_writing_temp_files = false);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;

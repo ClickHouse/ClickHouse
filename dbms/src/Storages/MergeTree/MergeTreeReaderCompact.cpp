@@ -28,7 +28,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(const MergeTreeData::DataPartPtr 
         settings.save_marks_in_cache, data_part->getColumns().size())
 {
     size_t buffer_size = settings.max_read_buffer_size;
-    const String full_data_path = path + MergeTreeDataPartCompact::DATA_FILE_NAME + MergeTreeDataPartCompact::DATA_FILE_EXTENSION;
+    const String full_data_path = path + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
 
     if (uncompressed_cache)
     {
