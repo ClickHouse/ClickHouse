@@ -101,7 +101,7 @@ world
 
 [NULL](../query_language/syntax.md) форматируется как `\N`.
 
-Элементы структур типа [Nested](../data_types/nested_data_structures/nested.md) форматируются каждый как отдельный массив.
+Каждый элемент структуры типа [Nested](../data_types/nested_data_structures/nested.md) представляется как отдельный массив.
 
 Например:
 

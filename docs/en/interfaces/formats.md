@@ -103,7 +103,7 @@ Arrays are written as a list of comma-separated values in square brackets. Numbe
 
 [NULL](../query_language/syntax.md) is formatted as `\N`.
 
-Elements of [Nested](../data_types/nested_data_structures/nested.md) structures are formatted as arrays each.
+Each element of [Nested](../data_types/nested_data_structures/nested.md) structures is represented as array.
 
 For example:
 
