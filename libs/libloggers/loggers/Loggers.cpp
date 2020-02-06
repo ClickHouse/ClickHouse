@@ -138,7 +138,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     if (config.getBool("logger.console", false)
         || (!config.hasProperty("logger.console") && !is_daemon && is_tty))
     {
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_NOTHING, is_tty);
+        bool color_enabled = config.getBool("logger.colored_console", false) && is_tty;
+
+        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_NOTHING, color_enabled);
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);
         logger.warning("Logging " + log_level + " to console");
         split->addChannel(log);
