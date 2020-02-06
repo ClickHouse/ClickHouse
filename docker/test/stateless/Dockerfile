@@ -18,8 +18,10 @@ RUN apt-get update -y \
             curl \
             sudo \
             openssl \
+            ncdu \
             netcat-openbsd \
             telnet \
+            tree \
             moreutils \
             brotli \
             gdb \
