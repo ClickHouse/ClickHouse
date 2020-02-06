@@ -156,7 +156,7 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
                 || endsWith(name, "Key")
                 || endsWith(name, "Type"))
             {
-                if (!nested_type.isValueRepresentedByInteger())
+                if (!nested_type.isValueRepresentedByInteger() && !isStringOrFixedString(nested_type))
                     break;
 
                 map_desc.key_col_nums.push_back(*column_num_it);

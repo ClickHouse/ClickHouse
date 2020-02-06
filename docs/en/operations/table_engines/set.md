@@ -10,4 +10,4 @@ Data is always located in RAM. For INSERT, the blocks of inserted data are also 
 For a rough server restart, the block of data on the disk might be lost or damaged. In the latter case, you may need to manually delete the file with damaged data.
 
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/set/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/set/) <!--hide-->

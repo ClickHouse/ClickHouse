@@ -2,6 +2,7 @@
 #include <Parsers/ASTShowRowPoliciesQuery.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/executeQuery.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Interpreters/Context.h>
 #include <ext/range.h>

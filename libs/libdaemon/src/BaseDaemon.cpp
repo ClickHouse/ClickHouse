@@ -18,6 +18,7 @@
 #include <fstream>
 #include <sstream>
 #include <memory>
+#include <ext/scope_guard.h>
 
 #include <Poco/Observer.h>
 #include <Poco/AutoPtr.h>
@@ -36,7 +37,7 @@
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
 #include <common/argsToConfig.h>
-#include <common/getThreadNumber.h>
+#include <common/getThreadId.h>
 #include <common/coverage.h>
 
 #include <IO/WriteBufferFromFile.h>
@@ -122,7 +123,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     DB::writePODBinary(*info, out);
     DB::writePODBinary(signal_context, out);
     DB::writePODBinary(stack_trace, out);
-    DB::writeBinary(UInt32(getThreadNumber()), out);
+    DB::writeBinary(UInt32(getThreadId()), out);
     DB::writeStringBinary(query_id, out);
 
     out.next();
@@ -300,7 +301,7 @@ static void terminate_handler()
     DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
 
     DB::writeBinary(static_cast<int>(SignalListener::StdTerminate), out);
-    DB::writeBinary(UInt32(getThreadNumber()), out);
+    DB::writeBinary(UInt32(getThreadId()), out);
     DB::writeBinary(log_message, out);
     out.next();
 
@@ -498,7 +499,7 @@ void BaseDaemon::terminate()
 void BaseDaemon::kill()
 {
     dumpCoverageReportIfPossible();
-    pid.clear();
+    pid.reset();
     if (::raise(SIGKILL) != 0)
         throw Poco::SystemException("cannot kill process");
 }
@@ -668,7 +669,7 @@ void BaseDaemon::initialize(Application & self)
 
     /// Create pid file.
     if (config().has("pid"))
-        pid.seed(config().getString("pid"));
+        pid.emplace(config().getString("pid"));
 
     /// Change path for logging.
     if (!log_path.empty())
@@ -835,7 +836,7 @@ bool isPidRunning(pid_t pid)
     return 0;
 }
 
-void BaseDaemon::PID::seed(const std::string & file_)
+BaseDaemon::PID::PID(const std::string & file_)
 {
     file = Poco::Path(file_).absolute().toString();
     Poco::File poco_file(file);
@@ -862,34 +863,28 @@ void BaseDaemon::PID::seed(const std::string & file_)
 
     if (-1 == fd)
     {
-        file.clear();
         if (EEXIST == errno)
             throw Poco::Exception("Pid file exists, should not start daemon.");
         throw Poco::CreateFileException("Cannot create pid file.");
     }
 
+    SCOPE_EXIT({ close(fd); });
+
+    std::stringstream s;
+    s << getpid();
+    if (static_cast<ssize_t>(s.str().size()) != write(fd, s.str().c_str(), s.str().size()))
+        throw Poco::Exception("Cannot write to pid file.");
+}
+
+BaseDaemon::PID::~PID()
+{
     try
     {
-        std::stringstream s;
-        s << getpid();
-        if (static_cast<ssize_t>(s.str().size()) != write(fd, s.str().c_str(), s.str().size()))
-            throw Poco::Exception("Cannot write to pid file.");
+        Poco::File(file).remove();
     }
     catch (...)
     {
-        close(fd);
-        throw;
-    }
-
-    close(fd);
-}
-
-void BaseDaemon::PID::clear()
-{
-    if (!file.empty())
-    {
-        Poco::File(file).remove();
-        file.clear();
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 

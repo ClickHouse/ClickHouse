@@ -167,7 +167,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         which_from_type = WhichDataType(*from_type_hint);
 
-        // This was added to mitigate converting DateTime64-Field (a typedef to a Decimal64) to DataTypeDate64-compatitable type.
+        // This was added to mitigate converting DateTime64-Field (a typedef to a Decimal64) to DataTypeDate64-compatible type.
         if (from_type_hint && from_type_hint->equals(type))
         {
             return src;

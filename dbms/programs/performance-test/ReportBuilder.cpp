@@ -19,15 +19,10 @@ namespace
 {
 std::string getMainMetric(const PerformanceTestInfo & test_info)
 {
-    std::string main_metric;
-    if (test_info.main_metric.empty())
-        if (test_info.exec_type == ExecutionType::Loop)
-            main_metric = "min_time";
-        else
-            main_metric = "rows_per_second";
+    if (test_info.exec_type == ExecutionType::Loop)
+        return "min_time";
     else
-        main_metric = test_info.main_metric;
-    return main_metric;
+        return "rows_per_second";
 }
 
 bool isASCIIString(const std::string & str)
@@ -64,7 +59,6 @@ std::string ReportBuilder::buildFullReport(
 {
     FormatSettings settings;
 
-
     JSONString json_output;
 
     json_output.set("hostname", hostname);
@@ -75,7 +69,6 @@ std::string ReportBuilder::buildFullReport(
     json_output.set("time", getCurrentTime());
     json_output.set("test_name", test_info.test_name);
     json_output.set("path", test_info.path);
-    json_output.set("main_metric", getMainMetric(test_info));
 
     if (!test_info.substitutions.empty())
     {
@@ -124,7 +117,7 @@ std::string ReportBuilder::buildFullReport(
                 if (isASCIIString(statistics.exception))
                     runJSON.set("exception", jsonString(statistics.exception, settings), false);
                 else
-                    runJSON.set("exception", "Some exception occured with non ASCII message. This may produce invalid JSON. Try reproduce locally.");
+                    runJSON.set("exception", "Some exception occurred with non ASCII message. This may produce invalid JSON. Try reproduce locally.");
             }
 
             if (test_info.exec_type == ExecutionType::Loop)

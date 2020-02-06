@@ -5,6 +5,10 @@
 
 Если вы используете Windows, вам потребуется создать виртуальную машину с Ubuntu. Для работы с виртуальной машиной, установите VirtualBox. Скачать Ubuntu можно на сайте: https://www.ubuntu.com/#download Создайте виртуальную машину из полученного образа. Выделите для неё не менее 4 GB оперативной памяти. Для запуска терминала в Ubuntu, найдите в меню программу со словом terminal (gnome-terminal, konsole или что-то в этом роде) или нажмите Ctrl+Alt+T.
 
+# Если вы используете 32-битную систему
+
+ClickHouse не работает и не собирается на 32-битных системах. Получите доступ к 64-битной системе и продолжайте.
+
 
 # Создание репозитория на GitHub
 
@@ -96,15 +100,7 @@ brew install cmake ninja
 
 # Необязательные внешние библиотеки
 
-ClickHouse использует для сборки некоторое количество внешних библиотек. Большинство из них не требуется отдельно устанавливать, так как они собираются вместе с ClickHouse, из исходников, которые расположены в submodules. Посмотреть набор этих библиотек можно в директории contrib.
-
-Одна библиотека не собирается из исходников, а используется из системы: Readline, и её рекомендуется установить.
-
-Ubuntu: `sudo apt install libreadline-dev`
-
-Mac OS X: `brew install readline`
-
-Впрочем, эти библиотеки не обязательны для работы и ClickHouse может быть собран без них. ICU используется для поддержки `COLLATE` в `ORDER BY` (например, для сортировки с учётом турецкого алфавита). Readline используется для более удобного набора команд в интерактивном режиме в clickhouse-client.
+ClickHouse использует для сборки некоторое количество внешних библиотек. Но ни одну из них не требуется отдельно устанавливать, так как они собираются вместе с ClickHouse, из исходников, которые расположены в submodules. Посмотреть набор этих библиотек можно в директории contrib.
 
 
 # Компилятор C++
@@ -115,7 +111,7 @@ Mac OS X: `brew install readline`
 
 Для установки GCC под Ubuntu, выполните: `sudo apt install gcc g++`.
 
-Проверьте версию gcc: `gcc --version`. Если версия меньше 9, то следуйте инструкции: https://clickhouse.yandex/docs/en/development/build/#install-gcc-9
+Проверьте версию gcc: `gcc --version`. Если версия меньше 9, то следуйте инструкции: https://clickhouse.tech/docs/en/development/build/#install-gcc-9
 
 Сборка под Mac OS X поддерживается только для компилятора Clang. Чтобы установить его выполните `brew install llvm`
 
@@ -230,11 +226,11 @@ sudo -u clickhouse ClickHouse/build/dbms/programs/clickhouse server --config-fil
 
 # Написание кода
 
-Описание архитектуры ClickHouse: https://clickhouse.yandex/docs/ru/development/architecture/
+Описание архитектуры ClickHouse: https://clickhouse.tech/docs/ru/development/architecture/
 
-Стиль кода: https://clickhouse.yandex/docs/ru/development/style/
+Стиль кода: https://clickhouse.tech/docs/ru/development/style/
 
-Разработка тестов: https://clickhouse.yandex/docs/ru/development/tests/
+Разработка тестов: https://clickhouse.tech/docs/ru/development/tests/
 
 Список задач: https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/instructions/easy_tasks_sorted_ru.md
 

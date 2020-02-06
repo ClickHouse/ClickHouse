@@ -101,9 +101,6 @@ namespace
     public:
         void add(const ASTPtr & condition, bool is_restrictive)
         {
-            if (!condition)
-                return;
-
             if (is_restrictive)
                 restrictions.push_back(condition);
             else
@@ -139,29 +136,32 @@ void RowPolicyContextFactory::PolicyInfo::setPolicy(const RowPolicyPtr & policy_
 
     for (auto index : ext::range_with_static_cast<ConditionIndex>(0, MAX_CONDITION_INDEX))
     {
+        parsed_conditions[index] = nullptr;
         const String & condition = policy->conditions[index];
+        if (condition.empty())
+            continue;
+
         auto previous_range = std::pair(std::begin(policy->conditions), std::begin(policy->conditions) + index);
         auto previous_it = std::find(previous_range.first, previous_range.second, condition);
         if (previous_it != previous_range.second)
         {
             /// The condition is already parsed before.
             parsed_conditions[index] = parsed_conditions[previous_it - previous_range.first];
+            continue;
         }
-        else
+
+        /// Try to parse the condition.
+        try
         {
-            /// Try to parse the condition.
-            try
-            {
-                ParserExpression parser;
-                parsed_conditions[index] = parseQuery(parser, condition, 0);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(
-                    &Poco::Logger::get("RowPolicy"),
-                    String("Could not parse the condition ") + RowPolicy::conditionIndexToString(index) + " of row policy "
-                        + backQuote(policy->getFullName()));
-            }
+            ParserExpression parser;
+            parsed_conditions[index] = parseQuery(parser, condition, 0);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                &Poco::Logger::get("RowPolicy"),
+                String("Could not parse the condition ") + RowPolicy::conditionIndexToString(index) + " of row policy "
+                    + backQuote(policy->getFullName()));
         }
     }
 }
@@ -290,7 +290,8 @@ void RowPolicyContextFactory::mixConditionsForContext(RowPolicyContext & context
             auto & mixers = map_of_mixers[std::pair{policy.getDatabase(), policy.getTableName()}];
             mixers.policy_ids.push_back(policy_id);
             for (auto index : ext::range(0, MAX_CONDITION_INDEX))
-                mixers.mixers[index].add(info.parsed_conditions[index], policy.isRestrictive());
+                if (info.parsed_conditions[index])
+                    mixers.mixers[index].add(info.parsed_conditions[index], policy.isRestrictive());
         }
     }
 

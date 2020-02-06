@@ -3,5 +3,4 @@
 namespace DB
 {
 void registerDisks();
-
 }

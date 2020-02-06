@@ -36,4 +36,4 @@ Features:
 
 Implemented in Go.
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/third-party/proxy/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/interfaces/third-party/proxy/) <!--hide-->

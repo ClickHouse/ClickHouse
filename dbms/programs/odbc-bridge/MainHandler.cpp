@@ -138,7 +138,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     {
         auto message = getCurrentExceptionMessage(true);
         response.setStatusAndReason(
-            Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR); // can't call process_error, bacause of too soon response sending
+            Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR); // can't call process_error, because of too soon response sending
         writeStringBinary(message, out);
         tryLogCurrentException(log);
     }

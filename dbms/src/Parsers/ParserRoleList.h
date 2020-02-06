@@ -11,8 +11,8 @@ namespace DB
 class ParserRoleList : public IParserBase
 {
 protected:
-    const char * getName() const { return "RoleList"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+    const char * getName() const override { return "RoleList"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 }

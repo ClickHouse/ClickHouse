@@ -387,7 +387,6 @@ namespace ErrorCodes
     extern const int PTHREAD_ERROR = 411;
     extern const int NETLINK_ERROR = 412;
     extern const int CANNOT_SET_SIGNAL_HANDLER = 413;
-    extern const int CANNOT_READLINE = 414;
     extern const int ALL_REPLICAS_LOST = 415;
     extern const int REPLICA_STATUS_CHANGED = 416;
     extern const int EXPECTED_ALL_OR_ANY = 417;
@@ -470,12 +469,18 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_FOUND_DUPLICATES = 494;
     extern const int ACCESS_ENTITY_STORAGE_READONLY = 495;
     extern const int QUOTA_REQUIRES_CLIENT_KEY = 496;
-    extern const int NOT_ENOUGH_PRIVILEGES = 497;
+    extern const int ACCESS_DENIED = 497;
     extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED = 498;
     extern const int S3_ERROR = 499;
     extern const int CANNOT_CREATE_DATABASE = 501;
     extern const int CANNOT_SIGQUEUE = 502;
     extern const int AGGREGATE_FUNCTION_THROW = 503;
+    extern const int FILE_ALREADY_EXISTS = 504;
+    extern const int CANNOT_DELETE_DIRECTORY = 505;
+    extern const int UNEXPECTED_ERROR_CODE = 506;
+    extern const int UNABLE_TO_SKIP_UNUSED_SHARDS = 507;
+    extern const int UNKNOWN_ACCESS_TYPE = 508;
+    extern const int INVALID_GRANT = 509;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
