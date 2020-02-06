@@ -10,6 +10,11 @@
 
 #if _MSC_VER || MEMORY_SANITIZER
 
+DemangleResult tryDemangle(const char * name)
+{
+    return DemangleResult{};
+}
+
 std::string demangle(const char * name, int & status)
 {
     status = 0;
@@ -21,28 +26,27 @@ std::string demangle(const char * name, int & status)
 #include <stdlib.h>
 #include <cxxabi.h>
 
+static DemangleResult tryDemangle(const char * name, int & status)
+{
+    return DemangleResult(abi::__cxa_demangle(name, nullptr, nullptr, &status));
+}
+
+DemangleResult tryDemangle(const char * name)
+{
+    int status = 0;
+    return tryDemangle(name, status);
+}
+
 std::string demangle(const char * name, int & status)
 {
-    std::string res;
-
-    char * demangled_str = abi::__cxa_demangle(name, 0, 0, &status);
-    if (demangled_str)
+    auto result = tryDemangle(name, status);
+    if (result)
     {
-        try
-        {
-            res = demangled_str;
-        }
-        catch (...)
-        {
-            free(demangled_str);
-            throw;
-        }
-        free(demangled_str);
+        return std::string(result.get());
     }
-    else
-        res = name;
 
-    return res;
+    return name;
 }
+
 
 #endif
