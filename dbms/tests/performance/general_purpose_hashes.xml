@@ -33,11 +33,23 @@
            </values>
         </substitution>
         <substitution>
+           <name>string_slow</name>
+           <values>
+               <value>materialize('Lorem ipsum dolor sit amet, consectetur adipiscing elit. Mauris sollicitudin nisi ac erat mollis dapibus. Maecenas leo purus, bibendum eu erat eget, iaculis molestie tortor. Phasellus maximus odio nec mauris ultrices dictum. Morbi efficitur nisl eget congue mollis. Vestibulum pharetra diam vitae urna interdum, eget ultricies justo sollicitudin. Nunc sit amet purus id leo tempus dignissim. Donec ac lacus ut orci tempus scelerisque quis ultricies nibh. Nullam lobortis, erat ac ullamcorper interdum, odio nisl elementum quam, ut malesuada massa nunc eget quam. Nam suscipit neque quis sapien ultricies imperdiet. Maecenas augue libero, finibus tristique sagittis et, semper nec arcu. Morbi non tortor ultrices, sollicitudin justo sed, accumsan ligula. Nullam at ipsum in nibh auctor ullamcorper. Nullam laoreet neque id lorem condimentum tincidunt. Nullam vel orci nibh. Ut sit amet sem faucibus, fringilla orci at, lacinia enim. Mauris imperdiet ex id scelerisque eleifend. Ut tincidunt massa nibh, viverra pharetra metus')</value>
+           </values>
+        </substitution>
+        <substitution>
            <name>string</name>
            <values>
                <value>materialize('')</value>
                <value>toString(1000000000+number)</value>
-               <value>materialize('Lorem ipsum dolor sit amet, consectetur adipiscing elit. Mauris sollicitudin nisi ac erat mollis dapibus. Maecenas leo purus, bibendum eu erat eget, iaculis molestie tortor. Phasellus maximus odio nec mauris ultrices dictum. Morbi efficitur nisl eget congue mollis. Vestibulum pharetra diam vitae urna interdum, eget ultricies justo sollicitudin. Nunc sit amet purus id leo tempus dignissim. Donec ac lacus ut orci tempus scelerisque quis ultricies nibh. Nullam lobortis, erat ac ullamcorper interdum, odio nisl elementum quam, ut malesuada massa nunc eget quam. Nam suscipit neque quis sapien ultricies imperdiet. Maecenas augue libero, finibus tristique sagittis et, semper nec arcu. Morbi non tortor ultrices, sollicitudin justo sed, accumsan ligula. Nullam at ipsum in nibh auctor ullamcorper. Nullam laoreet neque id lorem condimentum tincidunt. Nullam vel orci nibh. Ut sit amet sem faucibus, fringilla orci at, lacinia enim. Mauris imperdiet ex id scelerisque eleifend. Ut tincidunt massa nibh, viverra pharetra metus')</value>
+           </values>
+        </substitution>
+        <substitution>
+           <name>table_slow</name>
+           <values>
+               <value>numbers(100000)</value>
+               <value>numbers_mt(1000000)</value>
            </values>
         </substitution>
         <substitution>
@@ -50,5 +62,6 @@
     </substitutions>
 
     <query>SELECT count() from {table} where not ignore({gp_hash_func}({string}))</query>
+    <query>SELECT count() from {table_slow} where not ignore({gp_hash_func}({string_slow})</query>
 </test>
 
