@@ -366,8 +366,13 @@ private:
         bool right_bounded,
         BoolMask initial_mask) const;
 
-    void traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants);
-    bool atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
+    /// Recursively traverse AST to produce RPN.
+    /// node -- current traversed node,
+    /// context -- query_context.
+    /// block_with_constants -- block with evaluated constants from query
+    /// not_operator -- operator not was encounted on one of previous levels. This is important when we have monotonic functions in primary key.
+    void traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants, bool not_operator=false);
+    bool atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out, bool not_operator);
     bool operatorFromAST(const ASTFunction * func, RPNElement & out);
 
     /** Is node the key column

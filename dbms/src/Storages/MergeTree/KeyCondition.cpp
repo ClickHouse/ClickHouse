@@ -428,7 +428,7 @@ static void applyFunction(
 }
 
 
-void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants)
+void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants, bool not_operator)
 {
     RPNElement element;
 
@@ -439,7 +439,10 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
             auto & args = func->arguments->children;
             for (size_t i = 0, size = args.size(); i < size; ++i)
             {
-                traverseAST(args[i], context, block_with_constants);
+                if (element.function == RPNElement::FUNCTION_NOT)
+                    not_operator = true;
+
+                traverseAST(args[i], context, block_with_constants, not_operator);
 
                 /** The first part of the condition is for the correct support of `and` and `or` functions of arbitrary arity
                   * - in this case `n - 1` elements are added (where `n` is the number of arguments).
@@ -452,7 +455,7 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
         }
     }
 
-    if (!atomFromAST(node, context, block_with_constants, element))
+    if (!atomFromAST(node, context, block_with_constants, element, not_operator))
     {
         element.function = RPNElement::FUNCTION_UNKNOWN;
     }
@@ -680,7 +683,7 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
 }
 
 
-bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
+bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out, bool not_operator)
 {
     /** Functions < > = != <= >= in `notIn`, where one argument is a constant, and the other is one of columns of key,
       *  or itself, wrapped in a chain of possibly-monotonic functions,
@@ -748,8 +751,12 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
             if (key_column_num == static_cast<size_t>(-1))
                 throw Exception("`key_column_num` wasn't initialized. It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-            /// Transformed constant must weaken the condition, for example "x > 5" must weaken to "round(x) >= 5"
-            if (is_constant_transformed)
+            /// Transformed constant must weaken the condition, for example "x > 5" must weaken to "round(x) >= 5".
+            /// But it's not true if our comparison wrapped with "not" operator, so we don't need closed bound here.
+            /// For example for "not x > 5" we should eventually produce range "(-inf, 5]" <=> "(5, +inf) not", but not "[5, +inf)".
+            /// Actually KeyCondition doesn't produce inverted ranges (it leaves operator "not" as RPNElement and apply it),
+            /// but semantically such explanation should be correct.
+            if (is_constant_transformed && !not_operator)
             {
                 if (func_name == "less")
                     func_name = "lessOrEquals";
