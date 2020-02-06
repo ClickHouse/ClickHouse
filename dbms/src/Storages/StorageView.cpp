@@ -15,7 +15,6 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 
 #include <Common/typeid_cast.h>
-#include "StorageView.h"
 
 
 namespace DB

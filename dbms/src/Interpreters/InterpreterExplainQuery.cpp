@@ -4,21 +4,21 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Common/typeid_cast.h>
-#include <Core/Field.h>
-#include <Storages/StorageView.h>
 
+#include <Core/Field.h>
+#include <Common/typeid_cast.h>
+#include <Storages/StorageView.h>
 #include <sstream>
-#include <Parsers/ASTIdentifier.h>
-#include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/getTableExpressions.h>
 
 
 namespace DB
@@ -46,6 +46,9 @@ namespace
 
         static void visit(ASTSelectQuery & select_query, ASTPtr &, Data & data)
         {
+            if (!select_query.tables())
+                return;
+
             for (const auto & child : select_query.tables()->children)
             {
                 auto * tables_element = child->as<ASTTablesInSelectQueryElement>();
