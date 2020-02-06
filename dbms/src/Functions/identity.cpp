@@ -33,6 +33,11 @@ public:
     {
         block.getByPosition(result).column = block.getByPosition(arguments.front()).column;
     }
+
+    // This funciton should never be optimized in any way when planning the
+    // query, so we mark it as having side effects.
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 };
 
 
