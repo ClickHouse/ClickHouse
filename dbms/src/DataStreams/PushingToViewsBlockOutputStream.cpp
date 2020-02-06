@@ -59,6 +59,20 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
                 std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
                 insert->database = inner_table->getDatabaseName();
                 insert->table = inner_table->getTableName();
+
+                /// Get list of columns we get from select query.
+                auto header = InterpreterSelectQuery(query, *views_context, SelectQueryOptions().analyze())
+                        .getSampleBlock();
+
+                /// Insert only columns returned by select.
+                auto list = std::make_shared<ASTExpressionList>();
+                for (auto & column : header)
+                    /// But skip columns which storage doesn't have.
+                    if (inner_table->hasColumn(column.name))
+                        list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+
+                insert->columns = std::move(list);
+
                 ASTPtr insert_query_ptr(insert.release());
                 InterpreterInsertQuery interpreter(insert_query_ptr, *views_context);
                 BlockIO io = interpreter.execute();
