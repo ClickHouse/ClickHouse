@@ -10,6 +10,7 @@ cd workspace
 # We will compare to the most recent testing tag in master branch, let's find it.
 rm -rf ch ||:
 git clone --branch master --single-branch --depth 50 --bare https://github.com/ClickHouse/ClickHouse ch
+(cd ch && git fetch origin $SHA_TO_TEST:to-test) # fetch it so that we can show the commit message
 ref_tag=$(cd ch && git describe --match='v*-testing' --abbrev=0 --first-parent master)
 echo Reference tag is $ref_tag
 # We use annotated tags which have their own shas, so we have to further
