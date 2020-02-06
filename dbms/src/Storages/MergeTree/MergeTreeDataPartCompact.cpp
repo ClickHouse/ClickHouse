@@ -173,7 +173,7 @@ NameToNameMap MergeTreeDataPartCompact::createRenameMapForAlter(
 
         analysis_result.expression->add(ExpressionAction::project(projection));
 
-        String data_temp_name = String(DATA_FILE_NAME) + "_converting";
+        String data_temp_name = String(DATA_FILE_NAME) + TEMP_FILE_SUFFIX;
         rename_map[data_temp_name + DATA_FILE_EXTENSION] = DATA_FILE_NAME_WITH_EXTENSION;
         rename_map[data_temp_name + part_mrk_file_extension] = DATA_FILE_NAME + part_mrk_file_extension;
     }

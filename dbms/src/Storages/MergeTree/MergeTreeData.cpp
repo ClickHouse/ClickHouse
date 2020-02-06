@@ -1841,7 +1841,7 @@ void MergeTreeData::alterDataPart(
             nullptr /* offset_columns */,
             part->index_granularity,
             &part->index_granularity_info,
-            "_converting");
+            true /* is_writing_temp_files */);
 
         in.readPrefix();
         out.writePrefix();

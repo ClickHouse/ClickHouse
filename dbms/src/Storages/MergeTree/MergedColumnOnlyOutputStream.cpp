@@ -10,7 +10,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info,
-    const String & filename_suffix)
+    bool is_writing_temp_files)
     : IMergedBlockOutputStream(data_part),
     header(header_), sync(sync_)
 {
@@ -20,7 +20,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity(),
         global_settings.min_bytes_to_use_direct_io);
 
-    writer_settings.filename_suffix = filename_suffix;
+    writer_settings.is_writing_temp_files = is_writing_temp_files;
     writer_settings.skip_offsets = skip_offsets_;
 
     writer = data_part->getWriter(header.getNamesAndTypesList(), indices_to_recalc,

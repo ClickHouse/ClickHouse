@@ -1,13 +1,8 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
+#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 
 namespace DB
 {
-
-namespace
-{
-    constexpr auto DATA_FILE_NAME = "data";
-    constexpr auto DATA_FILE_EXTENSION = ".bin";
-}
 
 
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
@@ -24,10 +19,14 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     indices_to_recalc_, marks_file_extension_,
     default_codec_, settings_, index_granularity_, true)
 {
-    String data_file_name = DATA_FILE_NAME + settings.filename_suffix;
+    using DataPart = MergeTreeDataPartCompact;
+    String data_file_name = DataPart::DATA_FILE_NAME;
+    if (settings.is_writing_temp_files)
+        data_file_name += DataPart::TEMP_FILE_SUFFIX;
+
     stream = std::make_unique<ColumnStream>(
         data_file_name,
-        part_path + data_file_name, DATA_FILE_EXTENSION,
+        part_path + data_file_name, DataPart::DATA_FILE_EXTENSION,
         part_path + data_file_name, marks_file_extension,
         default_codec,
         settings.max_compress_block_size,
