@@ -263,7 +263,7 @@ void MergeTreeRangeReader::ReadResult::shrink(Columns & old_columns)
             continue;
         auto new_column = old_columns[i]->cloneEmpty();
         new_column->reserve(total_rows_per_granule);
-        for (size_t j = 0, pos = 0; j < rows_per_granule_original.size(); pos += rows_per_granule_original[i], ++j)
+        for (size_t j = 0, pos = 0; j < rows_per_granule_original.size(); pos += rows_per_granule_original[j++])
         {
             if (rows_per_granule[j])
                 new_column->insertRangeFrom(*old_columns[i], pos, rows_per_granule[j]);
@@ -431,9 +431,11 @@ void MergeTreeRangeReader::ReadResult::setFilter(const ColumnPtr & new_filter)
     }
 
     ConstantFilterDescription const_description(*new_filter);
-    if (const_description.always_false)
+    if (const_description.always_true)
+        setFilterConstTrue();
+    else if (const_description.always_false)
         clear();
-    else if (!const_description.always_true)
+    else
     {
         FilterDescription filter_description(*new_filter);
         filter_holder = filter_description.data_holder ? filter_description.data_holder : new_filter;

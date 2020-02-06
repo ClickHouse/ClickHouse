@@ -227,4 +227,276 @@ SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos
 └─────────────────────────────────────────────┘
 ```
 
+## h3GetBaseCell
+
+Returns the base cell number of the index.
+
+**Syntax**
+
+```sql
+h3GetBaseCell(index)
+```
+
+**Parameters** 
+
+- `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
+
+**Returned values**
+
+- Hexagon base cell number. Type: [UInt8](../../data_types/int_uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT h3GetBaseCell(612916788725809151) as basecell
+```
+
+Result:
+
+```text
+┌─basecell─┐
+│       12 │
+└──────────┘
+```
+
+## h3HexAreaM2
+
+Average hexagon area in square meters at the given resolution.
+
+**Syntax** 
+
+```sql
+h3HexAreaM2(resolution)
+```
+
+**Parameters** 
+
+- `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
+
+**Returned values**
+
+- Area in m². Type: [Float64](../../data_types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT h3HexAreaM2(13) as area
+```
+
+Result:
+
+```text
+┌─area─┐
+│ 43.9 │
+└──────┘
+```
+
+## h3IndexesAreNeighbors
+
+Returns whether or not the provided H3Indexes are neighbors.
+
+**Syntax**
+
+```sql
+h3IndexesAreNeighbors(index1, index2)
+```
+
+**Parameters** 
+
+- `index1` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
+- `index2` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
+
+**Returned values**
+
+- Returns `1` if the indexes are neighbors, `0` otherwise. Type: [UInt8](../../data_types/int_uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT h3IndexesAreNeighbors(617420388351344639, 617420388352655359) AS n
+```
+
+Result:
+
+```text
+┌─n─┐
+│ 1 │
+└───┘
+```
+
+
+## h3ToChildren
+
+Returns an array with the child indexes of the given index.
+
+**Syntax**
+
+```sql
+h3ToChildren(index, resolution)
+```
+
+**Parameters** 
+
+- `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
+- `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
+
+**Returned values**
+
+- Array with the child H3 indexes. Array of type: [UInt64](../../data_types/int_uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT h3ToChildren(599405990164561919, 6) AS children
+```
+
+Result:
+
+```text
+┌─children───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [603909588852408319,603909588986626047,603909589120843775,603909589255061503,603909589389279231,603909589523496959,603909589657714687] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## h3ToParent
+
+Returns the parent (coarser) index containing the given index.
+
+**Syntax**
+
+```sql
+h3ToParent(index, resolution)
+```
+
+**Parameters** 
+
+- `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
+- `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
+
+**Returned values**
+
+- Parent H3 index. Type: [UInt64](../../data_types/int_uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT h3ToParent(599405990164561919, 3) as parent
+```
+
+Result:
+
+```text
+┌─────────────parent─┐
+│ 590398848891879423 │
+└────────────────────┘
+```
+
+## h3ToString
+
+Converts the H3Index representation of the index to the string representation. 
+
+```sql
+h3ToString(index)
+```
+
+**Parameters** 
+
+- `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
+
+**Returned values**
+
+- String representation of the H3 index. Type: [String](../../data_types/string.md).
+
+**Example**
+
+Query: 
+
+```sql
+SELECT h3ToString(617420388352917503) as h3_string
+```
+
+Result:
+
+```text
+┌─h3_string───────┐
+│ 89184926cdbffff │
+└─────────────────┘
+```
+
+## stringToH3
+
+Converts the string representation to H3Index (UInt64) representation.
+
+```sql
+stringToH3(index_str)
+```
+
+**Parameters** 
+
+- `index_str` — String representation of the H3 index. Type: [String](../../data_types/string.md).
+
+**Returned values**
+
+- Hexagon index number. Returns 0 on error. Type: [UInt64](../../data_types/int_uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT stringToH3('89184926cc3ffff') as index
+```
+
+Result:
+
+```text
+┌──────────────index─┐
+│ 617420388351344639 │
+└────────────────────┘
+```
+
+## h3GetResolution
+
+Returns the resolution of the index.
+
+**Syntax**
+
+```sql
+h3GetResolution(index)
+```
+
+**Parameters** 
+
+- `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
+
+**Returned values**
+
+- Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT h3GetResolution(617420388352917503) as res
+```
+
+Result:
+
+```text
+┌─res─┐
+│   9 │
+└─────┘
+```
+
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/geo/) <!--hide-->
