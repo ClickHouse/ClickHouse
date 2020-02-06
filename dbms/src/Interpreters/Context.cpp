@@ -650,6 +650,10 @@ void Context::checkAccess(const AccessFlags & access, const std::string_view & d
 void Context::checkAccess(const AccessRightsElement & access) const { return checkAccessImpl(access); }
 void Context::checkAccess(const AccessRightsElements & access) const { return checkAccessImpl(access); }
 
+void Context::switchRowPolicy()
+{
+    row_policy = getAccessControlManager().getRowPolicyContext(client_info.initial_user);
+}
 
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {

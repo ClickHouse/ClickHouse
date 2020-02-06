@@ -1080,37 +1080,37 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             options.to_stage > QueryProcessingStage::WithMergeableState &&
             !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
 
-        if (expressions.filter_info)
-        {
-            if constexpr (pipeline_with_processors)
-            {
-                pipeline.addSimpleTransform([&](const Block & block, QueryPipeline::StreamType stream_type) -> ProcessorPtr
-                {
-                    if (stream_type == QueryPipeline::StreamType::Totals)
-                        return nullptr;
-
-                    return std::make_shared<FilterTransform>(
-                        block,
-                        expressions.filter_info->actions,
-                        expressions.filter_info->column_name,
-                        expressions.filter_info->do_remove_column);
-                });
-            }
-            else
-            {
-                pipeline.transform([&](auto & stream)
-                {
-                    stream = std::make_shared<FilterBlockInputStream>(
-                        stream,
-                        expressions.filter_info->actions,
-                        expressions.filter_info->column_name,
-                        expressions.filter_info->do_remove_column);
-                });
-            }
-        }
-
         if (expressions.first_stage)
         {
+            if (expressions.filter_info)
+            {
+                if constexpr (pipeline_with_processors)
+                {
+                    pipeline.addSimpleTransform([&](const Block & block, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+                    {
+                        if (stream_type == QueryPipeline::StreamType::Totals)
+                            return nullptr;
+
+                        return std::make_shared<FilterTransform>(
+                            block,
+                            expressions.filter_info->actions,
+                            expressions.filter_info->column_name,
+                            expressions.filter_info->do_remove_column);
+                    });
+                }
+                else
+                {
+                    pipeline.transform([&](auto & stream)
+                    {
+                        stream = std::make_shared<FilterBlockInputStream>(
+                            stream,
+                            expressions.filter_info->actions,
+                            expressions.filter_info->column_name,
+                            expressions.filter_info->do_remove_column);
+                    });
+                }
+            }
+
             if (expressions.hasJoin())
             {
                 Block header_before_join;

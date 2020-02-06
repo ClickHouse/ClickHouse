@@ -9,9 +9,6 @@
                     <filtered_table1>
                         <filter>a = 1</filter>
                     </filtered_table1>
-                    <local>
-                        <filter>a = 1</filter>
-                    </local>
 
                     <!-- Complex expression filter -->
                     <filtered_table2>
@@ -25,5 +22,15 @@
                 </mydb>
             </databases>
         </default>
+        <another>
+            <!-- For testing the table filters -->
+            <databases>
+                <mydb>
+                    <local>
+                        <filter>a = 1</filter>
+                    </local>
+                </mydb>
+            </databases>
+        </another>
     </users>
 </yandex>
