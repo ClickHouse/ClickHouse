@@ -720,7 +720,7 @@ InterpreterSelectQuery::analyzeExpressions(
         */
 
     bool finalized = false;
-    size_t where_step_num;
+    size_t where_step_num = 0;
 
     auto finalizeChain = [&](ExpressionActionsChain & chain)
     {
