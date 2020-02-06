@@ -7,6 +7,7 @@
 #include <Storages/System/StorageSystemNumbers.h>
 #include <Access/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include "registerTableFunctions.h"
 
 
