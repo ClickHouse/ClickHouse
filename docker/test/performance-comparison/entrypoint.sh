@@ -31,6 +31,9 @@ ref_sha=$(cd ch && git rev-parse $ref_tag~0)
 # Set python output encoding so that we can print queries with Russian letters.
 export PYTHONIOENCODING=utf-8
 
+# Use 11 runs if not told otherwise
+export CHPC_RUNS=${CHPC_RUNS:-11}
+
 # Even if we have some errors, try our best to save the logs.
 set +e
 # compare.sh kills its process group, so put it into a separate one.
