@@ -154,12 +154,8 @@ private:
 
     struct AnalysisResult
     {
-        bool hasJoin() const { return before_join.get(); }
-        bool has_where      = false;
         bool need_aggregate = false;
-        bool has_having     = false;
         bool has_order_by   = false;
-        bool has_limit_by   = false;
 
         bool remove_where_filter = false;
         bool optimize_read_in_order = false;
@@ -188,6 +184,17 @@ private:
         FilterInfoPtr filter_info;
         ConstantFilterDescription prewhere_constant_filter_description;
         ConstantFilterDescription where_constant_filter_description;
+
+        bool hasFilter() const { return filter_info.get(); }
+        bool hasJoin() const { return before_join.get(); }
+        bool hasPrewhere() const { return prewhere_info.get(); }
+        bool hasWhere() const { return before_where.get(); }
+        bool hasHaving() const { return before_having.get(); }
+        bool hasLimitBy() const { return before_limit_by.get(); }
+
+        void removeExtraColumns();
+        void checkActions();
+        void finalize(const ExpressionActionsChain & chain, const Context & context, size_t where_step_num);
     };
 
     static AnalysisResult analyzeExpressions(
