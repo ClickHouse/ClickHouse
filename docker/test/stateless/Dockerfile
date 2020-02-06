@@ -24,7 +24,8 @@ RUN apt-get update -y \
             brotli \
             gdb \
             lsof \
-            llvm-8
+            llvm-8 \
+            vim
 
 
 ENV TZ=Europe/Moscow
