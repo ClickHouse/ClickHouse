@@ -30,7 +30,7 @@ if [ $DOWNLOAD_DATASETS -eq 1 ]; then
     download_data
 fi
 
-clickhouse-client --query "select * from system.query_log where name = 'log_queries'"
+clickhouse-client --query "select * from system.settings where name = 'log_queries'"
 tree /etc/clickhouse-server
 cat /etc/clickhouse-server/preprocessed/config.xml
 
