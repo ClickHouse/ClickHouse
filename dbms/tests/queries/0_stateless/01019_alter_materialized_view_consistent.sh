@@ -24,7 +24,8 @@ EOF
 # Also, helps detect data races.
 
 function insert_thread() {
-  trap 'exit' INT
+  # Always wait for all background INSERTs to finish to catch stuck queries.
+  trap 'wait; exit;' INT
 
   INSERT[0]="INSERT INTO TABLE src_a VALUES (1);"
   INSERT[1]="INSERT INTO TABLE src_b VALUES (2);"
