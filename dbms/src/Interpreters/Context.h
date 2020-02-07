@@ -221,6 +221,10 @@ public:
     std::shared_ptr<RowPolicyContext> getRowPolicy() const { return row_policy; }
     void checkRowPolicyManagementIsAllowed();
 
+    /// TODO: we need much better code for switching policies, quotas, access rights for initial user
+    /// Switches row policy in case we have initial user in client info
+    void switchRowPolicy();
+
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
       * The accumulated quota values are not reset if the quota is not deleted.

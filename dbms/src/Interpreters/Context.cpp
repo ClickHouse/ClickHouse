@@ -632,6 +632,11 @@ void Context::checkRowPolicyManagementIsAllowed()
             "User " + client_info.current_user + " doesn't have enough privileges to manage row policies", ErrorCodes::NOT_ENOUGH_PRIVILEGES);
 }
 
+void Context::switchRowPolicy()
+{
+    row_policy = getAccessControlManager().getRowPolicyContext(client_info.initial_user);
+}
+
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
