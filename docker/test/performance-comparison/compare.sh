@@ -148,10 +148,34 @@ function run_tests
 run_tests
 
 # Analyze results
+function report
+{
 result_structure="left float, right float, diff float, rd Array(float), query text"
-right/clickhouse local --file '*-report.tsv' -S "$result_structure" --query "select * from table where abs(diff) < 0.05 and rd[3] > 0.05 order by rd[3] desc" > unstable.tsv
-right/clickhouse local --file '*-report.tsv' -S "$result_structure" --query "select * from table where abs(diff) > 0.05 and abs(diff) > rd[3] order by diff desc" > changed-perf.tsv
-right/clickhouse local --file '*-client-time.tsv' -S "query text, client float, server float" -q "select client, server, floor(client/server, 3) p, query from table where p > 1.01 order by p desc" > slow-on-client.tsv
+rm test-times.tsv test-dump.tsv unstable.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv ||:
+right/clickhouse local --query "
+create table queries engine Memory as select
+        replaceAll(_file, '-report.tsv', '') test,
+        if(abs(diff) < 0.05 and rd[3] > 0.05,      1, 0) unstable,
+        if(abs(diff) > 0.05 and abs(diff) > rd[3], 1, 0) changed,
+        *
+    from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
+
+create table changed_perf_tsv     engine File(TSV, 'changed-perf.tsv')     as select left, right, diff, rd, query from queries where changed  order by rd[3] desc;
+create table unstable_queries_tsv engine File(TSV, 'unstable-queries.tsv') as select left, right, diff, rd, query from queries where unstable order by rd[3] desc;
+create table unstable_tests_tsv   engine File(TSV, 'bad-tests.tsv')        as select test, sum(unstable) u, sum(changed) c, u + c s from queries
+    group by test having s > 0 order by s desc;
+
+create table times engine Memory as select *, replaceAll(_file, '-client-time.tsv', '') test
+    from file('*-client-time.tsv', TSV, 'query text, client float, server float');
+
+create table slow_on_client_tsv engine File(TSV, 'slow-on-client.tsv') as
+    select client, server, floor(client/server, 3) p, query from times where p > 1.02 order by p desc;
+
+create table test_times_tsv engine File(TSV, 'test-times.tsv') as
+    select test, floor(sum(client), 3) t, count(*) n, floor(t/n, 3) from times group by test order by sum(client) desc;
+"
 grep Exception:[^:] *-err.log > run-errors.log
 
 $script_dir/report.py > report.html
+}
+report
