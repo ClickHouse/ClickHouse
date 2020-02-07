@@ -57,6 +57,9 @@ RUN apt-get update -y \
             rename \
             wget
 
+RUN ln -s /usr/bin/lld-8 /usr/bin/ld.lld
+RUN ln -s /usr/bin/lld-8 /usr/bin/ldd
+
 ENV CC=clang-8
 ENV CXX=clang++-8
 
