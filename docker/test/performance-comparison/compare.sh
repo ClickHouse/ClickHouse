@@ -126,17 +126,20 @@ function run_tests
     # Just check that the script runs at all
     "$script_dir/perf.py" --help > /dev/null
 
+    rm -v test-times.tsv ||:
+
     # FIXME remove some broken long tests
-    rm left/performance/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
+    rm right/performance/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
 
     # Run the tests
-    for test in left/performance/${CHPC_TEST_GLOB:-*.xml}
+    for test in right/performance/${CHPC_TEST_GLOB:-*.xml}
     do
         test_name=$(basename $test ".xml")
         echo test $test_name
-        TIMEFORMAT=$(printf "time\t$test_name\t%%3R\t%%3U\t%%3S\n")
+        #TIMEFORMAT=$(printf "time\t$test_name\t%%3R\t%%3U\t%%3S\n")
+        TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
         #time "$script_dir/perf.py" "$test" > >(tee "$test_name-raw.tsv") 2> >(tee "$test_name-err.log") || continue
-        time "$script_dir/perf.py" "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" || continue
+        { time "$script_dir/perf.py" "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; } 2>> "test-times.tsv" || continue
         grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
         grep ^client-time "$test_name-raw.tsv" | cut -f2- > "$test_name-client-time.tsv"
         right/clickhouse local --file "$test_name-queries.tsv" --structure 'query text, run int, version UInt32, time float' --query "$(cat $script_dir/eqmed.sql)" > "$test_name-report.tsv"
