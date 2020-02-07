@@ -203,7 +203,7 @@ struct ExpressionAnalysisResult
         const ASTSelectQuery & query,
         SelectQueryExpressionAnalyzer & query_analyzer,
         bool first_stage,
-        bool secons_stage,
+        bool second_stage,
         const Context & context,
         const StoragePtr & storage,
         bool only_types,

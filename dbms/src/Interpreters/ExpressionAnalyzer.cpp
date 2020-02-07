@@ -944,14 +944,14 @@ void SelectQueryExpressionAnalyzer::getAggregateInfo(Names & key_names, Aggregat
 ExpressionAnalysisResult::ExpressionAnalysisResult(const ASTSelectQuery & query,
         SelectQueryExpressionAnalyzer & query_analyzer,
         bool first_stage_,
-        bool secons_stage_,
+        bool second_stage_,
         const Context & context,
         const StoragePtr & storage,
         bool only_types,
         const FilterInfoPtr & filter_info_,
         const Block & source_header)
     : first_stage(first_stage_)
-    , second_stage(secons_stage_)
+    , second_stage(second_stage_)
 {
     /// first_stage: Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     /// second_stage: Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
