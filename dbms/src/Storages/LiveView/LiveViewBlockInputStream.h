@@ -185,7 +185,7 @@ protected:
             num_updates += 1;
         }
 
-        last_event_timestamp_usec = static_cast<UInt64>(timestamp.epochMicroseconds());
+        last_event_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
         return { res, true };
     }
 
