@@ -621,6 +621,12 @@ inline bool isStringOrFixedString(const T & data_type)
     return WhichDataType(data_type).isStringOrFixedString();
 }
 
+template <typename T>
+inline bool isNotCreatable(const T & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isNothing() || which.isFunction() || which.isSet();
+}
 
 inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
 {

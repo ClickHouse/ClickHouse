@@ -236,7 +236,6 @@ binary     decimal
 01101000 = 104
 ```
 
-
 ## groupBitmap
 
 Bitmap or Aggregate calculations from a unsigned integer column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md).
@@ -962,9 +961,9 @@ The result is equal to the square root of `varSamp(x)`.
 
 The result is equal to the square root of `varPop(x)`.
 
-## topK(N)(column)
+## topK(N)(x)
 
-Returns an array of the most frequent values in the specified column. The resulting array is sorted in descending order of frequency of values (not by the values themselves).
+Returns an array of the approximately most frequent values in the specified column. The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).
 
 Implements the [ Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf) algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
 
@@ -976,10 +975,15 @@ This function doesn't provide a guaranteed result. In certain situations, errors
 
 We recommend using the `N < 10 ` value; performance is reduced with large `N` values. Maximum value of ` N = 65536`.
 
+**Parameters**
+
+- 'N' is the number of elements to return.
+
+If the parameter is omitted, default value 10 is used.
+
 **Arguments**
 
-- 'N' is the number of values.
-- ' x ' – The column.
+- ' x ' – The value to calculate frequency.
 
 **Example**
 
@@ -994,6 +998,45 @@ FROM ontime
 ┌─res─────────────────┐
 │ [19393,19790,19805] │
 └─────────────────────┘
+```
+
+## topKWeighted {#topkweighted}
+
+Similar to `topK` but takes one additional argument of integer type - `weight`. Every value is accounted `weight` times for frequency calculation.
+
+**Syntax**
+
+```sql
+topKWeighted(N)(x, weight)
+```
+
+**Parameters**
+
+- `N` — The number of elements to return.
+
+**Arguments**
+
+- `x` – The value.
+- `weight` — The weight. [UInt8](../../data_types/int_uint.md).
+
+**Returned value**
+
+Returns an array of the values with maximum approximate sum of weights.
+
+**Example**
+
+Query:
+
+```sql
+SELECT topKWeighted(10)(number, number) FROM numbers(1000)
+```
+
+Result:
+
+```text
+┌─topKWeighted(10)(number, number)──────────┐
+│ [999,998,997,996,995,994,993,992,991,990] │
+└───────────────────────────────────────────┘
 ```
 
 ## covarSamp(x, y)

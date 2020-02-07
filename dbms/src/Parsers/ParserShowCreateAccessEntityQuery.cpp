@@ -3,6 +3,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/parseUserName.h>
 #include <assert.h>
 
 
@@ -15,7 +16,9 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
 
     using Kind = ASTShowCreateAccessEntityQuery::Kind;
     Kind kind;
-    if (ParserKeyword{"QUOTA"}.ignore(pos, expected))
+    if (ParserKeyword{"USER"}.ignore(pos, expected))
+        kind = Kind::USER;
+    else if (ParserKeyword{"QUOTA"}.ignore(pos, expected))
         kind = Kind::QUOTA;
     else if (ParserKeyword{"POLICY"}.ignore(pos, expected) || ParserKeyword{"ROW POLICY"}.ignore(pos, expected))
         kind = Kind::ROW_POLICY;
@@ -24,9 +27,15 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
 
     String name;
     bool current_quota = false;
+    bool current_user = false;
     RowPolicy::FullNameParts row_policy_name;
 
-    if (kind == Kind::ROW_POLICY)
+    if (kind == Kind::USER)
+    {
+        if (!parseUserNameOrCurrentUserTag(pos, expected, name, current_user))
+            current_user = true;
+    }
+    else if (kind == Kind::ROW_POLICY)
     {
         String & database = row_policy_name.database;
         String & table_name = row_policy_name.table_name;

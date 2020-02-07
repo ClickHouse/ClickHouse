@@ -1,8 +1,8 @@
 # Performance
 
-According to internal testing results at Yandex, ClickHouse shows the best performance (both the highest throughput for long queries and the lowest latency on short queries) for comparable operating scenarios among systems of its class that were available for testing. You can view the test results on a [separate page](/benchmark.html).
+According to internal testing results at Yandex, ClickHouse shows the best performance (both the highest throughput for long queries and the lowest latency on short queries) for comparable operating scenarios among systems of its class that were available for testing. You can view the test results on a [separate page](https://clickhouse.tech/benchmark.html).
 
-This has also been confirmed by numerous independent benchmarks. They are not difficult to find using an internet search, or you can see [our small collection of related links](/#independent-benchmarks).
+This has also been confirmed by numerous independent benchmarks. They are not difficult to find using an internet search, or you can see [our small collection of related links](https://clickhouse.tech/#independent-benchmarks).
 
 ## Throughput for a Single Large Query
 
