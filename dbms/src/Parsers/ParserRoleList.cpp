@@ -1,7 +1,7 @@
 #include <Parsers/ParserRoleList.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ASTRoleList.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/parseUserName.h>
 #include <boost/range/algorithm/find.hpp>
 
 
@@ -47,7 +47,7 @@ bool ParserRoleList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         else
         {
             String name;
-            if (!parseIdentifierOrStringLiteral(pos, expected, name))
+            if (!parseUserName(pos, expected, name))
                 return false;
             if (except_mode && (boost::range::find(roles, name) == roles.end()))
                 except_roles.push_back(name);

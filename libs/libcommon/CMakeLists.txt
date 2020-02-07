@@ -17,7 +17,7 @@ set (COMMON_SRCS
     src/DateLUTImpl.cpp
     src/demangle.cpp
     src/getMemoryAmount.cpp
-    src/getThreadNumber.cpp
+    src/getThreadId.cpp
     src/JSON.cpp
     src/LineReader.cpp
     src/mremap.cpp
@@ -36,7 +36,7 @@ set (COMMON_SRCS
     include/common/ErrorHandlers.h
     include/common/find_symbols.h
     include/common/getMemoryAmount.h
-    include/common/getThreadNumber.h
+    include/common/getThreadId.h
     include/common/JSON.h
     include/common/likely.h
     include/common/LineReader.h
@@ -61,6 +61,7 @@ set (COMMON_SRCS
     include/ext/function_traits.h
     include/ext/identity.h
     include/ext/map.h
+    include/ext/push_back.h
     include/ext/range.h
     include/ext/scope_guard.h
     include/ext/size.h

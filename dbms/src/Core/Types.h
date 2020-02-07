@@ -14,6 +14,7 @@ namespace DB
 
 struct Null {};
 
+/// @note Except explicitly described you should not assume on TypeIndex numbers and/or their orders in this enum.
 enum class TypeIndex
 {
     Nothing = 0,

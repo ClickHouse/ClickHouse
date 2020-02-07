@@ -10,6 +10,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnString.h>
 
 #include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
@@ -56,8 +57,6 @@ class AggregateFunctionSumMapBase : public IAggregateFunctionDataHelper<
     AggregateFunctionSumMapData<NearestFieldType<T>>, Derived>
 {
 private:
-    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
-
     DataTypePtr keys_type;
     DataTypes values_types;
 
@@ -84,9 +83,10 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
         // Column 0 contains array of keys of known type
+        Field key_field;
         const ColumnArray & array_column0 = assert_cast<const ColumnArray &>(*columns[0]);
         const IColumn::Offsets & offsets0 = array_column0.getOffsets();
-        const auto & keys_vec = static_cast<const ColVecType &>(array_column0.getData());
+        const IColumn & key_column = array_column0.getData();
         const size_t keys_vec_offset = offsets0[row_num - 1];
         const size_t keys_vec_size = (offsets0[row_num] - keys_vec_offset);
 
@@ -111,7 +111,8 @@ public:
                 using IteratorType = typename MapType::iterator;
 
                 array_column.getData().get(values_vec_offset + i, value);
-                const auto & key = keys_vec.getElement(keys_vec_offset + i);
+                key_column.get(keys_vec_offset + i, key_field);
+                auto && key = key_field.get<T>();
 
                 if (!keepKey(key))
                 {
@@ -121,7 +122,7 @@ public:
                 IteratorType it;
                 if constexpr (IsDecimalNumber<T>)
                 {
-                    UInt32 scale = keys_vec.getData().getScale();
+                    UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getData().getScale();
                     it = merged_maps.find(DecimalField<T>(key, scale));
                 }
                 else
@@ -139,7 +140,7 @@ public:
 
                     if constexpr (IsDecimalNumber<T>)
                     {
-                        UInt32 scale = keys_vec.getData().getScale();
+                        UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getData().getScale();
                         merged_maps.emplace(DecimalField<T>(key, scale), std::move(new_values));
                     }
                     else

@@ -58,6 +58,13 @@ public:
         const BlockInputStreamPtr & input_,
         const SelectQueryOptions & = {});
 
+    /// Read data not from the table specified in the query, but from the prepared pipe `input`.
+    InterpreterSelectQuery(
+            const ASTPtr & query_ptr_,
+            const Context & context_,
+            Pipe input_pipe_,
+            const SelectQueryOptions & = {});
+
     /// Read data not from the table specified in the query, but from the specified `storage_`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -90,13 +97,14 @@ private:
         const ASTPtr & query_ptr_,
         const Context & context_,
         const BlockInputStreamPtr & input_,
+        std::optional<Pipe> input_pipe,
         const StoragePtr & storage_,
         const SelectQueryOptions &,
         const Names & required_result_column_names = {});
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
-    Block getSampleBlockImpl();
+    Block getSampleBlockImpl(bool try_move_to_prewhere);
 
     struct Pipeline
     {
@@ -142,7 +150,7 @@ private:
     };
 
     template <typename TPipeline>
-    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, QueryPipeline & save_context_and_storage);
+    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe, QueryPipeline & save_context_and_storage);
 
     struct AnalysisResult
     {
@@ -301,6 +309,7 @@ private:
 
     /// Used when we read from prepared input, not table or subquery.
     BlockInputStreamPtr input;
+    std::optional<Pipe> input_pipe;
 
     Poco::Logger * log;
 };

@@ -193,6 +193,8 @@ nav:
   - 'Configuration Files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'
   - 'System Tables': 'operations/system_tables.md'
+  - 'Optimizing Performance':
+    - 'Query Profiling': 'operations/performance/sampling_query_profiler.md'
   - 'Testing Hardware': 'operations/performance_test.md'
   - 'Server Configuration Parameters':
     - 'Introduction': 'operations/server_settings/index.md'
