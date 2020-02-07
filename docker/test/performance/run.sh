@@ -1,12 +1,13 @@
 #!/bin/bash
 
-set -x
+set -ex
 
 install_packages() {
     dpkg -i package_folder/clickhouse-common-static_*.deb
     dpkg -i package_folder/clickhouse-server_*.deb
     dpkg -i package_folder/clickhouse-client_*.deb
     dpkg -i package_folder/clickhouse-test_*.deb
+    ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/config.d/
     service clickhouse-server start && sleep 5
 }
 
