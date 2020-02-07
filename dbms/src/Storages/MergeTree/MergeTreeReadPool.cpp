@@ -28,11 +28,6 @@ MergeTreeReadPool::MergeTreeReadPool(
       column_names{column_names_}, do_not_steal_tasks{do_not_steal_tasks_},
       predict_block_size_bytes{preferred_block_size_bytes_ > 0}, prewhere_info{prewhere_info_}, parts_ranges{parts_}
 {
-    /// reverse from right-to-left to left-to-right
-    /// because 'reverse' was done in MergeTreeDataSelectExecutor
-    for (auto & part_ranges : parts_ranges)
-        std::reverse(std::begin(part_ranges.ranges), std::end(part_ranges.ranges));
-
     /// parts don't contain duplicate MergeTreeDataPart's.
     const auto per_part_sum_marks = fillPerPartInfo(parts_, check_columns_);
     fillPerThreadInfo(threads_, sum_marks_, per_part_sum_marks, parts_, min_marks_for_concurrent_read_);
@@ -79,10 +74,9 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
     {
         const auto marks_to_get_from_range = marks_in_part;
 
-        /** Ranges are in right-to-left order, because 'reverse' was done in MergeTreeDataSelectExecutor
-            *     and that order is supported in 'fillPerThreadInfo'.
-            */
+        /// Ranges are in right-to-left order, because 'reverse' was done in 'fillPerThreadInfo'.
         ranges_to_get_from_part = thread_task.ranges;
+        std::reverse(ranges_to_get_from_part.begin(), ranges_to_get_from_part.end());
 
         marks_in_part -= marks_to_get_from_range;
 
@@ -113,11 +107,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
             marks_in_part -= marks_to_get_from_range;
             need_marks -= marks_to_get_from_range;
         }
-
-        /** Change order to right-to-left, for MergeTreeThreadSelectBlockInputStream to get ranges with .pop_back()
-            *  (order was changed to left-to-right due to .pop_back() above).
-            */
-        std::reverse(std::begin(ranges_to_get_from_part), std::end(ranges_to_get_from_part));
+        /// Order of ranges was changed to left-to-right due to .pop_back() above.
     }
 
     auto curr_task_size_predictor = !per_part_size_predictor[part_idx] ? nullptr
@@ -211,7 +201,6 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
 
         /// Read marks for every data part.
         size_t sum_marks = 0;
-        /// Ranges are in right-to-left order, due to 'reverse' in MergeTreeDataSelectExecutor.
         for (const auto & range : part.ranges)
             sum_marks += range.end - range.begin;
 
@@ -250,6 +239,10 @@ void MergeTreeReadPool::fillPerThreadInfo(
     RangesInDataParts & parts, const size_t min_marks_for_concurrent_read)
 {
     threads_tasks.resize(threads);
+
+    /// Let the ranges be listed from right to left so that the leftmost range can be dropped using `pop_back()`.
+    for (auto & part : parts)
+        std::reverse(part.ranges.begin(), part.ranges.end());
 
     const size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;
 

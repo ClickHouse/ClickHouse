@@ -718,9 +718,6 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     for (size_t i = 0; i < parts.size(); ++i)
     {
         total_rows += parts[i].getRowsCount();
-        /// Let the ranges be listed from right to left so that the leftmost range can be dropped using `pop_back()`.
-        std::reverse(parts[i].ranges.begin(), parts[i].ranges.end());
-
         sum_marks_in_parts[i] = parts[i].getMarksCount();
         sum_marks += sum_marks_in_parts[i];
 
@@ -897,6 +894,8 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                 }
                 new_ranges.emplace_back(range.begin, range.end);
             }
+
+            /// Restore left-to-right order.
             std::reverse(new_ranges.begin(), new_ranges.end());
         }
 
