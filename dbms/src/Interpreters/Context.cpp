@@ -579,6 +579,11 @@ const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
     return shared->config ? *shared->config : Poco::Util::Application::instance().config();
 }
 
+void Context::switchRowPolicy()
+{
+    override_user_filter = true;
+}
+
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
@@ -597,11 +602,13 @@ bool Context::hasUserProperty(const String & database, const String & table, con
 {
     auto lock = getLock();
 
+    const String & user = override_user_filter && name == "filter" ? client_info.initial_user : client_info.current_user;
+
     // No user - no properties.
-    if (client_info.current_user.empty())
+    if (user.empty())
         return false;
 
-    const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
+    const auto & props = shared->users_manager->getUser(user)->table_props;
 
     auto db = props.find(database);
     if (db == props.end())
@@ -617,7 +624,10 @@ bool Context::hasUserProperty(const String & database, const String & table, con
 const String & Context::getUserProperty(const String & database, const String & table, const String & name) const
 {
     auto lock = getLock();
-    const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
+
+    const String & user = override_user_filter && name == "filter" ? client_info.initial_user : client_info.current_user;
+
+    const auto & props = shared->users_manager->getUser(user)->table_props;
     return props.at(database).at(table).at(name);
 }
 

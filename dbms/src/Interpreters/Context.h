@@ -133,6 +133,7 @@ private:
     InputBlocksReader input_blocks_reader;
 
     std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
+    bool override_user_filter = false;
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     std::shared_ptr<const SettingsConstraints> settings_constraints;
@@ -194,6 +195,10 @@ public:
     /// Global application configuration settings.
     void setConfig(const ConfigurationPtr & config);
     const Poco::Util::AbstractConfiguration & getConfigRef() const;
+
+    /// TODO: we need much better code for switching policies, quotas, access rights for initial user
+    /// Switches row policy in case we have initial user in client info
+    void switchRowPolicy();
 
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
