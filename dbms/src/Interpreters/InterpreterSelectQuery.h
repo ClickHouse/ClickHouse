@@ -104,7 +104,7 @@ private:
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
-    Block getSampleBlockImpl();
+    Block getSampleBlockImpl(bool try_move_to_prewhere);
 
     struct Pipeline
     {

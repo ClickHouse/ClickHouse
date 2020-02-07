@@ -1,15 +1,12 @@
 #include <Access/AllowedClientHosts.h>
 #include <Common/Exception.h>
 #include <common/SimpleCache.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <IO/ReadHelpers.h>
+#include <Functions/likePatternToRegexp.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/RegularExpression.h>
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
-#include <boost/range/algorithm/find.hpp>
-#include <boost/range/algorithm/find_first_of.hpp>
-#include <boost/algorithm/string/predicate.hpp>
+#include <boost/algorithm/string/replace.hpp>
 #include <ifaddrs.h>
 
 
@@ -27,20 +24,6 @@ namespace
     using IPSubnet = AllowedClientHosts::IPSubnet;
     const IPSubnet ALL_ADDRESSES{IPAddress{IPAddress::IPv6}, IPAddress{IPAddress::IPv6}};
 
-    const IPAddress & getIPV6Loopback()
-    {
-        static const IPAddress ip("::1");
-        return ip;
-    }
-
-    bool isIPV4LoopbackMappedToIPV6(const IPAddress & ip)
-    {
-        static const IPAddress prefix("::ffff:127.0.0.0");
-        /// 104 == 128 - 24, we have to reset the lowest 24 bits of 128 before comparing with `prefix`
-        /// (IPv4 loopback means any IP from 127.0.0.0 to 127.255.255.255).
-        return (ip & IPAddress(104, IPAddress::IPv6)) == prefix;
-    }
-
     /// Converts an address to IPv6.
     /// The loopback address "127.0.0.1" (or any "127.x.y.z") is converted to "::1".
     IPAddress toIPv6(const IPAddress & ip)
@@ -52,34 +35,17 @@ namespace
             v6 = IPAddress("::ffff:" + ip.toString());
 
         // ::ffff:127.XX.XX.XX -> ::1
-        if (isIPV4LoopbackMappedToIPV6(v6))
-            v6 = getIPV6Loopback();
+        if ((v6 & IPAddress(104, IPAddress::IPv6)) == IPAddress("::ffff:127.0.0.0"))
+            v6 = IPAddress{"::1"};
 
         return v6;
     }
 
-    /// Converts a subnet to IPv6.
     IPSubnet toIPv6(const IPSubnet & subnet)
     {
-        IPSubnet v6;
-        if (subnet.prefix.family() == IPAddress::IPv6)
-            v6.prefix = subnet.prefix;
-        else
-            v6.prefix = IPAddress("::ffff:" + subnet.prefix.toString());
-
-        if (subnet.mask.family() == IPAddress::IPv6)
-            v6.mask = subnet.mask;
-        else
-            v6.mask = IPAddress(96, IPAddress::IPv6) | IPAddress("::ffff:" + subnet.mask.toString());
-
-        v6.prefix = v6.prefix & v6.mask;
-
-        // ::ffff:127.XX.XX.XX -> ::1
-        if (isIPV4LoopbackMappedToIPV6(v6.prefix))
-            v6 = {getIPV6Loopback(), IPAddress(128, IPAddress::IPv6)};
-
-        return v6;
+        return IPSubnet(toIPv6(subnet.getPrefix()), subnet.getMask());
     }
+
 
     /// Helper function for isAddressOfHost().
     bool isAddressOfHostImpl(const IPAddress & address, const String & host)
@@ -150,7 +116,7 @@ namespace
 
         int err = getifaddrs(&ifa_begin);
         if (err)
-            return {getIPV6Loopback()};
+            return {IPAddress{"::1"}};
 
         for (const ifaddrs * ifa = ifa_begin; ifa; ifa = ifa->ifa_next)
         {
@@ -203,163 +169,203 @@ namespace
         static SimpleCache<decltype(getHostByAddressImpl), &getHostByAddressImpl> cache;
         return cache(address);
     }
-}
 
 
-String AllowedClientHosts::IPSubnet::toString() const
-{
-    unsigned int prefix_length = mask.prefixLength();
-    if (IPAddress{prefix_length, mask.family()} == mask)
-        return prefix.toString() + "/" + std::to_string(prefix_length);
-
-    return prefix.toString() + "/" + mask.toString();
-}
-
-
-AllowedClientHosts::AllowedClientHosts()
-{
-}
-
-
-AllowedClientHosts::AllowedClientHosts(AllAddressesTag)
-{
-    addAllAddresses();
-}
-
-
-AllowedClientHosts::~AllowedClientHosts() = default;
-
-
-AllowedClientHosts::AllowedClientHosts(const AllowedClientHosts & src)
-{
-    *this = src;
-}
-
-
-AllowedClientHosts & AllowedClientHosts::operator =(const AllowedClientHosts & src)
-{
-    addresses = src.addresses;
-    localhost = src.localhost;
-    subnets = src.subnets;
-    host_names = src.host_names;
-    host_regexps = src.host_regexps;
-    compiled_host_regexps.clear();
-    return *this;
-}
-
-
-AllowedClientHosts::AllowedClientHosts(AllowedClientHosts && src) = default;
-AllowedClientHosts & AllowedClientHosts::operator =(AllowedClientHosts && src) = default;
-
-
-void AllowedClientHosts::clear()
-{
-    addresses.clear();
-    localhost = false;
-    subnets.clear();
-    host_names.clear();
-    host_regexps.clear();
-    compiled_host_regexps.clear();
-}
-
-
-bool AllowedClientHosts::empty() const
-{
-    return addresses.empty() && subnets.empty() && host_names.empty() && host_regexps.empty();
-}
-
-
-void AllowedClientHosts::addAddress(const IPAddress & address)
-{
-    IPAddress addr_v6 = toIPv6(address);
-    if (boost::range::find(addresses, addr_v6) != addresses.end())
-        return;
-    addresses.push_back(addr_v6);
-    if (addr_v6.isLoopback())
-        localhost = true;
-}
-
-
-void AllowedClientHosts::addAddress(const String & address)
-{
-    addAddress(IPAddress{address});
-}
-
-
-void AllowedClientHosts::addSubnet(const IPSubnet & subnet)
-{
-    IPSubnet subnet_v6 = toIPv6(subnet);
-
-    if (subnet_v6.mask == IPAddress(128, IPAddress::IPv6))
+    void parseLikePatternIfIPSubnet(const String & pattern, IPSubnet & subnet, IPAddress::Family address_family)
     {
-        addAddress(subnet_v6.prefix);
-        return;
+        size_t slash = pattern.find('/');
+        if (slash != String::npos)
+        {
+            /// IP subnet, e.g. "192.168.0.0/16" or "192.168.0.0/255.255.0.0".
+            subnet = IPSubnet{pattern};
+            return;
+        }
+
+        bool has_wildcard = (pattern.find_first_of("%_") != String::npos);
+        if (has_wildcard)
+        {
+            /// IP subnet specified with one of the wildcard characters, e.g. "192.168.%.%".
+            String wildcard_replaced_with_zero_bits = pattern;
+            String wildcard_replaced_with_one_bits = pattern;
+            if (address_family == IPAddress::IPv6)
+            {
+                boost::algorithm::replace_all(wildcard_replaced_with_zero_bits, "_", "0");
+                boost::algorithm::replace_all(wildcard_replaced_with_zero_bits, "%", "0000");
+                boost::algorithm::replace_all(wildcard_replaced_with_one_bits, "_", "f");
+                boost::algorithm::replace_all(wildcard_replaced_with_one_bits, "%", "ffff");
+            }
+            else if (address_family == IPAddress::IPv4)
+            {
+                boost::algorithm::replace_all(wildcard_replaced_with_zero_bits, "%", "0");
+                boost::algorithm::replace_all(wildcard_replaced_with_one_bits, "%", "255");
+            }
+
+            IPAddress prefix{wildcard_replaced_with_zero_bits};
+            IPAddress mask = ~(prefix ^ IPAddress{wildcard_replaced_with_one_bits});
+            subnet = IPSubnet{prefix, mask};
+            return;
+        }
+
+        /// Exact IP address.
+        subnet = IPSubnet{pattern};
     }
 
-    if (boost::range::find(subnets, subnet_v6) == subnets.end())
-        subnets.push_back(subnet_v6);
-}
-
-
-void AllowedClientHosts::addSubnet(const IPAddress & prefix, const IPAddress & mask)
-{
-    addSubnet(IPSubnet{prefix, mask});
-}
-
-
-void AllowedClientHosts::addSubnet(const IPAddress & prefix, size_t num_prefix_bits)
-{
-    addSubnet(prefix, IPAddress(num_prefix_bits, prefix.family()));
-}
-
-
-void AllowedClientHosts::addSubnet(const String & subnet)
-{
-    size_t slash = subnet.find('/');
-    if (slash == String::npos)
+    /// Extracts a subnet, a host name or a host name regular expession from a like pattern.
+    void parseLikePattern(
+        const String & pattern, std::optional<IPSubnet> & subnet, std::optional<String> & name, std::optional<String> & name_regexp)
     {
-        addAddress(subnet);
-        return;
+        /// If `host` starts with digits and a dot then it's an IP pattern, otherwise it's a hostname pattern.
+        size_t first_not_digit = pattern.find_first_not_of("0123456789");
+        if ((first_not_digit != String::npos) && (first_not_digit != 0) && (pattern[first_not_digit] == '.'))
+        {
+            parseLikePatternIfIPSubnet(pattern, subnet.emplace(), IPAddress::IPv4);
+            return;
+        }
+
+        size_t first_not_hex = pattern.find_first_not_of("0123456789ABCDEFabcdef");
+        if (((first_not_hex == 4) && pattern[first_not_hex] == ':') || pattern.starts_with("::"))
+        {
+            parseLikePatternIfIPSubnet(pattern, subnet.emplace(), IPAddress::IPv6);
+            return;
+        }
+
+        bool has_wildcard = (pattern.find_first_of("%_") != String::npos);
+        if (has_wildcard)
+        {
+            name_regexp = likePatternToRegexp(pattern);
+            return;
+        }
+
+        name = pattern;
     }
-
-    IPAddress prefix{String{subnet, 0, slash}};
-    String mask(subnet, slash + 1, subnet.length() - slash - 1);
-    if (std::all_of(mask.begin(), mask.end(), isNumericASCII))
-        addSubnet(prefix, parseFromString<UInt8>(mask));
-    else
-        addSubnet(prefix, IPAddress{mask});
 }
 
 
-void AllowedClientHosts::addHostName(const String & host_name)
+bool AllowedClientHosts::contains(const IPAddress & client_address) const
 {
-    if (boost::range::find(host_names, host_name) != host_names.end())
-        return;
-    host_names.push_back(host_name);
-    if (boost::iequals(host_name, "localhost"))
-        localhost = true;
-}
+    if (any_host)
+        return true;
 
+    IPAddress client_v6 = toIPv6(client_address);
 
-void AllowedClientHosts::addHostRegexp(const String & host_regexp)
-{
-    if (boost::range::find(host_regexps, host_regexp) == host_regexps.end())
-        host_regexps.push_back(host_regexp);
-}
+    std::optional<bool> is_client_local_value;
+    auto is_client_local = [&]
+    {
+        if (is_client_local_value)
+            return *is_client_local_value;
+        is_client_local_value = isAddressOfLocalhost(client_v6);
+        return *is_client_local_value;
+    };
 
+    if (local_host && is_client_local())
+        return true;
 
-void AllowedClientHosts::addAllAddresses()
-{
-    clear();
-    addSubnet(ALL_ADDRESSES);
-}
+    /// Check `addresses`.
+    auto check_address = [&](const IPAddress & address_)
+    {
+        IPAddress address_v6 = toIPv6(address_);
+        if (address_v6.isLoopback())
+            return is_client_local();
+        return address_v6 == client_v6;
+    };
 
+    for (const auto & address : addresses)
+        if (check_address(address))
+            return true;
 
-bool AllowedClientHosts::containsAllAddresses() const
-{
-    return (boost::range::find(subnets, ALL_ADDRESSES) != subnets.end())
-        || (boost::range::find(host_regexps, ".*") != host_regexps.end())
-        || (boost::range::find(host_regexps, "$") != host_regexps.end());
+    /// Check `subnets`.
+    auto check_subnet = [&](const IPSubnet & subnet_)
+    {
+        IPSubnet subnet_v6 = toIPv6(subnet_);
+        if (subnet_v6.isMaskAllBitsOne())
+            return check_address(subnet_v6.getPrefix());
+        return (client_v6 & subnet_v6.getMask()) == subnet_v6.getPrefix();
+    };
+
+    for (const auto & subnet : subnets)
+        if (check_subnet(subnet))
+            return true;
+
+    /// Check `names`.
+    auto check_name = [&](const String & name_)
+    {
+        if (boost::iequals(name_, "localhost"))
+            return is_client_local();
+        try
+        {
+            return isAddressOfHost(client_v6, name_);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::DNS_ERROR)
+                throw;
+            /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
+            LOG_WARNING(
+                &Logger::get("AddressPatterns"),
+                "Failed to check if the allowed client hosts contain address " << client_address.toString() << ". " << e.displayText()
+                                                                               << ", code = " << e.code());
+            return false;
+        }
+    };
+
+    for (const String & name : names)
+        if (check_name(name))
+            return true;
+
+    /// Check `name_regexps`.
+    std::optional<String> resolved_host;
+    auto check_name_regexp = [&](const String & name_regexp_)
+    {
+        try
+        {
+            if (boost::iequals(name_regexp_, "localhost"))
+                return is_client_local();
+            if (!resolved_host)
+                resolved_host = getHostByAddress(client_v6);
+            if (resolved_host->empty())
+                return false;
+            Poco::RegularExpression re(name_regexp_);
+            Poco::RegularExpression::Match match;
+            return re.match(*resolved_host, match) != 0;
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::DNS_ERROR)
+                throw;
+            /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
+            LOG_WARNING(
+                &Logger::get("AddressPatterns"),
+                "Failed to check if the allowed client hosts contain address " << client_address.toString() << ". " << e.displayText()
+                                                                             << ", code = " << e.code());
+            return false;
+        }
+    };
+
+    for (const String & name_regexp : name_regexps)
+        if (check_name_regexp(name_regexp))
+            return true;
+
+    auto check_like_pattern = [&](const String & pattern)
+    {
+        std::optional<IPSubnet> subnet;
+        std::optional<String> name;
+        std::optional<String> name_regexp;
+        parseLikePattern(pattern, subnet, name, name_regexp);
+        if (subnet)
+            return check_subnet(*subnet);
+        else if (name)
+            return check_name(*name);
+        else if (name_regexp)
+            return check_name_regexp(*name_regexp);
+        else
+            return false;
+    };
+
+    for (const String & like_pattern : like_patterns)
+        if (check_like_pattern(like_pattern))
+            return true;
+
+    return false;
 }
 
 
@@ -374,86 +380,4 @@ void AllowedClientHosts::checkContains(const IPAddress & address, const String &
     }
 }
 
-
-bool AllowedClientHosts::contains(const IPAddress & address) const
-{
-    /// Check `ip_addresses`.
-    IPAddress addr_v6 = toIPv6(address);
-    if (boost::range::find(addresses, addr_v6) != addresses.end())
-        return true;
-
-    if (localhost && isAddressOfLocalhost(addr_v6))
-        return true;
-
-    /// Check `ip_subnets`.
-    for (const auto & subnet : subnets)
-        if ((addr_v6 & subnet.mask) == subnet.prefix)
-            return true;
-
-    /// Check `hosts`.
-    for (const String & host_name : host_names)
-    {
-        try
-        {
-            if (isAddressOfHost(addr_v6, host_name))
-                return true;
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() != ErrorCodes::DNS_ERROR)
-                throw;
-            /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
-            LOG_WARNING(
-                &Logger::get("AddressPatterns"),
-                "Failed to check if the allowed client hosts contain address " << address.toString() << ". " << e.displayText()
-                                                                               << ", code = " << e.code());
-        }
-    }
-
-    /// Check `host_regexps`.
-    try
-    {
-        String resolved_host = getHostByAddress(addr_v6);
-        if (!resolved_host.empty())
-        {
-            compileRegexps();
-            for (const auto & compiled_regexp : compiled_host_regexps)
-            {
-                Poco::RegularExpression::Match match;
-                if (compiled_regexp && compiled_regexp->match(resolved_host, match))
-                    return true;
-            }
-        }
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() != ErrorCodes::DNS_ERROR)
-            throw;
-        /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
-        LOG_WARNING(
-            &Logger::get("AddressPatterns"),
-            "Failed to check if the allowed client hosts contain address " << address.toString() << ". " << e.displayText()
-                                                                         << ", code = " << e.code());
-    }
-
-    return false;
-}
-
-
-void AllowedClientHosts::compileRegexps() const
-{
-    if (compiled_host_regexps.size() == host_regexps.size())
-        return;
-    size_t old_size = compiled_host_regexps.size();
-    compiled_host_regexps.reserve(host_regexps.size());
-    for (size_t i = old_size; i != host_regexps.size(); ++i)
-        compiled_host_regexps.emplace_back(std::make_unique<Poco::RegularExpression>(host_regexps[i]));
-}
-
-
-bool operator ==(const AllowedClientHosts & lhs, const AllowedClientHosts & rhs)
-{
-    return (lhs.addresses == rhs.addresses) && (lhs.subnets == rhs.subnets) && (lhs.host_names == rhs.host_names)
-        && (lhs.host_regexps == rhs.host_regexps);
-}
 }
