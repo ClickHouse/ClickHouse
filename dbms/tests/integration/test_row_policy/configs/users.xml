@@ -15,9 +15,16 @@
             <quota>default</quota>
             <allow_row_policy_management>true</allow_row_policy_management>
         </default>
+        <another>
+            <password/>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </another>
     </users>
     <quotas>
-        <default>
-        </default>
+        <default/>
     </quotas>
 </yandex>
