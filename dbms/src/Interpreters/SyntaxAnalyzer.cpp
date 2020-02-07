@@ -526,8 +526,24 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
                             DB::ErrorCodes::EXPECTED_ALL_OR_ANY);
     }
 
-    if (old_any && table_join.strictness == ASTTableJoin::Strictness::Any)
-        table_join.strictness = ASTTableJoin::Strictness::RightAny;
+    if (old_any)
+    {
+        if (table_join.strictness == ASTTableJoin::Strictness::Any &&
+            table_join.kind == ASTTableJoin::Kind::Inner)
+        {
+            table_join.strictness = ASTTableJoin::Strictness::Semi;
+            table_join.kind = ASTTableJoin::Kind::Left;
+        }
+
+        if (table_join.strictness == ASTTableJoin::Strictness::Any)
+            table_join.strictness = ASTTableJoin::Strictness::RightAny;
+    }
+    else
+    {
+        if (table_join.strictness == ASTTableJoin::Strictness::Any)
+            if (table_join.kind == ASTTableJoin::Kind::Full)
+                throw Exception("ANY FULL JOINs are not implemented.", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     out_table_join = table_join;
 }
@@ -587,18 +603,6 @@ void replaceJoinedTable(const ASTTablesInSelectQueryElement * join)
             table_expr = parseQuery(parser, expr, 0)->as<ASTTableExpression &>();
         }
     }
-}
-
-void checkJoin(const ASTTablesInSelectQueryElement * join)
-{
-    if (!join->table_join)
-        return;
-
-    const auto & table_join = join->table_join->as<ASTTableJoin &>();
-
-    if (table_join.strictness == ASTTableJoin::Strictness::Any)
-        if (table_join.kind == ASTTableJoin::Kind::Full)
-            throw Exception("ANY FULL JOINs are not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 std::vector<const ASTFunction *> getAggregates(const ASTPtr & query)
@@ -831,9 +835,6 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         const ASTTablesInSelectQueryElement * table_join_node = select_query->join();
         if (table_join_node)
         {
-            if (!settings.any_join_distinct_right_table_keys)
-                checkJoin(table_join_node);
-
             if (settings.enable_optimize_predicate_expression)
                 replaceJoinedTable(table_join_node);
         }

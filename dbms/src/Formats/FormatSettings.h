@@ -64,6 +64,7 @@ struct FormatSettings
     struct TSV
     {
         bool empty_as_default = false;
+        bool crlf_end_of_line = false;
     };
 
     TSV tsv;

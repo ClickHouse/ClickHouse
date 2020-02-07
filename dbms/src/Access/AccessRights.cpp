@@ -1,8 +1,8 @@
 #include <Access/AccessRights.h>
 #include <Common/Exception.h>
+#include <common/logger_useful.h>
 #include <boost/range/adaptor/map.hpp>
 #include <unordered_map>
-
 
 namespace DB
 {
@@ -73,6 +73,7 @@ public:
         inherited_access = src.inherited_access;
         explicit_grants = src.explicit_grants;
         partial_revokes = src.partial_revokes;
+        raw_access = src.raw_access;
         access = src.access;
         min_access = src.min_access;
         max_access = src.max_access;
@@ -114,8 +115,12 @@ public:
             access_to_grant = grantable;
         }
 
-        explicit_grants |= access_to_grant - partial_revokes;
-        partial_revokes -= access_to_grant;
+        AccessFlags new_explicit_grants = access_to_grant - partial_revokes;
+        if (level == TABLE_LEVEL)
+            removeExplicitGrantsRec(new_explicit_grants);
+        removePartialRevokesRec(access_to_grant);
+        explicit_grants |= new_explicit_grants;
+
         calculateAllAccessRec(helper);
     }
 
@@ -147,16 +152,27 @@ public:
     {
         if constexpr (mode == NORMAL_REVOKE_MODE)
         {
-            explicit_grants -= access_to_revoke;
+            if (level == TABLE_LEVEL)
+                removeExplicitGrantsRec(access_to_revoke);
+            else
+                removeExplicitGrants(access_to_revoke);
         }
         else if constexpr (mode == PARTIAL_REVOKE_MODE)
         {
-            partial_revokes |= access_to_revoke - explicit_grants;
-            explicit_grants -= access_to_revoke;
+            AccessFlags new_partial_revokes = access_to_revoke - explicit_grants;
+            if (level == TABLE_LEVEL)
+                removeExplicitGrantsRec(access_to_revoke);
+            else
+                removeExplicitGrants(access_to_revoke);
+            removePartialRevokesRec(new_partial_revokes);
+            partial_revokes |= new_partial_revokes;
         }
         else /// mode == FULL_REVOKE_MODE
         {
-            fullRevokeRec(access_to_revoke);
+            AccessFlags new_partial_revokes = access_to_revoke - explicit_grants;
+            removeExplicitGrantsRec(access_to_revoke);
+            removePartialRevokesRec(new_partial_revokes);
+            partial_revokes |= new_partial_revokes;
         }
         calculateAllAccessRec(helper);
     }
@@ -272,6 +288,24 @@ public:
         calculateAllAccessRec(helper);
     }
 
+    void traceTree(Poco::Logger * log) const
+    {
+        LOG_TRACE(log, "Tree(" << level << "): name=" << (node_name ? *node_name : "NULL")
+                  << ", explicit_grants=" << explicit_grants.toString()
+                  << ", partial_revokes=" << partial_revokes.toString()
+                  << ", inherited_access=" << inherited_access.toString()
+                  << ", raw_access=" << raw_access.toString()
+                  << ", access=" << access.toString()
+                  << ", min_access=" << min_access.toString()
+                  << ", max_access=" << max_access.toString()
+                  << ", num_children=" << (children ? children->size() : 0));
+        if (children)
+        {
+            for (auto & child : *children | boost::adaptors::map_values)
+                child.traceTree(log);
+        }
+    }
+
 private:
     Node * tryGetChild(const std::string_view & name)
     {
@@ -371,14 +405,28 @@ private:
         calculateMinAndMaxAccess();
     }
 
-    void fullRevokeRec(const AccessFlags & access_to_revoke)
+    void removeExplicitGrants(const AccessFlags & change)
     {
-        explicit_grants -= access_to_revoke;
-        partial_revokes |= access_to_revoke;
+        explicit_grants -= change;
+    }
+
+    void removeExplicitGrantsRec(const AccessFlags & change)
+    {
+        removeExplicitGrants(change);
         if (children)
         {
             for (auto & child : *children | boost::adaptors::map_values)
-                child.fullRevokeRec(access_to_revoke);
+                child.removeExplicitGrantsRec(change);
+        }
+    }
+
+    void removePartialRevokesRec(const AccessFlags & change)
+    {
+        partial_revokes -= change;
+        if (children)
+        {
+            for (auto & child : *children | boost::adaptors::map_values)
+                child.removePartialRevokesRec(change);
         }
     }
 
@@ -726,4 +774,13 @@ void AccessRights::merge(const AccessRights & other)
     }
 }
 
+
+void AccessRights::traceTree() const
+{
+    auto * log = &Poco::Logger::get("AccessRights");
+    if (root)
+        root->traceTree(log);
+    else
+        LOG_TRACE(log, "Tree: NULL");
+}
 }

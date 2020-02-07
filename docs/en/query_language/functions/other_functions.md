@@ -603,6 +603,34 @@ SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
 └───┘
 ```
 
+## blockSerializedSize
+
+Returns size on disk (without taking into account compression).
+
+
+```sql
+blockSerializedSize(value[, value[, ...]])
+```
+
+**Parameters:**
+
+- `value` — Any value.
+
+**Returned values**
+
+- The number of bytes that will be written to disk for block of values (without compression).
+
+**Example**
+
+```sql
+SELECT blockSerializedSize(maxState(1)) as x
+```
+```text
+┌─x─┐
+│ 2 │
+└───┘
+```
+
 ## toColumnTypeName
 
 Returns the name of the class that represents the data type of the column in RAM.
@@ -955,7 +983,7 @@ So, result of function depends on partition of data to blocks and on order of da
 
 ## joinGet {#joinget}
 
-The function lets you extract data from the table the same way as from a [dictionary](../dicts/index.md).
+The function lets you extract data from the table the same way as from a [dictionary](../../query_language/dicts/index.md).
 
 Gets data from [Join](../../operations/table_engines/join.md#creating-a-table) tables using the specified join key.
 
