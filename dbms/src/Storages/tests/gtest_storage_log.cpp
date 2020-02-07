@@ -12,6 +12,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/StorageLog.h>
 #include <Common/typeid_cast.h>
+#include <Common/tests/gtest_global_context.h>
 
 #include <memory>
 
@@ -20,13 +21,6 @@
 #    pragma GCC diagnostic ignored "-Wsuggest-override"
 #endif
 
-DB::Context createContext()
-{
-    auto context = DB::Context::createGlobal();
-    context.makeGlobalContext();
-    context.setPath("./");
-    return context;
-}
 
 DB::StoragePtr createStorage(DB::DiskPtr & disk)
 {
@@ -43,18 +37,10 @@ DB::StoragePtr createStorage(DB::DiskPtr & disk)
     return table;
 }
 
-std::unique_ptr<DB::Context> context;
-
 template <typename T>
 class StorageLogTest : public testing::Test
 {
 public:
-    static void SetUpTestSuite()
-    {
-        // Create context only once.
-        if (!context)
-            context = std::make_unique<DB::Context>(createContext());
-    }
 
     void SetUp() override
     {
@@ -109,7 +95,7 @@ std::string writeData(int rows, DB::StoragePtr & table)
         block.insert(column);
     }
 
-    BlockOutputStreamPtr out = table->write({}, *context);
+    BlockOutputStreamPtr out = table->write({}, getContext());
     out->write(block);
 
     return data;
@@ -123,9 +109,9 @@ std::string readData(DB::StoragePtr & table)
     Names column_names;
     column_names.push_back("a");
 
-    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(*context);
+    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(getContext());
 
-    BlockInputStreamPtr in = table->read(column_names, {}, *context, stage, 8192, 1)[0];
+    BlockInputStreamPtr in = table->read(column_names, {}, getContext(), stage, 8192, 1)[0];
 
     Block sample;
     {
@@ -136,7 +122,7 @@ std::string readData(DB::StoragePtr & table)
 
     std::ostringstream ss;
     WriteBufferFromOStream out_buf(ss);
-    BlockOutputStreamPtr output = FormatFactory::instance().getOutput("Values", out_buf, sample, *context);
+    BlockOutputStreamPtr output = FormatFactory::instance().getOutput("Values", out_buf, sample, getContext());
 
     copyData(*in, *output);
 
