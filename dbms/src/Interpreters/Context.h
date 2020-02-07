@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/Types.h>
+#include <Core/UUID.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
 #include <Parsers/IAST_fwd.h>
@@ -161,6 +162,7 @@ private:
     InputBlocksReader input_blocks_reader;
 
     std::shared_ptr<const User> user;
+    UUID user_id;
     SubscriptionForUserChange subscription_for_user_change;
     std::shared_ptr<const AccessRightsContext> access_rights;
     std::shared_ptr<QuotaContext> quota;           /// Current quota. By default - empty quota, that have no limits.
@@ -260,10 +262,8 @@ public:
 
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
-    std::shared_ptr<const User> getUser() const { return user; }
-
-    /// Used by MySQL Secure Password Authentication plugin.
-    std::shared_ptr<const User> getUser(const String & user_name) const;
+    std::shared_ptr<const User> getUser() const;
+    UUID getUserID() const;
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);

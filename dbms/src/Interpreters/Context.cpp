@@ -682,7 +682,7 @@ void Context::calculateAccessRights()
 {
     auto lock = getLock();
     if (user)
-        std::atomic_store(&access_rights, getAccessControlManager().getAccessRightsContext(client_info, user->access, settings, current_database));
+        std::atomic_store(&access_rights, getAccessControlManager().getAccessRightsContext(user, client_info, settings, current_database));
 }
 
 void Context::setProfile(const String & profile)
@@ -695,9 +695,18 @@ void Context::setProfile(const String & profile)
     settings_constraints = std::move(new_constraints);
 }
 
-std::shared_ptr<const User> Context::getUser(const String & user_name) const
+std::shared_ptr<const User> Context::getUser() const
 {
-    return shared->access_control_manager.getUser(user_name);
+    if (!user)
+        throw Exception("No current user", ErrorCodes::LOGICAL_ERROR);
+    return user;
+}
+
+UUID Context::getUserID() const
+{
+    if (!user)
+        throw Exception("No current user", ErrorCodes::LOGICAL_ERROR);
+    return user_id;
 }
 
 void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
@@ -711,8 +720,9 @@ void Context::setUser(const String & name, const String & password, const Poco::
     if (!quota_key.empty())
         client_info.quota_key = quota_key;
 
+    user_id = shared->access_control_manager.getID<User>(name);
     user = shared->access_control_manager.authorizeAndGetUser(
-        name,
+        user_id,
         password,
         address.host(),
         [this](const UserPtr & changed_user)
