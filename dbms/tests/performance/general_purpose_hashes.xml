@@ -62,5 +62,5 @@
     </substitutions>
 
     <query>SELECT count() from {table} where not ignore({gp_hash_func}({string}))</query>
-    <query>SELECT count() from {table_slow} where not ignore({gp_hash_func}({string_slow})</query>
+    <query>SELECT count() from {table_slow} where not ignore({gp_hash_func}({string_slow}))</query>
 </test>
