@@ -16,25 +16,23 @@ static const char * setColor(UInt64 num)
 {
     /// ANSI escape sequences to set foreground font color in terminal.
 
-    static constexpr auto num_colors = 14;
+    static constexpr auto num_colors = 12;
     static const char * colors[num_colors] =
     {
         /// Black on black is meaningless
-        "\033[40m\033[0;31m",
-        "\033[40m\033[0;32m",
-        "\033[40m\033[0;33m",
+        "\033[0;31m",
+        "\033[0;32m",
+        "\033[0;33m",
         /// Low intense blue on black is too dark.
-        "\033[40m\033[0;35m",
-        "\033[40m\033[0;36m",
-        "\033[40m\033[0;37m",
-        "\033[40m\033[1;30m",
-        "\033[40m\033[1;31m",
-        "\033[40m\033[1;32m",
-        "\033[40m\033[1;33m",
-        "\033[40m\033[1;34m",
-        "\033[40m\033[1;35m",
-        "\033[40m\033[1;36m",
-        "\033[40m\033[1m",  /// Not as white but just as high intense - for readability on white background.
+        "\033[0;35m",
+        "\033[0;36m",
+        "\033[1;31m",
+        "\033[1;32m",
+        "\033[1;33m",
+        "\033[1;34m",
+        "\033[1;35m",
+        "\033[1;36m",
+        "\033[1m",  /// Not as white but just as high intense - for readability on white background.
     };
 
     return colors[num % num_colors];
@@ -48,14 +46,14 @@ static const char * setColorForLogPriority(int priority)
     static const char * colors[] =
     {
         "",
-        "\033[40m\033[1;41m",   /// Fatal
-        "\033[40m\033[0;41m",   /// Critical
-        "\033[40m\033[1;31m",   /// Error
-        "\033[40m\033[0;31m",   /// Warning
-        "\033[40m\033[0;33m",   /// Notice
-        "\033[40m\033[1m",      /// Information
+        "\033[1;41m",   /// Fatal
+        "\033[7;31m",   /// Critical
+        "\033[1;31m",   /// Error
+        "\033[0;31m",   /// Warning
+        "\033[0;33m",   /// Notice
+        "\033[1m",      /// Information
         "",             /// Debug
-        "\033[40m\033[1;30m",   /// Trace
+        "\033[2m",      /// Trace
     };
 
     return colors[priority];
