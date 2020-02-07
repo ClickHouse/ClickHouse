@@ -7,7 +7,7 @@ install_packages() {
     dpkg -i package_folder/clickhouse-server_*.deb
     dpkg -i package_folder/clickhouse-client_*.deb
     dpkg -i package_folder/clickhouse-test_*.deb
-    ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/config.d/
+    ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/users.d/
     service clickhouse-server start && sleep 5
 }
 
