@@ -427,8 +427,8 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
             // Skip non-config and temporary files
             if (file.isFile() && (extension == "xml" || extension == "conf") && !startsWith(base_name, "."))
                 files.push_back(file.path());
-            }
         }
+    }
 
     std::sort(files.begin(), files.end());
 
