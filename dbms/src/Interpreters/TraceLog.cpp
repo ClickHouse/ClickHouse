@@ -24,7 +24,7 @@ Block TraceLogElement::createBlock()
         {std::make_shared<DataTypeDateTime>(),                                "event_time"},
         {std::make_shared<DataTypeUInt32>(),                                  "revision"},
         {std::make_shared<TimerDataType>(timer_values),                       "timer_type"},
-        {std::make_shared<DataTypeUInt32>(),                                  "thread_number"},
+        {std::make_shared<DataTypeUInt64>(),                                  "thread_id"},
         {std::make_shared<DataTypeString>(),                                  "query_id"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "trace"}
     };
@@ -40,7 +40,7 @@ void TraceLogElement::appendToBlock(Block & block) const
     columns[i++]->insert(event_time);
     columns[i++]->insert(ClickHouseRevision::get());
     columns[i++]->insert(static_cast<UInt8>(timer_type));
-    columns[i++]->insert(thread_number);
+    columns[i++]->insert(thread_id);
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insert(trace);
 

@@ -81,7 +81,12 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
         }
 
         if (input.empty())
-            continue;
+        {
+            if (!line.empty() && !delimiter && !hasInputData())
+                break;
+            else
+                continue;
+        }
 
         is_multiline = (input.back() == extender) || (delimiter && input.back() != delimiter) || hasInputData();
 
@@ -96,18 +101,16 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
         line += (line.empty() ? "" : " ") + input;
 
         if (!is_multiline)
-        {
-            if (line != prev_line)
-            {
-                addToHistory(line);
-                prev_line = line;
-            }
-
-            return line;
-        }
+            break;
     }
 
-    return {};
+    if (!line.empty() && line != prev_line)
+    {
+        addToHistory(line);
+        prev_line = line;
+    }
+
+    return line;
 }
 
 LineReader::InputStatus LineReader::readOneLine(const String & prompt)
