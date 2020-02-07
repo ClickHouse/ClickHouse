@@ -71,17 +71,14 @@ StorageRabbitMQ::StorageRabbitMQ(
         UInt64 max_block_size_,
         size_t skip_broken_)
         : IStorage(table_id_,
-        ColumnsDescription({{"_topic", std::make_shared<DataTypeString>()},
-                            {"_key", std::make_shared<DataTypeString>()},
-                            {"_offset", std::make_shared<DataTypeUInt64>()},
-                            {"_partition", std::make_shared<DataTypeUInt64>()},
-                            {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}}, true))
+        ColumnsDescription({
+            {"_exchange", std::make_shared<DataTypeString>()},
+            {"_routingKey", std::make_shared<DataTypeString>()},
+            {"_deliveryTag", std::make_shared<DataTypeString>()}
+            }, true))
         , global_context(context_.getGlobalContext())
         , host_port(global_context.getMacros()->expand(host_port_))
         , routing_keys(global_context.getMacros()->expand(routing_keys_))
-        , connection_handler(parseAddress(host_port, 5672))
-        , connection(&connection_handler,
-                AMQP::Login(connection_handler.get_user_name(), connection_handler.get_password()))
         , format_name(global_context.getMacros()->expand(format_name_))
         , row_delimiter(row_delimiter_)
         , num_consumers(num_consumers_)
@@ -89,8 +86,12 @@ StorageRabbitMQ::StorageRabbitMQ(
         , skip_broken(skip_broken_)
         , log(&Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, num_consumers_)
+        , connection_handler(parseAddress(host_port, 5672), log)
+        , connection(&connection_handler,
+                     AMQP::Login(connection_handler.get_user_name(), connection_handler.get_password()))
 {
     setColumns(columns_);
+    publishing_channel = std::make_shared<AMQP::Channel>(&connection);
 }
 
 BlockInputStreams StorageRabbitMQ::read(
@@ -109,7 +110,7 @@ BlockInputStreams StorageRabbitMQ::read(
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        streams.emplace_back(std::make_shared<RabbitMQBlockInputStream>(*this, context, column_names));
+        streams.emplace_back(std::make_shared<RabbitMQBlockInputStream>(*this, context, column_names, 1));
     }
 
     LOG_DEBUG(log, "Starting reading " << streams.size() << " streams");
@@ -139,6 +140,8 @@ void StorageRabbitMQ::startup()
 
 void StorageRabbitMQ::shutdown()
 {
+    stream_cancelled = true;
+
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto buffer = popReadBuffer();
@@ -176,25 +179,95 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
 
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
-    auto producer = std::make_shared<AMQP::Channel>(&connection);
-
     return std::make_shared<WriteBufferToRabbitMQProducer>(
-            producer, &connection_handler, routing_keys[0],
+            publishing_channel, routing_keys[0],
             row_delimiter ? std::optional<char>{row_delimiter} : std::optional<char>(), 1, 1024);
 }
 
 
 ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 {
-    auto consumer = std::make_shared<AMQP::Channel>(&connection);
+    const Settings & settings = global_context.getSettingsRef();
+    size_t batch_size = max_block_size;
+    if (!batch_size)
+        batch_size = settings.max_block_size.value;
 
-    return std::make_shared<ReadBufferFromRabbitMQConsumer>(consumer, &connection_handler);
+    return std::make_shared<ReadBufferFromRabbitMQConsumer>(
+            std::make_shared<AMQP::Channel>(&connection), log, batch_size, stream_cancelled);
 }
+
+
+bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
+{
+    // Check if all dependencies are attached
+    auto dependencies = global_context.getDependencies(table_id);
+    if (dependencies.size() == 0)
+        return true;
+
+    // Check the dependencies are ready?
+    for (const auto & db_tab : dependencies)
+    {
+        auto table = global_context.tryGetTable(db_tab);
+        if (!table)
+            return false;
+
+        // If it materialized view, check it's target table
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(table.get());
+        if (materialized_view && !materialized_view->tryGetTargetTable())
+            return false;
+
+        // Check all its dependencies
+        if (!checkDependencies(db_tab))
+            return false;
+    }
+
+    return true;
+}
+
+
+void StorageRabbitMQ::threadFunc()
+{
+    try
+    {
+        auto table_id = getStorageID();
+        // Check if at least one direct dependency is attached
+        auto dependencies = global_context.getDependencies(table_id);
+
+        // Keep streaming as long as there are attached views and streaming is not cancelled
+        while (!stream_cancelled && num_created_consumers > 0 && dependencies.size() > 0)
+        {
+            if (!checkDependencies(table_id))
+                break;
+
+            LOG_DEBUG(log, "Started streaming to " << dependencies.size() << " attached views");
+
+            /* if (!streamToViews())
+                break; */
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    /* Wait for attached views
+    if (!stream_cancelled)
+        task->scheduleAfter(RESCHEDULE_MS); */
+}
+
+/* Having the server PUSH messages to the client is one of the two ways to get messages
+to the client, and also the preferred one. This is known as consuming messages via a subscription.
+The alternative is for the client to poll for messages one at a time, over the channel, via a get method.
+
+But streamToViews() function is called only if dependencies are present.
+So the first option is not applicable. The only alternative is via get method, but
+messages are supposed to be received in batches. Seems like n get calls is a bad idea.
+TODO: Figure that out. */
 
 
 void registerStorageRabbitMQ(StorageFactory & factory)
 {
-    factory.registerStorage("RabbitMQ", [](const StorageFactory::Arguments & args)
+    auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
         size_t args_count = engine_args.size();
@@ -215,12 +288,6 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         if (has_settings)
         {
             rabbitmq_settings.loadFromQuery(*args.storage_def);
-        }
-
-        if (args_count < 2 || args_count > 7)
-        {
-            throw Exception(
-                    "Storage RabbitMQ requires 2-7 parameters!", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
 
         String host_port = rabbitmq_settings.rabbitmq_host_port;
@@ -343,6 +410,9 @@ void registerStorageRabbitMQ(StorageFactory & factory)
                 args.table_id, args.context, args.columns,
                 host_port, routing_keys,
                 format, row_delimiter, num_consumers, max_block_size, skip_broken);
-    });
+    };
+
+    factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
+
 }
 }

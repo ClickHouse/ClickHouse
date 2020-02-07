@@ -15,6 +15,8 @@
 namespace DB
 {
 
+using ChannelPtr = std::shared_ptr<AMQP::Channel>;
+
 class StorageRabbitMQ : public ext::shared_ptr_helper<StorageRabbitMQ>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageRabbitMQ>;
@@ -44,7 +46,9 @@ public:
 
     ProducerBufferPtr createWriteBuffer();
 
+    RabbitMQHandler & getHandler() { return connection_handler; }
     const Names & getRoutingKeys() const { return routing_keys; }
+
     const String & getFormatName() const { return format_name; }
     const auto & skipBroken() const { return skip_broken; }
 
@@ -62,8 +66,7 @@ private:
 
     const String host_port;
     Names routing_keys;
-    RabbitMQHandler connection_handler;
-    AMQP::Connection connection;
+    ChannelPtr publishing_channel;
 
     const String format_name;
     char row_delimiter;
@@ -75,8 +78,16 @@ private:
     Poco::Logger * log;
     Poco::Semaphore semaphore;
 
+    RabbitMQHandler connection_handler;
+    AMQP::Connection connection;
+
+    std::atomic<bool> stream_cancelled{false};
+
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
     ConsumerBufferPtr createReadBuffer();
+
+    void threadFunc();
+    bool checkDependencies(const StorageID & table_id);
 };
 }

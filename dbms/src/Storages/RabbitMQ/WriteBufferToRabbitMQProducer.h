@@ -10,14 +10,16 @@
 namespace DB
 {
 
-using ProducerPtr = std::shared_ptr<AMQP::Channel>;
+/* It is recommended to have a channel per thread, and a channel per consumer.
+But for publishing it is totally ok to use the same channel. */
+
+using ChannelPtr = std::shared_ptr<AMQP::Channel>;
 
 class WriteBufferToRabbitMQProducer : public WriteBuffer
 {
 public:
     WriteBufferToRabbitMQProducer(
-            ProducerPtr producer_,
-            RabbitMQHandler * handler_,
+            ChannelPtr channel_,
             const std::string & routing_key_,
             std::optional<char> delimiter,
             size_t rows_per_message,
@@ -26,12 +28,12 @@ public:
     ~WriteBufferToRabbitMQProducer() override;
 
     void count_row();
+    void flush();
 
 private:
     void nextImpl() override;
 
-    ProducerPtr producer;
-    RabbitMQHandler * handler;
+    ChannelPtr channel;
     const std::string routing_key;
     const std::optional<char> delim;
     const size_t max_rows;

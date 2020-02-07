@@ -14,32 +14,57 @@ namespace Poco
 namespace DB
 {
 
-using ConsumerPtr = std::shared_ptr<AMQP::Channel>;
+using ChannelPtr = std::shared_ptr<AMQP::Channel>;
 
 class ReadBufferFromRabbitMQConsumer : public ReadBuffer
 {
 public:
     ReadBufferFromRabbitMQConsumer(
-            ConsumerPtr consumer_,
-            RabbitMQHandler * handler_);
+            ChannelPtr consumer_,
+            Poco::Logger * log_,
+            size_t max_batch_size,
+            const std::atomic<bool> & stopped_);
     ~ReadBufferFromRabbitMQConsumer() override;
 
     void allowNext() { allowed = true; } // Allow to read next message.
-    void commit(); // Commit all processed messages.
 
-    void subscribe(const Names & topics);
+    void subscribe(const Names & routing_keys);
     void unsubscribe();
 
+    String getCurrentExchange() const { return current[-1].exchange; }
+    String getCurrentRoutingKey() const { return current[-1].routingKey; }
+    UInt64 getCurrentDeliveryTag() const { return current[-1].deliveryTag; }
 
 private:
-    using Messages = std::vector<AMQP::Message>;
+    struct RabbitMQMessage
+    {
+        Position message;
+        size_t size;
+        String exchange;
+        String routingKey;
+        UInt64 deliveryTag;
+        bool redelivered;
 
-    ConsumerPtr consumer;
-    RabbitMQHandler * handler;
-    bool allowed = true;
+        RabbitMQMessage(
+                Position message_, size_t size_, String exchange_, String routingKey_,
+                UInt64 deliveryTag_, bool redelivered_) :
+                message(message_), size(size_), exchange(exchange_), routingKey(routingKey_),
+                deliveryTag(deliveryTag_), redelivered(redelivered_) {}
+    };
+
+    using Messages = std::vector<RabbitMQMessage>;
+
+    ChannelPtr consumer_channel;
+    Poco::Logger * log;
+    const size_t batch_size = 1;
+    bool allowed = true, stalled = false;
+    const std::atomic<bool> & stopped;
+
+    String consumerTag; // ID for the consumer
 
     Messages messages;
     Messages::const_iterator current;
 
+    bool nextImpl() override;
 };
 }

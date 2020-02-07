@@ -16,6 +16,7 @@ public:
 
     void writePrefix() override;
     void write(const Block & block) override;
+    void writeSuffix() override;
 
 private:
     StorageRabbitMQ & storage;
