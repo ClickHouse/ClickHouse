@@ -14,6 +14,7 @@ namespace DB
 
 struct Null {};
 
+/// @note Except explicitly described you should not assume on TypeIndex numbers and/or their orders in this enum.
 enum class TypeIndex
 {
     Nothing = 0,
@@ -31,7 +32,6 @@ enum class TypeIndex
     Float64,
     Date,
     DateTime,
-    DateTime32 = DateTime,
     DateTime64,
     String,
     FixedString,
