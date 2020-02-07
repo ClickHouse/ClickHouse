@@ -144,9 +144,19 @@ BlockInputStreamPtr FormatFactory::getInput(
 
     // Doesn't make sense to use parallel parsing with less than four threads
     // (segmentator + two parsers + reader).
-    if (settings.input_format_parallel_parsing
-        && file_segmentation_engine
-        && settings.max_threads >= 4)
+    bool parallel_parsing = settings.input_format_parallel_parsing && file_segmentation_engine && settings.max_threads >= 4;
+
+    if (parallel_parsing && name == "JSONEachRow")
+    {
+        /// FIXME ParallelParsingBlockInputStream doesn't support formats with non-trivial readPrefix() and readSuffix()
+
+        /// For JSONEachRow we can safely skip whitespace characters
+        skipWhitespaceIfAny(buf);
+        if (buf.eof() || *buf.position() == '[')
+            parallel_parsing = false; /// Disable it for JSONEachRow if data is in square brackets (see JSONEachRowRowInputFormat)
+    }
+
+    if (parallel_parsing)
     {
         const auto & input_getter = getCreators(name).input_processor_creator;
         if (!input_getter)
