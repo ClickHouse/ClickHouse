@@ -1,6 +1,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCreateUserQuery.h>
 #include <Parsers/ASTCreateQuotaQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ASTDropAccessEntityQuery.h>
@@ -14,6 +15,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
+#include <Parsers/ASTShowGrantsQuery.h>
 #include <Parsers/ASTShowQuotasQuery.h>
 #include <Parsers/ASTShowRowPoliciesQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
@@ -21,10 +23,12 @@
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ASTWatchQuery.h>
+#include <Parsers/ASTGrantQuery.h>
 
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterCreateUserQuery.h>
 #include <Interpreters/InterpreterCreateQuotaQuery.h>
 #include <Interpreters/InterpreterCreateRowPolicyQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
@@ -43,12 +47,14 @@
 #include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
+#include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Interpreters/InterpreterShowQuotasQuery.h>
 #include <Interpreters/InterpreterShowRowPoliciesQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
+#include <Interpreters/InterpreterGrantQuery.h>
 
 #include <Parsers/ASTSystemQuery.h>
 
@@ -176,6 +182,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         return std::make_unique<InterpreterWatchQuery>(query, context);
     }
+    else if (query->as<ASTCreateUserQuery>())
+    {
+        return std::make_unique<InterpreterCreateUserQuery>(query, context);
+    }
     else if (query->as<ASTCreateQuotaQuery>())
     {
         return std::make_unique<InterpreterCreateQuotaQuery>(query, context);
@@ -188,9 +198,17 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         return std::make_unique<InterpreterDropAccessEntityQuery>(query, context);
     }
+    else if (query->as<ASTGrantQuery>())
+    {
+        return std::make_unique<InterpreterGrantQuery>(query, context);
+    }
     else if (query->as<ASTShowCreateAccessEntityQuery>())
     {
         return std::make_unique<InterpreterShowCreateAccessEntityQuery>(query, context);
+    }
+    else if (query->as<ASTShowGrantsQuery>())
+    {
+        return std::make_unique<InterpreterShowGrantsQuery>(query, context);
     }
     else if (query->as<ASTShowQuotasQuery>())
     {
