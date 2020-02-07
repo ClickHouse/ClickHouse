@@ -88,6 +88,9 @@ RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/dpkg-deb
 RUN chmod +x dpkg-deb
 RUN cp dpkg-deb /usr/bin
 
+RUN ln -s /usr/bin/lld-8 /usr/bin/ld.lld
+RUN ln -s /usr/bin/lld-8 /usr/bin/ldd
+
 COPY build.sh /
 
 CMD ["/bin/bash", "/build.sh"]
