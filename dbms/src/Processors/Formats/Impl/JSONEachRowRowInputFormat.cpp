@@ -305,8 +305,7 @@ void JSONEachRowRowInputFormat::readSuffix()
         ++in.position();
         skipWhitespaceIfAny(in);
     }
-    if (!in.eof())
-        assertEOF(in);
+    assertEOF(in);
 }
 
 
