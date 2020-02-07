@@ -534,16 +534,30 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     if (metadata.order_by_ast)
     {
         ASTPtr dummy;
-        auto order_by_expr = std::make_shared<ASTOrderByElement>(1, 0, false, dummy, false, dummy, dummy, dummy);
+
+        ASTPtr key_expr;
         if (metadata.primary_key_ast)
-            order_by_expr->children.push_back(metadata.primary_key_ast);
+            key_expr = metadata.primary_key_ast;
         else
-            order_by_expr->children.push_back(metadata.order_by_ast);
+            key_expr = metadata.order_by_ast;
 
-        auto res = std::make_shared<ASTExpressionList>();
-        res->children.push_back(order_by_expr);
+        bool empty = false;
+        /// In all other cases we cannot have empty key
+        if (auto key_function = key_expr->as<ASTFunction>())
+            empty = key_function->arguments->children.size() == 0;
 
-        select->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(res));
+        /// Not explicitely spicified empty key
+        if (!empty)
+        {
+            auto order_by_expr = std::make_shared<ASTOrderByElement>(1, 1, false, dummy, false, dummy, dummy, dummy);
+
+
+            order_by_expr->children.push_back(key_expr);
+            auto res = std::make_shared<ASTExpressionList>();
+            res->children.push_back(order_by_expr);
+
+            select->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(res));
+        }
     }
 
     return select;
