@@ -18,6 +18,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -524,6 +525,25 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
             where_expression = std::move(coalesced_predicates);
         }
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
+    }
+    auto metadata = storage->getInMemoryMetadata();
+    /// We have to execute select in order of primary key
+    /// because we don't sort results additionaly and don't have
+    /// any guarantees on data order without ORDER BY. It's almost free, because we
+    /// have optimization for data read in primary key order.
+    if (metadata.order_by_ast)
+    {
+        ASTPtr dummy;
+        auto order_by_expr = std::make_shared<ASTOrderByElement>(1, 0, false, dummy, false, dummy, dummy, dummy);
+        if (metadata.primary_key_ast)
+            order_by_expr->children.push_back(metadata.primary_key_ast);
+        else
+            order_by_expr->children.push_back(metadata.order_by_ast);
+
+        auto res = std::make_shared<ASTExpressionList>();
+        res->children.push_back(order_by_expr);
+
+        select->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(res));
     }
 
     return select;
