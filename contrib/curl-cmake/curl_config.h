@@ -1,3 +1,4 @@
+#define CURL_CA_BUNDLE "/etc/ssl/certs/ca-certificates.crt"
 #define CURL_DISABLE_FTP
 #define CURL_DISABLE_TFTP
 #define CURL_DISABLE_LDAP
