@@ -109,11 +109,10 @@ public:
         {
             const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
             if (!array_type)
-                throw Exception("All argument for function " + getName() + " must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception("All arguments for function " + getName() + " must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             auto & nested_type = array_type->getNestedType();
-            WhichDataType which(nested_type);
-            bool is_number = which.isNativeInt() || which.isNativeUInt() || which.isFloat();
+            bool is_number = isNativeNumber(nested_type)
             if (!is_number)
             {
                 throw Exception(

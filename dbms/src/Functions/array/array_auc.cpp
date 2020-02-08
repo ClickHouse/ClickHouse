@@ -18,15 +18,34 @@ public:
     struct ScoreLabel
     {
         ResultType score;
-        UInt8 label;
+        bool label;
     };
 
-    static DataTypePtr getReturnType(const DataTypePtr & /* nested_type1 */, const DataTypePtr & nested_type2)
+    static DataTypePtr getReturnType(const DataTypePtr & /* score_type */, const DataTypePtr & label_type)
     {
-        WhichDataType which2(nested_type2);
-        if (!which2.isUInt8())
+        WhichDataType which(label_type);
+        // Labels values are either {0, 1} or {-1, 1}, and its type must be one of (Enum8, UInt8, Int8)
+        if (!which.isUInt8() && !which.isEnum8() && !which.isInt8())
         {
             throw Exception(std::string(NameArrayAUC::name) + "lable type must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+
+        if (which.isEnum8())
+        {
+            auto type8 = checkAndGetDataType<DataTypeEnum8>(label_type.get());
+            if (type8)
+                throw Exception(std::string(NameArrayAUC::name) + "lable type not valid Enum8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            std::set<Int8> valSet;
+            const auto & values = type8->getValues();
+            for (const auto & value : values)
+            {
+                valSet.insert(value.second);
+            }
+
+            if (valSet != {0, 1} || valSet != {-1, 1})
+                throw Exception(
+                    std::string(NameArrayAUC::name) + "lable values must be {0, 1} or {-1, 1}", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
@@ -45,25 +64,35 @@ public:
         if (score_len == 0)
             return {};
 
-        // Order pairs of score and lable by score ascending
+        // Calculate positive and negative label number and restore scores and labels in vector
         size_t num_pos = 0;
         size_t num_neg = 0;
+        std::set<Int16> labelValSet;
         std::vector<ScoreLabel> pairs(score_len);
         for (size_t i = 0; i < score_len; ++i)
         {
             pairs[i].score = scores[i + score_offset];
-            pairs[i].label = (labels[i + label_offset] ? 1 : 0);
+            pairs[i].label = (labels[i + label_offset] == 1);
             if (pairs[i].label)
                 ++num_pos;
             else
                 ++num_neg;
+
+            labelValSet.insert(labels[i + label_offset]);
         }
+
+        // Label values must be {0, 1} or {-1, 1}
+        if (labelValSet != {0, 1} && labelValSet != {-1, 1})
+            throw Exception(
+                std::string(NameArrayAUC::name) + "lable values must be {0, 1} or {-1, 1}", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        // Order pairs of score and lable by score ascending
         std::sort(pairs.begin(), pairs.end(), [](const auto & lhs, const auto & rhs) { return lhs.score < rhs.score; });
 
         // Calculate AUC
         size_t curr_cnt = 0;
         size_t curr_pos_cnt = 0;
-        size_t curr_sum = 0;
+        Int64 curr_sum = 0;
         ResultType last_score = -1;
         ResultType rank_sum = 0;
         for (size_t i = 0; i < pairs.size(); ++i)
