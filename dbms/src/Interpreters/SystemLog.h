@@ -137,7 +137,7 @@ private:
 
     /* Data shared between callers of add()/flush()/shutdown(), and the saving thread */
     std::mutex mutex;
-    /// Queue is bounded. But its size is quite large to not block in all normal cases.
+    // Queue is bounded. But its size is quite large to not block in all normal cases.
     std::vector<LogElement> queue;
     // An always-incrementing index of the first message currently in the queue.
     // We use it to give a global sequential index to every message, so that we can wait
