@@ -4,6 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -112,12 +113,9 @@ public:
                 throw Exception("All arguments for function " + getName() + " must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             auto & nested_type = array_type->getNestedType();
-            bool is_number = isNativeNumber(nested_type)
-            if (!is_number)
-            {
+            if (!isNativeNumber(nested_type) && !isEnum(nested_type))
                 throw Exception(
                     getName() + " cannot process values of type " + nested_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
             nested_types[i] = nested_type;
         }
 
