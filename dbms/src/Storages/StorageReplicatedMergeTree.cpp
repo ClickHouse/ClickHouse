@@ -3128,6 +3128,7 @@ void StorageReplicatedMergeTree::alter(
 
     if (params.isSettingsAlter())
     {
+        lockStructureExclusively(table_lock_holder, query_context.getCurrentQueryId());
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
         LOG_DEBUG(log, "ALTER storage_settings_ptr only");
@@ -3171,9 +3172,7 @@ void StorageReplicatedMergeTree::alter(
     std::vector<ChangedNode> changed_nodes;
 
     {
-        /// Just to read current structure. Alter will be done in separate thread.
-        auto table_lock = lockStructureForShare(false, query_context.getCurrentQueryId());
-
+        /// We can safely read structure, because we guarded with alter_intention_lock
         if (is_readonly)
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
 
@@ -3214,13 +3213,13 @@ void StorageReplicatedMergeTree::alter(
         /// Perform settings update locally
         if (!new_changes.empty())
         {
+            lockStructureExclusively(table_lock_holder, query_context.getCurrentQueryId());
             IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
 
             changeSettings(new_changes, table_lock_holder);
 
             global_context.getDatabase(current_database_name)->alterTable(
                 query_context, current_table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
-
         }
 
         /// Modify shared metadata nodes in ZooKeeper.

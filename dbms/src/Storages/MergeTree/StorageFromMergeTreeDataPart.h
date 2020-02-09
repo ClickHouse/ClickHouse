@@ -39,6 +39,12 @@ public:
         return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context);
     }
 
+    StorageInMemoryMetadata getInMemoryMetadata() const override
+    {
+        return part->storage.getInMemoryMetadata();
+    }
+
+
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(part_->storage.getVirtuals()), part(part_)
