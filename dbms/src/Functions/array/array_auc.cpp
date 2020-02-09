@@ -14,6 +14,10 @@ class ArrayAUCImpl
 {
 public:
     using ResultType = Float64;
+    using LabelValueSet = std::set<Int16>;
+    using LabelValueSets = std::vector<LabelValueSet>;
+
+    inline static const LabelValueSets expect_label_value_sets = {{0, 1}, {-1, 1}};
 
     struct ScoreLabel
     {
@@ -27,23 +31,22 @@ public:
         // Labels values are either {0, 1} or {-1, 1}, and its type must be one of (Enum8, UInt8, Int8)
         if (!which.isUInt8() && !which.isEnum8() && !which.isInt8())
         {
-            throw Exception(std::string(NameArrayAUC::name) + "lable type must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(
+                std::string(NameArrayAUC::name) + "lable type must be UInt8, Enum8 or Int8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         if (which.isEnum8())
         {
             auto type8 = checkAndGetDataType<DataTypeEnum8>(label_type.get());
-            if (type8)
+            if (!type8)
                 throw Exception(std::string(NameArrayAUC::name) + "lable type not valid Enum8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            std::set<Int8> valSet;
+            LabelValueSet value_set;
             const auto & values = type8->getValues();
             for (const auto & value : values)
-            {
-                valSet.insert(value.second);
-            }
+                value_set.insert(value.second);
 
-            if (valSet != {0, 1} || valSet != {-1, 1})
+            if (std::find(expect_label_value_sets.begin(), expect_label_value_sets.end(), value_set) == expect_label_value_sets.end())
                 throw Exception(
                     std::string(NameArrayAUC::name) + "lable values must be {0, 1} or {-1, 1}", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
@@ -67,7 +70,7 @@ public:
         // Calculate positive and negative label number and restore scores and labels in vector
         size_t num_pos = 0;
         size_t num_neg = 0;
-        std::set<Int16> labelValSet;
+        LabelValueSet label_value_set;
         std::vector<ScoreLabel> pairs(score_len);
         for (size_t i = 0; i < score_len; ++i)
         {
@@ -78,11 +81,11 @@ public:
             else
                 ++num_neg;
 
-            labelValSet.insert(labels[i + label_offset]);
+            label_value_set.insert(labels[i + label_offset]);
         }
 
         // Label values must be {0, 1} or {-1, 1}
-        if (labelValSet != {0, 1} && labelValSet != {-1, 1})
+        if (std::find(expect_label_value_sets.begin(), expect_label_value_sets.end(), label_value_set) == expect_label_value_sets.end())
             throw Exception(
                 std::string(NameArrayAUC::name) + "lable values must be {0, 1} or {-1, 1}", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -119,6 +122,7 @@ public:
     }
 };
 
+
 /// auc(array_score, array_label) - Calculate AUC with array of score and label
 using FunctionArrayAUC = FunctionArrayScalarProduct<ArrayAUCImpl, NameArrayAUC>;
 
@@ -126,6 +130,4 @@ void registerFunctionArrayAUC(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayAUC>();
 }
-
-
 }
