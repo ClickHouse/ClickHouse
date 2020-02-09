@@ -3272,8 +3272,7 @@ void StorageReplicatedMergeTree::alter(
     std::vector<ChangedNode> changed_nodes;
 
     {
-        /// Guard races of alter thread metadata change
-        lockNewDataStructureExclusively(table_lock_holder, query_context.getCurrentQueryId());
+        /// We can safely read structure, because we guarded with alter_intention_lock
         if (is_readonly)
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
 
