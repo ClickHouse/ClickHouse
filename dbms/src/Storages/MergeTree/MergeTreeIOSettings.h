@@ -37,4 +37,3 @@ struct MergeTreeWriterSettings
     bool skip_offsets = false;
 };
 }
-

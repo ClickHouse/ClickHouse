@@ -5,16 +5,10 @@
 namespace DB
 {
 
-struct ColumnSize;
-class MergeTreeData;
-
 /// Description of the data part.
 class MergeTreeDataPartCompact : public IMergeTreeDataPart
 {
 public:
-    using Checksums = MergeTreeDataPartChecksums;
-    using Checksum = MergeTreeDataPartChecksums::Checksum;
-
     static constexpr auto DATA_FILE_NAME = "data";
     static constexpr auto DATA_FILE_EXTENSION = ".bin";
     static constexpr auto TEMP_FILE_SUFFIX = "_temp";
