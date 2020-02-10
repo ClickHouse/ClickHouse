@@ -39,7 +39,7 @@ public:
 private:
     friend class RowPolicyContextFactory;
     friend struct ext::shared_ptr_helper<RowPolicyContext>;
-    RowPolicyContext(const String & user_name_); /// RowPolicyContext should be created by RowPolicyContextFactory.
+    RowPolicyContext(const UUID & user_id_); /// RowPolicyContext should be created by RowPolicyContextFactory.
 
     using DatabaseAndTableName = std::pair<String, String>;
     using DatabaseAndTableNameRef = std::pair<std::string_view, std::string_view>;
@@ -57,7 +57,7 @@ private:
     };
     using MapOfMixedConditions = std::unordered_map<DatabaseAndTableNameRef, MixedConditions, Hash>;
 
-    const String user_name;
+    const UUID user_id;
     mutable boost::atomic_shared_ptr<const MapOfMixedConditions> map_of_mixed_conditions;
 };
 

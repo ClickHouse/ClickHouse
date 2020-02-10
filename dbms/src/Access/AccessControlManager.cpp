@@ -95,18 +95,17 @@ AccessRightsContextPtr AccessControlManager::getAccessRightsContext(const UserPt
 }
 
 
-RowPolicyContextPtr AccessControlManager::getRowPolicyContext(const String & user_name) const
+RowPolicyContextPtr AccessControlManager::getRowPolicyContext(const UUID & user_id) const
 {
-    return row_policy_context_factory->createContext(user_name);
+    return row_policy_context_factory->createContext(user_id);
 }
 
 
-QuotaContextPtr
-AccessControlManager::getQuotaContext(const String & user_name, const Poco::Net::IPAddress & address, const String & custom_quota_key) const
+QuotaContextPtr AccessControlManager::getQuotaContext(
+    const UUID & user_id, const String & user_name, const Poco::Net::IPAddress & address, const String & custom_quota_key) const
 {
-    return quota_context_factory->createContext(user_name, address, custom_quota_key);
+    return quota_context_factory->createContext(user_id, user_name, address, custom_quota_key);
 }
-
 
 std::vector<QuotaUsageInfo> AccessControlManager::getQuotaUsageInfo() const
 {

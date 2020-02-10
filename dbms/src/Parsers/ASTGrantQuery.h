@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class ASTRoleList;
+class ASTGenericRoleSet;
 
 
 /** GRANT access_type[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user_name | CURRENT_USER} [,...] [WITH GRANT OPTION]
@@ -22,7 +22,7 @@ public:
     };
     Kind kind = Kind::GRANT;
     AccessRightsElements access_rights_elements;
-    std::shared_ptr<ASTRoleList> to_roles;
+    std::shared_ptr<ASTGenericRoleSet> to_roles;
     bool grant_option = false;
 
     String getID(char) const override;

@@ -1,8 +1,8 @@
 #include <Parsers/ParserCreateRowPolicyQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
 #include <Access/RowPolicy.h>
-#include <Parsers/ParserRoleList.h>
-#include <Parsers/ASTRoleList.h>
+#include <Parsers/ParserGenericRoleSet.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -187,15 +187,15 @@ namespace
         });
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTRoleList> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTGenericRoleSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected) || !ParserRoleList{}.parse(pos, ast, expected))
+            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected) || !ParserGenericRoleSet{}.parse(pos, ast, expected))
                 return false;
 
-            roles = std::static_pointer_cast<ASTRoleList>(ast);
+            roles = std::static_pointer_cast<ASTGenericRoleSet>(ast);
             return true;
         });
     }
@@ -239,7 +239,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     String new_policy_name;
     std::optional<bool> is_restrictive;
     std::vector<std::pair<ConditionIndex, ASTPtr>> conditions;
-    std::shared_ptr<ASTRoleList> roles;
+    std::shared_ptr<ASTGenericRoleSet> roles;
 
     while (true)
     {

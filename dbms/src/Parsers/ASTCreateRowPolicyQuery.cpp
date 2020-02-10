@@ -1,5 +1,5 @@
 #include <Parsers/ASTCreateRowPolicyQuery.h>
-#include <Parsers/ASTRoleList.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <Parsers/formatAST.h>
 #include <Common/quoteString.h>
 #include <boost/range/algorithm/transform.hpp>
@@ -112,7 +112,7 @@ namespace
         }
     }
 
-    void formatToRoles(const ASTRoleList & roles, const IAST::FormatSettings & settings)
+    void formatToRoles(const ASTGenericRoleSet & roles, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TO " << (settings.hilite ? IAST::hilite_none : "");
         roles.format(settings);

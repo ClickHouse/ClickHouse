@@ -21,8 +21,8 @@ RowPolicyContext::RowPolicyContext()
 RowPolicyContext::~RowPolicyContext() = default;
 
 
-RowPolicyContext::RowPolicyContext(const String & user_name_)
-    : user_name(user_name_)
+RowPolicyContext::RowPolicyContext(const UUID & user_id_)
+    : user_id(user_id_)
 {}
 
 

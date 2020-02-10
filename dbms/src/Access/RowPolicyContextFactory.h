@@ -19,7 +19,7 @@ public:
     RowPolicyContextFactory(const AccessControlManager & access_control_manager_);
     ~RowPolicyContextFactory();
 
-    RowPolicyContextPtr createContext(const String & user_name);
+    RowPolicyContextPtr createContext(const UUID & user_id);
 
 private:
     using ParsedConditions = RowPolicyContext::ParsedConditions;
@@ -31,9 +31,7 @@ private:
         bool canUseWithContext(const RowPolicyContext & context) const;
 
         RowPolicyPtr policy;
-        std::unordered_set<String> roles;
-        bool all_roles = false;
-        std::unordered_set<String> except_roles;
+        const GenericRoleSet * roles = nullptr;
         ParsedConditions parsed_conditions;
     };
 

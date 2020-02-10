@@ -652,7 +652,9 @@ void Context::checkAccess(const AccessRightsElements & access) const { return ch
 
 void Context::switchRowPolicy()
 {
-    row_policy = getAccessControlManager().getRowPolicyContext(client_info.initial_user);
+    auto initial_user_id = getAccessControlManager().find<User>(client_info.initial_user);
+    if (initial_user_id)
+        row_policy = getAccessControlManager().getRowPolicyContext(*initial_user_id);
 }
 
 void Context::setUsersConfig(const ConfigurationPtr & config)
@@ -742,12 +744,13 @@ void Context::setUser(const String & name, const String & password, const Poco::
         },
         &subscription_for_user_change.subscription);
 
-    quota = getAccessControlManager().getQuotaContext(client_info.current_user, client_info.current_address.host(), client_info.quota_key);
-    row_policy = getAccessControlManager().getRowPolicyContext(client_info.current_user);
+    quota = getAccessControlManager().getQuotaContext(user_id, name, address.host(), quota_key);
+    row_policy = getAccessControlManager().getRowPolicyContext(user_id);
 
     calculateUserSettings();
     calculateAccessRights();
 }
+
 
 void Context::addDependencyUnsafe(const StorageID & from, const StorageID & where)
 {

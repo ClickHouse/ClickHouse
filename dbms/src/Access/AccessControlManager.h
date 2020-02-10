@@ -51,9 +51,9 @@ public:
 
     AccessRightsContextPtr getAccessRightsContext(const UserPtr & user, const ClientInfo & client_info, const Settings & settings, const String & current_database) const;
 
-    RowPolicyContextPtr getRowPolicyContext(const String & user_name) const;
+    RowPolicyContextPtr getRowPolicyContext(const UUID & user_id) const;
 
-    QuotaContextPtr getQuotaContext(const String & user_name, const Poco::Net::IPAddress & address, const String & custom_quota_key) const;
+    QuotaContextPtr getQuotaContext(const UUID & user_id, const String & user_name, const Poco::Net::IPAddress & address, const String & custom_quota_key) const;
     std::vector<QuotaUsageInfo> getQuotaUsageInfo() const;
 
 private:
