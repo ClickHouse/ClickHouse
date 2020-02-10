@@ -397,6 +397,7 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     zookeeper->createIfNotExists(zookeeper_path + "/quorum", String());
     zookeeper->createIfNotExists(zookeeper_path + "/quorum/last_part", String());
     zookeeper->createIfNotExists(zookeeper_path + "/quorum/failed_parts", String());
+    zookeeper->createIfNotExists(zookeeper_path + "/alter_intention_counter", String());
 
     /// Tracking lag of replicas.
     zookeeper->createIfNotExists(replica_path + "/min_unprocessed_insert_time", String());
@@ -3290,7 +3291,7 @@ void StorageReplicatedMergeTree::alter(
 {
     assertNotReadonly();
 
-    LOG_DEBUG(log, "Doing ALTER");
+    LOG_DEBUG(log, "Doing ALTER FROM " << metadata_version);
 
     auto maybe_mutation_commands = params.getMutationCommands(getInMemoryMetadata());
     auto table_id = getStorageID();
@@ -3394,7 +3395,6 @@ void StorageReplicatedMergeTree::alter(
 
         bool have_mutation = false;
         std::optional<EphemeralLocksInAllPartitions> lock_holder;
-        size_t partitions_count = 0;
         if (!maybe_mutation_commands.empty())
         {
             String mutations_path = zookeeper_path + "/mutations";
@@ -3406,24 +3406,20 @@ void StorageReplicatedMergeTree::alter(
             Coordination::Stat mutations_stat;
             zookeeper->get(mutations_path, &mutations_stat);
 
+            Coordination::Stat intention_counter_stat;
+            zookeeper->get(zookeeper_path + "/alter_intention_counter", &intention_counter_stat);
             lock_holder.emplace(
-                    zookeeper_path + "/block_numbers", "block-", zookeeper_path + "/temp", *zookeeper);
+                zookeeper_path + "/block_numbers", "block-", zookeeper_path + "/temp", *zookeeper);
 
-            Coordination::Stat block_numbers_version;
-            zookeeper->get(zookeeper_path + "/block_numbers", &block_numbers_version);
+            ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/alter_intention_counter", intention_counter_stat.version));
 
             for (const auto & lock : lock_holder->getLocks())
             {
-                Coordination::Stat partition_stat;
                 mutation_entry.block_numbers[lock.partition_id] = lock.number;
-                zookeeper->get(zookeeper_path + "/block_numbers/" + lock.partition_id, &partition_stat);
-                ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/block_numbers/" + lock.partition_id, partition_stat.version));
-                partitions_count++;
+                LOG_DEBUG(log, "ALLOCATED:" << lock.number << " FOR VERSION:" << metadata_version + 1);
             }
 
             mutation_entry.create_time = time(nullptr);
-            /// We have to be sure, that no inserts happened
-            ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/block_numbers", block_numbers_version.version));
 
             ops.emplace_back(zkutil::makeSetRequest(mutations_path, String(), mutations_stat.version));
             ops.emplace_back(
@@ -3435,6 +3431,8 @@ void StorageReplicatedMergeTree::alter(
         Coordination::Responses results;
         int32_t rc = zookeeper->tryMulti(ops, results);
 
+        LOG_DEBUG(log, "ALTER REQUESTED TO" << entry.alter_version);
+
         //std::cerr << "Results size:" << results.size() << std::endl;
         //std::cerr << "Have mutation:" << have_mutation << std::endl;
 
@@ -3445,7 +3443,7 @@ void StorageReplicatedMergeTree::alter(
             {
                 //std::cerr << "In have mutation\n";
                 //std::cerr << "INDEX:" << results.size() - 2 << std::endl;
-                String alter_path = dynamic_cast<const Coordination::CreateResponse &>(*results[results.size() - 4 - partitions_count]).path_created;
+                String alter_path = dynamic_cast<const Coordination::CreateResponse &>(*results[results.size() - 4]).path_created;
                 //std::cerr << "Alter path:" << alter_path << std::endl;
                 entry.znode_name = alter_path.substr(alter_path.find_last_of('/') + 1);
 
@@ -3474,7 +3472,11 @@ void StorageReplicatedMergeTree::alter(
     std::vector<String> unwaited;
     //std::cerr << "Started wait for alter\n";
     if (query_context.getSettingsRef().replication_alter_partitions_sync == 2)
+    {
+        LOG_DEBUG(log, "Start waiting for metadata alter");
         unwaited = waitForAllReplicasToProcessLogEntry(entry, false);
+        LOG_DEBUG(log, "Finished waiting for metadata alter");
+    }
     else if (query_context.getSettingsRef().replication_alter_partitions_sync == 1)
         waitForReplicaToProcessLogEntry(replica_name, entry);
     //std::cerr << "FInished wait for alter\n";
@@ -3487,7 +3489,9 @@ void StorageReplicatedMergeTree::alter(
     if (mutation_znode)
     {
         //std::cerr << "Started wait for mutation:" << *mutation_znode << std::endl;
+        LOG_DEBUG(log, "Start waiting for mutation");
         waitMutation(*mutation_znode, query_context.getSettingsRef().replication_alter_partitions_sync);
+        LOG_DEBUG(log, "Finished waiting for mutation");
         //std::cerr << "FInished wait for mutation\n";
     }
 }
