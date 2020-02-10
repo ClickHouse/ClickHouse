@@ -189,7 +189,7 @@ dateDiff('unit', startdate, enddate, [timezone])
 
 - `startdate` — Первая дата. [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md).
 - `enddate` — Вторая дата. [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md).
-- `timezone` — Опциональный параметр. Если определен, применяется к обоим значениям: `startdate` и `enddate`. Если не определен, используются часовые пояса `startdate` и `enddate`. Если часовые пояса не совпадают, вернется неожидаемый результат. [Часовые пояса](../../data_types/datetime.md#time-zones).
+- `timezone` — Опциональный параметр. Если определен, применяется к обоим значениям: `startdate` и `enddate`. Если не определен, используются часовые пояса `startdate` и `enddate`. Если часовые пояса не совпадают, вернется неожидаемый результат.
 
 **Возвращаемое значение**
 

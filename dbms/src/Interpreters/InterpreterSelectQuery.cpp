@@ -212,15 +212,20 @@ static Context getSubqueryContext(const Context & context)
     return subquery_context;
 }
 
-static void sanitizeBlock(Block & block)
+static bool sanitizeBlock(Block & block)
 {
     for (auto & col : block)
     {
         if (!col.column)
+        {
+            if (isNotCreatable(col.type->getTypeId()))
+                return false;
             col.column = col.type->createColumn();
+        }
         else if (isColumnConst(*col.column) && !col.column->empty())
             col.column = col.column->cloneEmpty();
     }
+    return true;
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -325,7 +330,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         table_id = storage->getStorageID();
     }
 
-    auto analyze = [&] ()
+    auto analyze = [&] (bool try_move_to_prewhere = true)
     {
         syntax_analyzer_result = SyntaxAnalyzer(*context, options).analyze(
                 query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage, NamesAndTypesList());
@@ -398,7 +403,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
 
         /// Calculate structure of the result.
-        result_header = getSampleBlockImpl();
+        result_header = getSampleBlockImpl(try_move_to_prewhere);
     };
 
     analyze();
@@ -426,8 +431,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         query.setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", query.prewhere()->clone(), query.where()->clone()));
         need_analyze_again = true;
     }
+
     if (need_analyze_again)
-        analyze();
+    {
+        /// Do not try move conditions to PREWHERE for the second time.
+        /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
+        analyze(/* try_move_to_prewhere = */ false);
+    }
 
     /// If there is no WHERE, filter blocks as usual
     if (query.prewhere() && !query.where())
@@ -510,7 +520,7 @@ QueryPipeline InterpreterSelectQuery::executeWithProcessors()
 }
 
 
-Block InterpreterSelectQuery::getSampleBlockImpl()
+Block InterpreterSelectQuery::getSampleBlockImpl(bool try_move_to_prewhere)
 {
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
@@ -534,7 +544,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
                 current_info.sets = query_analyzer->getPreparedSets();
 
                 /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
-                if (settings.optimize_move_to_prewhere && query.where() && !query.prewhere() && !query.final())
+                if (settings.optimize_move_to_prewhere && try_move_to_prewhere && query.where() && !query.prewhere() && !query.final())
                     MergeTreeWhereOptimizer{current_info, *context, merge_tree,
                                             syntax_analyzer_result->requiredSourceColumns(), log};
             };
@@ -609,18 +619,21 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
 /// Check if there is an ignore function. It's used for disabling constant folding in query
 ///  predicates because some performance tests use ignore function as a non-optimize guard.
-static bool hasIgnore(const ExpressionActions & actions)
+static bool allowEarlyConstantFolding(const ExpressionActions & actions, const Context & context)
 {
+    if (!context.getSettingsRef().enable_early_constant_folding)
+        return false;
+
     for (auto & action : actions.getActions())
     {
         if (action.type == action.APPLY_FUNCTION && action.function_base)
         {
             auto name = action.function_base->getName();
             if (name == "ignore")
-                return true;
+                return false;
         }
     }
-    return false;
+    return true;
 }
 
 InterpreterSelectQuery::AnalysisResult
@@ -727,15 +740,17 @@ InterpreterSelectQuery::analyzeExpressions(
             res.prewhere_info = std::make_shared<PrewhereInfo>(
                     chain.steps.front().actions, query.prewhere()->getColumnName());
 
-            if (!hasIgnore(*res.prewhere_info->prewhere_actions))
+            if (allowEarlyConstantFolding(*res.prewhere_info->prewhere_actions, context))
             {
                 Block before_prewhere_sample = source_header;
-                sanitizeBlock(before_prewhere_sample);
-                res.prewhere_info->prewhere_actions->execute(before_prewhere_sample);
-                auto & column_elem = before_prewhere_sample.getByName(query.prewhere()->getColumnName());
-                /// If the filter column is a constant, record it.
-                if (column_elem.column)
-                    res.prewhere_constant_filter_description = ConstantFilterDescription(*column_elem.column);
+                if (sanitizeBlock(before_prewhere_sample))
+                {
+                    res.prewhere_info->prewhere_actions->execute(before_prewhere_sample);
+                    auto & column_elem = before_prewhere_sample.getByName(query.prewhere()->getColumnName());
+                    /// If the filter column is a constant, record it.
+                    if (column_elem.column)
+                        res.prewhere_constant_filter_description = ConstantFilterDescription(*column_elem.column);
+                }
             }
             chain.addStep();
         }
@@ -757,19 +772,21 @@ InterpreterSelectQuery::analyzeExpressions(
             where_step_num = chain.steps.size() - 1;
             has_where = res.has_where = true;
             res.before_where = chain.getLastActions();
-            if (!hasIgnore(*res.before_where))
+            if (allowEarlyConstantFolding(*res.before_where, context))
             {
                 Block before_where_sample;
                 if (chain.steps.size() > 1)
                     before_where_sample = chain.steps[chain.steps.size() - 2].actions->getSampleBlock();
                 else
                     before_where_sample = source_header;
-                sanitizeBlock(before_where_sample);
-                res.before_where->execute(before_where_sample);
-                auto & column_elem = before_where_sample.getByName(query.where()->getColumnName());
-                /// If the filter column is a constant, record it.
-                if (column_elem.column)
-                    res.where_constant_filter_description = ConstantFilterDescription(*column_elem.column);
+                if (sanitizeBlock(before_where_sample))
+                {
+                    res.before_where->execute(before_where_sample);
+                    auto & column_elem = before_where_sample.getByName(query.where()->getColumnName());
+                    /// If the filter column is a constant, record it.
+                    if (column_elem.column)
+                        res.where_constant_filter_description = ConstantFilterDescription(*column_elem.column);
+                }
             }
             chain.addStep();
         }

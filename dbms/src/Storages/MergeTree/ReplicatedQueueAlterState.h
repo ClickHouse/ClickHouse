@@ -27,6 +27,7 @@ private:
     {
         int alter_version;
         AlterState state;
+        std::map<String, Int64> block_numbers;
 
         AlterInQueue(int alter_version_, AlterState state_)
             : alter_version(alter_version_)
