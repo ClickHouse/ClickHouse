@@ -541,7 +541,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
     }
 
     auto table_id = getStorageID();
-    global_context.getDatabase(table_id.database_name)->alterTable(global_context, table_id.table_name, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(global_context, table_id.table_name, metadata);
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
@@ -3231,7 +3231,7 @@ void StorageReplicatedMergeTree::alter(
 
         changeSettings(metadata.settings_ast, table_lock_holder);
 
-        global_context.getDatabase(table_id.database_name)->alterTable(query_context, table_id.table_name, metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id.table_name, metadata);
         return;
     }
 
@@ -3309,7 +3309,7 @@ void StorageReplicatedMergeTree::alter(
             auto old_metadata = getInMemoryMetadata();
             old_metadata.settings_ast = metadata.settings_ast;
             changeSettings(metadata.settings_ast, table_lock_holder);
-            global_context.getDatabase(table_id.database_name)->alterTable(query_context, table_id.table_name, old_metadata);
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id.table_name, old_metadata);
         }
 
         /// Modify shared metadata nodes in ZooKeeper.

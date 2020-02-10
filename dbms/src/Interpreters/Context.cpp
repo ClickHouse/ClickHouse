@@ -185,8 +185,6 @@ struct ContextShared
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
     mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
 
-    std::shared_ptr<DatabaseCatalog> database_catalog;      /// Manages databases and tables in them.
-
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
     mutable std::optional<ExternalModelsLoader> external_models_loader;
@@ -317,7 +315,7 @@ struct ContextShared
         if (system_logs)
             system_logs->shutdown();
 
-        database_catalog->shutdown();
+        DatabaseCatalog::instance().shutdown();
 
         /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
         /// TODO: Get rid of this.
@@ -362,7 +360,6 @@ Context Context::createGlobal()
     res.row_policy = std::make_shared<RowPolicyContext>();
     res.access_rights = std::make_shared<AccessRightsContext>();
     res.shared = std::make_shared<ContextShared>();
-    res.shared->database_catalog = std::make_shared<DatabaseCatalog>(res);
     return res;
 }
 
@@ -491,66 +488,12 @@ std::chrono::steady_clock::duration Context::closeSessions() const
     return shared->close_interval;
 }
 
-DatabaseCatalog & Context::getDatabaseCatalog() const
-{
-    return *shared->database_catalog;
-}
-
-Databases Context::getDatabases() const
-{
-    return shared->database_catalog->getDatabases();
-}
-
 String Context::resolveDatabase(const String & database_name) const
 {
     String res = database_name.empty() ? getCurrentDatabase() : database_name;
     if (res.empty())
         throw Exception("Default database is not selected", ErrorCodes::UNKNOWN_DATABASE);
     return res;
-}
-
-String Context::resolveDatabaseAndCheckAccess(const String & database_name) const
-{
-    auto lock = getLock();
-    String res = database_name.empty() ? current_database : database_name;
-    if (res.empty())
-        throw Exception("Default database is not selected", ErrorCodes::UNKNOWN_DATABASE);
-    return res;
-}
-
-//StorageID Context::resolveDatabase(StorageID table_id) const
-//{
-//    table_id.database_name = resolveDatabase(table_id.database_name);
-//    return table_id;
-//}
-
-DatabasePtr Context::getDatabase(const String & database_name) const
-{
-    auto db = resolveDatabaseAndCheckAccess(database_name);
-    return shared->database_catalog->getDatabase(db, *this);
-}
-
-DatabasePtr Context::tryGetDatabase(const String & database_name) const
-{
-    String db = resolveDatabase(database_name);
-    return shared->database_catalog->tryGetDatabase(database_name, *this);
-}
-
-bool Context::isDatabaseExist(const String & database_name) const
-{
-    String db = resolveDatabaseAndCheckAccess(database_name);
-    return shared->database_catalog->isDatabaseExist(database_name);
-}
-
-void Context::addDatabase(const String & database_name, const DatabasePtr & database)
-{
-    shared->database_catalog->attachDatabase(database_name, database, *this);
-}
-
-
-DatabasePtr Context::detachDatabase(const String & database_name)
-{
-    return shared->database_catalog->detachDatabase(database_name, *this);
 }
 
 String Context::getPath() const
@@ -833,35 +776,20 @@ bool Context::isTableExist(const String & database_name, const String & table_na
 {
     //FIXME do we need resolve temporary tables here?
     auto table_id = resolveStorageID({database_name, table_name});
-    return shared->database_catalog->isTableExist(table_id, *this);
+    return DatabaseCatalog::instance().isTableExist(table_id, *this);
 }
 
 bool Context::isDictionaryExists(const String & database_name, const String & dictionary_name) const
 {
     auto lock = getLock();
-    String db = resolveDatabaseAndCheckAccess(database_name);
-    auto db_ptr = shared->database_catalog->tryGetDatabase(database_name, *this);
+    String db = resolveDatabase(database_name);
+    auto db_ptr = DatabaseCatalog::instance().tryGetDatabase(database_name);
     return db_ptr && db_ptr->isDictionaryExist(*this, dictionary_name);
 }
 
 bool Context::isExternalTableExist(const String & table_name) const
 {
     return external_tables_mapping.count(table_name);
-}
-
-
-void Context::assertTableDoesntExist(const String & database_name, const String & table_name) const
-{
-    //FIXME do we need resolve temporary tables here? (and do we need this method?)
-    auto table_id = resolveStorageID({database_name, table_name});
-    shared->database_catalog->assertTableDoesntExist(table_id, *this);
-}
-
-
-void Context::assertDatabaseExists(const String & database_name) const
-{
-    String db = resolveDatabaseAndCheckAccess(database_name);
-    shared->database_catalog->assertDatabaseExists(db);
 }
 
 const Scalars & Context::getScalars() const
@@ -938,7 +866,7 @@ StoragePtr Context::tryGetTable(const StorageID & table_id) const
 StoragePtr Context::getTableImpl(const StorageID & table_id, std::optional<Exception> * exception) const
 {
     auto resolved_id = resolveStorageID(table_id);
-    return shared->database_catalog->getTable(resolved_id, *this, exception);
+    return DatabaseCatalog::instance().getTable(resolved_id, *this, exception);
 }
 
 
@@ -948,7 +876,7 @@ void Context::addExternalTable(const String & table_name, const StoragePtr & sto
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
         throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
-    auto holder = std::make_shared<TemporaryTableHolder>(*this, *shared->database_catalog->getDatabaseForTemporaryTables(), storage, ast);
+    auto holder = std::make_shared<TemporaryTableHolder>(*this, *DatabaseCatalog::instance().getDatabaseForTemporaryTables(), storage, ast);
     external_tables_mapping.emplace(table_name, std::move(holder));
 }
 
@@ -1038,7 +966,7 @@ ASTPtr Context::getCreateExternalTableQuery(const String & table_name) const
     if (external_tables_mapping.end() == it)
         throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
 
-    return shared->database_catalog->getDatabaseForTemporaryTables()->getCreateTableQuery(*this, it->second->getGlobalTableID().table_name);
+    return DatabaseCatalog::instance().getDatabaseForTemporaryTables()->getCreateTableQuery(*this, it->second->getGlobalTableID().table_name);
 }
 
 Settings Context::getSettings() const
@@ -1140,10 +1068,10 @@ String Context::getInitialQueryId() const
 
 void Context::setCurrentDatabase(const String & name)
 {
+    DatabaseCatalog::instance().assertDatabaseExists(name);
     auto lock = getLock();
-    assertDatabaseExists(name);
-    current_database = name;
     calculateAccessRights();
+    current_database = name;
 }
 
 

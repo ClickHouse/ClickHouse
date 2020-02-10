@@ -57,7 +57,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
 static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & context)
 {
     MutableColumnPtr column = ColumnString::create();
-    for (const auto & db : context.getDatabases())
+    for (const auto & db : DatabaseCatalog::instance().getDatabases())
         column->insert(db.first);
 
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
@@ -118,7 +118,8 @@ protected:
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
                 database_name = databases->getDataAt(database_idx).toString();
-                database = context.tryGetDatabase(database_name);
+                //FIXME access is not checked
+                database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
                 if (!database)
                 {

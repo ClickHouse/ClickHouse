@@ -17,11 +17,12 @@ namespace ErrorCodes
     extern const int DATABASE_ALREADY_EXISTS;
 }
 
+
 void DatabaseCatalog::loadDatabases()
 {
 
     auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE);
-    attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables, global_context);
+    attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
 }
 
 void DatabaseCatalog::shutdown()
@@ -131,7 +132,7 @@ void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const String & database_
         throw Exception("Database " + backQuoteIfNeed(database_name) + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
 }
 
-void DatabaseCatalog::attachDatabase(const String & database_name, const DatabasePtr & database, const Context & /*local_context*/)
+void DatabaseCatalog::attachDatabase(const String & database_name, const DatabasePtr & database)
 {
     //local_context.checkDatabaseAccessRights(database_name);
     std::lock_guard lock{databases_mutex};
@@ -140,17 +141,18 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
 }
 
 
-DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, const Context & local_context)
+DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name)
 {
     //local_context.checkDatabaseAccessRights(database_name);
     std::lock_guard lock{databases_mutex};
-    auto res = getDatabase(database_name, local_context);   //FIXME locks order
+    auto res = getDatabase(database_name);   //FIXME locks order
     databases.erase(database_name);
     return res;
 }
 
-DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, const Context & /*local_context*/) const
+DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
 {
+    assert(!database_name.empty());
     //String db = local_context.resolveDatabase(database_name);
     //local_context.checkDatabaseAccessRights(db);    //FIXME non-atomic
     std::lock_guard lock{databases_mutex};
@@ -158,8 +160,9 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, const Con
     return databases.find(database_name)->second;
 }
 
-DatabasePtr DatabaseCatalog::tryGetDatabase(const String & database_name, const Context & /*local_context*/) const
+DatabasePtr DatabaseCatalog::tryGetDatabase(const String & database_name) const
 {
+    assert(!database_name.empty());
     //String db = local_context.resolveDatabase(database_name);
     std::lock_guard lock{databases_mutex};
     auto it = databases.find(database_name);
@@ -170,6 +173,7 @@ DatabasePtr DatabaseCatalog::tryGetDatabase(const String & database_name, const 
 
 bool DatabaseCatalog::isDatabaseExist(const String & database_name) const
 {
+    assert(!database_name.empty());
     std::lock_guard lock{databases_mutex};
     return databases.end() != databases.find(database_name);
 }
@@ -201,7 +205,12 @@ void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id, const C
 
 DatabasePtr DatabaseCatalog::getDatabaseForTemporaryTables() const
 {
-    return getDatabase(TEMPORARY_DATABASE, global_context);
+    return getDatabase(TEMPORARY_DATABASE);
+}
+
+DatabasePtr DatabaseCatalog::getSystemDatabase() const
+{
+    return getDatabase(SYSTEM_DATABASE);
 }
 
 void DatabaseCatalog::addUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table)
@@ -221,6 +230,18 @@ void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
     std::lock_guard lock{map_part.mutex};
     if (!map_part.map.erase(uuid))
         throw Exception("Mapping for table with UUID=" + toString(uuid) + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
+}
+
+DatabaseCatalog & DatabaseCatalog::instance()
+{
+    static DatabaseCatalog database_catalog;
+    return database_catalog;
+}
+
+DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, const Context & local_context) const
+{
+    String resolved_database = local_context.resolveDatabase(database_name);
+    return getDatabase(resolved_database);
 }
 
 }

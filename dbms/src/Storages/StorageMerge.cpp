@@ -399,7 +399,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) const
 {
     checkStackSize();
-    auto database = context.getDatabase(source_database);
+    auto database = DatabaseCatalog::instance().getDatabase(source_database, context);
     auto table_name_match = [this](const String & table_name_) { return table_name_regexp.match(table_name_); };
     return database->getTablesIterator(global_context, table_name_match);
 }
@@ -425,7 +425,7 @@ void StorageMerge::alter(
 
     StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();
     params.apply(storage_metadata);
-    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, storage_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, storage_metadata);
     setColumns(storage_metadata.columns);
 }
 

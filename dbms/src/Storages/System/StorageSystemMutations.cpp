@@ -42,7 +42,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, const Contex
 
     /// Collect a set of *MergeTree tables.
     std::map<String, std::map<String, StoragePtr>> merge_tree_tables;
-    for (const auto & db : context.getDatabases())
+    for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
         /// Lazy database can not contain MergeTree tables
         if (db.second->getEngineName() == "Lazy")

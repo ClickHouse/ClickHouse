@@ -32,7 +32,8 @@ struct State
         registerFunctions();
         DatabasePtr database = std::make_shared<DatabaseMemory>("test");
         database->attachTable("table", StorageMemory::create(StorageID("test", "table"), ColumnsDescription{columns}, ConstraintsDescription{}));
-        context.addDatabase("test", database);
+        context.makeGlobalContext();
+        DatabaseCatalog::instance().attachDatabase("test", database);
         context.setCurrentDatabase("test");
     }
 };

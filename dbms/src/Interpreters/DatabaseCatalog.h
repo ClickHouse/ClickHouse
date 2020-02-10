@@ -27,9 +27,10 @@ public:
     static constexpr const char * TEMPORARY_DATABASE = "_temporary_and_external_tables";
     static constexpr const char * SYSTEM_DATABASE = "system";
 
+    static DatabaseCatalog & instance();
 
-    DatabaseCatalog(Context & global_context_/*, String default_database_*/)
-    : global_context(global_context_)/*, default_database(std::move(default_database_))*/ {}
+    //DatabaseCatalog(/*Context & global_context_, String default_database_*/) {}
+    //: global_context(global_context_)/*, default_database(std::move(default_database_))*/ {}
 
     void loadDatabases();
     void shutdown();
@@ -40,12 +41,14 @@ public:
     void assertDatabaseDoesntExist(const String & database_name) const;
 
     DatabasePtr getDatabaseForTemporaryTables() const;
+    DatabasePtr getSystemDatabase() const;
 
-    void attachDatabase(const String & database_name, const DatabasePtr & database, const Context & local_context);     // ca, a
-    DatabasePtr detachDatabase(const String & database_name, const Context & local_context);                            // (sr), ca, a
+    void attachDatabase(const String & database_name, const DatabasePtr & database);     // ca, a
+    DatabasePtr detachDatabase(const String & database_name);                            // (sr), ca, a
 
-    DatabasePtr getDatabase(const String & database_name, const Context & local_context) const;                         // sr, ca, a
-    DatabasePtr tryGetDatabase(const String & database_name, const Context & local_context) const;                      // sr
+    DatabasePtr getDatabase(const String & database_name, const Context & local_context) const;
+    DatabasePtr getDatabase(const String & database_name) const;                         // sr, ca, a
+    DatabasePtr tryGetDatabase(const String & database_name) const;                      // sr
     bool isDatabaseExist(const String & database_name) const;                                                           // sr, ca
     Databases getDatabases() const;
 
@@ -60,6 +63,7 @@ public:
     StoragePtr getTable(const StorageID & table_id, const Context & local_context, std::optional<Exception> * exception) const;
 
 private:
+    DatabaseCatalog() = default;
     void assertDatabaseExistsUnlocked(const String & database_name) const;
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const;
 
@@ -78,7 +82,7 @@ private:
     }
 
 private:
-    [[maybe_unused]] Context & global_context;
+    //[[maybe_unused]] Context & global_context;
     mutable std::mutex databases_mutex;
     //const String default_database;
     Databases databases;

@@ -469,7 +469,7 @@ void StorageDistributed::alter(const AlterCommands & params, const Context & con
     checkAlterIsPossible(params, context.getSettingsRef());
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     params.apply(metadata);
-    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
     setColumns(std::move(metadata.columns));
 }
 
