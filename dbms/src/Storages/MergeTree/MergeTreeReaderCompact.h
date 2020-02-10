@@ -8,11 +8,15 @@
 namespace DB
 {
 
+class MergeTreeDataPartCompact;
+using DataPartCompactPtr = std::shared_ptr<const MergeTreeDataPartCompact>;
+
 /// Reader for compact parts
 class MergeTreeReaderCompact : public IMergeTreeReader
 {
 public:
-    MergeTreeReaderCompact(const MergeTreeData::DataPartPtr & data_part_,
+    MergeTreeReaderCompact(
+        const DataPartCompactPtr & data_part_,
         const NamesAndTypesList & columns_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,

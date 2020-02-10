@@ -15,10 +15,17 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-MergeTreeReaderCompact::MergeTreeReaderCompact(const MergeTreeData::DataPartPtr & data_part_,
-    const NamesAndTypesList & columns_, UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_,
-    const MarkRanges & mark_ranges_, const MergeTreeReaderSettings & settings_, const ValueSizeMap & avg_value_size_hints_,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_)
+
+MergeTreeReaderCompact::MergeTreeReaderCompact(
+    const DataPartCompactPtr & data_part_,
+    const NamesAndTypesList & columns_,
+    UncompressedCache * uncompressed_cache_,
+    MarkCache * mark_cache_,
+    const MarkRanges & mark_ranges_,
+    const MergeTreeReaderSettings & settings_,
+    const ValueSizeMap & avg_value_size_hints_,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
+    clockid_t clock_type_)
     : IMergeTreeReader(data_part_, columns_,
         uncompressed_cache_, mark_cache_, mark_ranges_,
         settings_, avg_value_size_hints_)

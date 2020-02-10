@@ -5,16 +5,10 @@
 namespace DB
 {
 
-struct ColumnSize;
-class MergeTreeData;
-
 /// Description of the data part.
 class MergeTreeDataPartWide : public IMergeTreeDataPart
 {
 public:
-    using Checksums = MergeTreeDataPartChecksums;
-    using Checksum = MergeTreeDataPartChecksums::Checksum;
-
     MergeTreeDataPartWide(
         const MergeTreeData & storage_,
         const String & name_,

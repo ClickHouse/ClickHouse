@@ -8,11 +8,15 @@
 namespace DB
 {
 
+class MergeTreeDataPartWide;
+using DataPartWidePtr = std::shared_ptr<const MergeTreeDataPartWide>;
+
 /// Reader for Wide parts.
 class MergeTreeReaderWide : public IMergeTreeReader
 {
 public:
-    MergeTreeReaderWide(const MergeTreeData::DataPartPtr & data_part_,
+    MergeTreeReaderWide(
+        const DataPartWidePtr & data_part_,
         const NamesAndTypesList & columns_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,

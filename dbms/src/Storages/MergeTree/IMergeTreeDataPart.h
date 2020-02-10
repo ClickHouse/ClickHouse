@@ -53,6 +53,24 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToPosition = std::unordered_map<std::string, size_t>;
 
+    using Type = MergeTreeDataPartType;
+
+
+    IMergeTreeDataPart(
+        const MergeTreeData & storage_,
+        const String & name_,
+        const MergeTreePartInfo & info_,
+        const DiskPtr & disk,
+        const std::optional<String> & relative_path,
+        Type part_type_);
+
+    IMergeTreeDataPart(
+        MergeTreeData & storage_,
+        const String & name_,
+        const DiskPtr & disk,
+        const std::optional<String> & relative_path,
+        Type part_type_);
+
     virtual MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns_,
         const MarkRanges & mark_ranges,
@@ -93,26 +111,10 @@ public:
     using ColumnToSize = std::map<std::string, UInt64>;
     virtual void accumulateColumnSizes(ColumnToSize & /* column_to_size */) const {}
 
-    using Type = MergeTreeDataPartType;
     Type getType() const { return part_type; }
 
     static String typeToString(Type type);
     String getTypeName() const { return typeToString(getType()); }
-
-    IMergeTreeDataPart(
-        const MergeTreeData & storage_,
-        const String & name_,
-        const MergeTreePartInfo & info_,
-        const DiskPtr & disk,
-        const std::optional<String> & relative_path,
-        Type part_type_);
-
-    IMergeTreeDataPart(
-        MergeTreeData & storage_,
-        const String & name_,
-        const DiskPtr & disk,
-        const std::optional<String> & relative_path,
-        Type part_type_);
 
     void setColumns(const NamesAndTypesList & new_columns);
 
@@ -132,6 +134,7 @@ public:
     /// This is useful when you want to change e.g. block numbers or the mutation version of the part.
     String getNewName(const MergeTreePartInfo & new_part_info) const;
 
+    /// Returns column position in part structure or std::nullopt if it's missing in part.
     std::optional<size_t> getColumnPosition(const String & column_name) const;
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
