@@ -167,7 +167,6 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
         LOG_DEBUG(log, "ADDING DATA ENTRY WITH ALTER VERSION:" << entry->alter_version << " FOR PART:" << entry->source_parts[0] << " to " << entry->getVirtualPartNames()[0]);
         //LOG_DEBUG(log, "ADDING DATA ENTRY WITH ALTER VERSION:" << entry->alter_version);
         //std::cerr << "INSERT MUTATE PART:" << entry->alter_version << std::endl;
-        alter_sequence.addDataAlterIfEmpty(entry->alter_version, state_lock);
     }
 }
 
@@ -246,10 +245,10 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
         if (entry->type == LogEntry::ALTER_METADATA)
         {
+            LOG_DEBUG(log, "FIN ALTER FOR PART with ALTER VERSION:" << entry->alter_version);
             //std::cerr << "Alter have mutation:" << entry->have_mutation << std::endl;
             alter_sequence.finishMetadataAlter(entry->alter_version, entry->have_mutation, state_lock);
 
-            LOG_DEBUG(log, "FIN ALTER FOR PART with ALTER VERSION:" << entry->alter_version);
         }
         if (entry->type == LogEntry::MUTATE_PART)
         {
@@ -726,6 +725,9 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
 
                 if (mutation.parts_to_do.size() == 0)
                     some_mutations_are_probably_done = true;
+
+                if (entry->alter_version != -1)
+                    alter_sequence.addMutationForAlter(entry->alter_version, entry->block_numbers, state_lock);
             }
         }
 
@@ -987,6 +989,12 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     MergeTreeData & data,
     std::lock_guard<std::mutex> & state_lock) const
 {
+    if (entry.type == LogEntry::GET_PART)
+    {
+        if (!alter_sequence.canExecuteGetEntry(entry.new_part_name, format_version, state_lock))
+            return false;
+    }
+
     if (entry.type == LogEntry::MERGE_PARTS
         || entry.type == LogEntry::GET_PART
         || entry.type == LogEntry::MUTATE_PART)
@@ -1074,20 +1082,23 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     {       //std::cerr << "Should we execute alter:";
 
 
-        LOG_DEBUG(log, "Should we execute alter entry:" << entry.toString());
+        LOG_DEBUG(log, "Should we execute alter entry:" << entry.znode_name << "\n"<< entry.toString());
         LOG_DEBUG(log, "We are in front:" << (entry.znode_name == *entries_in_queue.begin()));
+
         for (auto & log_entry : entries_in_queue)
         {
             LOG_DEBUG(log, "LogEntry:" << log_entry);
         }
+        for (auto & log_entry : queue)
+        {
+            LOG_DEBUG(log, "LogEntryData:" << log_entry->znode_name << "\n" << log_entry->toString());
+        }
 
         //std::cerr << alter_sequence.canExecuteMetadataAlter(entry.alter_version, state_lock) << std::endl;
-        if (!alter_sequence.canExecuteMetadataAlter(entry.alter_version, state_lock) || *entries_in_queue.begin() != entry.znode_name)
+        if (*entries_in_queue.begin() != entry.znode_name || !alter_sequence.canExecuteMetaAlter(entry.alter_version, state_lock))
         {
-            LOG_DEBUG(log, "No we shouldn't");
-            out_postpone_reason = "Cannot execute alter metadata with version: " + std::to_string(entry.alter_version)
-                + " because current head is " + std::to_string(alter_sequence.queue.front().alter_version)
-                + " with state: " + std::to_string(alter_sequence.queue.front().state);
+            out_postpone_reason
+                = "Cannot execute alter metadata with because head smallest node is " + *entries_in_queue.begin() + " but we are " + entry.znode_name;
             return false;
         }
         else
@@ -1101,13 +1112,11 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         //std::cerr << "Should we execute mutation:";
         //std::cerr << alter_sequence.canExecuteDataAlter(entry.alter_version, state_lock) << std::endl;
 
-        LOG_DEBUG(log, "Should we execute mutation entry:" << entry.toString());
+        LOG_DEBUG(log, "Should we execute mutation entry:" << entry.znode_name << "\n" << entry.toString());
         if (!alter_sequence.canExecuteDataAlter(entry.alter_version, state_lock))
         {
             LOG_DEBUG(log, "NOOOO");
-            out_postpone_reason = "Cannot execute alter data with version: " + std::to_string(entry.alter_version)
-                + " because current head is " + std::to_string(alter_sequence.queue.front().alter_version)
-                + " with state: " + std::to_string(alter_sequence.queue.front().state);
+            out_postpone_reason = "Cannot execute alter data with version: " + std::to_string(entry.alter_version);
             return false;
         }
         else
