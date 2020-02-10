@@ -20,7 +20,7 @@ public:
     QuotaContextFactory(const AccessControlManager & access_control_manager_);
     ~QuotaContextFactory();
 
-    QuotaContextPtr createContext(const String & user_name, const Poco::Net::IPAddress & address, const String & client_key);
+    QuotaContextPtr createContext(const UUID & user_id, const String & user_name, const Poco::Net::IPAddress & address, const String & client_key);
     std::vector<QuotaUsageInfo> getUsageInfo() const;
 
 private:
@@ -40,9 +40,7 @@ private:
 
         QuotaPtr quota;
         UUID quota_id;
-        std::unordered_set<String> roles;
-        bool all_roles = false;
-        std::unordered_set<String> except_roles;
+        const GenericRoleSet * roles = nullptr;
         std::unordered_map<String /* quota key */, boost::shared_ptr<const Intervals>> key_to_intervals;
     };
 

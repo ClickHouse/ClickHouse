@@ -1,6 +1,6 @@
 #include <Interpreters/InterpreterCreateQuotaQuery.h>
 #include <Parsers/ASTCreateQuotaQuery.h>
-#include <Parsers/ASTRoleList.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessControlManager.h>
 #include <Access/AccessFlags.h>
@@ -18,12 +18,16 @@ BlockIO InterpreterCreateQuotaQuery::execute()
     auto & access_control = context.getAccessControlManager();
     context.checkAccess(query.alter ? AccessType::ALTER_QUOTA : AccessType::CREATE_QUOTA);
 
+    std::optional<GenericRoleSet> roles_from_query;
+    if (query.roles)
+        roles_from_query = GenericRoleSet{*query.roles, access_control, context.getUserID()};
+
     if (query.alter)
     {
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
         {
             auto updated_quota = typeid_cast<std::shared_ptr<Quota>>(entity->clone());
-            updateQuotaFromQuery(*updated_quota, query);
+            updateQuotaFromQuery(*updated_quota, query, roles_from_query);
             return updated_quota;
         };
         if (query.if_exists)
@@ -37,7 +41,7 @@ BlockIO InterpreterCreateQuotaQuery::execute()
     else
     {
         auto new_quota = std::make_shared<Quota>();
-        updateQuotaFromQuery(*new_quota, query);
+        updateQuotaFromQuery(*new_quota, query, roles_from_query);
 
         if (query.if_not_exists)
             access_control.tryInsert(new_quota);
@@ -51,7 +55,7 @@ BlockIO InterpreterCreateQuotaQuery::execute()
 }
 
 
-void InterpreterCreateQuotaQuery::updateQuotaFromQuery(Quota & quota, const ASTCreateQuotaQuery & query)
+void InterpreterCreateQuotaQuery::updateQuotaFromQuery(Quota & quota, const ASTCreateQuotaQuery & query, const std::optional<GenericRoleSet> & roles_from_query)
 {
     if (query.alter)
     {
@@ -98,25 +102,7 @@ void InterpreterCreateQuotaQuery::updateQuotaFromQuery(Quota & quota, const ASTC
         }
     }
 
-    if (query.roles)
-    {
-        const auto & query_roles = *query.roles;
-
-        /// We keep `roles` sorted.
-        quota.roles = query_roles.names;
-        if (query_roles.current_user)
-            quota.roles.push_back(context.getClientInfo().current_user);
-        boost::range::sort(quota.roles);
-        quota.roles.erase(std::unique(quota.roles.begin(), quota.roles.end()), quota.roles.end());
-
-        quota.all_roles = query_roles.all;
-
-        /// We keep `except_roles` sorted.
-        quota.except_roles = query_roles.except_names;
-        if (query_roles.except_current_user)
-            quota.except_roles.push_back(context.getClientInfo().current_user);
-        boost::range::sort(quota.except_roles);
-        quota.except_roles.erase(std::unique(quota.except_roles.begin(), quota.except_roles.end()), quota.except_roles.end());
-    }
+    if (roles_from_query)
+        quota.roles = *roles_from_query;
 }
 }

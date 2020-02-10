@@ -1,7 +1,7 @@
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Parsers/ASTShowGrantsQuery.h>
 #include <Parsers/ASTGrantQuery.h>
-#include <Parsers/ASTRoleList.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnString.h>
@@ -92,7 +92,7 @@ ASTs InterpreterShowGrantsQuery::getGrantQueries(const ASTShowGrantsQuery & show
     if (show_query.current_user)
         user = context.getUser();
     else
-        user = context.getAccessControlManager().getUser(show_query.name);
+        user = context.getAccessControlManager().read<User>(show_query.name);
 
     ASTs res;
 
@@ -111,7 +111,7 @@ ASTs InterpreterShowGrantsQuery::getGrantQueries(const ASTShowGrantsQuery & show
                 auto grant_query = std::make_shared<ASTGrantQuery>();
                 grant_query->kind = kind;
                 grant_query->grant_option = grant_option;
-                grant_query->to_roles = std::make_shared<ASTRoleList>();
+                grant_query->to_roles = std::make_shared<ASTGenericRoleSet>();
                 grant_query->to_roles->names.push_back(user->getName());
                 grant_query->access_rights_elements = elements;
                 res.push_back(std::move(grant_query));

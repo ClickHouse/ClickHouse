@@ -1,6 +1,6 @@
 #include <Interpreters/InterpreterCreateRowPolicyQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
-#include <Parsers/ASTRoleList.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessControlManager.h>
@@ -16,12 +16,16 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     auto & access_control = context.getAccessControlManager();
     context.checkAccess(query.alter ? AccessType::ALTER_POLICY : AccessType::CREATE_POLICY);
 
+    std::optional<GenericRoleSet> roles_from_query;
+    if (query.roles)
+        roles_from_query = GenericRoleSet{*query.roles, access_control, context.getUserID()};
+
     if (query.alter)
     {
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
         {
             auto updated_policy = typeid_cast<std::shared_ptr<RowPolicy>>(entity->clone());
-            updateRowPolicyFromQuery(*updated_policy, query);
+            updateRowPolicyFromQuery(*updated_policy, query, roles_from_query);
             return updated_policy;
         };
         String full_name = query.name_parts.getFullName(context);
@@ -36,7 +40,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     else
     {
         auto new_policy = std::make_shared<RowPolicy>();
-        updateRowPolicyFromQuery(*new_policy, query);
+        updateRowPolicyFromQuery(*new_policy, query, roles_from_query);
 
         if (query.if_not_exists)
             access_control.tryInsert(new_policy);
@@ -50,7 +54,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
 }
 
 
-void InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(RowPolicy & policy, const ASTCreateRowPolicyQuery & query)
+void InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(RowPolicy & policy, const ASTCreateRowPolicyQuery & query, const std::optional<GenericRoleSet> & roles_from_query)
 {
     if (query.alter)
     {
@@ -70,25 +74,7 @@ void InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(RowPolicy & polic
     for (const auto & [index, condition] : query.conditions)
         policy.conditions[index] = condition ? serializeAST(*condition) : String{};
 
-    if (query.roles)
-    {
-        const auto & query_roles = *query.roles;
-
-        /// We keep `roles` sorted.
-        policy.roles = query_roles.names;
-        if (query_roles.current_user)
-            policy.roles.push_back(context.getClientInfo().current_user);
-        boost::range::sort(policy.roles);
-        policy.roles.erase(std::unique(policy.roles.begin(), policy.roles.end()), policy.roles.end());
-
-        policy.all_roles = query_roles.all;
-
-        /// We keep `except_roles` sorted.
-        policy.except_roles = query_roles.except_names;
-        if (query_roles.except_current_user)
-            policy.except_roles.push_back(context.getClientInfo().current_user);
-        boost::range::sort(policy.except_roles);
-        policy.except_roles.erase(std::unique(policy.except_roles.begin(), policy.except_roles.end()), policy.except_roles.end());
-    }
+    if (roles_from_query)
+        policy.roles = *roles_from_query;
 }
 }

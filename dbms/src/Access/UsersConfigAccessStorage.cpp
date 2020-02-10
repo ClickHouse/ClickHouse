@@ -183,7 +183,7 @@ namespace
     }
 
 
-    QuotaPtr parseQuota(const Poco::Util::AbstractConfiguration & config, const String & quota_name, const Strings & user_names)
+    QuotaPtr parseQuota(const Poco::Util::AbstractConfiguration & config, const String & quota_name, const std::vector<UUID> & user_ids)
     {
         auto quota = std::make_shared<Quota>();
         quota->setName(quota_name);
@@ -225,7 +225,7 @@ namespace
             limits.max[ResourceType::EXECUTION_TIME] = Quota::secondsToExecutionTime(config.getUInt64(interval_config + ".execution_time", Quota::UNLIMITED));
         }
 
-        quota->roles = user_names;
+        quota->roles.add(user_ids);
 
         return quota;
     }
@@ -235,11 +235,11 @@ namespace
     {
         Poco::Util::AbstractConfiguration::Keys user_names;
         config.keys("users", user_names);
-        std::unordered_map<String, Strings> quota_to_user_names;
+        std::unordered_map<String, std::vector<UUID>> quota_to_user_ids;
         for (const auto & user_name : user_names)
         {
             if (config.has("users." + user_name + ".quota"))
-                quota_to_user_names[config.getString("users." + user_name + ".quota")].push_back(user_name);
+                quota_to_user_ids[config.getString("users." + user_name + ".quota")].push_back(generateID(typeid(User), user_name));
         }
 
         Poco::Util::AbstractConfiguration::Keys quota_names;
@@ -250,8 +250,8 @@ namespace
         {
             try
             {
-                auto it = quota_to_user_names.find(quota_name);
-                const Strings quota_users = (it != quota_to_user_names.end()) ? std::move(it->second) : Strings{};
+                auto it = quota_to_user_ids.find(quota_name);
+                const std::vector<UUID> & quota_users = (it != quota_to_user_ids.end()) ? std::move(it->second) : std::vector<UUID>{};
                 quotas.push_back(parseQuota(config, quota_name, quota_users));
             }
             catch (...)
@@ -307,7 +307,7 @@ namespace
                                 auto policy = std::make_shared<RowPolicy>();
                                 policy->setFullName(database, table_name, user_name);
                                 policy->conditions[RowPolicy::SELECT_FILTER] = config.getString(filter_config);
-                                policy->roles.push_back(user_name);
+                                policy->roles.add(generateID(typeid(User), user_name));
                                 policies.push_back(policy);
                             }
                             catch (...)

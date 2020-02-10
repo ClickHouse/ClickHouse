@@ -3,10 +3,10 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/ParserRoleList.h>
+#include <Parsers/ParserGenericRoleSet.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTRoleList.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <ext/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -187,15 +187,15 @@ namespace
         });
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTRoleList> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTGenericRoleSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr node;
-            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected) || !ParserRoleList{}.parse(pos, node, expected))
+            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected) || !ParserGenericRoleSet{}.parse(pos, node, expected))
                 return false;
 
-            roles = std::static_pointer_cast<ASTRoleList>(node);
+            roles = std::static_pointer_cast<ASTGenericRoleSet>(node);
             return true;
         });
     }
@@ -235,7 +235,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     String new_name;
     std::optional<KeyType> key_type;
     std::vector<ASTCreateQuotaQuery::Limits> all_limits;
-    std::shared_ptr<ASTRoleList> roles;
+    std::shared_ptr<ASTGenericRoleSet> roles;
 
     while (true)
     {

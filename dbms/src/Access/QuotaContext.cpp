@@ -178,10 +178,11 @@ QuotaContext::QuotaContext()
 
 
 QuotaContext::QuotaContext(
+    const UUID & user_id_,
     const String & user_name_,
     const Poco::Net::IPAddress & address_,
     const String & client_key_)
-    : user_name(user_name_), address(address_), client_key(client_key_)
+    : user_id(user_id_), user_name(user_name_), address(address_), client_key(client_key_)
 {
 }
 

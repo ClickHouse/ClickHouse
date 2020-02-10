@@ -1,10 +1,10 @@
-#include <Parsers/ASTRoleList.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <Common/quoteString.h>
 
 
 namespace DB
 {
-void ASTRoleList::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTGenericRoleSet::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     if (empty())
     {

@@ -130,10 +130,7 @@ namespace
 void RowPolicyContextFactory::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
 {
     policy = policy_;
-
-    boost::range::copy(policy->roles, std::inserter(roles, roles.end()));
-    all_roles = policy->all_roles;
-    boost::range::copy(policy->except_roles, std::inserter(except_roles, except_roles.end()));
+    roles = &policy->roles;
 
     for (auto index : ext::range_with_static_cast<ConditionIndex>(0, MAX_CONDITION_INDEX))
     {
@@ -170,13 +167,7 @@ void RowPolicyContextFactory::PolicyInfo::setPolicy(const RowPolicyPtr & policy_
 
 bool RowPolicyContextFactory::PolicyInfo::canUseWithContext(const RowPolicyContext & context) const
 {
-    if (roles.count(context.user_name))
-        return true;
-
-    if (all_roles && !except_roles.count(context.user_name))
-        return true;
-
-    return false;
+    return roles->match(context.user_id);
 }
 
 
@@ -188,11 +179,11 @@ RowPolicyContextFactory::RowPolicyContextFactory(const AccessControlManager & ac
 RowPolicyContextFactory::~RowPolicyContextFactory() = default;
 
 
-RowPolicyContextPtr RowPolicyContextFactory::createContext(const String & user_name)
+RowPolicyContextPtr RowPolicyContextFactory::createContext(const UUID & user_id)
 {
     std::lock_guard lock{mutex};
     ensureAllRowPoliciesRead();
-    auto context = ext::shared_ptr_helper<RowPolicyContext>::create(user_name);
+    auto context = ext::shared_ptr_helper<RowPolicyContext>::create(user_id);
     contexts.push_back(context);
     mixConditionsForContext(*context);
     return context;

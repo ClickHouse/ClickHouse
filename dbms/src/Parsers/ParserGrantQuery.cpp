@@ -1,10 +1,10 @@
 #include <Parsers/ParserGrantQuery.h>
 #include <Parsers/ASTGrantQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTRoleList.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ParserRoleList.h>
+#include <Parsers/ParserGenericRoleSet.h>
 #include <boost/algorithm/string/predicate.hpp>
 
 
@@ -206,7 +206,7 @@ namespace
     }
 
 
-    bool parseToRoles(IParser::Pos & pos, Expected & expected, ASTGrantQuery::Kind kind, std::shared_ptr<ASTRoleList> & to_roles)
+    bool parseToRoles(IParser::Pos & pos, Expected & expected, ASTGrantQuery::Kind kind, std::shared_ptr<ASTGenericRoleSet> & to_roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -223,10 +223,10 @@ namespace
             }
 
             ASTPtr ast;
-            if (!ParserRoleList{false, false}.parse(pos, ast, expected))
+            if (!ParserGenericRoleSet{}.allowAll(kind == Kind::REVOKE).parse(pos, ast, expected))
                 return false;
 
-            to_roles = typeid_cast<std::shared_ptr<ASTRoleList>>(ast);
+            to_roles = typeid_cast<std::shared_ptr<ASTGenericRoleSet>>(ast);
             return true;
         });
     }
@@ -252,7 +252,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     AccessRightsElements elements;
-    std::shared_ptr<ASTRoleList> to_roles;
+    std::shared_ptr<ASTGenericRoleSet> to_roles;
     if (!parseAccessRightsElements(pos, expected, elements) && !parseToRoles(pos, expected, kind, to_roles))
         return false;
 

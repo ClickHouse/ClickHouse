@@ -4,7 +4,7 @@
 #include <Parsers/ASTCreateQuotaQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
-#include <Parsers/ASTRoleList.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -115,14 +115,8 @@ ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuotaQuery(const ASTShow
         create_query->all_limits.push_back(create_query_limits);
     }
 
-    if (!quota->roles.empty() || quota->all_roles)
-    {
-        auto create_query_roles = std::make_shared<ASTRoleList>();
-        create_query_roles->names = quota->roles;
-        create_query_roles->all = quota->all_roles;
-        create_query_roles->except_names = quota->except_roles;
-        create_query->roles = std::move(create_query_roles);
-    }
+    if (!quota->roles.empty())
+        create_query->roles = quota->roles.toAST(access_control);
 
     return create_query;
 }
@@ -149,14 +143,8 @@ ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateRowPolicyQuery(const AST
         }
     }
 
-    if (!policy->roles.empty() || policy->all_roles)
-    {
-        auto create_query_roles = std::make_shared<ASTRoleList>();
-        create_query_roles->names = policy->roles;
-        create_query_roles->all = policy->all_roles;
-        create_query_roles->except_names = policy->except_roles;
-        create_query->roles = std::move(create_query_roles);
-    }
+    if (!policy->roles.empty())
+        create_query->roles = policy->roles.toAST(access_control);
 
     return create_query;
 }
