@@ -1,6 +1,7 @@
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Join.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTIdentifier.h>

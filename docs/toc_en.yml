@@ -152,6 +152,7 @@ nav:
       - 'Dictionary Updates': 'query_language/dicts/external_dicts_dict_lifetime.md'
       - 'Sources of External Dictionaries': 'query_language/dicts/external_dicts_dict_sources.md'
       - 'Dictionary Key and Fields': 'query_language/dicts/external_dicts_dict_structure.md'
+      - 'Hierarchical dictionaries': 'query_language/dicts/external_dicts_dict_hierarchical.md'
     - 'Internal Dictionaries': 'query_language/dicts/internal_dicts.md'
   - 'Operators': 'query_language/operators.md'
   - 'Data Types':

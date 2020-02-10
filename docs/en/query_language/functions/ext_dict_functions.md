@@ -111,24 +111,27 @@ dictHas('dict_name', id_expr)
 
 Type: `UInt8`.
 
-## dictGetHierarchy
+## dictGetHierarchy {#dictgethierarchy}
 
-For the hierarchical dictionary, returns an array of dictionary keys starting from the passed `id_expr` and continuing along the chain of parent elements.
+Creates an array, containing all the parents of a key in the [hierarchical dictionary](../dicts/external_dicts_dict_hierarchical.md).
+
+**Syntax**
 
 ```sql
-dictGetHierarchy('dict_name', id_expr)
+dictGetHierarchy('dict_name', key)
 ```
 
 **Parameters**
 
 - `dict_name` — Name of the dictionary. [String literal](../syntax.md#syntax-string-literal).
-- `id_expr` — Key value. [Expression](../syntax.md#syntax-expressions) returning a [UInt64](../../data_types/int_uint.md)-type value.
+- `key` — Key value. [Expression](../syntax.md#syntax-expressions) returning a [UInt64](../../data_types/int_uint.md)-type value.
 
 **Returned value**
 
-Hierarchy of dictionary keys.
+- Parents for the key.
 
-Type: Array(UInt64).
+Type: [Array(UInt64)](../../data_types/array.md).
+
 
 ## dictIsIn
 

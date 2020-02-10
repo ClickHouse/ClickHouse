@@ -177,6 +177,7 @@ nav:
       - '字典的刷新策略': 'query_language/dicts/external_dicts_dict_lifetime.md'
       - '字典的外部数据源': 'query_language/dicts/external_dicts_dict_sources.md'
       - '字典的键和字段值': 'query_language/dicts/external_dicts_dict_structure.md'
+      - 'Hierarchical dictionaries': 'query_language/dicts/external_dicts_dict_hierarchical.md'
     - '内部字典': 'query_language/dicts/internal_dicts.md'
   - '操作符': 'query_language/operators.md'
   - '语法说明': 'query_language/syntax.md'
