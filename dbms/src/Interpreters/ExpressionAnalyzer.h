@@ -52,9 +52,6 @@ struct ExpressionAnalyzerData
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
-
-    /// Actions by every element of ORDER BY
-    ManyExpressionActions order_by_elements_actions;
 };
 
 
@@ -166,6 +163,11 @@ class SelectQueryExpressionAnalyzer;
 /// Result of SelectQueryExpressionAnalyzer: expressions for InterpreterSelectQuery
 struct ExpressionAnalysisResult
 {
+    /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
+    bool first_stage = false;
+    /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
+    bool second_stage = false;
+
     bool need_aggregate = false;
     bool has_order_by   = false;
 
@@ -186,26 +188,19 @@ struct ExpressionAnalysisResult
     /// Columns will be removed after prewhere actions execution.
     Names columns_to_remove_after_prewhere;
 
-    /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
-    bool first_stage = false;
-    /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
-    bool second_stage = false;
-
-    SubqueriesForSets subqueries_for_sets;
     PrewhereInfoPtr prewhere_info;
     FilterInfoPtr filter_info;
     ConstantFilterDescription prewhere_constant_filter_description;
     ConstantFilterDescription where_constant_filter_description;
+    /// Actions by every element of ORDER BY
+    ManyExpressionActions order_by_elements_actions;
 
     ExpressionAnalysisResult() = default;
 
     ExpressionAnalysisResult(
-        const ASTSelectQuery & query,
         SelectQueryExpressionAnalyzer & query_analyzer,
         bool first_stage,
         bool second_stage,
-        const Context & context,
-        const StoragePtr & storage,
         bool only_types,
         const FilterInfoPtr & filter_info,
         const Block & source_header);
@@ -243,12 +238,12 @@ public:
     bool hasAggregation() const { return has_aggregation; }
     bool hasGlobalSubqueries() { return has_global_subqueries; }
 
-    /// Get a list of aggregation keys and descriptions of aggregate functions if the query contains GROUP BY.
-    void getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates) const;
+    const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
+    const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
+    /// Create Set-s that we make from IN section to use index on them.
+    void makeSetsForIndex(const ASTPtr & node);
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
-
-    const ManyExpressionActions & getOrderByActions() const { return order_by_elements_actions; }
 
     /// Tables that will need to be sent to remote servers for distributed query processing.
     const Tables & getExternalTables() const { return external_tables; }
@@ -259,9 +254,6 @@ public:
     void appendSelect(ExpressionActionsChain & chain, bool only_types);
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
     void appendProjectResult(ExpressionActionsChain & chain) const;
-
-    /// Create Set-s that we can from IN section to use the index on them.
-    void makeSetsForIndex(const ASTPtr & node);
 
 private:
     /// If non-empty, ignore all expressions not from this list.
@@ -315,7 +307,7 @@ private:
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
     ///  appendSelect
-    bool appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order);
+    bool appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
     ///  appendProjectResult
 };

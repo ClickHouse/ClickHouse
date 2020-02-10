@@ -79,9 +79,9 @@ namespace
 
 /// Check if there is an ignore function. It's used for disabling constant folding in query
 ///  predicates because some performance tests use ignore function as a non-optimize guard.
-bool allowEarlyConstantFolding(const ExpressionActions & actions, const Context & context)
+bool allowEarlyConstantFolding(const ExpressionActions & actions, const Settings & settings)
 {
-    if (!context.getSettingsRef().enable_early_constant_folding)
+    if (!settings.enable_early_constant_folding)
         return false;
 
     for (auto & action : actions.getActions())
@@ -775,7 +775,8 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
         step.required_output.push_back(child->getColumnName());
 }
 
-bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order)
+bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order,
+                                                  ManyExpressionActions & order_by_elements_actions)
 {
     const auto * select_query = getSelectQuery();
 
@@ -933,25 +934,16 @@ ExpressionActionsPtr SelectQueryExpressionAnalyzer::simpleSelectActions()
     return new_chain.getLastActions();
 }
 
-void SelectQueryExpressionAnalyzer::getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates) const
-{
-    for (const auto & name_and_type : aggregation_keys)
-        key_names.emplace_back(name_and_type.name);
-
-    aggregates = aggregate_descriptions;
-}
-
-ExpressionAnalysisResult::ExpressionAnalysisResult(const ASTSelectQuery & query,
+ExpressionAnalysisResult::ExpressionAnalysisResult(
         SelectQueryExpressionAnalyzer & query_analyzer,
         bool first_stage_,
         bool second_stage_,
-        const Context & context,
-        const StoragePtr & storage,
         bool only_types,
         const FilterInfoPtr & filter_info_,
         const Block & source_header)
     : first_stage(first_stage_)
     , second_stage(second_stage_)
+    , need_aggregate(query_analyzer.hasAggregation())
 {
     /// first_stage: Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     /// second_stage: Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
@@ -960,6 +952,11 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(const ASTSelectQuery & query,
         *  Regardless of from_stage and to_stage, we will compose a complete sequence of actions to perform optimization and
         *  throw out unnecessary columns based on the entire query. In unnecessary parts of the query, we will not execute subqueries.
         */
+
+    const ASTSelectQuery & query = *query_analyzer.getSelectQuery();
+    const Context & context = query_analyzer.context;
+    const Settings & settings = context.getSettingsRef();
+    const StoragePtr & storage = query_analyzer.storage();
 
     bool finalized = false;
     size_t where_step_num = 0;
@@ -979,7 +976,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(const ASTSelectQuery & query,
         ExpressionActionsChain chain(context);
         Names additional_required_columns_after_prewhere;
 
-        if (storage && (query.sample_size() || context.getSettingsRef().parallel_replicas_count > 1))
+        if (storage && (query.sample_size() || settings.parallel_replicas_count > 1))
         {
             Names columns_for_sampling = storage->getColumnsRequiredForSampling();
             additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
@@ -1004,7 +1001,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(const ASTSelectQuery & query,
             prewhere_info = std::make_shared<PrewhereInfo>(
                     chain.steps.front().actions, query.prewhere()->getColumnName());
 
-            if (allowEarlyConstantFolding(*prewhere_info->prewhere_actions, context))
+            if (allowEarlyConstantFolding(*prewhere_info->prewhere_actions, settings))
             {
                 Block before_prewhere_sample = source_header;
                 if (sanitizeBlock(before_prewhere_sample))
@@ -1018,8 +1015,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(const ASTSelectQuery & query,
             }
             chain.addStep();
         }
-
-        need_aggregate = query_analyzer.hasAggregation();
 
         query_analyzer.appendArrayJoin(chain, only_types || !first_stage);
 
@@ -1035,7 +1030,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(const ASTSelectQuery & query,
         {
             where_step_num = chain.steps.size() - 1;
             before_where = chain.getLastActions();
-            if (allowEarlyConstantFolding(*before_where, context))
+            if (allowEarlyConstantFolding(*before_where, settings))
             {
                 Block before_where_sample;
                 if (chain.steps.size() > 1)
@@ -1071,7 +1066,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(const ASTSelectQuery & query,
 
         bool has_stream_with_non_joned_rows = (before_join && before_join->getTableJoinAlgo()->hasStreamWithNonJoinedRows());
         optimize_read_in_order =
-            context.getSettingsRef().optimize_read_in_order
+            settings.optimize_read_in_order
             && storage && query.orderBy()
             && !query_analyzer.hasAggregation()
             && !query.final()
@@ -1080,7 +1075,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(const ASTSelectQuery & query,
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
         selected_columns = chain.getLastStep().required_output;
-        has_order_by = query_analyzer.appendOrderBy(chain, only_types || (need_aggregate ? !second_stage : !first_stage), optimize_read_in_order);
+        has_order_by = query_analyzer.appendOrderBy(chain, only_types || (need_aggregate ? !second_stage : !first_stage),
+                                                    optimize_read_in_order, order_by_elements_actions);
         before_order_and_select = chain.getLastActions();
         chain.addStep();
 
@@ -1098,8 +1094,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(const ASTSelectQuery & query,
 
     /// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).
     removeExtraColumns();
-
-    subqueries_for_sets = query_analyzer.getSubqueriesForSets();
 
     checkActions();
 }
