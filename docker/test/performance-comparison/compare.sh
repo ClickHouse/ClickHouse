@@ -139,7 +139,7 @@ function run_tests
         #TIMEFORMAT=$(printf "time\t$test_name\t%%3R\t%%3U\t%%3S\n")
         TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
         #time "$script_dir/perf.py" "$test" > >(tee "$test_name-raw.tsv") 2> >(tee "$test_name-err.log") || continue
-        { time "$script_dir/perf.py" "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; } 2>> "test-times.tsv" || continue
+        { time "$script_dir/perf.py" "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; } 2>> "wall-clock-times.tsv" || continue
         grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
         grep ^client-time "$test_name-raw.tsv" | cut -f2- > "$test_name-client-time.tsv"
         right/clickhouse local --file "$test_name-queries.tsv" --structure 'query text, run int, version UInt32, time float' --query "$(cat $script_dir/eqmed.sql)" > "$test_name-report.tsv"
@@ -160,19 +160,39 @@ create table queries engine Memory as select
         *
     from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
 
-create table changed_perf_tsv     engine File(TSV, 'changed-perf.tsv')     as select left, right, diff, rd, query from queries where changed  order by rd[3] desc;
-create table unstable_queries_tsv engine File(TSV, 'unstable-queries.tsv') as select left, right, diff, rd, query from queries where unstable order by rd[3] desc;
-create table unstable_tests_tsv   engine File(TSV, 'bad-tests.tsv')        as select test, sum(unstable) u, sum(changed) c, u + c s from queries
+create table changed_perf_tsv engine File(TSV, 'changed-perf.tsv') as
+    select left, right, diff, rd, test, query from queries where changed
+    order by rd[3] desc;
+create table unstable_queries_tsv engine File(TSV, 'unstable-queries.tsv') as
+    select left, right, diff, rd, test, query from queries where unstable
+    order by rd[3] desc;
+create table unstable_tests_tsv engine File(TSV, 'bad-tests.tsv') as
+    select test, sum(unstable) u, sum(changed) c, u + c s from queries
     group by test having s > 0 order by s desc;
 
-create table times engine Memory as select *, replaceAll(_file, '-client-time.tsv', '') test
+create table query_time engine Memory as select *, replaceAll(_file, '-client-time.tsv', '') test
     from file('*-client-time.tsv', TSV, 'query text, client float, server float');
 
+create table wall_clock engine Memory as select *
+    from file('wall-clock-times.tsv', TSV, 'test text, real float, user float, system float');
+
 create table slow_on_client_tsv engine File(TSV, 'slow-on-client.tsv') as
-    select client, server, floor(client/server, 3) p, query from times where p > 1.02 order by p desc;
+    select client, server, floor(client/server, 3) p, query
+    from query_time where p > 1.02 order by p desc;
+
+create table test_time engine Memory as
+    select test, floor(sum(client), 3) client, count(*) queries
+    from query_time group by test;
 
 create table test_times_tsv engine File(TSV, 'test-times.tsv') as
-    select test, floor(sum(client), 3) t, count(*) n, floor(t/n, 3) from times group by test order by sum(client) desc;
+    select wall_clock.test, real, client, queries,
+        floor(real / queries, 3) real_per_query
+    from test_time join wall_clock using test
+    order by real desc;
+
+create table all_queries_tsv engine File(TSV, 'all-queries.tsv') as
+    select left, right, diff, rd, test, query
+    from queries order by rd[3] desc;
 "
 grep Exception:[^:] *-err.log > run-errors.log
 
