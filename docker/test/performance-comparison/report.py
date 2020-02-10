@@ -36,6 +36,7 @@ p.links a {{ padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-
     color: inherit;
     text-decoration: none;
 }}
+tr:nth-child(odd) td {{filter: brightness(95%);}}
   </style>
   <title>{header}</title>
 </head>
