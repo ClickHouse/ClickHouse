@@ -17,7 +17,7 @@ For a case-insensitive search, use the function `positionCaseInsensitiveUTF8`.
 
 ## multiSearchAllPositions {#multiSearchAllPositions}
 
-The same as [position](#position) but returns `Array` of positions (in bytes) of the found corresponding substrings in the string. Positions are indexed starting from 1.
+The same as [position](string_search_functions.md#position) but returns `Array` of positions (in bytes) of the found corresponding substrings in the string. Positions are indexed starting from 1.
 
 The search is performed on sequences of bytes without respect to string encoding and collation.
 

@@ -77,29 +77,42 @@ def table_header(r):
 
 def tsv_rows(n):
     result = ''
-    with open(n) as fd:
+    with open(n, encoding='utf-8') as fd:
         for row in csv.reader(fd, delimiter="\t", quotechar='"'):
             result += table_row(row)
     return result
 
 params = collections.defaultdict(str)
 params['header'] = "ClickHouse Performance Comparison"
-params['test_part'] = (table_template.format_map(
-    collections.defaultdict(str,
+params['test_part'] = (
+    table_template.format(
+        caption = 'Tested commits',
+        header = table_header(['Old', 'New']),
+        rows = table_row([open('left-commit.txt').read(), open('right-commit.txt').read()])
+        ) +
+    table_template.format(
         caption = 'Changes in performance',
         header = table_header(['Old, s', 'New, s', 'Relative difference (new&nbsp;-&nbsp;old)/old', 'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%]', 'Query']),
-        rows = tsv_rows('changed-perf.tsv'))) +
+        rows = tsv_rows('changed-perf.tsv')) +
     table_template.format(
         caption = 'Slow on client',
         header = table_header(['Client time, s', 'Server time, s', 'Ratio', 'Query']),
         rows = tsv_rows('slow-on-client.tsv')) +
     table_template.format(
-        caption = 'Unstable',
+        caption = 'Unstable queries',
         header = table_header(['Old, s', 'New, s', 'Relative difference (new&nbsp;-&nbsp;old)/old', 'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%]', 'Query']),
-        rows = tsv_rows('unstable.tsv')) +
+        rows = tsv_rows('unstable-queries.tsv')) +
     table_template.format(
         caption = 'Run errors',
         header = table_header(['A', 'B']),
-        rows = tsv_rows('run-errors.log'))
+        rows = tsv_rows('run-errors.log')) +
+    table_template.format(
+        caption = 'Tests with most unstable queries',
+        header = table_header(['Test', 'Unstable', 'Changed perf', 'Total']),
+        rows = tsv_rows('bad-tests.tsv')) +
+    table_template.format(
+        caption = 'Tests with most unstable queries',
+        header = table_header(['Test', 'Total client time, s', 'Number of queries', 'Time per query, s']),
+        rows = tsv_rows('test-times.tsv'))
 )
 print(doc_template.format_map(params))

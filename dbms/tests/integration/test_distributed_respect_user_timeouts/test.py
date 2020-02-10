@@ -10,11 +10,7 @@ from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 
-NODES = {'node' + str(i): cluster.add_instance(
-    'node' + str(i),
-    main_configs=['configs/remote_servers.xml'],
-    user_configs=['configs/set_distributed_defaults.xml'],
-) for i in (1, 2)}
+NODES = {'node' + str(i): None for i in (1, 2)}
 
 CREATE_TABLES_SQL = '''
 CREATE DATABASE test;
@@ -55,6 +51,16 @@ EXPECTED_BEHAVIOR = {
     },
 }
 
+TIMEOUT_DIFF_UPPER_BOUND = {
+    'default': {
+        'distributed': 5.5,
+        'remote': 2.5,
+    },
+    'ready_to_wait': {
+        'distributed': 3,
+        'remote': 1.5,
+    },
+}
 
 def _check_exception(exception, expected_tries=3):
     lines = exception.split('\n')
@@ -80,8 +86,13 @@ def _check_exception(exception, expected_tries=3):
     assert lines[3 + expected_tries] == '', 'Wrong number of connect attempts'
 
 
-@pytest.fixture(scope="module")
-def started_cluster():
+@pytest.fixture(scope="module", params=["configs", "configs_secure"])
+def started_cluster(request):
+
+    cluster = ClickHouseCluster(__file__)
+    cluster.__with_ssl_config = request.param == "configs_secure"
+    for name in NODES:
+        NODES[name] = cluster.add_instance(name, config_dir=request.param)
     try:
         cluster.start()
 
@@ -95,17 +106,18 @@ def started_cluster():
         cluster.shutdown()
 
 
-def _check_timeout_and_exception(node, user, query_base):
+def _check_timeout_and_exception(node, user, query_base, query):
     repeats = EXPECTED_BEHAVIOR[user]['times']
     expected_timeout = EXPECTED_BEHAVIOR[user]['timeout'] * repeats
 
     start = timeit.default_timer()
-    exception = node.query_and_get_error(SELECTS_SQL[query_base], user=user)
+    exception = node.query_and_get_error(query, user=user)
 
     # And it should timeout no faster than:
     measured_timeout = timeit.default_timer() - start
 
-    assert measured_timeout >= expected_timeout - TIMEOUT_MEASUREMENT_EPS
+    assert expected_timeout - measured_timeout <= TIMEOUT_MEASUREMENT_EPS
+    assert measured_timeout - expected_timeout <= TIMEOUT_DIFF_UPPER_BOUND[user][query_base]
 
     # And exception should reflect connection attempts:
     _check_exception(exception, repeats)
@@ -117,9 +129,12 @@ def _check_timeout_and_exception(node, user, query_base):
 )
 def test_reconnect(started_cluster, node_name, first_user, query_base):
     node = NODES[node_name]
+    query = SELECTS_SQL[query_base]
+    if started_cluster.__with_ssl_config:
+        query = query.replace('remote(', 'remoteSecure(')
 
     # Everything is up, select should work:
-    assert TSV(node.query(SELECTS_SQL[query_base],
+    assert TSV(node.query(query,
                           user=first_user)) == TSV('node1\nnode2')
 
     with PartitionManager() as pm:
@@ -127,15 +142,16 @@ def test_reconnect(started_cluster, node_name, first_user, query_base):
         pm.partition_instances(*NODES.values())
 
         # Now it shouldn't:
-        _check_timeout_and_exception(node, first_user, query_base)
+        _check_timeout_and_exception(node, first_user, query_base, query)
 
         # Other user should have different timeout and exception
         _check_timeout_and_exception(
             node,
             'default' if first_user != 'default' else 'ready_to_wait',
             query_base,
+            query,
         )
 
     # select should work again:
-    assert TSV(node.query(SELECTS_SQL[query_base],
+    assert TSV(node.query(query,
                           user=first_user)) == TSV('node1\nnode2')

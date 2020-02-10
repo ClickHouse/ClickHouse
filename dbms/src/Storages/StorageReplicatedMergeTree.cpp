@@ -2260,7 +2260,10 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::movePartsTask()
 void StorageReplicatedMergeTree::mergeSelectingTask()
 {
     if (!is_leader)
+    {
+        LOG_DEBUG(log, "I'm not leader, I don't want to assign anything");
         return;
+    }
 
     const auto storage_settings_ptr = getSettings();
     const bool deduplicate = false; /// TODO: read deduplicate option from table config
@@ -2311,12 +2314,20 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 DataPartsVector data_parts = getDataPartsVector();
                 for (const auto & part : data_parts)
                 {
+                    LOG_DEBUG(log, "ASSIGNING MUTATIONS LOOKING AT PART " << part->name);
                     if (part->bytes_on_disk > max_source_part_size_for_mutation)
                         continue;
 
                     std::optional<std::pair<Int64, int>> desired_mutation_version = merge_pred.getDesiredMutationVersion(part);
                     if (!desired_mutation_version)
+                    {
+                        LOG_DEBUG(log, "NO Desired version found");
                         continue;
+                    }
+                    else
+                    {
+                        LOG_DEBUG(log, "Desired mutation version: " << desired_mutation_version->first << " alter version:" << desired_mutation_version->second);
+                    }
 
                     if (createLogEntryToMutatePart(*part, desired_mutation_version->first, desired_mutation_version->second))
                     {
@@ -3290,6 +3301,7 @@ void StorageReplicatedMergeTree::alter(
     /// metadata alter.
     if (params.isSettingsAlter())
     {
+        lockStructureExclusively(table_lock_holder, query_context.getCurrentQueryId());
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
         LOG_DEBUG(log, "ALTER storage_settings_ptr only");
@@ -3318,9 +3330,8 @@ void StorageReplicatedMergeTree::alter(
     std::optional<String> mutation_znode;
     {
         Coordination::Requests ops;
-        /// Just to read current structure. Alter will be done in separate thread.
-        auto table_lock = lockStructureForShare(false, query_context.getCurrentQueryId());
 
+        /// We can safely read structure, because we guarded with alter_intention_lock
         if (is_readonly)
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
 
@@ -3357,10 +3368,14 @@ void StorageReplicatedMergeTree::alter(
         ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/metadata", new_metadata_str, metadata_stat.version));
 
         /// Perform settings update locally
-        auto old_metadata = getInMemoryMetadata();
-        old_metadata.settings_ast = metadata.settings_ast;
-        changeSettings(metadata.settings_ast, table_lock_holder);
-        global_context.getDatabase(table_id.database_name)->alterTable(query_context, table_id.table_name, old_metadata);
+
+        {
+            lockStructureExclusively(table_lock_holder, query_context.getCurrentQueryId());
+            auto old_metadata = getInMemoryMetadata();
+            old_metadata.settings_ast = metadata.settings_ast;
+            changeSettings(metadata.settings_ast, table_lock_holder);
+            global_context.getDatabase(table_id.database_name)->alterTable(query_context, table_id.table_name, old_metadata);
+        }
 
         entry.type = LogEntry::ALTER_METADATA;
         entry.source_replica = replica_name;

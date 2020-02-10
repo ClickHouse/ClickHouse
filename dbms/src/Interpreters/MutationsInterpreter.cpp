@@ -18,6 +18,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/queryToString.h>
 
@@ -552,6 +553,39 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
             where_expression = std::move(coalesced_predicates);
         }
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
+    }
+    auto metadata = storage->getInMemoryMetadata();
+    /// We have to execute select in order of primary key
+    /// because we don't sort results additionaly and don't have
+    /// any guarantees on data order without ORDER BY. It's almost free, because we
+    /// have optimization for data read in primary key order.
+    if (metadata.order_by_ast)
+    {
+        ASTPtr dummy;
+
+        ASTPtr key_expr;
+        if (metadata.primary_key_ast)
+            key_expr = metadata.primary_key_ast;
+        else
+            key_expr = metadata.order_by_ast;
+
+        bool empty = false;
+        /// In all other cases we cannot have empty key
+        if (auto key_function = key_expr->as<ASTFunction>())
+            empty = key_function->arguments->children.size() == 0;
+
+        /// Not explicitely spicified empty key
+        if (!empty)
+        {
+            auto order_by_expr = std::make_shared<ASTOrderByElement>(1, 1, false, dummy, false, dummy, dummy, dummy);
+
+
+            order_by_expr->children.push_back(key_expr);
+            auto res = std::make_shared<ASTExpressionList>();
+            res->children.push_back(order_by_expr);
+
+            select->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(res));
+        }
     }
 
     return select;
