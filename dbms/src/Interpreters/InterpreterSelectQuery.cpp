@@ -154,7 +154,7 @@ String InterpreterSelectQuery::generateFilterActions(ExpressionActionsPtr & acti
     /// Using separate expression analyzer to prevent any possible alias injection
     auto syntax_result = SyntaxAnalyzer(*context).analyze(query_ast, storage->getColumns().getAllPhysical());
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context);
-    actions = analyzer.simpleSelectActions(*context);
+    actions = analyzer.simpleSelectActions();
 
     return expr_list->children.at(0)->getColumnName();
 }

@@ -253,7 +253,7 @@ public:
     /// Tables that will need to be sent to remote servers for distributed query processing.
     const Tables & getExternalTables() const { return external_tables; }
 
-    ExpressionActionsPtr simpleSelectActions(const Context & context);
+    ExpressionActionsPtr simpleSelectActions();
 
     /// These appends are public only for tests
     void appendSelect(ExpressionActionsChain & chain, bool only_types);

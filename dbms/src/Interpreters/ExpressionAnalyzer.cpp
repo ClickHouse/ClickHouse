@@ -926,7 +926,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
     return actions;
 }
 
-ExpressionActionsPtr SelectQueryExpressionAnalyzer::simpleSelectActions(const Context & context)
+ExpressionActionsPtr SelectQueryExpressionAnalyzer::simpleSelectActions()
 {
     ExpressionActionsChain new_chain(context);
     appendSelect(new_chain, false);
