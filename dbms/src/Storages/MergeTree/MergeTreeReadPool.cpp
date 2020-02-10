@@ -96,10 +96,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
             ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
             range.begin += marks_to_get_from_range;
             if (range.begin == range.end)
-            {
-                std::swap(range, thread_task.ranges.front());
                 thread_task.ranges.pop_front();
-            }
 
             marks_in_part -= marks_to_get_from_range;
             need_marks -= marks_to_get_from_range;
