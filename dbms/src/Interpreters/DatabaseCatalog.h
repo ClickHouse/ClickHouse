@@ -18,12 +18,11 @@ struct StorageID;
 class Exception;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
+using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
-//TODO make singleton?
 class DatabaseCatalog : boost::noncopyable
 {
 public:
-    using Databases = std::map<String, std::shared_ptr<IDatabase>>;
     static constexpr const char * TEMPORARY_DATABASE = "_temporary_and_external_tables";
     static constexpr const char * SYSTEM_DATABASE = "system";
 

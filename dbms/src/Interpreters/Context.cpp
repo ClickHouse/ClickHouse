@@ -95,7 +95,6 @@ namespace ErrorCodes
     extern const int PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int SCALAR_ALREADY_EXISTS;
     extern const int UNKNOWN_SCALAR;
@@ -765,7 +764,7 @@ Dependencies Context::getDependencies(const StorageID & from) const
 {
     auto lock = getLock();
     StorageID resolved = resolveStorageIDUnlocked(from);
-    ViewDependencies::const_iterator iter = shared->view_dependencies.find(resolved);
+    auto iter = shared->view_dependencies.find(resolved);
     if (iter == shared->view_dependencies.end())
         return {};
 
@@ -774,8 +773,7 @@ Dependencies Context::getDependencies(const StorageID & from) const
 
 bool Context::isTableExist(const String & database_name, const String & table_name) const
 {
-    //FIXME do we need resolve temporary tables here?
-    auto table_id = resolveStorageID({database_name, table_name});
+    auto table_id = resolveStorageID({database_name, table_name}, StorageNamespace::Ordinary);
     return DatabaseCatalog::instance().isTableExist(table_id, *this);
 }
 
@@ -2046,30 +2044,45 @@ void Context::resetInputCallbacks()
         input_blocks_reader = {};
 }
 
-StorageID Context::resolveStorageID(StorageID storage_id) const
+StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where) const
 {
     auto lock = getLock();
-    return resolveStorageIDUnlocked(std::move(storage_id));
+    return resolveStorageIDUnlocked(std::move(storage_id), where);
 }
 
-StorageID Context::resolveStorageIDUnlocked(StorageID storage_id) const
+StorageID Context::resolveStorageIDUnlocked(StorageID storage_id, StorageNamespace where) const
 {
     if (storage_id.uuid != UUIDHelpers::Nil)
-    {
-        //TODO maybe update table and db name?
-        //TODO add flag `resolved` to StorageID and check access rights if it was not previously resolved
         return storage_id;
+
+    bool look_for_external_table = where & StorageNamespace::External;
+    bool in_current_database = where & StorageNamespace::CurrentDatabase;
+    bool in_specified_database = where & StorageNamespace::Global;
+
+    if (!storage_id.database_name.empty())
+    {
+        if (in_specified_database)
+            return storage_id;
+        throw Exception("External and temporary tables have no database, but " +
+                        storage_id.database_name + " is specified", ErrorCodes::UNKNOWN_TABLE);
     }
-    if (storage_id.database_name.empty())
+
+    if (look_for_external_table)
     {
         auto it = external_tables_mapping.find(storage_id.getTableName());
         if (it != external_tables_mapping.end())
-            return it->second->getGlobalTableID();      /// Do not check access rights for session-local table
+            return it->second->getGlobalTableID();
+    }
+
+    if (in_current_database)
+    {
         if (current_database.empty())
             throw Exception("Default database is not selected", ErrorCodes::UNKNOWN_DATABASE);
         storage_id.database_name = current_database;
+        return storage_id;
     }
-    return storage_id;
+
+    throw Exception("Cannot resolve database name for table " + storage_id.getNameForLogs(), ErrorCodes::UNKNOWN_TABLE);
 }
 
 
