@@ -92,7 +92,7 @@ void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trac
         sizeof(StackTrace::Frames) +           // collected stack trace, maximum capacity
         sizeof(TraceType) +                    // trace type
         sizeof(UInt64) +                       // thread_id
-        sizeof(Int64);                         // size
+        sizeof(UInt64);                         // size
     char buffer[buf_size];
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
 
@@ -112,7 +112,7 @@ void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trac
 
     writePODBinary(trace_type, out);
     writePODBinary(thread_id, out);
-    writePODBinary(Int64(0), out);
+    writePODBinary(UInt64(0), out);
 
     out.next();
 }
@@ -203,7 +203,7 @@ void TraceCollector::run()
         UInt64 thread_id;
         readPODBinary(thread_id, in);
 
-        Int64 size;
+        UInt64 size;
         readPODBinary(size, in);
 
         if (trace_log)
