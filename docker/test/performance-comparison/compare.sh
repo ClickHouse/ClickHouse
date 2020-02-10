@@ -39,7 +39,6 @@ function download
     wait
 
 }
-download
 
 function configure
 {
@@ -83,7 +82,6 @@ EOF
     left/clickhouse client --port 9001 --query "create database test" ||:
     left/clickhouse client --port 9001 --query "rename table datasets.hits_v1 to test.hits" ||:
 }
-configure
 
 function restart
 {
@@ -119,7 +117,6 @@ function restart
     left/clickhouse client --port 9001 --query "select * from system.tables where database != 'system'"
     right/clickhouse client --port 9002 --query "select * from system.tables where database != 'system'"
 }
-restart
 
 function run_tests
 {
@@ -145,7 +142,6 @@ function run_tests
         right/clickhouse local --file "$test_name-queries.tsv" --structure 'query text, run int, version UInt32, time float' --query "$(cat $script_dir/eqmed.sql)" > "$test_name-report.tsv"
     done
 }
-run_tests
 
 # Analyze results
 function report
@@ -198,4 +194,17 @@ grep Exception:[^:] *-err.log > run-errors.log
 
 $script_dir/report.py > report.html
 }
-report
+
+case "$stage" in
+"")
+    ;&
+"download")
+    download
+    configure
+    restart
+    run_tests
+    ;&
+"report")
+    report
+    ;&
+esac
