@@ -94,7 +94,7 @@ namespace
         }
     }
 
-    void formatRoles(const ASTRoleList & roles, const IAST::FormatSettings & settings)
+    void formatToRoles(const ASTRoleList & roles, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TO " << (settings.hilite ? IAST::hilite_none : "");
         roles.format(settings);
@@ -137,6 +137,6 @@ void ASTCreateQuotaQuery::formatImpl(const FormatSettings & settings, FormatStat
     formatAllLimits(all_limits, settings);
 
     if (roles)
-        formatRoles(*roles, settings);
+        formatToRoles(*roles, settings);
 }
 }

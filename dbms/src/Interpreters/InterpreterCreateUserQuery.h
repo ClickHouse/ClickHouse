@@ -18,7 +18,7 @@ public:
     BlockIO execute() override;
 
 private:
-    void updateUserFromQuery(User & quota, const ASTCreateUserQuery & query);
+    void updateUserFromQuery(User & user, const ASTCreateUserQuery & query);
 
     ASTPtr query_ptr;
     Context & context;

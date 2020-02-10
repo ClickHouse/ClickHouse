@@ -75,16 +75,16 @@ void InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(RowPolicy & polic
         const auto & query_roles = *query.roles;
 
         /// We keep `roles` sorted.
-        policy.roles = query_roles.roles;
+        policy.roles = query_roles.names;
         if (query_roles.current_user)
             policy.roles.push_back(context.getClientInfo().current_user);
         boost::range::sort(policy.roles);
         policy.roles.erase(std::unique(policy.roles.begin(), policy.roles.end()), policy.roles.end());
 
-        policy.all_roles = query_roles.all_roles;
+        policy.all_roles = query_roles.all;
 
         /// We keep `except_roles` sorted.
-        policy.except_roles = query_roles.except_roles;
+        policy.except_roles = query_roles.except_names;
         if (query_roles.except_current_user)
             policy.except_roles.push_back(context.getClientInfo().current_user);
         boost::range::sort(policy.except_roles);

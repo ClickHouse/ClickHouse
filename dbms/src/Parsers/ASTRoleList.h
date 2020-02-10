@@ -10,13 +10,13 @@ namespace DB
 class ASTRoleList : public IAST
 {
 public:
-    Strings roles;
+    Strings names;
     bool current_user = false;
-    bool all_roles = false;
-    Strings except_roles;
+    bool all = false;
+    Strings except_names;
     bool except_current_user = false;
 
-    bool empty() const { return roles.empty() && !current_user && !all_roles; }
+    bool empty() const { return names.empty() && !current_user && !all; }
 
     String getID(char) const override { return "RoleList"; }
     ASTPtr clone() const override { return std::make_shared<ASTRoleList>(*this); }

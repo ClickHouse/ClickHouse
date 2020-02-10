@@ -19,7 +19,7 @@ namespace
     }
 
 
-    void formatIsRestrictive(bool is_restrictive, const IAST::FormatSettings & settings)
+    void formatAsRestrictiveOrPermissive(bool is_restrictive, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS " << (is_restrictive ? "RESTRICTIVE" : "PERMISSIVE")
                       << (settings.hilite ? IAST::hilite_none : "");
@@ -112,7 +112,7 @@ namespace
         }
     }
 
-    void formatRoles(const ASTRoleList & roles, const IAST::FormatSettings & settings)
+    void formatToRoles(const ASTRoleList & roles, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TO " << (settings.hilite ? IAST::hilite_none : "");
         roles.format(settings);
@@ -154,11 +154,11 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
         formatRenameTo(new_policy_name, settings);
 
     if (is_restrictive)
-        formatIsRestrictive(*is_restrictive, settings);
+        formatAsRestrictiveOrPermissive(*is_restrictive, settings);
 
     formatMultipleConditions(conditions, alter, settings);
 
     if (roles)
-        formatRoles(*roles, settings);
+        formatToRoles(*roles, settings);
 }
 }

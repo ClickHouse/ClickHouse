@@ -118,9 +118,9 @@ ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuotaQuery(const ASTShow
     if (!quota->roles.empty() || quota->all_roles)
     {
         auto create_query_roles = std::make_shared<ASTRoleList>();
-        create_query_roles->roles = quota->roles;
-        create_query_roles->all_roles = quota->all_roles;
-        create_query_roles->except_roles = quota->except_roles;
+        create_query_roles->names = quota->roles;
+        create_query_roles->all = quota->all_roles;
+        create_query_roles->except_names = quota->except_roles;
         create_query->roles = std::move(create_query_roles);
     }
 
@@ -152,9 +152,9 @@ ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateRowPolicyQuery(const AST
     if (!policy->roles.empty() || policy->all_roles)
     {
         auto create_query_roles = std::make_shared<ASTRoleList>();
-        create_query_roles->roles = policy->roles;
-        create_query_roles->all_roles = policy->all_roles;
-        create_query_roles->except_roles = policy->except_roles;
+        create_query_roles->names = policy->roles;
+        create_query_roles->all = policy->all_roles;
+        create_query_roles->except_names = policy->except_roles;
         create_query->roles = std::move(create_query_roles);
     }
 

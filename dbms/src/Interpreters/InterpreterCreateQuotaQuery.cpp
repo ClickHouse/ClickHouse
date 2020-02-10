@@ -103,16 +103,16 @@ void InterpreterCreateQuotaQuery::updateQuotaFromQuery(Quota & quota, const ASTC
         const auto & query_roles = *query.roles;
 
         /// We keep `roles` sorted.
-        quota.roles = query_roles.roles;
+        quota.roles = query_roles.names;
         if (query_roles.current_user)
             quota.roles.push_back(context.getClientInfo().current_user);
         boost::range::sort(quota.roles);
         quota.roles.erase(std::unique(quota.roles.begin(), quota.roles.end()), quota.roles.end());
 
-        quota.all_roles = query_roles.all_roles;
+        quota.all_roles = query_roles.all;
 
         /// We keep `except_roles` sorted.
-        quota.except_roles = query_roles.except_roles;
+        quota.except_roles = query_roles.except_names;
         if (query_roles.except_current_user)
             quota.except_roles.push_back(context.getClientInfo().current_user);
         boost::range::sort(quota.except_roles);

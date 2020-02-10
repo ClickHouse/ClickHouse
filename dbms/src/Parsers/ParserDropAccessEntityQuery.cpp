@@ -13,47 +13,64 @@ namespace
 {
     bool parseNames(IParserBase::Pos & pos, Expected & expected, Strings & names)
     {
-        do
+        return IParserBase::wrapParseImpl(pos, [&]
         {
-            String name;
-            if (!parseIdentifierOrStringLiteral(pos, expected, name))
-                return false;
+            Strings res_names;
+            do
+            {
+                String name;
+                if (!parseIdentifierOrStringLiteral(pos, expected, name))
+                    return false;
 
-            names.push_back(std::move(name));
-        }
-        while (ParserToken{TokenType::Comma}.ignore(pos, expected));
-        return true;
+                res_names.push_back(std::move(name));
+            }
+            while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+
+            names = std::move(res_names);
+            return true;
+        });
     }
 
-    bool parseRowPolicyNames(IParserBase::Pos & pos, Expected & expected, std::vector<RowPolicy::FullNameParts> & row_policies_names)
+    bool parseRowPolicyNames(IParserBase::Pos & pos, Expected & expected, std::vector<RowPolicy::FullNameParts> & names)
     {
-        do
+        return IParserBase::wrapParseImpl(pos, [&]
         {
-            Strings policy_names;
-            if (!parseNames(pos, expected, policy_names))
-                return false;
-            String database, table_name;
-            if (!ParserKeyword{"ON"}.ignore(pos, expected) || !parseDatabaseAndTableName(pos, expected, database, table_name))
-                return false;
-            for (const String & policy_name : policy_names)
-                row_policies_names.push_back({database, table_name, policy_name});
-        }
-        while (ParserToken{TokenType::Comma}.ignore(pos, expected));
-        return true;
+            std::vector<RowPolicy::FullNameParts> res_names;
+            do
+            {
+                Strings policy_names;
+                if (!parseNames(pos, expected, policy_names))
+                    return false;
+                String database, table_name;
+                if (!ParserKeyword{"ON"}.ignore(pos, expected) || !parseDatabaseAndTableName(pos, expected, database, table_name))
+                    return false;
+                for (const String & policy_name : policy_names)
+                    res_names.push_back({database, table_name, policy_name});
+            }
+            while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+
+            names = std::move(res_names);
+            return true;
+        });
     }
 
     bool parseUserNames(IParserBase::Pos & pos, Expected & expected, Strings & names)
     {
-        do
+        return IParserBase::wrapParseImpl(pos, [&]
         {
-            String name;
-            if (!parseUserName(pos, expected, name))
-                return false;
+            Strings res_names;
+            do
+            {
+                String name;
+                if (!parseUserName(pos, expected, name))
+                    return false;
 
-            names.push_back(std::move(name));
-        }
-        while (ParserToken{TokenType::Comma}.ignore(pos, expected));
-        return true;
+                res_names.emplace_back(std::move(name));
+            }
+            while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+            names = std::move(res_names);
+            return true;
+        });
     }
 }
 
