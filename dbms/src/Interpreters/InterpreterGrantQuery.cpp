@@ -16,11 +16,6 @@ BlockIO InterpreterGrantQuery::execute()
     context.getAccessRights()->checkGrantOption(query.access_rights_elements);
 
     using Kind = ASTGrantQuery::Kind;
-
-    if (query.to_roles->all_roles)
-        throw Exception(
-            "Cannot " + String((query.kind == Kind::GRANT) ? "GRANT to" : "REVOKE from") + " ALL", ErrorCodes::NOT_IMPLEMENTED);
-
     String current_database = context.getCurrentDatabase();
 
     auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
@@ -47,7 +42,7 @@ BlockIO InterpreterGrantQuery::execute()
         return updated_user;
     };
 
-    std::vector<UUID> ids = access_control.getIDs<User>(query.to_roles->roles);
+    std::vector<UUID> ids = access_control.getIDs<User>(query.to_roles->names);
     if (query.to_roles->current_user)
         ids.push_back(context.getUserID());
     access_control.update(ids, update_func);

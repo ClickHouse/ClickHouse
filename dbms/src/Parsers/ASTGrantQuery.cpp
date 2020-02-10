@@ -71,6 +71,34 @@ namespace
         }
         settings.ostr << ")";
     }
+
+
+    void formatAccessRightsElements(const AccessRightsElements & elements, const IAST::FormatSettings & settings)
+    {
+        bool need_comma = false;
+        for (const auto & [database_and_table, keyword_to_columns] : prepareTableToAccessMap(elements))
+        {
+            for (const auto & [keyword, columns] : keyword_to_columns)
+            {
+                if (std::exchange(need_comma, true))
+                    settings.ostr << ", ";
+
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << keyword << (settings.hilite ? IAST::hilite_none : "");
+                formatColumnNames(columns, settings);
+            }
+
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " ON " << (settings.hilite ? IAST::hilite_none : "") << database_and_table;
+        }
+    }
+
+
+    void formatToRoles(const ASTRoleList & to_roles, ASTGrantQuery::Kind kind, const IAST::FormatSettings & settings)
+    {
+        using Kind = ASTGrantQuery::Kind;
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << ((kind == Kind::GRANT) ? " TO " : " FROM ")
+                      << (settings.hilite ? IAST::hilite_none : "");
+        to_roles.format(settings);
+    }
 }
 
 
@@ -88,29 +116,14 @@ ASTPtr ASTGrantQuery::clone() const
 
 void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << ((kind == Kind::GRANT) ? "GRANT" : "REVOKE")
-                  << (settings.hilite ? hilite_none : "") << " ";
+    settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << ((kind == Kind::GRANT) ? "GRANT" : "REVOKE")
+                  << (settings.hilite ? IAST::hilite_none : "") << " ";
 
     if (grant_option && (kind == Kind::REVOKE))
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "GRANT OPTION FOR " << (settings.hilite ? hilite_none : "");
 
-    bool need_comma = false;
-    for (const auto & [database_and_table, keyword_to_columns] : prepareTableToAccessMap(access_rights_elements))
-    {
-        for (const auto & [keyword, columns] : keyword_to_columns)
-        {
-            if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << keyword << (settings.hilite ? hilite_none : "");
-            formatColumnNames(columns, settings);
-        }
-
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "") << database_and_table;
-    }
-
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << ((kind == Kind::GRANT) ? " TO " : " FROM ") << (settings.hilite ? hilite_none : "");
-    to_roles->format(settings);
+    formatAccessRightsElements(access_rights_elements, settings);
+    formatToRoles(*to_roles, kind, settings);
 
     if (grant_option && (kind == Kind::GRANT))
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH GRANT OPTION" << (settings.hilite ? hilite_none : "");

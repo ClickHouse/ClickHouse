@@ -18,13 +18,11 @@ ASTPtr ASTShowGrantsQuery::clone() const
 
 void ASTShowGrantsQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW GRANTS FOR "
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW GRANTS"
                   << (settings.hilite ? hilite_none : "");
 
-    if (current_user)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "CURRENT_USER"
-                      << (settings.hilite ? hilite_none : "");
-    else
-        settings.ostr << backQuoteIfNeed(name);
+    if (!current_user)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FOR " << (settings.hilite ? hilite_none : "")
+                      << backQuoteIfNeed(name);
 }
 }

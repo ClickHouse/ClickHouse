@@ -112,7 +112,7 @@ ASTs InterpreterShowGrantsQuery::getGrantQueries(const ASTShowGrantsQuery & show
                 grant_query->kind = kind;
                 grant_query->grant_option = grant_option;
                 grant_query->to_roles = std::make_shared<ASTRoleList>();
-                grant_query->to_roles->roles.push_back(user->getName());
+                grant_query->to_roles->names.push_back(user->getName());
                 grant_query->access_rights_elements = elements;
                 res.push_back(std::move(grant_query));
             }
