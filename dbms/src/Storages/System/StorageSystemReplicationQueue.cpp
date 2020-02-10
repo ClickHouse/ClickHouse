@@ -53,7 +53,7 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, const
     const bool check_access_for_databases = !access_rights->isGranted(AccessType::SHOW);
 
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
-    for (const auto & db : context.getDatabases())
+    for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
         /// Lazy database can not contain replicated tables
         if (db.second->getEngineName() == "Lazy")

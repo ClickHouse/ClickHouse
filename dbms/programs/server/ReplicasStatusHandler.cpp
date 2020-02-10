@@ -35,7 +35,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         bool ok = true;
         std::stringstream message;
 
-        auto databases = context.getDatabases();
+        auto databases = DatabaseCatalog::instance().getDatabases();
 
         /// Iterate through all the replicated tables.
         for (const auto & db : databases)

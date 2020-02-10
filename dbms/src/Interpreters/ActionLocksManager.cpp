@@ -22,7 +22,7 @@ namespace ActionLocks
 template <typename F>
 inline void forEachTable(Context & context, F && f)
 {
-    for (auto & elem : context.getDatabases())
+    for (auto & elem : DatabaseCatalog::instance().getDatabases())
         for (auto iterator = elem.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             f(iterator->table());
 

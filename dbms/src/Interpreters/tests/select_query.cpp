@@ -38,9 +38,9 @@ try
     loadMetadata(context);
 
     DatabasePtr system = std::make_shared<DatabaseOrdinary>("system", "./metadata/system/", context);
-    context.addDatabase("system", system);
+    DatabaseCatalog::instance().attachDatabase("system", system);
     system->loadStoredObjects(context, false);
-    attachSystemTablesLocal(*context.getDatabase("system"));
+    attachSystemTablesLocal(*DatabaseCatalog::instance().getSystemDatabase());
     context.setCurrentDatabase("default");
 
     ReadBufferFromFileDescriptor in(STDIN_FILENO);

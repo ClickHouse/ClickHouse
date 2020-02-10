@@ -76,7 +76,7 @@ BlockIO InterpreterDropQuery::executeToTable(
                         ErrorCodes::UNKNOWN_TABLE);
     }
 
-    String database_name = database_name_.empty() ? context.getCurrentDatabase() : database_name_;
+    String database_name = context.resolveDatabase(database_name_);
 
     auto ddl_guard = (!no_ddl_lock ? context.getDDLGuard(database_name, table_name) : nullptr);
 
@@ -168,7 +168,7 @@ BlockIO InterpreterDropQuery::executeToDictionary(
     if (is_temporary)
         throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
 
-    String database_name = database_name_.empty() ? context.getCurrentDatabase() : database_name_;
+    String database_name = context.resolveDatabase(database_name_);
 
     auto ddl_guard = (!no_ddl_lock ? context.getDDLGuard(database_name, dictionary_name) : nullptr);
 
@@ -248,7 +248,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
         else if (kind == ASTDropQuery::Kind::Detach)
         {
             context.checkAccess(AccessType::DETACH_DATABASE, database_name);
-            context.detachDatabase(database_name);
+            DatabaseCatalog::instance().detachDatabase(database_name);
             database->shutdown();
         }
         else if (kind == ASTDropQuery::Kind::Drop)
@@ -270,14 +270,14 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
             auto context_lock = context.getLock();
 
             /// Someone could have time to delete the database before us.
-            context.assertDatabaseExists(database_name);
+            DatabaseCatalog::instance().assertDatabaseExists(database_name);
 
             /// Someone could have time to create a table in the database to be deleted while we deleted the tables without the context lock.
-            if (!context.getDatabase(database_name)->empty(context))
+            if (!DatabaseCatalog::instance().getDatabase(database_name)->empty(context))
                 throw Exception("New table appeared in database being dropped. Try dropping it again.", ErrorCodes::DATABASE_NOT_EMPTY);
 
             /// Delete database information from the RAM
-            context.detachDatabase(database_name);
+            DatabaseCatalog::instance().detachDatabase(database_name);
 
             database->shutdown();
 
@@ -296,7 +296,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
 
 DatabasePtr InterpreterDropQuery::tryGetDatabase(const String & database_name, bool if_exists)
 {
-    return if_exists ? context.tryGetDatabase(database_name) : context.getDatabase(database_name);
+    return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name) : DatabaseCatalog::instance().getDatabase(database_name);
 }
 
 DatabaseAndTable InterpreterDropQuery::tryGetDatabaseAndTable(const String & database_name, const String & table_name, bool if_exists)

@@ -7,6 +7,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -135,7 +136,7 @@ void startStopAction(Context & context, Poco::Logger * log, ASTSystemQuery & que
     }
     else
     {
-        for (auto & elem : context.getDatabases())
+        for (auto & elem : DatabaseCatalog::instance().getDatabases())
         {
             for (auto iterator = elem.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
@@ -312,7 +313,7 @@ BlockIO InterpreterSystemQuery::execute()
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_name, const String & table_name, Context & system_context)
 {
     context.checkAccess(AccessType::RESTART_REPLICA, database_name, table_name);
-    auto database = system_context.getDatabase(database_name);
+    auto database = DatabaseCatalog::instance().getDatabase(database_name, system_context);
 
     auto table_ddl_guard = system_context.getDDLGuard(database_name, table_name);
     ASTPtr create_ast;
@@ -361,7 +362,7 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
 {
     std::vector<std::pair<String, String>> replica_names;
 
-    for (auto & elem : system_context.getDatabases())
+    for (auto & elem : DatabaseCatalog::instance().getDatabases())
     {
         DatabasePtr & database = elem.second;
         const String & database_name = elem.first;
