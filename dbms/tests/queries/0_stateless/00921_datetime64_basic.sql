@@ -1,5 +1,3 @@
-USE test;
-
 DROP TABLE IF EXISTS A;
 
 SELECT CAST(1 as DateTime64('abc')); -- { serverError 43 } # Invalid scale parameter type
