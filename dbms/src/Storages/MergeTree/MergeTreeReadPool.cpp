@@ -73,10 +73,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
     if (marks_in_part <= need_marks)
     {
         const auto marks_to_get_from_range = marks_in_part;
-
-        /// Ranges are in right-to-left order, because 'reverse' was done in 'fillPerThreadInfo'.
         ranges_to_get_from_part = thread_task.ranges;
-        std::reverse(ranges_to_get_from_part.begin(), ranges_to_get_from_part.end());
 
         marks_in_part -= marks_to_get_from_range;
 
@@ -91,7 +88,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
         /// Loop through part ranges.
         while (need_marks > 0 && !thread_task.ranges.empty())
         {
-            auto & range = thread_task.ranges.back();
+            auto & range = thread_task.ranges.front();
 
             const size_t marks_in_range = range.end - range.begin;
             const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
@@ -100,14 +97,13 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
             range.begin += marks_to_get_from_range;
             if (range.begin == range.end)
             {
-                std::swap(range, thread_task.ranges.back());
-                thread_task.ranges.pop_back();
+                std::swap(range, thread_task.ranges.front());
+                thread_task.ranges.pop_front();
             }
 
             marks_in_part -= marks_to_get_from_range;
             need_marks -= marks_to_get_from_range;
         }
-        /// Order of ranges was changed to left-to-right due to .pop_back() above.
     }
 
     auto curr_task_size_predictor = !per_part_size_predictor[part_idx] ? nullptr
@@ -240,10 +236,6 @@ void MergeTreeReadPool::fillPerThreadInfo(
 {
     threads_tasks.resize(threads);
 
-    /// Let the ranges be listed from right to left so that the leftmost range can be dropped using `pop_back()`.
-    for (auto & part : parts)
-        std::reverse(part.ranges.begin(), part.ranges.end());
-
     const size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;
 
     for (size_t i = 0; i < threads && !parts.empty(); ++i)
@@ -272,7 +264,6 @@ void MergeTreeReadPool::fillPerThreadInfo(
             /// Get whole part to read if it is small enough.
             if (marks_in_part <= need_marks)
             {
-                /// Leave ranges in right-to-left order for convenience to use .pop_back() in .getTask()
                 ranges_to_get_from_part = part.ranges;
                 marks_in_ranges = marks_in_part;
 
@@ -288,7 +279,7 @@ void MergeTreeReadPool::fillPerThreadInfo(
                     if (part.ranges.empty())
                         throw Exception("Unexpected end of ranges while spreading marks among threads", ErrorCodes::LOGICAL_ERROR);
 
-                    MarkRange & range = part.ranges.back();
+                    MarkRange & range = part.ranges.front();
 
                     const size_t marks_in_range = range.end - range.begin;
                     const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
@@ -298,13 +289,8 @@ void MergeTreeReadPool::fillPerThreadInfo(
                     marks_in_part -= marks_to_get_from_range;
                     need_marks -= marks_to_get_from_range;
                     if (range.begin == range.end)
-                        part.ranges.pop_back();
+                        part.ranges.pop_front();
                 }
-
-                /** Change order to right-to-left, for getTask() to get ranges with .pop_back()
-                    *  (order was changed to left-to-right due to .pop_back() above).
-                    */
-                std::reverse(std::begin(ranges_to_get_from_part), std::end(ranges_to_get_from_part));
             }
 
             threads_tasks[i].parts_and_ranges.push_back({ part_idx, ranges_to_get_from_part });
