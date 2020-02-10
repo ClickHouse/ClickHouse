@@ -78,7 +78,7 @@ BlockIO InterpreterDropQuery::executeToTable(
 
     String database_name = context.resolveDatabase(database_name_);
 
-    auto ddl_guard = (!no_ddl_lock ? context.getDDLGuard(database_name, table_name) : nullptr);
+    auto ddl_guard = (!no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(database_name, table_name) : nullptr);
 
     auto [database, table] = tryGetDatabaseAndTable(database_name, table_name, if_exists);
 
@@ -170,7 +170,7 @@ BlockIO InterpreterDropQuery::executeToDictionary(
 
     String database_name = context.resolveDatabase(database_name_);
 
-    auto ddl_guard = (!no_ddl_lock ? context.getDDLGuard(database_name, dictionary_name) : nullptr);
+    auto ddl_guard = (!no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(database_name, dictionary_name) : nullptr);
 
     DatabasePtr database = tryGetDatabase(database_name, if_exists);
 
@@ -237,7 +237,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
 
 BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, ASTDropQuery::Kind kind, bool if_exists)
 {
-    auto ddl_guard = context.getDDLGuard(database_name, "");
+    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
     if (auto database = tryGetDatabase(database_name, if_exists))
     {

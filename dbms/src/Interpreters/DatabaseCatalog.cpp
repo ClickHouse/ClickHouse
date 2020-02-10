@@ -15,6 +15,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int DATABASE_ALREADY_EXISTS;
+    extern const int DDL_GUARD_IS_ACTIVE;
 }
 
 
@@ -232,6 +233,33 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, const Con
 {
     String resolved_database = local_context.resolveDatabase(database_name);
     return getDatabase(resolved_database);
+}
+
+std::unique_ptr<DDLGuard> DatabaseCatalog::getDDLGuard(const String & database, const String & table)
+{
+    std::unique_lock lock(ddl_guards_mutex);
+    return std::make_unique<DDLGuard>(ddl_guards[database], std::move(lock), table);
+}
+
+
+DDLGuard::DDLGuard(Map & map_, std::unique_lock<std::mutex> guards_lock_, const String & elem)
+        : map(map_), guards_lock(std::move(guards_lock_))
+{
+    it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
+    ++it->second.counter;
+    guards_lock.unlock();
+    table_lock = std::unique_lock(*it->second.mutex);
+}
+
+DDLGuard::~DDLGuard()
+{
+    guards_lock.lock();
+    --it->second.counter;
+    if (!it->second.counter)
+    {
+        table_lock.unlock();
+        map.erase(it);
+    }
 }
 
 }
