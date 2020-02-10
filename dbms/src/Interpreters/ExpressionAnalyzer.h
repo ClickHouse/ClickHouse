@@ -2,11 +2,13 @@
 
 #include <Core/Settings.h>
 #include <DataStreams/IBlockStream_fwd.h>
+#include <Columns/FilterDescription.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/SelectQueryInfo.h>
 
 
 namespace DB
@@ -28,6 +30,9 @@ class ASTFunction;
 class ASTExpressionList;
 class ASTSelectQuery;
 struct ASTTablesInSelectQueryElement;
+
+/// Create columns in block or return false if not possible
+bool sanitizeBlock(Block & block);
 
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
@@ -156,10 +161,73 @@ protected:
     bool isRemoteStorage() const;
 };
 
+class SelectQueryExpressionAnalyzer;
+
+/// Result of SelectQueryExpressionAnalyzer: expressions for InterpreterSelectQuery
+struct ExpressionAnalysisResult
+{
+    bool need_aggregate = false;
+    bool has_order_by   = false;
+
+    bool remove_where_filter = false;
+    bool optimize_read_in_order = false;
+
+    ExpressionActionsPtr before_join;   /// including JOIN
+    ExpressionActionsPtr before_where;
+    ExpressionActionsPtr before_aggregation;
+    ExpressionActionsPtr before_having;
+    ExpressionActionsPtr before_order_and_select;
+    ExpressionActionsPtr before_limit_by;
+    ExpressionActionsPtr final_projection;
+
+    /// Columns from the SELECT list, before renaming them to aliases.
+    Names selected_columns;
+
+    /// Columns will be removed after prewhere actions execution.
+    Names columns_to_remove_after_prewhere;
+
+    /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
+    bool first_stage = false;
+    /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
+    bool second_stage = false;
+
+    SubqueriesForSets subqueries_for_sets;
+    PrewhereInfoPtr prewhere_info;
+    FilterInfoPtr filter_info;
+    ConstantFilterDescription prewhere_constant_filter_description;
+    ConstantFilterDescription where_constant_filter_description;
+
+    ExpressionAnalysisResult() = default;
+
+    ExpressionAnalysisResult(
+        const ASTSelectQuery & query,
+        SelectQueryExpressionAnalyzer & query_analyzer,
+        bool first_stage,
+        bool second_stage,
+        const Context & context,
+        const StoragePtr & storage,
+        bool only_types,
+        const FilterInfoPtr & filter_info,
+        const Block & source_header);
+
+    bool hasFilter() const { return filter_info.get(); }
+    bool hasJoin() const { return before_join.get(); }
+    bool hasPrewhere() const { return prewhere_info.get(); }
+    bool hasWhere() const { return before_where.get(); }
+    bool hasHaving() const { return before_having.get(); }
+    bool hasLimitBy() const { return before_limit_by.get(); }
+
+    void removeExtraColumns();
+    void checkActions();
+    void finalize(const ExpressionActionsChain & chain, const Context & context, size_t where_step_num);
+};
+
 /// SelectQuery specific ExpressionAnalyzer part.
 class SelectQueryExpressionAnalyzer : public ExpressionAnalyzer
 {
 public:
+    friend struct ExpressionAnalysisResult;
+
     SelectQueryExpressionAnalyzer(
         const ASTPtr & query_,
         const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
@@ -184,6 +252,39 @@ public:
 
     /// Tables that will need to be sent to remote servers for distributed query processing.
     const Tables & getExternalTables() const { return external_tables; }
+
+    ExpressionActionsPtr simpleSelectActions();
+
+    /// These appends are public only for tests
+    void appendSelect(ExpressionActionsChain & chain, bool only_types);
+    /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
+    void appendProjectResult(ExpressionActionsChain & chain) const;
+
+    /// Create Set-s that we can from IN section to use the index on them.
+    void makeSetsForIndex(const ASTPtr & node);
+
+private:
+    /// If non-empty, ignore all expressions not from this list.
+    NameSet required_result_columns;
+
+    /**
+      * Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
+      * The set will not be created if its size hits the limit.
+      */
+    void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
+
+    /**
+      * Checks if subquery is not a plain StorageSet.
+      * Because while making set we will read data from StorageSet which is not allowed.
+      * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
+      */
+    SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_of_table_name);
+
+    JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
+    void makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element, NamesWithAliases && required_columns_with_aliases,
+                             SubqueryForSet & subquery_for_set) const;
+
+    const ASTSelectQuery * getAggregatingQuery() const;
 
     /** These methods allow you to build a chain of transformations over a block, that receives values in the desired sections of the query.
       *
@@ -213,37 +314,10 @@ public:
 
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
-    void appendSelect(ExpressionActionsChain & chain, bool only_types);
+    ///  appendSelect
     bool appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order);
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
-    /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
-    void appendProjectResult(ExpressionActionsChain & chain) const;
-
-    /// Create Set-s that we can from IN section to use the index on them.
-    void makeSetsForIndex(const ASTPtr & node);
-
-private:
-    /// If non-empty, ignore all expressions not from this list.
-    NameSet required_result_columns;
-
-    /**
-      * Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
-      * The set will not be created if its size hits the limit.
-      */
-    void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
-
-    /**
-      * Checks if subquery is not a plain StorageSet.
-      * Because while making set we will read data from StorageSet which is not allowed.
-      * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
-      */
-    SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_of_table_name);
-
-    JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
-    void makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element, NamesWithAliases && required_columns_with_aliases,
-                             SubqueryForSet & subquery_for_set) const;
-
-    const ASTSelectQuery * getAggregatingQuery() const;
+    ///  appendProjectResult
 };
 
 }

@@ -154,9 +154,7 @@ String InterpreterSelectQuery::generateFilterActions(ExpressionActionsPtr & acti
     /// Using separate expression analyzer to prevent any possible alias injection
     auto syntax_result = SyntaxAnalyzer(*context).analyze(query_ast, storage->getColumns().getAllPhysical());
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context);
-    ExpressionActionsChain new_chain(*context);
-    analyzer.appendSelect(new_chain, false);
-    actions = new_chain.getLastActions();
+    actions = analyzer.simpleSelectActions();
 
     return expr_list->children.at(0)->getColumnName();
 }
@@ -210,22 +208,6 @@ static Context getSubqueryContext(const Context & context)
     subquery_settings.extremes = 0;
     subquery_context.setSettings(subquery_settings);
     return subquery_context;
-}
-
-static bool sanitizeBlock(Block & block)
-{
-    for (auto & col : block)
-    {
-        if (!col.column)
-        {
-            if (isNotCreatable(col.type->getTypeId()))
-                return false;
-            col.column = col.type->createColumn();
-        }
-        else if (isColumnConst(*col.column) && !col.column->empty())
-            col.column = col.column->cloneEmpty();
-    }
-    return true;
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -556,11 +538,18 @@ Block InterpreterSelectQuery::getSampleBlockImpl(bool try_move_to_prewhere)
     if (storage && !options.only_analyze)
         from_stage = storage->getQueryProcessingStage(*context);
 
-    analysis_result = analyzeExpressions(
+    /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
+    bool first_stage = from_stage < QueryProcessingStage::WithMergeableState
+        && options.to_stage >= QueryProcessingStage::WithMergeableState;
+    /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
+    bool second_stage = from_stage <= QueryProcessingStage::WithMergeableState
+        && options.to_stage > QueryProcessingStage::WithMergeableState;
+
+    analysis_result = ExpressionAnalysisResult(
             getSelectQuery(),
             *query_analyzer,
-            from_stage,
-            options.to_stage,
+            first_stage,
+            second_stage,
             *context,
             storage,
             options.only_analyze,
@@ -614,253 +603,6 @@ Block InterpreterSelectQuery::getSampleBlockImpl(bool try_move_to_prewhere)
     }
 
     return analysis_result.final_projection->getSampleBlock();
-}
-
-/// Check if there is an ignore function. It's used for disabling constant folding in query
-///  predicates because some performance tests use ignore function as a non-optimize guard.
-static bool allowEarlyConstantFolding(const ExpressionActions & actions, const Context & context)
-{
-    if (!context.getSettingsRef().enable_early_constant_folding)
-        return false;
-
-    for (auto & action : actions.getActions())
-    {
-        if (action.type == action.APPLY_FUNCTION && action.function_base)
-        {
-            auto name = action.function_base->getName();
-            if (name == "ignore")
-                return false;
-        }
-    }
-    return true;
-}
-
-InterpreterSelectQuery::AnalysisResult
-InterpreterSelectQuery::analyzeExpressions(
-    const ASTSelectQuery & query,
-    SelectQueryExpressionAnalyzer & query_analyzer,
-    QueryProcessingStage::Enum from_stage,
-    QueryProcessingStage::Enum to_stage,
-    const Context & context,
-    const StoragePtr & storage,
-    bool only_types,
-    const FilterInfoPtr & filter_info,
-    const Block & source_header)
-{
-    AnalysisResult res;
-
-    /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
-    res.first_stage = from_stage < QueryProcessingStage::WithMergeableState
-        && to_stage >= QueryProcessingStage::WithMergeableState;
-    /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
-    res.second_stage = from_stage <= QueryProcessingStage::WithMergeableState
-        && to_stage > QueryProcessingStage::WithMergeableState;
-
-    /** First we compose a chain of actions and remember the necessary steps from it.
-        *  Regardless of from_stage and to_stage, we will compose a complete sequence of actions to perform optimization and
-        *  throw out unnecessary columns based on the entire query. In unnecessary parts of the query, we will not execute subqueries.
-        */
-
-    bool has_filter = false;
-    bool has_prewhere = false;
-    bool has_where = false;
-    size_t where_step_num;
-
-    auto finalizeChain = [&](ExpressionActionsChain & chain)
-    {
-        chain.finalize();
-
-        if (has_prewhere)
-        {
-            const ExpressionActionsChain::Step & step = chain.steps.at(0);
-            res.prewhere_info->remove_prewhere_column = step.can_remove_required_output.at(0);
-
-            Names columns_to_remove;
-            for (size_t i = 1; i < step.required_output.size(); ++i)
-            {
-                if (step.can_remove_required_output[i])
-                    columns_to_remove.push_back(step.required_output[i]);
-            }
-
-            if (!columns_to_remove.empty())
-            {
-                auto columns = res.prewhere_info->prewhere_actions->getSampleBlock().getNamesAndTypesList();
-                ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(columns, context);
-                for (const auto & column : columns_to_remove)
-                    actions->add(ExpressionAction::removeColumn(column));
-
-                res.prewhere_info->remove_columns_actions = std::move(actions);
-            }
-
-            res.columns_to_remove_after_prewhere = std::move(columns_to_remove);
-        }
-        else if (has_filter)
-        {
-            /// Can't have prewhere and filter set simultaneously
-            res.filter_info->do_remove_column = chain.steps.at(0).can_remove_required_output.at(0);
-        }
-        if (has_where)
-            res.remove_where_filter = chain.steps.at(where_step_num).can_remove_required_output.at(0);
-
-        has_filter = has_prewhere = has_where = false;
-
-        chain.clear();
-    };
-
-    {
-        ExpressionActionsChain chain(context);
-        Names additional_required_columns_after_prewhere;
-
-        if (storage && (query.sample_size() || context.getSettingsRef().parallel_replicas_count > 1))
-        {
-            Names columns_for_sampling = storage->getColumnsRequiredForSampling();
-            additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
-                columns_for_sampling.begin(), columns_for_sampling.end());
-        }
-
-        if (storage && query.final())
-        {
-            Names columns_for_final = storage->getColumnsRequiredForFinal();
-            additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
-                columns_for_final.begin(), columns_for_final.end());
-        }
-
-        if (storage && filter_info)
-        {
-            has_filter = true;
-            res.filter_info = filter_info;
-            query_analyzer.appendPreliminaryFilter(chain, filter_info->actions, filter_info->column_name);
-        }
-
-        if (query_analyzer.appendPrewhere(chain, !res.first_stage, additional_required_columns_after_prewhere))
-        {
-            has_prewhere = true;
-
-            res.prewhere_info = std::make_shared<PrewhereInfo>(
-                    chain.steps.front().actions, query.prewhere()->getColumnName());
-
-            if (allowEarlyConstantFolding(*res.prewhere_info->prewhere_actions, context))
-            {
-                Block before_prewhere_sample = source_header;
-                if (sanitizeBlock(before_prewhere_sample))
-                {
-                    res.prewhere_info->prewhere_actions->execute(before_prewhere_sample);
-                    auto & column_elem = before_prewhere_sample.getByName(query.prewhere()->getColumnName());
-                    /// If the filter column is a constant, record it.
-                    if (column_elem.column)
-                        res.prewhere_constant_filter_description = ConstantFilterDescription(*column_elem.column);
-                }
-            }
-            chain.addStep();
-        }
-
-        res.need_aggregate = query_analyzer.hasAggregation();
-
-        query_analyzer.appendArrayJoin(chain, only_types || !res.first_stage);
-
-        if (query_analyzer.appendJoin(chain, only_types || !res.first_stage))
-        {
-            res.before_join = chain.getLastActions();
-            if (!res.hasJoin())
-                throw Exception("No expected JOIN", ErrorCodes::LOGICAL_ERROR);
-            chain.addStep();
-        }
-
-        if (query_analyzer.appendWhere(chain, only_types || !res.first_stage))
-        {
-            where_step_num = chain.steps.size() - 1;
-            has_where = res.has_where = true;
-            res.before_where = chain.getLastActions();
-            if (allowEarlyConstantFolding(*res.before_where, context))
-            {
-                Block before_where_sample;
-                if (chain.steps.size() > 1)
-                    before_where_sample = chain.steps[chain.steps.size() - 2].actions->getSampleBlock();
-                else
-                    before_where_sample = source_header;
-                if (sanitizeBlock(before_where_sample))
-                {
-                    res.before_where->execute(before_where_sample);
-                    auto & column_elem = before_where_sample.getByName(query.where()->getColumnName());
-                    /// If the filter column is a constant, record it.
-                    if (column_elem.column)
-                        res.where_constant_filter_description = ConstantFilterDescription(*column_elem.column);
-                }
-            }
-            chain.addStep();
-        }
-
-        if (res.need_aggregate)
-        {
-            query_analyzer.appendGroupBy(chain, only_types || !res.first_stage);
-            query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !res.first_stage);
-            res.before_aggregation = chain.getLastActions();
-
-            finalizeChain(chain);
-
-            if (query_analyzer.appendHaving(chain, only_types || !res.second_stage))
-            {
-                res.has_having = true;
-                res.before_having = chain.getLastActions();
-                chain.addStep();
-            }
-        }
-
-        bool has_stream_with_non_joned_rows = (res.before_join && res.before_join->getTableJoinAlgo()->hasStreamWithNonJoinedRows());
-        res.optimize_read_in_order =
-            context.getSettingsRef().optimize_read_in_order
-            && storage && query.orderBy()
-            && !query_analyzer.hasAggregation()
-            && !query.final()
-            && !has_stream_with_non_joned_rows;
-
-        /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
-        query_analyzer.appendSelect(chain, only_types || (res.need_aggregate ? !res.second_stage : !res.first_stage));
-        res.selected_columns = chain.getLastStep().required_output;
-        res.has_order_by = query_analyzer.appendOrderBy(chain, only_types || (res.need_aggregate ? !res.second_stage : !res.first_stage), res.optimize_read_in_order);
-        res.before_order_and_select = chain.getLastActions();
-        chain.addStep();
-
-        if (query_analyzer.appendLimitBy(chain, only_types || !res.second_stage))
-        {
-            res.has_limit_by = true;
-            res.before_limit_by = chain.getLastActions();
-            chain.addStep();
-        }
-
-        query_analyzer.appendProjectResult(chain);
-        res.final_projection = chain.getLastActions();
-
-        finalizeChain(chain);
-    }
-
-    /// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).
-    if (res.filter_info)
-        res.filter_info->actions->prependProjectInput();
-    if (res.has_where)
-        res.before_where->prependProjectInput();
-    if (res.has_having)
-        res.before_having->prependProjectInput();
-
-    res.subqueries_for_sets = query_analyzer.getSubqueriesForSets();
-
-    /// Check that PREWHERE doesn't contain unusual actions. Unusual actions are that can change number of rows.
-    if (res.prewhere_info)
-    {
-        auto check_actions = [](const ExpressionActionsPtr & actions)
-        {
-            if (actions)
-                for (const auto & action : actions->getActions())
-                    if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
-                        throw Exception("PREWHERE cannot contain ARRAY JOIN or JOIN action", ErrorCodes::ILLEGAL_PREWHERE);
-        };
-
-        check_actions(res.prewhere_info->prewhere_actions);
-        check_actions(res.prewhere_info->alias_actions);
-        check_actions(res.prewhere_info->remove_columns_actions);
-    }
-
-    return res;
 }
 
 static Field getWithFillFieldValue(const ASTPtr & node, const Context & context)
@@ -1094,7 +836,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
         if (expressions.first_stage)
         {
-            if (expressions.filter_info)
+            if (expressions.hasFilter())
             {
                 if constexpr (pipeline_with_processors)
                 {
@@ -1176,7 +918,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 }
             }
 
-            if (expressions.has_where)
+            if (expressions.hasWhere())
                 executeWhere(pipeline, expressions.before_where, expressions.remove_where_filter);
 
             if (expressions.need_aggregate)
@@ -1192,7 +934,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
               *  but there is an ORDER or LIMIT,
               *  then we will perform the preliminary sorting and LIMIT on the remote server.
               */
-            if (!expressions.second_stage && !expressions.need_aggregate && !expressions.has_having)
+            if (!expressions.second_stage && !expressions.need_aggregate && !expressions.hasHaving())
             {
                 if (expressions.has_order_by)
                     executeOrder(pipeline, query_info.input_sorting_info);
@@ -1200,7 +942,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 if (expressions.has_order_by && query.limitLength())
                     executeDistinct(pipeline, false, expressions.selected_columns);
 
-                if (expressions.has_limit_by)
+                if (expressions.hasLimitBy())
                 {
                     executeExpression(pipeline, expressions.before_limit_by);
                     executeLimitBy(pipeline);
@@ -1230,7 +972,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     if (query.group_by_with_totals)
                     {
                         bool final = !query.group_by_with_rollup && !query.group_by_with_cube;
-                        executeTotalsAndHaving(pipeline, expressions.has_having, expressions.before_having, aggregate_overflow_row, final);
+                        executeTotalsAndHaving(pipeline, expressions.hasHaving(), expressions.before_having, aggregate_overflow_row, final);
                     }
 
                     if (query.group_by_with_rollup)
@@ -1238,14 +980,14 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     else if (query.group_by_with_cube)
                         executeRollupOrCube(pipeline, Modificator::CUBE);
 
-                    if ((query.group_by_with_rollup || query.group_by_with_cube) && expressions.has_having)
+                    if ((query.group_by_with_rollup || query.group_by_with_cube) && expressions.hasHaving())
                     {
                         if (query.group_by_with_totals)
                             throw Exception("WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING", ErrorCodes::NOT_IMPLEMENTED);
                         executeHaving(pipeline, expressions.before_having);
                     }
                 }
-                else if (expressions.has_having)
+                else if (expressions.hasHaving())
                     executeHaving(pipeline, expressions.before_having);
 
                 executeExpression(pipeline, expressions.before_order_and_select);
@@ -1273,7 +1015,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
               * limiting the number of rows in each up to `offset + limit`.
               */
-            if (query.limitLength() && !query.limit_with_ties && pipeline.hasMoreThanOneStream() && !query.distinct && !expressions.has_limit_by && !settings.extremes)
+            if (query.limitLength() && !query.limit_with_ties && pipeline.hasMoreThanOneStream() &&
+                !query.distinct && !expressions.hasLimitBy() && !settings.extremes)
             {
                 executePreLimit(pipeline);
             }
@@ -1298,7 +1041,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             if (need_second_distinct_pass)
                 executeDistinct(pipeline, false, expressions.selected_columns);
 
-            if (expressions.has_limit_by)
+            if (expressions.hasLimitBy())
             {
                 executeExpression(pipeline, expressions.before_limit_by);
                 executeLimitBy(pipeline);

@@ -3,6 +3,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/Buffer_fwd.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/Semaphore.h>
 #include <ext/shared_ptr_helper.h>
