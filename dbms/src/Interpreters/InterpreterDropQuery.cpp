@@ -250,6 +250,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
             context.checkAccess(AccessType::DETACH_DATABASE, database_name);
             DatabaseCatalog::instance().detachDatabase(database_name);
             database->shutdown();
+            //FIXME someone may still use tables from database
         }
         else if (kind == ASTDropQuery::Kind::Drop)
         {

@@ -145,8 +145,6 @@ struct SubscriptionForUserChange
 };
 
 struct TemporaryTableHolder;
-class DatabaseCatalog;
-using DatabaseCatalogPtr = std::shared_ptr<DatabaseCatalog>;
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
@@ -196,9 +194,6 @@ private:
 
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
-
-    using DatabasePtr = std::shared_ptr<IDatabase>;
-    using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
@@ -306,11 +301,19 @@ public:
     bool isDictionaryExists(const String & database_name, const String & dictionary_name) const;
     bool isExternalTableExist(const String & table_name) const;
 
+    enum StorageNamespace
+    {
+         Global = 1u,                           /// Database name must be specified
+         CurrentDatabase = 2u,                  /// Use current database
+         Ordinary = Global | CurrentDatabase,   /// If database name is not specified, use current database
+         External = 4u,                         /// Try get external table
+         All = External | Ordinary              /// If database name is not specified, try get external table,
+                                                /// if external table not found use current database.
+    };
+
     String resolveDatabase(const String & database_name) const;
-    String resolveDatabaseAndCheckAccess(const String & database_name) const;
-    //StorageID resolveDatabase(StorageID table_id) const;
-    StorageID resolveStorageID(StorageID storage_id) const;
-    StorageID resolveStorageIDUnlocked(StorageID storage_id) const;
+    StorageID resolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::All) const;
+    StorageID resolveStorageIDUnlocked(StorageID storage_id, StorageNamespace where = StorageNamespace::All) const;
 
     const Scalars & getScalars() const;
     const Block & getScalar(const String & name) const;

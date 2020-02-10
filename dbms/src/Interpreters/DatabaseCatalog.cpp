@@ -65,13 +65,6 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
     return it->second;
 }
 
-//String DatabaseCatalog::resolveDatabase(const String & database_name, const String & current_database)
-//{
-//    String res = database_name.empty() ? current_database : database_name;
-//    if (res.empty())
-//        throw Exception("Default database is not selected", ErrorCodes::UNKNOWN_DATABASE);
-//    return res;
-//}
 
 StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, const Context & local_context, std::optional<Exception> * exception) const
 {
@@ -121,6 +114,7 @@ void DatabaseCatalog::assertDatabaseDoesntExist(const String & database_name) co
 
 void DatabaseCatalog::assertDatabaseExistsUnlocked(const String & database_name) const
 {
+    assert(!database_name.empty());
     if (databases.end() == databases.find(database_name))
         throw Exception("Database " + backQuoteIfNeed(database_name) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 }
@@ -128,13 +122,13 @@ void DatabaseCatalog::assertDatabaseExistsUnlocked(const String & database_name)
 
 void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const String & database_name) const
 {
+    assert(!database_name.empty());
     if (databases.end() != databases.find(database_name))
         throw Exception("Database " + backQuoteIfNeed(database_name) + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
 }
 
 void DatabaseCatalog::attachDatabase(const String & database_name, const DatabasePtr & database)
 {
-    //local_context.checkDatabaseAccessRights(database_name);
     std::lock_guard lock{databases_mutex};
     assertDatabaseDoesntExistUnlocked(database_name);
     databases[database_name] = database;
@@ -143,18 +137,15 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
 
 DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name)
 {
-    //local_context.checkDatabaseAccessRights(database_name);
     std::lock_guard lock{databases_mutex};
-    auto res = getDatabase(database_name);   //FIXME locks order
+    assertDatabaseExistsUnlocked(database_name);
+    auto res = databases.find(database_name)->second;
     databases.erase(database_name);
     return res;
 }
 
 DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
 {
-    assert(!database_name.empty());
-    //String db = local_context.resolveDatabase(database_name);
-    //local_context.checkDatabaseAccessRights(db);    //FIXME non-atomic
     std::lock_guard lock{databases_mutex};
     assertDatabaseExistsUnlocked(database_name);
     return databases.find(database_name)->second;
@@ -163,7 +154,6 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
 DatabasePtr DatabaseCatalog::tryGetDatabase(const String & database_name) const
 {
     assert(!database_name.empty());
-    //String db = local_context.resolveDatabase(database_name);
     std::lock_guard lock{databases_mutex};
     auto it = databases.find(database_name);
     if (it == databases.end())
@@ -198,7 +188,7 @@ bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, const DB::Con
 
 void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id, const Context & context) const
 {
-    if (!isTableExist(table_id, context))
+    if (isTableExist(table_id, context))
         throw Exception("Table " + table_id.getNameForLogs() + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
 }
