@@ -90,7 +90,6 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_SESSION;
     extern const int THERE_IS_NO_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int DDL_GUARD_IS_ACTIVE;
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int SESSION_NOT_FOUND;
@@ -252,16 +251,6 @@ struct ContextShared
 #endif
 
     bool shutdown_called = false;
-
-    /// Do not allow simultaneous execution of DDL requests on the same table.
-    /// database -> object -> (mutex, counter), counter: how many threads are running a query on the table at the same time
-    /// For the duration of the operation, an element is placed here, and an object is returned,
-    /// which deletes the element in the destructor when counter becomes zero.
-    /// In case the element already exists, waits, when query will be executed in other thread. See class DDLGuard below.
-    using DDLGuards = std::unordered_map<String, DDLGuard::Map>;
-    DDLGuards ddl_guards;
-    /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.
-    mutable std::mutex ddl_guards_mutex;
 
     Stopwatch uptime_watch;
 
@@ -929,33 +918,6 @@ void Context::addViewSource(const StoragePtr & storage)
 StoragePtr Context::getViewSource()
 {
     return view_source;
-}
-
-
-DDLGuard::DDLGuard(Map & map_, std::unique_lock<std::mutex> guards_lock_, const String & elem)
-    : map(map_), guards_lock(std::move(guards_lock_))
-{
-    it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
-    ++it->second.counter;
-    guards_lock.unlock();
-    table_lock = std::unique_lock(*it->second.mutex);
-}
-
-DDLGuard::~DDLGuard()
-{
-    guards_lock.lock();
-    --it->second.counter;
-    if (!it->second.counter)
-    {
-        table_lock.unlock();
-        map.erase(it);
-    }
-}
-
-std::unique_ptr<DDLGuard> Context::getDDLGuard(const String & database, const String & table) const
-{
-    std::unique_lock lock(shared->ddl_guards_mutex);
-    return std::make_unique<DDLGuard>(shared->ddl_guards[database], std::move(lock), table);
 }
 
 ASTPtr Context::getCreateExternalTableQuery(const String & table_name) const

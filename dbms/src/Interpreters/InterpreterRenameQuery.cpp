@@ -84,11 +84,12 @@ BlockIO InterpreterRenameQuery::execute()
         table_guards[to];
     }
 
+    auto & database_catalog = DatabaseCatalog::instance();
+
     /// Must do it in consistent order.
     for (auto & table_guard : table_guards)
-        table_guard.second = context.getDDLGuard(table_guard.first.database_name, table_guard.first.table_name);
+        table_guard.second = database_catalog.getDDLGuard(table_guard.first.database_name, table_guard.first.table_name);
 
-    auto & database_catalog = DatabaseCatalog::instance();
     for (auto & elem : descriptions)
     {
         database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), context);

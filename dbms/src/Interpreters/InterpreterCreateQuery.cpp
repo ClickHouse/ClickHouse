@@ -83,7 +83,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
     String database_name = create.database;
 
-    auto guard = context.getDDLGuard(database_name, "");
+    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
     /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard
     if (DatabaseCatalog::instance().isDatabaseExist(database_name))
@@ -595,7 +595,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
         /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
           * If table doesnt exist, one thread is creating table, while others wait in DDLGuard.
           */
-        guard = context.getDDLGuard(create.database, table_name);
+        guard = DatabaseCatalog::instance().getDDLGuard(create.database, table_name);
 
         /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
         if (database->isTableExist(context, table_name))
@@ -689,7 +689,7 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
     create.database = context.resolveDatabase(create.database);
     const String & database_name = create.database;
 
-    auto guard = context.getDDLGuard(database_name, dictionary_name);
+    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, dictionary_name);
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
 
     if (database->isDictionaryExist(context, dictionary_name))

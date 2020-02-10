@@ -315,7 +315,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
     context.checkAccess(AccessType::RESTART_REPLICA, database_name, table_name);
     auto database = DatabaseCatalog::instance().getDatabase(database_name, system_context);
 
-    auto table_ddl_guard = system_context.getDDLGuard(database_name, table_name);
+    auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, table_name);
     ASTPtr create_ast;
 
     /// Detach actions
