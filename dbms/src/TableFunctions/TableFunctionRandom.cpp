@@ -92,10 +92,11 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<UInt64> &>(column).getData();
             data.resize(limit);
-            pcg64_oneseq generator(random_seed);
+            pcg32 generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
-                data[i] = static_cast<UInt64>(generator());
+                UInt64 a = static_cast<UInt64>(generator()) << 32 | static_cast<UInt64>(generator());
+                data[i] = static_cast<UInt64>(a);
             }
             break;
         }
@@ -138,10 +139,11 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<Int64> &>(column).getData();
             data.resize(limit);
-            pcg64_oneseq generator(random_seed);
+            pcg32 generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
-                data[i] = static_cast<Int64>(generator());
+                Int64 a = static_cast<Int64>(generator()) << 32 | static_cast<Int64>(generator());
+                data[i] = static_cast<Int64>(a);
             }
             break;
         }
@@ -164,12 +166,12 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<Float64> &>(column).getData();
             data.resize(limit);
-            pcg64_oneseq generator(random_seed);
+            pcg32 generator(random_seed);
             double d = 1.0;
             for (UInt64 i = 0; i < limit; ++i)
             {
                 d = std::numeric_limits<double>::max();
-                data[i] = (d / pcg64::max()) * generator();
+                data[i] = (d / pcg32::max()) * generator();
             }
             break;
         }
@@ -306,10 +308,11 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnDecimal<Decimal64> &>(column).getData();
             data.resize(limit);
-            pcg64_oneseq generator(random_seed);
+            pcg32 generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
-                data[i] = static_cast<UInt64>(generator());
+                UInt64 a = static_cast<UInt64>(generator()) << 32 | static_cast<UInt64>(generator());
+                data[i] = a;
             }
             break;
         }
@@ -317,10 +320,11 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnDecimal<Decimal128> &>(column).getData();
             data.resize(limit);
-            pcg64_oneseq generator(random_seed);
+            pcg32 generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
-                Int128 x = static_cast<Int128>(generator()) << 64 | static_cast<Int128>(generator());
+                Int128 x = static_cast<Int128>(generator()) << 96 | static_cast<Int128>(generator()) << 32 |
+                           static_cast<Int128>(generator()) << 64 | static_cast<Int128>(generator());
                 data[i] = x;
             }
         }
@@ -329,10 +333,12 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<UInt128> &>(column).getData();
             data.resize(limit);
-            pcg64_oneseq generator(random_seed);
+            pcg32 generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
-                auto x = UInt128(generator(), generator());
+                UInt64 a = static_cast<UInt64>(generator()) << 32 | static_cast<UInt64>(generator());
+                UInt64 b = static_cast<UInt64>(generator()) << 32 | static_cast<UInt64>(generator());
+                auto x = UInt128(a, b);
                 data[i] = x;
             }
         }
@@ -467,4 +473,5 @@ void registerTableFunctionRandom(TableFunctionFactory & factory)
 }
 
 }
+
 
