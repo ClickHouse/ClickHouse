@@ -83,17 +83,20 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, const Context &
     //    return db_and_table.second;
     //}
 
-    std::lock_guard _lock{databases_mutex};
-
-    auto it = databases.find(table_id.getDatabaseName());
-    if (databases.end() == it)
+    DatabasePtr database;
     {
-        if (exception)
-            exception->emplace("Database " + backQuoteIfNeed(table_id.getDatabaseName()) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-        return {};
+        std::lock_guard _lock{databases_mutex};
+        auto it = databases.find(table_id.getDatabaseName());
+        if (databases.end() == it)
+        {
+            if (exception)
+                exception->emplace("Database " + backQuoteIfNeed(table_id.getDatabaseName()) + " doesn't exist",
+                                   ErrorCodes::UNKNOWN_DATABASE);
+            return {};
+        }
+        database = it->second;
     }
 
-    auto database = it->second;
     auto table = database->tryGetTable(local_context, table_id.table_name);
     if (!table && exception)
             exception->emplace("Table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
