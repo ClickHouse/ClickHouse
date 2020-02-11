@@ -1,6 +1,7 @@
 #include "PolygonDictionaryUtils.h"
 
 #include <algorithm>
+#include <numeric>
 
 namespace DB
 {
@@ -23,9 +24,7 @@ const ICell * DividedCell::find(Float64 x, Float64 y) const
     return children[x_bin + y_bin * GridRoot::kSplit]->find(x_ratio - x_bin, y_ratio - y_bin);
 }
 
-GridRoot::GridRoot(const Box & box_, const std::vector<Polygon> & polygons_): box(box_), polygons(polygons_) {}
-
-void GridRoot::build()
+GridRoot::GridRoot(const std::vector<Polygon> & polygons_): box(getBoundingBox(polygons_)), polygons(polygons_)
 {
     std::vector<size_t> ids(polygons.size());
     std::iota(ids.begin(), ids.end(), 0);
@@ -67,6 +66,28 @@ std::unique_ptr<ICell> GridRoot::makeCell(const DB::Box & current_box, std::vect
         }
     }
     return std::make_unique<DividedCell>(children);
+}
+
+Box GridRoot::getBoundingBox(const std::vector<Polygon> & polygons)
+{
+    bool first = true;
+    Float64 min_x = 0, min_y = 0, max_x = 0, max_y = 0;
+    std::for_each(polygons.begin(), polygons.end(), [&](const auto & polygon) {
+        bg::for_each_point(polygon, [&](const Point & point) {
+            auto x = point.get<0>();
+            auto y = point.get<1>();
+            if (first || x < min_x)
+                min_x = x;
+            if (first || x > max_x)
+                max_x = x;
+            if (first || y < min_y)
+                min_y = y;
+            if (first || y > max_y)
+                max_y = y;
+            first = false;
+        });
+    });
+    return Box(Point(min_x, min_y), Point(max_x, max_y));
 }
 
 }

@@ -49,8 +49,7 @@ private:
 class GridRoot : public ICell
 {
 public:
-    GridRoot(const Box & box_, const std::vector<Polygon> & polygons_);
-    void build();
+    GridRoot(const std::vector<Polygon> & polygons_);
     const ICell * find(Float64 x, Float64 y) const override;
 
     static constexpr size_t kSplit = 10;
@@ -63,6 +62,8 @@ private:
     const std::vector<Polygon> & polygons;
 
     std::unique_ptr<ICell> makeCell(const Box & box, std::vector<size_t> intersecting_ids, size_t depth = 0);
+
+    static Box getBoundingBox(const std::vector<Polygon> & polygons);
 };
 
 }
