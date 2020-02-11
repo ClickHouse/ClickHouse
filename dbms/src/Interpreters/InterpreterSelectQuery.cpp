@@ -546,12 +546,9 @@ Block InterpreterSelectQuery::getSampleBlockImpl(bool try_move_to_prewhere)
         && options.to_stage > QueryProcessingStage::WithMergeableState;
 
     analysis_result = ExpressionAnalysisResult(
-            getSelectQuery(),
             *query_analyzer,
             first_stage,
             second_stage,
-            *context,
-            storage,
             options.only_analyze,
             filter_info,
             source_header
@@ -578,16 +575,12 @@ Block InterpreterSelectQuery::getSampleBlockImpl(bool try_move_to_prewhere)
 
         auto header = analysis_result.before_aggregation->getSampleBlock();
 
-        Names key_names;
-        AggregateDescriptions aggregates;
-        query_analyzer->getAggregateInfo(key_names, aggregates);
-
         Block res;
 
-        for (auto & key : key_names)
-            res.insert({nullptr, header.getByName(key).type, key});
+        for (auto & key : query_analyzer->aggregationKeys())
+            res.insert({nullptr, header.getByName(key.name).type, key.name});
 
-        for (auto & aggregate : aggregates)
+        for (auto & aggregate : query_analyzer->aggregates())
         {
             size_t arguments_size = aggregate.argument_names.size();
             DataTypes argument_types(arguments_size);
@@ -748,6 +741,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
     auto & expressions = analysis_result;
+    auto & subqueries_for_sets = query_analyzer->getSubqueriesForSets();
 
     if (options.only_analyze)
     {
@@ -953,8 +947,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             }
 
             // If there is no global subqueries, we can run subqueries only when receive them on server.
-            if (!query_analyzer->hasGlobalSubqueries() && !expressions.subqueries_for_sets.empty())
-                executeSubqueriesInSetsAndJoins(pipeline, expressions.subqueries_for_sets);
+            if (!query_analyzer->hasGlobalSubqueries() && !subqueries_for_sets.empty())
+                executeSubqueriesInSetsAndJoins(pipeline, subqueries_for_sets);
         }
 
         if (expressions.second_stage)
@@ -1061,8 +1055,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         }
     }
 
-    if (query_analyzer->hasGlobalSubqueries() && !expressions.subqueries_for_sets.empty())
-        executeSubqueriesInSetsAndJoins(pipeline, expressions.subqueries_for_sets);
+    if (query_analyzer->hasGlobalSubqueries() && !subqueries_for_sets.empty())
+        executeSubqueriesInSetsAndJoins(pipeline, subqueries_for_sets);
 }
 
 template <typename TPipeline>
@@ -1084,9 +1078,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             || !query_analyzer->hasAggregation() || processing_stage != QueryProcessingStage::FetchColumns)
             return {};
 
-        Names key_names;
-        AggregateDescriptions aggregates;
-        query_analyzer->getAggregateInfo(key_names, aggregates);
+        const AggregateDescriptions & aggregates = query_analyzer->aggregates();
 
         if (aggregates.size() != 1)
             return {};
@@ -1399,7 +1391,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         if (analysis_result.optimize_read_in_order)
         {
             query_info.order_by_optimizer = std::make_shared<ReadInOrderOptimizer>(
-                query_analyzer->getOrderByActions(),
+                analysis_result.order_by_elements_actions,
                 getSortDescription(query, *context),
                 query_info.syntax_analyzer_result);
 
@@ -1626,14 +1618,12 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
         stream = std::make_shared<ExpressionBlockInputStream>(stream, expression);
     });
 
-    Names key_names;
-    AggregateDescriptions aggregates;
-    query_analyzer->getAggregateInfo(key_names, aggregates);
-
     Block header = pipeline.firstStream()->getHeader();
     ColumnNumbers keys;
-    for (const auto & name : key_names)
-        keys.push_back(header.getPositionByName(name));
+    for (const auto & key : query_analyzer->aggregationKeys())
+        keys.push_back(header.getPositionByName(key.name));
+
+    AggregateDescriptions aggregates = query_analyzer->aggregates();
     for (auto & descr : aggregates)
         if (descr.arguments.empty())
             for (const auto & name : descr.argument_names)
@@ -1692,14 +1682,12 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
         return std::make_shared<ExpressionTransform>(header, expression);
     });
 
-    Names key_names;
-    AggregateDescriptions aggregates;
-    query_analyzer->getAggregateInfo(key_names, aggregates);
-
     Block header_before_aggregation = pipeline.getHeader();
     ColumnNumbers keys;
-    for (const auto & name : key_names)
-        keys.push_back(header_before_aggregation.getPositionByName(name));
+    for (const auto & key : query_analyzer->aggregationKeys())
+        keys.push_back(header_before_aggregation.getPositionByName(key.name));
+
+    AggregateDescriptions aggregates = query_analyzer->aggregates();
     for (auto & descr : aggregates)
         if (descr.arguments.empty())
             for (const auto & name : descr.argument_names)
@@ -1760,15 +1748,11 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
 
 void InterpreterSelectQuery::executeMergeAggregated(Pipeline & pipeline, bool overflow_row, bool final)
 {
-    Names key_names;
-    AggregateDescriptions aggregates;
-    query_analyzer->getAggregateInfo(key_names, aggregates);
-
     Block header = pipeline.firstStream()->getHeader();
 
     ColumnNumbers keys;
-    for (const auto & name : key_names)
-        keys.push_back(header.getPositionByName(name));
+    for (const auto & key : query_analyzer->aggregationKeys())
+        keys.push_back(header.getPositionByName(key.name));
 
     /** There are two modes of distributed aggregation.
       *
@@ -1787,7 +1771,7 @@ void InterpreterSelectQuery::executeMergeAggregated(Pipeline & pipeline, bool ov
 
     const Settings & settings = context->getSettingsRef();
 
-    Aggregator::Params params(header, keys, aggregates, overflow_row, settings.max_threads);
+    Aggregator::Params params(header, keys, query_analyzer->aggregates(), overflow_row, settings.max_threads);
 
     if (!settings.distributed_aggregation_memory_efficient)
     {
@@ -1811,15 +1795,11 @@ void InterpreterSelectQuery::executeMergeAggregated(Pipeline & pipeline, bool ov
 
 void InterpreterSelectQuery::executeMergeAggregated(QueryPipeline & pipeline, bool overflow_row, bool final)
 {
-    Names key_names;
-    AggregateDescriptions aggregates;
-    query_analyzer->getAggregateInfo(key_names, aggregates);
-
     Block header_before_merge = pipeline.getHeader();
 
     ColumnNumbers keys;
-    for (const auto & name : key_names)
-        keys.push_back(header_before_merge.getPositionByName(name));
+    for (const auto & key : query_analyzer->aggregationKeys())
+        keys.push_back(header_before_merge.getPositionByName(key.name));
 
     /** There are two modes of distributed aggregation.
       *
@@ -1838,7 +1818,7 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPipeline & pipeline, bo
 
     const Settings & settings = context->getSettingsRef();
 
-    Aggregator::Params params(header_before_merge, keys, aggregates, overflow_row, settings.max_threads);
+    Aggregator::Params params(header_before_merge, keys, query_analyzer->aggregates(), overflow_row, settings.max_threads);
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
 
@@ -1927,20 +1907,16 @@ void InterpreterSelectQuery::executeRollupOrCube(Pipeline & pipeline, Modificato
 {
     executeUnion(pipeline, {});
 
-    Names key_names;
-    AggregateDescriptions aggregates;
-    query_analyzer->getAggregateInfo(key_names, aggregates);
-
     Block header = pipeline.firstStream()->getHeader();
 
     ColumnNumbers keys;
 
-    for (const auto & name : key_names)
-        keys.push_back(header.getPositionByName(name));
+    for (const auto & key : query_analyzer->aggregationKeys())
+        keys.push_back(header.getPositionByName(key.name));
 
     const Settings & settings = context->getSettingsRef();
 
-    Aggregator::Params params(header, keys, aggregates,
+    Aggregator::Params params(header, keys, query_analyzer->aggregates(),
         false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
         SettingUInt64(0), SettingUInt64(0),
         settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
@@ -1956,20 +1932,16 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPipeline & pipeline, Modif
 {
     pipeline.resize(1);
 
-    Names key_names;
-    AggregateDescriptions aggregates;
-    query_analyzer->getAggregateInfo(key_names, aggregates);
-
     Block header_before_transform = pipeline.getHeader();
 
     ColumnNumbers keys;
 
-    for (const auto & name : key_names)
-        keys.push_back(header_before_transform.getPositionByName(name));
+    for (const auto & key : query_analyzer->aggregationKeys())
+        keys.push_back(header_before_transform.getPositionByName(key.name));
 
     const Settings & settings = context->getSettingsRef();
 
-    Aggregator::Params params(header_before_transform, keys, aggregates,
+    Aggregator::Params params(header_before_transform, keys, query_analyzer->aggregates(),
                               false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
                               SettingUInt64(0), SettingUInt64(0),
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
@@ -2566,7 +2538,7 @@ void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
 }
 
 
-void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline, SubqueriesForSets & subqueries_for_sets)
+void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline, const SubqueriesForSets & subqueries_for_sets)
 {
     /// Merge streams to one. Use MergeSorting if data was read in sorted order, Union otherwise.
     if (query_info.input_sorting_info)
@@ -2582,7 +2554,7 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline
         pipeline.firstStream(), subqueries_for_sets, *context);
 }
 
-void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, SubqueriesForSets & subqueries_for_sets)
+void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, const SubqueriesForSets & subqueries_for_sets)
 {
     if (query_info.input_sorting_info)
         executeMergeSorted(pipeline, query_info.input_sorting_info->order_key_prefix_descr, 0);
