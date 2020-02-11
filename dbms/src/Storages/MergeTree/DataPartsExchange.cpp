@@ -259,9 +259,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
 
     part_file.createDirectory();
 
-    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, reservation->getDisk(),relative_part_path);
-    new_data_part->is_temp = true;
-
     MergeTreeData::DataPart::Checksums checksums;
     for (size_t i = 0; i < files; ++i)
     {
@@ -305,6 +302,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
 
     assertEOF(in);
 
+    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, reservation->getDisk(), relative_part_path);
+    new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
     new_data_part->checksums.checkEqual(checksums, false);

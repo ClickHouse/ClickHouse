@@ -41,7 +41,7 @@ public:
     String toString() const;
 
 private:
-    Value value;   
+    Value value;
 };
 
 }
