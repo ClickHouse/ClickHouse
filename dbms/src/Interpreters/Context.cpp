@@ -770,7 +770,7 @@ bool Context::isDictionaryExists(const String & database_name, const String & di
 {
     auto lock = getLock();
     String db = resolveDatabase(database_name);
-    auto db_ptr = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    auto db_ptr = DatabaseCatalog::instance().tryGetDatabase(db);
     return db_ptr && db_ptr->isDictionaryExist(*this, dictionary_name);
 }
 

@@ -113,7 +113,7 @@ private:
 
 private:
     //[[maybe_unused]] Context & global_context;
-    mutable std::mutex databases_mutex;
+    mutable std::recursive_mutex databases_mutex;
     //const String default_database;
     Databases databases;
     UUIDToStorageMap uuid_map;
