@@ -87,6 +87,7 @@ public:
     bool sameStrictnessAndKind(ASTTableJoin::Strictness, ASTTableJoin::Kind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
     VolumePtr getTemporaryVolume() { return tmp_volume; }
+    bool allowMergeJoin() const;
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
@@ -128,9 +129,6 @@ public:
     void setRightKeys(const Names & keys) { key_names_right = keys; }
 
     static bool sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y);
-    friend JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block);
 };
-
-bool isMergeJoin(const JoinPtr &);
 
 }
