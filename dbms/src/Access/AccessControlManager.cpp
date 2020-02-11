@@ -35,45 +35,49 @@ AccessControlManager::~AccessControlManager()
 }
 
 
-UserPtr AccessControlManager::getUser(const String & user_name) const
+UserPtr AccessControlManager::getUser(
+    const String & user_name, std::function<void(const UserPtr &)> on_change, ext::scope_guard * subscription) const
 {
-    return getUser(user_name, {}, nullptr);
+    return getUser(getID<User>(user_name), std::move(on_change), subscription);
 }
 
+
 UserPtr AccessControlManager::getUser(
-    const String & user_name, const std::function<void(const UserPtr &)> & on_change, ext::scope_guard * subscription) const
+    const UUID & user_id, std::function<void(const UserPtr &)> on_change, ext::scope_guard * subscription) const
 {
-    UUID id = getID<User>(user_name);
     if (on_change && subscription)
     {
-        *subscription = subscribeForChanges(id, [on_change](const UUID &, const AccessEntityPtr & user)
+        *subscription = subscribeForChanges(user_id, [on_change](const UUID &, const AccessEntityPtr & user)
         {
             if (user)
                 on_change(typeid_cast<UserPtr>(user));
         });
     }
-    return read<User>(id);
+    return read<User>(user_id);
 }
 
-
-UserPtr AccessControlManager::authorizeAndGetUser(
-    const String & user_name,
-    const String & password,
-    const Poco::Net::IPAddress & address) const
-{
-    return authorizeAndGetUser(user_name, password, address, {}, nullptr);
-}
 
 UserPtr AccessControlManager::authorizeAndGetUser(
     const String & user_name,
     const String & password,
     const Poco::Net::IPAddress & address,
-    const std::function<void(const UserPtr &)> & on_change,
+    std::function<void(const UserPtr &)> on_change,
     ext::scope_guard * subscription) const
 {
-    auto user = getUser(user_name, on_change, subscription);
-    user->allowed_client_hosts.checkContains(address, user_name);
-    user->authentication.checkPassword(password, user_name);
+    return authorizeAndGetUser(getID<User>(user_name), password, address, std::move(on_change), subscription);
+}
+
+
+UserPtr AccessControlManager::authorizeAndGetUser(
+    const UUID & user_id,
+    const String & password,
+    const Poco::Net::IPAddress & address,
+    std::function<void(const UserPtr &)> on_change,
+    ext::scope_guard * subscription) const
+{
+    auto user = getUser(user_id, on_change, subscription);
+    user->allowed_client_hosts.checkContains(address, user->getName());
+    user->authentication.checkPassword(password, user->getName());
     return user;
 }
 
@@ -85,9 +89,9 @@ void AccessControlManager::loadFromConfig(const Poco::Util::AbstractConfiguratio
 }
 
 
-std::shared_ptr<const AccessRightsContext> AccessControlManager::getAccessRightsContext(const ClientInfo & client_info, const AccessRights & granted_to_user, const Settings & settings, const String & current_database)
+std::shared_ptr<const AccessRightsContext> AccessControlManager::getAccessRightsContext(const UserPtr & user, const ClientInfo & client_info, const Settings & settings, const String & current_database)
 {
-    return std::make_shared<AccessRightsContext>(client_info, granted_to_user, settings, current_database);
+    return std::make_shared<AccessRightsContext>(user, client_info, settings, current_database);
 }
 
 

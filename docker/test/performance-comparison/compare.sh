@@ -39,7 +39,6 @@ function download
     wait
 
 }
-download
 
 function configure
 {
@@ -83,7 +82,6 @@ EOF
     left/clickhouse client --port 9001 --query "create database test" ||:
     left/clickhouse client --port 9001 --query "rename table datasets.hits_v1 to test.hits" ||:
 }
-configure
 
 function restart
 {
@@ -119,36 +117,94 @@ function restart
     left/clickhouse client --port 9001 --query "select * from system.tables where database != 'system'"
     right/clickhouse client --port 9002 --query "select * from system.tables where database != 'system'"
 }
-restart
 
 function run_tests
 {
     # Just check that the script runs at all
     "$script_dir/perf.py" --help > /dev/null
 
+    rm -v test-times.tsv ||:
+
     # FIXME remove some broken long tests
-    rm left/performance/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
+    rm right/performance/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
 
     # Run the tests
-    for test in left/performance/*.xml
+    for test in right/performance/${CHPC_TEST_GLOB:-*.xml}
     do
         test_name=$(basename $test ".xml")
         echo test $test_name
-        TIMEFORMAT=$(printf "time\t$test_name\t%%3R\t%%3U\t%%3S\n")
+        #TIMEFORMAT=$(printf "time\t$test_name\t%%3R\t%%3U\t%%3S\n")
+        TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
         #time "$script_dir/perf.py" "$test" > >(tee "$test_name-raw.tsv") 2> >(tee "$test_name-err.log") || continue
-        time "$script_dir/perf.py" "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" || continue
+        { time "$script_dir/perf.py" "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; } 2>> "wall-clock-times.tsv" || continue
         grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
         grep ^client-time "$test_name-raw.tsv" | cut -f2- > "$test_name-client-time.tsv"
         right/clickhouse local --file "$test_name-queries.tsv" --structure 'query text, run int, version UInt32, time float' --query "$(cat $script_dir/eqmed.sql)" > "$test_name-report.tsv"
     done
 }
-run_tests
 
 # Analyze results
+function report
+{
 result_structure="left float, right float, diff float, rd Array(float), query text"
-right/clickhouse local --file '*-report.tsv' -S "$result_structure" --query "select * from table where abs(diff) < 0.05 and rd[3] > 0.05 order by rd[3] desc" > unstable.tsv
-right/clickhouse local --file '*-report.tsv' -S "$result_structure" --query "select * from table where abs(diff) > 0.05 and abs(diff) > rd[3] order by diff desc" > changed-perf.tsv
-right/clickhouse local --file '*-client-time.tsv' -S "query text, client float, server float" -q "select client, server, floor(client/server, 3) p, query from table where p > 1.01 order by p desc" > slow-on-client.tsv
+rm test-times.tsv test-dump.tsv unstable.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv ||:
+right/clickhouse local --query "
+create table queries engine Memory as select
+        replaceAll(_file, '-report.tsv', '') test,
+        if(abs(diff) < 0.05 and rd[3] > 0.05,      1, 0) unstable,
+        if(abs(diff) > 0.05 and abs(diff) > rd[3], 1, 0) changed,
+        *
+    from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
+
+create table changed_perf_tsv engine File(TSV, 'changed-perf.tsv') as
+    select left, right, diff, rd, test, query from queries where changed
+    order by rd[3] desc;
+create table unstable_queries_tsv engine File(TSV, 'unstable-queries.tsv') as
+    select left, right, diff, rd, test, query from queries where unstable
+    order by rd[3] desc;
+create table unstable_tests_tsv engine File(TSV, 'bad-tests.tsv') as
+    select test, sum(unstable) u, sum(changed) c, u + c s from queries
+    group by test having s > 0 order by s desc;
+
+create table query_time engine Memory as select *, replaceAll(_file, '-client-time.tsv', '') test
+    from file('*-client-time.tsv', TSV, 'query text, client float, server float');
+
+create table wall_clock engine Memory as select *
+    from file('wall-clock-times.tsv', TSV, 'test text, real float, user float, system float');
+
+create table slow_on_client_tsv engine File(TSV, 'slow-on-client.tsv') as
+    select client, server, floor(client/server, 3) p, query
+    from query_time where p > 1.02 order by p desc;
+
+create table test_time engine Memory as
+    select test, floor(sum(client), 3) client, count(*) queries
+    from query_time group by test;
+
+create table test_times_tsv engine File(TSV, 'test-times.tsv') as
+    select wall_clock.test, real, client, queries,
+        floor(real / queries, 3) real_per_query
+    from test_time join wall_clock using test
+    order by real desc;
+
+create table all_queries_tsv engine File(TSV, 'all-queries.tsv') as
+    select left, right, diff, rd, test, query
+    from queries order by rd[3] desc;
+"
 grep Exception:[^:] *-err.log > run-errors.log
 
 $script_dir/report.py > report.html
+}
+
+case "$stage" in
+"")
+    ;&
+"download")
+    download
+    configure
+    restart
+    run_tests
+    ;&
+"report")
+    report
+    ;&
+esac

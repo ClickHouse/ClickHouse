@@ -421,14 +421,7 @@ void SettingURI::set(const Field & x)
 
 void SettingURI::set(const String & x)
 {
-    try {
-        Poco::URI uri(x);
-        set(uri);
-    }
-    catch (const Poco::Exception& e)
-    {
-        throw Exception{Exception::CreateFromPoco, e};
-    }
+    set(Poco::URI(x));
 }
 
 void SettingURI::serialize(WriteBuffer & buf, SettingsBinaryFormat) const

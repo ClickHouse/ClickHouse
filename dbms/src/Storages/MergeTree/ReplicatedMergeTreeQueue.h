@@ -97,18 +97,21 @@ private:
 
     struct MutationStatus
     {
-        MutationStatus(const ReplicatedMergeTreeMutationEntryPtr & entry_)
+        MutationStatus(const ReplicatedMergeTreeMutationEntryPtr & entry_, MergeTreeDataFormatVersion format_version_)
             : entry(entry_)
+            , parts_to_do(format_version_)
         {
         }
 
         ReplicatedMergeTreeMutationEntryPtr entry;
 
-        /// A number of parts that should be mutated/merged or otherwise moved to Obsolete state for this mutation to complete.
-        Int64 parts_to_do = 0;
+        /// Parts we have to mutate to complete mutation. We use ActiveDataPartSet structure
+        /// to be able to manage covering and covered parts.
+        ActiveDataPartSet parts_to_do;
 
-        /// Note that is_done is not equivalent to parts_to_do == 0
-        /// (even if parts_to_do == 0 some relevant parts can still commit in the future).
+        /// Note that is_done is not equivalent to parts_to_do.size() == 0
+        /// (even if parts_to_do.size() == 0 some relevant parts can still commit in the future).
+        /// Also we can jump over mutation when we dowload mutated part from other replica.
         bool is_done = false;
 
         String latest_failed_part;
@@ -191,9 +194,14 @@ private:
         std::optional<time_t> & max_processed_insert_time_changed,
         std::unique_lock<std::mutex> & state_lock);
 
-    /// If the new part appears (add == true) or becomes obsolete (add == false), update parts_to_do of all affected mutations.
-    /// Notifies storage.mutations_finalizing_task if some mutations are probably finished.
-    void updateMutationsPartsToDo(const String & part_name, bool add);
+    /// Add part for mutations with block_number > part.getDataVersion()
+    void addPartToMutations(const String & part_name);
+
+    /// Remove part from mutations which were assigned to mutate it
+    /// with block_number > part.getDataVersion()
+    /// and block_number == part.getDataVersion()
+    ///     ^ (this may happen if we downloaded mutated part from other replica)
+    void removePartFromMutations(const String & part_name);
 
     /// Update the insertion times in ZooKeeper.
     void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper,
