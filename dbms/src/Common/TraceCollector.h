@@ -33,14 +33,13 @@ public:
     void collect(TraceType type, const StackTrace & stack_trace, int overrun_count = 0);
     void collect(UInt64 size);
 
-    void stop();
-
 private:
     std::shared_ptr<TraceLog> trace_log;
     ThreadFromGlobalPool thread;
     LazyPipeFDs pipe;
 
     void run();
+    void stop();
 };
 
 }

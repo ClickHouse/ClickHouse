@@ -26,8 +26,14 @@ public:
         return instance.get();
     }
 
-    static bool isInitialized() {
+    static bool isInitialized()
+    {
         return !!instance;
+    }
+
+    static void reset()
+    {
+        instance.reset();
     }
 
 private:

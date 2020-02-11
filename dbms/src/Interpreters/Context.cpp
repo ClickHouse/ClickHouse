@@ -299,7 +299,7 @@ struct ContextShared
         schedule_pool.reset();
         ddl_worker.reset();
 
-        ext::Singleton<TraceCollector>()->stop();
+        ext::Singleton<TraceCollector>::reset();
     }
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
