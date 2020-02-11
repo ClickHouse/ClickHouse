@@ -1,146 +1,146 @@
 [submodule "contrib/poco"]
-	path = contrib/poco
+	path = src/contrib/poco
 	url = https://github.com/ClickHouse-Extras/poco
 	branch = clickhouse
 [submodule "contrib/zstd"]
-	path = contrib/zstd
+	path = src/contrib/zstd
 	url = https://github.com/facebook/zstd.git
 [submodule "contrib/lz4"]
-	path = contrib/lz4
+	path = src/contrib/lz4
 	url = https://github.com/lz4/lz4.git
 [submodule "contrib/librdkafka"]
-	path = contrib/librdkafka
+	path = src/contrib/librdkafka
 	url = https://github.com/edenhill/librdkafka.git
 [submodule "contrib/cctz"]
-	path = contrib/cctz
+	path = src/contrib/cctz
 	url = https://github.com/google/cctz.git
 [submodule "contrib/zlib-ng"]
-	path = contrib/zlib-ng
+	path = src/contrib/zlib-ng
 	url = https://github.com/ClickHouse-Extras/zlib-ng.git
 [submodule "contrib/googletest"]
-	path = contrib/googletest
+	path = src/contrib/googletest
 	url = https://github.com/google/googletest.git
 [submodule "contrib/capnproto"]
-	path = contrib/capnproto
+	path = src/contrib/capnproto
 	url = https://github.com/capnproto/capnproto.git
 [submodule "contrib/double-conversion"]
-	path = contrib/double-conversion
+	path = src/contrib/double-conversion
 	url = https://github.com/google/double-conversion.git
 [submodule "contrib/re2"]
-	path = contrib/re2
+	path = src/contrib/re2
 	url = https://github.com/google/re2.git
 [submodule "contrib/llvm"]
-	path = contrib/llvm
+	path = src/contrib/llvm
 	url = https://github.com/ClickHouse-Extras/llvm
 [submodule "contrib/mariadb-connector-c"]
-	path = contrib/mariadb-connector-c
+	path = src/contrib/mariadb-connector-c
 	url = https://github.com/ClickHouse-Extras/mariadb-connector-c.git
 [submodule "contrib/jemalloc"]
-	path = contrib/jemalloc
+	path = src/contrib/jemalloc
 	url = https://github.com/jemalloc/jemalloc.git
 [submodule "contrib/unixodbc"]
-	path = contrib/unixodbc
+	path = src/contrib/unixodbc
 	url = https://github.com/ClickHouse-Extras/UnixODBC.git
 [submodule "contrib/protobuf"]
-	path = contrib/protobuf
+	path = src/contrib/protobuf
 	url = https://github.com/ClickHouse-Extras/protobuf.git
 [submodule "contrib/boost"]
-	path = contrib/boost
+	path = src/contrib/boost
 	url = https://github.com/ClickHouse-Extras/boost.git
 [submodule "contrib/base64"]
-	path = contrib/base64
+	path = src/contrib/base64
 	url = https://github.com/powturbo/Turbo-Base64.git
 [submodule "contrib/arrow"]
-	path = contrib/arrow
+	path = src/contrib/arrow
 	url = https://github.com/apache/arrow
 [submodule "contrib/thrift"]
-	path = contrib/thrift
+	path = src/contrib/thrift
 	url = https://github.com/apache/thrift.git
 [submodule "contrib/libhdfs3"]
-	path = contrib/libhdfs3
+	path = src/contrib/libhdfs3
 	url = https://github.com/ClickHouse-Extras/libhdfs3.git
 [submodule "contrib/libxml2"]
-	path = contrib/libxml2
+	path = src/contrib/libxml2
 	url = https://github.com/GNOME/libxml2.git
 [submodule "contrib/libgsasl"]
-	path = contrib/libgsasl
+	path = src/contrib/libgsasl
 	url = https://github.com/ClickHouse-Extras/libgsasl.git
 [submodule "contrib/libcxx"]
-	path = contrib/libcxx
+	path = src/contrib/libcxx
 	url = https://github.com/ClickHouse-Extras/libcxx.git
 [submodule "contrib/libcxxabi"]
-	path = contrib/libcxxabi
+	path = src/contrib/libcxxabi
 	url = https://github.com/ClickHouse-Extras/libcxxabi.git
 [submodule "contrib/snappy"]
-	path = contrib/snappy
+	path = src/contrib/snappy
 	url = https://github.com/google/snappy
 [submodule "contrib/cppkafka"]
-	path = contrib/cppkafka
+	path = src/contrib/cppkafka
 	url = https://github.com/ClickHouse-Extras/cppkafka.git
 [submodule "contrib/brotli"]
-	path = contrib/brotli
+	path = src/contrib/brotli
 	url = https://github.com/google/brotli.git
 [submodule "contrib/h3"]
-	path = contrib/h3
+	path = src/contrib/h3
 	url = https://github.com/uber/h3
 [submodule "contrib/hyperscan"]
-	path = contrib/hyperscan
+	path = src/contrib/hyperscan
 	url = https://github.com/ClickHouse-Extras/hyperscan.git
 [submodule "contrib/libunwind"]
-	path = contrib/libunwind
+	path = src/contrib/libunwind
 	url = https://github.com/ClickHouse-Extras/libunwind.git
 [submodule "contrib/simdjson"]
-	path = contrib/simdjson
+	path = src/contrib/simdjson
 	url = https://github.com/lemire/simdjson.git
 [submodule "contrib/rapidjson"]
-	path = contrib/rapidjson
+	path = src/contrib/rapidjson
 	url = https://github.com/Tencent/rapidjson
 [submodule "contrib/fastops"]
-	path = contrib/fastops
+	path = src/contrib/fastops
 	url = https://github.com/ClickHouse-Extras/fastops
 [submodule "contrib/orc"]
-	path = contrib/orc
+	path = src/contrib/orc
 	url = https://github.com/apache/orc
 [submodule "contrib/sparsehash-c11"]
-	path = contrib/sparsehash-c11
+	path = src/contrib/sparsehash-c11
 	url = https://github.com/sparsehash/sparsehash-c11.git
 [submodule "contrib/aws"]
-	path = contrib/aws
+	path = src/contrib/aws
 	url = https://github.com/aws/aws-sdk-cpp.git
 [submodule "aws-c-event-stream"]
-	path = contrib/aws-c-event-stream
+	path = src/contrib/aws-c-event-stream
 	url = https://github.com/awslabs/aws-c-event-stream.git
 [submodule "aws-c-common"]
-	path = contrib/aws-c-common
+	path = src/contrib/aws-c-common
 	url = https://github.com/awslabs/aws-c-common.git
 [submodule "aws-checksums"]
-	path = contrib/aws-checksums
+	path = src/contrib/aws-checksums
 	url = https://github.com/awslabs/aws-checksums.git
 [submodule "contrib/curl"]
-	path = contrib/curl
+	path = src/contrib/curl
 	url = https://github.com/curl/curl.git
 [submodule "contrib/openssl"]
-	path = contrib/openssl
+	path = src/contrib/openssl
 	url = https://github.com/ClickHouse-Extras/openssl.git
 [submodule "contrib/icudata"]
-	path = contrib/icudata
+	path = src/contrib/icudata
 	url = https://github.com/ClickHouse-Extras/icudata.git
 [submodule "contrib/icu"]
-	path = contrib/icu
+	path = src/contrib/icu
 	url = https://github.com/unicode-org/icu.git
 [submodule "contrib/flatbuffers"]
-	path = contrib/flatbuffers
+	path = src/contrib/flatbuffers
 	url = https://github.com/google/flatbuffers.git
 [submodule "contrib/libc-headers"]
-	path = contrib/libc-headers
+	path = src/contrib/libc-headers
 	url = https://github.com/ClickHouse-Extras/libc-headers.git
 [submodule "contrib/replxx"]
-	path = contrib/replxx
+	path = src/contrib/replxx
 	url = https://github.com/AmokHuginnsson/replxx.git
 [submodule "contrib/ryu"]
-	path = contrib/ryu
+	path = src/contrib/ryu
 	url = https://github.com/ClickHouse-Extras/ryu.git
 [submodule "contrib/avro"]
-	path = contrib/avro
+	path = src/contrib/avro
 	url = https://github.com/ClickHouse-Extras/avro.git
 	ignore = untracked
