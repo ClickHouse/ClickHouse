@@ -409,6 +409,11 @@ StoragePtr TableFunctionRandom::executeImpl(const ASTPtr & ast_function, const C
 
     ASTs & args = args_func.at(0)->children;
 
+    if (args.size() < 2)
+        throw Exception("Table function '" + getName() + "' requires at least two arguments: "\
+                        " structure, limit(, max_array_length, max_string_length, random_seed).",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
     if (args.size() > 5)
         throw Exception("Table function '" + getName() + "' requires at most five arguments: "\
                         " structure, limit, max_array_length, max_string_length, random_seed.",
