@@ -5,13 +5,13 @@ CREATE TABLE clear_column (d Date, num Int64, str String) ENGINE = MergeTree(d, 
 
 INSERT INTO clear_column VALUES ('2016-12-12', 1, 'a'), ('2016-11-12', 2, 'b');
 
-SELECT data_uncompressed_bytes FROM system.columns WHERE (database = 'test') AND (table = 'clear_column') AND (name = 'num');
+SELECT data_uncompressed_bytes FROM system.columns WHERE (database = currentDatabase()) AND (table = 'clear_column') AND (name = 'num');
 
 SELECT num, str FROM clear_column ORDER BY num;
 ALTER TABLE clear_column CLEAR COLUMN num IN PARTITION '201612';
 SELECT num, str FROM clear_column ORDER BY num;
 
-SELECT data_uncompressed_bytes FROM system.columns WHERE (database = 'test') AND (table = 'clear_column') AND (name = 'num');
+SELECT data_uncompressed_bytes FROM system.columns WHERE (database = currentDatabase()) AND (table = 'clear_column') AND (name = 'num');
 ALTER TABLE clear_column CLEAR COLUMN num IN PARTITION '201611';
 SELECT data_compressed_bytes, data_uncompressed_bytes FROM system.columns WHERE (database = currentDatabase()) AND (table = 'clear_column') AND (name = 'num');
 
@@ -54,7 +54,7 @@ SELECT DISTINCT * FROM clear_column2 ORDER BY d, i, s;
 SELECT DISTINCT * FROM clear_column2 ORDER BY d, i, s;
 
 SELECT 'sizes';
-SELECT sum(data_uncompressed_bytes) FROM system.columns WHERE database='test' AND table LIKE 'clear_column_' AND (name = 'i' OR name = 's') GROUP BY table;
+SELECT sum(data_uncompressed_bytes) FROM system.columns WHERE database=currentDatabase() AND table LIKE 'clear_column_' AND (name = 'i' OR name = 's') GROUP BY table;
 
 -- double call should be OK
 ALTER TABLE clear_column1 CLEAR COLUMN s IN PARTITION '200001';
