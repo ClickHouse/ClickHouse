@@ -148,12 +148,14 @@ struct TaskStateWithOwner
 
 
 /// Hierarchical description of the tasks
+struct ShardPartitionPiece;
 struct ShardPartition;
 struct TaskShard;
 struct TaskTable;
 struct TaskCluster;
 struct ClusterPartition;
 
+using PartitionPieces = std::vector<ShardPartitionPiece>;
 using TasksPartition = std::map<String, ShardPartition, std::greater<>>;
 using ShardInfo = Cluster::ShardInfo;
 using TaskShardPtr = std::shared_ptr<TaskShard>;
@@ -162,22 +164,59 @@ using TasksTable = std::list<TaskTable>;
 using ClusterPartitions = std::map<String, ClusterPartition, std::greater<>>;
 
 
+struct ShardPartitionPiece
+{
+    ShardPartitionPiece(ShardPartition & parent, size_t current_piece_number_, bool is_absent_piece_)
+        : is_absent_piece(is_absent_piece_)
+        , current_piece_number(current_piece_number_)
+        , shard_partition(parent) {}
+
+    [[maybe_unused]] String getPartitionPiecePath() const {return "Not implemented.";}
+    [[maybe_unused]] String getPartitionPieceCleanStartPath() const {return "Not implemented.";}
+    [[maybe_unused]] String getCommonPartitionPieceIsDirtyPath() const {return "Not implemented.";}
+    [[maybe_unused]] String getCommonPartitionPieceIsCleanedPath() const {return "Not implemented.";}
+
+    [[maybe_unused]] String getPartitionPieceActiveWorkersPath() const {return "Not implemented.";}
+    [[maybe_unused]] String getActiveWorkerPath() const {return "Not implemented.";}
+
+    /// On what shards do we have current partition.
+    [[maybe_unused]] String getPartitionPieceShardsPath() const {return "Not implemented.";}
+    [[maybe_unused]] String getShardStatusPath() const {return "Not implemented.";}
+
+    bool is_absent_piece;
+    const size_t current_piece_number;
+
+    ShardPartition & shard_partition;
+};
+
+
 /// Just destination partition of a shard
 /// I don't know what this comment means.
 /// In short, when we discovered what shards contain currently processing partition,
 /// This class describes a partition (name) that is stored on the shard (parent).
 struct ShardPartition
 {
-    ShardPartition(TaskShard & parent, String  name_quoted_) : task_shard(parent), name(std::move(name_quoted_)) {}
+    ShardPartition(TaskShard & parent, String  name_quoted_, size_t number_of_splits = 10)
+        : task_shard(parent)
+        , name(std::move(name_quoted_))
+        { pieces.reserve(number_of_splits); }
 
-    String getPartitionPath() const;
-    String getPartitionCleanStartPath() const;
-    String getCommonPartitionIsDirtyPath() const;
-    String getCommonPartitionIsCleanedPath() const;
-    String getPartitionActiveWorkersPath() const;
-    String getActiveWorkerPath() const;
-    String getPartitionShardsPath() const;
-    String getShardStatusPath() const;
+    /*useful*/ String getPartitionPath() const;
+    [[maybe_unused]] String getPartitionPiecePath(size_t current_piece_number) const;
+    /*useful*/ String getPartitionCleanStartPath() const;
+    [[maybe_unused]] String getPartitionPieceCleanStartPath(size_t current_piece_number) const;
+    /*useful*/ String getCommonPartitionIsDirtyPath() const;
+    /*useful*/ String getCommonPartitionIsCleanedPath() const;
+    /*??????*/ String getPartitionActiveWorkersPath() const;
+    /*??????*/ String getActiveWorkerPath() const;
+    /*useful*/ String getPartitionShardsPath() const;
+    /*useful*/ String getShardStatusPath() const;
+
+    /// What partition pieces are present in current shard.
+    /// FYI: Piece is a part of partition which has modulo equals to concrete constant (less than number_of_splits obliously)
+    /// For example SELECT ... from ... WHERE partition=current_partition AND cityHash64(*) == const;
+    /// Absent pieces have field is_absent_piece equals to true.
+    PartitionPieces pieces;
 
     TaskShard & task_shard;
     String name;
@@ -255,7 +294,7 @@ struct TaskTable
     TaskCluster & task_cluster;
 
     String getPartitionPath(const String & partition_name) const;
-    [[maybe_unused]] String getPartitionPathWithPieceNumber(const String & partition_name, size_t current_piece_number) const;
+    [[maybe_unused]] String getPartitionPiecePath(const String & partition_name, size_t current_piece_number) const;
     String getPartitionIsDirtyPath(const String & partition_name) const;
     String getPartitionIsCleanedPath(const String & partition_name) const;
     String getPartitionTaskStatusPath(const String & partition_name) const;
@@ -422,8 +461,9 @@ String TaskTable::getPartitionPath(const String & partition_name) const
            + "/" + escapeForFileName(partition_name);   // 201701
 }
 
-String TaskTable::getPartitionPathWithPieceNumber(const String & partition_name, size_t current_piece_number) const
+String TaskTable::getPartitionPiecePath(const String & partition_name, size_t current_piece_number) const
 {
+    assert(current_piece_number < number_of_splits);
     return getPartitionPath(partition_name) + "/" + std::to_string(current_piece_number);  // 1...number_of_splits
 }
 
@@ -432,9 +472,21 @@ String ShardPartition::getPartitionCleanStartPath() const
     return getPartitionPath() + "/clean_start";
 }
 
+String ShardPartition::getPartitionPieceCleanStartPath(size_t current_piece_number) const
+{
+    assert(current_piece_number < task_shard.task_table.number_of_splits);
+    return getPartitionPiecePath(current_piece_number) + "/clean_start";
+}
+
 String ShardPartition::getPartitionPath() const
 {
     return task_shard.task_table.getPartitionPath(name);
+}
+
+String ShardPartition::getPartitionPiecePath(size_t current_piece_number) const
+{
+    assert(current_piece_number < task_shard.task_table.number_of_splits);
+    return task_shard.task_table.getPartitionPiecePath(name, current_piece_number);
 }
 
 String ShardPartition::getShardStatusPath() const
