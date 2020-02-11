@@ -94,6 +94,12 @@ test_query_templates = [q.text for q in root.findall('query')]
 test_queries = substitute_parameters(test_query_templates, parameter_combinations)
 
 for q in test_queries:
+    # Warmup: run once on both servers. Helps to bring the data into memory,
+    # precompile the queries, etc.
+    for c in connections:
+        c.execute(q)
+
+    # Now, perform measured runs.
     # Track the time spent by the client to process this query, so that we can notice
     # out the queries that take long to process on the client side, e.g. by sending
     # excessive data.

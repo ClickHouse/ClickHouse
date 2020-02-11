@@ -54,7 +54,7 @@ public:
     ConsumerBufferPtr popReadBuffer();
     ConsumerBufferPtr popReadBuffer(std::chrono::milliseconds timeout);
 
-    ProducerBufferPtr createWriteBuffer();
+    ProducerBufferPtr createWriteBuffer(const Block & header);
 
     const auto & getTopics() const { return topics; }
     const auto & getFormatName() const { return format_name; }

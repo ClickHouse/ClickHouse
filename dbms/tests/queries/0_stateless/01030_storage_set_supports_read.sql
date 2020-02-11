@@ -19,3 +19,4 @@ SELECT * FROM userid_test WHERE toUInt64(1) IN (userid_set);
 SELECT * FROM userid_test WHERE userid IN (userid_set);
 
 DROP TABLE userid_test;
+DROP TABLE userid_set;
