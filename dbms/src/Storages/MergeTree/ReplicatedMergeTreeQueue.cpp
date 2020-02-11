@@ -287,6 +287,8 @@ void ReplicatedMergeTreeQueue::removePartFromMutations(const String & part_name)
     for (auto it = from_it; it != in_partition->second.end(); ++it)
     {
         MutationStatus & status = *it->second;
+
+        LOG_DEBUG(log, "Removing part name:" << part_name << " from mutation:" << status.entry->znode_name);
         status.parts_to_do.removePartAndCoveredParts(part_name);
         if (status.parts_to_do.size() == 0)
             some_mutations_are_probably_done = true;
@@ -695,6 +697,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
 
             for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
             {
+                LOG_DEBUG(log, "PROCESSING MUTATION:" << entry->znode_name);
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version))
                     .first->second;
 
@@ -972,6 +975,9 @@ bool ReplicatedMergeTreeQueue::addFuturePartIfNotCoveredByThem(const String & pa
 {
     std::lock_guard lock(state_mutex);
 
+    if (!alter_sequence.canExecuteGetEntry(part_name, format_version, lock))
+        return false;
+
     if (isNotCoveredByFuturePartsImpl(part_name, reject_reason, lock))
     {
         CurrentlyExecuting::setActualPartName(entry, part_name, *this);
@@ -991,7 +997,10 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 {
     if (entry.type == LogEntry::GET_PART)
     {
-        if (!alter_sequence.canExecuteGetEntry(entry.new_part_name, format_version, state_lock))
+        if (!entry.actual_new_part_name.empty() && !alter_sequence.canExecuteGetEntry(entry.actual_new_part_name, format_version, state_lock))
+            return false;
+
+        if (!entry.new_part_name.empty() && !alter_sequence.canExecuteGetEntry(entry.new_part_name, format_version, state_lock))
             return false;
     }
 

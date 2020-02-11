@@ -256,7 +256,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         zkutil::CreateMode::PersistentSequential));
 
     ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/columns", storage.getMetadataVersion()));
-    ops.emplace_back(zkutil::makeSetRequest(storage.zookeeper_path + "/alter_intention_counter", "", -1));
+    ops.emplace_back(zkutil::makeSetRequest(storage.zookeeper_path + "/block_numbers/" + part->info.partition_id, "", -1));
 
     /// Deletes the information that the block number is used for writing.
     block_number_lock->getUnlockOps(ops);
