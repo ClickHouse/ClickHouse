@@ -101,7 +101,11 @@ bool DiskLocal::tryReserve(UInt64 bytes)
 
 UInt64 DiskLocal::getTotalSpace() const
 {
-    auto fs = getStatVFS(disk_path + "data/");
+    struct statvfs fs;
+    if (has_data_directory)
+        fs = getStatVFS(disk_path + "data/");
+    else
+        fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_blocks * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
@@ -112,7 +116,11 @@ UInt64 DiskLocal::getAvailableSpace() const
 {
     /// we use f_bavail, because part of b_free space is
     /// available for superuser only and for system purposes
-    auto fs = getStatVFS(disk_path + "data/");
+    struct statvfs fs;
+    if (has_data_directory)
+        fs = getStatVFS(disk_path + "data/");
+    else
+        fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_bavail * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
@@ -305,10 +313,10 @@ void registerDiskLocal(DiskFactory & factory)
                 tmp_path = context.getPath();
 
             // Create tmp disk for getting total disk space.
-            keep_free_space_bytes = static_cast<UInt64>(DiskLocal("tmp", tmp_path, 0).getTotalSpace() * ratio);
+            keep_free_space_bytes = static_cast<UInt64>(DiskLocal("tmp", tmp_path, 0, false).getTotalSpace() * ratio);
         }
 
-        return std::make_shared<DiskLocal>(name, path, keep_free_space_bytes);
+        return std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, true);
     };
     factory.registerDiskType("local", creator);
 }

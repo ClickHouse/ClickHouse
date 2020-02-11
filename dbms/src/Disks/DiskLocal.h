@@ -21,8 +21,8 @@ class DiskLocal : public IDisk
 public:
     friend class DiskLocalReservation;
 
-    DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_)
-        : name(name_), disk_path(path_), keep_free_space_bytes(keep_free_space_bytes_)
+    DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_, bool has_data_directory_)
+        : name(name_), disk_path(path_), keep_free_space_bytes(keep_free_space_bytes_), has_data_directory(has_data_directory_)
     {
         if (disk_path.back() != '/')
             throw Exception("Disk path must ends with '/', but '" + disk_path + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
@@ -81,6 +81,8 @@ private:
     const String name;
     const String disk_path;
     const UInt64 keep_free_space_bytes;
+
+    const bool has_data_directory;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;

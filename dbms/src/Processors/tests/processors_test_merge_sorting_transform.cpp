@@ -118,7 +118,7 @@ try
     Logger::root().setChannel(channel);
     Logger::root().setLevel("trace");
 
-    auto disk = std::make_shared<DiskLocal>("tmp", ".", 0);
+    auto disk = std::make_shared<DiskLocal>("tmp", ".", 0, false);
     auto tmp_volume = std::make_shared<Volume>("tmp", std::vector<DiskPtr>{disk}, 0);
 
     auto execute_chain = [tmp_volume](

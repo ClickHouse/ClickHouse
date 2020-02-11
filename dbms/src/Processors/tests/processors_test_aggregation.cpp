@@ -189,7 +189,7 @@ try
     auto & factory = AggregateFunctionFactory::instance();
 
     auto cur_path = Poco::Path().absolute().toString();
-    auto disk = std::make_shared<DiskLocal>("tmp", cur_path, 0);
+    auto disk = std::make_shared<DiskLocal>("tmp", cur_path, 0, false);
     auto tmp_volume = std::make_shared<Volume>("tmp", std::vector<DiskPtr>{disk}, 0);
 
     auto execute_one_stream = [&](String msg, size_t num_threads, bool two_level, bool external)
