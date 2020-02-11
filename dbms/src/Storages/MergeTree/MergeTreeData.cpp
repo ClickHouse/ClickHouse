@@ -1704,7 +1704,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     const String & name, const MergeTreePartInfo & part_info,
     const DiskPtr & disk, const String & relative_path) const
 {
-    auto type = MergeTreeDataPartType::UNKNOWN;
+    MergeTreeDataPartType type;
     auto full_path = getFullPathOnDisk(disk) + relative_path + "/";
     auto mrk_ext = MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(full_path);
 

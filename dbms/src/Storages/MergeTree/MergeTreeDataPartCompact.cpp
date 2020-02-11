@@ -78,7 +78,7 @@ ColumnSize MergeTreeDataPartCompact::getTotalColumnsSize() const
     if (bin_checksum != checksums.files.end())
     {
         total_size.data_compressed += bin_checksum->second.file_size;
-        total_size.data_compressed += bin_checksum->second.uncompressed_size;
+        total_size.data_uncompressed += bin_checksum->second.uncompressed_size;
     }
 
     auto mrk_checksum = checksums.files.find(DATA_FILE_NAME + index_granularity_info.marks_file_extension);

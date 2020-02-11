@@ -1,11 +1,17 @@
 #pragma once
 
+#include <Core/Types.h>
+
 namespace DB
 {
-    /// Types of data part format.
-    enum class MergeTreeDataPartType
+
+/// Types of data part format.
+class MergeTreeDataPartType
+{
+public:
+    enum Value
     {
-        /// Data of each is stored in one or several (for complex types) files.
+        /// Data of each column is stored in one or several (for complex types) files.
         /// Every data file is followed by marks file.
         WIDE,
 
@@ -17,4 +23,25 @@ namespace DB
 
         UNKNOWN,
     };
+
+    MergeTreeDataPartType() : value(UNKNOWN) {}
+    MergeTreeDataPartType(Value value_) : value(value_) {}
+
+    bool operator==(const MergeTreeDataPartType & other) const
+    {
+        return value == other.value;
+    }
+
+    bool operator!=(const MergeTreeDataPartType & other) const
+    {
+        return !(*this == other);
+    }
+
+    void fromString(const String & str);
+    String toString() const;
+
+private:
+    Value value;   
+};
+
 }

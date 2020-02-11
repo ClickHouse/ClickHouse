@@ -18,6 +18,7 @@ struct FutureMergedMutatedPart
 {
     String name;
     String path;
+    MergeTreeDataPartType type;
     MergeTreePartInfo part_info;
     MergeTreeData::DataPartsVector parts;
 

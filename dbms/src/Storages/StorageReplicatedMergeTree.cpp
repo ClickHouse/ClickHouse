@@ -1220,6 +1220,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     future_mutated_part.part_info = new_part_info;
     future_mutated_part.name = entry.new_part_name;
     future_mutated_part.updatePath(*this, reserved_space);
+    future_mutated_part.type = source_part->getType();
 
     auto table_id = getStorageID();
     MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(
@@ -2279,7 +2280,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred))
             {
                 success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
-                    future_merged_part.name, deduplicate, force_ttl);
+                    future_merged_part.name, future_merged_part.type, deduplicate, force_ttl);
             }
             /// If there are many mutations in queue it may happen, that we cannot enqueue enough merges to merge all new parts
             else if (max_source_part_size_for_mutation > 0 && queue.countMutations() > 0
@@ -2344,6 +2345,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
     zkutil::ZooKeeperPtr & zookeeper,
     const DataPartsVector & parts,
     const String & merged_name,
+    const MergeTreeDataPartType & merged_part_type,
     bool deduplicate,
     bool force_ttl,
     ReplicatedMergeTreeLogEntryData * out_log_entry)
@@ -2380,12 +2382,15 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
     entry.type = LogEntry::MERGE_PARTS;
     entry.source_replica = replica_name;
     entry.new_part_name = merged_name;
+    entry.new_part_type = merged_part_type;
     entry.deduplicate = deduplicate;
     entry.force_ttl = force_ttl;
     entry.create_time = time(nullptr);
 
     for (const auto & part : parts)
+    {
         entry.source_parts.push_back(part->name);
+    }
 
     String path_created = zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
     entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
@@ -3152,7 +3157,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
                     future_merged_part, disk_space, can_merge, partition_id, true, nullptr);
                 ReplicatedMergeTreeLogEntryData merge_entry;
                 if (selected && !createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
-                        future_merged_part.name, deduplicate, force_ttl, &merge_entry))
+                        future_merged_part.name, future_merged_part.type, deduplicate, force_ttl, &merge_entry))
                     return handle_noop("Can't create merge queue node in ZooKeeper");
                 if (merge_entry.type != ReplicatedMergeTreeLogEntryData::Type::EMPTY)
                     merge_entries.push_back(std::move(merge_entry));
@@ -3189,7 +3194,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
             ReplicatedMergeTreeLogEntryData merge_entry;
             if (!createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
-                future_merged_part.name, deduplicate, force_ttl, &merge_entry))
+                future_merged_part.name, future_merged_part.type, deduplicate, force_ttl, &merge_entry))
                 return handle_noop("Can't create merge queue node in ZooKeeper");
             if (merge_entry.type != ReplicatedMergeTreeLogEntryData::Type::EMPTY)
                 merge_entries.push_back(std::move(merge_entry));
