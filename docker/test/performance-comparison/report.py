@@ -144,9 +144,12 @@ params['test_part'] = (
         rows = tsv_rows('bad-tests.tsv')) +
     table_template.format(
         anchor = nextTableAnchor(),
-        caption = 'Tests with most unstable queries',
-        header = table_header(['Test', 'Wall clock time, s', 'Client time, s',
-            'Number of queries', 'Wall clock time per all runs of a query, s']),
+        caption = 'Tests times',
+        header = table_header(['Test', 'Wall clock time, s', 'Total client time, s',
+            'Number of queries',
+            'Max client time<br>(sum for all runs), s',
+            'Avg wall clock time<br>(sum for all runs), s',
+            'Min client time<br>(sum for all runs), s']),
         rows = tsv_rows('test-times.tsv'))
 )
 print(doc_template.format_map(params))

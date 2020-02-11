@@ -133,10 +133,9 @@ function run_tests
     do
         test_name=$(basename $test ".xml")
         echo test $test_name
-        #TIMEFORMAT=$(printf "time\t$test_name\t%%3R\t%%3U\t%%3S\n")
         TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
-        #time "$script_dir/perf.py" "$test" > >(tee "$test_name-raw.tsv") 2> >(tee "$test_name-err.log") || continue
-        { time "$script_dir/perf.py" "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; } 2>> "wall-clock-times.tsv" || continue
+        # the grep is to filter out set -x output and keep only time output
+        { time "$script_dir/perf.py" "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; } 2>&1 >/dev/null | grep -v ^+ >> "wall-clock-times.tsv" || continue
         grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
         grep ^client-time "$test_name-raw.tsv" | cut -f2- > "$test_name-client-time.tsv"
         right/clickhouse local --file "$test_name-queries.tsv" --structure 'query text, run int, version UInt32, time float' --query "$(cat $script_dir/eqmed.sql)" > "$test_name-report.tsv"
@@ -147,14 +146,19 @@ function run_tests
 function report
 {
 result_structure="left float, right float, diff float, rd Array(float), query text"
-rm test-times.tsv test-dump.tsv unstable.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv ||:
+rm test-times.tsv test-dump.tsv unstable.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
 right/clickhouse local --query "
 create table queries engine Memory as select
         replaceAll(_file, '-report.tsv', '') test,
         if(abs(diff) < 0.05 and rd[3] > 0.05,      1, 0) unstable,
         if(abs(diff) > 0.05 and abs(diff) > rd[3], 1, 0) changed,
         *
-    from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
+    from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text')
+    -- FIXME Comparison mode doesn't make sense for queries that complete
+    -- immediately, so for now we pretend they don't exist. We don't want to
+    -- remove them altogether because we want to be able to detect regressions,
+    -- but the right way to do this is not yet clear.
+    where left + right > 0.01;
 
 create table changed_perf_tsv engine File(TSV, 'changed-perf.tsv') as
     select left, right, diff, rd, test, query from queries where changed
@@ -177,20 +181,31 @@ create table slow_on_client_tsv engine File(TSV, 'slow-on-client.tsv') as
     from query_time where p > 1.02 order by p desc;
 
 create table test_time engine Memory as
-    select test, floor(sum(client), 3) client, count(*) queries
-    from query_time group by test;
+    select test, sum(client) total_client_time,
+        max(client) query_max, min(client) query_min, count(*) queries
+    from query_time
+    -- for consistency, filter out everything we filtered out of queries table
+    semi join queries using query
+    group by test;
 
 create table test_times_tsv engine File(TSV, 'test-times.tsv') as
-    select wall_clock.test, real, client, queries,
-        floor(real / queries, 3) real_per_query
-    from test_time join wall_clock using test
-    order by real desc;
+    select wall_clock.test, real,
+        floor(total_client_time, 3),
+        queries,
+        floor(query_max, 3),
+        floor(real / queries, 3) avg_real_per_query,
+        floor(query_min, 3)
+    from test_time right join wall_clock using test
+    order by query_max / query_min desc;
 
 create table all_queries_tsv engine File(TSV, 'all-queries.tsv') as
     select left, right, diff, rd, test, query
     from queries order by rd[3] desc;
 "
-grep Exception:[^:] *-err.log > run-errors.log
+
+# Remember that grep sets error code when nothing is found, hence the bayan
+# operator
+grep Exception:[^:] *-err.log > run-errors.log ||:
 
 $script_dir/report.py > report.html
 }
