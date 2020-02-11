@@ -2265,6 +2265,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         LOG_DEBUG(log, "I'm not leader, I don't want to assign anything");
         return;
     }
+    LOG_DEBUG(log, "Merge selecting started");
 
     const auto storage_settings_ptr = getSettings();
     const bool deduplicate = false; /// TODO: read deduplicate option from table config
@@ -2304,6 +2305,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             if (max_source_parts_size_for_merge > 0 &&
                 merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred))
             {
+                LOG_DEBUG(log, "ASSIGNING MERGE");
                 success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
                     future_merged_part.name, deduplicate, force_ttl);
             }
@@ -2336,6 +2338,10 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                         break;
                     }
                 }
+            }
+            else
+            {
+                LOG_DEBUG(log, "TOO MANY MUTATIONS IN QUEUE");
             }
         }
     }
@@ -3395,6 +3401,7 @@ void StorageReplicatedMergeTree::alter(
 
         bool have_mutation = false;
         std::optional<EphemeralLocksInAllPartitions> lock_holder;
+        size_t partitions_count = 0;
         if (!maybe_mutation_commands.empty())
         {
             String mutations_path = zookeeper_path + "/mutations";
@@ -3406,17 +3413,36 @@ void StorageReplicatedMergeTree::alter(
             Coordination::Stat mutations_stat;
             zookeeper->get(mutations_path, &mutations_stat);
 
-            Coordination::Stat intention_counter_stat;
-            zookeeper->get(zookeeper_path + "/alter_intention_counter", &intention_counter_stat);
+            //Coordination::Stat intention_counter_stat;
+            //zookeeper->get(zookeeper_path + "/alter_intention_counter", &intention_counter_stat);
+            Strings partitions = zookeeper->getChildren(zookeeper_path + "/block_numbers");
+
+            std::vector<std::future<Coordination::GetResponse>> partition_futures;
+            for (const String & partition : partitions)
+                partition_futures.push_back(zookeeper->asyncGet(zookeeper_path + "/block_numbers/" + partition));
+
+            std::unordered_map<String, int> partition_versions;
+            for (size_t i = 0; i < partition_futures.size(); ++i)
+            {
+                auto stat = partition_futures[i].get().stat;
+                auto partition = partitions[i];
+                partition_versions[partition] = stat.version;
+                LOG_DEBUG(log, "Partition version:" << partition << " stat version " << stat.version);
+            }
+
             lock_holder.emplace(
                 zookeeper_path + "/block_numbers", "block-", zookeeper_path + "/temp", *zookeeper);
-
-            ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/alter_intention_counter", intention_counter_stat.version));
 
             for (const auto & lock : lock_holder->getLocks())
             {
                 mutation_entry.block_numbers[lock.partition_id] = lock.number;
-                LOG_DEBUG(log, "ALLOCATED:" << lock.number << " FOR VERSION:" << metadata_version + 1);
+                //ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/alter_intention_counter", intention_counter_stat.version));
+                ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/block_numbers/" + lock.partition_id, partition_versions[lock.partition_id]));
+                partitions_count++;
+                LOG_DEBUG(
+                    log,
+                    "ALLOCATED:" << lock.number << " FOR VERSION:" << metadata_version + 1
+                    << " Partition version:" << partition_versions[lock.partition_id] + 1 << " for partition " << lock.partition_id);
             }
 
             mutation_entry.create_time = time(nullptr);
@@ -3431,7 +3457,7 @@ void StorageReplicatedMergeTree::alter(
         Coordination::Responses results;
         int32_t rc = zookeeper->tryMulti(ops, results);
 
-        LOG_DEBUG(log, "ALTER REQUESTED TO" << entry.alter_version);
+        LOG_DEBUG(log, "ALTER REQUESTED TO:" << entry.alter_version);
 
         //std::cerr << "Results size:" << results.size() << std::endl;
         //std::cerr << "Have mutation:" << have_mutation << std::endl;
@@ -3443,7 +3469,7 @@ void StorageReplicatedMergeTree::alter(
             {
                 //std::cerr << "In have mutation\n";
                 //std::cerr << "INDEX:" << results.size() - 2 << std::endl;
-                String alter_path = dynamic_cast<const Coordination::CreateResponse &>(*results[results.size() - 4]).path_created;
+                String alter_path = dynamic_cast<const Coordination::CreateResponse &>(*results[results.size() - 3 - partitions_count]).path_created;
                 //std::cerr << "Alter path:" << alter_path << std::endl;
                 entry.znode_name = alter_path.substr(alter_path.find_last_of('/') + 1);
 

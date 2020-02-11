@@ -47,7 +47,10 @@ public:
     void addMutationForAlter(int alter_version, const std::map<String, Int64> & block_numbers, std::lock_guard<std::mutex> & /*state_lock*/)
     {
         LOG_DEBUG(log, "Adding mutation with alter version:" << alter_version);
-        queue_state.emplace(alter_version, AlterInQueue(block_numbers, true));
+        if (queue_state.count(alter_version))
+            queue_state[alter_version].block_numbers = block_numbers;
+        else
+            queue_state.emplace(alter_version, AlterInQueue(block_numbers, true));
     }
 
     void addMetadataAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/)
@@ -65,8 +68,19 @@ public:
             return true;
 
         MergeTreePartInfo info = MergeTreePartInfo::fromPartName(part_name, format_version);
-        if (queue_state.begin()->second.block_numbers.count(info.partition_id))
-            return info.getDataVersion() < queue_state.begin()->second.block_numbers.at(info.partition_id);
+        LOG_DEBUG(log, "Checking can fetch:" << part_name);
+
+        for (const auto & [block_number, state] : queue_state)
+        {
+
+            LOG_DEBUG(log, "Looking at block:" << block_number << " with part name:" << part_name);
+            if (state.block_numbers.count(info.partition_id))
+            {
+                LOG_DEBUG(log, "Block number:" << block_number << " has part name " << part_name <<  " version " << state.block_numbers.at(info.partition_id));
+                return info.getDataVersion() < state.block_numbers.at(info.partition_id);
+            }
+        }
+        LOG_DEBUG(log, "Nobody has block number for part " << part_name);
         return true;
 
     }
@@ -117,6 +131,8 @@ public:
         {
             LOG_DEBUG(log, "Key:" << key << " is metadata finished:" << value.metadata_finished);
         }
+        if (alter_version < queue_state.begin()->first)
+            return true;
         return queue_state.at(alter_version).metadata_finished;
     }
     bool canExecuteMetaAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/) const
