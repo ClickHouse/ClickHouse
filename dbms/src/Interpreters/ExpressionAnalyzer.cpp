@@ -29,7 +29,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/AnalyzedJoin.h>
-#include <Interpreters/Join.h>
+#include <Interpreters/JoinSwitcher.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -564,7 +564,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQuer
 
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
         subquery_for_join.setJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
-        subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block);
+        subquery_for_join.join = std::make_shared<JoinSwitcher>(syntax->analyzed_join, subquery_for_join.sample_block);
     }
 
     return subquery_for_join.join;
