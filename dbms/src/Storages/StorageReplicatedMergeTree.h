@@ -438,6 +438,7 @@ private:
         zkutil::ZooKeeperPtr & zookeeper,
         const DataPartsVector & parts,
         const String & merged_name,
+        const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
         bool force_ttl,
         ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);

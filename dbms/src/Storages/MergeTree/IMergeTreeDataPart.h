@@ -113,8 +113,7 @@ public:
 
     Type getType() const { return part_type; }
 
-    static String typeToString(Type type);
-    String getTypeName() const { return typeToString(getType()); }
+    String getTypeName() const { return getType().toString(); }
 
     void setColumns(const NamesAndTypesList & new_columns);
 

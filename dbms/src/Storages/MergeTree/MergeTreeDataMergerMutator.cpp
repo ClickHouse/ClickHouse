@@ -89,19 +89,25 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
 
     UInt32 max_level = 0;
     Int64 max_mutation = 0;
+    size_t sum_rows = 0;
+    size_t sum_bytes_uncompressed = 0;
     for (const auto & part : parts)
     {
         max_level = std::max(max_level, part->info.level);
         max_mutation = std::max(max_mutation, part->info.mutation);
+        sum_rows += part->rows_count;
+        sum_bytes_uncompressed += part->getTotalColumnsSize().data_uncompressed;
     }
 
+    const auto & storage = parts.front()->storage;
+    type = storage.choosePartType(sum_bytes_uncompressed, sum_rows);
     part_info.partition_id = parts.front()->info.partition_id;
     part_info.min_block = parts.front()->info.min_block;
     part_info.max_block = parts.back()->info.max_block;
     part_info.level = max_level + 1;
     part_info.mutation = max_mutation;
 
-    if (parts.front()->storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    if (storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         DayNum min_date = DayNum(std::numeric_limits<UInt16>::max());
         DayNum max_date = DayNum(std::numeric_limits<UInt16>::min());
@@ -576,20 +582,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         all_columns, data.sorting_key_expr, data.skip_indices,
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
-    size_t sum_input_rows_upper_bound = merge_entry->total_rows_count;
-    size_t estimated_bytes_uncompressed = 0;
-    for (const auto & part : parts)
-        estimated_bytes_uncompressed += part->getTotalColumnsSize().data_uncompressed;
-
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
         future_part.name,
+        future_part.type,
         future_part.part_info,
         space_reservation->getDisk(),
-        all_columns,
-        estimated_bytes_uncompressed,
-        sum_input_rows_upper_bound,
         TMP_PREFIX + future_part.name);
 
+    new_data_part->setColumns(all_columns);
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->is_temp = true;
 
@@ -607,6 +607,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         need_remove_expired_values = false;
     }
 
+    size_t sum_input_rows_upper_bound = merge_entry->total_rows_count;
     MergeAlgorithm merge_alg = chooseMergeAlgorithm(parts, sum_input_rows_upper_bound, gathering_columns, deduplicate, need_remove_expired_values);
 
     LOG_DEBUG(log, "Selected MergeAlgorithm: " << ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Horizontal"));
@@ -990,7 +991,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     auto new_data_part = data.createPart(
         future_part.name,
-        source_part->getType(),
+        future_part.type,
         future_part.part_info,
         space_reservation->getDisk(),
         "tmp_mut_" + future_part.name);

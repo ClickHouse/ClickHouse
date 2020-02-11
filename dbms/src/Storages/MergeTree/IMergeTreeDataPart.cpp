@@ -340,7 +340,7 @@ void IMergeTreeDataPart::assertOnDisk() const
 {
     if (!isStoredOnDisk())
         throw Exception("Data part '" + name + "' with type '"
-            + typeToString(getType()) + "' is not stored on disk", ErrorCodes::LOGICAL_ERROR);
+            + getType().toString() + "' is not stored on disk", ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -416,7 +416,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
 void IMergeTreeDataPart::loadIndexGranularity()
 {
-    throw Exception("Method 'loadIndexGranularity' is not implemented for part with type " + typeToString(getType()), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("Method 'loadIndexGranularity' is not implemented for part with type " + getType().toString(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void IMergeTreeDataPart::loadIndex()
@@ -777,23 +777,6 @@ void IMergeTreeDataPart::remove() const
 
         to_dir.remove(true);
     }
-}
-
-String IMergeTreeDataPart::typeToString(Type type)
-{
-    switch (type)
-    {
-        case Type::WIDE:
-            return "Wide";
-        case Type::COMPACT:
-            return "Compact";
-        case Type::IN_MEMORY:
-            return "InMemory";
-        case Type::UNKNOWN:
-            return "Unknown";
-    }
-
-    __builtin_unreachable();
 }
 
 String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix) const
