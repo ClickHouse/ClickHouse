@@ -316,7 +316,7 @@ void registerDiskLocal(DiskFactory & factory)
             keep_free_space_bytes = static_cast<UInt64>(DiskLocal("tmp", tmp_path, 0, false).getTotalSpace() * ratio);
         }
 
-        return std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, true);
+        return std::make_shared<DiskLocal>(name, path, keep_free_space_bytes);
     };
     factory.registerDiskType("local", creator);
 }

@@ -21,7 +21,7 @@ class DiskLocal : public IDisk
 public:
     friend class DiskLocalReservation;
 
-    DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_, bool has_data_directory_)
+    DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_, bool has_data_directory_ = true)
         : name(name_), disk_path(path_), keep_free_space_bytes(keep_free_space_bytes_), has_data_directory(has_data_directory_)
     {
         if (disk_path.back() != '/')
