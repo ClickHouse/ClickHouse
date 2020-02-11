@@ -161,3 +161,4 @@ DROP DATABASE IF EXISTS ordinary_db;
 DROP TABLE IF EXISTS database_for_dict.table_for_dict;
 
 DROP DATABASE IF EXISTS database_for_dict;
+DROP DATABASE IF EXISTS memory_db;
