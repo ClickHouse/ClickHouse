@@ -94,10 +94,11 @@ test_query_templates = [q.text for q in root.findall('query')]
 test_queries = substitute_parameters(test_query_templates, parameter_combinations)
 
 for q in test_queries:
-    # Warmup: run once on both servers. Helps to bring the data into memory,
+    # Prewarm: run once on both servers. Helps to bring the data into memory,
     # precompile the queries, etc.
-    for c in connections:
-        c.execute(q)
+    for conn_index, c in enumerate(connections):
+        res = c.execute(q)
+        print('prewarm\t' + tsv_escape(q) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
 
     # Now, perform measured runs.
     # Track the time spent by the client to process this query, so that we can notice
