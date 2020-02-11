@@ -34,7 +34,7 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
         disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context));
     }
     if (!has_default_disk)
-        disks.emplace(default_disk_name, std::make_shared<DiskLocal>(default_disk_name, context.getPath(), 0));
+        disks.emplace(default_disk_name, std::make_shared<DiskLocal>(default_disk_name, context.getPath(), 0, true));
 }
 
 
