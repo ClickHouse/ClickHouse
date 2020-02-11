@@ -92,7 +92,7 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<UInt64> &>(column).getData();
             data.resize(limit);
-            pcg64 generator(random_seed);
+            pcg64_oneseq generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
                 data[i] = static_cast<UInt64>(generator());
@@ -138,7 +138,7 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<Int64> &>(column).getData();
             data.resize(limit);
-            pcg64 generator(random_seed);
+            pcg64_oneseq generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
                 data[i] = static_cast<Int64>(generator());
@@ -164,7 +164,7 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<Float64> &>(column).getData();
             data.resize(limit);
-            pcg64 generator(random_seed);
+            pcg64_oneseq generator(random_seed);
             double d = 1.0;
             for (UInt64 i = 0; i < limit; ++i)
             {
@@ -306,7 +306,7 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnDecimal<Decimal64> &>(column).getData();
             data.resize(limit);
-            pcg64 generator(random_seed);
+            pcg64_oneseq generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
                 data[i] = static_cast<UInt64>(generator());
@@ -317,7 +317,7 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnDecimal<Decimal128> &>(column).getData();
             data.resize(limit);
-            pcg64 generator(random_seed);
+            pcg64_oneseq generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
                 Int128 x = static_cast<Int128>(generator()) << 64 | static_cast<Int128>(generator());
@@ -329,7 +329,7 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<UInt128> &>(column).getData();
             data.resize(limit);
-            pcg64 generator(random_seed);
+            pcg64_oneseq generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
                 auto x = UInt128(generator(), generator());
@@ -467,3 +467,4 @@ void registerTableFunctionRandom(TableFunctionFactory & factory)
 }
 
 }
+
