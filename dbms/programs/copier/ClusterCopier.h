@@ -71,11 +71,9 @@ private:
 
     void mainImpl();
 
-    void setupLogging();
-
     std::string config_xml_path;
     std::string task_path;
-    std::string log_level = "debug";
+    std::string log_level = "trace";
     bool is_safe_mode = false;
     double copy_fault_probability = 0;
     bool is_help = false;
