@@ -328,6 +328,7 @@ Context Context::createGlobal()
     Context res;
     res.quota = std::make_shared<QuotaContext>();
     res.row_policy = std::make_shared<RowPolicyContext>();
+    res.initial_row_policy = std::make_shared<RowPolicyContext>();
     res.access_rights = std::make_shared<AccessRightsContext>();
     res.shared = std::make_shared<ContextShared>();
     return res;
@@ -650,11 +651,11 @@ void Context::checkAccess(const AccessFlags & access, const std::string_view & d
 void Context::checkAccess(const AccessRightsElement & access) const { return checkAccessImpl(access); }
 void Context::checkAccess(const AccessRightsElements & access) const { return checkAccessImpl(access); }
 
-void Context::switchRowPolicy()
+void Context::setInitialRowPolicy()
 {
     auto initial_user_id = getAccessControlManager().find<User>(client_info.initial_user);
     if (initial_user_id)
-        row_policy = getAccessControlManager().getRowPolicyContext(*initial_user_id);
+        initial_row_policy = getAccessControlManager().getRowPolicyContext(*initial_user_id);
 }
 
 void Context::setUsersConfig(const ConfigurationPtr & config)

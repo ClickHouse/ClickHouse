@@ -1,4 +1,6 @@
 #include <Access/RowPolicyContext.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTExpressionList.h>
 #include <boost/smart_ptr/make_shared.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -34,6 +36,23 @@ ASTPtr RowPolicyContext::getCondition(const String & database, const String & ta
     if (it == loaded->end())
         return {};
     return it->second.mixed_conditions[index];
+}
+
+
+ASTPtr RowPolicyContext::combineConditionsUsingAnd(const ASTPtr & lhs, const ASTPtr & rhs)
+{
+    if (!lhs)
+        return rhs;
+    if (!rhs)
+        return lhs;
+    auto function = std::make_shared<ASTFunction>();
+    auto exp_list = std::make_shared<ASTExpressionList>();
+    function->name = "and";
+    function->arguments = exp_list;
+    function->children.push_back(exp_list);
+    exp_list->children.push_back(lhs);
+    exp_list->children.push_back(rhs);
+    return function;
 }
 
 

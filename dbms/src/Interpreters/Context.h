@@ -170,6 +170,7 @@ private:
     AccessRightsContextPtr access_rights;
     QuotaContextPtr quota;           /// Current quota. By default - empty quota, that have no limits.
     RowPolicyContextPtr row_policy;
+    RowPolicyContextPtr initial_row_policy;
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     std::shared_ptr<const SettingsConstraints> settings_constraints;
@@ -256,9 +257,11 @@ public:
     QuotaContextPtr getQuota() const { return quota; }
     RowPolicyContextPtr getRowPolicy() const { return row_policy; }
 
-    /// TODO: we need much better code for switching policies, quotas, access rights for initial user
-    /// Switches row policy in case we have initial user in client info
-    void switchRowPolicy();
+    /// Sets an extra row policy based on `client_info.initial_user`, if it exists.
+    /// TODO: we need a better solution here. It seems we should pass the initial row policy
+    /// because a shard is allowed to don't have the initial user or it may be another user with the same name.
+    void setInitialRowPolicy();
+    RowPolicyContextPtr getInitialRowPolicy() const { return initial_row_policy; }
 
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
