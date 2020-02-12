@@ -243,20 +243,22 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, const Con
 void DatabaseCatalog::addDependency(const StorageID & from, const StorageID & where)
 {
     std::lock_guard lock{databases_mutex};
-    view_dependencies[from].insert(where);
+    // FIXME when loading metadata storage may not know UUIDs of it's dependencies, because they are not loaded yet,
+    // so UUID of `from` is not used here. (same for remove, get and update)
+    view_dependencies[{from.getDatabaseName(), from.getTableName()}].insert(where);
 
 }
 
 void DatabaseCatalog::removeDependency(const StorageID & from, const StorageID & where)
 {
     std::lock_guard lock{databases_mutex};
-    view_dependencies[from].erase(where);
+    view_dependencies[{from.getDatabaseName(), from.getTableName()}].erase(where);
 }
 
 Dependencies DatabaseCatalog::getDependencies(const StorageID & from) const
 {
     std::lock_guard lock{databases_mutex};
-    auto iter = view_dependencies.find(from);
+    auto iter = view_dependencies.find({from.getDatabaseName(), from.getTableName()});
     if (iter == view_dependencies.end())
         return {};
     return Dependencies(iter->second.begin(), iter->second.end());
@@ -268,9 +270,9 @@ DatabaseCatalog::updateDependency(const StorageID & old_from, const StorageID & 
 {
     std::lock_guard lock{databases_mutex};
     if (!old_from.empty())
-        view_dependencies[old_from].erase(old_where);
+        view_dependencies[{old_from.getDatabaseName(), old_from.getTableName()}].erase(old_where);
     if (!new_from.empty())
-        view_dependencies[new_from].insert(new_where);
+        view_dependencies[{new_from.getDatabaseName(), new_from.getTableName()}].insert(new_where);
 }
 
 std::unique_ptr<DDLGuard> DatabaseCatalog::getDDLGuard(const String & database, const String & table)

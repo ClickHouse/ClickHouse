@@ -960,8 +960,8 @@ bool TCPHandler::receiveData(bool scalar)
     initBlockInput();
 
     /// The name of the temporary table for writing data, default to empty string
-    String name;
-    readStringBinary(name, *in);
+    auto temporary_id = StorageID::createEmpty();
+    readStringBinary(temporary_id.table_name, *in);
 
     /// Read one block from the network and write it down
     Block block = state.block_in->read();
@@ -969,22 +969,24 @@ bool TCPHandler::receiveData(bool scalar)
     if (block)
     {
         if (scalar)
-            query_context->addScalar(name, block);
+            query_context->addScalar(temporary_id.table_name, block);
         else
         {
             /// If there is an insert request, then the data should be written directly to `state.io.out`.
             /// Otherwise, we write the blocks in the temporary `external_table_name` table.
             if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
             {
+                auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
                 StoragePtr storage;
                 /// If such a table does not exist, create it.
-                if (!(storage = query_context->tryGetExternalTable(name)))
+                if (temporary_id.empty())
                 {
                     NamesAndTypesList columns = block.getNamesAndTypesList();
-                    storage = StorageMemory::create(StorageID("_external", name), ColumnsDescription{columns}, ConstraintsDescription{});
+                    storage = StorageMemory::create(temporary_id, ColumnsDescription{columns}, ConstraintsDescription{});
                     storage->startup();
-                    query_context->addExternalTable(name, storage);
-                }
+                    query_context->addExternalTable(temporary_id.table_name, storage);
+                } else
+                    storage = DatabaseCatalog::instance().getTable(resolved, *query_context);
                 /// The data will be written directly to the table.
                 state.io.out = storage->write(ASTPtr(), *query_context);
             }

@@ -32,8 +32,8 @@ private:
     static void visit(const ASTIdentifier & node, ASTPtr &, Data & data)
     {
         if (auto opt_name = IdentifierSemantic::getTableName(node))
-            if (StoragePtr external_storage = data.context.tryGetExternalTable(*opt_name))
-                data.external_tables[*opt_name] = external_storage;
+            if (auto resolved_id = data.context.tryResolveStorageID(StorageID("", *opt_name), Context::ResolveExternal))
+                data.external_tables[*opt_name] = DatabaseCatalog::instance().getTable(resolved_id, data.context);
     }
 };
 

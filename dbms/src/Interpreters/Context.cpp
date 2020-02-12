@@ -718,7 +718,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
 bool Context::isTableExist(const String & database_name, const String & table_name) const
 {
-    auto table_id = resolveStorageID({database_name, table_name}, StorageNamespace::Ordinary);
+    auto table_id = resolveStorageID({database_name, table_name}, StorageNamespace::ResolveOrdinary);
     return DatabaseCatalog::instance().isTableExist(table_id, *this);
 }
 
@@ -771,15 +771,6 @@ Tables Context::getExternalTables() const
     return res;
 }
 
-
-StoragePtr Context::tryGetExternalTable(const String & table_name) const
-{
-    auto it = external_tables_mapping.find(table_name);
-    if (external_tables_mapping.end() == it)
-        return StoragePtr();
-
-    return it->second->getTable();
-}
 
 StoragePtr Context::getTable(const String & database_name, const String & table_name) const
 {
@@ -1965,24 +1956,43 @@ void Context::resetInputCallbacks()
 StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where) const
 {
     auto lock = getLock();
-    return resolveStorageIDUnlocked(std::move(storage_id), where);
+    std::optional<Exception> exc;
+    auto resolved = resolveStorageIDImpl(std::move(storage_id), where, &exc);
+    if (exc)
+        throw *exc;
+    return resolved;
 }
 
-StorageID Context::resolveStorageIDUnlocked(StorageID storage_id, StorageNamespace where) const
+StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace where) const
+{
+    auto lock = getLock();
+    return resolveStorageIDImpl(std::move(storage_id), where, nullptr);
+}
+
+StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const
 {
     if (storage_id.uuid != UUIDHelpers::Nil)
         return storage_id;
 
-    bool look_for_external_table = where & StorageNamespace::External;
-    bool in_current_database = where & StorageNamespace::CurrentDatabase;
-    bool in_specified_database = where & StorageNamespace::Global;
+    if (storage_id.empty())
+    {
+        if (exception)
+            exception->emplace("Both table name and UUID are empty", ErrorCodes::UNKNOWN_TABLE);
+        return storage_id;
+    }
+
+    bool look_for_external_table = where & StorageNamespace::ResolveExternal;
+    bool in_current_database = where & StorageNamespace::ResolveCurrentDatabase;
+    bool in_specified_database = where & StorageNamespace::ResolveGlobal;
 
     if (!storage_id.database_name.empty())
     {
         if (in_specified_database)
             return storage_id;
-        throw Exception("External and temporary tables have no database, but " +
+        if (exception)
+            exception->emplace("External and temporary tables have no database, but " +
                         storage_id.database_name + " is specified", ErrorCodes::UNKNOWN_TABLE);
+        return StorageID::createEmpty();
     }
 
     if (look_for_external_table)
@@ -1995,12 +2005,18 @@ StorageID Context::resolveStorageIDUnlocked(StorageID storage_id, StorageNamespa
     if (in_current_database)
     {
         if (current_database.empty())
-            throw Exception("Default database is not selected", ErrorCodes::UNKNOWN_DATABASE);
+        {
+            if (exception)
+                exception->emplace("Default database is not selected", ErrorCodes::UNKNOWN_DATABASE);
+            return StorageID::createEmpty();
+        }
         storage_id.database_name = current_database;
         return storage_id;
     }
 
-    throw Exception("Cannot resolve database name for table " + storage_id.getNameForLogs(), ErrorCodes::UNKNOWN_TABLE);
+    if (exception)
+        exception->emplace("Cannot resolve database name for table " + storage_id.getNameForLogs(), ErrorCodes::UNKNOWN_TABLE);
+    return StorageID::createEmpty();
 }
 
 

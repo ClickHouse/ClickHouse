@@ -287,22 +287,22 @@ public:
 
     enum StorageNamespace
     {
-         Global = 1u,                           /// Database name must be specified
-         CurrentDatabase = 2u,                  /// Use current database
-         Ordinary = Global | CurrentDatabase,   /// If database name is not specified, use current database
-         External = 4u,                         /// Try get external table
-         All = External | Ordinary              /// If database name is not specified, try get external table,
-                                                /// if external table not found use current database.
+         ResolveGlobal = 1u,                                           /// Database name must be specified
+         ResolveCurrentDatabase = 2u,                                  /// Use current database
+         ResolveOrdinary = ResolveGlobal | ResolveCurrentDatabase,     /// If database name is not specified, use current database
+         ResolveExternal = 4u,                                         /// Try get external table
+         ResolveAll = ResolveExternal | ResolveOrdinary                /// If database name is not specified, try get external table,
+                                                                       ///    if external table not found use current database.
     };
 
     String resolveDatabase(const String & database_name) const;
-    StorageID resolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::All) const;
-    StorageID resolveStorageIDUnlocked(StorageID storage_id, StorageNamespace where = StorageNamespace::All) const;
+    StorageID resolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
+    StorageID tryResolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
+    StorageID resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const;
 
     const Scalars & getScalars() const;
     const Block & getScalar(const String & name) const;
     Tables getExternalTables() const;
-    StoragePtr tryGetExternalTable(const String & table_name) const;
     StoragePtr getTable(const String & database_name, const String & table_name) const;
     StoragePtr getTable(const StorageID & table_id) const;
     StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
