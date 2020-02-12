@@ -30,6 +30,9 @@ public:
     /// The returned filter can be a combination of the filters defined by multiple row policies.
     ASTPtr getCondition(const String & database, const String & table_name, ConditionIndex index) const;
 
+    /// Combines two conditions into one by using the logical AND operator.
+    static ASTPtr combineConditionsUsingAnd(const ASTPtr & lhs, const ASTPtr & rhs);
+
     /// Returns IDs of all the policies used by the current user.
     std::vector<UUID> getCurrentPolicyIDs() const;
 
