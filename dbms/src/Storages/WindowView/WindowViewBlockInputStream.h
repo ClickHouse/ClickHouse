@@ -58,7 +58,7 @@ protected:
         /// If blocks were never assigned get blocks
         if (!in_stream)
         {
-            std::unique_lock lock(storage->mutex);
+            // std::unique_lock lock(storage->mutex);
             in_stream = storage->getNewBlocksInputStreamPtr();
         }
         if (isCancelled() || storage->is_dropped)
@@ -69,7 +69,7 @@ protected:
         res = in_stream->read();
         if (!res)
         {
-            if (!active)
+            if (!(*active))
                 return Block();
 
             if (!end_of_blocks)
@@ -79,7 +79,7 @@ protected:
                 return getHeader();
             }
 
-            std::unique_lock lock(storage->flushTableMutex);
+            std::unique_lock lock(mutex);
             UInt64 timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
             UInt64 w_end = static_cast<UInt64>(storage->getWindowUpperBound(static_cast<UInt32>(timestamp_usec / 1000000))) * 1000000;
             storage->condition.wait_for(lock, std::chrono::microseconds(w_end - timestamp_usec));
@@ -89,7 +89,7 @@ protected:
                 return Block();
             }
             {
-                std::unique_lock lock_(storage->mutex);
+                // std::unique_lock lock_(storage->mutex);
                 in_stream = storage->getNewBlocksInputStreamPtr();
             }
 
@@ -113,6 +113,7 @@ private:
     std::shared_ptr<bool> active;
     const bool has_limit;
     const UInt64 limit;
+    std::mutex mutex;
     Int64 num_updates = -1;
     bool end_of_blocks = false;
     BlockInputStreamPtr in_stream;

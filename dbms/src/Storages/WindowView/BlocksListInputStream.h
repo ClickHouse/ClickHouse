@@ -16,8 +16,8 @@ class BlocksListInputStream : public IBlockInputStream
 {
 public:
     /// Acquires shared ownership of the blocks vector
-    BlocksListInputStream(BlocksListPtrs blocks_ptr_, Block header_, std::mutex &mutex_, UInt32 window_upper_bound_)
-        : blocks(blocks_ptr_), mutex(mutex_), window_upper_bound(window_upper_bound_), header(std::move(header_))
+    BlocksListInputStream(BlocksListPtrs blocks_ptr_, Block header_, UInt32 window_upper_bound_)
+        : blocks(blocks_ptr_), window_upper_bound(window_upper_bound_), header(std::move(header_))
     {
         it_blocks = blocks->begin();
         end_blocks = blocks->end();
@@ -46,7 +46,7 @@ protected:
                 IColumn::Filter filter(column_status->size(), 0);
                 auto & data = static_cast<const ColumnUInt32 &>(*column_status).getData();
                 {
-                    std::unique_lock lock(mutex);
+                    // std::unique_lock lock(mutex);
                     for (size_t i = 0; i < column_status->size(); ++i)
                     {
                         if (data[i] == window_upper_bound)
@@ -121,7 +121,7 @@ private:
     std::list<BlocksListPtr>::iterator end_blocks;
     BlocksList::iterator it;
     BlocksList::iterator end;
-    std::mutex & mutex;
+    // std::mutex & mutex;
     UInt32 window_upper_bound;
     Block header;
 };
