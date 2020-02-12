@@ -34,8 +34,8 @@ private:
 
         bool canUseWithContext(const QuotaContext & context) const;
         String calculateKey(const QuotaContext & context) const;
-        std::shared_ptr<const Intervals> getOrBuildIntervals(const String & key);
-        std::shared_ptr<const Intervals> rebuildIntervals(const String & key);
+        boost::shared_ptr<const Intervals> getOrBuildIntervals(const String & key);
+        boost::shared_ptr<const Intervals> rebuildIntervals(const String & key);
         void rebuildAllIntervals();
 
         QuotaPtr quota;
@@ -43,7 +43,7 @@ private:
         std::unordered_set<String> roles;
         bool all_roles = false;
         std::unordered_set<String> except_roles;
-        std::unordered_map<String /* quota key */, std::shared_ptr<const Intervals>> key_to_intervals;
+        std::unordered_map<String /* quota key */, boost::shared_ptr<const Intervals>> key_to_intervals;
     };
 
     void ensureAllQuotasRead();

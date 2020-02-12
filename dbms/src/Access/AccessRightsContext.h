@@ -89,4 +89,6 @@ private:
     mutable std::mutex mutex;
 };
 
+using AccessRightsContextPtr = std::shared_ptr<const AccessRightsContext>;
+
 }

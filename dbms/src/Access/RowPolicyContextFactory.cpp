@@ -8,6 +8,7 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <ext/range.h>
+#include <boost/smart_ptr/make_shared.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
 
@@ -295,7 +296,7 @@ void RowPolicyContextFactory::mixConditionsForContext(RowPolicyContext & context
         }
     }
 
-    auto map_of_mixed_conditions = std::make_shared<MapOfMixedConditions>();
+    auto map_of_mixed_conditions = boost::make_shared<MapOfMixedConditions>();
     for (auto & [database_and_table_name, mixers] : map_of_mixers)
     {
         auto database_and_table_name_keeper = std::make_unique<DatabaseAndTableName>();
@@ -309,7 +310,7 @@ void RowPolicyContextFactory::mixConditionsForContext(RowPolicyContext & context
             mixed_conditions.mixed_conditions[index] = std::move(mixers.mixers[index]).getResult();
     }
 
-    std::atomic_store(&context.atomic_map_of_mixed_conditions, std::shared_ptr<const MapOfMixedConditions>{map_of_mixed_conditions});
+    context.map_of_mixed_conditions.store(map_of_mixed_conditions);
 }
 
 }
