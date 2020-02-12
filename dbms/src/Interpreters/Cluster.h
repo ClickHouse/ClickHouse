@@ -72,6 +72,7 @@ public:
         Address() = default;
         Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, UInt32 shard_index_ = 0, UInt32 replica_index_ = 0);
         Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port, bool secure_ = false);
+
         /// Returns 'escaped_host_name:port'
         String toString() const;
 
