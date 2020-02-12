@@ -477,7 +477,7 @@ class FunctionBinaryArithmetic : public IFunction
     template <typename F>
     static bool castType(const IDataType * type, F && f)
     {
-        if constexpr(is_bit_operation)
+        if constexpr (is_bit_operation)
             return castTypeToEither<
                 DataTypeUInt8,
                 DataTypeUInt16,
@@ -768,9 +768,9 @@ public:
         {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr(std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeFixedString, RightDataType>)
+            if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeFixedString, RightDataType>)
             {
-                if constexpr(std::is_same_v<LeftDataType, RightDataType>)
+                if constexpr (std::is_same_v<LeftDataType, RightDataType>)
                 {
                    if (left.getN() == right.getN())
                     {
@@ -1040,7 +1040,7 @@ void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, 
         {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr(std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeFixedString, RightDataType>)
+            if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeFixedString, RightDataType>)
             {
                 return executeFixedString(block, arguments, result, left, right);
             }
@@ -1060,7 +1060,7 @@ void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, 
         {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr(std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeFixedString, RightDataType>)
+            if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeFixedString, RightDataType>)
                 return false;
             else
             {
@@ -1078,7 +1078,7 @@ void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, 
         {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr(!std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>)
+            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>)
             {
                 using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
                 using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
