@@ -28,7 +28,7 @@ struct BitXorImpl
 };
 
 struct NameBitXor { static constexpr auto name = "bitXor"; };
-using FunctionBitXor = FunctionBinaryArithmetic<BitXorImpl, NameBitXor>;
+using FunctionBitXor = FunctionBinaryArithmetic<BitXorImpl, NameBitXor, true, true>;
 
 void registerFunctionBitXor(FunctionFactory & factory)
 {
