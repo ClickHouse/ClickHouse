@@ -89,14 +89,20 @@ void AccessControlManager::loadFromConfig(const Poco::Util::AbstractConfiguratio
 }
 
 
-std::shared_ptr<const AccessRightsContext> AccessControlManager::getAccessRightsContext(const UserPtr & user, const ClientInfo & client_info, const Settings & settings, const String & current_database)
+AccessRightsContextPtr AccessControlManager::getAccessRightsContext(const UserPtr & user, const ClientInfo & client_info, const Settings & settings, const String & current_database) const
 {
     return std::make_shared<AccessRightsContext>(user, client_info, settings, current_database);
 }
 
 
-std::shared_ptr<QuotaContext> AccessControlManager::createQuotaContext(
-    const String & user_name, const Poco::Net::IPAddress & address, const String & custom_quota_key)
+RowPolicyContextPtr AccessControlManager::getRowPolicyContext(const String & user_name) const
+{
+    return row_policy_context_factory->createContext(user_name);
+}
+
+
+QuotaContextPtr
+AccessControlManager::getQuotaContext(const String & user_name, const Poco::Net::IPAddress & address, const String & custom_quota_key) const
 {
     return quota_context_factory->createContext(user_name, address, custom_quota_key);
 }
@@ -105,12 +111,6 @@ std::shared_ptr<QuotaContext> AccessControlManager::createQuotaContext(
 std::vector<QuotaUsageInfo> AccessControlManager::getQuotaUsageInfo() const
 {
     return quota_context_factory->getUsageInfo();
-}
-
-
-std::shared_ptr<RowPolicyContext> AccessControlManager::getRowPolicyContext(const String & user_name) const
-{
-    return row_policy_context_factory->createContext(user_name);
 }
 
 }

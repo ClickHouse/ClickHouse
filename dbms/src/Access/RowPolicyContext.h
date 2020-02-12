@@ -3,7 +3,7 @@
 #include <Access/RowPolicy.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <common/StringRef.h>
+#include <boost/smart_ptr/atomic_shared_ptr.hpp>
 #include <memory>
 #include <unordered_map>
 
@@ -42,7 +42,7 @@ private:
     RowPolicyContext(const String & user_name_); /// RowPolicyContext should be created by RowPolicyContextFactory.
 
     using DatabaseAndTableName = std::pair<String, String>;
-    using DatabaseAndTableNameRef = std::pair<StringRef, StringRef>;
+    using DatabaseAndTableNameRef = std::pair<std::string_view, std::string_view>;
     struct Hash
     {
         size_t operator()(const DatabaseAndTableNameRef & database_and_table_name) const;
@@ -58,9 +58,9 @@ private:
     using MapOfMixedConditions = std::unordered_map<DatabaseAndTableNameRef, MixedConditions, Hash>;
 
     const String user_name;
-    std::shared_ptr<const MapOfMixedConditions> atomic_map_of_mixed_conditions; /// Changed atomically, not protected by `mutex`.
+    mutable boost::atomic_shared_ptr<const MapOfMixedConditions> map_of_mixed_conditions;
 };
 
 
-using RowPolicyContextPtr = std::shared_ptr<RowPolicyContext>;
+using RowPolicyContextPtr = std::shared_ptr<const RowPolicyContext>;
 }

@@ -1,4 +1,5 @@
 #include <Access/RowPolicyContext.h>
+#include <boost/smart_ptr/make_shared.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 
@@ -7,12 +8,12 @@ namespace DB
 {
 size_t RowPolicyContext::Hash::operator()(const DatabaseAndTableNameRef & database_and_table_name) const
 {
-    return std::hash<StringRef>{}(database_and_table_name.first) - std::hash<StringRef>{}(database_and_table_name.second);
+    return std::hash<std::string_view>{}(database_and_table_name.first) - std::hash<std::string_view>{}(database_and_table_name.second);
 }
 
 
 RowPolicyContext::RowPolicyContext()
-    : atomic_map_of_mixed_conditions(std::make_shared<MapOfMixedConditions>())
+    : map_of_mixed_conditions(boost::make_shared<MapOfMixedConditions>())
 {
 }
 
@@ -28,9 +29,9 @@ RowPolicyContext::RowPolicyContext(const String & user_name_)
 ASTPtr RowPolicyContext::getCondition(const String & database, const String & table_name, ConditionIndex index) const
 {
     /// We don't lock `mutex` here.
-    auto map_of_mixed_conditions = std::atomic_load(&atomic_map_of_mixed_conditions);
-    auto it = map_of_mixed_conditions->find({database, table_name});
-    if (it == map_of_mixed_conditions->end())
+    auto loaded = map_of_mixed_conditions.load();
+    auto it = loaded->find({database, table_name});
+    if (it == loaded->end())
         return {};
     return it->second.mixed_conditions[index];
 }
@@ -39,9 +40,9 @@ ASTPtr RowPolicyContext::getCondition(const String & database, const String & ta
 std::vector<UUID> RowPolicyContext::getCurrentPolicyIDs() const
 {
     /// We don't lock `mutex` here.
-    auto map_of_mixed_conditions = std::atomic_load(&atomic_map_of_mixed_conditions);
+    auto loaded = map_of_mixed_conditions.load();
     std::vector<UUID> policy_ids;
-    for (const auto & mixed_conditions : *map_of_mixed_conditions | boost::adaptors::map_values)
+    for (const auto & mixed_conditions : *loaded | boost::adaptors::map_values)
         boost::range::copy(mixed_conditions.policy_ids, std::back_inserter(policy_ids));
     return policy_ids;
 }
@@ -50,9 +51,9 @@ std::vector<UUID> RowPolicyContext::getCurrentPolicyIDs() const
 std::vector<UUID> RowPolicyContext::getCurrentPolicyIDs(const String & database, const String & table_name) const
 {
     /// We don't lock `mutex` here.
-    auto map_of_mixed_conditions = std::atomic_load(&atomic_map_of_mixed_conditions);
-    auto it = map_of_mixed_conditions->find({database, table_name});
-    if (it == map_of_mixed_conditions->end())
+    auto loaded = map_of_mixed_conditions.load();
+    auto it = loaded->find({database, table_name});
+    if (it == loaded->end())
         return {};
     return it->second.policy_ids;
 }

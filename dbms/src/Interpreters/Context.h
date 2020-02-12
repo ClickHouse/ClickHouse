@@ -46,8 +46,11 @@ struct ContextShared;
 class Context;
 struct User;
 class AccessRightsContext;
-class QuotaContext;
+using AccessRightsContextPtr = std::shared_ptr<const AccessRightsContext>;
 class RowPolicyContext;
+using RowPolicyContextPtr = std::shared_ptr<const RowPolicyContext>;
+class QuotaContext;
+using QuotaContextPtr = std::shared_ptr<const QuotaContext>;
 class AccessFlags;
 struct AccessRightsElement;
 class AccessRightsElements;
@@ -164,9 +167,9 @@ private:
     std::shared_ptr<const User> user;
     UUID user_id;
     SubscriptionForUserChange subscription_for_user_change;
-    std::shared_ptr<const AccessRightsContext> access_rights;
-    std::shared_ptr<QuotaContext> quota;           /// Current quota. By default - empty quota, that have no limits.
-    std::shared_ptr<RowPolicyContext> row_policy;
+    AccessRightsContextPtr access_rights;
+    QuotaContextPtr quota;           /// Current quota. By default - empty quota, that have no limits.
+    RowPolicyContextPtr row_policy;
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     std::shared_ptr<const SettingsConstraints> settings_constraints;
@@ -237,7 +240,7 @@ public:
 
     AccessControlManager & getAccessControlManager();
     const AccessControlManager & getAccessControlManager() const;
-    std::shared_ptr<const AccessRightsContext> getAccessRights() const { return std::atomic_load(&access_rights); }
+    AccessRightsContextPtr getAccessRights() const { return std::atomic_load(&access_rights); }
 
     /// Checks access rights.
     /// Empty database means the current database.
@@ -250,8 +253,8 @@ public:
     void checkAccess(const AccessRightsElement & access) const;
     void checkAccess(const AccessRightsElements & access) const;
 
-    std::shared_ptr<QuotaContext> getQuota() const { return quota; }
-    std::shared_ptr<RowPolicyContext> getRowPolicy() const { return row_policy; }
+    QuotaContextPtr getQuota() const { return quota; }
+    RowPolicyContextPtr getRowPolicy() const { return row_policy; }
 
     /// TODO: we need much better code for switching policies, quotas, access rights for initial user
     /// Switches row policy in case we have initial user in client info
