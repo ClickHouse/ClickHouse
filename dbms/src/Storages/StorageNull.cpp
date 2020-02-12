@@ -3,6 +3,7 @@
 #include <Storages/AlterCommands.h>
 
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/Context.h>
 #include <Databases/IDatabase.h>
 
 #include <IO/WriteHelpers.h>

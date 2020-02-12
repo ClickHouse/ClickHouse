@@ -690,9 +690,9 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             if (stream.isFinished())
             {
                 result.addRows(stream.finalize(result.columns));
-                stream = Stream(ranges.back().begin, ranges.back().end, merge_tree_reader);
-                result.addRange(ranges.back());
-                ranges.pop_back();
+                stream = Stream(ranges.front().begin, ranges.front().end, merge_tree_reader);
+                result.addRange(ranges.front());
+                ranges.pop_front();
             }
 
             auto rows_to_read = std::min(space_left, stream.numPendingRowsInCurrentGranule());

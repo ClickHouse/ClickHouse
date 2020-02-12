@@ -1,12 +1,15 @@
 #include <Common/ThreadStatus.h>
 
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Interpreters/QueryThreadLog.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadProfileEvents.h>
 #include <Common/Exception.h>
 #include <Common/QueryProfiler.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/QueryThreadLog.h>
-#include <Interpreters/ProcessList.h>
+#include <Common/ThreadProfileEvents.h>
+#include <Common/TraceCollector.h>
+
+#include <ext/singleton.h>
 
 #if defined(OS_LINUX)
 #   include <Common/hasLinuxCapability.h>
@@ -153,7 +156,7 @@ void ThreadStatus::finalizePerformanceCounters()
 void ThreadStatus::initQueryProfiler()
 {
     /// query profilers are useless without trace collector
-    if (!global_context || !global_context->hasTraceCollector())
+    if (!global_context || !ext::Singleton<TraceCollector>::isInitialized())
         return;
 
     const auto & settings = query_context->getSettingsRef();

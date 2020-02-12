@@ -52,6 +52,9 @@ using Processors = std::vector<ProcessorPtr>;
 class Pipe;
 using Pipes = std::vector<Pipe>;
 
+class StoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
+
 struct ColumnSize
 {
     size_t marks = 0;
