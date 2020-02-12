@@ -1,4 +1,5 @@
 #include <Access/IAccessStorage.h>
+#include <Access/User.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
@@ -15,6 +16,7 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
     extern const int ACCESS_ENTITY_FOUND_DUPLICATES;
     extern const int ACCESS_ENTITY_STORAGE_READONLY;
+    extern const int UNKNOWN_USER;
 }
 
 
@@ -365,8 +367,13 @@ void IAccessStorage::throwNotFound(const UUID & id) const
 
 void IAccessStorage::throwNotFound(std::type_index type, const String & name) const
 {
-    throw Exception(
-        getTypeName(type) + " " + backQuote(name) + " not found in " + getStorageName(), ErrorCodes::ACCESS_ENTITY_NOT_FOUND);
+    int error_code;
+    if (type == typeid(User))
+        error_code = ErrorCodes::UNKNOWN_USER;
+    else
+        error_code = ErrorCodes::ACCESS_ENTITY_NOT_FOUND;
+
+    throw Exception(getTypeName(type) + " " + backQuote(name) + " not found in " + getStorageName(), error_code);
 }
 
 
