@@ -192,11 +192,6 @@ void StorageKafka::shutdown()
     task->deactivate();
 }
 
-void StorageKafka::updateDependencies()
-{
-    task->activateAndSchedule();
-}
-
 
 void StorageKafka::pushReadBuffer(ConsumerBufferPtr buffer)
 {
@@ -295,7 +290,7 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 bool StorageKafka::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
-    auto dependencies = global_context.getDependencies(table_id);
+    auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
     if (dependencies.size() == 0)
         return true;
 
@@ -325,19 +320,21 @@ void StorageKafka::threadFunc()
     {
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
-        auto dependencies = global_context.getDependencies(table_id);
-
-        // Keep streaming as long as there are attached views and streaming is not cancelled
-        while (!stream_cancelled && num_created_consumers > 0 && dependencies.size() > 0)
+        size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
+        if (dependencies_count)
         {
-            if (!checkDependencies(table_id))
-                break;
+            // Keep streaming as long as there are attached views and streaming is not cancelled
+            while (!stream_cancelled && num_created_consumers > 0)
+            {
+                if (!checkDependencies(table_id))
+                    break;
 
-            LOG_DEBUG(log, "Started streaming to " << dependencies.size() << " attached views");
+                LOG_DEBUG(log, "Started streaming to " << dependencies_count << " attached views");
 
-            // Reschedule if not limited
-            if (!streamToViews())
-                break;
+                // Reschedule if not limited
+                if (!streamToViews())
+                    break;
+            }
         }
     }
     catch (...)

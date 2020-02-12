@@ -47,12 +47,13 @@ void DatabaseCatalog::shutdown()
 
 
     std::lock_guard lock(databases_mutex);
-    databases.clear();
     for (auto & elem : uuid_map)
     {
         std::lock_guard map_lock(elem.mutex);
         elem.map.clear();
     }
+    databases.clear();
+    view_dependencies.clear();
 }
 
 DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
@@ -236,6 +237,40 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, const Con
 {
     String resolved_database = local_context.resolveDatabase(database_name);
     return getDatabase(resolved_database);
+}
+
+
+void DatabaseCatalog::addDependency(const StorageID & from, const StorageID & where)
+{
+    std::lock_guard lock{databases_mutex};
+    view_dependencies[from].insert(where);
+
+}
+
+void DatabaseCatalog::removeDependency(const StorageID & from, const StorageID & where)
+{
+    std::lock_guard lock{databases_mutex};
+    view_dependencies[from].erase(where);
+}
+
+Dependencies DatabaseCatalog::getDependencies(const StorageID & from) const
+{
+    std::lock_guard lock{databases_mutex};
+    auto iter = view_dependencies.find(from);
+    if (iter == view_dependencies.end())
+        return {};
+    return Dependencies(iter->second.begin(), iter->second.end());
+}
+
+void
+DatabaseCatalog::updateDependency(const StorageID & old_from, const StorageID & old_where, const StorageID & new_from,
+                                  const StorageID & new_where)
+{
+    std::lock_guard lock{databases_mutex};
+    if (!old_from.empty())
+        view_dependencies[old_from].erase(old_where);
+    if (!new_from.empty())
+        view_dependencies[new_from].insert(new_where);
 }
 
 std::unique_ptr<DDLGuard> DatabaseCatalog::getDDLGuard(const String & database, const String & table)

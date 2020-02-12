@@ -47,8 +47,6 @@ public:
         const ASTPtr & query,
         const Context & context) override;
 
-    void updateDependencies() override;
-
     void pushReadBuffer(ConsumerBufferPtr buf);
     ConsumerBufferPtr popReadBuffer();
     ConsumerBufferPtr popReadBuffer(std::chrono::milliseconds timeout);

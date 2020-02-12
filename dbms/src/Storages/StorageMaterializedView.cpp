@@ -150,7 +150,7 @@ StorageMaterializedView::StorageMaterializedView(
     }
 
     if (!select_table_id.empty())
-        global_context.addDependency(select_table_id, getStorageID());
+        DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
 }
 
 NameAndTypePair StorageMaterializedView::getColumn(const String & column_name) const
@@ -228,7 +228,7 @@ void StorageMaterializedView::drop(TableStructureWriteLockHolder &)
 {
     auto table_id = getStorageID();
     if (!select_table_id.empty())
-        global_context.removeDependency(select_table_id, table_id);
+        DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
 
     if (has_inner_table && tryGetTargetTable())
         executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_table_id);
@@ -277,20 +277,11 @@ void StorageMaterializedView::alter(
         checkAllowedQueries(select_query);
 
         auto new_select_table_id = extractDependentTableFromSelectQuery(select_query, context);
+        DatabaseCatalog::instance().updateDependency(select_table_id, table_id, new_select_table_id, table_id);
 
-        {
-            auto context_lock = global_context.getLock();
-
-            if (!select_table_id.empty())
-                global_context.removeDependency(select_table_id, getStorageID());
-
-            if (!new_select_table_id.empty())
-                global_context.addDependency(new_select_table_id, getStorageID());
-
-            select_table_id = new_select_table_id;
-            select = metadata.select;
-            inner_query = new_inner_query;
-        }
+        select_table_id = new_select_table_id;
+        select = metadata.select;
+        inner_query = new_inner_query;
     }
     /// end modify query
 
@@ -360,19 +351,16 @@ void StorageMaterializedView::rename(
         target_table_id.table_name = new_target_table_name;
     }
 
-    auto lock = global_context.getLock();
-    if (!select_table_id.empty())
-        global_context.removeDependencyUnsafe(select_table_id, getStorageID());
+    auto old_table_id = getStorageID();
     IStorage::renameInMemory(new_database_name, new_table_name);
-    if (!select_table_id.empty())
-        global_context.addDependencyUnsafe(select_table_id, getStorageID());
+    DatabaseCatalog::instance().updateDependency(select_table_id, old_table_id, select_table_id, getStorageID());
 }
 
 void StorageMaterializedView::shutdown()
 {
     /// Make sure the dependency is removed after DETACH TABLE
     if (!select_table_id.empty())
-        global_context.removeDependency(select_table_id, getStorageID());
+        DatabaseCatalog::instance().removeDependency(select_table_id, getStorageID());
 }
 
 StoragePtr StorageMaterializedView::getTargetTable() const
