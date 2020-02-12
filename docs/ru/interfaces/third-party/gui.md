@@ -130,5 +130,6 @@
 - Инструменты для встраивания сервиса в приложения.
 - API.
 
+[Как сконфигурировать ClickHouse в Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 
 [Original article](https://clickhouse.tech/docs/ru/interfaces/third-party/gui/) <!--hide-->
