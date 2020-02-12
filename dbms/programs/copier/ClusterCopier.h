@@ -162,6 +162,15 @@ public:
         {
             task_shard->partition_tasks.emplace(partition_name, ShardPartition(*task_shard, partition_name, 10));
             task_shard->checked_partitions.emplace(partition_name, true);
+
+            auto shard_partition_it = task_shard->partition_tasks.find(partition_name);
+            PartitionPieces & shard_partition_pieces = shard_partition_it->second.pieces;
+
+            for (int piece_number = 0; piece_number < 10; ++piece_number)
+            {
+                bool res = checkPresentPartitionPiecesOnCurrentShard(timeouts, *task_shard, partition_name, piece_number);
+                shard_partition_pieces.emplace_back(shard_partition_it->second, piece_number, res);
+            }
         }
 
         if (!missing_partitions.empty())
@@ -1378,7 +1387,9 @@ public:
         std::string query = "SELECT 1 FROM " + getQuotedTable(task_shard.table_read_shard)
                             + " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = (" + partition_quoted_name + " AS partition_key))";
 
-        query += " AND (cityHash64(*) = " + std::to_string(current_piece_number) + " )";
+        const size_t number_of_splits = task_table.number_of_splits;
+
+        query += " AND (cityHash64(*) % " + std::to_string(number_of_splits) + " = " + std::to_string(current_piece_number) + " )";
 
         if (!task_table.where_condition_str.empty())
             query += " AND (" + task_table.where_condition_str + ")";
@@ -1393,7 +1404,14 @@ public:
 
         Context local_context = context;
         local_context.setSettings(task_cluster->settings_pull);
-        return InterpreterFactory::get(query_ast, local_context)->execute().in->read().rows() != 0;
+        auto result = InterpreterFactory::get(query_ast, local_context)->execute().in->read().rows();
+        if (result != 0)
+            LOG_DEBUG(log, "Partition " << partition_quoted_name << " piece number "
+            << std::to_string(current_piece_number) << " is PRESENT on shard " << task_shard.getDescription());
+        else
+            LOG_DEBUG(log, "Partition " << partition_quoted_name << " piece number "
+            << std::to_string(current_piece_number) << " is ABSENT on shard " << task_shard.getDescription());
+        return result != 0;
     }
 
     /** Executes simple query (without output streams, for example DDL queries) on each shard of the cluster
