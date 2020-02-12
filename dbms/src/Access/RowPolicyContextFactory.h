@@ -4,13 +4,11 @@
 #include <ext/scope_guard.h>
 #include <mutex>
 #include <unordered_map>
-#include <unordered_set>
 
 
 namespace DB
 {
 class AccessControlManager;
-
 
 /// Stores read and parsed row policies.
 class RowPolicyContextFactory
