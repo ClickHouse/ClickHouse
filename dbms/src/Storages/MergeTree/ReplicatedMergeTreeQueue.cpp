@@ -288,7 +288,7 @@ void ReplicatedMergeTreeQueue::removePartFromMutations(const String & part_name)
     {
         MutationStatus & status = *it->second;
 
-        LOG_DEBUG(log, "Removing part name:" << part_name << " from mutation:" << status.entry->znode_name);
+        LOG_DEBUG(log, "Removing part name:" << part_name << " from mutation:" << status.entry->znode_name << "    block number :" << status.entry->block_numbers.begin()->second);
         status.parts_to_do.removePartAndCoveredParts(part_name);
         if (status.parts_to_do.size() == 0)
             some_mutations_are_probably_done = true;
@@ -995,19 +995,17 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     MergeTreeData & data,
     std::lock_guard<std::mutex> & state_lock) const
 {
-    if (entry.type == LogEntry::GET_PART)
-    {
-        if (!entry.actual_new_part_name.empty() && !alter_sequence.canExecuteGetEntry(entry.actual_new_part_name, format_version, state_lock))
-            return false;
-
-        if (!entry.new_part_name.empty() && !alter_sequence.canExecuteGetEntry(entry.new_part_name, format_version, state_lock))
-            return false;
-    }
-
     if (entry.type == LogEntry::MERGE_PARTS
         || entry.type == LogEntry::GET_PART
         || entry.type == LogEntry::MUTATE_PART)
     {
+        if (!entry.actual_new_part_name.empty()
+            && !alter_sequence.canExecuteGetEntry(entry.actual_new_part_name, format_version, state_lock))
+            return false;
+
+        if (!entry.new_part_name.empty() && !alter_sequence.canExecuteGetEntry(entry.new_part_name, format_version, state_lock))
+            return false;
+
         for (const String & new_part_name : entry.getBlockingPartNames())
         {
             if (!isNotCoveredByFuturePartsImpl(new_part_name, out_postpone_reason, state_lock))
