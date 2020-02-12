@@ -129,7 +129,7 @@ function run_tests
     rm right/performance/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
 
     # Run the tests
-    for test in right/performance/${CHPC_TEST_GLOB:-*.xml}
+    for test in right/performance/${CHPC_TEST_GLOB:-*}.xml
     do
         test_name=$(basename $test ".xml")
         echo test $test_name
@@ -150,22 +150,24 @@ rm test-times.tsv test-dump.tsv unstable.tsv changed-perf.tsv unstable-tests.tsv
 right/clickhouse local --query "
 create table queries engine Memory as select
         replaceAll(_file, '-report.tsv', '') test,
-        if(abs(diff) < 0.05 and rd[3] > 0.05,      1, 0) unstable,
-        if(abs(diff) > 0.05 and abs(diff) > rd[3], 1, 0) changed,
+        left + right < 0.01 as short,
+        -- FIXME Comparison mode doesn't make sense for queries that complete
+        -- immediately, so for now we pretend they don't exist. We don't want to
+        -- remove them altogether because we want to be able to detect regressions,
+        -- but the right way to do this is not yet clear.
+        not short and abs(diff) < 0.05 and rd[3] > 0.05 as unstable,
+        not short and abs(diff) > 0.05 and abs(diff) > rd[3] as changed,
         *
-    from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text')
-    -- FIXME Comparison mode doesn't make sense for queries that complete
-    -- immediately, so for now we pretend they don't exist. We don't want to
-    -- remove them altogether because we want to be able to detect regressions,
-    -- but the right way to do this is not yet clear.
-    where left + right > 0.01;
+    from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
 
 create table changed_perf_tsv engine File(TSV, 'changed-perf.tsv') as
     select left, right, diff, rd, test, query from queries where changed
     order by rd[3] desc;
+
 create table unstable_queries_tsv engine File(TSV, 'unstable-queries.tsv') as
     select left, right, diff, rd, test, query from queries where unstable
     order by rd[3] desc;
+
 create table unstable_tests_tsv engine File(TSV, 'bad-tests.tsv') as
     select test, sum(unstable) u, sum(changed) c, u + c s from queries
     group by test having s > 0 order by s desc;
@@ -182,20 +184,23 @@ create table slow_on_client_tsv engine File(TSV, 'slow-on-client.tsv') as
 
 create table test_time engine Memory as
     select test, sum(client) total_client_time,
-        max(client) query_max, min(client) query_min, count(*) queries
-    from query_time
-    -- for consistency, filter out everything we filtered out of queries table
-    semi join queries using query
+        maxIf(client, not short) query_max,
+        minIf(client, not short) query_min,
+        count(*) queries,
+        sum(short) short_queries
+    from query_time, queries
+    where query_time.query = queries.query
     group by test;
 
 create table test_times_tsv engine File(TSV, 'test-times.tsv') as
     select wall_clock.test, real,
         floor(total_client_time, 3),
         queries,
+        short_queries,
         floor(query_max, 3),
         floor(real / queries, 3) avg_real_per_query,
         floor(query_min, 3)
-    from test_time right join wall_clock using test
+    from test_time join wall_clock using test
     order by query_max / query_min desc;
 
 create table all_queries_tsv engine File(TSV, 'all-queries.tsv') as

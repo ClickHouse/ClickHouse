@@ -57,6 +57,7 @@
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
+#include <ext/singleton.h>
 
 namespace ProfileEvents
 {
@@ -168,7 +169,6 @@ struct ContextShared
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
-    std::unique_ptr<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
     class SessionKeyHash
@@ -299,13 +299,7 @@ struct ContextShared
         schedule_pool.reset();
         ddl_worker.reset();
 
-        /// Stop trace collector if any
-        trace_collector.reset();
-    }
-
-    bool hasTraceCollector()
-    {
-        return trace_collector != nullptr;
+        ext::Singleton<TraceCollector>::reset();
     }
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
@@ -313,7 +307,7 @@ struct ContextShared
         if (trace_log == nullptr)
             return;
 
-        trace_collector = std::make_unique<TraceCollector>(trace_log);
+        ext::Singleton<TraceCollector>()->setTraceLog(trace_log);
     }
 };
 
@@ -1691,11 +1685,6 @@ void Context::initializeSystemLogs()
 {
     auto lock = getLock();
     shared->system_logs.emplace(*global_context, getConfigRef());
-}
-
-bool Context::hasTraceCollector()
-{
-    return shared->hasTraceCollector();
 }
 
 void Context::initializeTraceCollector()

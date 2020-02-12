@@ -81,7 +81,8 @@ def nextRowAnchor():
 
 def tr(x):
     a = nextRowAnchor()
-    return '<tr onclick="location.href=\'#{a}\'" id={a}>{x}</tr>'.format(a=a, x=str(x))
+    #return '<tr onclick="location.href=\'#{a}\'" id={a}>{x}</tr>'.format(a=a, x=str(x))
+    return '<tr id={a}>{x}</tr>'.format(a=a, x=str(x))
 
 def td(x):
     return '<td>' + str(x) + '</td>'
@@ -140,16 +141,17 @@ params['test_part'] = (
     table_template.format(
         anchor = nextTableAnchor(),
         caption = 'Tests with most unstable queries',
-        header = table_header(['Test', 'Unstable', 'Changed perf', 'Total']),
+        header = table_header(['Test', 'Unstable', 'Changed perf', 'Total not OK']),
         rows = tsv_rows('bad-tests.tsv')) +
     table_template.format(
         anchor = nextTableAnchor(),
         caption = 'Tests times',
         header = table_header(['Test', 'Wall clock time, s', 'Total client time, s',
-            'Number of queries',
-            'Max client time<br>(sum for all runs), s',
+            'Total queries',
+            'Ignored short queries',
+            'Longest query<br>(sum for all runs), s',
             'Avg wall clock time<br>(sum for all runs), s',
-            'Min client time<br>(sum for all runs), s']),
+            'Shortest query<br>(sum for all runs), s']),
         rows = tsv_rows('test-times.tsv'))
 )
 print(doc_template.format_map(params))
