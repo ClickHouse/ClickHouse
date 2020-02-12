@@ -608,7 +608,7 @@ TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConfigurati
 
     name_in_config = table_key;
 
-    number_of_splits = config.getUInt64("number_of_splits", 10);
+    number_of_splits = config.getUInt64(table_prefix + "number_of_splits", 10);
 
     cluster_pull_name = config.getString(table_prefix + "cluster_pull");
     cluster_push_name = config.getString(table_prefix + "cluster_push");
