@@ -12,21 +12,21 @@ namespace DB
 class WindowViewProxyStorage : public IStorage
 {
 public:
-    WindowViewProxyStorage(const StorageID & table_id_, StoragePtr storage_, BlockInputStreams streams_, QueryProcessingStage::Enum to_stage_)
+    WindowViewProxyStorage(const StorageID & table_id_, StoragePtr parent_storage_, BlockInputStreams streams_, QueryProcessingStage::Enum to_stage_)
     : IStorage(table_id_)
-    , storage(std::move(storage_))
+    , parent_storage(std::move(parent_storage_))
     , streams(std::move(streams_))
     , to_stage(to_stage_) {}
 
 public:
-    std::string getName() const override { return "WindowViewProxyStorage(" + storage->getName() + ")"; }
+    std::string getName() const override { return "WindowViewProxyStorage(" + parent_storage->getName() + ")"; }
 
-    bool isRemote() const override { return storage->isRemote(); }
-    bool supportsSampling() const override { return storage->supportsSampling(); }
-    bool supportsFinal() const override { return storage->supportsFinal(); }
-    bool supportsPrewhere() const override { return storage->supportsPrewhere(); }
-    bool supportsReplication() const override { return storage->supportsReplication(); }
-    bool supportsDeduplication() const override { return storage->supportsDeduplication(); }
+    bool isRemote() const override { return parent_storage->isRemote(); }
+    bool supportsSampling() const override { return parent_storage->supportsSampling(); }
+    bool supportsFinal() const override { return parent_storage->supportsFinal(); }
+    bool supportsPrewhere() const override { return parent_storage->supportsPrewhere(); }
+    bool supportsReplication() const override { return parent_storage->supportsReplication(); }
+    bool supportsDeduplication() const override { return parent_storage->supportsDeduplication(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context & /*context*/) const override { return to_stage; }
 
@@ -41,30 +41,29 @@ public:
         return streams;
     }
 
-    bool supportsIndexForIn() const override { return storage->supportsIndexForIn(); }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override { return storage->mayBenefitFromIndexForIn(left_in_operand, query_context); }
-    ASTPtr getPartitionKeyAST() const override { return storage->getPartitionKeyAST(); }
-    ASTPtr getSortingKeyAST() const override { return storage->getSortingKeyAST(); }
-    ASTPtr getPrimaryKeyAST() const override { return storage->getPrimaryKeyAST(); }
-    ASTPtr getSamplingKeyAST() const override { return storage->getSamplingKeyAST(); }
-    Names getColumnsRequiredForPartitionKey() const override { return storage->getColumnsRequiredForPartitionKey(); }
-    Names getColumnsRequiredForSortingKey() const override { return storage->getColumnsRequiredForSortingKey(); }
-    Names getColumnsRequiredForPrimaryKey() const override { return storage->getColumnsRequiredForPrimaryKey(); }
-    Names getColumnsRequiredForSampling() const override { return storage->getColumnsRequiredForSampling(); }
-    Names getColumnsRequiredForFinal() const override { return storage->getColumnsRequiredForFinal(); }
+    bool supportsIndexForIn() const override { return parent_storage->supportsIndexForIn(); }
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override { return parent_storage->mayBenefitFromIndexForIn(left_in_operand, query_context); }
+    ASTPtr getPartitionKeyAST() const override { return parent_storage->getPartitionKeyAST(); }
+    ASTPtr getSortingKeyAST() const override { return parent_storage->getSortingKeyAST(); }
+    ASTPtr getPrimaryKeyAST() const override { return parent_storage->getPrimaryKeyAST(); }
+    ASTPtr getSamplingKeyAST() const override { return parent_storage->getSamplingKeyAST(); }
+    Names getColumnsRequiredForPartitionKey() const override { return parent_storage->getColumnsRequiredForPartitionKey(); }
+    Names getColumnsRequiredForSortingKey() const override { return parent_storage->getColumnsRequiredForSortingKey(); }
+    Names getColumnsRequiredForPrimaryKey() const override { return parent_storage->getColumnsRequiredForPrimaryKey(); }
+    Names getColumnsRequiredForSampling() const override { return parent_storage->getColumnsRequiredForSampling(); }
+    Names getColumnsRequiredForFinal() const override { return parent_storage->getColumnsRequiredForFinal(); }
 
-    const ColumnsDescription & getColumns() const override { return storage->getColumns(); }
+    const ColumnsDescription & getColumns() const override { return parent_storage->getColumns(); }
 
-    void setColumns(ColumnsDescription columns_) override { return storage->setColumns(columns_); }
+    void setColumns(ColumnsDescription columns_) override { return parent_storage->setColumns(columns_); }
 
-    NameAndTypePair getColumn(const String & column_name) const override { return storage->getColumn(column_name); }
+    NameAndTypePair getColumn(const String & column_name) const override { return parent_storage->getColumn(column_name); }
 
-    bool hasColumn(const String & column_name) const override { return storage->hasColumn(column_name); }
+    bool hasColumn(const String & column_name) const override { return parent_storage->hasColumn(column_name); }
 
 private:
-    StoragePtr storage;
+    StoragePtr parent_storage;
     BlockInputStreams streams;
     QueryProcessingStage::Enum to_stage;
-    NameAndTypePair column_end;
 };
 }

@@ -70,10 +70,6 @@ StoragePtr StorageFactory::get(
     }
     else if (query.is_window_view)
     {
-
-        if (query.storage)
-            throw Exception("Specifying ENGINE is not allowed for a WindowView", ErrorCodes::INCORRECT_QUERY);
-
         name = "WindowView";
     }
     else
@@ -126,8 +122,6 @@ StoragePtr StorageFactory::get(
                     "Direct creation of tables with ENGINE WindowView is not supported, use CREATE WINDOW VIEW statement",
                     ErrorCodes::INCORRECT_QUERY);
             }
-        }
-    }
 
             auto it = storages.find(name);
             if (it == storages.end())

@@ -12,12 +12,12 @@ namespace DB
 using BlocksListPtr = std::shared_ptr<BlocksList>;
 using BlocksListPtrs = std::shared_ptr<std::list<BlocksListPtr>>;
 
-class WindowViewBlocksBlockInputStream : public IBlockInputStream
+class BlocksListInputStream : public IBlockInputStream
 {
 public:
     /// Acquires shared ownership of the blocks vector
-    WindowViewBlocksBlockInputStream(BlocksListPtrs blocks_ptr_, Block header_, std::mutex &mutex_)
-        : blocks(blocks_ptr_), mutex(mutex_), header(std::move(header_))
+    BlocksListInputStream(BlocksListPtrs blocks_ptr_, Block header_, std::mutex &mutex_, UInt32 window_upper_bound_)
+        : blocks(blocks_ptr_), mutex(mutex_), window_upper_bound(window_upper_bound_), header(std::move(header_))
     {
         it_blocks = blocks->begin();
         end_blocks = blocks->end();
@@ -28,7 +28,7 @@ public:
         }
     }
 
-    String getName() const override { return "MetadataBlocks"; }
+    String getName() const override { return "BlocksListInputStream"; }
 
     Block getHeader() const override { return header; }
 
@@ -42,28 +42,19 @@ protected:
                 Block &block = *it;
                 size_t columns = block.columns();
 
-                //generate filter
-                auto & column_status = block.getByName("____fire_status").column;
-                auto column_status_mutable = column_status->assumeMutable();
+                auto & column_status = block.getByName("____w_end").column;
                 IColumn::Filter filter(column_status->size(), 0);
-                auto & data = static_cast<ColumnUInt8 &>(*column_status_mutable).getData();
+                auto & data = static_cast<const ColumnUInt32 &>(*column_status).getData();
                 {
                     std::unique_lock lock(mutex);
                     for (size_t i = 0; i < column_status->size(); ++i)
                     {
-                        if (data[i] == WINDOW_VIEW_FIRE_STATUS::READY)
-                        {
+                        if (data[i] == window_upper_bound)
                             filter[i] = 1;
-                            data[i] = WINDOW_VIEW_FIRE_STATUS::RETIRED;
-                        }
                     }
                 }
 
                 //filter block
-                /** Let's find out how many rows will be in result.
-                 * To do this, we filter out the first non-constant column
-                 *  or calculate number of set bytes in the filter.
-                 */
                 size_t first_non_constant_column = 0;
                 for (size_t i = 0; i < columns; ++i)
                 {
@@ -131,6 +122,7 @@ private:
     BlocksList::iterator it;
     BlocksList::iterator end;
     std::mutex & mutex;
+    UInt32 window_upper_bound;
     Block header;
 };
 }
