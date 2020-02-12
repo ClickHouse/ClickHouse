@@ -190,10 +190,10 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
         const auto & shards_info = cluster->getShardsInfo();
         const auto & shards_addresses = cluster->getShardsAddresses();
 
-        /// check format shard{shard_index}_number{number_index}
+        /// check new format shard{shard_index}_number{number_index}
         if (address.shard_index != 0)
         {
-            return shards_info[address.shard_index].per_replica_pools[address.replica_index];
+            return shards_info[address.shard_index - 1].per_replica_pools[address.replica_index - 1];
         }
 
         /// existing connections pool have a higher priority
