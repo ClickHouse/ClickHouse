@@ -1,0 +1,17 @@
+add_library (daemon
+    BaseDaemon.cpp
+    BaseDaemon.h
+    GraphiteWriter.cpp
+    GraphiteWriter.h
+)
+
+target_link_libraries (daemon
+    PUBLIC
+        loggers
+    PRIVATE
+        clickhouse_common_io
+        clickhouse_common_config
+        common
+        ${Poco_Net_LIBRARY}
+        ${Poco_Util_LIBRARY}
+        ${EXECINFO_LIBRARIES})

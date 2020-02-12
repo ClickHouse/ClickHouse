@@ -1,6 +1,6 @@
 set(USE_INTERNAL_LIBCXX_LIBRARY_DEFAULT ${NOT_UNBUNDLED})
 
-if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libcxx/CMakeLists.txt")
+if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/src/contrib/libcxx/CMakeLists.txt")
     message(WARNING "submodule contrib/libcxx is missing. to fix try run: \n git submodule update --init --recursive")
     set(USE_INTERNAL_LIBCXX_LIBRARY_DEFAULT 0)
 endif()
@@ -22,8 +22,8 @@ if (USE_LIBCXX)
     else ()
         set (LIBCXX_LIBRARY cxx)
         set (LIBCXXABI_LIBRARY cxxabi)
-        add_subdirectory(contrib/libcxxabi-cmake)
-        add_subdirectory(contrib/libcxx-cmake)
+        add_subdirectory(src/contrib/libcxxabi-cmake)
+        add_subdirectory(src/contrib/libcxx-cmake)
 
         # Exception handling library is embedded into libcxxabi.
     endif ()

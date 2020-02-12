@@ -1,4 +1,4 @@
-SET(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/ryu)
+SET(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/ryu)
 
 add_library(ryu
 ${LIBRARY_DIR}/ryu/d2fixed.c

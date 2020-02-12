@@ -1,4 +1,4 @@
-set(SIMDJSON_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/simdjson/include")
+set(SIMDJSON_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/src/contrib/simdjson/include")
 set(SIMDJSON_SRC_DIR "${SIMDJSON_INCLUDE_DIR}/../src")
 set(SIMDJSON_SRC
     ${SIMDJSON_SRC_DIR}/jsonioutil.cpp

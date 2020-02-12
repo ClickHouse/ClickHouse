@@ -1,4 +1,4 @@
-SET(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/cctz)
+SET(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/cctz)
 
 add_library(cctz
     ${LIBRARY_DIR}/src/civil_time_detail.cc

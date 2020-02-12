@@ -1,4 +1,4 @@
-SET(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/lz4/lib)
+SET(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/lz4/lib)
 
 add_library (lz4
     ${LIBRARY_DIR}/lz4.c

@@ -1,4 +1,4 @@
-set(LIBCXXABI_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libcxxabi)
+set(LIBCXXABI_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/libcxxabi)
 
 set(SRCS
 ${LIBCXXABI_SOURCE_DIR}/src/stdlib_stdexcept.cpp

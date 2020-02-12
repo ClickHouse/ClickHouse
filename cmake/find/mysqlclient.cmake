@@ -7,7 +7,7 @@ endif ()
 if(ENABLE_MYSQL)
     option(USE_INTERNAL_MYSQL_LIBRARY "Set to FALSE to use system mysqlclient library instead of bundled" ${NOT_UNBUNDLED})
 
-    if(USE_INTERNAL_MYSQL_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/README")
+    if(USE_INTERNAL_MYSQL_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/src/contrib/mariadb-connector-c/README")
         message(WARNING "submodule contrib/mariadb-connector-c is missing. to fix try run: \n git submodule update --init --recursive")
         set(USE_INTERNAL_MYSQL_LIBRARY 0)
     endif()

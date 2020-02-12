@@ -154,7 +154,7 @@ if(USE_INTERNAL_SNAPPY_LIBRARY)
 
     add_subdirectory(snappy)
 
-    set (SNAPPY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/snappy")
+    set (SNAPPY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/src/contrib/snappy")
     if(SANITIZE STREQUAL "undefined")
         target_compile_options(${SNAPPY_LIBRARY} PRIVATE -fno-sanitize=undefined)
     endif()
@@ -195,7 +195,7 @@ if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
 
     # Because Arrow uses CMAKE_SOURCE_DIR as a project path
     # Hopefully will be fixed in https://github.com/apache/arrow/pull/2676
-    set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/cmake_modules")
+    set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/src/contrib/arrow/cpp/cmake_modules")
     add_subdirectory (arrow/cpp)
 
     if(_save_build_type)
@@ -241,7 +241,7 @@ endif ()
 
 if(USE_INTERNAL_GTEST_LIBRARY)
     # Google Test from sources
-    add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
+    add_subdirectory(${ClickHouse_SOURCE_DIR}/src/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
     # avoid problems with <regexp.h>
     target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
 elseif(GTEST_SRC_DIR)

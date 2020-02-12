@@ -5,7 +5,7 @@ if (NOT APPLE)
 endif ()
 
 if (ENABLE_EMBEDDED_COMPILER)
-    if (USE_INTERNAL_LLVM_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/CMakeLists.txt")
+    if (USE_INTERNAL_LLVM_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/src/contrib/llvm/llvm/CMakeLists.txt")
         message (WARNING "submodule contrib/llvm is missing. to fix try run: \n git submodule update --init --recursive")
         set (USE_INTERNAL_LLVM_LIBRARY 0)
     endif ()
@@ -60,10 +60,10 @@ if (ENABLE_EMBEDDED_COMPILER)
             set (USE_EMBEDDED_COMPILER 1)
             set (LLVM_VERSION "9.0.0bundled")
             set (LLVM_INCLUDE_DIRS
-                ${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/include
-                ${ClickHouse_BINARY_DIR}/contrib/llvm/llvm/include
+                ${ClickHouse_SOURCE_DIR}/src/contrib/llvm/llvm/include
+                ${ClickHouse_BINARY_DIR}/src/contrib/llvm/llvm/include
             )
-            set (LLVM_LIBRARY_DIRS ${ClickHouse_BINARY_DIR}/contrib/llvm/llvm)
+            set (LLVM_LIBRARY_DIRS ${ClickHouse_BINARY_DIR}/src/contrib/llvm/llvm)
         endif()
     endif()
 

@@ -4,7 +4,7 @@ if (ENABLE_REPLXX)
     option (USE_INTERNAL_REPLXX "Use internal replxx library" ${NOT_UNBUNDLED})
 
     if (USE_INTERNAL_REPLXX)
-        set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/replxx")
+        set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/src/contrib/replxx")
 
         set(SRCS
             ${LIBRARY_DIR}/src/conversion.cxx

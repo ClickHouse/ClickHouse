@@ -1,4 +1,4 @@
-set (CAPNPROTO_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/capnproto/c++/src)
+set (CAPNPROTO_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/capnproto/c++/src)
 
 set (CMAKE_CXX_STANDARD 17)
 

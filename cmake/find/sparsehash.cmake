@@ -7,7 +7,7 @@ endif ()
 if (SPARSEHASH_INCLUDE_DIR)
 else ()
     set (USE_INTERNAL_SPARSEHASH_LIBRARY 1)
-    set (SPARSEHASH_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/sparsehash-c11")
+    set (SPARSEHASH_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/src/contrib/sparsehash-c11")
 endif ()
 
 message (STATUS "Using sparsehash: ${SPARSEHASH_INCLUDE_DIR}")

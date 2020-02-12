@@ -12,7 +12,7 @@
 
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 
-set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/boost)
+set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/boost)
 
 if(NOT MSVC)
     add_definitions(-Wno-unused-variable -Wno-deprecated-declarations)

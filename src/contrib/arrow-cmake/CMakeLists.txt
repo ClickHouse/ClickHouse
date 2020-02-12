@@ -4,7 +4,7 @@ set (CMAKE_CXX_STANDARD 17)
 
 # === thrift
 
-set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp)
+set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/thrift/lib/cpp)
 # contrib/thrift/lib/cpp/CMakeLists.txt
 set(thriftcpp_SOURCES
         ${LIBRARY_DIR}/src/thrift/TApplicationException.cpp
@@ -47,12 +47,12 @@ set(thriftcpp_threads_SOURCES
         )
 add_library(${THRIFT_LIBRARY} ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
 set_target_properties(${THRIFT_LIBRARY} PROPERTIES CXX_STANDARD 14) # REMOVE after https://github.com/apache/thrift/pull/1641
-target_include_directories(${THRIFT_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src PRIVATE ${Boost_INCLUDE_DIRS})
+target_include_directories(${THRIFT_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/src/contrib/thrift/lib/cpp/src PRIVATE ${Boost_INCLUDE_DIRS})
 
 
 # === orc
 
-set(ORC_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/orc/c++)
+set(ORC_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/orc/c++)
 set(ORC_INCLUDE_DIR ${ORC_SOURCE_DIR}/include)
 set(ORC_SOURCE_SRC_DIR ${ORC_SOURCE_DIR}/src)
 set(ORC_SOURCE_WRAP_DIR ${ORC_SOURCE_DIR}/wrap)
@@ -62,7 +62,7 @@ set(ORC_BUILD_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/include)
 
 set(GOOGLE_PROTOBUF_DIR ${Protobuf_INCLUDE_DIR}/)
 set(ORC_ADDITION_SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR})
-set(ARROW_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src)
+set(ARROW_SRC_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/arrow/cpp/src)
 
 set(PROTOBUF_EXECUTABLE ${Protobuf_PROTOC_EXECUTABLE})
 set(PROTO_DIR ${ORC_SOURCE_DIR}/../proto)
@@ -80,8 +80,8 @@ add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
 ##############################################################
 # fbs - Step 1: build flatbuffers lib and flatc compiler
 ##############################################################
-set(FLATBUFFERS_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/flatbuffers)
-set(FLATBUFFERS_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/flatbuffers)
+set(FLATBUFFERS_SRC_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/flatbuffers)
+set(FLATBUFFERS_BINARY_DIR ${ClickHouse_BINARY_DIR}/src/contrib/flatbuffers)
 set(FLATBUFFERS_INCLUDE_DIR ${FLATBUFFERS_SRC_DIR}/include)
 set(FLATBUFFERS_COMPILER "${FLATBUFFERS_BINARY_DIR}/flatc")
 
@@ -146,14 +146,14 @@ add_custom_target(metadata_fbs DEPENDS ${FBS_OUTPUT_FILES})
 add_dependencies(metadata_fbs flatc)
 
 # arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features.
-# Apple Clang compiler failed to compile this code without specifying c++11 standard. 
+# Apple Clang compiler failed to compile this code without specifying c++11 standard.
 # As result these compiler features detected as absent. In result it failed to compile orc itself.
 # In orc makefile there is code that sets flags, but arrow-cmake ignores these flags.
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
     set(CXX11_FLAGS "-std=c++0x")
 endif ()
 
-include(${ClickHouse_SOURCE_DIR}/contrib/orc/cmake_modules/CheckSourceCompiles.cmake)
+include(${ClickHouse_SOURCE_DIR}/src/contrib/orc/cmake_modules/CheckSourceCompiles.cmake)
 include(orc_check.cmake)
 configure_file("${ORC_INCLUDE_DIR}/orc/orc-config.hh.in" "${ORC_BUILD_INCLUDE_DIR}/orc/orc-config.hh")
 configure_file("${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in" "${ORC_BUILD_INCLUDE_DIR}/Adaptor.hh")
@@ -194,7 +194,7 @@ set(ORC_SRCS
 
 # === arrow
 
-set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow)
+set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/arrow/cpp/src/arrow)
 
 configure_file("${LIBRARY_DIR}/util/config.h.cmake" "${CMAKE_CURRENT_SOURCE_DIR}/cpp/src/arrow/util/config.h")
 
@@ -335,7 +335,7 @@ if (USE_INTERNAL_PROTOBUF_LIBRARY)
     add_dependencies(${ARROW_LIBRARY} protoc)
 endif ()
 
-target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
+target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/src/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
 target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Protobuf_LIBRARY})
 if (ARROW_WITH_LZ4)
     target_link_libraries(${ARROW_LIBRARY} PRIVATE ${LZ4_LIBRARY})
@@ -363,7 +363,7 @@ target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_GENERATED_INC
 
 # === parquet
 
-set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/parquet)
+set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/arrow/cpp/src/parquet)
 # arrow/cpp/src/parquet/CMakeLists.txt
 set(PARQUET_SRCS
         ${LIBRARY_DIR}/arrow/reader.cc
@@ -393,8 +393,8 @@ list(APPEND PARQUET_SRCS
         ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src/parquet/parquet_types.cpp
         )
 add_library(${PARQUET_LIBRARY} ${PARQUET_SRCS})
-target_include_directories(${PARQUET_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
-include(${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cmake) # makes config.h
+target_include_directories(${PARQUET_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/src/contrib/arrow/cpp/src ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
+include(${ClickHouse_SOURCE_DIR}/src/contrib/thrift/build/cmake/ConfigureChecks.cmake) # makes config.h
 target_link_libraries(${PARQUET_LIBRARY} PUBLIC ${ARROW_LIBRARY} PRIVATE ${THRIFT_LIBRARY} ${Boost_REGEX_LIBRARY})
 target_include_directories(${PARQUET_LIBRARY} PRIVATE ${Boost_INCLUDE_DIRS})
 
@@ -405,7 +405,7 @@ endif ()
 
 # === tools
 
-set(TOOLS_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/tools/parquet)
+set(TOOLS_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/arrow/cpp/tools/parquet)
 set(PARQUET_TOOLS parquet_dump_schema parquet_reader parquet_scan)
 foreach (TOOL ${PARQUET_TOOLS})
     add_executable(${TOOL} ${TOOLS_DIR}/${TOOL}.cc)

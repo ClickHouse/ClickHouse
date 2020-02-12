@@ -4,7 +4,7 @@ if(ENABLE_PROTOBUF)
 
 option(USE_INTERNAL_PROTOBUF_LIBRARY "Set to FALSE to use system protobuf instead of bundled" ${NOT_UNBUNDLED})
 
-if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/protobuf/cmake/CMakeLists.txt")
+if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/src/contrib/protobuf/cmake/CMakeLists.txt")
    if(USE_INTERNAL_PROTOBUF_LIBRARY)
        message(WARNING "submodule contrib/protobuf is missing. to fix try run: \n git submodule update --init --recursive")
        set(USE_INTERNAL_PROTOBUF_LIBRARY 0)
@@ -19,7 +19,7 @@ endif()
 if (Protobuf_LIBRARY AND Protobuf_INCLUDE_DIR)
     set(USE_PROTOBUF 1)
 elseif(NOT MISSING_INTERNAL_PROTOBUF_LIBRARY)
-    set(Protobuf_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/protobuf/src)
+    set(Protobuf_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/protobuf/src)
 
     set(USE_PROTOBUF 1)
     set(USE_INTERNAL_PROTOBUF_LIBRARY 1)
@@ -27,7 +27,7 @@ elseif(NOT MISSING_INTERNAL_PROTOBUF_LIBRARY)
     set(Protobuf_PROTOC_LIBRARY libprotoc)
     set(Protobuf_LITE_LIBRARY libprotobuf-lite)
 
-    set(Protobuf_PROTOC_EXECUTABLE ${ClickHouse_BINARY_DIR}/contrib/protobuf/cmake/protoc)
+    set(Protobuf_PROTOC_EXECUTABLE ${ClickHouse_BINARY_DIR}/src/contrib/protobuf/cmake/protoc)
 
     if(NOT DEFINED PROTOBUF_GENERATE_CPP_APPEND_PATH)
         set(PROTOBUF_GENERATE_CPP_APPEND_PATH TRUE)

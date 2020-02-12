@@ -1,4 +1,4 @@
-SET(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/double-conversion)
+SET(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/double-conversion)
 
 add_library(double-conversion
 ${LIBRARY_DIR}/double-conversion/bignum.cc

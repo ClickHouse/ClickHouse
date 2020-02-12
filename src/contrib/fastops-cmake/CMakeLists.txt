@@ -1,4 +1,4 @@
-set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/fastops)
+set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/fastops)
 
 set(SRCS "")
 

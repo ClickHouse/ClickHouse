@@ -1,5 +1,5 @@
-set(ICU_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/icu/icu4c/source)
-set(ICUDATA_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/icudata/)
+set(ICU_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/icu/icu4c/source)
+set(ICUDATA_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/icudata/)
 
 set (CMAKE_CXX_STANDARD 17)
 

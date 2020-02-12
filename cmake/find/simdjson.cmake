@@ -1,4 +1,4 @@
-if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/simdjson/include/simdjson/jsonparser.h")
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/src/contrib/simdjson/include/simdjson/jsonparser.h")
     message (WARNING "submodule contrib/simdjson is missing. to fix try run: \n git submodule update --init --recursive")
     return()
 endif ()

@@ -8,7 +8,7 @@ if (NOT OS_FREEBSD AND NOT OS_DARWIN) # Freebsd: ../contrib/arrow/cpp/src/arrow/
     option(USE_INTERNAL_PARQUET_LIBRARY "Set to FALSE to use system parquet library instead of bundled" ${NOT_UNBUNDLED})
 endif()
 
-if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/CMakeLists.txt")
+if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/src/contrib/arrow/cpp/CMakeLists.txt")
     if(USE_INTERNAL_PARQUET_LIBRARY)
         message(WARNING "submodule contrib/arrow (required for Parquet) is missing. to fix try run: \n git submodule update --init --recursive")
     endif()
@@ -49,8 +49,8 @@ elseif(NOT MISSING_INTERNAL_PARQUET_LIBRARY AND NOT OS_FREEBSD)
     set(USE_INTERNAL_PARQUET_LIBRARY 1)
 
     if(USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
-        set(ARROW_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
-        set(PARQUET_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src" ${ClickHouse_BINARY_DIR}/contrib/arrow/cpp/src)
+        set(ARROW_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/src/contrib/arrow/cpp/src")
+        set(PARQUET_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/src/contrib/arrow/cpp/src" ${ClickHouse_BINARY_DIR}/src/contrib/arrow/cpp/src)
     endif()
 
     if(${USE_STATIC_LIBRARIES})

@@ -27,7 +27,7 @@ if (TARGET ${Boost_PROGRAM_OPTIONS_LIBRARY})
 endif ()
 
 if (USE_INTERNAL_POCO_LIBRARY)
-    list(APPEND dirs "./contrib/poco/Foundation/include")
+    list(APPEND dirs "./src/contrib/poco/Foundation/include")
 endif ()
 
 list(REMOVE_DUPLICATES dirs)

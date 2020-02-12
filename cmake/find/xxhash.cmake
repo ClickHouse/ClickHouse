@@ -7,7 +7,7 @@ endif ()
 
 if (USE_INTERNAL_XXHASH_LIBRARY)
     set (XXHASH_LIBRARY lz4)
-    set (XXHASH_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/lz4/lib)
+    set (XXHASH_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/lz4/lib)
 else ()
     find_library (XXHASH_LIBRARY xxhash)
     find_path (XXHASH_INCLUDE_DIR NAMES xxhash.h PATHS ${XXHASH_INCLUDE_PATHS})

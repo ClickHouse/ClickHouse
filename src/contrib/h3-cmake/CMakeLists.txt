@@ -1,5 +1,5 @@
-set(H3_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/h3/src/h3lib)
-set(H3_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/h3/src/h3lib)
+set(H3_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/h3/src/h3lib)
+set(H3_BINARY_DIR ${ClickHouse_BINARY_DIR}/src/contrib/h3/src/h3lib)
 
 set(SRCS
 ${H3_SOURCE_DIR}/lib/algos.c

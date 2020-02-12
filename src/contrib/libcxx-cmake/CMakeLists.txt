@@ -1,6 +1,6 @@
 include(CheckCXXCompilerFlag)
 
-set(LIBCXX_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libcxx)
+set(LIBCXX_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/libcxx)
 
 set(SRCS
 ${LIBCXX_SOURCE_DIR}/src/algorithm.cpp

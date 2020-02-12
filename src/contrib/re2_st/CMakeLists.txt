@@ -3,7 +3,7 @@
 # It uses RWLock to process the same regular expression object from different threads.
 # In order to avoid redundant locks in some cases, we use not thread-safe version of the library (re2_st).
 
-set (RE2_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/re2/)
+set (RE2_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/re2/)
 
 get_target_property (RE2_SOURCES_ re2 SOURCES)
 foreach (src ${RE2_SOURCES_})

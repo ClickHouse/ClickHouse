@@ -1,5 +1,5 @@
-set(OPENSSL_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/openssl)
-set(OPENSSL_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/openssl)
+set(OPENSSL_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/openssl)
+set(OPENSSL_BINARY_DIR ${ClickHouse_BINARY_DIR}/src/contrib/openssl)
 
 set(OPENSSLDIR "/etc/ssl" CACHE PATH "Set the default openssl directory")
 set(OPENSSL_ENGINESDIR "/usr/lib/engines-3" CACHE PATH "Set the default openssl directory for engines")

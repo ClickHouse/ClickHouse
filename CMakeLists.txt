@@ -45,7 +45,7 @@ else()
 endif()
 
 # Check that submodules are present only if source was downloaded with git
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/boost")
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/src/contrib/boost/boost")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
 endif ()
 
@@ -364,9 +364,9 @@ if (ENABLE_TESTS)
 endif ()
 
 # Need to process before "contrib" dir:
-include (libs/libcommon/cmake/find_jemalloc.cmake)
-include (libs/libcommon/cmake/find_cctz.cmake)
-include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
+include (cmake/find/jemalloc.cmake)
+include (cmake/find/cctz.cmake)
+include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
@@ -385,21 +385,8 @@ if (TARGET global-group)
     install (EXPORT global DESTINATION cmake)
 endif ()
 
-add_subdirectory (contrib EXCLUDE_FROM_ALL)
-
-macro (add_executable target)
-    # invoke built-in add_executable
-    # explicitly acquire and interpose malloc symbols by clickhouse_malloc
-    _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
-    get_target_property (type ${target} TYPE)
-    if (${type} STREQUAL EXECUTABLE)
-        # operator::new/delete for executables (MemoryTracker stuff)
-        target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
-    endif()
-endmacro()
-
-add_subdirectory (libs)
+add_subdirectory (src)
+add_subdirectory (tests)
 add_subdirectory (utils)
-add_subdirectory (dbms)
 
 include (cmake/print_include_directories.cmake)

@@ -1,4 +1,4 @@
-SET(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/base64)
+SET(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/src/contrib/base64)
 
 add_library(base64_scalar OBJECT ${LIBRARY_DIR}/turbob64c.c ${LIBRARY_DIR}/turbob64d.c)
 add_library(base64_ssse3 OBJECT ${LIBRARY_DIR}/turbob64sse.c) # This file also contains code for ARM NEON
