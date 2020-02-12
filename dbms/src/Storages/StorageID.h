@@ -53,6 +53,11 @@ struct StorageID
                + (hasUUID() ? " (UUID " + toString(uuid) + ")" : "");
     }
 
+    explicit operator bool () const
+    {
+        return !empty();
+    }
+
     bool empty() const
     {
         return table_name.empty() && !hasUUID();

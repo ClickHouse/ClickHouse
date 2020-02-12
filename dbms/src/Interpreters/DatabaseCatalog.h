@@ -96,7 +96,7 @@ public:
     void addUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
     void removeUUIDMapping(const UUID & uuid);
 
-    StoragePtr getTable(const StorageID & table_id, const Context & local_context, std::optional<Exception> * exception) const;
+    StoragePtr getTable(const StorageID & table_id, const Context & local_context, std::optional<Exception> * exception = nullptr) const;
 
 
     void addDependency(const StorageID & from, const StorageID & where);
