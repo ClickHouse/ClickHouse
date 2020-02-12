@@ -29,7 +29,7 @@ struct BitAndImpl
 };
 
 struct NameBitAnd { static constexpr auto name = "bitAnd"; };
-using FunctionBitAnd = FunctionBinaryArithmetic<BitAndImpl, NameBitAnd>;
+using FunctionBitAnd = FunctionBinaryArithmetic<BitAndImpl, NameBitAnd, true, true>;
 
 void registerFunctionBitAnd(FunctionFactory & factory)
 {
