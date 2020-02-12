@@ -38,7 +38,7 @@ $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 Displays a list of tables.
 
 ```sql
-SHOW [TEMPORARY] TABLES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE '<pattern>' | WHERE expr] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
 If the `FROM` clause is not specified, the query returns the list of tables from the current database.
