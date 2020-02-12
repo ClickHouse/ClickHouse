@@ -413,9 +413,6 @@ public:
     /// We do not use mutex because it is not very important that the size could change during the operation.
     virtual void checkPartitionCanBeDropped(const ASTPtr & /*partition*/) {}
 
-    /** Notify engine about updated dependencies for this storage. */
-    virtual void updateDependencies() {}
-
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 

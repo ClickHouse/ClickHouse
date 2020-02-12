@@ -1,9 +1,12 @@
 #pragma once
 #include <Storages/IStorage_fwd.h>
+#include <Storages/StorageID.h>
 #include <Core/UUID.h>
+#include <Poco/Logger.h>
 #include <boost/noncopyable.hpp>
 #include <memory>
 #include <map>
+#include <set>
 #include <unordered_map>
 #include <mutex>
 #include <array>
@@ -14,12 +17,15 @@ namespace DB
 
 class Context;
 class IDatabase;
-struct StorageID;
 class Exception;
+
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
+/// Table -> set of table-views that make SELECT from it.
+using ViewDependencies = std::map<StorageID, std::set<StorageID>>;
+using Dependencies = std::vector<StorageID>;
 
 /// Allows executing DDL query only in one thread.
 /// Puts an element into the map, locks tables's mutex, counts how much threads run parallel query on the table,
@@ -92,8 +98,16 @@ public:
 
     StoragePtr getTable(const StorageID & table_id, const Context & local_context, std::optional<Exception> * exception) const;
 
+
+    void addDependency(const StorageID & from, const StorageID & where);
+    void removeDependency(const StorageID & from, const StorageID & where);
+    Dependencies getDependencies(const StorageID & from) const;
+
+    /// For Materialized and Live View
+    void updateDependency(const StorageID & old_from, const StorageID & old_where,const StorageID & new_from,  const StorageID & new_where);
+
 private:
-    DatabaseCatalog() = default;
+    DatabaseCatalog() : log(&Poco::Logger::get("DatabaseCatalog")) {}
     void assertDatabaseExistsUnlocked(const String & database_name) const;
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const;
 
@@ -114,10 +128,14 @@ private:
 private:
     //[[maybe_unused]] Context & global_context;
     mutable std::recursive_mutex databases_mutex;
+
+    ViewDependencies view_dependencies;                     /// Current dependencies
+
     //const String default_database;
     Databases databases;
     UUIDToStorageMap uuid_map;
 
+    Poco::Logger * log;
 
     /// Do not allow simultaneous execution of DDL requests on the same table.
     /// database -> object -> (mutex, counter), counter: how many threads are running a query on the table at the same time

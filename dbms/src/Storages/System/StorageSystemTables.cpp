@@ -275,7 +275,7 @@ protected:
                     Array dependencies_database_name_array;
                     if (columns_mask[src_index] || columns_mask[src_index + 1])
                     {
-                        const auto dependencies = context.getDependencies(StorageID(database_name, table_name));
+                        const auto dependencies = DatabaseCatalog::instance().getDependencies(StorageID(database_name, table_name));
 
                         dependencies_table_name_array.reserve(dependencies.size());
                         dependencies_database_name_array.reserve(dependencies.size());

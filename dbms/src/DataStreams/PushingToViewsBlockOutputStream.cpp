@@ -32,7 +32,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     bool disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
 
     auto table_id = storage->getStorageID();
-    Dependencies dependencies = context.getDependencies(table_id);
+    Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
 
     /// We need special context for materialized views insertions
     if (!dependencies.empty())

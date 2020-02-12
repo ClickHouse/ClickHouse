@@ -193,7 +193,6 @@ struct ContextShared
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     ProcessList process_list;                               /// Executing queries at the moment.
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
-    ViewDependencies view_dependencies;                     /// Current dependencies
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     std::optional<BackgroundProcessingPool> background_pool; /// The thread pool for the background work performed by the tables.
@@ -715,49 +714,6 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
     calculateUserSettings();
     calculateAccessRights();
-}
-
-void Context::addDependencyUnsafe(const StorageID & from, const StorageID & where)
-{
-    shared->view_dependencies[from].insert(where);
-
-    // Notify table of dependencies change
-    auto table = tryGetTable(from);
-    if (table != nullptr)
-        table->updateDependencies();
-}
-
-void Context::addDependency(const StorageID & from, const StorageID & where)
-{
-    auto lock = getLock();
-    addDependencyUnsafe(from, where);
-}
-
-void Context::removeDependencyUnsafe(const StorageID & from, const StorageID & where)
-{
-    shared->view_dependencies[from].erase(where);
-
-    // Notify table of dependencies change
-    auto table = tryGetTable(from);
-    if (table != nullptr)
-        table->updateDependencies();
-}
-
-void Context::removeDependency(const StorageID & from, const StorageID & where)
-{
-    auto lock = getLock();
-    removeDependencyUnsafe(from, where);
-}
-
-Dependencies Context::getDependencies(const StorageID & from) const
-{
-    auto lock = getLock();
-    StorageID resolved = resolveStorageIDUnlocked(from);
-    auto iter = shared->view_dependencies.find(resolved);
-    if (iter == shared->view_dependencies.end())
-        return {};
-
-    return Dependencies(iter->second.begin(), iter->second.end());
 }
 
 bool Context::isTableExist(const String & database_name, const String & table_name) const

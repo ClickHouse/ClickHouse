@@ -260,7 +260,7 @@ StorageLiveView::StorageLiveView(
     auto inner_query_tmp = inner_query->clone();
     select_table_id = extractDependentTable(inner_query_tmp, global_context, table_id_.table_name, inner_subquery);
 
-    global_context.addDependency(select_table_id, table_id_);
+    DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
 
     is_temporary = query.temporary;
     temporary_live_view_timeout = local_context.getSettingsRef().temporary_live_view_timeout.totalSeconds();
@@ -372,7 +372,7 @@ bool StorageLiveView::getNewBlocks()
 void StorageLiveView::checkTableCanBeDropped() const
 {
     auto table_id = getStorageID();
-    Dependencies dependencies = global_context.getDependencies(table_id);
+    Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
     if (!dependencies.empty())
     {
         StorageID dependent_table_id = dependencies.front();
@@ -399,7 +399,7 @@ void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, co
                     return;
                 if (storage->hasUsers())
                     return;
-                if (!storage->global_context.getDependencies(table_id).empty())
+                if (!DatabaseCatalog::instance().getDependencies(table_id).empty())
                     continue;
                 drop_table = true;
             }
@@ -471,7 +471,7 @@ void StorageLiveView::startup()
 
 void StorageLiveView::shutdown()
 {
-    global_context.removeDependency(select_table_id, getStorageID());
+    DatabaseCatalog::instance().removeDependency(select_table_id, getStorageID());
     bool expected = false;
     if (!shutdown_called.compare_exchange_strong(expected, true))
         return;
@@ -503,7 +503,7 @@ StorageLiveView::~StorageLiveView()
 void StorageLiveView::drop(TableStructureWriteLockHolder &)
 {
     auto table_id = getStorageID();
-    global_context.removeDependency(select_table_id, table_id);
+    DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
 
     std::lock_guard lock(mutex);
     is_dropped = true;
