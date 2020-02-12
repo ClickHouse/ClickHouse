@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Join.h>
 #include <Interpreters/MergeJoin.h>
+#include <Interpreters/ExpressionActions.h>
 #include <DataStreams/LazyBlockInputStream.h>
 
 namespace DB
