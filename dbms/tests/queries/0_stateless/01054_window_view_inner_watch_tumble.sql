@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS test.wv;
 DROP TABLE IF EXISTS test.mt;
 
 CREATE TABLE test.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
-CREATE WINDOW VIEW test.wv AS SELECT count(a) FROM test.mt GROUP BY HOP(timestamp, INTERVAL '1' SECOND, INTERVAL '2' SECOND) AS wid;
+CREATE WINDOW VIEW test.wv ENGINE=MergeTree ORDER BY tuple() AS SELECT count(a) FROM test.mt GROUP BY TUMBLE(timestamp, INTERVAL '1' SECOND) AS wid;
 
 INSERT INTO test.mt VALUES (1, now());
 WATCH test.wv LIMIT 1;

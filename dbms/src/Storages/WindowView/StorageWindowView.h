@@ -34,11 +34,6 @@ public:
 
     bool hasActiveUsers() { return active_ptr.use_count() > 1; }
 
-    void startNoUsersThread(const UInt64 & timeout);
-    std::mutex no_users_thread_wakeup_mutex;
-    bool no_users_thread_wakeup{false};
-    std::condition_variable no_users_thread_condition;
-
     void checkTableCanBeDropped() const override;
 
     StoragePtr getTargetTable() const;
@@ -63,25 +58,45 @@ public:
     /// Read new data blocks that store query result
     BlockInputStreamPtr getNewBlocksInputStreamPtr();
 
+    BlockInputStreamPtr getNewBlocksInputStreamPtrInnerTable();
+
     BlocksPtr getNewBlocks();
 
     Block getHeader() const;
 
-    StoragePtr & getParentStorage() { return parent_storage; }
+    StoragePtr & getParentStorage() 
+    {
+        if (parent_storage == nullptr) 
+            parent_storage = global_context.getTable(select_table_id);
+        return parent_storage; 
+    }
+
+    StoragePtr& getInnerStorage()
+    {
+        if (inner_storage == nullptr && !inner_table_id.empty())
+            inner_storage = global_context.getTable(inner_table_id);
+        return inner_storage;
+    }
 
     static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, const Context & context);
 
+    static void writeIntoWindowViewInnerTable(StorageWindowView & window_view, const Block & block, const Context & context);
+
     ASTPtr innerQueryParser(ASTSelectQuery & inner_query);
 
-    inline UInt32 getWindowUpperBound(UInt32 time_sec);
+    std::shared_ptr<ASTCreateQuery> generateInnerTableCreateQuery(const ASTCreateQuery & inner_create_query, const String & database_name, const String & table_name);
+
+    inline UInt32 getWindowLowerBound(UInt32 time_sec, int window_id_skew = 0);
+    inline UInt32 getWindowUpperBound(UInt32 time_sec, int window_id_skew = 0);
 
 private:
     StorageID select_table_id = StorageID::createEmpty();
     ASTPtr inner_query;
+    ASTPtr fetch_column_query;
     String window_column_name;
-    String window_end_column_alias;
     Context & global_context;
     StoragePtr parent_storage;
+    StoragePtr inner_storage;
     bool is_temporary{false};
     mutable Block sample_block;
 
@@ -101,26 +116,27 @@ private:
     const DateLUTImpl & time_zone;
 
     StorageID target_table_id = StorageID::createEmpty();
+    StorageID inner_table_id = StorageID::createEmpty();
+    bool has_inner_table;
 
-    static void noUsersThread(std::shared_ptr<StorageWindowView> storage, const UInt64 & timeout);
     inline void flushToTable();
+    inline void clearInnerTable();
     void threadFuncToTable();
-    bool refreshBlockStatus();
-    std::mutex no_users_thread_mutex;
-    std::thread no_users_thread;
+    void threadFuncClearInnerTable();
     std::atomic<bool> shutdown_called{false};
-    std::atomic<bool> start_no_users_thread_called{false};
-    UInt64 temporary_window_view_timeout;
+    // UInt64 temporary_window_view_timeout;
+    UInt64 inner_table_clear_interval;
 
     Poco::Timestamp timestamp;
 
     BackgroundSchedulePool::TaskHolder toTableTask;
-    BackgroundSchedulePool::TaskHolder toTableTask_preprocess;
+    BackgroundSchedulePool::TaskHolder innerTableClearTask;
 
     StorageWindowView(
         const StorageID & table_id_,
         Context & local_context,
         const ASTCreateQuery & query,
-        const ColumnsDescription & columns);
+        const ColumnsDescription & columns,
+        bool attach_);
 };
 }

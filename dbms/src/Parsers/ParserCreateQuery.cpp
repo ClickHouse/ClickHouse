@@ -709,6 +709,9 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
+    /// Internal ENGINE for WINDOW VIEW
+    storage_p.parse(pos, storage, expected);
+
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))
         return false;
@@ -733,6 +736,7 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     tryGetIdentifierNameInto(to_table, query->to_table);
 
     query->set(query->columns_list, columns_list);
+    query->set(query->storage, storage);
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
