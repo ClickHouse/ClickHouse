@@ -64,11 +64,11 @@ public:
 
     Block getHeader() const;
 
-    StoragePtr & getParentStorage() 
+    StoragePtr& getParentStorage() 
     {
-        if (parent_storage == nullptr) 
+        if (parent_storage == nullptr)
             parent_storage = global_context.getTable(select_table_id);
-        return parent_storage; 
+        return parent_storage;
     }
 
     StoragePtr& getInnerStorage()

@@ -420,12 +420,6 @@ BlockInputStreams StorageWindowView::watch(
     size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    if (!target_table_id.empty())
-        throw Exception("WATCH query is disabled for " + getName() + " when constructed with 'TO' clause.", ErrorCodes::INCORRECT_QUERY);
-
-    if (active_ptr.use_count() > 1)
-        throw Exception("WATCH query is already attached, WINDOW VIEW only supports attaching one watch query.", ErrorCodes::INCORRECT_QUERY);
-
     ASTWatchQuery & query = typeid_cast<ASTWatchQuery &>(*query_info.query);
 
     bool has_limit = false;
@@ -519,7 +513,7 @@ StorageWindowView::StorageWindowView(
         }
         else
         {
-            if(query.storage->engine->name != "MergeTree")
+            if (query.storage->engine->name != "MergeTree")
                 throw Exception(
                     "The ENGINE of WindowView must be MergeTree family of table engines including the engines with replication support",
                     ErrorCodes::INCORRECT_QUERY);
@@ -673,7 +667,7 @@ BlockInputStreamPtr StorageWindowView::getNewBlocksInputStreamPtr()
 
     BlockInputStreams from;
     auto sample_block_ = mergeable_blocks->front()->front().cloneEmpty();
-    BlockInputStreamPtr stream = std::make_shared<BlocksListInputStream>(mergeable_blocks, sample_block_, mutex,w_upper_bound);
+    BlockInputStreamPtr stream = std::make_shared<BlocksListInputStream>(mergeable_blocks, sample_block_, w_upper_bound);
     from.push_back(std::move(stream));
     auto proxy_storage = std::make_shared<WindowViewProxyStorage>(
         StorageID("", "WindowViewProxyStorage"), getParentStorage(), std::move(from), QueryProcessingStage::WithMergeableState);
