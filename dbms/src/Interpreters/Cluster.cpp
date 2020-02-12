@@ -139,8 +139,7 @@ String Cluster::Address::toFullString() const
 {
     return
         ((shard_index == 0) ? "" : "shard" + std::to_string(shard_index)) +
-        ((replica_index == 0) ? "" : "_replica" + std::to_string(replica_index)) +
-        ((secure == Protocol::Secure::Enable) ? "+secure" : "");
+        ((replica_index == 0) ? "" : "_replica" + std::to_string(replica_index));
 }
 
 Cluster::Address Cluster::Address::fromFullString(const String & full_string)
@@ -148,17 +147,9 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
     const char * address_begin = full_string.data();
     const char * address_end = address_begin + full_string.size();
 
-    Protocol::Secure secure = Protocol::Secure::Disable;
-    const char * secure_tag = "+secure";
-    if (endsWith(full_string, secure_tag))
-    {
-        address_end -= strlen(secure_tag);
-        secure = Protocol::Secure::Enable;
-    }
-
     const char * user_pw_end = strchr(full_string.data(), '@');
 
-    /// parsing with format [shard{shard_index}[_replica{replica_index}]]
+    /// parsing with [shard{shard_index}[_replica{replica_index}]] format
     if (!user_pw_end && startsWith(full_string, "shard"))
     {
         const char * underscore = strchr(full_string.data(), '_');
@@ -167,6 +158,15 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
         address.shard_index = parse<UInt32>(address_begin + 5);
         address.replica_index = underscore ? parse<UInt32>(underscore + 8) : 0;
         return address;
+    }
+
+    /// parsing with old user[:password]@host:port#default_database format
+    Protocol::Secure secure = Protocol::Secure::Disable;
+    const char * secure_tag = "+secure";
+    if (endsWith(full_string, secure_tag))
+    {
+        address_end -= strlen(secure_tag);
+        secure = Protocol::Secure::Enable;
     }
 
     const char * colon = strchr(full_string.data(), ':');
