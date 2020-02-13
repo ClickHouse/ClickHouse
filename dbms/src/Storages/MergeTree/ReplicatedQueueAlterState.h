@@ -17,31 +17,34 @@ namespace ErrorCodes
 class AlterSequence
 {
 private:
-    struct AlterInQueue
+    struct AlterState
     {
         bool metadata_finished = false;
         bool data_finished = false;
 
-        AlterInQueue() = default;
+        AlterState() = default;
 
-        AlterInQueue(bool metadata_finished_, bool data_finished_)
+        AlterState(bool metadata_finished_, bool data_finished_)
             : metadata_finished(metadata_finished_)
             , data_finished(data_finished_)
         {
         }
     };
 
-    std::map<int, AlterInQueue> queue_state;
+    std::map<int, AlterState> queue_state;
 
 public:
-    bool empty() const {
-        return queue_state.empty();
+    int getHeadAlterVersion(std::lock_guard<std::mutex> & /*state_lock*/) const
+    {
+        if (!queue_state.empty())
+            return queue_state.begin()->first;
+        return -1;
     }
 
     void addMutationForAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/)
     {
         if (!queue_state.count(alter_version))
-            queue_state.emplace(alter_version, AlterInQueue(true, false));
+            queue_state.emplace(alter_version, AlterState{true, false});
         else
             queue_state[alter_version].data_finished = false;
     }
@@ -49,7 +52,7 @@ public:
     void addMetadataAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/)
     {
         if (!queue_state.count(alter_version))
-            queue_state.emplace(alter_version, AlterInQueue(false, true));
+            queue_state.emplace(alter_version, AlterState{false, true});
         else
             queue_state[alter_version].metadata_finished = false;
     }
@@ -80,14 +83,19 @@ public:
 
     bool canExecuteDataAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/) const
     {
+
         if (!queue_state.count(alter_version))
             return true;
+
         return queue_state.at(alter_version).metadata_finished;
     }
 
     bool canExecuteMetaAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/) const
     {
-        return queue_state.empty() || queue_state.begin()->first == alter_version;
+        if (queue_state.empty())
+            return true;
+
+        return queue_state.begin()->first == alter_version;
     }
 
 };
