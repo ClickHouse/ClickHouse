@@ -573,17 +573,9 @@ ASOF LEFT JOIN table_2
 ON equi_cond AND closest_match_cond
 ```
 
-You can use any number of equality conditions and exactly one closest match condition. For example, `SELECT count() FROM A ASOF LEFT JOIN B ON A.a == B.b AND B.t <= A.t`. 
+You can use any number of equality conditions and exactly one closest match condition. For example, `SELECT count() FROM table_1 ASOF LEFT JOIN table_2 ON table_1.a == table_2.b AND table_2.t <= table_1.t`. 
 
-Conditions supported for the closest match:
-
-- `table_1.some_col > table_2.some_col`
-- `table_1.some_col < table_2.some_col`
-- `table_1.some_col >= table_2.some_col`
-- `table_1.some_col <= table_2.some_col`
-- `table_2.some_col <= table_1.some_col`
-
-Other condition types are not available.
+Conditions supported for the closest match: `>`, `>=`, `<`, `<=`.
 
 Syntax `ASOF JOIN ... USING`:
 
@@ -594,7 +586,7 @@ ASOF JOIN table_2
 USING (equi_column1, ... equi_columnN, asof_column)
 ```
 
-`ASOF JOIN` uses `equi_columnX` for joining on equality and `asof_column` for joining on the closest match with the `table_1.asof_column >= table_2.asof_column` condition. The `asof_column` column must be the last in the `USING` clause.
+`ASOF JOIN` uses `equi_columnX` for joining on equality and `asof_column` for joining on the closest match with the `table_1.asof_column >= table_2.asof_column` condition. The `asof_column` column always the last one in the `USING` clause.
 
 For example, consider the following tables:
 

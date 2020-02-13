@@ -581,17 +581,9 @@ ASOF LEFT JOIN table_2
 ON equi_cond AND closest_match_cond
 ```
 
-Можно использовать произвольное количество условий равенства и одно условие на ближайшее совпадение. Например, `SELECT count() FROM A ASOF LEFT JOIN B ON A.a == B.b AND B.t <= A.t`. 
+Можно использовать произвольное количество условий равенства и одно условие на ближайшее совпадение. Например, `SELECT count() FROM table_1 ASOF LEFT JOIN table_2 ON table_1.a == table_2.b AND table_2.t <= table_1.t`. 
 
-Условия, поддержанные для проверки на ближайшее совпадение:
-
-- `table_1.some_col > table_2.some_col`
-- `table_1.some_col < table_2.some_col`
-- `table_1.some_col >= table_2.some_col`
-- `table_1.some_col <= table_2.some_col`
-- `table_2.some_col <= table_1.some_col`
-
-Другие условия не поддержаны.
+Условия, поддержанные для проверки на ближайшее совпадение: `>`, `>=`, `<`, `<=`.
 
 Синтаксис `ASOF JOIN ... USING`:
 
