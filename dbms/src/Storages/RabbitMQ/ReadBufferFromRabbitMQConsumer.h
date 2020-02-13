@@ -27,9 +27,10 @@ public:
     ~ReadBufferFromRabbitMQConsumer() override;
 
     void allowNext() { allowed = true; } // Allow to read next message.
-
     void subscribe(const Names & routing_keys);
     void unsubscribe();
+    void commitNotSubscribed(const Names & routing_keys);
+    void commitViaGet(const Names & routing_keys);
 
     String getCurrentExchange() const { return current[-1].exchange; }
     String getCurrentRoutingKey() const { return current[-1].routingKey; }

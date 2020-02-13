@@ -34,6 +34,7 @@ RabbitMQBlockInputStream::~RabbitMQBlockInputStream()
     if (!claimed)
         return;
 
+    storage.getHandler().updatePending();
     storage.pushReadBuffer(buffer);
 }
 
@@ -156,7 +157,7 @@ Block RabbitMQBlockInputStream::readImpl()
             .read();
 }
 
-void RabbitMQBlockInputStream::readSuffixImpl()     
+void RabbitMQBlockInputStream::readSuffixImpl()
 {
     if (commit_in_suffix)
         commit();
@@ -167,6 +168,22 @@ void RabbitMQBlockInputStream::commit()
     if (!buffer)
         return;
 
+    startProcessing();
+}
+
+void RabbitMQBlockInputStream::commitNotSubscribed(const Names & routing_keys)
+{
+    if (!buffer)
+        return;
+
+    buffer->commitNotSubscribed(routing_keys);
+    startProcessing();
+}
+
+void RabbitMQBlockInputStream::startProcessing()
+{
+    storage.getHandler().onWait();
     storage.getHandler().process();
 }
+
 }

@@ -16,7 +16,7 @@ namespace DB
  * called by the library every time it wants to send out data, or when it needs to inform you that an error occured.
  */
 
-class RabbitMQHandlerImpl;
+class ConnectionImpl;
 class RabbitMQHandler: public AMQP::ConnectionHandler
 {
 public:
@@ -26,15 +26,15 @@ public:
     ~RabbitMQHandler() override;
 
     void process();
-    void onProduced();
-    void onProcessed();
+    void onWait();
+    void updatePending();
     bool connected() const;
 
     RabbitMQHandler(const RabbitMQHandler&) = delete;
     RabbitMQHandler& operator=(const RabbitMQHandler&) = delete;
 
-    const String get_user_name() { return user_name; }
-    const String get_password() { return password; }
+    const String & get_user_name() { return user_name; }
+    const String & get_password() { return password; }
 
 private:
     void onReady(AMQP::Connection * conection) override;
@@ -42,26 +42,24 @@ private:
     void onError(AMQP::Connection * connection, const char *message) override;
     void onClosed(AMQP::Connection * connection) override;
 
-    void sendDataToRabbitMQ();
-
 private:
     Poco::Logger * log;
     String user_name;
     String password;
 
-    std::shared_ptr<RabbitMQHandlerImpl> handler_impl;
+    std::shared_ptr<ConnectionImpl> handler_impl;
+
+    size_t pending = 0;
 };
 
-class RabbitMQHandlerImpl
+class ConnectionImpl
 {
 public:
-    RabbitMQHandlerImpl() :
+    ConnectionImpl() :
             connected(false),
             connection(nullptr),
             closed(false),
-            readable(false),
-            outputBuffer(nullptr, 0),
-            inputBuffer(nullptr, 0)
+            readable(false)
     {
     }
     Poco::Net::StreamSocket socket;
@@ -70,8 +68,6 @@ public:
     bool closed;
     bool readable;
 
-    WriteBuffer outputBuffer;
-    WriteBuffer inputBuffer;
     std::vector<char> tmpBuff;
 };
 

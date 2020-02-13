@@ -71,11 +71,11 @@ StorageRabbitMQ::StorageRabbitMQ(
         UInt64 max_block_size_,
         size_t skip_broken_)
         : IStorage(table_id_,
-        ColumnsDescription({
-            {"_exchange", std::make_shared<DataTypeString>()},
-            {"_routingKey", std::make_shared<DataTypeString>()},
-            {"_deliveryTag", std::make_shared<DataTypeString>()}
-            }, true))
+                   ColumnsDescription({
+                                              {"_exchange", std::make_shared<DataTypeString>()},
+                                              {"_routingKey", std::make_shared<DataTypeString>()},
+                                              {"_deliveryTag", std::make_shared<DataTypeString>()}
+                                      }, true))
         , global_context(context_.getGlobalContext())
         , host_port(global_context.getMacros()->expand(host_port_))
         , routing_keys(global_context.getMacros()->expand(routing_keys_))
@@ -91,6 +91,9 @@ StorageRabbitMQ::StorageRabbitMQ(
                      AMQP::Login(connection_handler.get_user_name(), connection_handler.get_password()))
 {
     setColumns(columns_);
+    task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
+    task->deactivate();
+
     publishing_channel = std::make_shared<AMQP::Channel>(&connection);
 }
 
@@ -136,6 +139,8 @@ void StorageRabbitMQ::startup()
             tryLogCurrentException(log);
         }
     }
+
+    task->activateAndSchedule();
 }
 
 void StorageRabbitMQ::shutdown()
@@ -146,6 +151,8 @@ void StorageRabbitMQ::shutdown()
     {
         auto buffer = popReadBuffer();
     }
+
+    task->deactivate();
 }
 
 void StorageRabbitMQ::pushReadBuffer(ConsumerBufferPtr buffer)
@@ -181,7 +188,7 @@ ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
     return std::make_shared<WriteBufferToRabbitMQProducer>(
             publishing_channel, routing_keys[0],
-            row_delimiter ? std::optional<char>{row_delimiter} : std::optional<char>(), 1, 1024);
+            row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
 
@@ -241,8 +248,8 @@ void StorageRabbitMQ::threadFunc()
 
             LOG_DEBUG(log, "Started streaming to " << dependencies.size() << " attached views");
 
-            /* if (!streamToViews())
-                break; */
+            if (!streamToViews())
+                break;
         }
     }
     catch (...)
@@ -250,19 +257,69 @@ void StorageRabbitMQ::threadFunc()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    /* Wait for attached views
+    /// Wait for attached views
     if (!stream_cancelled)
-        task->scheduleAfter(RESCHEDULE_MS); */
+        task->scheduleAfter(500);
 }
 
-/* Having the server PUSH messages to the client is one of the two ways to get messages
-to the client, and also the preferred one. This is known as consuming messages via a subscription.
-The alternative is for the client to poll for messages one at a time, over the channel, via a get method.
 
-But streamToViews() function is called only if dependencies are present.
-So the first option is not applicable. The only alternative is via get method, but
-messages are supposed to be received in batches. Seems like n get calls is a bad idea.
-TODO: Figure that out. */
+bool StorageRabbitMQ::streamToViews()
+{
+    auto table_id = getStorageID();
+    auto table = global_context.getTable(table_id);
+    if (!table)
+        throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
+
+    // Create an INSERT query for streaming data
+    auto insert = std::make_shared<ASTInsertQuery>();
+    insert->database = table_id.database_name;
+    insert->table = table_id.table_name;
+
+    const Settings & settings = global_context.getSettingsRef();
+    size_t block_size = max_block_size;
+    if (block_size == 0)
+        block_size = settings.max_block_size;
+
+    InterpreterInsertQuery interpreter(insert, global_context, false, true, true);
+    auto block_io = interpreter.execute();
+
+    // Create a stream for each consumer and join them in a union stream
+    BlockInputStreams streams;
+    streams.reserve(num_created_consumers);
+
+    for (size_t i = 0; i < num_created_consumers; ++i)
+    {
+        auto stream = std::make_shared<RabbitMQBlockInputStream>(
+                *this, global_context, block_io.out->getHeader().getNames(), block_size, false);
+        streams.emplace_back(stream);
+
+        // Limit read batch to maximum block size to allow DDL
+        IBlockInputStream::LocalLimits limits;
+        limits.speed_limits.max_execution_time = settings.stream_flush_interval_ms;
+        limits.timeout_overflow_mode = OverflowMode::BREAK;
+        stream->setLimits(limits);
+    }
+
+    // Join multiple streams if necessary
+    BlockInputStreamPtr in;
+    if (streams.size() > 1)
+        in = std::make_shared<UnionBlockInputStream>(streams, nullptr, streams.size());
+    else
+        in = streams[0];
+
+    std::atomic<bool> stub = {false};
+    copyData(*in, *block_io.out, &stub);
+
+    for (auto & stream : streams)
+        stream->as<RabbitMQBlockInputStream>()->commitNotSubscribed(routing_keys);
+
+    // Check whether the limits were applied during query execution
+    bool limits_applied = false;
+    const BlockStreamProfileInfo & info = in->getProfileInfo();
+    limits_applied = info.hasAppliedLimit();
+
+    return limits_applied;
+}
 
 
 void registerStorageRabbitMQ(StorageFactory & factory)
@@ -368,7 +425,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             {
                 throw Exception("Row delimiter must be a char", ErrorCodes::BAD_ARGUMENTS);
             }
-            else if (arg.size() == 0)
+            else if (arg.empty())
             {
                 row_delimiter = '\0';
             }

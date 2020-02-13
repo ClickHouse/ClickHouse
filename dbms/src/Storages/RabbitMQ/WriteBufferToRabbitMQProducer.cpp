@@ -1,5 +1,7 @@
 #include <Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h>
-#include <cassert>
+#include "Core/Block.h"
+#include "Columns/ColumnString.h"
+#include "Columns/ColumnsNumber.h"
 #include <amqpcpp.h>
 
 namespace DB
@@ -29,23 +31,27 @@ void WriteBufferToRabbitMQProducer::count_row()
 {
     if (++rows % max_rows == 0)
     {
+        const std::string & last_chunk = chunks.back();
+        size_t last_chunk_size = offset();
+
+        if (delim && last_chunk[last_chunk_size - 1] == delim)
+            --last_chunk_size;
+
         std::string payload;
-        payload.reserve((chunks.size() - 1) * chunk_size + offset());
+        payload.reserve((chunks.size() - 1) * chunk_size + last_chunk_size);
 
         for (auto i = chunks.begin(), e = --chunks.end(); i != e; ++i)
             payload.append(*i);
 
-        int trunk_delim = delim && chunks.back()[offset() - 1] == delim ? 1 : 0;
-
-        payload.append(chunks.back(), 0, offset() - trunk_delim);
+        payload.append(last_chunk, 0, last_chunk_size);
 
         channel->declareExchange("direct", AMQP::direct).onSuccess([&]()
-        {
-            channel->publish("direct", routing_key, payload).onError(
-                    [](const char * /* messsage */)
-                    {
-                    });
-        });
+           {
+               channel->publish("direct", routing_key, payload).onError(
+                       [](const char * /* messsage */)
+                       {
+                       });
+           });
 
         rows = 0;
         chunks.clear();

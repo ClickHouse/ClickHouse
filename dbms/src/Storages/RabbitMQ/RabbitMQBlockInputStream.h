@@ -25,6 +25,8 @@ public:
     void readSuffixImpl() override;
 
     void commit();
+    void commitNotSubscribed(const Names & routing_keys);
+    void startProcessing();
 
 private:
     StorageRabbitMQ & storage;

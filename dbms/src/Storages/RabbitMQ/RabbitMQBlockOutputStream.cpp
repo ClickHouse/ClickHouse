@@ -32,12 +32,9 @@ void RabbitMQBlockOutputStream::writePrefix()
         throw Exception("Failed to create RabbitMQ producer!", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
 
     child = FormatFactory::instance().getOutput(
-            storage.getFormatName(), *buffer, getHeader(), context, [this]
+            storage.getFormatName(), *buffer, getHeader(), context, [this](const Columns & /*columns*/, size_t /*row*/)
             {
                 buffer->count_row();
-                storage.getHandler().onProduced();
-                storage.getHandler().process();
-                storage.getHandler().onProcessed();
             });
 }
 

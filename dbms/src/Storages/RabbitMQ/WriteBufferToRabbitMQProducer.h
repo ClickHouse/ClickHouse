@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/WriteBuffer.h>
+#include <Columns/IColumn.h>
 
 #include <list>
 
@@ -28,7 +29,6 @@ public:
     ~WriteBufferToRabbitMQProducer() override;
 
     void count_row();
-    void flush();
 
 private:
     void nextImpl() override;

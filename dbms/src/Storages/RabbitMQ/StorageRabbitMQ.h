@@ -2,6 +2,8 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
+#include <Interpreters/Context.h>
+
 #include <Storages/RabbitMQ/Buffer_fwd.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 
@@ -81,6 +83,7 @@ private:
     RabbitMQHandler connection_handler;
     AMQP::Connection connection;
 
+    BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
 
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
@@ -88,6 +91,7 @@ private:
     ConsumerBufferPtr createReadBuffer();
 
     void threadFunc();
+    bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 };
 }
