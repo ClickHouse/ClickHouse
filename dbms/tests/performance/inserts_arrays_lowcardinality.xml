@@ -75,7 +75,7 @@
                 numbers(1000000)
             GROUP BY rowid
         ) GROUP BY id</fill_query>
-    <fill_query>optimize table lot_of_string_arrays_src final</fill_query>
+    <fill_query>optimize table lot_of_string_arrays_src</fill_query>
     <fill_query>system stop merges</fill_query>
     
     <query>INSERT INTO lot_of_string_arrays_dst SELECT rand64() as id, columns('^col') FROM lot_of_string_arrays_src</query>
