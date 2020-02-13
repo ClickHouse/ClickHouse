@@ -73,8 +73,6 @@ private:
       */
     Queue queue;
 
-    StringSet entries_in_queue;
-
     InsertsByTime inserts_by_time;
     time_t min_unprocessed_insert_time = 0;
     time_t max_processed_insert_time = 0;
@@ -347,12 +345,6 @@ public:
     /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
     /// Locks queue's mutex.
     bool addFuturePartIfNotCoveredByThem(const String & part_name, LogEntry & entry, String & reject_reason);
-
-    bool checkCanFetchPart(const String & part_name)
-    {
-        std::lock_guard lock(state_mutex);
-        return alter_sequence.canExecuteGetEntry(part_name, format_version, lock);
-    }
 
     /// A blocker that stops selects from the queue
     ActionBlocker actions_blocker;

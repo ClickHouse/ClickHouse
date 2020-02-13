@@ -777,16 +777,6 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
     if (part_name.empty())
         part_name = part->name;
 
-    //try
-    //{
-    //    check(part->columns);
-    //}
-    //catch (...)
-    //{
-    //    LOG_DEBUG(log, "EXCEPTION ADDING PART:" << part_name << " VERSION:" << getMetadataVersion());
-    //    throw;
-    //}
-
 
     auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
         part->columns, part->checksums);
@@ -2617,12 +2607,8 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entr
 
         String largest_part_found;
         Strings parts = zookeeper->getChildren(zookeeper_path + "/replicas/" + replica + "/parts");
-        bool source_part_found = false;
         for (const String & part_on_replica : parts)
         {
-            if (part_on_replica == entry.new_part_name)
-                source_part_found = true;
-
             if (part_on_replica == entry.new_part_name
                 || MergeTreePartInfo::contains(part_on_replica, entry.new_part_name, format_version))
             {
@@ -2642,19 +2628,11 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entr
             if (!the_same_part)
             {
                 String reject_reason;
-                if (queue.checkCanFetchPart(largest_part_found))
+                if (!queue.addFuturePartIfNotCoveredByThem(largest_part_found, entry, reject_reason))
                 {
-                    if (!queue.addFuturePartIfNotCoveredByThem(largest_part_found, entry, reject_reason))
-                    {
-                        LOG_INFO(log, "Will not fetch part " << largest_part_found << " covering " << entry.new_part_name << ". " << reject_reason);
-                        return {};
-                    }
+                    LOG_INFO(log, "Will not fetch part " << largest_part_found << " covering " << entry.new_part_name << ". " << reject_reason);
+                    return {};
                 }
-                if (source_part_found)
-                    return replica;
-                else
-                    LOG_INFO(
-                        log, "NOT FOUND ANYTHING");
             }
             else
             {
