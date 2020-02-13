@@ -107,12 +107,18 @@ struct ReplicatedMergeTreeLogEntryData
 
     std::shared_ptr<ReplaceRangeEntry> replace_range_entry;
 
-    //TODO(alesap)
-    int alter_version;
-    bool have_mutation;
+    /// ALTER METADATA and MUTATE PART command
 
-    String columns_str;
-    String metadata_str;
+    /// Version of metadata which will be set after this alter
+    /// Also present in MUTATE_PART command, to track mutations
+    /// required for complete alter execution.
+    int alter_version; /// May be equal to -1, if it's normal mutation, not metadata update.
+
+    /// only ALTER METADATA command
+    bool have_mutation; /// If this alter requires additional mutation step, for data update
+
+    String columns_str; /// New columns data corresponding to alter_version
+    String metadata_str; /// New metadata corresponding to alter_version
 
     /// Returns a set of parts that will appear after executing the entry + parts to block
     /// selection of merges. These parts are added to queue.virtual_parts.

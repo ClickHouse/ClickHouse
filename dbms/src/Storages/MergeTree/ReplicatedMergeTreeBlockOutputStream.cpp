@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int KEEPER_EXCEPTION;
     extern const int TIMEOUT_EXCEEDED;
     extern const int NO_ACTIVE_REPLICAS;
+    extern const int CONCURRENT_ALTER_IS_PROCESSING;
 }
 
 
@@ -255,7 +256,14 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         log_entry.toString(),
         zkutil::CreateMode::PersistentSequential));
 
+    /// We check metadata_version has the same version as shared node.
+    /// In other case we may have parts, which nobody will alter.
+    ///
     ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/metadata", storage.getMetadataVersion()));
+
+    /// We update version of block_number/partition node to register fact of new insert.
+    /// If we want to be sure, that no inserts happend in some period of time, than we can receive
+    /// version of all partition nodes inside block numbers and then make check requirests in zookeeper transaction.
     ops.emplace_back(zkutil::makeSetRequest(storage.zookeeper_path + "/block_numbers/" + part->info.partition_id, "", -1));
 
     /// Deletes the information that the block number is used for writing.
@@ -346,6 +354,11 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
             transaction.rollback();
 
             throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
+        }
+        else if (multi_code == Coordination::ZBADVERSION)
+        {
+            transaction.rollback();
+            throw Exception("Current metadata version is not consistent with version in zookeeper. Concurrent alter of metadata is processing now, client must retry", ErrorCodes::CONCURRENT_ALTER_IS_PROCESSING);
         }
         else
         {

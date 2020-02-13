@@ -150,7 +150,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
         }
     }
     if (entry->type == LogEntry::ALTER_METADATA)
-        alter_sequence.addMetadataAlter(entry->alter_version, state_lock);
+        alter_chain.addMetadataAlter(entry->alter_version, state_lock);
 }
 
 
@@ -226,7 +226,7 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
         }
 
         if (entry->type == LogEntry::ALTER_METADATA)
-            alter_sequence.finishMetadataAlter(entry->alter_version, entry->have_mutation, state_lock);
+            alter_chain.finishMetadataAlter(entry->alter_version, entry->have_mutation, state_lock);
     }
     else
     {
@@ -696,7 +696,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                     some_mutations_are_probably_done = true;
 
                 if (entry->alter_version != -1)
-                    alter_sequence.addMutationForAlter(entry->alter_version, state_lock);
+                    alter_chain.addMutationForAlter(entry->alter_version, state_lock);
             }
         }
 
@@ -1043,10 +1043,10 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
     if (entry.type == LogEntry::ALTER_METADATA)
     {
-        if (!alter_sequence.canExecuteMetaAlter(entry.alter_version, state_lock))
+        if (!alter_chain.canExecuteMetaAlter(entry.alter_version, state_lock))
         {
-            int head_alter = alter_sequence.getHeadAlterVersion(state_lock);
-            out_postpone_reason = "Cannot execute alter data with version: " + std::to_string(entry.alter_version)
+            int head_alter = alter_chain.getHeadAlterVersion(state_lock);
+            out_postpone_reason = "Cannot execute alter metadata with version: " + std::to_string(entry.alter_version)
                 + " because another alter " + std::to_string(head_alter)
                 + " must be executed before";
             return false;
@@ -1055,9 +1055,9 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
     if (entry.type == LogEntry::MUTATE_PART && entry.alter_version != -1)
     {
-        if (!alter_sequence.canExecuteDataAlter(entry.alter_version, state_lock))
+        if (!alter_chain.canExecuteDataAlter(entry.alter_version, state_lock))
         {
-            int head_alter = alter_sequence.getHeadAlterVersion(state_lock);
+            int head_alter = alter_chain.getHeadAlterVersion(state_lock);
             if (head_alter == entry.alter_version)
                 out_postpone_reason = "Cannot execute alter data with version: "
                     + std::to_string(entry.alter_version) + " because metadata still not altered";
@@ -1352,7 +1352,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                     LOG_INFO(log, "Seems like we jumped over mutation " << znode << " when downloaded part with bigger mutation number."
                         << " It's OK, tasks for rest parts will be skipped, but probably a lot of mutations were executed concurrently on different replicas.");
                     mutation.parts_to_do.clear();
-                    alter_sequence.finishDataAlter(mutation.entry->alter_version, lock);
+                    alter_chain.finishDataAlter(mutation.entry->alter_version, lock);
                 }
             }
             else if (mutation.parts_to_do.size() == 0)
@@ -1393,7 +1393,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                 if (entry->alter_version != -1)
                 {
                     LOG_TRACE(log, "Finishing data alter with version " << entry->alter_version << " for entry " << entry->znode_name);
-                    alter_sequence.finishDataAlter(entry->alter_version, lock);
+                    alter_chain.finishDataAlter(entry->alter_version, lock);
                 }
             }
         }

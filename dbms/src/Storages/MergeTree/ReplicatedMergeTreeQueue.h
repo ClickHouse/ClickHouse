@@ -9,7 +9,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
-#include <Storages/MergeTree/ReplicatedQueueAlterState.h>
+#include <Storages/MergeTree/ReplicatedQueueAlterChain.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -132,7 +132,7 @@ private:
     /// Provides only one simultaneous call to pullLogsToQueue.
     std::mutex pull_logs_to_queue_mutex;
 
-    AlterSequence alter_sequence;
+    ReplicatedQueueAlterChain alter_chain;
 
     /// List of subscribers
     /// A subscriber callback is called when an entry queue is deleted

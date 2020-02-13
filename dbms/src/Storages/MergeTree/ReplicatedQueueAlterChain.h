@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class AlterSequence
+class ReplicatedQueueAlterChain
 {
 private:
     struct AlterState
