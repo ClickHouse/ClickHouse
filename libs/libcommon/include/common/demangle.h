@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string>
 
 
@@ -14,3 +15,18 @@ inline std::string demangle(const char * name)
     int status = 0;
     return demangle(name, status);
 }
+
+// abi::__cxa_demangle returns a C string of known size that should be deleted
+// with free().
+struct FreeingDeleter
+{
+    template <typename PointerType>
+    void operator() (PointerType ptr)
+    {
+        std::free(ptr);
+    }
+};
+
+typedef std::unique_ptr<char, FreeingDeleter> DemangleResult;
+
+DemangleResult tryDemangle(const char * name);

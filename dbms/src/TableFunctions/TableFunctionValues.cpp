@@ -17,6 +17,7 @@
 #include <Access/AccessFlags.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include "registerTableFunctions.h"
 
 

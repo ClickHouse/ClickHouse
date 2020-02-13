@@ -5,6 +5,7 @@
 #include <Access/AccessFlags.h>
 #include <Access/Quota.h>
 #include <Access/RowPolicy.h>
+#include <Access/User.h>
 #include <boost/range/algorithm/transform.hpp>
 
 
@@ -18,6 +19,16 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
 
     switch (query.kind)
     {
+        case Kind::USER:
+        {
+            context.checkAccess(AccessType::DROP_USER);
+            if (query.if_exists)
+                access_control.tryRemove(access_control.find<User>(query.names));
+            else
+                access_control.remove(access_control.getIDs<User>(query.names));
+            return {};
+        }
+
         case Kind::QUOTA:
         {
             context.checkAccess(AccessType::DROP_QUOTA);
@@ -27,6 +38,7 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
                 access_control.remove(access_control.getIDs<Quota>(query.names));
             return {};
         }
+
         case Kind::ROW_POLICY:
         {
             context.checkAccess(AccessType::DROP_POLICY);

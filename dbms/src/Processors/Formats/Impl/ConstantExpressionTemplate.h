@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Formats/FormatSettings.h>
 #include <Parsers/TokenIterator.h>
 
@@ -11,6 +10,9 @@ namespace DB
 struct LiteralInfo;
 using LiteralsInfo = std::vector<LiteralInfo>;
 struct SpecialParserType;
+
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 /// Deduces template of an expression by replacing literals with dummy columns.
 /// It allows to parse and evaluate similar expressions without using heavy IParsers and ExpressionAnalyzer.

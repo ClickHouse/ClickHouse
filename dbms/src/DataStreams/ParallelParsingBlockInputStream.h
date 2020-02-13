@@ -213,9 +213,9 @@ private:
     std::deque<ProcessingUnit> processing_units;
 
 
-    void scheduleParserThreadForUnitWithNumber(size_t unit_number)
+    void scheduleParserThreadForUnitWithNumber(size_t ticket_number)
     {
-        pool.scheduleOrThrowOnError(std::bind(&ParallelParsingBlockInputStream::parserThreadFunction, this, unit_number));
+        pool.scheduleOrThrowOnError(std::bind(&ParallelParsingBlockInputStream::parserThreadFunction, this, ticket_number));
     }
 
     void finishAndWait()
