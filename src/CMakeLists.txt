@@ -1,6 +1,8 @@
 set(ConfigIncludePath ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
 include_directories(${ConfigIncludePath})
 
+add_subdirectory(base)
+
 if (USE_INCLUDE_WHAT_YOU_USE)
     set (CMAKE_CXX_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
 endif ()
@@ -21,16 +23,16 @@ else()
 endif()
 include(../cmake/limit_jobs.cmake)
 
-include(cmake/find_vectorclass.cmake)
+include(../cmake/find/vectorclass.cmake)
 
-set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config_version.h)
-set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config.h)
+set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/dbms/Common/config_version.h)
+set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/dbms/Common/config.h)
 
-include (cmake/version.cmake)
+include (../cmake/version.cmake)
 message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSION_OFFICIAL}")
-configure_file (src/Common/config.h.in ${CONFIG_COMMON})
-configure_file (src/Common/config_version.h.in ${CONFIG_VERSION})
-configure_file (src/Core/config_core.h.in ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include/config_core.h)
+configure_file (dbms/Common/config.h.in ${CONFIG_COMMON})
+configure_file (dbms/Common/config_version.h.in ${CONFIG_VERSION})
+configure_file (dbms/Core/config_core.h.in ${CMAKE_CURRENT_BINARY_DIR}/dbms/Core/include/config_core.h)
 
 if (NOT MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
@@ -191,7 +193,7 @@ elseif (COMPILER_GCC)
 endif ()
 
 if (USE_DEBUG_HELPERS)
-    set (INCLUDE_DEBUG_HELPERS "-I${ClickHouse_SOURCE_DIR}/libs/libcommon/include -include ${ClickHouse_SOURCE_DIR}/dbms/src/Core/iostream_debug_helpers.h")
+    set (INCLUDE_DEBUG_HELPERS "-I${ClickHouse_SOURCE_DIR}/dbms/base -include ${ClickHouse_SOURCE_DIR}/dbms/dbms/Core/iostream_debug_helpers.h")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
 endif ()
 
@@ -202,71 +204,71 @@ if (COMPILER_GCC)
     # (gdb) bt
     #0  memcpy (destination=0x7faa6e9f1638, source=0x7faa81d9e9a8, size=16) at ../libs/libmemcpy/memcpy.h:11
     #1  0x0000000005341c5f in _mm_storeu_si128 (__B=..., __P=<optimized out>) at /usr/lib/gcc/x86_64-linux-gnu/7/include/emmintrin.h:720
-    #2  memcpySmallAllowReadWriteOverflow15Impl (n=<optimized out>, src=<optimized out>, dst=<optimized out>) at ../dbms/src/Common/memcpySmall.h:37
+    #2  memcpySmallAllowReadWriteOverflow15Impl (n=<optimized out>, src=<optimized out>, dst=<optimized out>) at ../dbms/dbms/Common/memcpySmall.h:37
 
     add_definitions ("-fno-tree-loop-distribute-patterns")
 endif ()
 
-add_subdirectory (src)
+add_subdirectory (dbms)
 
 set(dbms_headers)
 set(dbms_sources)
 
-add_headers_and_sources(clickhouse_common_io src/Common)
-add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
-add_headers_and_sources(clickhouse_common_io src/IO)
-list (REMOVE_ITEM clickhouse_common_io_sources src/Common/malloc.cpp src/Common/new_delete.cpp)
+add_headers_and_sources(clickhouse_common_io dbms/Common)
+add_headers_and_sources(clickhouse_common_io dbms/Common/HashTable)
+add_headers_and_sources(clickhouse_common_io dbms/IO)
+list (REMOVE_ITEM clickhouse_common_io_sources dbms/Common/malloc.cpp dbms/Common/new_delete.cpp)
 
 if(USE_RDKAFKA)
-    add_headers_and_sources(dbms src/Storages/Kafka)
+    add_headers_and_sources(dbms dbms/Storages/Kafka)
 endif()
 
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
-list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/FunctionHelpers.cpp src/Functions/extractTimeZoneFromFunctionArguments.cpp)
-list (APPEND dbms_headers src/Functions/IFunctionImpl.h src/Functions/FunctionFactory.h src/Functions/FunctionHelpers.h src/Functions/extractTimeZoneFromFunctionArguments.h)
+list (APPEND dbms_sources dbms/Functions/IFunction.cpp dbms/Functions/FunctionFactory.cpp dbms/Functions/FunctionHelpers.cpp dbms/Functions/extractTimeZoneFromFunctionArguments.cpp)
+list (APPEND dbms_headers dbms/Functions/IFunctionImpl.h dbms/Functions/FunctionFactory.h dbms/Functions/FunctionHelpers.h dbms/Functions/extractTimeZoneFromFunctionArguments.h)
 
 list (APPEND dbms_sources
-    src/AggregateFunctions/AggregateFunctionFactory.cpp
-    src/AggregateFunctions/AggregateFunctionCombinatorFactory.cpp
-    src/AggregateFunctions/AggregateFunctionState.cpp
-    src/AggregateFunctions/parseAggregateFunctionParameters.cpp)
+    dbms/AggregateFunctions/AggregateFunctionFactory.cpp
+    dbms/AggregateFunctions/AggregateFunctionCombinatorFactory.cpp
+    dbms/AggregateFunctions/AggregateFunctionState.cpp
+    dbms/AggregateFunctions/parseAggregateFunctionParameters.cpp)
 
 list (APPEND dbms_headers
-    src/AggregateFunctions/IAggregateFunction.h
-    src/AggregateFunctions/IAggregateFunctionCombinator.h
-    src/AggregateFunctions/AggregateFunctionFactory.h
-    src/AggregateFunctions/AggregateFunctionCombinatorFactory.h
-    src/AggregateFunctions/AggregateFunctionState.h
-    src/AggregateFunctions/FactoryHelpers.h
-    src/AggregateFunctions/parseAggregateFunctionParameters.h)
+    dbms/AggregateFunctions/IAggregateFunction.h
+    dbms/AggregateFunctions/IAggregateFunctionCombinator.h
+    dbms/AggregateFunctions/AggregateFunctionFactory.h
+    dbms/AggregateFunctions/AggregateFunctionCombinatorFactory.h
+    dbms/AggregateFunctions/AggregateFunctionState.h
+    dbms/AggregateFunctions/FactoryHelpers.h
+    dbms/AggregateFunctions/parseAggregateFunctionParameters.h)
 
-list (APPEND dbms_sources src/TableFunctions/ITableFunction.cpp src/TableFunctions/TableFunctionFactory.cpp)
-list (APPEND dbms_headers src/TableFunctions/ITableFunction.h   src/TableFunctions/TableFunctionFactory.h)
-list (APPEND dbms_sources src/Dictionaries/DictionaryFactory.cpp src/Dictionaries/DictionarySourceFactory.cpp src/Dictionaries/DictionaryStructure.cpp  src/Dictionaries/getDictionaryConfigurationFromAST.cpp)
-list (APPEND dbms_headers src/Dictionaries/DictionaryFactory.h   src/Dictionaries/DictionarySourceFactory.h   src/Dictionaries/DictionaryStructure.h src/Dictionaries/getDictionaryConfigurationFromAST.h)
+list (APPEND dbms_sources dbms/TableFunctions/ITableFunction.cpp dbms/TableFunctions/TableFunctionFactory.cpp)
+list (APPEND dbms_headers dbms/TableFunctions/ITableFunction.h   dbms/TableFunctions/TableFunctionFactory.h)
+list (APPEND dbms_sources dbms/Dictionaries/DictionaryFactory.cpp dbms/Dictionaries/DictionarySourceFactory.cpp dbms/Dictionaries/DictionaryStructure.cpp  dbms/Dictionaries/getDictionaryConfigurationFromAST.cpp)
+list (APPEND dbms_headers dbms/Dictionaries/DictionaryFactory.h   dbms/Dictionaries/DictionarySourceFactory.h   dbms/Dictionaries/DictionaryStructure.h dbms/Dictionaries/getDictionaryConfigurationFromAST.h)
 
 if (NOT ENABLE_SSL)
-    list (REMOVE_ITEM clickhouse_common_io_sources src/Common/OpenSSLHelpers.cpp)
-    list (REMOVE_ITEM clickhouse_common_io_headers src/Common/OpenSSLHelpers.h)
+    list (REMOVE_ITEM clickhouse_common_io_sources dbms/Common/OpenSSLHelpers.cpp)
+    list (REMOVE_ITEM clickhouse_common_io_headers dbms/Common/OpenSSLHelpers.h)
 endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
-add_library (clickhouse_malloc OBJECT src/Common/malloc.cpp)
-set_source_files_properties(src/Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
+add_library (clickhouse_malloc OBJECT dbms/Common/malloc.cpp)
+set_source_files_properties(dbms/Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
-add_library (clickhouse_new_delete STATIC src/Common/new_delete.cpp)
+add_library (clickhouse_new_delete STATIC dbms/Common/new_delete.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
 
 if (OS_FREEBSD)
     target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
 endif ()
 
-add_subdirectory(src/Common/ZooKeeper)
-add_subdirectory(src/Common/Config)
+add_subdirectory(dbms/Common/ZooKeeper)
+add_subdirectory(dbms/Common/Config)
 
 set (all_modules)
 macro(add_object_library name common_path)
@@ -280,28 +282,28 @@ macro(add_object_library name common_path)
     endif ()
 endmacro()
 
-add_object_library(clickhouse_access src/Access)
-add_object_library(clickhouse_core src/Core)
-add_object_library(clickhouse_compression src/Compression)
-add_object_library(clickhouse_datastreams src/DataStreams)
-add_object_library(clickhouse_datatypes src/DataTypes)
-add_object_library(clickhouse_databases src/Databases)
-add_object_library(clickhouse_disks src/Disks)
-add_object_library(clickhouse_interpreters src/Interpreters)
-add_object_library(clickhouse_interpreters_clusterproxy src/Interpreters/ClusterProxy)
-add_object_library(clickhouse_columns src/Columns)
-add_object_library(clickhouse_storages src/Storages)
-add_object_library(clickhouse_storages_distributed src/Storages/Distributed)
-add_object_library(clickhouse_storages_mergetree src/Storages/MergeTree)
-add_object_library(clickhouse_storages_liveview src/Storages/LiveView)
-add_object_library(clickhouse_client src/Client)
-add_object_library(clickhouse_formats src/Formats)
-add_object_library(clickhouse_processors src/Processors)
-add_object_library(clickhouse_processors_executors src/Processors/Executors)
-add_object_library(clickhouse_processors_formats src/Processors/Formats)
-add_object_library(clickhouse_processors_formats_impl src/Processors/Formats/Impl)
-add_object_library(clickhouse_processors_transforms src/Processors/Transforms)
-add_object_library(clickhouse_processors_sources src/Processors/Sources)
+add_object_library(clickhouse_access dbms/Access)
+add_object_library(clickhouse_core dbms/Core)
+add_object_library(clickhouse_compression dbms/Compression)
+add_object_library(clickhouse_datastreams dbms/DataStreams)
+add_object_library(clickhouse_datatypes dbms/DataTypes)
+add_object_library(clickhouse_databases dbms/Databases)
+add_object_library(clickhouse_disks dbms/Disks)
+add_object_library(clickhouse_interpreters dbms/Interpreters)
+add_object_library(clickhouse_interpreters_clusterproxy dbms/Interpreters/ClusterProxy)
+add_object_library(clickhouse_columns dbms/Columns)
+add_object_library(clickhouse_storages dbms/Storages)
+add_object_library(clickhouse_storages_distributed dbms/Storages/Distributed)
+add_object_library(clickhouse_storages_mergetree dbms/Storages/MergeTree)
+add_object_library(clickhouse_storages_liveview dbms/Storages/LiveView)
+add_object_library(clickhouse_client dbms/Client)
+add_object_library(clickhouse_formats dbms/Formats)
+add_object_library(clickhouse_processors dbms/Processors)
+add_object_library(clickhouse_processors_executors dbms/Processors/Executors)
+add_object_library(clickhouse_processors_formats dbms/Processors/Formats)
+add_object_library(clickhouse_processors_formats_impl dbms/Processors/Formats/Impl)
+add_object_library(clickhouse_processors_transforms dbms/Processors/Transforms)
+add_object_library(clickhouse_processors_sources dbms/Processors/Sources)
 
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
@@ -335,29 +337,29 @@ endif ()
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
     # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
     set_source_files_properties(
-        src/Dictionaries/FlatDictionary.cpp
-        src/Dictionaries/HashedDictionary.cpp
-        src/Dictionaries/CacheDictionary.cpp
-        src/Dictionaries/TrieDictionary.cpp
-        src/Dictionaries/RangeHashedDictionary.cpp
-        src/Dictionaries/ComplexKeyHashedDictionary.cpp
-        src/Dictionaries/ComplexKeyCacheDictionary.cpp
-        src/Dictionaries/ComplexKeyCacheDictionary_generate1.cpp
-        src/Dictionaries/ComplexKeyCacheDictionary_generate2.cpp
-        src/Dictionaries/ComplexKeyCacheDictionary_generate3.cpp
-        src/Dictionaries/ODBCBlockInputStream.cpp
-        src/Dictionaries/HTTPDictionarySource.cpp
-        src/Dictionaries/LibraryDictionarySource.cpp
-        src/Dictionaries/ExecutableDictionarySource.cpp
-        src/Dictionaries/ClickHouseDictionarySource.cpp
+        dbms/Dictionaries/FlatDictionary.cpp
+        dbms/Dictionaries/HashedDictionary.cpp
+        dbms/Dictionaries/CacheDictionary.cpp
+        dbms/Dictionaries/TrieDictionary.cpp
+        dbms/Dictionaries/RangeHashedDictionary.cpp
+        dbms/Dictionaries/ComplexKeyHashedDictionary.cpp
+        dbms/Dictionaries/ComplexKeyCacheDictionary.cpp
+        dbms/Dictionaries/ComplexKeyCacheDictionary_generate1.cpp
+        dbms/Dictionaries/ComplexKeyCacheDictionary_generate2.cpp
+        dbms/Dictionaries/ComplexKeyCacheDictionary_generate3.cpp
+        dbms/Dictionaries/ODBCBlockInputStream.cpp
+        dbms/Dictionaries/HTTPDictionarySource.cpp
+        dbms/Dictionaries/LibraryDictionarySource.cpp
+        dbms/Dictionaries/ExecutableDictionarySource.cpp
+        dbms/Dictionaries/ClickHouseDictionarySource.cpp
         PROPERTIES COMPILE_FLAGS -g0)
 endif ()
 
 # Otherwise it will slow down stack traces printing too much.
 set_source_files_properties(
-        src/Common/Elf.cpp
-        src/Common/Dwarf.cpp
-        src/Common/SymbolIndex.cpp
+        dbms/Common/Elf.cpp
+        dbms/Common/Dwarf.cpp
+        dbms/Common/SymbolIndex.cpp
         PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
 
 target_link_libraries (clickhouse_common_io
@@ -441,8 +443,8 @@ dbms_target_link_libraries (
     ${Boost_SYSTEM_LIBRARY}
 )
 
-target_include_directories(clickhouse_common_io PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include) # uses some includes from core
-dbms_target_include_directories(PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include)
+target_include_directories(clickhouse_common_io PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/dbms/Core/include) # uses some includes from core
+dbms_target_include_directories(PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/dbms/Core/include)
 
 target_include_directories(clickhouse_common_io SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
 dbms_target_include_directories(SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
@@ -565,7 +567,7 @@ if (USE_JEMALLOC)
     target_include_directories (clickhouse_new_delete SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR})
 
     if(NOT MAKE_STATIC_LIBRARIES AND ${JEMALLOC_LIBRARIES} MATCHES "${CMAKE_STATIC_LIBRARY_SUFFIX}$")
-        # mallctl in dbms/src/Interpreters/AsynchronousMetrics.cpp
+        # mallctl in dbms/dbms/Interpreters/AsynchronousMetrics.cpp
         # Actually we link JEMALLOC to almost all libraries.
         # This is just hotfix for some uninvestigated problem.
         target_link_libraries(clickhouse_interpreters PRIVATE ${JEMALLOC_LIBRARIES})
@@ -581,7 +583,6 @@ target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_C
 target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 
 add_subdirectory (programs)
-add_subdirectory (tests)
 
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
