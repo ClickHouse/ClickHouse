@@ -482,6 +482,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_ACCESS_TYPE = 508;
     extern const int INVALID_GRANT = 509;
     extern const int CACHE_DICTIONARY_UPDATE_FAIL = 510;
+    extern const int CANNOT_ASSIGN_ALTER = 512;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

@@ -1045,7 +1045,10 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     {
         if (!alter_sequence.canExecuteMetaAlter(entry.alter_version, state_lock))
         {
-            out_postpone_reason = "Alter is not started, because more old alter is executing right now";
+            int head_alter = alter_sequence.getHeadAlterVersion(state_lock);
+            out_postpone_reason = "Cannot execute alter data with version: " + std::to_string(entry.alter_version)
+                + " because another alter " + std::to_string(head_alter)
+                + " must be executed before";
             return false;
         }
     }
@@ -1054,7 +1057,15 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     {
         if (!alter_sequence.canExecuteDataAlter(entry.alter_version, state_lock))
         {
-            out_postpone_reason = "Cannot execute alter data with version: " + std::to_string(entry.alter_version) + " because metadata alter is not finished yet";
+            int head_alter = alter_sequence.getHeadAlterVersion(state_lock);
+            if (head_alter == entry.alter_version)
+                out_postpone_reason = "Cannot execute alter data with version: "
+                    + std::to_string(entry.alter_version) + " because metadata still not altered";
+            else
+                out_postpone_reason = "Cannot execute alter data with version: " + std::to_string(entry.alter_version)
+                    + " because another alter " + std::to_string(head_alter) + " must be executed before";
+
+
             return false;
         }
     }
