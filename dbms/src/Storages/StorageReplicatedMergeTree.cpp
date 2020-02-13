@@ -2251,11 +2251,7 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::movePartsTask()
 void StorageReplicatedMergeTree::mergeSelectingTask()
 {
     if (!is_leader)
-    {
-        LOG_DEBUG(log, "I'm not leader, I don't want to assign anything");
         return;
-    }
-    LOG_DEBUG(log, "Merge selecting started");
 
     const auto storage_settings_ptr = getSettings();
     const bool deduplicate = false; /// TODO: read deduplicate option from table config
@@ -2295,7 +2291,6 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             if (max_source_parts_size_for_merge > 0 &&
                 merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred))
             {
-                LOG_DEBUG(log, "ASSIGNING MERGE");
                 success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
                     future_merged_part.name, deduplicate, force_ttl);
             }
@@ -2307,20 +2302,12 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 DataPartsVector data_parts = getDataPartsVector();
                 for (const auto & part : data_parts)
                 {
-                    LOG_DEBUG(log, "ASSIGNING MUTATIONS LOOKING AT PART " << part->name);
                     if (part->bytes_on_disk > max_source_part_size_for_mutation)
                         continue;
 
                     std::optional<std::pair<Int64, int>> desired_mutation_version = merge_pred.getDesiredMutationVersion(part);
                     if (!desired_mutation_version)
-                    {
-                        LOG_DEBUG(log, "NO Desired version found");
                         continue;
-                    }
-                    else
-                    {
-                        LOG_DEBUG(log, "Desired mutation version: " << desired_mutation_version->first << " alter version:" << desired_mutation_version->second);
-                    }
 
                     if (createLogEntryToMutatePart(*part, desired_mutation_version->first, desired_mutation_version->second))
                     {
@@ -2328,10 +2315,6 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                         break;
                     }
                 }
-            }
-            else
-            {
-                LOG_DEBUG(log, "TOO MANY MUTATIONS IN QUEUE");
             }
         }
     }
