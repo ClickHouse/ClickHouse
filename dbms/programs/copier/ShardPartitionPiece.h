@@ -4,8 +4,6 @@
 
 namespace DB {
 
-namespace {
-
 struct ShardPartitionPiece {
 
     ShardPartitionPiece(ShardPartition &parent, size_t current_piece_number_, bool is_absent_piece_)
@@ -77,7 +75,5 @@ String ShardPartitionPiece::getShardStatusPath() const
     return getPartitionPieceShardsPath() + "/" + toString(shard_partition.task_shard.numberInCluster());
 }
 
-
-} // end of anonymous namespace
 
 }

@@ -4,7 +4,6 @@
 
 namespace DB {
 
-namespace {
 
 struct TaskCluster {
     TaskCluster(const String &task_zookeeper_path_, const String &default_local_database_)
@@ -90,7 +89,6 @@ void TaskCluster::reloadSettings(const Poco::Util::AbstractConfiguration &config
     set_default_value(settings_push.insert_distributed_timeout, 0);
 }
 
-} // end of anonymous namespace
 
 }
 

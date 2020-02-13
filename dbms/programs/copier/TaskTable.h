@@ -5,8 +5,6 @@
 
 namespace DB {
 
-namespace {
-
 
 struct TaskTable {
     TaskTable(TaskCluster &parent, const Poco::Util::AbstractConfiguration &config, const String &prefix,
@@ -238,6 +236,5 @@ void TaskTable::initShards(RandomEngine &&random_engine) {
     local_shards.assign(all_shards.begin(), it_first_remote);
 }
 
-} // end of anonymouse namespace
 
 }

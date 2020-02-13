@@ -5,8 +5,6 @@
 
 namespace DB {
 
-namespace {
-
 
 /// Just destination partition of a shard
 /// I don't know what this comment means.
@@ -90,6 +88,5 @@ String ShardPartition::getCommonPartitionIsCleanedPath() const {
     return getCommonPartitionIsDirtyPath() + "/cleaned";
 }
 
-} //end of anonymous namespace
 
 }
