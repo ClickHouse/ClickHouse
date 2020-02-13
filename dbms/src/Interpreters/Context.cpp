@@ -57,6 +57,7 @@
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
+#include <ext/singleton.h>
 
 namespace ProfileEvents
 {
@@ -168,7 +169,6 @@ struct ContextShared
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
-    std::unique_ptr<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
     class SessionKeyHash
@@ -299,13 +299,7 @@ struct ContextShared
         schedule_pool.reset();
         ddl_worker.reset();
 
-        /// Stop trace collector if any
-        trace_collector.reset();
-    }
-
-    bool hasTraceCollector()
-    {
-        return trace_collector != nullptr;
+        ext::Singleton<TraceCollector>::reset();
     }
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
@@ -313,7 +307,7 @@ struct ContextShared
         if (trace_log == nullptr)
             return;
 
-        trace_collector = std::make_unique<TraceCollector>(trace_log);
+        ext::Singleton<TraceCollector>()->setTraceLog(trace_log);
     }
 };
 
@@ -650,6 +644,10 @@ void Context::checkAccess(const AccessFlags & access, const std::string_view & d
 void Context::checkAccess(const AccessRightsElement & access) const { return checkAccessImpl(access); }
 void Context::checkAccess(const AccessRightsElements & access) const { return checkAccessImpl(access); }
 
+void Context::switchRowPolicy()
+{
+    row_policy = getAccessControlManager().getRowPolicyContext(client_info.initial_user);
+}
 
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
@@ -688,7 +686,7 @@ void Context::calculateAccessRights()
 {
     auto lock = getLock();
     if (user)
-        std::atomic_store(&access_rights, getAccessControlManager().getAccessRightsContext(client_info, user->access, settings, current_database));
+        std::atomic_store(&access_rights, getAccessControlManager().getAccessRightsContext(user, client_info, settings, current_database));
 }
 
 void Context::setProfile(const String & profile)
@@ -701,9 +699,18 @@ void Context::setProfile(const String & profile)
     settings_constraints = std::move(new_constraints);
 }
 
-std::shared_ptr<const User> Context::getUser(const String & user_name) const
+std::shared_ptr<const User> Context::getUser() const
 {
-    return shared->access_control_manager.getUser(user_name);
+    if (!user)
+        throw Exception("No current user", ErrorCodes::LOGICAL_ERROR);
+    return user;
+}
+
+UUID Context::getUserID() const
+{
+    if (!user)
+        throw Exception("No current user", ErrorCodes::LOGICAL_ERROR);
+    return user_id;
 }
 
 void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
@@ -717,8 +724,9 @@ void Context::setUser(const String & name, const String & password, const Poco::
     if (!quota_key.empty())
         client_info.quota_key = quota_key;
 
+    user_id = shared->access_control_manager.getID<User>(name);
     user = shared->access_control_manager.authorizeAndGetUser(
-        name,
+        user_id,
         password,
         address.host(),
         [this](const UserPtr & changed_user)
@@ -1677,11 +1685,6 @@ void Context::initializeSystemLogs()
 {
     auto lock = getLock();
     shared->system_logs.emplace(*global_context, getConfigRef());
-}
-
-bool Context::hasTraceCollector()
-{
-    return shared->hasTraceCollector();
 }
 
 void Context::initializeTraceCollector()

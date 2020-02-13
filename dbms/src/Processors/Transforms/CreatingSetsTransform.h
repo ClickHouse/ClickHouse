@@ -1,11 +1,14 @@
 #pragma once
+#include <Poco/Logger.h>
 #include <Processors/IProcessor.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Common/Stopwatch.h>
+#include <DataStreams/SizeLimits.h>
 
 namespace DB
 {
 
+class QueryStatus;
 struct Progress;
 using ProgressCallback = std::function<void(const Progress & progress)>;
 

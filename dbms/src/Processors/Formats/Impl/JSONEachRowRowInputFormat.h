@@ -24,6 +24,9 @@ public:
 
     String getName() const override { return "JSONEachRowRowInputFormat"; }
 
+    void readPrefix() override;
+    void readSuffix() override;
+
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
@@ -71,15 +74,7 @@ private:
     /// This flag is needed to know if data is in square brackets.
     bool data_in_square_brackets = false;
 
-    /// This is needed to know the stage of parsing.
-    enum class ParsingStage
-    {
-        START,
-        PROCESS,
-        FINISH
-    };
-
-    ParsingStage parsing_stage = ParsingStage::START;
+    bool allow_new_rows = true;
 };
 
 }

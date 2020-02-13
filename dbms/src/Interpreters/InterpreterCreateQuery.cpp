@@ -322,7 +322,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
     {
         auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(default_expr_list, column_names_and_types);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
-        for (auto action : actions->getActions())
+        for (auto & action : actions->getActions())
             if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
                 throw Exception("Cannot CREATE table. Unsupported default value that requires ARRAY JOIN or JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
 
@@ -545,10 +545,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
     {
+        bool if_not_exists = create.if_not_exists;
         // Table SQL definition is available even if the table is detached
         auto query = context.getDatabase(create.database)->getCreateTableQuery(context, create.table);
         create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
         create.attach = true;
+        create.if_not_exists = if_not_exists;
     }
 
     String current_database = context.getCurrentDatabase();

@@ -4,6 +4,7 @@
 
 #include <Common/OptimizedRegularExpression.h>
 #include <Storages/IStorage.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
