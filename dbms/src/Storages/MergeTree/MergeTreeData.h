@@ -180,15 +180,9 @@ public:
     using DataPartsLock = std::unique_lock<std::mutex>;
     DataPartsLock lockParts() const { return DataPartsLock(data_parts_mutex); }
 
-    MergeTreeDataPartType choosePartType(size_t bytes_on_disk, size_t rows_count) const;
+    MergeTreeDataPartType choosePartType(size_t bytes_uncompressed, size_t rows_count) const;
 
-    /// After this methods setColumns must be called
-    MutableDataPartPtr createPart(const String & name,
-        const MergeTreePartInfo & part_info, const DiskPtr & disk,
-        const NamesAndTypesList & columns,
-        size_t bytes_on_disk, size_t rows_num,
-        const String & relative_path) const;
-
+    /// After this method setColumns must be called
     MutableDataPartPtr createPart(const String & name,
         MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
         const DiskPtr & disk, const String & relative_path) const;
