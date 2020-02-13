@@ -348,6 +348,12 @@ public:
     /// Locks queue's mutex.
     bool addFuturePartIfNotCoveredByThem(const String & part_name, LogEntry & entry, String & reject_reason);
 
+    bool checkCanFetchPart(const String & part_name)
+    {
+        std::lock_guard lock(state_mutex);
+        return alter_sequence.canExecuteGetEntry(part_name, format_version, lock);
+    }
+
     /// A blocker that stops selects from the queue
     ActionBlocker actions_blocker;
 
