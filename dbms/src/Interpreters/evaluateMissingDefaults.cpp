@@ -48,18 +48,10 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
     {
         if (!block.has(required_column.name))
             continue;
-            //throw Exception("Required conversion of column " + required_column.name + " which is absent in block. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
         auto column_in_block = block.getByName(required_column.name);
-        //std::cerr << "Looking at:" << required_column.name << std::endl;
-        //std::cerr << "In block type:" << column_in_block.type->getName() << std::endl;
-        //std::cerr << "Required type:" << required_column.type->getName() << std::endl;
         if (column_in_block.type->equals(*required_column.type))
-        {
-            //std::cerr << "TYPES ARE SAME\n";
             continue;
-        }
-        //std::cerr << "TYPES ARE DIFFERENT\n";
 
         auto cast_func = makeASTFunction(
             "CAST", std::make_shared<ASTIdentifier>(required_column.name), std::make_shared<ASTLiteral>(required_column.type->getName()));
@@ -114,9 +106,7 @@ void executeExpressionsOnBlock(
         copy_block.insert({DataTypeUInt8().createColumnConst(rows_was, 0u), std::make_shared<DataTypeUInt8>(), "__dummy"});
     }
 
-    //std::cerr << "Block before expression:" << copy_block.dumpStructure() << std::endl;
     expression_analyzer.getActions(true)->execute(copy_block);
-    //std::cerr << "Block after expression:" << copy_block.dumpStructure() << std::endl;
 
     /// move evaluated columns to the original block, materializing them at the same time
     size_t pos = 0;
@@ -140,8 +130,6 @@ void executeExpressionsOnBlock(
 void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, const Context & context)
 {
     ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns);
-    //std::cerr << queryToString(conversion_expr_list) << std::endl;
-    //std::cerr << "Block:" << block.dumpStructure() << std::endl;
     if (conversion_expr_list->children.empty())
         return;
     executeExpressionsOnBlock(block, conversion_expr_list, true, required_columns, context);

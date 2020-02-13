@@ -302,7 +302,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     createNewZooKeeperNodes();
 
     Coordination::Stat metadata_stat;
-    current_zookeeper->get(zookeeper_path + "/columns", &metadata_stat);
+    current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
     metadata_version = metadata_stat.version;
 
     other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
@@ -474,11 +474,9 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
     String metadata_str = zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
     auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
     auto metadata_diff = old_metadata.checkAndFindDiff(metadata_from_zk, allow_alter);
-    //metadata_version = metadata_stat.version;
 
     Coordination::Stat columns_stat;
     auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(zookeeper_path + "/columns", &columns_stat));
-    //columns_version = columns_stat.version;
 
     /// TODO(alesap) remove this trash
     const ColumnsDescription & old_columns = getColumns();
@@ -1438,7 +1436,8 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
 
         try
         {
-            if (!fetchPart(entry.actual_new_part_name, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
+            String part_name = entry.actual_new_part_name.empty() ? entry.new_part_name : entry.actual_new_part_name;
+            if (!fetchPart(part_name, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
                 return false;
         }
         catch (Exception & e)
@@ -2618,10 +2617,6 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entr
                     return {};
                 }
             }
-            else
-            {
-                entry.actual_new_part_name = entry.new_part_name;
-            }
 
             return replica;
         }
@@ -3436,21 +3431,30 @@ void StorageReplicatedMergeTree::alter(
         }
     }
 
-    LOG_DEBUG(log, "Updated shared metadata nodes in ZooKeeper. Waiting for replicas to apply changes.");
 
     table_lock_holder.release();
 
     std::vector<String> unwaited;
     if (query_context.getSettingsRef().replication_alter_partitions_sync == 2)
+    {
+        LOG_DEBUG(log, "Updated shared metadata nodes in ZooKeeper. Waiting for replicas to apply changes.");
         unwaited = waitForAllReplicasToProcessLogEntry(*alter_entry, false);
+    }
     else if (query_context.getSettingsRef().replication_alter_partitions_sync == 1)
+    {
+        LOG_DEBUG(log, "Updated shared metadata nodes in ZooKeeper. Waiting for replicas to apply changes.");
         waitForReplicaToProcessLogEntry(replica_name, *alter_entry);
+    }
 
     if (!unwaited.empty())
         throw Exception("Some replicas doesn't finish metadata alter", ErrorCodes::UNFINISHED);
 
     if (mutation_znode)
+    {
+        LOG_DEBUG(log, "Metadata changes applied. Will wait for data changes.");
         waitMutation(*mutation_znode, query_context.getSettingsRef().replication_alter_partitions_sync);
+        LOG_DEBUG(log, "Data changes applied.");
+    }
 }
 
 void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context)

@@ -44,7 +44,7 @@ public:
     void addMutationForAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/)
     {
         if (!queue_state.count(alter_version))
-            queue_state.emplace(alter_version, AlterState{true, false});
+            queue_state.emplace(alter_version, AlterState{false, false});
         else
             queue_state[alter_version].data_finished = false;
     }
@@ -73,17 +73,19 @@ public:
         /// queue can be empty after load of finished mutation without move of mutation pointer
         if (queue_state.empty())
             return;
-        assert(queue_state.count(alter_version));
 
-        if (queue_state[alter_version].metadata_finished)
-            queue_state.erase(alter_version);
-        else
-            queue_state[alter_version].data_finished = true;
+        if (alter_version >= queue_state.begin()->first)
+        {
+            assert(queue_state.count(alter_version));
+            if (queue_state[alter_version].metadata_finished)
+                queue_state.erase(alter_version);
+            else
+                queue_state[alter_version].data_finished = true;
+        }
     }
 
     bool canExecuteDataAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/) const
     {
-
         if (!queue_state.count(alter_version))
             return true;
 
