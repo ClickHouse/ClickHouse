@@ -1666,22 +1666,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
         throw Exception("Unknown type in part " + relative_path, ErrorCodes::UNKNOWN_PART_TYPE);
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
-    const String & name,
-    const MergeTreePartInfo & part_info,
-    const DiskPtr & disk,
-    const NamesAndTypesList & columns_list,
-    size_t bytes_uncompressed,
-    size_t rows_count,
-    const String & relative_path) const
-{
-    auto type = choosePartType(bytes_uncompressed, rows_count);
-    auto part = createPart(name, type, part_info, disk, relative_path);
-    part->setColumns(columns_list);
-    /// Don't save rows_count count here as it can be changed later
-    return part;
-}
-
 static MergeTreeDataPartType getPartTypeFromMarkExtension(const String & mrk_ext)
 {
     if (mrk_ext == getNonAdaptiveMrkExtension())

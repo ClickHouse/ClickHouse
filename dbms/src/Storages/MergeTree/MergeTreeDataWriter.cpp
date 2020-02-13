@@ -232,13 +232,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     ReservationPtr reservation = data.reserveSpacePreferringTTLRules(expected_size, move_ttl_infos, time(nullptr));
 
     auto new_data_part = data.createPart(
-        part_name, new_part_info,
+        part_name,
+        data.choosePartType(expected_size, block.rows()),
+        new_part_info,
         reservation->getDisk(),
-        columns,
-        expected_size,
-        block.rows(),
         TMP_PREFIX + part_name);
 
+    new_data_part->setColumns(columns);
     new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
