@@ -29,11 +29,14 @@ struct StringRef
     StringRef(const char * data_, size_t size_) : data(data_), size(size_) {}
     StringRef(const unsigned char * data_, size_t size_) : data(reinterpret_cast<const char *>(data_)), size(size_) {}
     StringRef(const std::string & s) : data(s.data()), size(s.size()) {}
+    StringRef(const std::string_view & s) : data(s.data()), size(s.size()) {}
+    explicit StringRef(const char * data_) : data(data_), size(strlen(data_)) {}
     StringRef() = default;
 
     std::string toString() const { return std::string(data, size); }
 
     explicit operator std::string() const { return toString(); }
+    explicit operator std::string_view() const { return {data, size}; }
 };
 
 using StringRefs = std::vector<StringRef>;

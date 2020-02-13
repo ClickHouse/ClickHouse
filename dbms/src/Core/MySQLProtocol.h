@@ -7,6 +7,8 @@
 #include <Common/PODArray.h>
 #include <Core/Types.h>
 #include <Interpreters/Context.h>
+#include <Access/AccessControlManager.h>
+#include <Access/User.h>
 #include <IO/copyData.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -951,7 +953,7 @@ public:
             throw Exception("Wrong size of auth response. Expected: " + std::to_string(Poco::SHA1Engine::DIGEST_SIZE) + " bytes, received: " + std::to_string(auth_response->size()) + " bytes.",
                             ErrorCodes::UNKNOWN_EXCEPTION);
 
-        auto user = context.getUser(user_name);
+        auto user = context.getAccessControlManager().getUser(user_name);
 
         Poco::SHA1Engine::Digest double_sha1_value = user->authentication.getPasswordDoubleSHA1();
         assert(double_sha1_value.size() == Poco::SHA1Engine::DIGEST_SIZE);

@@ -231,7 +231,7 @@ ConsumerBufferPtr StorageKafka::popReadBuffer(std::chrono::milliseconds timeout)
 }
 
 
-ProducerBufferPtr StorageKafka::createWriteBuffer()
+ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
 {
     cppkafka::Configuration conf;
     conf.set("metadata.broker.list", brokers);
@@ -245,7 +245,7 @@ ProducerBufferPtr StorageKafka::createWriteBuffer()
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
     return std::make_shared<WriteBufferToKafkaProducer>(
-        producer, topics[0], row_delimiter ? std::optional<char>{row_delimiter} : std::optional<char>(), 1, 1024, std::chrono::milliseconds(poll_timeout));
+        producer, topics[0], row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024, std::chrono::milliseconds(poll_timeout), header);
 }
 
 
@@ -272,7 +272,7 @@ ConsumerBufferPtr StorageKafka::createReadBuffer()
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
     /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
-    return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit, stream_cancelled);
+    return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit, stream_cancelled, getTopics());
 }
 
 

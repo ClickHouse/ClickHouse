@@ -184,7 +184,9 @@ Changes already made by the mutation are not rolled back.
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL] [DEDUPLICATE]
 ```
 
-This query tries to initialize an unscheduled merge of data parts for tables with a table engine from the [MergeTree](../operations/table_engines/mergetree.md) family. Other kinds of table engines aren't supported.
+This query tries to initialize an unscheduled merge of data parts for tables with a table engine from the [MergeTree](../operations/table_engines/mergetree.md) family.
+
+The `OPTMIZE` query is also supported for the [MaterializedView](../operations/table_engines/materializedview.md) and the [Buffer](../operations/table_engines/buffer.md) engines. Other table engines aren't supported.
 
 When `OPTIMIZE` is used with the [ReplicatedMergeTree](../operations/table_engines/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all nodes (if the `replication_alter_partitions_sync` setting is enabled).
 

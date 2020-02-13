@@ -6,6 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/Context.h>
 
 
@@ -17,7 +18,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 class FunctionDemangle : public IFunction
@@ -26,9 +26,7 @@ public:
     static constexpr auto name = "demangle";
     static FunctionPtr create(const Context & context)
     {
-        if (!context.getSettingsRef().allow_introspection_functions)
-            throw Exception("Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
-
+        context.checkAccess(AccessType::demangle);
         return std::make_shared<FunctionDemangle>();
     }
 
@@ -75,9 +73,15 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             StringRef source = column_concrete->getDataAt(i);
-            int status = 0;
-            std::string demangled = demangle(source.data, status);
-            result_column->insertDataWithTerminatingZero(demangled.data(), demangled.size() + 1);
+            auto demangled = tryDemangle(source.data);
+            if (demangled)
+            {
+                result_column->insertDataWithTerminatingZero(demangled.get(), strlen(demangled.get()));
+            }
+            else
+            {
+                result_column->insertDataWithTerminatingZero(source.data, source.size);
+            }
         }
 
         block.getByPosition(result).column = std::move(result_column);

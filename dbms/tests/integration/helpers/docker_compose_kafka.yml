@@ -29,3 +29,18 @@ services:
         - kafka_zookeeper
     security_opt:
         - label:disable
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:5.2.0
+    hostname: schema-registry
+    ports:
+        - "8081:8081"
+    environment:
+        SCHEMA_REGISTRY_HOST_NAME: schema-registry
+        SCHEMA_REGISTRY_KAFKASTORE_SECURITY_PROTOCOL: PLAINTEXT
+        SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka1:19092
+    depends_on:
+        - kafka_zookeeper
+        - kafka1
+    security_opt:
+        - label:disable

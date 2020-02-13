@@ -396,6 +396,47 @@ void SettingEnum<EnumType, Tag>::set(const Field & x)
 }
 
 
+
+String SettingURI::toString() const
+{
+    return value.toString();
+}
+
+Field SettingURI::toField() const
+{
+    return value.toString();
+}
+
+void SettingURI::set(const Poco::URI & x)
+{
+    value = x;
+    changed = true;
+}
+
+void SettingURI::set(const Field & x)
+{
+    const String & s = safeGet<const String &>(x);
+    set(s);
+}
+
+void SettingURI::set(const String & x)
+{
+    set(Poco::URI(x));
+}
+
+void SettingURI::serialize(WriteBuffer & buf, SettingsBinaryFormat) const
+{
+    writeStringBinary(toString(), buf);
+}
+
+void SettingURI::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
+{
+    String s;
+    readStringBinary(s, buf);
+    set(s);
+}
+
+
 #define IMPLEMENT_SETTING_ENUM(ENUM_NAME, LIST_OF_NAMES_MACRO, ERROR_CODE_FOR_UNEXPECTED_NAME) \
     IMPLEMENT_SETTING_ENUM_WITH_TAG(ENUM_NAME, void, LIST_OF_NAMES_MACRO, ERROR_CODE_FOR_UNEXPECTED_NAME)
 

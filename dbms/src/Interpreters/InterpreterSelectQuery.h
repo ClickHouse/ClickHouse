@@ -58,6 +58,13 @@ public:
         const BlockInputStreamPtr & input_,
         const SelectQueryOptions & = {});
 
+    /// Read data not from the table specified in the query, but from the prepared pipe `input`.
+    InterpreterSelectQuery(
+            const ASTPtr & query_ptr_,
+            const Context & context_,
+            Pipe input_pipe_,
+            const SelectQueryOptions & = {});
+
     /// Read data not from the table specified in the query, but from the specified `storage_`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -90,13 +97,14 @@ private:
         const ASTPtr & query_ptr_,
         const Context & context_,
         const BlockInputStreamPtr & input_,
+        std::optional<Pipe> input_pipe,
         const StoragePtr & storage_,
         const SelectQueryOptions &,
         const Names & required_result_column_names = {});
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
-    Block getSampleBlockImpl();
+    Block getSampleBlockImpl(bool try_move_to_prewhere);
 
     struct Pipeline
     {
@@ -142,56 +150,7 @@ private:
     };
 
     template <typename TPipeline>
-    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, QueryPipeline & save_context_and_storage);
-
-    struct AnalysisResult
-    {
-        bool hasJoin() const { return before_join.get(); }
-        bool has_where      = false;
-        bool need_aggregate = false;
-        bool has_having     = false;
-        bool has_order_by   = false;
-        bool has_limit_by   = false;
-
-        bool remove_where_filter = false;
-        bool optimize_read_in_order = false;
-
-        ExpressionActionsPtr before_join;   /// including JOIN
-        ExpressionActionsPtr before_where;
-        ExpressionActionsPtr before_aggregation;
-        ExpressionActionsPtr before_having;
-        ExpressionActionsPtr before_order_and_select;
-        ExpressionActionsPtr before_limit_by;
-        ExpressionActionsPtr final_projection;
-
-        /// Columns from the SELECT list, before renaming them to aliases.
-        Names selected_columns;
-
-        /// Columns will be removed after prewhere actions execution.
-        Names columns_to_remove_after_prewhere;
-
-        /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
-        bool first_stage = false;
-        /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
-        bool second_stage = false;
-
-        SubqueriesForSets subqueries_for_sets;
-        PrewhereInfoPtr prewhere_info;
-        FilterInfoPtr filter_info;
-        ConstantFilterDescription prewhere_constant_filter_description;
-        ConstantFilterDescription where_constant_filter_description;
-    };
-
-    static AnalysisResult analyzeExpressions(
-        const ASTSelectQuery & query,
-        SelectQueryExpressionAnalyzer & query_analyzer,
-        QueryProcessingStage::Enum from_stage,
-        QueryProcessingStage::Enum to_stage,
-        const Context & context,
-        const StoragePtr & storage,
-        bool only_types,
-        const FilterInfoPtr & filter_info,
-        const Block & source_header);
+    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe, QueryPipeline & save_context_and_storage);
 
     /** From which table to read. With JOIN, the "left" table is returned.
      */
@@ -224,7 +183,7 @@ private:
     void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeDistinct(Pipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(Pipeline & pipeline);
-    void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+    void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
     void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter);
@@ -242,7 +201,7 @@ private:
     void executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(QueryPipeline & pipeline);
-    void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+    void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
     String generateFilterActions(ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
@@ -276,7 +235,7 @@ private:
     SelectQueryInfo query_info;
 
     /// Is calculated in getSampleBlock. Is used later in readImpl.
-    AnalysisResult analysis_result;
+    ExpressionAnalysisResult analysis_result;
     FilterInfoPtr filter_info;
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
@@ -301,6 +260,7 @@ private:
 
     /// Used when we read from prepared input, not table or subquery.
     BlockInputStreamPtr input;
+    std::optional<Pipe> input_pipe;
 
     Poco::Logger * log;
 };
