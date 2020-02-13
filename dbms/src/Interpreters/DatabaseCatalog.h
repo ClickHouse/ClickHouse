@@ -61,6 +61,8 @@ public:
     static constexpr const char * TEMPORARY_DATABASE = "_temporary_and_external_tables";
     static constexpr const char * SYSTEM_DATABASE = "system";
 
+    static DatabaseCatalog & init(const Context * global_context_);
+
     static DatabaseCatalog & instance();
 
     //DatabaseCatalog(/*Context & global_context_, String default_database_*/) {}
@@ -80,7 +82,7 @@ public:
     DatabasePtr getSystemDatabase() const;
 
     void attachDatabase(const String & database_name, const DatabasePtr & database);     // ca, a
-    DatabasePtr detachDatabase(const String & database_name);                            // (sr), ca, a
+    DatabasePtr detachDatabase(const String & database_name, bool drop = false);                            // (sr), ca, a
 
     DatabasePtr getDatabase(const String & database_name, const Context & local_context) const;
     DatabasePtr getDatabase(const String & database_name) const;                         // sr, ca, a
@@ -107,7 +109,7 @@ public:
     void updateDependency(const StorageID & old_from, const StorageID & old_where,const StorageID & new_from,  const StorageID & new_where);
 
 private:
-    DatabaseCatalog() : log(&Poco::Logger::get("DatabaseCatalog")) {}
+    DatabaseCatalog(const Context * global_context_);
     void assertDatabaseExistsUnlocked(const String & database_name) const;
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const;
 
@@ -126,7 +128,7 @@ private:
     }
 
 private:
-    //[[maybe_unused]] Context & global_context;
+    const Context * global_context;
     mutable std::recursive_mutex databases_mutex;
 
     ViewDependencies view_dependencies;                     /// Current dependencies

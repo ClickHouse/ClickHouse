@@ -187,6 +187,7 @@ try
       * Otherwise, metadata of temporary File(format, EXPLICIT_PATH) tables will pollute metadata/ directory;
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
+    DatabaseCatalog::init(context.get());
     std::string default_database = config().getString("default_database", "_local");
     DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);

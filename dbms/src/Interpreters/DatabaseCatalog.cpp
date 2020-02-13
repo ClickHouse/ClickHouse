@@ -5,6 +5,7 @@
 #include <Storages/StorageID.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseMemory.h>
+#include <Poco/File.h>
 
 namespace DB
 {
@@ -16,6 +17,7 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int DDL_GUARD_IS_ACTIVE;
+    extern const int DATABASE_NOT_EMPTY;
 }
 
 
@@ -140,13 +142,32 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
 }
 
 
-DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name)
+DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool drop)
 {
     std::lock_guard lock{databases_mutex};
     assertDatabaseExistsUnlocked(database_name);
-    auto res = databases.find(database_name)->second;
+
+    if (!DatabaseCatalog::instance().getDatabase(database_name)->empty(*global_context))
+        throw Exception("New table appeared in database being dropped or detached. Try again.", ErrorCodes::DATABASE_NOT_EMPTY);
+
+    auto db = databases.find(database_name)->second;
     databases.erase(database_name);
-    return res;
+
+    db->shutdown();
+
+    if (drop)
+    {
+        /// Delete the database.
+        db->drop(*global_context);
+
+        /// Old ClickHouse versions did not store database.sql files
+        Poco::File database_metadata_file(
+                global_context->getPath() + "metadata/" + escapeForFileName(database_name) + ".sql");
+        if (database_metadata_file.exists())
+            database_metadata_file.remove(false);
+    }
+
+    return db;
 }
 
 DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
@@ -227,10 +248,22 @@ void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
         throw Exception("Mapping for table with UUID=" + toString(uuid) + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
 }
 
+DatabaseCatalog::DatabaseCatalog(const Context * global_context_)
+    : global_context(global_context_), log(&Poco::Logger::get("DatabaseCatalog"))
+{
+    if (!global_context)
+        throw Exception("DatabaseCatalog is not initialized. It's a bug.", ErrorCodes::LOGICAL_ERROR);
+}
+
+DatabaseCatalog & DatabaseCatalog::init(const Context * global_context_)
+{
+    static DatabaseCatalog database_catalog(global_context_);
+    return database_catalog;
+}
+
 DatabaseCatalog & DatabaseCatalog::instance()
 {
-    static DatabaseCatalog database_catalog;
-    return database_catalog;
+    return init(nullptr);
 }
 
 DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, const Context & local_context) const
