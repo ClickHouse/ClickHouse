@@ -811,8 +811,7 @@ public:
         return type_res;
     }
 
-    template<typename A, typename B>
-    bool executeFixedString(Block & block, const ColumnNumbers & arguments, size_t result, const A & /*left*/, const B & /*right*/)
+    bool executeFixedString(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         using OpImpl = FixedStringOperationImpl<Op<UInt8, UInt8>>;
 
@@ -1008,6 +1007,8 @@ public:
             block.getByPosition(result).column = std::move(col_res);
             return true;
         }
+        else
+            (void)result;
         return false;
 }
 
@@ -1041,13 +1042,9 @@ void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, 
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
             if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeFixedString, RightDataType>)
-            {
-                return executeFixedString(block, arguments, result, left, right);
-            }
+                return executeFixedString(block, arguments, result);
             else
-            {
                 return executeNumeric(block, arguments, result, left, right);
-            }
         });
         if (!valid)
             throw Exception(getName() + "'s arguments do not match the expected data types", ErrorCodes::LOGICAL_ERROR);
