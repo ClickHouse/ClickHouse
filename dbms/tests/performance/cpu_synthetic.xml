@@ -59,7 +59,7 @@ PageCharset тоже почти всегда непуст, но его сред�
 <query>SELECT count() FROM hits_10m_single WHERE match(URL, '^https?://(?:www\\.)?metri[kc]a\\.yandex\\.(?:ru|com|com\\.tr|ua|by|kz)/.+?2014') SETTINGS max_threads = 1</query>
 <query>SELECT count() FROM hits_100m_single WHERE match(URL, '^https?://(?:www\\.)?metri[kc]a\\.yandex\\.(?:ru|com|com\\.tr|ua|by|kz)/.+?2014')</query>
 <!-- 34. Сложная агрегация. -->
-<query>SELECT SearchEngineID, SearchPhrase, RegionID FROM hits_100m_single GROUP BY SearchEngineID, SearchPhrase, RegionID ORDER BY count() DESC LIMIT 10 SETTINGS max_threads = 1</query>
+<query>SELECT SearchEngineID, SearchPhrase, RegionID FROM hits_10m_single GROUP BY SearchEngineID, SearchPhrase, RegionID ORDER BY count() DESC LIMIT 10 SETTINGS max_threads = 1</query>
 <query>SELECT SearchEngineID, SearchPhrase, RegionID FROM hits_100m_single GROUP BY SearchEngineID, SearchPhrase, RegionID ORDER BY count() DESC LIMIT 10</query>
 <!-- 36. Функция для работы с датой и временем. -->
 <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(toMonday(EventTime)) SETTINGS max_threads = 1</query>
