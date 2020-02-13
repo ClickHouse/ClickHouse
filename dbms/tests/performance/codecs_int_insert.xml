@@ -12,11 +12,6 @@
         </any_of>
     </stop_conditions>
 
-    <settings>
-        <parts_to_delay_insert>5000</parts_to_delay_insert>
-        <parts_to_throw_insert>5000</parts_to_throw_insert>
-    </settings>
-
     <substitutions>
         <substitution>
             <name>codec</name>
@@ -52,7 +47,9 @@
         </substitution>
     </substitutions>
 
-    <create_query>CREATE TABLE IF NOT EXISTS codec_{seq_type}_{type}_{codec} (n {type} CODEC({codec})) ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple();</create_query>
+    <create_query>CREATE TABLE IF NOT EXISTS codec_{seq_type}_{type}_{codec} (n {type} CODEC({codec})) 
+        ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple()
+        SETTINGS parts_to_delay_insert = 5000, parts_to_throw_insert = 5000;</create_query>
     <create_query>system stop merges</create_query>
 
     <!-- Using limit to make query finite, allowing it to be run multiple times in a loop, reducing mean error -->
