@@ -8,7 +8,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ThreadPool.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
@@ -51,8 +50,10 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         ASTPtr query;
         BlockOutputStreamPtr out;
 
-        if (auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(dependent_table.get()))
+        if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
         {
+            addTableLock(materialized_view->lockStructureForShare(true, context.getInitialQueryId()));
+
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
             query = materialized_view->getInnerQuery();

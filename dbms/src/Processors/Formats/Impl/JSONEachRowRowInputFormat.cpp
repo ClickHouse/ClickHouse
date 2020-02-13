@@ -216,46 +216,37 @@ void JSONEachRowRowInputFormat::readNestedData(const String & name, MutableColum
 
 bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
-    /// Set flag data_in_square_brackets if data starts with '['.
-    if (!in.eof() && parsing_stage == ParsingStage::START)
-    {
-        parsing_stage = ParsingStage::PROCESS;
-        skipWhitespaceIfAny(in);
-        if (*in.position() == '[')
-        {
-            data_in_square_brackets = true;
-            ++in.position();
-        }
-    }
-
+    if (!allow_new_rows)
+        return false;
     skipWhitespaceIfAny(in);
 
-    /// We consume ;, or \n before scanning a new row, instead scanning to next row at the end.
+    /// We consume , or \n before scanning a new row, instead scanning to next row at the end.
     /// The reason is that if we want an exact number of rows read with LIMIT x
     /// from a streaming table engine with text data format, like File or Kafka
     /// then seeking to next ;, or \n would trigger reading of an extra row at the end.
 
     /// Semicolon is added for convenience as it could be used at end of INSERT query.
-    if (!in.eof() && (*in.position() == ',' || *in.position() == ';'))
-        ++in.position();
-
-    /// Finish reading rows if data is in square brackets and ']' received.
-    skipWhitespaceIfAny(in);
-    if (!in.eof() && *in.position() == ']' && data_in_square_brackets)
+    bool is_first_row = getCurrentUnitNumber() == 0 && getTotalRows() == 1;
+    if (!in.eof())
     {
-        data_in_square_brackets = false;
-        parsing_stage = ParsingStage::FINISH;
-        ++in.position();
-        return false;
+        /// There may be optional ',' (but not before the first row)
+        if (!is_first_row && *in.position() == ',')
+            ++in.position();
+        else if (!data_in_square_brackets && *in.position() == ';')
+        {
+            /// ';' means the end of query (but it cannot be before ']')
+            return allow_new_rows = false;
+        }
+        else if (data_in_square_brackets && *in.position() == ']')
+        {
+            /// ']' means the end of query
+            return allow_new_rows = false;
+        }
     }
 
     skipWhitespaceIfAny(in);
-    if (in.eof() || parsing_stage == ParsingStage::FINISH)
-    {
-        if (data_in_square_brackets)
-            throw Exception("Unexpected end of data: received end of stream instead of ']'.", ErrorCodes::INCORRECT_DATA);
+    if (in.eof())
         return false;
-    }
 
     size_t num_columns = columns.size();
 
@@ -289,6 +280,32 @@ void JSONEachRowRowInputFormat::resetParser()
     read_columns.clear();
     seen_columns.clear();
     prev_positions.clear();
+}
+
+void JSONEachRowRowInputFormat::readPrefix()
+{
+    skipWhitespaceIfAny(in);
+    if (!in.eof() && *in.position() == '[')
+    {
+        ++in.position();
+        data_in_square_brackets = true;
+    }
+}
+
+void JSONEachRowRowInputFormat::readSuffix()
+{
+    skipWhitespaceIfAny(in);
+    if (data_in_square_brackets)
+    {
+        assertChar(']', in);
+        skipWhitespaceIfAny(in);
+    }
+    if (!in.eof() && *in.position() == ';')
+    {
+        ++in.position();
+        skipWhitespaceIfAny(in);
+    }
+    assertEOF(in);
 }
 
 
