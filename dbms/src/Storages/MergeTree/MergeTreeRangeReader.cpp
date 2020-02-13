@@ -333,8 +333,8 @@ void MergeTreeRangeReader::ReadResult::optimize()
             filter_holder_original = std::move(filter_holder);
             filter = new_filter.get();
             filter_holder = std::move(new_filter);
+            need_filter = true;
         }
-        need_filter = true;
     }
     /// Another guess, if it's worth filtering at PREWHERE
     else if (countBytesInResultFilter(filter->getData()) < 0.6 * filter->size())
