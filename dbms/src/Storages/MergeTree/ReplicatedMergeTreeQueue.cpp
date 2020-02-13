@@ -223,7 +223,6 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
             /// we can even replace virtual parts. For example when we failed to
             /// GET source part and dowloaded merged/mutated part instead.
             current_parts.add(virtual_part_name, &replaced_parts);
-            virtual_parts.add(virtual_part_name, &replaced_parts);
 
             /// Each part from `replaced_parts` should become Obsolete as a result of executing the entry.
             /// So it is one less part to mutate for each mutation with block number greater or equal than part_info.getDataVersion()
@@ -975,9 +974,6 @@ bool ReplicatedMergeTreeQueue::addFuturePartIfNotCoveredByThem(const String & pa
 {
     std::lock_guard lock(state_mutex);
 
-    if (!alter_sequence.canExecuteGetEntry(part_name, format_version, lock))
-        return false;
-
     if (isNotCoveredByFuturePartsImpl(part_name, reject_reason, lock))
     {
         CurrentlyExecuting::setActualPartName(entry, part_name, *this);
@@ -999,12 +995,12 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         || entry.type == LogEntry::GET_PART
         || entry.type == LogEntry::MUTATE_PART)
     {
-        if (!entry.actual_new_part_name.empty()
-            && !alter_sequence.canExecuteGetEntry(entry.actual_new_part_name, format_version, state_lock))
-            return false;
+        //if (!entry.actual_new_part_name.empty()
+        //    && !alter_sequence.canExecuteGetEntry(entry.actual_new_part_name, format_version, state_lock))
+        //    return false;
 
-        if (!entry.new_part_name.empty() && !alter_sequence.canExecuteGetEntry(entry.new_part_name, format_version, state_lock))
-            return false;
+        //if (!entry.new_part_name.empty() && !alter_sequence.canExecuteGetEntry(entry.new_part_name, format_version, state_lock))
+        //    return false;
 
         for (const String & new_part_name : entry.getBlockingPartNames())
         {
@@ -1102,7 +1098,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
 
         //std::cerr << alter_sequence.canExecuteMetadataAlter(entry.alter_version, state_lock) << std::endl;
-        if (*entries_in_queue.begin() != entry.znode_name || !alter_sequence.canExecuteMetaAlter(entry.alter_version, state_lock))
+        if (!alter_sequence.canExecuteMetaAlter(entry.alter_version, state_lock))
         {
             out_postpone_reason
                 = "Cannot execute alter metadata with because head smallest node is " + *entries_in_queue.begin() + " but we are " + entry.znode_name;

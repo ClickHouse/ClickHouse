@@ -78,9 +78,9 @@ public:
             {
                 LOG_DEBUG(log, "Block number:" << block_number << " has part name " << part_name <<  " version " << state.block_numbers.at(info.partition_id) << " metadata is done:" << state.metadata_finished);
                 if (!state.metadata_finished)
-                    return info.getDataVersion() < state.block_numbers.at(info.partition_id);
+                    return info.getDataVersion() < state.block_numbers.at(info.partition_id) && info.max_block < state.block_numbers.at(info.partition_id);
                 else
-                    return info.getDataVersion() <= state.block_numbers.at(info.partition_id);
+                    return info.getDataVersion() <= state.block_numbers.at(info.partition_id) && info.max_block <= state.block_numbers.at(info.partition_id);
             }
         }
         //LOG_DEBUG(log, "Nobody has block number for part " << part_name);
@@ -137,10 +137,8 @@ public:
         {
             LOG_DEBUG(log, "Key:" << key << " is metadata finished:" << value.metadata_finished);
         }
-        if (alter_version < queue_state.begin()->first)
-            return true;
         if (!queue_state.count(alter_version))
-            std::terminate();
+            return true;
         return queue_state.at(alter_version).metadata_finished;
     }
     bool canExecuteMetaAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/) const
