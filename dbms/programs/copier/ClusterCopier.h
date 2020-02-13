@@ -1,6 +1,10 @@
 #pragma once
 
 #include "Internals.h"
+#include "TaskCluster.h"
+#include "ShardPartition.h"
+#include "ShardPartitionPiece.h"
+#include "TaskTable.h"
 #include "ZookeeperStaff.h"
 
 namespace DB
@@ -166,7 +170,9 @@ public:
             auto shard_partition_it = task_shard->partition_tasks.find(partition_name);
             PartitionPieces & shard_partition_pieces = shard_partition_it->second.pieces;
 
-            for (int piece_number = 0; piece_number < 10; ++piece_number)
+            const size_t number_of_splits = task_table.number_of_splits;
+
+            for (size_t piece_number = 0; piece_number < number_of_splits; ++piece_number)
             {
                 bool res = checkPresentPartitionPiecesOnCurrentShard(timeouts, *task_shard, partition_name, piece_number);
                 shard_partition_pieces.emplace_back(shard_partition_it->second, piece_number, res);
@@ -472,14 +478,14 @@ public:
             {
                 CleanStateClock clean_state_clock (
                         zookeeper,
-                        task_table.getPartitionIsDirtyPath(partition_name),
-                        task_table.getPartitionIsCleanedPath(partition_name)
+                        task_table.getCertainPartitionIsDirtyPath(partition_name),
+                        task_table.getCertainPartitionIsCleanedPath(partition_name)
                 );
                 Coordination::Stat stat{};
                 LogicalClock task_start_clock;
-                if (zookeeper->exists(task_table.getPartitionTaskStatusPath(partition_name), &stat))
+                if (zookeeper->exists(task_table.getCertainPartitionTaskStatusPath(partition_name), &stat))
                     task_start_clock = LogicalClock(stat.mzxid);
-                zookeeper->get(task_table.getPartitionTaskStatusPath(partition_name), &stat);
+                zookeeper->get(task_table.getCertainPartitionTaskStatusPath(partition_name), &stat);
                 if (!clean_state_clock.is_clean() || task_start_clock <= clean_state_clock.discovery_zxid)
                 {
                     LOG_INFO(log, "Partition " << partition_name << " become dirty");
@@ -744,8 +750,10 @@ public:
                             /// To save references in the future.
                             auto shard_partition_it = shard->partition_tasks.find(partition_name);
                             PartitionPieces & shard_partition_pieces = shard_partition_it->second.pieces;
-                            ///FIXME: Remove 10
-                            for (int piece_number = 0; piece_number < 10; ++piece_number)
+
+                            const size_t number_of_splits = task_table.number_of_splits;
+
+                            for (size_t piece_number = 0; piece_number < number_of_splits; ++piece_number)
                             {
                                 auto res = checkPresentPartitionPiecesOnCurrentShard(timeouts, *shard, partition_name, piece_number);
                                 shard_partition_pieces.emplace_back(shard_partition_it->second, piece_number, res);
