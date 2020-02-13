@@ -24,7 +24,6 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
     , format_version(storage.format_version)
     , current_parts(format_version)
     , virtual_parts(format_version)
-    , alter_sequence(&Logger::get(storage_.getStorageID().table_name))
 {}
 
 
@@ -140,8 +139,6 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     else
         queue.push_front(entry);
 
-    entries_in_queue.insert(entry->znode_name);
-
     if (entry->type == LogEntry::GET_PART)
     {
         inserts_by_time.insert(entry);
@@ -153,21 +150,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
         }
     }
     if (entry->type == LogEntry::ALTER_METADATA)
-    {
-        LOG_DEBUG(log, "ADDING METADATA ENTRY WITH ALTER VERSION:" << entry->alter_version);
-        //for (auto & log_entry : entries_in_queue)
-        //{
-        //    LOG_DEBUG(log, "LogEntry:"  << log_entry);
-        //}
         alter_sequence.addMetadataAlter(entry->alter_version, state_lock);
-    }
-
-    if (entry->type == LogEntry::MUTATE_PART && entry->alter_version != -1)
-    {
-        LOG_DEBUG(log, "ADDING DATA ENTRY WITH ALTER VERSION:" << entry->alter_version << " FOR PART:" << entry->source_parts[0] << " to " << entry->getVirtualPartNames()[0]);
-        //LOG_DEBUG(log, "ADDING DATA ENTRY WITH ALTER VERSION:" << entry->alter_version);
-        //std::cerr << "INSERT MUTATE PART:" << entry->alter_version << std::endl;
-    }
 }
 
 
@@ -243,16 +226,7 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
         }
 
         if (entry->type == LogEntry::ALTER_METADATA)
-        {
-            LOG_DEBUG(log, "FIN ALTER FOR PART with ALTER VERSION:" << entry->alter_version);
-            //std::cerr << "Alter have mutation:" << entry->have_mutation << std::endl;
             alter_sequence.finishMetadataAlter(entry->alter_version, entry->have_mutation, state_lock);
-
-        }
-        if (entry->type == LogEntry::MUTATE_PART)
-        {
-            LOG_DEBUG(log, "FIN MUTATION FOR PART:" << entry->source_parts[0] << " with ALTER VERSION:" << entry->alter_version);
-        }
     }
     else
     {
@@ -260,25 +234,20 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
         {
             /// Because execution of the entry is unsuccessful, `virtual_part_name` will never appear
             /// so we won't need to mutate it.
-            LOG_DEBUG(log, "REMOVING PART FROM MUTATIONS:" << virtual_part_name);
             removePartFromMutations(virtual_part_name);
         }
 
     }
-    entries_in_queue.erase(entry->znode_name);
 }
 
 
 void ReplicatedMergeTreeQueue::removePartFromMutations(const String & part_name)
 {
-    LOG_DEBUG(log, "Removing part from mutations:" << part_name);
+    //LOG_DEBUG(log, "Removing part from mutations:" << part_name);
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
     auto in_partition = mutations_by_partition.find(part_info.partition_id);
     if (in_partition == mutations_by_partition.end())
-    {
-        LOG_DEBUG(log, "Not found partition in mutations for part:" << part_name);
         return;
-    }
 
     bool some_mutations_are_probably_done = false;
 
@@ -287,7 +256,7 @@ void ReplicatedMergeTreeQueue::removePartFromMutations(const String & part_name)
     {
         MutationStatus & status = *it->second;
 
-        LOG_DEBUG(log, "Removing part name:" << part_name << " from mutation:" << status.entry->znode_name << "    block number :" << status.entry->block_numbers.begin()->second);
+        //LOG_DEBUG(log, "Removing part name:" << part_name << " from mutation:" << status.entry->znode_name << "    block number :" << status.entry->block_numbers.begin()->second);
         status.parts_to_do.removePartAndCoveredParts(part_name);
         if (status.parts_to_do.size() == 0)
             some_mutations_are_probably_done = true;
@@ -626,7 +595,6 @@ Names ReplicatedMergeTreeQueue::getCurrentPartNamesToMutate(ReplicatedMergeTreeM
 void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
 {
     std::lock_guard lock(update_mutations_mutex);
-    //std::cerr << "UPdating mutations\n";
 
     Strings entries_in_zk = zookeeper->getChildrenWatch(zookeeper_path + "/mutations", nullptr, watch_callback);
     StringSet entries_in_zk_set(entries_in_zk.begin(), entries_in_zk.end());
@@ -696,7 +664,6 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
 
             for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
             {
-                LOG_DEBUG(log, "PROCESSING MUTATION:" << entry->znode_name);
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version))
                     .first->second;
 
@@ -729,7 +696,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                     some_mutations_are_probably_done = true;
 
                 if (entry->alter_version != -1)
-                    alter_sequence.addMutationForAlter(entry->alter_version, entry->block_numbers, state_lock);
+                    alter_sequence.addMutationForAlter(entry->alter_version, state_lock);
             }
         }
 
@@ -995,13 +962,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         || entry.type == LogEntry::GET_PART
         || entry.type == LogEntry::MUTATE_PART)
     {
-        //if (!entry.actual_new_part_name.empty()
-        //    && !alter_sequence.canExecuteGetEntry(entry.actual_new_part_name, format_version, state_lock))
-        //    return false;
-
-        //if (!entry.new_part_name.empty() && !alter_sequence.canExecuteGetEntry(entry.new_part_name, format_version, state_lock))
-        //    return false;
-
         for (const String & new_part_name : entry.getBlockingPartNames())
         {
             if (!isNotCoveredByFuturePartsImpl(new_part_name, out_postpone_reason, state_lock))
@@ -1082,49 +1042,20 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     }
 
     if (entry.type == LogEntry::ALTER_METADATA)
-    {       //std::cerr << "Should we execute alter:";
-
-
-        LOG_DEBUG(log, "Should we execute alter entry:" << entry.znode_name << "\n"<< entry.toString());
-        LOG_DEBUG(log, "We are in front:" << (entry.znode_name == *entries_in_queue.begin()));
-
-        for (auto & log_entry : entries_in_queue)
-        {
-            LOG_DEBUG(log, "LogEntry:" << log_entry);
-        }
-        for (auto & log_entry : queue)
-        {
-            LOG_DEBUG(log, "LogEntryData:" << log_entry->znode_name << "\n" << log_entry->toString());
-        }
-
-        //std::cerr << alter_sequence.canExecuteMetadataAlter(entry.alter_version, state_lock) << std::endl;
+    {
         if (!alter_sequence.canExecuteMetaAlter(entry.alter_version, state_lock))
         {
-            out_postpone_reason
-                = "Cannot execute alter metadata with because head smallest node is " + *entries_in_queue.begin() + " but we are " + entry.znode_name;
+            out_postpone_reason = "Alter is not started, because more old alter is executing right now";
             return false;
-        }
-        else
-        {
-            LOG_DEBUG(log, "YESSS");
         }
     }
 
     if (entry.type == LogEntry::MUTATE_PART && entry.alter_version != -1)
     {
-        //std::cerr << "Should we execute mutation:";
-        //std::cerr << alter_sequence.canExecuteDataAlter(entry.alter_version, state_lock) << std::endl;
-
-        LOG_DEBUG(log, "Should we execute mutation entry:" << entry.znode_name << "\n" << entry.toString());
         if (!alter_sequence.canExecuteDataAlter(entry.alter_version, state_lock))
         {
-            LOG_DEBUG(log, "NOOOO");
-            out_postpone_reason = "Cannot execute alter data with version: " + std::to_string(entry.alter_version);
+            out_postpone_reason = "Cannot execute alter data with version: " + std::to_string(entry.alter_version) + " because metadata alter is not finished yet";
             return false;
-        }
-        else
-        {
-            LOG_DEBUG(log, "YUESS");
         }
     }
 
