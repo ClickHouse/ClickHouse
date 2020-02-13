@@ -1076,7 +1076,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
-    FutureMergedMutatedPart future_merged_part(parts);
+    FutureMergedMutatedPart future_merged_part(parts, entry.new_part_type);
     if (future_merged_part.name != entry.new_part_name)
     {
         throw Exception("Future merged part name " + backQuote(future_merged_part.name) + " differs from part name in log entry: "

@@ -4,6 +4,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -12,7 +13,7 @@ namespace DB
 
 void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 {
-    out << "format version: 5\n"
+    out << "format version: 4\n"
         << "create_time: " << LocalDateTime(create_time ? create_time : time(nullptr)) << "\n"
         << "source replica: " << source_replica << '\n'
         << "block_id: " << escape << block_id << '\n';
@@ -29,7 +30,6 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 out << s << '\n';
             out << "into\n" << new_part_name;
             out << "\ndeduplicate: " << deduplicate;
-            out << "\npart_type: " << new_part_type.toString();
             break;
 
         case DROP_RANGE:
@@ -72,6 +72,9 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
     out << '\n';
 
+    if (new_part_type != MergeTreeDataPartType::WIDE && new_part_type != MergeTreeDataPartType::UNKNOWN)
+        out << "part_type: " << new_part_type.toString() << "\n";
+
     if (quorum)
         out << "quorum: " << quorum << '\n';
 }
@@ -83,7 +86,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
     in >> "format version: " >> format_version >> "\n";
 
-    if (format_version < 1 || format_version > 5)
+    if (format_version < 1 || format_version > 4)
         throw Exception("Unknown ReplicatedMergeTreeLogEntry format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT_VERSION);
 
     if (format_version >= 2)
@@ -121,12 +124,6 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         in >> new_part_name;
         if (format_version >= 4)
             in >> "\ndeduplicate: " >> deduplicate;
-        if (format_version >= 5)
-        {
-            String part_type_str;
-            in >> "\npart_type: " >> type_str;
-            new_part_type.fromString(type_str);
-        }
     }
     else if (type_str == "drop" || type_str == "detach")
     {
@@ -161,6 +158,15 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     }
 
     in >> "\n";
+    if (checkString("part_type: ", in))
+    {
+        String part_type_str;
+        in >> type_str;
+        new_part_type.fromString(type_str);
+        in >> "\n";
+    }
+    else
+        new_part_type = MergeTreeDataPartType::WIDE;
 
     /// Optional field.
     if (!in.eof())

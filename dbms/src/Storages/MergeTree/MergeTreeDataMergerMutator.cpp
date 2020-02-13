@@ -69,8 +69,24 @@ static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 2;
 ///  because between selecting parts to merge and doing merge, amount of free space could have decreased.
 static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 
-
 void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
+{
+    if (parts_.empty())
+        return;
+
+    size_t sum_rows = 0;
+    size_t sum_bytes_uncompressed = 0;
+    for (const auto & part : parts_)
+    {
+        sum_rows += part->rows_count;
+        sum_bytes_uncompressed += part->getTotalColumnsSize().data_uncompressed;
+    }
+
+    auto future_part_type = parts_.front()->storage.choosePartType(sum_bytes_uncompressed, sum_rows);
+    assign(std::move(parts_), future_part_type);
+}
+
+void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, MergeTreeDataPartType future_part_type)
 {
     if (parts_.empty())
         return;
@@ -89,25 +105,20 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
 
     UInt32 max_level = 0;
     Int64 max_mutation = 0;
-    size_t sum_rows = 0;
-    size_t sum_bytes_uncompressed = 0;
     for (const auto & part : parts)
     {
         max_level = std::max(max_level, part->info.level);
         max_mutation = std::max(max_mutation, part->info.mutation);
-        sum_rows += part->rows_count;
-        sum_bytes_uncompressed += part->getTotalColumnsSize().data_uncompressed;
     }
 
-    const auto & storage = parts.front()->storage;
-    type = storage.choosePartType(sum_bytes_uncompressed, sum_rows);
+    type = future_part_type;
     part_info.partition_id = parts.front()->info.partition_id;
     part_info.min_block = parts.front()->info.min_block;
     part_info.max_block = parts.back()->info.max_block;
     part_info.level = max_level + 1;
     part_info.mutation = max_mutation;
 
-    if (storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    if (parts.front()->storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         DayNum min_date = DayNum(std::numeric_limits<UInt16>::max());
         DayNum max_date = DayNum(std::numeric_limits<UInt16>::min());
@@ -562,7 +573,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     LOG_DEBUG(log, "Merging " << parts.size() << " parts: from "
               << parts.front()->name << " to " << parts.back()->name
-              << " into " << TMP_PREFIX + future_part.name);
+              << " into " << TMP_PREFIX + future_part.name + " with type " + future_part.type.toString());
 
     String part_path = data.getFullPathOnDisk(space_reservation->getDisk());
     String new_part_tmp_path = part_path + TMP_PREFIX + future_part.name + "/";
