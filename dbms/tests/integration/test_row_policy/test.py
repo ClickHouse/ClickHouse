@@ -6,13 +6,14 @@ import re
 import time
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance',
-                                config_dir="configs")
+instance = cluster.add_instance('instance1', config_dir="configs", with_zookeeper=True)
+instance2 = cluster.add_instance('instance2', config_dir="configs", with_zookeeper=True)
 
 
 def copy_policy_xml(local_file_name, reload_immediately = True):
     script_dir = os.path.dirname(os.path.realpath(__file__))
     instance.copy_file_to_container(os.path.join(script_dir, local_file_name), '/etc/clickhouse-server/users.d/row_policy.xml')
+    instance2.copy_file_to_container(os.path.join(script_dir, local_file_name), '/etc/clickhouse-server/users.d/row_policy.xml')
     if reload_immediately:
        instance.query("SYSTEM RELOAD CONFIG")
 
@@ -23,6 +24,24 @@ def started_cluster():
         cluster.start()
 
         instance.query('''
+            CREATE DATABASE mydb;
+
+            CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE MergeTree ORDER BY a;
+            INSERT INTO mydb.filtered_table1 values (0, 0), (0, 1), (1, 0), (1, 1);
+
+            CREATE TABLE mydb.table (a UInt8, b UInt8) ENGINE MergeTree ORDER BY a;
+            INSERT INTO mydb.table values (0, 0), (0, 1), (1, 0), (1, 1);
+
+            CREATE TABLE mydb.filtered_table2 (a UInt8, b UInt8, c UInt8, d UInt8) ENGINE MergeTree ORDER BY a;
+            INSERT INTO mydb.filtered_table2 values (0, 0, 0, 0), (1, 2, 3, 4), (4, 3, 2, 1), (0, 0, 6, 0);
+
+            CREATE TABLE mydb.filtered_table3 (a UInt8, b UInt8, c UInt16 ALIAS a + b) ENGINE MergeTree ORDER BY a;
+            INSERT INTO mydb.filtered_table3 values (0, 0), (0, 1), (1, 0), (1, 1);
+
+            CREATE TABLE mydb.`.filtered_table4` (a UInt8, b UInt8, c UInt16 ALIAS a + b) ENGINE MergeTree ORDER BY a;
+            INSERT INTO mydb.`.filtered_table4` values (0, 0), (0, 1), (1, 0), (1, 1);
+        ''')
+        instance2.query('''
             CREATE DATABASE mydb;
 
             CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE MergeTree ORDER BY a;
@@ -195,17 +214,18 @@ def test_introspection():
     policy1 = "mydb\tfiltered_table1\tdefault\tdefault ON mydb.filtered_table1\t9e8a8f62-4965-2b5e-8599-57c7b99b3549\tusers.xml\t0\ta = 1\t\t\t\t\n"
     policy2 = "mydb\tfiltered_table2\tdefault\tdefault ON mydb.filtered_table2\tcffae79d-b9bf-a2ef-b798-019c18470b25\tusers.xml\t0\ta + b < 1 or c - d > 5\t\t\t\t\n"
     policy3 = "mydb\tfiltered_table3\tdefault\tdefault ON mydb.filtered_table3\t12fc5cef-e3da-3940-ec79-d8be3911f42b\tusers.xml\t0\tc = 1\t\t\t\t\n"
+    policy4 = "mydb\tlocal\tanother\tanother ON mydb.local\t5b23c389-7e18-06bf-a6bc-dd1afbbc0a97\tusers.xml\t0\ta = 1\t\t\t\t\n"
     assert instance.query("SELECT * from system.row_policies WHERE has(currentRowPolicyIDs('mydb', 'filtered_table1'), id) ORDER BY table, name") == policy1
     assert instance.query("SELECT * from system.row_policies WHERE has(currentRowPolicyIDs('mydb', 'filtered_table2'), id) ORDER BY table, name") == policy2
     assert instance.query("SELECT * from system.row_policies WHERE has(currentRowPolicyIDs('mydb', 'filtered_table3'), id) ORDER BY table, name") == policy3
-    assert instance.query("SELECT * from system.row_policies ORDER BY table, name") == policy1 + policy2 + policy3
+    assert instance.query("SELECT * from system.row_policies ORDER BY table, name") == policy1 + policy2 + policy3 + policy4
     assert instance.query("SELECT * from system.row_policies WHERE has(currentRowPolicyIDs(), id) ORDER BY table, name") == policy1 + policy2 + policy3
 
 
 def test_dcl_introspection():
     assert instance.query("SHOW POLICIES ON mydb.filtered_table1") == "default\n"
     assert instance.query("SHOW POLICIES CURRENT ON mydb.filtered_table2") == "default\n"
-    assert instance.query("SHOW POLICIES") == "default ON mydb.filtered_table1\ndefault ON mydb.filtered_table2\ndefault ON mydb.filtered_table3\n"
+    assert instance.query("SHOW POLICIES") == "another ON mydb.local\ndefault ON mydb.filtered_table1\ndefault ON mydb.filtered_table2\ndefault ON mydb.filtered_table3\n"
     assert instance.query("SHOW POLICIES CURRENT") == "default ON mydb.filtered_table1\ndefault ON mydb.filtered_table2\ndefault ON mydb.filtered_table3\n"
 
     assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table1") == "CREATE POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 TO default\n"
@@ -254,3 +274,35 @@ def test_dcl_management():
 
 def test_users_xml_is_readonly():
     assert re.search("storage is readonly", instance.query_and_get_error("DROP POLICY default ON mydb.filtered_table1"))
+
+
+def test_miscellaneous_engines():
+    copy_policy_xml('normal_filters.xml')
+
+    # ReplicatedMergeTree
+    instance.query("DROP TABLE mydb.filtered_table1")
+    instance.query("CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE ReplicatedMergeTree('/clickhouse/tables/00-00/filtered_table1', 'replica1') ORDER BY a")
+    instance.query("INSERT INTO mydb.filtered_table1 values (0, 0), (0, 1), (1, 0), (1, 1)")
+    assert instance.query("SELECT * FROM mydb.filtered_table1") == "1\t0\n1\t1\n"
+
+    # CollapsingMergeTree
+    instance.query("DROP TABLE mydb.filtered_table1")
+    instance.query("CREATE TABLE mydb.filtered_table1 (a UInt8, b Int8) ENGINE CollapsingMergeTree(b) ORDER BY a")
+    instance.query("INSERT INTO mydb.filtered_table1 values (0, 1), (0, 1), (1, 1), (1, 1)")
+    assert instance.query("SELECT * FROM mydb.filtered_table1") == "1\t1\n1\t1\n"
+
+    # ReplicatedCollapsingMergeTree
+    instance.query("DROP TABLE mydb.filtered_table1")
+    instance.query("CREATE TABLE mydb.filtered_table1 (a UInt8, b Int8) ENGINE ReplicatedCollapsingMergeTree('/clickhouse/tables/00-00/filtered_table1', 'replica1', b) ORDER BY a")
+    instance.query("INSERT INTO mydb.filtered_table1 values (0, 1), (0, 1), (1, 1), (1, 1)")
+    assert instance.query("SELECT * FROM mydb.filtered_table1") == "1\t1\n1\t1\n"
+
+    # DistributedMergeTree
+    instance.query("DROP TABLE IF EXISTS mydb.not_filtered_table")
+    instance.query("CREATE TABLE mydb.not_filtered_table (a UInt8, b UInt8) ENGINE Distributed('test_local_cluster', mydb, local)")
+    instance.query("CREATE TABLE mydb.local (a UInt8, b UInt8) ENGINE MergeTree ORDER BY a")
+    instance2.query("CREATE TABLE mydb.local (a UInt8, b UInt8) ENGINE MergeTree ORDER BY a")
+    instance.query("INSERT INTO mydb.local values (2, 0), (2, 1), (1, 0), (1, 1)")
+    instance2.query("INSERT INTO mydb.local values (3, 0), (3, 1), (1, 0), (1, 1)")
+    assert instance.query("SELECT * FROM mydb.not_filtered_table", user="another") == "1\t0\n1\t1\n1\t0\n1\t1\n"
+    assert instance.query("SELECT sum(a), b FROM mydb.not_filtered_table GROUP BY b ORDER BY b", user="another") == "2\t0\n2\t1\n"

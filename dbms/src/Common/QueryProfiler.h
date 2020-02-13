@@ -15,12 +15,6 @@ namespace Poco
 namespace DB
 {
 
-enum class TimerType : UInt8
-{
-    Real,
-    Cpu,
-};
-
 /**
   * Query profiler implementation for selected thread.
   *
