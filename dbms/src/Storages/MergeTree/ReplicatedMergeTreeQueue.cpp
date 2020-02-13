@@ -1756,60 +1756,35 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
     /// the part (checked by querying queue.virtual_parts), we can confidently assign a mutation to
     /// version X for this part.
 
-    LOG_DEBUG(queue.log, "LOOKING for desired mutation version for part:" << part->name);
     if (last_quorum_parts.find(part->name) != last_quorum_parts.end()
         || part->name == inprogress_quorum_part)
-    {
-        LOG_DEBUG(queue.log, "PART " << part->name  <<" NAME NOT IN QUORUM");
         return {};
-    }
 
     std::lock_guard lock(queue.state_mutex);
 
     if (queue.virtual_parts.getContainingPart(part->info) != part->name)
-    {
-        LOG_DEBUG(queue.log, "VIRTUAL PARTS HAVE CONTAINING PART " << part->name);
         return {};
-    }
 
     auto in_partition = queue.mutations_by_partition.find(part->info.partition_id);
     if (in_partition == queue.mutations_by_partition.end())
-    {
-        LOG_DEBUG(queue.log, "NO PARTITION FOR MUTATION FOR PART " << part->name);
         return {};
-    }
 
     Int64 current_version = queue.getCurrentMutationVersionImpl(part->info.partition_id, part->info.getDataVersion(), lock);
     Int64 max_version = in_partition->second.rbegin()->first;
 
-    if (current_version >= max_version)
-    {
-        LOG_DEBUG(queue.log, "PART VERSION FOR " << part->name << " IS BIGGER THAN MAX");
-        //std::cerr << "But current version is:" << current_version << std::endl;
-        return {};
-    }
-
     int alter_version = -1;
-
-    //std::cerr << "Looking for alter version for mutation\n";
-    String version;
     for (auto [mutation_version, mutation_status] : in_partition->second)
     {
         max_version = mutation_version;
         if (mutation_version > current_version && mutation_status->entry->alter_version != -1)
         {
             alter_version = mutation_status->entry->alter_version;
-            version = mutation_status->entry->znode_name;
             break;
         }
     }
-    //std::cerr << "FOUND alter version:" << alter_version << " and mutation znode name:" << version << std::endl;
-    if (current_version >= max_version)
-    {
-        LOG_DEBUG(queue.log, "PART VERSION FOR " << part->name << " IS BIGGER THAN MAX AFTER ALTER");
-        return {};
-    }
 
+    if (current_version >= max_version)
+        return {};
 
     return std::make_pair(max_version, alter_version);
 }
