@@ -81,9 +81,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
-namespace
-{
-
 using DatabaseAndTableName = std::pair<String, String>;
 
 String getQuotedTable(const String & database, const String & table)
@@ -346,6 +343,4 @@ static ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, co
     return res;
 }
 
-
-} // end of an anonymous namespace
 }
