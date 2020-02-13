@@ -45,7 +45,8 @@ public:
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns);
 
-    /// Perform conversions TODO(alesap)
+    /// If part metadata is not equal to storage metadata, than
+    /// try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns);
 
     const NamesAndTypesList & getColumns() const { return columns; }
