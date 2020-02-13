@@ -399,8 +399,7 @@ public:
     /// Close sessions, that has been expired. Returns how long to wait for next session to be expired, if no new sessions will be added.
     std::chrono::steady_clock::duration closeSessions() const;
 
-    /// For methods below you may need to acquire a lock by yourself.
-    std::unique_lock<std::recursive_mutex> getLock() const;
+    /// For methods below you may need to acquire the context lock by yourself.
 
     const Context & getQueryContext() const;
     Context & getQueryContext();
@@ -588,6 +587,8 @@ public:
 
     MySQLWireContext mysql;
 private:
+    std::unique_lock<std::recursive_mutex> getLock() const;
+
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateUserSettings();
     void calculateAccessRights();

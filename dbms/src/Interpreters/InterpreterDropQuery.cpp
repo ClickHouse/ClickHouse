@@ -246,17 +246,15 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
         {
             throw Exception("Unable to truncate database.", ErrorCodes::SYNTAX_ERROR);
         }
-        else if (kind == ASTDropQuery::Kind::Detach)
+        else if (kind == ASTDropQuery::Kind::Detach || kind == ASTDropQuery::Kind::Drop)
         {
-            context.checkAccess(AccessType::DETACH_DATABASE, database_name);
-            DatabaseCatalog::instance().detachDatabase(database_name);
-            database->shutdown();
-            //FIXME someone may still use tables from database
-        }
-        else if (kind == ASTDropQuery::Kind::Drop)
-        {
-            context.checkAccess(AccessType::DROP_DATABASE, database_name);
+            bool drop = kind == ASTDropQuery::Kind::Drop;
+            if (drop)
+                context.checkAccess(AccessType::DROP_DATABASE, database_name);
+            else
+                context.checkAccess(AccessType::DETACH_DATABASE, database_name);
 
+            /// DETACH or DROP all tables and dictionaries inside database
             for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 String current_table_name = iterator->name();
@@ -269,27 +267,8 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
                 executeToDictionary(database_name, current_dictionary, kind, false, false, false);
             }
 
-            auto context_lock = context.getLock();
-
-            /// Someone could have time to delete the database before us.
-            DatabaseCatalog::instance().assertDatabaseExists(database_name);
-
-            /// Someone could have time to create a table in the database to be deleted while we deleted the tables without the context lock.
-            if (!DatabaseCatalog::instance().getDatabase(database_name)->empty(context))
-                throw Exception("New table appeared in database being dropped. Try dropping it again.", ErrorCodes::DATABASE_NOT_EMPTY);
-
-            /// Delete database information from the RAM
-            DatabaseCatalog::instance().detachDatabase(database_name);
-
-            database->shutdown();
-
-            /// Delete the database.
-            database->drop(context);
-
-            /// Old ClickHouse versions did not store database.sql files
-            Poco::File database_metadata_file(context.getPath() + "metadata/" + escapeForFileName(database_name) + ".sql");
-            if (database_metadata_file.exists())
-                database_metadata_file.remove(false);
+            /// DETACH or DROP database itself
+            DatabaseCatalog::instance().detachDatabase(database_name, drop);
         }
     }
 

@@ -979,7 +979,7 @@ bool TCPHandler::receiveData(bool scalar)
                 auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
                 StoragePtr storage;
                 /// If such a table does not exist, create it.
-                if (temporary_id.empty())
+                if (resolved.empty())
                 {
                     NamesAndTypesList columns = block.getNamesAndTypesList();
                     storage = StorageMemory::create(temporary_id, ColumnsDescription{columns}, ConstraintsDescription{});

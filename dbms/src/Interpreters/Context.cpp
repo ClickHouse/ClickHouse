@@ -800,7 +800,7 @@ StoragePtr Context::getTableImpl(const StorageID & table_id, std::optional<Excep
 
 void Context::addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast)
 {
-    //FIXME why without getLock()?
+    auto lock = getLock();
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
         throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 

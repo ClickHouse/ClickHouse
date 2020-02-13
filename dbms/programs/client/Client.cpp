@@ -224,6 +224,9 @@ private:
         context.setApplicationType(Context::ApplicationType::CLIENT);
         context.setQueryParameters(query_parameters);
 
+        /// There is no database catalog on client, but we have to initialized this singleton, because context may access it.
+        DatabaseCatalog::init(&context);
+
         /// settings and limits could be specified in config file, but passed settings has higher priority
         for (auto && setting : context.getSettingsRef())
         {
