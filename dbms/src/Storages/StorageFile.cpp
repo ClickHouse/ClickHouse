@@ -410,7 +410,7 @@ Pipes StorageFile::readWithProcessors(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    if (num_streams < paths.size())
+    if (num_streams > paths.size())
         num_streams = paths.size();
 
     Pipes pipes;
