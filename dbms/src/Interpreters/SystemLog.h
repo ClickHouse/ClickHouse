@@ -6,7 +6,6 @@
 #include <boost/noncopyable.hpp>
 #include <common/logger_useful.h>
 #include <Core/Types.h>
-#include <Common/ConcurrentBoundedQueue.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/Context.h>
 #include <Common/Stopwatch.h>
@@ -53,6 +52,10 @@ namespace DB
     };
     */
 
+namespace ErrorCodes
+{
+    extern const int TIMEOUT_EXCEEDED;
+}
 
 #define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576
 
@@ -119,55 +122,45 @@ public:
     void shutdown();
 
 protected:
+    Logger * log;
+
+private:
+    /* Saving thread data */
     Context & context;
     const String database_name;
     const String table_name;
     const String storage_def;
     StoragePtr table;
+    bool is_prepared = false;
     const size_t flush_interval_milliseconds;
-    std::atomic<bool> is_shutdown{false};
-
-    enum class EntryType
-    {
-        LOG_ELEMENT = 0,
-        AUTO_FLUSH,
-        FORCE_FLUSH,
-        SHUTDOWN,
-    };
-
-    using QueueItem = std::pair<EntryType, LogElement>;
-
-    /// Queue is bounded. But its size is quite large to not block in all normal cases.
-    ConcurrentBoundedQueue<QueueItem> queue {DBMS_SYSTEM_LOG_QUEUE_SIZE};
-
-    /** Data that was pulled from queue. Data is accumulated here before enough time passed.
-      * It's possible to implement double-buffering, but we assume that insertion into table is faster
-      *  than accumulation of large amount of log records (for example, for query log - processing of large amount of queries).
-      */
-    std::vector<LogElement> data;
-
-    Logger * log;
-
-    /** In this thread, data is pulled from 'queue' and stored in 'data', and then written into table.
-      */
     ThreadFromGlobalPool saving_thread;
 
-    void threadFunction();
+    /* Data shared between callers of add()/flush()/shutdown(), and the saving thread */
+    std::mutex mutex;
+    // Queue is bounded. But its size is quite large to not block in all normal cases.
+    std::vector<LogElement> queue;
+    // An always-incrementing index of the first message currently in the queue.
+    // We use it to give a global sequential index to every message, so that we can wait
+    // until a particular message is flushed. This is used to implement synchronous log
+    // flushing for SYSTEM FLUSH LOGS.
+    uint64_t queue_front_index = 0;
+    bool is_shutdown = false;
+    std::condition_variable flush_event;
+    // Requested to flush logs up to this index, exclusive
+    uint64_t requested_flush_before = 0;
+    // Flushed log up to this index, exclusive
+    uint64_t flushed_before = 0;
+
+    void savingThreadFunction();
 
     /** Creates new table if it does not exist.
       * Renames old table if its structure is not suitable.
       * This cannot be done in constructor to avoid deadlock while renaming a table under locked Context when SystemLog object is created.
       */
-    bool is_prepared = false;
     void prepareTable();
 
-    std::mutex flush_mutex;
-    std::mutex condvar_mutex;
-    std::condition_variable flush_condvar;
-    bool force_flushing = false;
-
     /// flushImpl can be executed only in saving_thread.
-    void flushImpl(EntryType reason);
+    void flushImpl(const std::vector<LogElement> & to_flush, uint64_t to_flush_end);
 };
 
 
@@ -183,51 +176,92 @@ SystemLog<LogElement>::SystemLog(Context & context_,
 {
     log = &Logger::get("SystemLog (" + database_name + "." + table_name + ")");
 
-    data.reserve(DBMS_SYSTEM_LOG_QUEUE_SIZE);
-    saving_thread = ThreadFromGlobalPool([this] { threadFunction(); });
+    saving_thread = ThreadFromGlobalPool([this] { savingThreadFunction(); });
 }
 
 
 template <typename LogElement>
 void SystemLog<LogElement>::add(const LogElement & element)
 {
+    std::unique_lock lock(mutex);
+
     if (is_shutdown)
         return;
 
-    /// Without try we could block here in case of queue overflow.
-    if (!queue.tryPush({EntryType::LOG_ELEMENT, element}))
-        LOG_ERROR(log, "SystemLog queue is full");
+    if (queue.size() == DBMS_SYSTEM_LOG_QUEUE_SIZE / 2)
+    {
+        // The queue more than half full, time to flush.
+        // We only check for strict equality, because messages are added one
+        // by one, under exclusive lock, so we will see each message count.
+        // It is enough to only wake the flushing thread once, after the message
+        // count increases past half available size.
+        const uint64_t queue_end = queue_front_index + queue.size();
+        if (requested_flush_before < queue_end)
+        {
+            requested_flush_before = queue_end;
+        }
+        flush_event.notify_all();
+        LOG_INFO(log, "Queue is half full for system log '" + demangle(typeid(*this).name()) + "'.");
+    }
+
+    if (queue.size() >= DBMS_SYSTEM_LOG_QUEUE_SIZE)
+    {
+        // TextLog sets its logger level to 0, so this log is a noop and there
+        // is no recursive logging.
+        LOG_ERROR(log, "Queue is full for system log '" + demangle(typeid(*this).name()) + "'.");
+        return;
+    }
+
+    queue.push_back(element);
 }
 
 
 template <typename LogElement>
 void SystemLog<LogElement>::flush()
 {
+    std::unique_lock lock(mutex);
+
     if (is_shutdown)
         return;
 
-    std::lock_guard flush_lock(flush_mutex);
-    force_flushing = true;
+    const uint64_t queue_end = queue_front_index + queue.size();
 
-    /// Tell thread to execute extra flush.
-    queue.push({EntryType::FORCE_FLUSH, {}});
+    if (requested_flush_before < queue_end)
+    {
+        requested_flush_before = queue_end;
+        flush_event.notify_all();
+    }
 
-    /// Wait for flush being finished.
-    std::unique_lock lock(condvar_mutex);
-    while (force_flushing)
-        flush_condvar.wait(lock);
+    // Use an arbitrary timeout to avoid endless waiting.
+    const int timeout_seconds = 60;
+    bool result = flush_event.wait_for(lock, std::chrono::seconds(timeout_seconds),
+        [&] { return flushed_before >= queue_end; });
+
+    if (!result)
+    {
+        throw Exception("Timeout exceeded (" + toString(timeout_seconds) + " s) while flushing system log '" + demangle(typeid(*this).name()) + "'.",
+            ErrorCodes::TIMEOUT_EXCEEDED);
+    }
 }
 
 
 template <typename LogElement>
 void SystemLog<LogElement>::shutdown()
 {
-    bool old_val = false;
-    if (!is_shutdown.compare_exchange_strong(old_val, true))
-        return;
+    {
+        std::unique_lock lock(mutex);
 
-    /// Tell thread to shutdown.
-    queue.push({EntryType::SHUTDOWN, {}});
+        if (is_shutdown)
+        {
+            return;
+        }
+
+        is_shutdown = true;
+
+        /// Tell thread to shutdown.
+        flush_event.notify_all();
+    }
+
     saving_thread.join();
 }
 
@@ -240,71 +274,44 @@ SystemLog<LogElement>::~SystemLog()
 
 
 template <typename LogElement>
-void SystemLog<LogElement>::threadFunction()
+void SystemLog<LogElement>::savingThreadFunction()
 {
     setThreadName("SystemLogFlush");
 
-    Stopwatch time_after_last_write;
-    bool first = true;
-
-    while (true)
+    std::vector<LogElement> to_flush;
+    bool exit_this_thread = false;
+    while (!exit_this_thread)
     {
         try
         {
-            if (first)
+            // The end index (exclusive, like std end()) of the messages we are
+            // going to flush.
+            uint64_t to_flush_end = 0;
+
             {
-                time_after_last_write.restart();
-                first = false;
+                std::unique_lock lock(mutex);
+                flush_event.wait_for(lock, std::chrono::milliseconds(flush_interval_milliseconds),
+                    [&] () { return requested_flush_before > flushed_before || is_shutdown; });
+
+                queue_front_index += queue.size();
+                to_flush_end = queue_front_index;
+                // Swap with existing array from previous flush, to save memory
+                // allocations.
+                to_flush.resize(0);
+                queue.swap(to_flush);
+
+                exit_this_thread = is_shutdown;
             }
 
-            QueueItem element;
-            bool has_element = false;
-
-            /// data.size() is increased only in this function
-            /// TODO: get rid of data and queue duality
-
-            if (data.empty())
+            if (to_flush.empty())
             {
-                queue.pop(element);
-                has_element = true;
-            }
-            else
-            {
-                size_t milliseconds_elapsed = time_after_last_write.elapsed() / 1000000;
-                if (milliseconds_elapsed < flush_interval_milliseconds)
-                    has_element = queue.tryPop(element, flush_interval_milliseconds - milliseconds_elapsed);
+                continue;
             }
 
-            if (has_element)
-            {
-                if (element.first == EntryType::SHUTDOWN)
-                {
-                    /// NOTE: MergeTree engine can write data even it is already in shutdown state.
-                    flushImpl(element.first);
-                    break;
-                }
-                else if (element.first == EntryType::FORCE_FLUSH)
-                {
-                    flushImpl(element.first);
-                    time_after_last_write.restart();
-                    continue;
-                }
-                else
-                    data.push_back(element.second);
-            }
-
-            size_t milliseconds_elapsed = time_after_last_write.elapsed() / 1000000;
-            if (milliseconds_elapsed >= flush_interval_milliseconds)
-            {
-                /// Write data to a table.
-                flushImpl(EntryType::AUTO_FLUSH);
-                time_after_last_write.restart();
-            }
+            flushImpl(to_flush, to_flush_end);
         }
         catch (...)
         {
-            /// In case of exception we lost accumulated data - to avoid locking.
-            data.clear();
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
@@ -312,13 +319,10 @@ void SystemLog<LogElement>::threadFunction()
 
 
 template <typename LogElement>
-void SystemLog<LogElement>::flushImpl(EntryType reason)
+void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, uint64_t to_flush_end)
 {
     try
     {
-        if ((reason == EntryType::AUTO_FLUSH || reason == EntryType::SHUTDOWN) && data.empty())
-            return;
-
         LOG_TRACE(log, "Flushing system log");
 
         /// We check for existence of the table and create it as needed at every flush.
@@ -327,12 +331,8 @@ void SystemLog<LogElement>::flushImpl(EntryType reason)
         prepareTable();
 
         Block block = LogElement::createBlock();
-        for (const LogElement & elem : data)
+        for (const auto & elem : to_flush)
             elem.appendToBlock(block);
-
-        /// Clear queue early, because insertion to the table could lead to generation of more log entrites
-        ///  and pushing them to already full queue will lead to deadlock.
-        data.clear();
 
         /// We write to table indirectly, using InterpreterInsertQuery.
         /// This is needed to support DEFAULT-columns in table.
@@ -352,15 +352,11 @@ void SystemLog<LogElement>::flushImpl(EntryType reason)
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        /// In case of exception, also clean accumulated data - to avoid locking.
-        data.clear();
     }
-    if (reason == EntryType::FORCE_FLUSH)
-    {
-        std::lock_guard lock(condvar_mutex);
-        force_flushing = false;
-        flush_condvar.notify_one();
-    }
+
+    std::unique_lock lock(mutex);
+    flushed_before = to_flush_end;
+    flush_event.notify_all();
 }
 
 
