@@ -8,7 +8,7 @@ select
    query 
 from
    (
-      select query, quantiles(0.05, 0.5, 0.95)(abs(time_by_label[1] - time_by_label[2])) rd_quantiles -- quantiles of randomization distribution
+      select query, quantiles(0.05, 0.5, 0.95, 0.99)(abs(time_by_label[1] - time_by_label[2])) rd_quantiles -- quantiles of randomization distribution
       from
          (
             select query, virtual_run, groupArrayInsertAt(median_time, random_label) time_by_label -- make array 'random label' -> 'median time'
