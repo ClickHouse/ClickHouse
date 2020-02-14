@@ -18,14 +18,14 @@ namespace DB
   */
 class StorageStripeLog : public ext::shared_ptr_helper<StorageStripeLog>, public IStorage
 {
-    friend class StripeLogBlockInputStream;
+    friend class StripeLogSource;
     friend class StripeLogBlockOutputStream;
     friend struct ext::shared_ptr_helper<StorageStripeLog>;
 
 public:
     String getName() const override { return "StripeLog"; }
 
-    BlockInputStreams read(
+    Pipes readWithProcessors(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
