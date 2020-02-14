@@ -411,7 +411,6 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     zookeeper->createIfNotExists(zookeeper_path + "/quorum", String());
     zookeeper->createIfNotExists(zookeeper_path + "/quorum/last_part", String());
     zookeeper->createIfNotExists(zookeeper_path + "/quorum/failed_parts", String());
-    zookeeper->createIfNotExists(zookeeper_path + "/alter_intention_counter", String());
 
     /// Tracking lag of replicas.
     zookeeper->createIfNotExists(replica_path + "/min_unprocessed_insert_time", String());
@@ -420,10 +419,6 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     /// Mutations
     zookeeper->createIfNotExists(zookeeper_path + "/mutations", String());
     zookeeper->createIfNotExists(replica_path + "/mutation_pointer", String());
-
-    /// ALTERs of the metadata node.
-    zookeeper->createIfNotExists(replica_path + "/metadata", String());
-
 }
 
 
@@ -485,11 +480,13 @@ void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
     old_metadata.checkEquals(metadata_from_zk);
 
     Coordination::Stat columns_stat;
-    auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(zookeeper_path + "/columns", &columns_stat));
+    auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(zookeeper_prefix + "/columns", &columns_stat));
 
     const ColumnsDescription & old_columns = getColumns();
     if (columns_from_zk != old_columns)
+    {
         throw Exception("Table columns structure in ZooKeeper is different from local table structure", ErrorCodes::INCOMPATIBLE_COLUMNS);
+    }
 }
 
 
@@ -590,6 +587,7 @@ void StorageReplicatedMergeTree::createReplica()
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/parts", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/flags", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/is_lost", is_lost_value, zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata", ReplicatedMergeTreeTableMetadata(*this).toString(), zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/columns", getColumns().toString(), zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata_version", std::to_string(metadata_version), zkutil::CreateMode::Persistent));
         /// Check version of /replicas to see if there are any replicas created at the same moment of time.
@@ -3254,6 +3252,7 @@ void StorageReplicatedMergeTree::alter(
         /// Also we don't upgrade alter lock to table structure lock.
         StorageInMemoryMetadata metadata = getInMemoryMetadata();
         params.apply(metadata);
+
 
         changeSettings(metadata.settings_ast, table_lock_holder);
 
