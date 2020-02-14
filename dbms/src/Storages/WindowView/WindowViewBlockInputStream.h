@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/NullBlockInputStream.h>
 
 
 namespace DB
@@ -29,11 +30,24 @@ public:
         if (isCancelled() || storage->is_dropped)
             return;
         IBlockInputStream::cancel(kill);
-        std::lock_guard lock(storage->mutex);
-        storage->condition.notify_all();
+        std::lock_guard lock(storage->fire_signal_mutex);
+        for (auto it = storage->watch_streams.begin() ; it != storage->watch_streams.end() ; ++it)
+        {
+            if (*it == this)
+            {
+                storage->watch_streams.erase(it);
+                break;
+            }
+        }
     }
 
     Block getHeader() const override { return storage->getHeader(); }
+
+    inline void addFireSignal(UInt32 timestamp)
+    {
+        std::lock_guard lock(fire_signal_mutex);
+        fire_signal.push_back(timestamp);
+    }
 
 protected:
     Block readImpl() override
@@ -57,10 +71,8 @@ protected:
         }
         /// If blocks were never assigned get blocks
         if (!in_stream)
-        {
-            // std::unique_lock lock(storage->mutex);
-            in_stream = storage->getNewBlocksInputStreamPtr();
-        }
+            in_stream = std::make_shared<NullBlockInputStream>(getHeader());
+
         if (isCancelled() || storage->is_dropped)
         {
             return Block();
@@ -80,31 +92,31 @@ protected:
             }
 
             std::unique_lock lock(mutex);
-            UInt64 timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
-            UInt64 w_end = static_cast<UInt64>(storage->getWindowUpperBound(static_cast<UInt32>(timestamp_usec / 1000000))) * 1000000;
-            storage->condition.wait_for(lock, std::chrono::microseconds(w_end - timestamp_usec));
+            storage->condition.wait_for(lock, std::chrono::seconds(5));
 
             if (isCancelled() || storage->is_dropped)
             {
                 return Block();
             }
-            {
-                // std::unique_lock lock_(storage->mutex);
-                in_stream = storage->getNewBlocksInputStreamPtr();
-            }
 
-            res = in_stream->read();
-            if (res)
+            while (!fire_signal.empty())
             {
-                end_of_blocks = false;
-                return res;
+                UInt32 timestamp_;
+                {
+                    std::unique_lock lock_(fire_signal_mutex);
+                    timestamp_ = fire_signal.front();
+                    fire_signal.pop_front();
+                }
+                in_stream = storage->getNewBlocksInputStreamPtr(timestamp_);
+                res = in_stream->read();
+                if (res)
+                {
+                    end_of_blocks = false;
+                    return res;
+                }
             }
-            else
-            {
-                return getHeader();
-            }
+            return getHeader();
         }
-
         return res;
     }
 
@@ -117,5 +129,7 @@ private:
     Int64 num_updates = -1;
     bool end_of_blocks = false;
     BlockInputStreamPtr in_stream;
+    std::mutex fire_signal_mutex;
+    std::list<UInt32> fire_signal;
 };
 }

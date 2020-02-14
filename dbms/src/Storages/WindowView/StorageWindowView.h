@@ -11,6 +11,7 @@
 namespace DB
 {
 class IAST;
+class WindowViewBlockInputStream;
 using ASTPtr = std::shared_ptr<IAST>;
 using BlocksListPtr = std::shared_ptr<BlocksList>;
 using BlocksListPtrs = std::shared_ptr<std::list<BlocksListPtr>>;
@@ -56,15 +57,15 @@ public:
     std::shared_ptr<bool> getActivePtr() { return active_ptr; }
 
     /// Read new data blocks that store query result
-    BlockInputStreamPtr getNewBlocksInputStreamPtr();
+    BlockInputStreamPtr getNewBlocksInputStreamPtr(UInt32 timestamp_);
 
-    BlockInputStreamPtr getNewBlocksInputStreamPtrInnerTable();
+    BlockInputStreamPtr getNewBlocksInputStreamPtrInnerTable(UInt32 timestamp_);
 
     BlocksPtr getNewBlocks();
 
     Block getHeader() const;
 
-    StoragePtr& getParentStorage() 
+    StoragePtr& getParentStorage()
     {
         if (parent_storage == nullptr)
             parent_storage = global_context.getTable(select_table_id);
@@ -88,12 +89,14 @@ public:
 
     inline UInt32 getWindowLowerBound(UInt32 time_sec, int window_id_skew = 0);
     inline UInt32 getWindowUpperBound(UInt32 time_sec, int window_id_skew = 0);
+    inline UInt32 getWatermark(UInt32 time_sec);
 
 private:
     StorageID select_table_id = StorageID::createEmpty();
     ASTPtr inner_query;
     ASTPtr fetch_column_query;
     String window_column_name;
+    String timestamp_column_name;
     Context & global_context;
     StoragePtr parent_storage;
     StoragePtr inner_storage;
@@ -102,7 +105,10 @@ private:
 
     /// Mutex for the blocks and ready condition
     std::mutex mutex;
-    std::mutex flushTableMutex;
+    std::mutex flush_table_mutex;
+    std::mutex fire_signal_mutex;
+    std::list<UInt32> fire_signal;
+    std::list<WindowViewBlockInputStream *> watch_streams;
     /// New blocks ready condition to broadcast to readers
     /// that new blocks are available
     std::condition_variable condition;
@@ -111,26 +117,31 @@ private:
     std::shared_ptr<bool> active_ptr;
     BlocksListPtrs mergeable_blocks;
 
+    bool has_watermark{false};
     IntervalKind::Kind window_kind;
     Int64 window_num_units;
+    IntervalKind::Kind watermark_kind;
+    Int64 watermark_num_units;
     const DateLUTImpl & time_zone;
 
     StorageID target_table_id = StorageID::createEmpty();
     StorageID inner_table_id = StorageID::createEmpty();
-    bool has_inner_table;
 
-    inline void flushToTable();
-    inline void clearInnerTable();
+    void flushToTable(UInt32 timestamp_);
+    void clearInnerTable();
     void threadFuncToTable();
     void threadFuncClearInnerTable();
+    void threadFuncFire();
+    void addFireSignal(UInt32 timestamp_);
+
     std::atomic<bool> shutdown_called{false};
-    // UInt64 temporary_window_view_timeout;
     UInt64 inner_table_clear_interval;
 
     Poco::Timestamp timestamp;
 
     BackgroundSchedulePool::TaskHolder toTableTask;
     BackgroundSchedulePool::TaskHolder innerTableClearTask;
+    BackgroundSchedulePool::TaskHolder fireTask;
 
     StorageWindowView(
         const StorageID & table_id_,
