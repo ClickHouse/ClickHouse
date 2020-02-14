@@ -18,7 +18,6 @@
 #include <Formats/FormatFactory.h>
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/narrowBlockInputStreams.h>
 
@@ -73,7 +72,7 @@ namespace
             const std::shared_ptr<Aws::S3::S3Client> & client,
             const String & bucket,
             const String & key)
-            : SourceWithProgress(getHeader(sample_block, need_path, need_file)
+            : SourceWithProgress(getHeader(sample_block, need_path, need_file))
             , name(std::move(name_))
             , with_file_column(need_file)
             , with_path_column(need_path)
@@ -105,17 +104,17 @@ namespace
             if (auto block = reader->read())
             {
                 auto columns = block.getColumns();
+                UInt64 num_rows = block.rows();
 
                 if (with_path_column)
-                    columns.push_back(DataTypeString().createColumnConst(res.rows(), file_path)->convertToFullColumnIfConst());
+                    columns.push_back(DataTypeString().createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
                 if (with_file_column)
                 {
                     size_t last_slash_pos = file_path.find_last_of('/');
-                    columns.push_back(DataTypeString().createColumnConst(res.rows(), file_path.substr(
+                    columns.push_back(DataTypeString().createColumnConst(num_rows, file_path.substr(
                             last_slash_pos + 1))->convertToFullColumnIfConst());
                 }
 
-                UInt64 num_rows = block.rows();
                 return Chunk(std::move(columns), num_rows);
             }
 
