@@ -221,9 +221,6 @@ private:
       */
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
 
-    /// Used to delay setting table structure till startup() in case of an offline ALTER.
-    std::function<void()> set_table_structure_at_startup;
-
     /** Is this replica "leading". The leader replica selects the parts to merge.
       */
     std::atomic<bool> is_leader {false};
@@ -308,11 +305,7 @@ private:
       */
     void createNewZooKeeperNodes();
 
-    /** Verify that the list of columns and table settings match those specified in ZK (/metadata).
-      * If not, throw an exception.
-      * Must be called before startup().
-      */
-    void checkTableStructure(bool skip_sanity_checks, bool allow_alter);
+    void checkTableStructure(const String & zookeeper_prefix);
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
     /// Must be called under IStorage::lockStructureForAlter() lock.

@@ -286,14 +286,29 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
         createTableIfNotExists();
 
-        checkTableStructure(false, false);
+        checkTableStructure(zookeeper_path);
+
         createReplica();
+
+        Coordination::Stat metadata_stat;
+        current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+        metadata_version = metadata_stat.version;
     }
     else
     {
-        checkTableStructure(skip_sanity_checks, true);
+        checkTableStructure(replica_path);
         checkParts(skip_sanity_checks);
 
+        if (current_zookeeper->exists(replica_path + "/metadata_version"))
+        {
+            metadata_version = parse<int>(current_zookeeper->get(replica_path + "/metadata_version"));
+        }
+        else /// This replica was created on old version, so we have to take version of global node
+        {
+            Coordination::Stat metadata_stat;
+            current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+            metadata_version = metadata_stat.version;
+        }
         /// Temporary directories contain untinalized results of Merges or Fetches (after forced restart)
         ///  and don't allow to reinitialize them, so delete each of them immediately
         clearOldTemporaryDirectories(0);
@@ -301,9 +316,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     createNewZooKeeperNodes();
 
-    Coordination::Stat metadata_stat;
-    current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
-    metadata_version = metadata_stat.version;
 
     other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
 }
@@ -450,10 +462,6 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/replicas", "",
         zkutil::CreateMode::Persistent));
 
-    ////std::cerr << "Creating alters node\n";
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/alters", "",
-        zkutil::CreateMode::Persistent));
-
     Coordination::Responses responses;
     auto code = zookeeper->tryMulti(ops, responses);
     if (code && code != Coordination::ZNODEEXISTS)
@@ -464,45 +472,23 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
 /** Verify that list of columns and table storage_settings_ptr match those specified in ZK (/ metadata).
     * If not, throw an exception.
     */
-void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bool allow_alter)
+void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_prefix)
 {
     auto zookeeper = getZooKeeper();
 
     ReplicatedMergeTreeTableMetadata old_metadata(*this);
 
     Coordination::Stat metadata_stat;
-    String metadata_str = zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+    String metadata_str = zookeeper->get(zookeeper_prefix + "/metadata", &metadata_stat);
     auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
-    auto metadata_diff = old_metadata.checkAndFindDiff(metadata_from_zk, allow_alter);
+    old_metadata.checkEquals(metadata_from_zk);
 
     Coordination::Stat columns_stat;
     auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(zookeeper_path + "/columns", &columns_stat));
 
-    /// TODO(alesap) remove this trash
     const ColumnsDescription & old_columns = getColumns();
-    if (columns_from_zk != old_columns || !metadata_diff.empty())
-    {
-        if (allow_alter &&
-            (skip_sanity_checks ||
-             old_columns.getOrdinary().sizeOfDifference(columns_from_zk.getOrdinary()) +
-             old_columns.getMaterialized().sizeOfDifference(columns_from_zk.getMaterialized()) <= 2))
-        {
-            LOG_WARNING(log, "Table structure in ZooKeeper is a little different from local table structure. Assuming ALTER.");
-
-            /// We delay setting table structure till startup() because otherwise new table metadata file can
-            /// be overwritten in DatabaseOrdinary::createTable.
-            set_table_structure_at_startup = [columns_from_zk, metadata_diff, this]()
-            {
-                /// Without any locks, because table has not been created yet.
-                setTableStructure(std::move(columns_from_zk), metadata_diff);
-            };
-        }
-        else
-        {
-            throw Exception("Table structure in ZooKeeper is too different from local table structure",
-                            ErrorCodes::INCOMPATIBLE_COLUMNS);
-        }
-    }
+    if (columns_from_zk != old_columns)
+        throw Exception("Table columns structure in ZooKeeper is different from local table structure", ErrorCodes::INCOMPATIBLE_COLUMNS);
 }
 
 
@@ -2934,9 +2920,6 @@ void StorageReplicatedMergeTree::startup()
     if (is_readonly)
         return;
 
-    if (set_table_structure_at_startup)
-        set_table_structure_at_startup();
-
     queue.initialize(
         zookeeper_path, replica_path,
         getStorageID().getFullTableName() + " (ReplicatedMergeTreeQueue)",
@@ -3223,7 +3206,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
 
     auto columns_from_entry = ColumnsDescription::parse(entry.columns_str);
     auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parse(entry.metadata_str);
-    auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this).checkAndFindDiff(metadata_from_entry, /* allow_alter = */ true);
+    auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this).checkAndFindDiff(metadata_from_entry);
 
     MergeTreeData::DataParts parts;
 
@@ -3231,6 +3214,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     Coordination::Requests requests;
     requests.emplace_back(zkutil::makeSetRequest(replica_path + "/columns", entry.columns_str, -1));
     requests.emplace_back(zkutil::makeSetRequest(replica_path + "/metadata", entry.metadata_str, -1));
+
 
     zookeeper->multi(requests);
 
@@ -3244,6 +3228,9 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
 
         LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: " << metadata_version);
     }
+
+    /// This transaction may not happen, but it's ok, because on the next retry we will eventually create this node
+    zookeeper->createOrUpdate(replica_path + "/metadata_version", std::to_string(metadata_version), zkutil::CreateMode::Persistent);
 
     recalculateColumnSizes();
 
@@ -3287,7 +3274,7 @@ void StorageReplicatedMergeTree::alter(
 
         /// Clear nodes from previous iteration
         alter_entry.emplace();
-        mutation_znode.emplace();
+        mutation_znode.reset();
 
         /// We can safely read structure, because we guarded with alter_intention_lock
         if (is_readonly)
@@ -3432,7 +3419,7 @@ void StorageReplicatedMergeTree::alter(
     if (!unwaited.empty())
         throw Exception("Some replicas doesn't finish metadata alter", ErrorCodes::UNFINISHED);
 
-    if (mutation_znode.has_value() && !mutation_znode->empty())
+    if (mutation_znode)
     {
         LOG_DEBUG(log, "Metadata changes applied. Will wait for data changes.");
         waitMutation(*mutation_znode, query_context.getSettingsRef().replication_alter_partitions_sync);
