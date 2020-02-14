@@ -18,6 +18,7 @@ RUN apt-get update \
             python3 \
             python3-dev \
             python3-pip \
+            rsync \
             tree \
             tzdata \
             vim \
