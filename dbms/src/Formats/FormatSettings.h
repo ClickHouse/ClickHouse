@@ -122,6 +122,15 @@ struct FormatSettings
 
     Avro avro;
 
+    struct Regexp
+    {
+        std::string regexp;
+        std::string escaping_rule;
+        bool skip_unmatched = false;
+    };
+
+    Regexp regexp;
+
 };
 
 }
