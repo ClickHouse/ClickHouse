@@ -156,3 +156,7 @@ h1, h2, h3, .md-logo {
     overflow-x: hidden;
     overflow-y: auto;
 }
+
+.md-typeset a:active, .md-typeset a:hover {
+    color: #f14600 !important;
+}
