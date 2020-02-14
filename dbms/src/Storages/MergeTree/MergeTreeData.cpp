@@ -242,11 +242,7 @@ MergeTreeData::MergeTreeData(
 
 StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
 {
-    StorageInMemoryMetadata metadata{
-        .columns = getColumns(),
-        .indices = getIndices(),
-        .constraints = getConstraints(),
-    };
+    StorageInMemoryMetadata metadata(getColumns(), getIndices(), getConstraints());
 
     if (partition_by_ast)
         metadata.partition_by_ast = partition_by_ast->clone();

@@ -35,7 +35,7 @@ namespace DB
 /** The engine that uses the merge tree (see MergeTreeData) and replicated through ZooKeeper.
   *
   * ZooKeeper is used for the following things:
-  * - the structure of the table (/ metadata, /columns)
+  * - the structure of the table (/metadata, /columns)
   * - action log with data (/log/log-...,/replicas/replica_name/queue/queue-...);
   * - a replica list (/replicas), and replica activity tag (/replicas/replica_name/is_active), replica addresses (/replicas/replica_name/host);
   * - select the leader replica (/leader_election) - this is the replica that assigns the merge;

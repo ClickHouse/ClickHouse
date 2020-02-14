@@ -165,13 +165,9 @@ bool StorageMaterializedView::hasColumn(const String & column_name) const
 
 StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
 {
-    return
-        {
-            .columns = getColumns(),
-            .indices = getIndices(),
-            .constraints = getConstraints(),
-            .select = getSelectQuery(),
-        };
+    StorageInMemoryMetadata result(getColumns(), getIndices(), getConstraints());
+    result.select = getSelectQuery();
+    return result;
 }
 
 QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context) const
