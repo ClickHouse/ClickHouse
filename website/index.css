@@ -77,12 +77,11 @@ h2 {
 }
 
 a:link, a:visited {
-    color: #08f;
+    color: #f14600;
     text-decoration: none;
 }
 
 a:hover, a:active {
-    color: #f00;
     text-decoration: underline;
 }
 
@@ -251,9 +250,9 @@ img {
 }
 
 .distributive_not_selected {
-    color: #08f;
+    color: #f14600;
     cursor: pointer;
-    border-bottom: 1px solid #08f;
+    border-bottom: 1px solid #f14600;
 }
 
 #tutorial_logo {
@@ -287,8 +286,8 @@ img {
 }
 
 .spoiler_title {
-    color: #08f;
-    border-bottom: 1px dotted #08f;
+    color: #f14600;
+    border-bottom: 1px dotted #f14600;
 }
 
 .spoiler_title:hover {

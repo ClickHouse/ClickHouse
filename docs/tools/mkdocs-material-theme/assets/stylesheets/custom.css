@@ -2,9 +2,8 @@ body {
     font: 300 14pt/200% -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif, Apple Color Emoji,Segoe UI Emoji;
 }
 
-
 a:link, a:visited {
-    color: #08f;
+    color: #f14600;
     text-decoration: none;
 }
 
@@ -16,14 +15,12 @@ a:link, a:visited {
     color: #888 !important;
 }
 
-
 .md-nav__link:hover, .md-nav__link:active {
-    color: #08f !important;
+    color: #f14600 !important;
     text-decoration: none;
 }
 
 a:hover, a:active {
-    color: #f00;
     text-decoration: underline;
 }
 
@@ -52,7 +49,7 @@ h1, h2, h3, .md-logo {
 
 .md-content__icon:hover {
     text-decoration: none !important;
-    color: #08f !important;
+    color: #f14600 !important;
 }
 
 .md-search-result__link {
