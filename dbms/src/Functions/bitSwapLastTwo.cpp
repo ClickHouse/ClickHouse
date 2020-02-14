@@ -15,6 +15,7 @@ namespace DB
     struct BitSwapLastTwoImpl
     {
         using ResultType = UInt8;
+        static constexpr const bool allow_fixed_string = false;
 
         static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
         {
