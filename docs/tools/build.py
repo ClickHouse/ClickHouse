@@ -248,7 +248,7 @@ def build_docs(args):
     tasks = []
     for lang in args.lang.split(','):
         tasks.append((lang, args,))
-    util.run_function_in_parallel(build_for_lang, tasks, threads=True)
+    util.run_function_in_parallel(build_for_lang, tasks, threads=False)
     build_redirects(args)
 
 
@@ -294,6 +294,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--skip-single-page', action='store_true')
     arg_parser.add_argument('--skip-pdf', action='store_true')
     arg_parser.add_argument('--skip-website', action='store_true')
+    arg_parser.add_argument('--minify', action='store_true')
     arg_parser.add_argument('--save-raw-single-page', type=str)
     arg_parser.add_argument('--verbose', action='store_true')
 
