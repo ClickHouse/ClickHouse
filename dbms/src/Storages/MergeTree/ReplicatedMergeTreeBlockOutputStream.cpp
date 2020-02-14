@@ -256,16 +256,6 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         log_entry.toString(),
         zkutil::CreateMode::PersistentSequential));
 
-    /// We check metadata_version has the same version as shared node.
-    /// In other case we may have parts, which nobody will alter.
-    ///
-    ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/metadata", storage.getMetadataVersion()));
-
-    /// We update version of block_number/partition node to register fact of new insert.
-    /// If we want to be sure, that no inserts happend in some period of time, than we can receive
-    /// version of all partition nodes inside block numbers and then make check requirests in zookeeper transaction.
-    ops.emplace_back(zkutil::makeSetRequest(storage.zookeeper_path + "/block_numbers/" + part->info.partition_id, "", -1));
-
     /// Deletes the information that the block number is used for writing.
     block_number_lock->getUnlockOps(ops);
 
