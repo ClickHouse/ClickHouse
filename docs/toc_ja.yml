@@ -6,6 +6,7 @@ nav:
   - 'ClickHouse Features that Can Be Considered Disadvantages': 'introduction/features_considered_disadvantages.md'
   - 'Performance': 'introduction/performance.md'
   - 'History': 'introduction/history.md'
+  - 'Adopters': 'introduction/adopters.md'
 
 - 'Getting Started':
   - 'hidden': 'getting_started/index.md'

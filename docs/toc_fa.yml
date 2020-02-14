@@ -6,6 +6,7 @@ nav:
   - ' ویژگی های از ClickHouse که می تواند معایبی باشد': 'introduction/features_considered_disadvantages.md'
   - 'ﯽﯾﺍﺭﺎﮐ': 'introduction/performance.md'
   - 'ﺦﯾﺭﺎﺗ': 'introduction/history.md'
+  - 'Adopters': 'introduction/adopters.md'
 
 - 'Getting started':
   - 'hidden': 'getting_started/index.md'
