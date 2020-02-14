@@ -119,7 +119,7 @@ namespace
             }
         }
     };
-    
+
     static inline IntervalKind strToIntervalKind(const String& interval_str)
     {
         if (interval_str == "Second")
@@ -267,7 +267,7 @@ inline void StorageWindowView::clearInnerTable()
     //delete fired blocks
     UInt32 timestamp_now = std::time(nullptr);
     UInt32 w_lower_bound = getWindowLowerBound(timestamp_now, -1);
-    if (has_watermark)
+    if (watermark_num_units != 0)
         w_lower_bound = getWatermark(w_lower_bound);
     if (!inner_table_id.empty())
     {
@@ -516,7 +516,7 @@ BlockInputStreams StorageWindowView::watch(
         active_ptr,
         has_limit,
         limit);
-    
+
     {
         std::lock_guard lock(fire_signal_mutex);
         watch_streams.push_back(reader.get());
@@ -591,7 +591,6 @@ StorageWindowView::StorageWindowView(
     if (query.watermark_function)
     {
         // parser watermark function
-        has_watermark = true;
         const auto & watermark_function = std::static_pointer_cast<ASTFunction>(query.watermark_function);
         if (!startsWith(watermark_function->name, "toInterval"))
             throw Exception(
@@ -608,9 +607,7 @@ StorageWindowView::StorageWindowView(
         {
             throw Exception("Cannot parse string '" + interval_units_p1->value.get<String>() + "' as Integer.", ErrorCodes::CANNOT_PARSE_TEXT);
         }
-        if (watermark_num_units == 0)
-            has_watermark = false;
-        else if (watermark_num_units > 0)
+        if (watermark_num_units > 0)
             watermark_num_units *= -1;
     }
 
@@ -704,7 +701,7 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
     actions_->add(ExpressionAction::removeColumn("____tuple_arg"));
 
     BlockInputStreamPtr in_stream;
-    if (window_view.has_watermark)
+    if (window_view.watermark_num_units != 0)
     {
         UInt32 watermark = window_view.getWatermark(timestamp_now);
         actions_->add(
@@ -720,7 +717,7 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
     if (!window_view.inner_table_id.empty())
     {
         auto stream = window_view.getInnerStorage()->write(window_view.getInnerQuery(), context);
-        if (window_view.has_watermark)
+        if (window_view.watermark_num_units != 0)
         {
             while (Block block_ = in_stream->read())
             {
@@ -742,7 +739,7 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
     else
     {
         BlocksListPtr new_mergeable_blocks = std::make_shared<BlocksList>();
-        if (window_view.has_watermark)
+        if (window_view.watermark_num_units != 0)
         {
             while (Block block_ = in_stream->read())
             {
