@@ -288,11 +288,12 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
         checkTableStructure(zookeeper_path);
 
-        createReplica();
-
         Coordination::Stat metadata_stat;
         current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
         metadata_version = metadata_stat.version;
+
+        createReplica();
+
     }
     else
     {
@@ -590,6 +591,7 @@ void StorageReplicatedMergeTree::createReplica()
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/flags", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/is_lost", is_lost_value, zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/columns", getColumns().toString(), zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata_version", std::to_string(metadata_version), zkutil::CreateMode::Persistent));
         /// Check version of /replicas to see if there are any replicas created at the same moment of time.
         ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/replicas", "last added replica: " + replica_name, replicas_stat.version));
 
