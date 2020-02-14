@@ -30,24 +30,24 @@ private:
 };
 
 
- /** Helper class, that can analyze MergeTree order key
- *   and required group by description to get their
- *   common prefix, which is needed for
- *   performing reading in order of PK.
- */
- class AggregateInOrderOptimizer
- {
- public:
-     AggregateInOrderOptimizer(
-         const Names & group_by_description,
-         const SyntaxAnalyzerResultPtr & syntax_result);
+/** Helper class, that can analyze MergeTree order key
+*   and required group by description to get their
+*   common prefix, which is needed for
+*   performing reading in order of PK.
+*/
+class AggregateInOrderOptimizer
+{
+public:
+    AggregateInOrderOptimizer(
+        const Names & group_by_description,
+        const SyntaxAnalyzerResultPtr & syntax_result);
 
-     GroupByInfoPtr getGroupByCommonPrefix(const StoragePtr & storage) const;
+    GroupByInfoPtr getGroupByCommonPrefix(const StoragePtr & storage) const;
 
- private:
-     /// Actions for every element of order expression to analyze functions for monotonicity
-     NameSet forbidden_columns;
-     Names group_by_description;
- };
+private:
+    /// Actions for every element of order expression to analyze functions for monotonicity
+    NameSet forbidden_columns;
+    Names group_by_description;
+};
 
- }
+}

@@ -136,10 +136,10 @@ GroupByInfoPtr AggregateInOrderOptimizer::getGroupByCommonPrefix(const StoragePt
         if (forbidden_columns.count(group_by_description[i]))
             break;
 
-        if (group_by_description[i] == sorting_key_columns[i]) {
+        if (group_by_description[i] == sorting_key_columns[i])
             group_by_common_prefix.push_back(group_by_description[i]);
-        }
-        else {
+        else
+        {
             /// TODO injective functions
             break;
         }

@@ -1910,15 +1910,15 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
 
     const Settings & settings = context->getSettingsRef();
 
-    if (group_by_info) {
-
+    if (group_by_info)
+    {
         /// TODO optimization :)
 
-//        for (const auto & elem : group_by_info->order_key_prefix_descr) {
+//        for (const auto & elem : group_by_info->order_key_prefix_descr)
 //            std::cerr << elem << " ";
-//        }
 //        std::cerr << "\n";
     }
+
     /** Two-level aggregation is useful in two cases:
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
