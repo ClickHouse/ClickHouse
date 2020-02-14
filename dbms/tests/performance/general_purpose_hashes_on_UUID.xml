@@ -46,8 +46,8 @@
         <substitution>
            <name>table</name>
            <values>
-               <value>numbers(40000000)</value>
-               <value>numbers_mt(400000000)</value>
+               <value>numbers(100000000)</value>
+               <value>numbers_mt(1000000000)</value>
            </values>
         </substitution>
         <substitution>
