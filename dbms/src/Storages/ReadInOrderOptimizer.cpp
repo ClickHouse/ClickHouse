@@ -31,7 +31,7 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
 
 InputSortingInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage) const
 {
-    const MergeTreeData * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get());
+    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get());
     if (!merge_tree || !merge_tree->hasSortingKey())
         return {};
 
@@ -108,6 +108,47 @@ InputSortingInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & stora
         return {};
 
     return std::make_shared<InputSortingInfo>(std::move(order_key_prefix_descr), read_direction);
+}
+
+
+AggregateInOrderOptimizer::AggregateInOrderOptimizer(
+        const Names & group_by_description_,
+        const SyntaxAnalyzerResultPtr & syntax_result)
+        : group_by_description(group_by_description_)
+{
+        /// Not sure yet but let it be
+        for (const auto & elem : syntax_result->array_join_result_to_source)
+            forbidden_columns.insert(elem.first);
+}
+
+GroupByInfoPtr AggregateInOrderOptimizer::getGroupByCommonPrefix(const StoragePtr &storage) const
+{
+    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get());
+    if (!merge_tree || !merge_tree->hasSortingKey())
+        return {};
+
+    Names group_by_common_prefix;
+    const auto & sorting_key_columns = merge_tree->getSortingKeyColumns();
+    size_t prefix_size = std::min(group_by_description.size(), sorting_key_columns.size());
+
+    for (size_t i = 0; i < prefix_size; ++i)
+    {
+        if (forbidden_columns.count(group_by_description[i]))
+            break;
+
+        if (group_by_description[i] == sorting_key_columns[i]) {
+            group_by_common_prefix.push_back(group_by_description[i]);
+        }
+        else {
+            /// TODO injective functions
+            break;
+        }
+    }
+
+    if (group_by_common_prefix.empty())
+        return {};
+
+    return std::make_shared<GroupByInfo>(std::move(group_by_common_prefix));
 }
 
 }

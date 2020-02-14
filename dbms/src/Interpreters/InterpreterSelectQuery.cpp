@@ -791,13 +791,18 @@ InterpreterSelectQuery::analyzeExpressions(
             }
         }
 
-        bool has_stream_with_non_joned_rows = (res.before_join && res.before_join->getTableJoinAlgo()->hasStreamWithNonJoinedRows());
+        bool has_stream_with_non_joined_rows = (res.before_join && res.before_join->getTableJoinAlgo()->hasStreamWithNonJoinedRows());
         res.optimize_read_in_order =
             context.getSettingsRef().optimize_read_in_order
             && storage && query.orderBy()
             && !query_analyzer.hasAggregation()
             && !query.final()
-            && !has_stream_with_non_joned_rows;
+            && !has_stream_with_non_joined_rows;
+
+        /// TODO correct conditions
+        res.optimize_aggregation_in_order =
+            context.getSettingsRef().optimize_aggregation_in_order
+            && storage && query.groupBy();
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (res.need_aggregate ? !res.second_stage : !res.first_stage));
@@ -927,6 +932,19 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
     }
 
     return order_descr;
+}
+
+static Names getGroupByDescription(const ASTSelectQuery & query, const Context & /*context*/)
+{
+    Names group_by_descr;
+    group_by_descr.reserve(query.groupBy()->children.size());
+
+    for (const auto & elem : query.groupBy()->children)
+    {
+        String name = elem->getColumnName();
+        group_by_descr.push_back(name);
+    }
+    return group_by_descr;
 }
 
 static UInt64 getLimitUIntValue(const ASTPtr & node, const Context & context)
@@ -1165,7 +1183,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 executeWhere(pipeline, expressions.before_where, expressions.remove_where_filter);
 
             if (expressions.need_aggregate)
-                executeAggregation(pipeline, expressions.before_aggregation, aggregate_overflow_row, aggregate_final);
+                executeAggregation(pipeline, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.group_by_info);
             else
             {
                 executeExpression(pipeline, expressions.before_order_and_select);
@@ -1648,6 +1666,15 @@ void InterpreterSelectQuery::executeFetchColumns(
             query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(storage);
         }
 
+        if (analysis_result.optimize_aggregation_in_order)
+        {
+            query_info.group_by_optimizer = std::make_shared<AggregateInOrderOptimizer>(
+                getGroupByDescription(query, *context),
+                query_info.syntax_analyzer_result);
+
+            query_info.group_by_info = query_info.group_by_optimizer->getGroupByCommonPrefix(storage);
+        }
+
 
         BlockInputStreams streams;
         Pipes pipes;
@@ -1861,7 +1888,7 @@ void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const Expres
     });
 }
 
-void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final)
+void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, GroupByInfoPtr group_by_info)
 {
     pipeline.transform([&](auto & stream)
     {
@@ -1883,6 +1910,15 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
 
     const Settings & settings = context->getSettingsRef();
 
+    if (group_by_info) {
+
+        /// TODO optimization :)
+
+//        for (const auto & elem : group_by_info->order_key_prefix_descr) {
+//            std::cerr << elem << " ";
+//        }
+//        std::cerr << "\n";
+    }
     /** Two-level aggregation is useful in two cases:
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
@@ -1927,7 +1963,7 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
 }
 
 
-void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final)
+void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, GroupByInfoPtr /*group_by_info*/)
 {
     pipeline.addSimpleTransform([&](const Block & header)
     {
