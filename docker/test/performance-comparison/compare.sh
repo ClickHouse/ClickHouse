@@ -21,23 +21,20 @@ function download
     rm -r right ||:
     mkdir right ||:
 
-    la="$left_pr-$left_sha.tgz"
-    ra="$right_pr-$right_sha.tgz"
-
     # might have the same version on left and right
-    if ! [ "$la" = "$ra" ]
+    if ! [ "$left_sha" = "$right_sha" ]
     then
-        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O "$la" && tar -C left --strip-components=1 -zxvf "$la" &
-        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$right_pr/$right_sha/performance/performance.tgz" -O "$ra" && tar -C right --strip-components=1 -zxvf "$ra" &
+        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv  &
+        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$right_pr/$right_sha/performance/performance.tgz" -O- | tar -C right --strip-components=1 -zxv &
     else
-        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O "$la" && { tar -C left --strip-components=1 -zxvf "$la" & tar -C right --strip-components=1 -zxvf "$ra" & } &
+        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv && cp -al left right
     fi
 
-    cd db0 && wget -nv -nd -c "https://s3.mds.yandex.net/clickhouse-private-datasets/hits_10m_single/partitions/hits_10m_single.tar" && tar -xvf hits_10m_single.tar &
-    cd db0 && wget -nv -nd -c "https://s3.mds.yandex.net/clickhouse-private-datasets/hits_100m_single/partitions/hits_100m_single.tar" && tar -xvf hits_100m_single.tar &
-    cd db0 && wget -nv -nd -c "https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_v1.tar" && tar -xvf hits_v1.tar &
+    cd db0 && wget -nv -nd -c "https://s3.mds.yandex.net/clickhouse-private-datasets/hits_10m_single/partitions/hits_10m_single.tar" -O- | tar -xv &
+    cd db0 && wget -nv -nd -c "https://s3.mds.yandex.net/clickhouse-private-datasets/hits_100m_single/partitions/hits_100m_single.tar" -O- | tar -xv &
+    cd db0 && wget -nv -nd -c "https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_v1.tar" -O- | tar -xv &
+    cd db0 && wget -nv -nd -c "https://clickhouse-datasets.s3.yandex.net/values_with_expressions/partitions/test_values.tar" -O- | tar -xv &
     wait
-
 }
 
 function configure
@@ -87,7 +84,7 @@ EOF
     echo all killed
 
     set -m # Spawn temporary in its own process groups
-    left/clickhouse server --config-file=left/config/config.xml -- --path db0 &> setup-log.txt &
+    left/clickhouse server --config-file=left/config/config.xml -- --path db0 &> setup-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
@@ -120,12 +117,12 @@ function restart
 
     set -m # Spawn servers in their own process groups
 
-    left/clickhouse server --config-file=left/config/config.xml -- --path left/db &> left/log.txt &
+    left/clickhouse server --config-file=left/config/config.xml -- --path left/db &> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
 
-    right/clickhouse server --config-file=right/config/config.xml -- --path right/db &> right/log.txt &
+    right/clickhouse server --config-file=right/config/config.xml -- --path right/db &> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
@@ -162,11 +159,12 @@ function run_tests
 
     # FIXME a quick crutch to bring the run time down for the flappy tests --
     # run only those that have changed. Only on my prs for now.
-    if grep Kuzmenkov right-commit.txt
+    if grep Kuzmenkov right-commit.txt && [ "PR_TO_TEST" != "0" ]
     then
-        if [ "PR_TO_TEST" != "0" ]
+        test_files_override=$(cd right/performance && readlink -e $changed_files)
+        if [ "test_files_override" != "" ]
         then
-            test_files=$(cd right/performance && readlink -e $changed_files)
+            test_files=$test_files_override
         fi
     fi
 
@@ -181,18 +179,30 @@ function run_tests
     do
         test_name=$(basename $test ".xml")
         echo test $test_name
+
         TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
         # the grep is to filter out set -x output and keep only time output
         { time "$script_dir/perf.py" "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; } 2>&1 >/dev/null | grep -v ^+ >> "wall-clock-times.tsv" || continue
+
         grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
         grep ^client-time "$test_name-raw.tsv" | cut -f2- > "$test_name-client-time.tsv"
         # this may be slow, run it in background
         right/clickhouse local --file "$test_name-queries.tsv" --structure 'query text, run int, version UInt32, time float' --query "$(cat $script_dir/eqmed.sql)" > "$test_name-report.tsv" &
     done
 
-    wait
+    unset TIMEFORMAT
 
+    wait
+}
+
+function get_profiles
+{
     # Collect the profiles
+    left/clickhouse client --port 9001 --query "set query_profiler_cpu_time_period_ns = 0"
+    left/clickhouse client --port 9001 --query "set query_profiler_real_time_period_ns = 0"
+    right/clickhouse client --port 9001 --query "set query_profiler_cpu_time_period_ns = 0"
+    right/clickhouse client --port 9001 --query "set query_profiler_real_time_period_ns = 0"
+
     left/clickhouse client --port 9001 --query "select * from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
     left/clickhouse client --port 9001 --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > left-addresses.tsv ||: &
     right/clickhouse client --port 9002 --query "select * from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
@@ -278,12 +288,21 @@ case "$stage" in
 "")
     ;&
 "download")
-    download
-    configure
-    restart
-    run_tests
+    time download
+    ;&
+"configure")
+    time configure
+    ;&
+"restart")
+    time restart
+    ;&
+"run_tests")
+    time run_tests
+    ;&
+"get_profiles")
+    time get_profiles
     ;&
 "report")
-    report
+    time report
     ;&
 esac
