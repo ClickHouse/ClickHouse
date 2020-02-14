@@ -93,7 +93,7 @@ Pipe createLocalStream(const ASTPtr & query_ast, const Block & header, const Con
      */
     /// return std::make_shared<MaterializingBlockInputStream>(stream);
 
-    return interpreter.executeWithProcessors().getPipe();;
+    return interpreter.executeWithProcessors().getPipe();
 }
 
 static String formattedAST(const ASTPtr & ast)
