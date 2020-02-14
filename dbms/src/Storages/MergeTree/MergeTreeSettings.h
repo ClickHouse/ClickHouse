@@ -111,6 +111,11 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     {
         return name == "index_granularity" || name == "index_granularity_bytes";
     }
+
+    static bool isPartFormatSetting(const String & name)
+    {
+        return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part";
+    }
 };
 
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
