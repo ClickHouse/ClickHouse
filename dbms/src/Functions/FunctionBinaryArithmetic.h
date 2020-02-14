@@ -878,7 +878,7 @@ public:
     }
 
     template<typename A, typename B>
-    bool executeNumeric(Block & block, const ColumnNumbers & arguments, size_t result, const A & left, const B & right)
+    bool executeNumeric(Block & block, const ColumnNumbers & arguments, size_t result [[maybe_unused]], const A & left, const B & right)
     {
         using LeftDataType = std::decay_t<decltype(left)>;
         using RightDataType = std::decay_t<decltype(right)>;
@@ -1007,8 +1007,6 @@ public:
             block.getByPosition(result).column = std::move(col_res);
             return true;
         }
-        else
-            (void)result;
         return false;
 }
 
