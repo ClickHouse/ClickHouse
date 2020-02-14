@@ -61,6 +61,7 @@ template <typename A, typename B, typename Op, typename ResultType_ = typename O
 struct BinaryOperationImplBase
 {
     using ResultType = ResultType_;
+    static const constexpr bool allow_fixed_string = false;
 
     static void NO_INLINE vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
     {
@@ -468,7 +469,7 @@ public:
 };
 
 
-template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool is_bit_operation = false>
+template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true>
 class FunctionBinaryArithmetic : public IFunction
 {
     const Context & context;
@@ -477,43 +478,24 @@ class FunctionBinaryArithmetic : public IFunction
     template <typename F>
     static bool castType(const IDataType * type, F && f)
     {
-        if constexpr (is_bit_operation)
-            return castTypeToEither<
-                DataTypeUInt8,
-                DataTypeUInt16,
-                DataTypeUInt32,
-                DataTypeUInt64,
-                DataTypeInt8,
-                DataTypeInt16,
-                DataTypeInt32,
-                DataTypeInt64,
-                DataTypeFloat32,
-                DataTypeFloat64,
-                DataTypeDate,
-                DataTypeDateTime,
-                DataTypeDecimal<Decimal32>,
-                DataTypeDecimal<Decimal64>,
-                DataTypeDecimal<Decimal128>,
-                DataTypeFixedString
-            >(type, std::forward<F>(f));
-        else
-            return castTypeToEither<
-                DataTypeUInt8,
-                DataTypeUInt16,
-                DataTypeUInt32,
-                DataTypeUInt64,
-                DataTypeInt8,
-                DataTypeInt16,
-                DataTypeInt32,
-                DataTypeInt64,
-                DataTypeFloat32,
-                DataTypeFloat64,
-                DataTypeDate,
-                DataTypeDateTime,
-                DataTypeDecimal<Decimal32>,
-                DataTypeDecimal<Decimal64>,
-                DataTypeDecimal<Decimal128>
-            >(type, std::forward<F>(f));
+        return castTypeToEither<
+            DataTypeUInt8,
+            DataTypeUInt16,
+            DataTypeUInt32,
+            DataTypeUInt64,
+            DataTypeInt8,
+            DataTypeInt16,
+            DataTypeInt32,
+            DataTypeInt64,
+            DataTypeFloat32,
+            DataTypeFloat64,
+            DataTypeDate,
+            DataTypeDateTime,
+            DataTypeDecimal<Decimal32>,
+            DataTypeDecimal<Decimal64>,
+            DataTypeDecimal<Decimal128>,
+            DataTypeFixedString
+        >(type, std::forward<F>(f));
     }
 
     template <typename F>
@@ -770,7 +752,9 @@ public:
             using RightDataType = std::decay_t<decltype(right)>;
             if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeFixedString, RightDataType>)
             {
-                if constexpr (std::is_same_v<LeftDataType, RightDataType>)
+                if constexpr (!Op<DataTypeFixedString, DataTypeFixedString>::allow_fixed_string)
+                    return false;
+                else if constexpr (std::is_same_v<LeftDataType, RightDataType>)
                 {
                    if (left.getN() == right.getN())
                     {
@@ -1040,7 +1024,12 @@ void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, 
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
             if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeFixedString, RightDataType>)
-                return executeFixedString(block, arguments, result);
+            {
+                if constexpr (!Op<DataTypeFixedString, DataTypeFixedString>::allow_fixed_string)
+                    return false;
+                else
+                    return executeFixedString(block, arguments, result);
+            }
             else
                 return executeNumeric(block, arguments, result, left, right);
         });
