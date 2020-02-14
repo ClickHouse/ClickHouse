@@ -729,9 +729,6 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     for (size_t i = 0; i < parts.size(); ++i)
     {
         total_rows += parts[i].getRowsCount();
-        /// Let the ranges be listed from right to left so that the leftmost range can be dropped using `pop_back()`.
-        std::reverse(parts[i].ranges.begin(), parts[i].ranges.end());
-
         sum_marks_in_parts[i] = parts[i].getMarksCount();
         sum_marks += sum_marks_in_parts[i];
 
@@ -836,9 +833,6 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
         sum_marks_in_parts[i] = parts[i].getMarksCount();
         sum_marks += sum_marks_in_parts[i];
 
-        /// Let the ranges be listed from right to left so that the leftmost range can be dropped using `pop_back()`.
-        std::reverse(parts[i].ranges.begin(), parts[i].ranges.end());
-
         if (parts[i].data_part->index_granularity_info.is_adaptive)
             adaptive_parts++;
     }
@@ -901,13 +895,12 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                 auto range = *it;
                 while (range.begin + marks_in_range < range.end)
                 {
-                    new_ranges.emplace_back(range.end - marks_in_range, range.end);
+                    new_ranges.emplace_front(range.end - marks_in_range, range.end);
                     range.end -= marks_in_range;
                     marks_in_range = std::min(marks_in_range * 2, max_marks_in_range);
                 }
-                new_ranges.emplace_back(range.begin, range.end);
+                new_ranges.emplace_front(range.begin, range.end);
             }
-            std::reverse(new_ranges.begin(), new_ranges.end());
         }
 
         return new_ranges;
@@ -929,7 +922,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             RangesInDataPart part = parts.back();
             parts.pop_back();
 
-            size_t & marks_in_part = sum_marks_in_parts.back();
+            size_t & marks_in_part = sum_marks_in_parts.front();
 
             /// We will not take too few rows from a part.
             if (marks_in_part >= min_marks_for_concurrent_read &&
@@ -946,9 +939,6 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             /// We take the whole part if it is small enough.
             if (marks_in_part <= need_marks)
             {
-                /// Restore the order of segments.
-                std::reverse(part.ranges.begin(), part.ranges.end());
-
                 ranges_to_get_from_part = part.ranges;
 
                 need_marks -= marks_in_part;
@@ -962,7 +952,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                     if (part.ranges.empty())
                         throw Exception("Unexpected end of ranges while spreading marks among streams", ErrorCodes::LOGICAL_ERROR);
 
-                    MarkRange & range = part.ranges.back();
+                    MarkRange & range = part.ranges.front();
 
                     const size_t marks_in_range = range.end - range.begin;
                     const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
@@ -972,7 +962,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                     marks_in_part -= marks_to_get_from_range;
                     need_marks -= marks_to_get_from_range;
                     if (range.begin == range.end)
-                        part.ranges.pop_back();
+                        part.ranges.pop_front();
                 }
                 parts.emplace_back(part);
             }

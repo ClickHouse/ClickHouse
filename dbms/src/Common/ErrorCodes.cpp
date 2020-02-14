@@ -481,7 +481,8 @@ namespace ErrorCodes
     extern const int UNABLE_TO_SKIP_UNUSED_SHARDS = 507;
     extern const int UNKNOWN_ACCESS_TYPE = 508;
     extern const int INVALID_GRANT = 509;
-    extern const int UNKNOWN_PART_TYPE = 510;
+    extern const int CACHE_DICTIONARY_UPDATE_FAIL = 510;
+    extern const int UNKNOWN_PART_TYPE = 511;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

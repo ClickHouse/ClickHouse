@@ -151,6 +151,7 @@ nav:
       - 'Dictionary Updates': 'query_language/dicts/external_dicts_dict_lifetime.md'
       - 'Sources of External Dictionaries': 'query_language/dicts/external_dicts_dict_sources.md'
       - 'Dictionary Key and Fields': 'query_language/dicts/external_dicts_dict_structure.md'
+      - 'Hierarchical dictionaries': 'query_language/dicts/external_dicts_dict_hierarchical.md'
     - 'Internal Dictionaries': 'query_language/dicts/internal_dicts.md'
   - 'Operators': 'query_language/operators.md'
   - 'Data Types':
@@ -199,7 +200,7 @@ nav:
   - 'Quotas': 'operations/quotas.md'
   - 'System Tables': 'operations/system_tables.md'
   - 'Optimizing Performance':
-    - 'Query Profiling': operations/performance/sampling_query_profiler.md
+    - 'Query Profiling': 'operations/performance/sampling_query_profiler.md'
   - 'Testing Hardware': 'operations/performance_test.md'
   - 'Server Configuration Parameters':
     - 'Introduction': 'operations/server_settings/index.md'
