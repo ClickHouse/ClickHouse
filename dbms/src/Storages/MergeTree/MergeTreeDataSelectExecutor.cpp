@@ -184,7 +184,6 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
     for (const String & name : column_names_to_return)
     {
-        //std::cerr << "Column name to return:" << name << std::endl;
         if (name == "_part")
         {
             part_column_queried = true;
@@ -645,7 +644,6 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     }
     else
     {
-        //std::cerr << "Spreading marks among streams columns size:" << column_names_to_read.size() << std::endl;
         res = spreadMarkRangesAmongStreams(
             std::move(parts_with_ranges),
             num_streams,
@@ -765,7 +763,6 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             num_streams, sum_marks, min_marks_for_concurrent_read, parts, data, query_info.prewhere_info, true,
             column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, false);
 
-        //std::cerr << "POOL HEADER:" << pool->getHeader().dumpStructure() << std::endl;
         /// Let's estimate total number of rows for progress bar.
         LOG_TRACE(log, "Reading approx. " << total_rows << " rows with " << num_streams << " streams");
 
