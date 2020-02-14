@@ -6,6 +6,7 @@
 | Company | Industry | Usecase | Cluster Size | (Un)Compressed Data Size<abbr title="of single replica"><sup>*</sup></abbr> | Reference |
 | --- | --- | --- | --- | --- | --- |
 | [2gis](https://2gis.ru) | Maps | Monitoring | — | — | [Talk in Russian, July 2019](https://youtu.be/58sPkXfq6nw) |
+| [Appsflyer](https://www.appsflyer.com) | Mobile analytics | Main product | — | — | [Talk in Russian, July 2019](https://www.youtube.com/watch?v=M3wbRlcpBbY) |
 | [Badoo](https://badoo.com) | Dating | Timeseries | — | — | [Slides in Russian, December 2019](https://presentations.clickhouse.tech/meetup38/ml.pdf) |
 | [CERN](http://public.web.cern.ch/public/) | Research  | Experiment | — | — | [Press release, April 2012](https://www.yandex.com/company/press_center/press_releases/2012/2012-04-10/) |
 | [Cisco](http://public.web.cern.ch/public/) | Networking  | Traffic analysis | — | — | [Lightning talk, October 2019](https://youtu.be/-hI1vDR2oPY?t=5057) |
@@ -15,7 +16,9 @@
 | [Geniee](https://geniee.co.jp) | Ad network | Main product | — | — | [Blog post in Japanese, July 2017](https://tech.geniee.co.jp/entry/2017/07/20/160100) |
 | [LifeStreet](https://cloudflare.com) | Ad network | Main product | — | — | [Blog post in Russian, February 2017](https://habr.com/en/post/322620/) |
 | [Qrator](https://qrator.net) | DDoS protection | Main product | — | — | [Blog Post, March 2019](https://blog.qrator.net/en/clickhouse-ddos-mitigation_37/) |
+| [Tencent](https://www.tencent.com) | Messaging | Logging | — | — | [Talk in Chinese, November 2019](https://youtu.be/T-iVQRuw-QY?t=5050) | 
 | [S7 Airlines](https://www.s7.ru) | Airlines | Metrics, Logging | — | — | [Talk in Russian, March 2019](https://www.youtube.com/watch?v=nwG68klRpPg&t=15s) |
 | [Uber](https://www.uber.com) | Taxi | Logging | — | — | [Slides, February 2020](https://presentations.clickhouse.tech/meetup40/ml.pdf) |
+| [Yandex Cloud](https://cloud.yandex.ru/services/managed-clickhouse) | Public Cloud | Main product | — | — | [Talk in Russian, December 2019](https://www.youtube.com/watch?v=pgnak9e_E0o) |
 | [Yandex DataLens](https://cloud.yandex.ru/services/datalens) | Business Intelligence | Main product | — | — | [Slides in Russian, December 2019](https://presentations.clickhouse.tech/meetup38/datalens.pdf) |
 | [Yandex Metrica](https://metrica.yandex.com) | Web analytics | Main product | 360 servers in one cluster, 1862 servers in one department | 66.41 PiB / 5.68 PiB | [Slides, February 2020](https://presentations.clickhouse.tech/meetup40/introduction/#13) |
