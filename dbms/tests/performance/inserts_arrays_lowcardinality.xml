@@ -72,13 +72,16 @@
                 intDiv( number, 4 ) as rowid,
                 groupArray( base64Encode( left( reinterpretAsString( rand64() ), 6) ) ) as arr
             FROM 
-                numbers(10000000)
+                numbers(1000000)
             GROUP BY rowid
         ) GROUP BY id</fill_query>
+    <fill_query>optimize table lot_of_string_arrays_src</fill_query>
+    <fill_query>system stop merges</fill_query>
     
     <query>INSERT INTO lot_of_string_arrays_dst SELECT rand64() as id, columns('^col') FROM lot_of_string_arrays_src</query>
     <query>INSERT INTO lot_of_string_arrays_dst_lowcardinality SELECT rand64() as id, columns('^col') FROM lot_of_string_arrays_src</query>
 
+    <drop_query>system start merges</drop_query>
     <drop_query>DROP TABLE IF EXISTS lot_of_string_arrays_src</drop_query>
     <drop_query>DROP TABLE IF EXISTS lot_of_string_arrays_dst</drop_query>
     <drop_query>DROP TABLE IF EXISTS lot_of_string_arrays_dst_lowcardinality</drop_query>
