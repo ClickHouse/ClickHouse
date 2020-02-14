@@ -19,33 +19,47 @@
                <value>11111</value>
            </values>
        </substitution>
-       <substitution>
-          <name>tableorder</name>
-          <values>
-              <value>tuple()</value>
-              <value>(key,value)</value>
-          </values>
-      </substitution>
     </substitutions>
 
     <create_query>
-        create table mingroupby_orderbylimit1_{aggregationscale}_{tableorder}
-        Engine=MergeTree order by {tableorder} AS
+        create table mingroupby_orderbylimit1_{aggregationscale}_tuple
+        Engine=MergeTree order by tuple() AS
         select toUInt64( number % {aggregationscale} ) key, toUInt64(1) value
         from numbers(10000000);
     </create_query>
-
-    <query tag='UsingGroupbyMin'>
+    
+    <create_query>
+        create table mingroupby_orderbylimit1_{aggregationscale}_key_value
+        Engine=MergeTree order by (key,value) AS
+        select toUInt64( number % {aggregationscale} ) key, toUInt64(1) value
+        from numbers(10000000);
+    </create_query>
+    
+    <query tag='UsingGroupbyMinTuple'>
          SELECT key, min(value)
-         FROM mingroupby_orderbylimit1_{aggregationscale}_{tableorder}
+         FROM mingroupby_orderbylimit1_{aggregationscale}_tuple
          group by key format Null;
     </query>
-
-    <query tag='UsingOrderbyLimit1'>
+    
+    <query tag='UsingGroupbyMinKV'>
+         SELECT key, min(value)
+         FROM mingroupby_orderbylimit1_{aggregationscale}_key_value
+         group by key format Null;
+    </query>
+    
+    <query tag='UsingOrderbyLimit1Tuple'>
          SELECT key, value
-         FROM mingroupby_orderbylimit1_{aggregationscale}_{tableorder}
+         FROM mingroupby_orderbylimit1_{aggregationscale}_tuple
          order by key, value limit 1 by key format Null;
      </query>
 
-     <drop_query> DROP TABLE IF EXISTS mingroupby_orderbylimit1_{aggregationscale}_{tableorder} </drop_query>
+    <query tag='UsingOrderbyLimit1KV'>
+         SELECT key, value
+         FROM mingroupby_orderbylimit1_{aggregationscale}_key_value
+         order by key, value limit 1 by key format Null;
+     </query>
+    
+     <drop_query> DROP TABLE IF EXISTS mingroupby_orderbylimit1_{aggregationscale}_tuple </drop_query>
+     <drop_query> DROP TABLE IF EXISTS mingroupby_orderbylimit1_{aggregationscale}_key_value </drop_query>
+
 </test>
