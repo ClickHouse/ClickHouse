@@ -1,17 +1,16 @@
 #pragma once
 
-#include <string>
 #include <ctime>
 #include <functional>
+#include <string>
 #include <fcntl.h>
-#include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/ReadBuffer.h>
 #include <port/clock.h>
 #include "SeekableReadBuffer.h"
 
 namespace DB
 {
-
 class ReadBufferFromFileBase : public BufferWithOwnMemory<SeekableReadBuffer>
 {
 public:
@@ -19,9 +18,7 @@ public:
     ReadBufferFromFileBase(size_t buf_size, char * existing_memory, size_t alignment);
     ReadBufferFromFileBase(ReadBufferFromFileBase &&) = default;
     ~ReadBufferFromFileBase() override;
-    virtual off_t getPositionInFile() = 0;
     virtual std::string getFileName() const = 0;
-    virtual int getFD() const = 0;
 
     /// It is possible to get information about the time of each reading.
     struct ProfileInfo
@@ -43,7 +40,6 @@ public:
 protected:
     ProfileCallback profile_callback;
     clockid_t clock_type{};
-
 };
 
 }

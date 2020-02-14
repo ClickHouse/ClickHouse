@@ -5,6 +5,9 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 
+#include <Interpreters/evaluateConstantExpression.h>
+
+#include <IO/ReadBufferFromFileBase.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -18,6 +21,7 @@
 #include <Columns/ColumnArray.h>
 
 #include <Interpreters/Context.h>
+#include <Parsers/ASTLiteral.h>
 
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -88,7 +92,7 @@ private:
                 plain->seek(offset, SEEK_SET);
         }
 
-        std::unique_ptr<SeekableReadBuffer> plain;
+        std::unique_ptr<ReadBufferFromFileBase> plain;
         CompressedReadBuffer compressed;
     };
 
@@ -625,13 +629,26 @@ void registerStorageLog(StorageFactory & factory)
 {
     factory.registerStorage("Log", [](const StorageFactory::Arguments & args)
     {
-        if (!args.engine_args.empty())
+        ASTs & engine_args = args.engine_args;
+
+        if (engine_args.size() > 1)
             throw Exception(
-                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
+                "Engine " + args.engine_name + " requires 0 or 1 arguments: [disk_name] (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+        for (size_t i = 0; i < engine_args.size(); ++i)
+            engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
+
+        DiskPtr disk = args.context.getDefaultDisk();
+
+        if (engine_args.size() == 1)
+        {
+            String disk_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+            disk = args.context.getDisk(disk_name);
+        }
+
         return StorageLog::create(
-            args.context.getDefaultDisk(), args.relative_data_path, args.table_id, args.columns, args.constraints,
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
             args.context.getSettings().max_compress_block_size);
     });
 }

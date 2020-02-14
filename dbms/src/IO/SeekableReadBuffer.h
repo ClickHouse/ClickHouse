@@ -20,6 +20,11 @@ public:
      * @return New position from the begging of underlying buffer / file.
      */
     virtual off_t seek(off_t off, int whence) = 0;
+
+    /**
+     * @return Offset from the begging of underlying buffer / file corresponds to buffer current position.
+     */
+    virtual off_t getPosition() = 0;
 };
 
 }

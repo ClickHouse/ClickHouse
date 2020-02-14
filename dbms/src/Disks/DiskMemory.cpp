@@ -15,6 +15,7 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int DIRECTORY_DOESNT_EXIST;
     extern const int CANNOT_DELETE_DIRECTORY;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
 }
 
 
@@ -37,8 +38,42 @@ private:
     std::vector<String>::iterator iter;
 };
 
+bool ReadIndirectBuffer::nextImpl()
+{
+    if (!initialized)
+    {
+        initialized = true;
+
+        internal_buffer = buf.buffer();
+        working_buffer = internal_buffer;
+
+        return true;
+    }
+
+    return false;
+}
+
+off_t ReadIndirectBuffer::seek(off_t off, int whence)
+{
+    if (whence != SEEK_SET)
+        throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+
+    off_t result = buf.seek(off, whence);
+    pos = buf.position();
+
+    return result;
+}
+
+off_t ReadIndirectBuffer::getPosition()
+{
+    return pos - working_buffer.begin();
+}
+
 void WriteIndirectBuffer::finalize()
 {
+    if (isFinished())
+        return;
+
     next();
     WriteBufferFromVector::finalize();
 
@@ -249,7 +284,7 @@ void DiskMemory::copyFile(const String & /*from_path*/, const String & /*to_path
     throw Exception("Method copyFile is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-std::unique_ptr<SeekableReadBuffer> DiskMemory::readFile(const String & path, size_t /*buf_size*/) const
+std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, size_t /*buf_size*/) const
 {
     std::lock_guard lock(mutex);
 
@@ -257,7 +292,7 @@ std::unique_ptr<SeekableReadBuffer> DiskMemory::readFile(const String & path, si
     if (iter == files.end())
         throw Exception("File '" + path + "' does not exist", ErrorCodes::FILE_DOESNT_EXIST);
 
-    return std::make_unique<ReadBufferFromString>(iter->second.data);
+    return std::make_unique<ReadIndirectBuffer>(path, iter->second.data);
 }
 
 std::unique_ptr<WriteBuffer> DiskMemory::writeFile(const String & path, size_t /*buf_size*/, WriteMode mode)
