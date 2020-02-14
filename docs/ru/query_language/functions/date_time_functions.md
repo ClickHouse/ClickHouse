@@ -43,6 +43,41 @@ SELECT
 Переводит дату-с-временем в число типа UInt8, содержащее номер секунды в минуте (0-59).
 Секунды координации не учитываются.
 
+## toUnixTimestamp {#to_unix_timestamp}
+
+For DateTime argument: converts value to its internal numeric representation (Unix Timestamp).
+For String argument: parse datetime from string according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
+For Date argument: the behaviour is unspecified.
+
+**Syntax** 
+
+```sql
+toUnixTimestamp(datetime)
+toUnixTimestamp(str, [timezone])
+```
+
+**Returned value**
+
+- Returns the unix timestamp.
+
+Type: `UInt32`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
+```
+
+Result:
+
+```text
+┌─unix_timestamp─┐
+│     1509836867 │
+└────────────────┘
+```
+
 ## toStartOfYear
 Округляет дату или дату-с-временем вниз до первого дня года.
 Возвращается дата.
@@ -124,6 +159,59 @@ SELECT
 ## yesterday
 Принимает ноль аргументов и возвращает вчерашнюю дату на один из моментов выполнения запроса.
 Делает то же самое, что today() - 1.
+
+## dateDiff {#datediff}
+
+Вычисляет разницу между двумя значениями дат с временем.
+
+**Синтаксис**
+
+```sql
+dateDiff('unit', startdate, enddate, [timezone])
+```
+
+**Параметры**
+
+- `unit` — Единица измерения времени, в которой будет вычислена разница между `startdate` и `enddate`. [String](../syntax.md#syntax-string-literal). 
+
+    Поддерживаемые значения:
+
+    | unit   |
+    | ------ |
+    |second  |
+    |minute  |
+    |hour    |
+    |day     |
+    |week    |
+    |month   |
+    |quarter |
+    |year    |
+
+- `startdate` — Первая дата. [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md).
+- `enddate` — Вторая дата. [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md).
+- `timezone` — Опциональный параметр. Если определен, применяется к обоим значениям: `startdate` и `enddate`. Если не определен, используются часовые пояса `startdate` и `enddate`. Если часовые пояса не совпадают, вернется неожидаемый результат.
+
+**Возвращаемое значение**
+
+Разница между `startdate` и `enddate`, выраженная в `unit`.
+
+Тип: `int`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'));
+```
+
+Ответ:
+
+```text
+┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
+│                                                                                     25 │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## timeSlot
 Округляет время до получаса.

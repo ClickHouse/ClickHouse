@@ -1,7 +1,6 @@
+DROP TABLE IF EXISTS set_array;
 
-DROP TABLE IF EXISTS test.set_array;
-
-CREATE TABLE test.set_array
+CREATE TABLE set_array
 (
     primary_key String,
     index_array Array(UInt64),
@@ -9,7 +8,7 @@ CREATE TABLE test.set_array
 ) ENGINE = MergeTree()
 ORDER BY (primary_key);
 
-INSERT INTO test.set_array
+INSERT INTO set_array
 select
   toString(intDiv(number, 1000000)) as primary_key,
   array(number) as index_array
@@ -18,6 +17,6 @@ limit 10000000;
 
 SET max_rows_to_read = 8192;
 
-select count() from test.set_array where has(index_array, 333);
+select count() from set_array where has(index_array, 333);
 
-DROP TABLE test.set_array;
+DROP TABLE set_array;

@@ -1,13 +1,15 @@
-#if defined(OS_LINUX)
-#include <malloc.h>
-#elif defined(OS_DARWIN)
-#include <malloc/malloc.h>
-#endif
-#include <new>
-
 #include <common/config_common.h>
 #include <common/memory.h>
 #include <Common/MemoryTracker.h>
+
+#include <iostream>
+#include <new>
+
+#if defined(OS_LINUX)
+#   include <malloc.h>
+#elif defined(OS_DARWIN)
+#   include <malloc/malloc.h>
+#endif
 
 /// Replace default new/delete with memory tracking versions.
 /// @sa https://en.cppreference.com/w/cpp/memory/new/operator_new
@@ -29,7 +31,7 @@ ALWAYS_INLINE void trackMemory(std::size_t size)
 #endif
 }
 
-ALWAYS_INLINE bool trackMemoryNoExept(std::size_t size) noexcept
+ALWAYS_INLINE bool trackMemoryNoExcept(std::size_t size) noexcept
 {
     try
     {
@@ -54,11 +56,11 @@ ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t size [
 #else
         if (size)
             CurrentMemoryTracker::free(size);
-#ifdef _GNU_SOURCE
+#   ifdef _GNU_SOURCE
         /// It's innaccurate resource free for sanitizers. malloc_usable_size() result is greater or equal to allocated size.
         else
             CurrentMemoryTracker::free(malloc_usable_size(ptr));
-#endif
+#   endif
 #endif
     }
     catch (...)
@@ -83,14 +85,14 @@ void * operator new[](std::size_t size)
 
 void * operator new(std::size_t size, const std::nothrow_t &) noexcept
 {
-    if (likely(Memory::trackMemoryNoExept(size)))
+    if (likely(Memory::trackMemoryNoExcept(size)))
         return Memory::newNoExept(size);
     return nullptr;
 }
 
 void * operator new[](std::size_t size, const std::nothrow_t &) noexcept
 {
-    if (likely(Memory::trackMemoryNoExept(size)))
+    if (likely(Memory::trackMemoryNoExcept(size)))
         return Memory::newNoExept(size);
     return nullptr;
 }
