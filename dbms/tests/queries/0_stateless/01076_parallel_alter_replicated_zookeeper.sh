@@ -36,7 +36,6 @@ done
 INITIAL_SUM=`$CLICKHOUSE_CLIENT --query "SELECT SUM(value1) FROM concurrent_alter_mt_1"`
 
 # Run mutation on random replica
->>>>>>> master
 function correct_alter_thread()
 {
     TYPES=(Float64 String UInt8 UInt32)
@@ -53,7 +52,6 @@ function insert_thread()
 {
 
     VALUES=(7 8 9)
->>>>>>> master
     while true; do
         REPLICA=$(($RANDOM % 5 + 1))
         VALUE=${VALUES[$RANDOM % ${#VALUES[@]} ]}
