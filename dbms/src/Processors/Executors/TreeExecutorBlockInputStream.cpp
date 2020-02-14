@@ -57,8 +57,15 @@ static void validateTree(const Processors & processors, IProcessor * root, IProc
         size_t position = it->second;
 
         if (is_visited[position])
-            throw Exception("Processor with name " + node->getName() + " was visited twice while traverse in TreeExecutorBlockInputStream. "
+        {
+            /// SourceFromInputStream may have totals port. Skip this check.
+            if (typeid_cast<const SourceFromInputStream *>(node))
+                continue;
+
+            throw Exception("Processor with name " + node->getName() +
+                            " was visited twice while traverse in TreeExecutorBlockInputStream. "
                             "Passed processors are not tree.", ErrorCodes::LOGICAL_ERROR);
+        }
 
         is_visited[position] = true;
 
