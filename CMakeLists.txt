@@ -364,9 +364,9 @@ if (ENABLE_TESTS)
 endif ()
 
 # Need to process before "contrib" dir:
-include (libs/libcommon/cmake/find_jemalloc.cmake)
-include (libs/libcommon/cmake/find_cctz.cmake)
-include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
+include (cmake/find/jemalloc.cmake)
+include (cmake/find/cctz.cmake)
+include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
@@ -398,7 +398,7 @@ macro (add_executable target)
     endif()
 endmacro()
 
-add_subdirectory (libs)
+add_subdirectory (base)
 add_subdirectory (utils)
 add_subdirectory (dbms)
 
