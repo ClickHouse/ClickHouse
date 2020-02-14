@@ -117,11 +117,10 @@ private:
     std::shared_ptr<bool> active_ptr;
     BlocksListPtrs mergeable_blocks;
 
-    bool has_watermark{false};
     IntervalKind::Kind window_kind;
     Int64 window_num_units;
     IntervalKind::Kind watermark_kind;
-    Int64 watermark_num_units;
+    Int64 watermark_num_units = 0;
     const DateLUTImpl & time_zone;
 
     StorageID target_table_id = StorageID::createEmpty();
