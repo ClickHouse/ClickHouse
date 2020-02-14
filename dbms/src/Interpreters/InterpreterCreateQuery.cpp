@@ -485,7 +485,7 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
-    if (create.storage)
+    if (create.storage || create.is_view || create.is_materialized_view || create.is_live_view || create.is_dictionary)
     {
         if (create.temporary && create.storage->engine->name != "Memory")
             throw Exception(
@@ -495,7 +495,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         return;
     }
 
-    if (create.temporary && !create.is_live_view)
+    if (create.temporary)
     {
         auto engine_ast = std::make_shared<ASTFunction>();
         engine_ast->name = "Memory";
@@ -538,7 +538,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
     /// Temporary tables are created out of databases.
-    if (create.temporary && !create.database.empty() && !create.is_live_view)
+    if (create.temporary && !create.database.empty())
         throw Exception("Temporary tables cannot be inside a database. You should not specify a database for a temporary table.",
             ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
 
@@ -585,7 +585,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
     DatabasePtr database;
 
     const String & table_name = create.table;
-    bool need_add_to_database = !create.temporary || create.is_live_view;
+    bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
     {
         database = context.getDatabase(create.database);
