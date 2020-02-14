@@ -241,7 +241,9 @@ MergeTreeData::MergeTreeData(
                 ErrorCodes::METADATA_MISMATCH);
     }
 
-    checkCanUsePolymorphicParts(true);
+    String reason;
+    if (!canUsePolymorphicParts(*settings, &reason) && !reason.empty())
+        LOG_WARNING(log, reason + " Settings 'min_bytes_for_wide_part' and 'min_bytes_for_wide_part' will be ignored.");
 }
 
 
@@ -1541,7 +1543,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     if (settings_ast)
     {
         const auto & current_changes = settings_ast->as<const ASTSetQuery &>().changes;
-        for (const auto & changed_setting : metadata.settings_ast->as<const ASTSetQuery &>().changes)
+        const auto & new_changes = metadata.settings_ast->as<const ASTSetQuery &>().changes;
+        for (const auto & changed_setting : new_changes)
         {
             if (MergeTreeSettings::findIndex(changed_setting.name) == MergeTreeSettings::npos)
                 throw Exception{"Storage '" + getName() + "' doesn't have setting '" + changed_setting.name + "'",
@@ -1557,6 +1560,16 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             {
                 throw Exception{"Setting '" + changed_setting.name + "' is readonly for storage '" + getName() + "'",
                                  ErrorCodes::READONLY_SETTING};
+            }
+
+            if (current_setting_it == current_changes.end()
+                && MergeTreeSettings::isPartFormatSetting(changed_setting.name))
+            {
+                MergeTreeSettings copy = *getSettings();
+                copy.applyChange(changed_setting);
+                String reason;
+                if (!canUsePolymorphicParts(copy, &reason) && !reason.empty())
+                    throw Exception("Can't change settings. Reason: " + reason, ErrorCodes::NOT_IMPLEMENTED);
             }
 
             if (changed_setting.name == "storage_policy")
@@ -1878,7 +1891,6 @@ void MergeTreeData::changeSettings(
         copy.applyChanges(new_changes);
         storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
         settings_ast = new_settings;
-        checkCanUsePolymorphicParts(false);
 
         for (const auto & change : new_changes)
             if (change.name == "storage_policy")
@@ -3899,26 +3911,23 @@ bool MergeTreeData::moveParts(CurrentlyMovingPartsTagger && moving_tagger)
     return true;
 }
 
-void MergeTreeData::checkCanUsePolymorphicParts(bool no_throw)
+bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason)
 {
-    const auto settings = getSettings();
-    if (!canUseAdaptiveGranularity() && (settings->min_rows_for_wide_part != 0 || settings->min_bytes_for_wide_part != 0))
+    if (!canUseAdaptiveGranularity())
     {
-        std::ostringstream message;
-        message << "Table can't create parts with adaptive granularity, but settings min_rows_for_wide_part = "
-                << settings->min_rows_for_wide_part << ", min_bytes_for_wide_part = " << settings->min_bytes_for_wide_part
-                << ". Parts with non-adaptive granularity can be stored only in Wide (default) format.";
+        if ((settings.min_rows_for_wide_part != 0 || settings.min_bytes_for_wide_part != 0) && out_reason)
+        {
+            std::ostringstream message;
+            message << "Table can't create parts with adaptive granularity, but settings min_rows_for_wide_part = "
+                    << settings.min_rows_for_wide_part << ", min_bytes_for_wide_part = " << settings.min_bytes_for_wide_part
+                    << ". Parts with non-adaptive granularity can be stored only in Wide (default) format.";
+            *out_reason = message.str();
+        }
 
-        if (no_throw)
-        {
-            message << " Settings 'min_rows_for_wide_part' and 'min_bytes_for_wide_part' will be ignored further.";
-            LOG_WARNING(log, message.str());
-        }
-        else
-        {
-            throw Exception(message.str(), ErrorCodes::NOT_IMPLEMENTED);
-        }
+        return false;
     }
+
+    return true;
 }
 
 }

@@ -96,7 +96,7 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
     if (!index_granularity_info.is_adaptive)
-        throw Exception("MergeTreeDataPartCompact cannot be created with non-adaptive granulary. TODO: help message", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("MergeTreeDataPartCompact cannot be created with non-adaptive granulary.", ErrorCodes::NOT_IMPLEMENTED);
 
     std::string marks_file_path = index_granularity_info.getMarksFilePath(full_path + "data");
     if (!Poco::File(marks_file_path).exists())

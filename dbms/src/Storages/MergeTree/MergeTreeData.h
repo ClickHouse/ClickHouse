@@ -190,7 +190,6 @@ public:
         const DiskPtr & disk, const String & relative_path) const;
 
     /// After this methods 'loadColumnsChecksumsIndexes' must be called
-    /// FIXME make this inside this function
     MutableDataPartPtr createPart(const String & name,
         const DiskPtr & disk, const String & relative_path) const;
 
@@ -1009,7 +1008,7 @@ private:
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
     CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
-    void checkCanUsePolymorphicParts(bool no_throw);
+    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason);
 };
 
 }
