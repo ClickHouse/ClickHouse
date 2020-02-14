@@ -20,4 +20,5 @@
     <query>SELECT count() FROM test.hits WHERE NOT ignore(bitAnd(toFixedString(ClientIP6, 16), IPv6StringToNum('ffff:ffff:ffff:0000:0000:0000:0000:0000')))</query>
     <query>SELECT count() FROM test.hits WHERE NOT ignore(bitOr(toFixedString(ClientIP6, 16), IPv6StringToNum('ffff:ffff:ffff:0000:0000:0000:0000:0000')))</query>
     <query>SELECT count() FROM test.hits WHERE NOT ignore(bitXor(toFixedString(ClientIP6, 16), IPv6StringToNum('ffff:ffff:ffff:0000:0000:0000:0000:0000')))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(bitNot(toFixedString(ClientIP6, 16)))</query>
 </test>
