@@ -188,15 +188,20 @@ void SystemLog<LogElement>::add(const LogElement & element)
     if (is_shutdown)
         return;
 
-    if (queue.size() >= DBMS_SYSTEM_LOG_QUEUE_SIZE / 2)
+    if (queue.size() == DBMS_SYSTEM_LOG_QUEUE_SIZE / 2)
     {
         // The queue more than half full, time to flush.
+        // We only check for strict equality, because messages are added one
+        // by one, under exclusive lock, so we will see each message count.
+        // It is enough to only wake the flushing thread once, after the message
+        // count increases past half available size.
         const uint64_t queue_end = queue_front_index + queue.size();
         if (requested_flush_before < queue_end)
         {
             requested_flush_before = queue_end;
         }
         flush_event.notify_all();
+        LOG_INFO(log, "Queue is half full for system log '" + demangle(typeid(*this).name()) + "'.");
     }
 
     if (queue.size() >= DBMS_SYSTEM_LOG_QUEUE_SIZE)
@@ -224,9 +229,10 @@ void SystemLog<LogElement>::flush()
     if (requested_flush_before < queue_end)
     {
         requested_flush_before = queue_end;
+        flush_event.notify_all();
     }
-    flush_event.notify_all();
 
+    // Use an arbitrary timeout to avoid endless waiting.
     const int timeout_seconds = 60;
     bool result = flush_event.wait_for(lock, std::chrono::seconds(timeout_seconds),
         [&] { return flushed_before >= queue_end; });
@@ -272,12 +278,12 @@ void SystemLog<LogElement>::savingThreadFunction()
 {
     setThreadName("SystemLogFlush");
 
+    std::vector<LogElement> to_flush;
     bool exit_this_thread = false;
     while (!exit_this_thread)
     {
         try
         {
-            std::vector<LogElement> to_flush;
             // The end index (exclusive, like std end()) of the messages we are
             // going to flush.
             uint64_t to_flush_end = 0;
@@ -289,6 +295,9 @@ void SystemLog<LogElement>::savingThreadFunction()
 
                 queue_front_index += queue.size();
                 to_flush_end = queue_front_index;
+                // Swap with existing array from previous flush, to save memory
+                // allocations.
+                to_flush.resize(0);
                 queue.swap(to_flush);
 
                 exit_this_thread = is_shutdown;
