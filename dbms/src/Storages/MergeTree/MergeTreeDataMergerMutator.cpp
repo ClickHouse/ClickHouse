@@ -1061,7 +1061,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         if (!indices_to_recalc.empty())
         {
-            //std::cerr << "Updated header:" << updated_header.dumpStructure()    << std::endl;
             auto indices_recalc_syntax
                 = SyntaxAnalyzer(context, {}).analyze(indices_recalc_expr_list, in->getHeader().getNamesAndTypesList());
             auto indices_recalc_expr = ExpressionAnalyzer(
@@ -1148,7 +1147,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 continue;
 
             Poco::Path destination(new_part_tmp_path);
-            //std::cerr << "HARDLINKING FROM:" << dir_it.path().toString() << " TO " << destination.toString() << std::endl;
             destination.append(dir_it.name());
 
             createHardLink(dir_it.path().toString(), destination.toString());
@@ -1159,7 +1157,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         new_data_part->checksums = source_part->checksums;
         if (in)
         {
-            //std::cerr << "Updated header:" << updated_header.dumpStructure() << std::endl;
             IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
             MergedColumnOnlyOutputStream out(
                 data,
@@ -1182,8 +1179,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             {
                 out.write(block);
 
-                //std::cerr << "Block readed:" << block.dumpStructure() << std::endl;
-                //std::cerr << "Block rows:" << block.rows() << std::endl;
                 merge_entry->rows_written += block.rows();
                 merge_entry->bytes_written_uncompressed += block.bytes();
             }
@@ -1193,10 +1188,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             auto changed_checksums = out.writeSuffixAndGetChecksums();
 
             new_data_part->checksums.add(std::move(changed_checksums));
-        }
-        else
-        {
-            //std::cerr << "Updated header empty\n";
         }
 
         for (const String & removed_file : remove_files)
