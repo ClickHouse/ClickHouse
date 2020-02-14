@@ -74,6 +74,11 @@ AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
             return AttributeUnderlyingType::utDecimal128;
     }
 
+    // Temporary hack to allow arrays in keys, since they are never retrieved for polygon dictionaries.
+    // TODO: This should be fixed by fully supporting arrays in dictionaries.
+    if (type.find("Array") == 0)
+        return AttributeUnderlyingType::utString;
+
     throw Exception{"Unknown type " + type, ErrorCodes::UNKNOWN_TYPE};
 }
 

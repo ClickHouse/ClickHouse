@@ -241,7 +241,7 @@ ORDER BY h ASC
 Преобразовать значение согласно явно указанному отображению одних элементов на другие.
 Имеется два варианта функции:
 
-1. `transform(x, array_from, array_to, default)`
+### transform(x, array_from, array_to, default)
 
 `x` - что преобразовывать.
 
@@ -283,7 +283,7 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-2. `transform(x, array_from, array_to)`
+### transform(x, array_from, array_to)
 
 Отличается от первого варианта отсутствующим аргументом default.
 Если значение x равно одному из элементов массива array_from, то возвращает соответствующий (такой же по номеру) элемент массива array_to; иначе возвращает x.
@@ -934,7 +934,7 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesy
 
 ## joinGet {#joinget}
 
-Функция позволяет извлекать данные из таблицы таким же образом как из [словаря](../dicts/index.md).
+Функция позволяет извлекать данные из таблицы таким же образом как из [словаря](../../query_language/dicts/index.md).
 
 Получает данные из таблиц [Join](../../operations/table_engines/join.md#creating-a-table) по ключу.
 

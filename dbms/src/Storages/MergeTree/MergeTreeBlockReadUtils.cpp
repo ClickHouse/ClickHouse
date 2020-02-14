@@ -74,7 +74,8 @@ MergeTreeReadTask::MergeTreeReadTask(
     : data_part{data_part_}, mark_ranges{mark_ranges_}, part_index_in_query{part_index_in_query_},
     ordered_names{ordered_names_}, column_name_set{column_name_set_}, columns{columns_}, pre_columns{pre_columns_},
     remove_prewhere_column{remove_prewhere_column_}, should_reorder{should_reorder_}, size_predictor{std::move(size_predictor_)}
-{}
+{
+}
 
 MergeTreeReadTask::~MergeTreeReadTask() = default;
 

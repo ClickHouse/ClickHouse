@@ -249,7 +249,7 @@ ORDER BY h ASC
 Transforms a value according to the explicitly defined mapping of some elements to other ones.
 There are two variations of this function:
 
-1. `transform(x, array_from, array_to, default)`
+### transform(x, array_from, array_to, default)
 
 `x` – What to transform.
 
@@ -291,7 +291,7 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-2. `transform(x, array_from, array_to)`
+### transform(x, array_from, array_to)
 
 Differs from the first variation in that the 'default' argument is omitted.
 If the 'x' value is equal to one of the elements in the 'array_from' array, it returns the matching element (that is numbered the same) from the 'array_to' array. Otherwise, it returns 'x'.
@@ -596,6 +596,34 @@ getSizeOfEnumType(value)
 
 ```sql
 SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
+```
+```text
+┌─x─┐
+│ 2 │
+└───┘
+```
+
+## blockSerializedSize
+
+Returns size on disk (without taking into account compression).
+
+
+```sql
+blockSerializedSize(value[, value[, ...]])
+```
+
+**Parameters:**
+
+- `value` — Any value.
+
+**Returned values**
+
+- The number of bytes that will be written to disk for block of values (without compression).
+
+**Example**
+
+```sql
+SELECT blockSerializedSize(maxState(1)) as x
 ```
 ```text
 ┌─x─┐
@@ -955,7 +983,7 @@ So, result of function depends on partition of data to blocks and on order of da
 
 ## joinGet {#joinget}
 
-The function lets you extract data from the table the same way as from a [dictionary](../dicts/index.md).
+The function lets you extract data from the table the same way as from a [dictionary](../../query_language/dicts/index.md).
 
 Gets data from [Join](../../operations/table_engines/join.md#creating-a-table) tables using the specified join key.
 

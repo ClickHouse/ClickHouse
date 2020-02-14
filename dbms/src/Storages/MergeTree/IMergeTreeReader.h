@@ -49,7 +49,7 @@ public:
 
     size_t getFirstMarkToRead() const
     {
-        return all_mark_ranges.back().begin;
+        return all_mark_ranges.front().begin;
     }
 
     MergeTreeData::DataPartPtr data_part;

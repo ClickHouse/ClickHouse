@@ -23,6 +23,78 @@ extern const int LOGICAL_ERROR;
 namespace
 {
 
+/// Fixed TypeIds that numbers would not be changed between versions.
+enum class MagicNumber : uint8_t
+{
+    UInt8       = 1,
+    UInt16      = 2,
+    UInt32      = 3,
+    UInt64      = 4,
+    Int8        = 6,
+    Int16       = 7,
+    Int32       = 8,
+    Int64       = 9,
+    Date        = 13,
+    DateTime    = 14,
+    DateTime64  = 15,
+    Enum8       = 17,
+    Enum16      = 18,
+    Decimal32   = 19,
+    Decimal64   = 20,
+};
+
+MagicNumber serializeTypeId(TypeIndex type_id)
+{
+    switch (type_id)
+    {
+        case TypeIndex::UInt8:      return MagicNumber::UInt8;
+        case TypeIndex::UInt16:     return MagicNumber::UInt16;
+        case TypeIndex::UInt32:     return MagicNumber::UInt32;
+        case TypeIndex::UInt64:     return MagicNumber::UInt64;
+        case TypeIndex::Int8:       return MagicNumber::Int8;
+        case TypeIndex::Int16:      return MagicNumber::Int16;
+        case TypeIndex::Int32:      return MagicNumber::Int32;
+        case TypeIndex::Int64:      return MagicNumber::Int64;
+        case TypeIndex::Date:       return MagicNumber::Date;
+        case TypeIndex::DateTime:   return MagicNumber::DateTime;
+        case TypeIndex::DateTime64: return MagicNumber::DateTime64;
+        case TypeIndex::Enum8:      return MagicNumber::Enum8;
+        case TypeIndex::Enum16:     return MagicNumber::Enum16;
+        case TypeIndex::Decimal32:  return MagicNumber::Decimal32;
+        case TypeIndex::Decimal64:  return MagicNumber::Decimal64;
+        default:
+            break;
+    }
+
+    throw Exception("Type is not supported by T64 codec: " + toString(UInt32(type_id)), ErrorCodes::LOGICAL_ERROR);
+}
+
+TypeIndex deserializeTypeId(uint8_t serialized_type_id)
+{
+    MagicNumber magic = static_cast<MagicNumber>(serialized_type_id);
+    switch (magic)
+    {
+        case MagicNumber::UInt8:        return TypeIndex::UInt8;
+        case MagicNumber::UInt16:       return TypeIndex::UInt16;
+        case MagicNumber::UInt32:       return TypeIndex::UInt32;
+        case MagicNumber::UInt64:       return TypeIndex::UInt64;
+        case MagicNumber::Int8:         return TypeIndex::Int8;
+        case MagicNumber::Int16:        return TypeIndex::Int16;
+        case MagicNumber::Int32:        return TypeIndex::Int32;
+        case MagicNumber::Int64:        return TypeIndex::Int64;
+        case MagicNumber::Date:         return TypeIndex::Date;
+        case MagicNumber::DateTime:     return TypeIndex::DateTime;
+        case MagicNumber::DateTime64:   return TypeIndex::DateTime64;
+        case MagicNumber::Enum8:        return TypeIndex::Enum8;
+        case MagicNumber::Enum16:       return TypeIndex::Enum16;
+        case MagicNumber::Decimal32:    return TypeIndex::Decimal32;
+        case MagicNumber::Decimal64:    return TypeIndex::Decimal64;
+    }
+
+    throw Exception("Bad magic number in T64 codec: " + toString(UInt32(serialized_type_id)), ErrorCodes::LOGICAL_ERROR);
+}
+
+
 UInt8 codecId()
 {
     return static_cast<UInt8>(CompressionMethodByte::T64);
@@ -41,6 +113,7 @@ TypeIndex baseType(TypeIndex type_idx)
             return TypeIndex::Int32;
         case TypeIndex::Int64:
         case TypeIndex::Decimal64:
+        case TypeIndex::DateTime64:
             return TypeIndex::Int64;
         case TypeIndex::UInt8:
         case TypeIndex::Enum8:
@@ -79,6 +152,7 @@ TypeIndex typeIdx(const DataTypePtr & data_type)
         case TypeIndex::Int32:
         case TypeIndex::UInt32:
         case TypeIndex::DateTime:
+        case TypeIndex::DateTime64:
         case TypeIndex::Decimal32:
         case TypeIndex::Int64:
         case TypeIndex::UInt64:
@@ -490,7 +564,7 @@ void decompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncomp
 
 UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, char * dst) const
 {
-    UInt8 cookie = static_cast<UInt8>(type_idx) | (static_cast<UInt8>(variant) << 7);
+    UInt8 cookie = static_cast<UInt8>(serializeTypeId(type_idx)) | (static_cast<UInt8>(variant) << 7);
     memcpy(dst, &cookie, 1);
     dst += 1;
 
@@ -529,7 +603,7 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
     src_size -= 1;
 
     auto saved_variant = static_cast<Variant>(cookie >> 7);
-    auto saved_type_id = static_cast<TypeIndex>(cookie & 0x7F);
+    TypeIndex saved_type_id = deserializeTypeId(cookie & 0x7F);
 
     switch (baseType(saved_type_id))
     {
