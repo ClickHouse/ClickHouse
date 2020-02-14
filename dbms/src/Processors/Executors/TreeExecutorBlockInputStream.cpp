@@ -2,12 +2,17 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Interpreters/ProcessList.h>
 #include <stack>
+#include <Processors/Sources/SourceFromInputStream.h>
 
 namespace DB
 {
 
 static void checkProcessorHasSingleOutput(IProcessor * processor)
 {
+    /// SourceFromInputStream may have totals port. Skip this check.
+    if (typeid_cast<const SourceFromInputStream *>(processor))
+        return;
+
     size_t num_outputs = processor->getOutputs().size();
     if (num_outputs != 1)
         throw Exception("All processors in TreeExecutorBlockInputStream must have single output, "
