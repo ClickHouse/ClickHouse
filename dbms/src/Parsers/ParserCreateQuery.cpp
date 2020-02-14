@@ -625,11 +625,13 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserKeyword s_view("VIEW");
     ParserKeyword s_window("WINDOW");
     ParserToken s_dot(TokenType::Dot);
+    ParserToken s_eq(TokenType::Equals);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserStorage storage_p;
     ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
+    ParserIntervalOperatorExpression watermark_p;
     ParserSelectWithUnionQuery select_p;
 
     ASTPtr database;
@@ -638,6 +640,7 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ASTPtr to_database;
     ASTPtr to_table;
     ASTPtr storage;
+    ASTPtr watermark;
     ASTPtr as_database;
     ASTPtr as_table;
     ASTPtr select;
@@ -709,8 +712,17 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
-    /// Internal ENGINE for WINDOW VIEW
+    /// Inner table ENGINE for WINDOW VIEW
     storage_p.parse(pos, storage, expected);
+
+    // WATERMARK
+    if (ParserKeyword{"WATERMARK"}.ignore(pos, expected))
+    {
+        s_eq.ignore(pos, expected);
+
+        if (!watermark_p.parse(pos, watermark, expected))
+            return false;
+    }
 
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))
@@ -737,6 +749,7 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
+    query->watermark_function = watermark;
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
