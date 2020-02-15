@@ -1,6 +1,7 @@
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Join.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -70,7 +71,7 @@ void StorageJoin::truncate(const ASTPtr &, const Context &, TableStructureWriteL
 
 HashJoinPtr StorageJoin::getJoin(std::shared_ptr<AnalyzedJoin> analyzed_join) const
 {
-    if (kind != analyzed_join->kind() || strictness != analyzed_join->strictness())
+    if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
         throw Exception("Table " + getStorageID().getNameForLogs() + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 
     if ((analyzed_join->forceNullableRight() && !use_nulls) ||

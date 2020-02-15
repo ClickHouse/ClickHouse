@@ -74,7 +74,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
 
-        socket->connect(*current_resolved_address, timeouts.connection_timeout);
+        const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
+        socket->connect(*current_resolved_address, connection_timeout);
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);

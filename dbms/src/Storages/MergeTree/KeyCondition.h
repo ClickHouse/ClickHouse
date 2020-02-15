@@ -4,7 +4,6 @@
 #include <optional>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Set.h>
 #include <Core/SortDescription.h>
 #include <Parsers/ASTExpressionList.h>
@@ -18,6 +17,9 @@ namespace DB
 
 class IFunction;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 /** Range with open or closed ends; possibly unbounded.
   */

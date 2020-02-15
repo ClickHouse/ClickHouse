@@ -18,13 +18,16 @@ RUN apt-get update -y \
             curl \
             sudo \
             openssl \
+            ncdu \
             netcat-openbsd \
             telnet \
+            tree \
             moreutils \
             brotli \
             gdb \
             lsof \
-            llvm-8
+            llvm-8 \
+            vim
 
 
 ENV TZ=Europe/Moscow
