@@ -4117,7 +4117,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
                 if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
                     ++res.active_replicas;
         }
-        catch (const Coordination::Exception & e)
+        catch (const Coordination::Exception &)
         {
             res.zookeeper_exception = getCurrentExceptionMessage(false);
         }
