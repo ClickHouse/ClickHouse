@@ -50,6 +50,7 @@ StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
         { "absolute_delay",                       std::make_shared<DataTypeUInt64>()   },
         { "total_replicas",                       std::make_shared<DataTypeUInt8>()    },
         { "active_replicas",                      std::make_shared<DataTypeUInt8>()    },
+        { "zookeeper_exception",                  std::make_shared<DataTypeString>()   },
     }));
 }
 
@@ -93,7 +94,8 @@ Pipes StorageSystemReplicas::readWithProcessors(
         if (   column_name == "log_max_index"
             || column_name == "log_pointer"
             || column_name == "total_replicas"
-            || column_name == "active_replicas")
+            || column_name == "active_replicas"
+            || column_name == "zookeeper_exception")
         {
             with_zk_fields = true;
             break;
@@ -175,6 +177,7 @@ Pipes StorageSystemReplicas::readWithProcessors(
         res_columns[col_num++]->insert(status.absolute_delay);
         res_columns[col_num++]->insert(status.total_replicas);
         res_columns[col_num++]->insert(status.active_replicas);
+        res_columns[col_num++]->insert(status.zookeeper_exception);
     }
 
     Block header = getSampleBlock();
