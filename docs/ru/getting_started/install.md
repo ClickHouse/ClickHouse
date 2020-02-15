@@ -14,7 +14,7 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 ## Доступные варианты установки
 
-### Из DEB пакетов {#from-deb-packages}
+### Из DEB пакетов {#install-from-deb-packages}
 
 Яндекс рекомендует использовать официальные скомпилированные `deb` пакеты для Debian или Ubuntu.
 

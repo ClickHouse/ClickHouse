@@ -47,6 +47,13 @@ protected:
 };
 
 
+class ParserBareWord : public IParserBase
+{
+protected:
+    const char * getName() const override { return "bare word"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 /** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime
   */
 class ParserCompoundIdentifier : public IParserBase

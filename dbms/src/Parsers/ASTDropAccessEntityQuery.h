@@ -9,17 +9,21 @@ namespace DB
 
 /** DROP QUOTA [IF EXISTS] name [,...]
   * DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...]
+  * DROP USER [IF EXISTS] name [,...]
   */
 class ASTDropAccessEntityQuery : public IAST
 {
 public:
     enum class Kind
     {
+        USER,
         QUOTA,
         ROW_POLICY,
     };
+
     const Kind kind;
     const char * const keyword;
+
     bool if_exists = false;
     Strings names;
     std::vector<RowPolicy::FullNameParts> row_policies_names;

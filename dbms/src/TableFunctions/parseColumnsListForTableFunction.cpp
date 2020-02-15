@@ -1,6 +1,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/Context.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 
 

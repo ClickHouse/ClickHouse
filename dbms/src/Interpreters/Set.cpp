@@ -228,7 +228,6 @@ static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, c
         throw Exception("Incorrect element of set. Must be literal or constant expression.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 }
 
-
 void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & context)
 {
     /// Will form a block with values from the set.

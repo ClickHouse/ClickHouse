@@ -52,6 +52,9 @@ using Processors = std::vector<ProcessorPtr>;
 class Pipe;
 using Pipes = std::vector<Pipe>;
 
+class StoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
+
 struct ColumnSize
 {
     size_t marks = 0;
@@ -92,6 +95,9 @@ public:
 
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
+
+    /// Returns true if the storage is a view of a table or another view.
+    virtual bool isView() const { return false; }
 
     /// Returns true if the storage supports queries with the SAMPLE section.
     virtual bool supportsSampling() const { return false; }

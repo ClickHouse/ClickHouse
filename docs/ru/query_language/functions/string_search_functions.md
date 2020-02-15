@@ -2,7 +2,7 @@
 
 Во всех функциях, поиск регистрозависимый по умолчанию. Существуют варианты функций для регистронезависимого поиска.
 
-## position(haystack, needle)
+## position(haystack, needle) {#position}
 Поиск подстроки `needle` в строке `haystack`.
 Возвращает позицию (в байтах) найденной подстроки, начиная с 1, или 0, если подстрока не найдена.
 
@@ -13,10 +13,50 @@
 
 Для поиска без учета регистра используйте функцию `positionCaseInsensitiveUTF8`.
 
-## multiSearchAllPositions(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
-Так же, как и `position`, только возвращает `Array` первых вхождений.
+## multiSearchAllPositions {#multiSearchAllPositions}
 
-Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `multiSearchAllPositionsCaseInsensitive, multiSearchAllPositionsUTF8, multiSearchAllPositionsCaseInsensitiveUTF8`.
+The same as [position](#position) but returns `Array` of positions (in bytes) of the found corresponding substrings in the string. Positions are indexed starting from 1.
+
+The search is performed on sequences of bytes without respect to string encoding and collation.
+
+- For case-insensitive ASCII search, use the function `multiSearchAllPositionsCaseInsensitive`.
+- For search in UTF-8, use the function [multiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
+- For case-insensitive UTF-8 search, use the function multiSearchAllPositionsCaseInsensitiveUTF8.
+
+**Syntax** 
+
+```sql
+multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
+```
+
+**Parameters**
+
+- `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
+- `needle` —  substring to be searched. [String](../syntax.md#syntax-string-literal).
+
+**Returned values**
+
+- Array of starting positions in bytes (counting from 1), if the corresponding substring was found and 0 if not found.
+
+**Example**
+
+Query:
+
+```sql
+SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])
+```
+
+Result:
+
+```text
+┌─multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])─┐
+│ [0,13,0]                                                          │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+## multiSearchAllPositionsUTF8 {#multiSearchAllPositionsUTF8}
+
+Смотрите `multiSearchAllPositions`.
 
 ## multiSearchFirstPosition(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
 
