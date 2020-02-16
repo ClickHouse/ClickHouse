@@ -348,7 +348,6 @@ if (ARROW_WITH_ZLIB)
 endif ()
 if (ARROW_WITH_ZSTD)
     target_link_libraries(${ARROW_LIBRARY} PRIVATE ${ZSTD_LIBRARY})
-    target_include_directories(${ARROW_LIBRARY} SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
 endif ()
 
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_INCLUDE_DIR})
