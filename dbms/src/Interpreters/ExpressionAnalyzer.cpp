@@ -693,7 +693,8 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     return true;
 }
 
-bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain, bool only_types)
+bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order,
+                                                  ManyExpressionActions & group_by_elements_actions)
 {
     const auto * select_query = getAggregatingQuery();
 
@@ -708,6 +709,16 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     {
         step.required_output.push_back(asts[i]->getColumnName());
         getRootActions(asts[i], only_types, step.actions);
+    }
+
+    if (optimize_aggregation_in_order)
+    {
+        auto all_columns = sourceWithJoinedColumns();
+        for (auto & child : asts)
+        {
+            group_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(all_columns, context));
+            getRootActions(child, only_types, group_by_elements_actions.back());
+        }
     }
 
     return true;
@@ -1051,7 +1062,12 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (need_aggregate)
         {
-            query_analyzer.appendGroupBy(chain, only_types || !first_stage);
+            /// TODO correct conditions
+            optimize_aggregation_in_order =
+                    context.getSettingsRef().optimize_aggregation_in_order
+                    && storage && query.groupBy();
+
+            query_analyzer.appendGroupBy(chain, only_types || !first_stage, optimize_aggregation_in_order, group_by_elements_actions);
             query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !first_stage);
             before_aggregation = chain.getLastActions();
 
@@ -1064,13 +1080,13 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             }
         }
 
-        bool has_stream_with_non_joned_rows = (before_join && before_join->getTableJoinAlgo()->hasStreamWithNonJoinedRows());
+        bool has_stream_with_non_joined_rows = (before_join && before_join->getTableJoinAlgo()->hasStreamWithNonJoinedRows());
         optimize_read_in_order =
             settings.optimize_read_in_order
             && storage && query.orderBy()
             && !query_analyzer.hasAggregation()
             && !query.final()
-            && !has_stream_with_non_joned_rows;
+            && !has_stream_with_non_joined_rows;
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));

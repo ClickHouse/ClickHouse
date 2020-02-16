@@ -52,18 +52,9 @@ struct InputSortingInfo
     bool operator !=(const InputSortingInfo & other) const { return !(*this == other); }
 };
 
-struct GroupByInfo
-{
-    Names order_key_prefix_descr;
-
-    GroupByInfo(const Names & order_key_prefix_descr_)
-        : order_key_prefix_descr(order_key_prefix_descr_) {}
-};
-
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 using FilterInfoPtr = std::shared_ptr<FilterInfo>;
 using InputSortingInfoPtr = std::shared_ptr<const InputSortingInfo>;
-using GroupByInfoPtr = std::shared_ptr<GroupByInfo>;
 
 struct SyntaxAnalyzerResult;
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
@@ -71,8 +62,6 @@ using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 class ReadInOrderOptimizer;
 using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 
-class AggregateInOrderOptimizer;
-using AggregateInOrderOptimizerPtr = std::shared_ptr<const AggregateInOrderOptimizer>;
 
 /** Query along with some additional data,
   *  that can be used during query processing
@@ -87,13 +76,12 @@ struct SelectQueryInfo
     PrewhereInfoPtr prewhere_info;
 
     ReadInOrderOptimizerPtr order_by_optimizer;
-
-    AggregateInOrderOptimizerPtr group_by_optimizer;
+    ReadInOrderOptimizerPtr group_by_optimizer;
 
     /// We can modify it while reading from storage
     mutable InputSortingInfoPtr input_sorting_info;
+    mutable InputSortingInfoPtr group_by_info;
 
-    GroupByInfoPtr group_by_info;
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)
     PreparedSets sets;
