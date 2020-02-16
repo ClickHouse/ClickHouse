@@ -2,40 +2,31 @@
 
 #include <functional>
 #include <optional>
+#include <sys/time.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/HashTable/Hash.h>
 #include <Interpreters/InternalTextLogsQueue.h>
-#include <sys/time.h>
 #include <Common/CurrentThread.h>
 #include <common/getThreadId.h>
 #include "Loggers.h"
 
 
-static const char * setColor(UInt64 num)
+static std::string setColor(UInt64 num)
 {
-    /// ANSI escape sequences to set foreground font color in terminal.
+    /// Make a random RGB color that has constant brightness.
+    /// https://en.wikipedia.org/wiki/YCbCr
 
-    static constexpr auto num_colors = 12;
-    static const char * colors[num_colors] =
-    {
-        /// Black on black is meaningless
-        "\033[0;31m",
-        "\033[0;32m",
-        "\033[0;33m",
-        /// Low intense blue on black is too dark.
-        "\033[0;35m",
-        "\033[0;36m",
-        "\033[1;31m",
-        "\033[1;32m",
-        "\033[1;33m",
-        "\033[1;34m",
-        "\033[1;35m",
-        "\033[1;36m",
-        "\033[1m",  /// Not as white but just as high intense - for readability on white background.
-    };
+    UInt8 y = 128;
+    UInt8 cb = num % 256;
+    UInt8 cr = num / 256 % 256;
 
-    return colors[num % num_colors];
+    UInt8 r = std::max(0.0, std::min(255.0, y + 1.402 * (cr - 128)));
+    UInt8 g = std::max(0.0, std::min(255.0, y - 0.344136 * (cb - 128) - 0.714136 * (cr - 128)));
+    UInt8 b = std::max(0.0, std::min(255.0, y + 1.772 * (cb - 128)));
+
+    /// ANSI escape sequence to set 24-bit foreground font color in terminal.
+    return "\033[38;2;" + DB::toString(r) + ";" + DB::toString(g) + ";" + DB::toString(b) + "m";
 }
 
 static const char * setColorForLogPriority(int priority)
@@ -104,7 +95,7 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
 
     writeCString(" [ ", wb);
     if (color)
-        writeCString(setColor(intHash64(msg_ext.thread_id)), wb);
+        writeString(setColor(intHash64(msg_ext.thread_id)), wb);
     DB::writeIntText(msg_ext.thread_id, wb);
     if (color)
         writeCString(resetColor(), wb);
@@ -114,7 +105,7 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
     /// just to be convenient for various log parsers.
     writeCString("{", wb);
     if (color)
-        writeCString(setColor(std::hash<std::string>()(msg_ext.query_id)), wb);
+        writeString(setColor(std::hash<std::string>()(msg_ext.query_id)), wb);
     DB::writeString(msg_ext.query_id, wb);
     if (color)
         writeCString(resetColor(), wb);
