@@ -333,8 +333,8 @@ void MergeTreeRangeReader::ReadResult::optimize()
             filter_holder_original = std::move(filter_holder);
             filter = new_filter.get();
             filter_holder = std::move(new_filter);
+            need_filter = true;
         }
-        need_filter = true;
     }
     /// Another guess, if it's worth filtering at PREWHERE
     else if (countBytesInResultFilter(filter->getData()) < 0.6 * filter->size())
@@ -690,9 +690,9 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             if (stream.isFinished())
             {
                 result.addRows(stream.finalize(result.columns));
-                stream = Stream(ranges.back().begin, ranges.back().end, merge_tree_reader);
-                result.addRange(ranges.back());
-                ranges.pop_back();
+                stream = Stream(ranges.front().begin, ranges.front().end, merge_tree_reader);
+                result.addRange(ranges.front());
+                ranges.pop_front();
             }
 
             auto rows_to_read = std::min(space_left, stream.numPendingRowsInCurrentGranule());
