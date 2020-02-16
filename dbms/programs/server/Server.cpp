@@ -581,7 +581,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// Describe multiple reasons when query profiler cannot work.
 
 #if !USE_UNWIND
-    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work without bundled unwind library.");
+    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work without bundled unwind (stack unwinding) library.");
 #endif
 
 #if WITH_COVERAGE
@@ -595,7 +595,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     if (!hasPHDRCache())
         LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
-            " (otherwise the function 'dl_iterate_phdr' is not lock free and async-signal safe).");
+            " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 
     global_context->setCurrentDatabase(default_database);
 
