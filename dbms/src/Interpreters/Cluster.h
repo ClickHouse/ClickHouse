@@ -57,8 +57,8 @@ public:
         UInt16 port;
         String user;
         String password;
-        UInt32 shard_index{}; /// shard serial number in configuration file
-        UInt32 replica_index{}; /// replica serial number in this shard
+        UInt32 shard_index{}; /// shard serial number in configuration file, starting from 1.
+        UInt32 replica_index{}; /// replica serial number in this shard, starting from 1; zero means no replicas.
 
         /// This database is selected when no database is specified for Distributed table
         String default_database;
