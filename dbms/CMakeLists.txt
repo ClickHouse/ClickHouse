@@ -36,11 +36,6 @@ if (NOT MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
 endif ()
 
-if (NOT NO_WERROR)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
-endif ()
-
 # Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
 
 option (WEVERYTHING "Enables -Weverything option with some exceptions. This is intended for exploration of new compiler warnings that may be found to be useful. Only makes sense for clang." ON)
@@ -576,9 +571,6 @@ dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
-
-# also for copy_headers.sh:
-target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 
 add_subdirectory (programs)
 add_subdirectory (tests)

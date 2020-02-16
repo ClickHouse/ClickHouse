@@ -229,6 +229,10 @@ endif ()
 # Using system libs can cause a lot of warnings in includes (on macro expansion).
 if (UNBUNDLED OR NOT (OS_LINUX OR OS_DARWIN) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
+
+    if (NOT NO_WERROR)
+        add_warning(error)
+    endif ()
 endif ()
 
 # Make this extra-checks for correct library dependencies.

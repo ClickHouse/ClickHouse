@@ -1,13 +1,12 @@
-set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/config_common.h)
-configure_file (${CMAKE_CURRENT_SOURCE_DIR}/config_common.h.in ${CONFIG_COMMON})
+configure_file (config_common.h.in config_common.h)
 
 add_library(apple_rt apple_rt.cpp)
-target_include_directories (apple_rt PUBLIC ${COMMON_INCLUDE_DIR})
+target_include_directories(apple_rt PRIVATE ..)  # TODO: replace with proper header-only target.
 if (DEFINED APPLE_HAVE_CLOCK_GETTIME)
     target_compile_definitions(apple_rt PUBLIC -DAPPLE_HAVE_CLOCK_GETTIME=${APPLE_HAVE_CLOCK_GETTIME})
 endif ()
 
-set (COMMON_SRCS
+set (SRCS
     argsToConfig.cpp
     coverage.cpp
     DateLUT.cpp
@@ -26,29 +25,23 @@ set (COMMON_SRCS
 )
 
 if (ENABLE_REPLXX)
-    set (COMMON_SRCS
+    set (SRCS ${SRCS}
         ReplxxLineReader.cpp
         ReplxxLineReader.h
-
-        ${COMMON_SRCS}
     )
 endif ()
 
-add_library (common
-    ${COMMON_SRCS}
-    ${CONFIG_COMMON})
+add_library (common ${SRCS})
+
+target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
 
 if (USE_INTERNAL_MEMCPY)
     set (MEMCPY_LIBRARIES memcpy)
 endif ()
 
-find_package (Threads)
-
 if(CCTZ_INCLUDE_DIR)
     target_include_directories(common BEFORE PRIVATE ${CCTZ_INCLUDE_DIR})
 endif()
-
-target_include_directories (common PUBLIC ${COMMON_INCLUDE_DIR})
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (common SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
@@ -62,19 +55,17 @@ if(CCTZ_LIBRARY)
     target_link_libraries(common PRIVATE ${CCTZ_LIBRARY})
 endif()
 
-if (ENABLE_REPLXX)
-    target_link_libraries(common PUBLIC replxx)
-endif ()
+target_link_libraries(common PUBLIC replxx)
 
 target_link_libraries (common
-        PUBLIC
-    ${Poco_Util_LIBRARY}
-    ${Poco_Foundation_LIBRARY}
-    ${CITYHASH_LIBRARIES}
-        PUBLIC
-    ${Boost_SYSTEM_LIBRARY}
-        PRIVATE
-    ${MEMCPY_LIBRARIES})
+    PUBLIC
+        ${Poco_Util_LIBRARY}
+        ${Poco_Foundation_LIBRARY}
+        ${CITYHASH_LIBRARIES}
+        ${Boost_SYSTEM_LIBRARY}
+    PRIVATE
+        ${MEMCPY_LIBRARIES}
+)
 
 if (RT_LIBRARY)
     target_link_libraries (common PRIVATE ${RT_LIBRARY})
