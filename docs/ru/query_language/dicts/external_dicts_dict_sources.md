@@ -3,7 +3,7 @@
 
 Внешний словарь можно подключить из множества источников.
 
-Общий вид конфигурации:
+Общий вид XML-конфигурации:
 
 ```xml
 <yandex>
@@ -19,6 +19,16 @@
   ...
 </yandex>
 ```
+
+Аналогичный [DDL-запрос](../create.md#create-dictionary-query):
+
+```sql
+CREATE DICTIONARY dict_name (...)
+...
+SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
+...
+```
+
 
 Источник настраивается в разделе `source`.
 
@@ -48,6 +58,12 @@
 </source>
 ```
 
+или
+
+ ```sql
+SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+```
+
 Поля настройки:
 
 -   `path` - Абсолютный путь к файлу.
@@ -69,6 +85,12 @@
 </source>
 ```
 
+или
+
+```sql
+SOURCE(EXECUTABLE(command 'cat /opt/dictionaries/os.tsv' format 'TabSeparated'))
+```
+
 Поля настройки:
 
 -   `command` - Абсолютный путь к исполняемому файлу или имя файла (если каталог программы прописан в `PATH`).
@@ -86,8 +108,29 @@
     <http>
         <url>http://[::1]/os.tsv</url>
         <format>TabSeparated</format>
+        <credentials>
+            <user>user</user>
+            <password>password</password>
+        </credentials>
+        <headers>
+            <header>
+                <name>API-KEY</name>
+                <value>key</value>
+            </header>
+        </headers>
     </http>
 </source>
+```
+
+или
+
+```sql
+SOURCE(HTTP(
+    url 'http://[::1]/os.tsv'
+    format 'TabSeparated'
+    credentials(user 'user' password 'password')
+    headers(header(name 'API-KEY' value 'key'))
+))
 ```
 
 Чтобы ClickHouse смог обратиться к HTTPS-ресурсу, необходимо [настроить openSSL](../../operations/server_settings/settings.md) в конфигурации сервера.
@@ -105,12 +148,25 @@
 Пример настройки:
 
 ```xml
-<odbc>
-    <db>DatabaseName</db>
-    <table>ShemaName.TableName</table>
-    <connection_string>DSN=some_parameters</connection_string>
-    <invalidate_query>SQL_QUERY</invalidate_query>
-</odbc>
+<source>
+    <odbc>
+        <db>DatabaseName</db>
+        <table>ShemaName.TableName</table>
+        <connection_string>DSN=some_parameters</connection_string>
+        <invalidate_query>SQL_QUERY</invalidate_query>
+    </odbc>
+</source>
+```
+
+или
+
+```sql
+SOURCE(ODBC(
+    db 'DatabaseName'
+    table 'SchemaName.TableName'
+    connection_string 'DSN=some_parameters'
+    invalidate_query 'SQL_QUERY'
+))
 ```
 
 Поля настройки:
@@ -216,6 +272,18 @@ $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 </yandex>
 ```
 
+или
+
+```sql
+CREATE DICTIONARY table_name (
+    id UInt64,
+    some_column UInt64 DEFAULT 0
+)
+PRIMARY KEY id
+SOURCE(ODBC(connection_string 'DSN=myconnection' table 'postgresql_table'))
+LAYOUT(HASHED())
+LIFETIME(MIN 300 MAX 360)
+
 Может понадобиться в `odbc.ini` указать полный путь до библиотеки с драйвером `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
 ### Пример подключения MS SQL Server
@@ -299,6 +367,20 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
 </yandex>
 ```
 
+или
+
+```sql
+CREATE DICTIONARY test (
+    k UInt64,
+    s String DEFAULT ''
+)
+PRIMARY KEY k
+SOURCE(ODBC(table 'dict' connection_string 'DSN=MSSQL;UID=test;PWD=test'))
+LAYOUT(FLAT())
+LIFETIME(MIN 300 MAX 360)
+```
+
+
 ## СУБД
 
 
@@ -326,6 +408,22 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
       <invalidate_query>SQL_QUERY</invalidate_query>
   </mysql>
 </source>
+```
+
+или
+
+```sql
+SOURCE(MYSQL(
+    port 3306
+    user 'clickhouse'
+    password 'qwerty'
+    replica(host 'example01-1' priority 1)
+    replica(host 'example01-2' priority 1)
+    db 'db_name'
+    table 'table_name'
+    where 'id=10'
+    invalidate_query 'SQL_QUERY'
+))
 ```
 
 Поля настройки:
@@ -362,6 +460,21 @@ MySQL можно подключить на локальном хосте чер�
 </source>
 ```
 
+или
+
+```sql
+SOURCE(MYSQL(
+    host 'localhost'
+    socket '/path/to/socket/file.sock'
+    user 'clickhouse'
+    password 'qwerty'
+    db 'db_name'
+    table 'table_name'
+    where 'id=10'
+    invalidate_query 'SQL_QUERY'
+))
+```
+
 
 ### ClickHouse {#dicts-external_dicts_dict_sources-clickhouse}
 
@@ -379,6 +492,20 @@ MySQL можно подключить на локальном хосте чер�
         <where>id=10</where>
     </clickhouse>
 </source>
+```
+
+или
+
+```sql
+SOURCE(CLICKHOUSE(
+    host 'example01-01-1'
+    port 9000
+    user 'default'
+    password ''
+    db 'default'
+    table 'ids'
+    where 'id=10'
+))
 ```
 
 Поля настройки:
@@ -410,6 +537,19 @@ MySQL можно подключить на локальном хосте чер�
 </source>
 ```
 
+или
+
+```sql
+SOURCE(MONGO(
+    host 'localhost'
+    port 27017
+    user ''
+    password ''
+    db 'test'
+    collection 'dictionary_source'
+))
+```
+
 Поля настройки:
 
 -   `host` - хост MongoDB.
@@ -432,6 +572,17 @@ MySQL можно подключить на локальном хосте чер�
         <db_index>0</db_index>
     </redis>
 </source>
+```
+
+или
+
+```sql
+SOURCE(REDIS(
+    host 'localhost'
+    port 6379
+    storage_type 'simple'
+    db_index 0
+))
 ```
 
 Поля настройки:
