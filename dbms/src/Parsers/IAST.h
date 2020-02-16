@@ -163,7 +163,8 @@ public:
         std::ostream & ostr;
         bool hilite = false;
         bool one_line;
-        bool always_quote_identifiers = false;
+        /// This is needed for ClickHouse to correctly format identifiers that can be keywords in some context, like `interval`.
+        bool always_quote_identifiers = true;
         IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
 
         char nl_or_ws;
