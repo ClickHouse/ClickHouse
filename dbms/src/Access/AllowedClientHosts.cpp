@@ -22,7 +22,6 @@ namespace
 {
     using IPAddress = Poco::Net::IPAddress;
     using IPSubnet = AllowedClientHosts::IPSubnet;
-    const IPSubnet ALL_ADDRESSES{IPAddress{IPAddress::IPv6}, IPAddress{IPAddress::IPv6}};
 
     /// Converts an address to IPv6.
     /// The loopback address "127.0.0.1" (or any "127.x.y.z") is converted to "::1".
