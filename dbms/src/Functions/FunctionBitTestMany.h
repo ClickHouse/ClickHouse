@@ -175,21 +175,21 @@ private:
     }
 
     template <typename PosType, typename ValueType>
-    bool addToMaskImpl(PaddedPODArray<ValueType> & mask, const IColumn * const pos_col_untyped)
+    bool NO_SANITIZE_UNDEFINED addToMaskImpl(PaddedPODArray<ValueType> & mask, const IColumn * const pos_col_untyped)
     {
         if (const auto pos_col = checkAndGetColumn<ColumnVector<PosType>>(pos_col_untyped))
         {
             const auto & pos = pos_col->getData();
 
             for (const auto i : ext::range(0, mask.size()))
-                mask[i] = mask[i] | (1 << pos[i]);
+                mask[i] = mask[i] | (PosType(1) << pos[i]);
 
             return true;
         }
         else if (const auto pos_col_const = checkAndGetColumnConst<ColumnVector<PosType>>(pos_col_untyped))
         {
             const auto & pos = pos_col_const->template getValue<PosType>();
-            const auto new_mask = 1 << pos;
+            const auto new_mask = PosType(1) << pos;
 
             for (const auto i : ext::range(0, mask.size()))
                 mask[i] = mask[i] | new_mask;
