@@ -340,4 +340,6 @@ if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
 
+add_subdirectory(grpc-cmake)
+
 add_subdirectory(replxx-cmake)
