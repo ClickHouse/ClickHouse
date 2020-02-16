@@ -35,8 +35,7 @@ ClickHouse:
 
 В одном файле можно [сконфигурировать](external_dicts_dict.md) произвольное количество словарей.
 
-[DDL queries for dictionaries](../create.md#create-dictionary-query) doesn't require any additional records in server configuration. They allow to work with dictionaries as first-class entities, like tables or views.
-
+Если вы создаёте внешние словари [DDL-запросами](../create.md#create-dictionary-query), то не задавайте конфигурацию словаря в конфигурации сервера.
 
 !!! attention "Внимание"
     Можно преобразовывать значения по небольшому словарю, описав его в запросе `SELECT` (см. функцию [transform](../functions/other_functions.md)). Эта функциональность не связана с внешними словарями.
