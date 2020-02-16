@@ -182,14 +182,14 @@ private:
             const auto & pos = pos_col->getData();
 
             for (const auto i : ext::range(0, mask.size()))
-                mask[i] = mask[i] | (PosType(1) << pos[i]);
+                mask[i] = mask[i] | (UInt64(1) << pos[i]);
 
             return true;
         }
         else if (const auto pos_col_const = checkAndGetColumnConst<ColumnVector<PosType>>(pos_col_untyped))
         {
             const auto & pos = pos_col_const->template getValue<PosType>();
-            const auto new_mask = PosType(1) << pos;
+            const auto new_mask = UInt64(1) << pos;
 
             for (const auto i : ext::range(0, mask.size()))
                 mask[i] = mask[i] | new_mask;
