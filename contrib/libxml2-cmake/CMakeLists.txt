@@ -59,4 +59,4 @@ endif()
 
 target_include_directories(libxml2 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/include)
 target_include_directories(libxml2 PUBLIC ${LIBXML2_SOURCE_DIR}/include)
-target_include_directories(libxml2 SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
+target_include_directories(libxml2 PRIVATE ${ZLIB_INCLUDE_DIR}/include)
