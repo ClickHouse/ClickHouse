@@ -679,17 +679,18 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
     return order_descr;
 }
 
-static Names getGroupByDescription(const ASTSelectQuery & query, const Context & /*context*/)
+static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & query, const Context & /*context*/)
 {
-    Names group_by_descr;
-    group_by_descr.reserve(query.groupBy()->children.size());
+    SortDescription order_descr;
+    order_descr.reserve(query.groupBy()->children.size());
 
     for (const auto & elem : query.groupBy()->children)
     {
         String name = elem->getColumnName();
-        group_by_descr.push_back(name);
+        order_descr.emplace_back(name, 1, 1);
     }
-    return group_by_descr;
+
+    return order_descr;
 }
 
 static UInt64 getLimitUIntValue(const ASTPtr & node, const Context & context)
@@ -1413,11 +1414,12 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         if (analysis_result.optimize_aggregation_in_order)
         {
-            query_info.group_by_optimizer = std::make_shared<AggregateInOrderOptimizer>(
-                getGroupByDescription(query, *context),
-                query_info.syntax_analyzer_result);
+            query_info.group_by_optimizer = std::make_shared<ReadInOrderOptimizer>(
+                    analysis_result.group_by_elements_actions,
+                    getSortDescriptionFromGroupBy(query, *context),
+                    query_info.syntax_analyzer_result);
 
-            query_info.group_by_info = query_info.group_by_optimizer->getGroupByCommonPrefix(storage);
+            query_info.group_by_info = query_info.group_by_optimizer->getInputOrder(storage);
         }
 
 
@@ -1633,7 +1635,7 @@ void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const Expres
     });
 }
 
-void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, GroupByInfoPtr group_by_info)
+void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputSortingInfoPtr group_by_info)
 {
     pipeline.transform([&](auto & stream)
     {
@@ -1656,9 +1658,9 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
     if (group_by_info)
     {
         /// TODO optimization :)
-
+//        std::cerr << "\n";
 //        for (const auto & elem : group_by_info->order_key_prefix_descr)
-//            std::cerr << elem << " ";
+//            std::cerr << elem.column_name << " ";
 //        std::cerr << "\n";
     }
 
@@ -1706,7 +1708,7 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
 }
 
 
-void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, GroupByInfoPtr /*group_by_info*/)
+void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputSortingInfoPtr /*group_by_info*/)
 {
     pipeline.addSimpleTransform([&](const Block & header)
     {
