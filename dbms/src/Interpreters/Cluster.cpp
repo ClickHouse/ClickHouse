@@ -155,8 +155,8 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
         const char * underscore = strchr(full_string.data(), '_');
 
         Address address;
-        address.shard_index = parse<UInt32>(address_begin + 5);
-        address.replica_index = underscore ? parse<UInt32>(underscore + 8) : 0;
+        address.shard_index = parse<UInt32>(address_begin + strlen("shard"));
+        address.replica_index = underscore ? parse<UInt32>(underscore + strlen("_replica")) : 0;
 
         return address;
     }
