@@ -78,22 +78,16 @@ OLAPシナリオは、他の一般的なシナリオ（OLTPやKey-Valueアクセ
 たとえば、「各広告プラットフォームのレコード数をカウントする」クエリでは、1つの「広告プラットフォームID」列を読み取る必要がありますが、これは非圧縮では1バイトの領域を要します。トラフィックのほとんどが広告プラットフォームからのものではない場合、この列は少なくとも10倍の圧縮が期待できます。高速な圧縮アルゴリズムを使用すれば、1秒あたり少なくとも非圧縮データに換算して数ギガバイトの速度でデータを展開できます。つまり、このクエリは、単一のサーバーで1秒あたり約数十億行の速度で処理できます。この速度はまさに実際に達成されます。
 
 <details markdown="1"><summary>Example</summary>
-```
+```bash
 $ clickhouse-client
 ClickHouse client version 0.0.52053.
 Connecting to localhost:9000.
 Connected to ClickHouse server version 0.0.52053.
-
-:) SELECT CounterID, count() FROM hits GROUP BY CounterID ORDER BY count() DESC LIMIT 20
-
-SELECT
-CounterID,
-count()
-FROM hits
-GROUP BY CounterID
-ORDER BY count() DESC
-LIMIT 20
-
+```
+```sql
+SELECT CounterID, count() FROM hits GROUP BY CounterID ORDER BY count() DESC LIMIT 20
+```
+```text
 ┌─CounterID─┬──count()─┐
 │    114208 │ 56057344 │
 │    115080 │ 51619590 │
@@ -116,10 +110,6 @@ LIMIT 20
 │    115079 │  8837972 │
 │    337234 │  8205961 │
 └───────────┴──────────┘
-
-20 rows in set. Elapsed: 0.153 sec. Processed 1.00 billion rows, 4.00 GB (6.53 billion rows/s., 26.10 GB/s.)
-
-:)
 ```
 
 </details>

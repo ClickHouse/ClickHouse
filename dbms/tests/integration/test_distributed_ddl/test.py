@@ -289,6 +289,11 @@ def test_rename(test_cluster):
     assert instance.query("select count(id), sum(id) from rename where sid like 'new%'").rstrip() == "10\t245"
     test_cluster.pm_random_drops.push_rules(rules)
 
+def test_socket_timeout(test_cluster):
+    instance = test_cluster.instances['ch1']
+    # queries should not fail with "Timeout exceeded while reading from socket" in case of EINTR caused by query profiler
+    for i in range(0, 100):
+        instance.query("select hostName() as host, count() from cluster('cluster', 'system', 'settings') group by host")
 
 if __name__ == '__main__':
     with contextmanager(test_cluster)() as ctx_cluster:

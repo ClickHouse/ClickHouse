@@ -99,9 +99,34 @@ The minimum set of characters that you need to escape when passing data in TabSe
 
 Only a small set of symbols are escaped. You can easily stumble onto a string value that your terminal will ruin in output.
 
-Arrays are written as a list of comma-separated values in square brackets. Number items in the array are fomratted as normally, but dates, dates with times, and strings are written in single quotes with the same escaping rules as above.
+Arrays are written as a list of comma-separated values in square brackets. Number items in the array are formatted as normally. `Date` and `DateTime` types are written in single quotes. Strings are written in single quotes with the same escaping rules as above.
 
 [NULL](../query_language/syntax.md) is formatted as `\N`.
+
+Each element of [Nested](../data_types/nested_data_structures/nested.md) structures is represented as array.
+
+For example:
+
+```sql
+CREATE TABLE nestedt
+(
+    `id` UInt8, 
+    `aux` Nested(
+        a UInt8, 
+        b String
+    )
+)
+ENGINE = TinyLog
+```
+```sql
+INSERT INTO nestedt Values ( 1, [1], ['a'])
+```
+```sql
+SELECT * FROM nestedt FORMAT TSV
+```
+```text
+1	[1]	['a']
+```
 
 ## TabSeparatedRaw {#tabseparatedraw}
 

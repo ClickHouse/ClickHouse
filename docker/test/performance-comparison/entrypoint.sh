@@ -11,11 +11,24 @@ cd workspace
 rm -rf ch ||:
 git clone --branch master --single-branch --depth 50 --bare https://github.com/ClickHouse/ClickHouse ch
 (cd ch && git fetch origin $SHA_TO_TEST:to-test) # fetch it so that we can show the commit message
-ref_tag=$(cd ch && git describe --match='v*-testing' --abbrev=0 --first-parent master)
-echo Reference tag is $ref_tag
-# We use annotated tags which have their own shas, so we have to further
-# dereference the tag to get the commit it points to, hence the '~0' thing.
-ref_sha=$(cd ch && git rev-parse $ref_tag~0)
+# FIXME sometimes we have testing tags on commits without published builds -- these
+# are documentation commits, normally. Loop to skip them.
+start_ref=master
+while :
+do
+    ref_tag=$(cd ch && git describe --match='v*-testing' --abbrev=0 --first-parent $start_ref)
+    echo Reference tag is $ref_tag
+    # We use annotated tags which have their own shas, so we have to further
+    # dereference the tag to get the commit it points to, hence the '~0' thing.
+    ref_sha=$(cd ch && git rev-parse $ref_tag~0)
+
+    if curl --fail --head https://clickhouse-builds.s3.yandex.net/0/$ref_sha/performance/performance.tgz
+    then
+        break
+    fi
+
+    start_ref=$ref_sha~
+done
 
 # Show what we're testing
 (
@@ -32,8 +45,8 @@ ref_sha=$(cd ch && git rev-parse $ref_tag~0)
 # Set python output encoding so that we can print queries with Russian letters.
 export PYTHONIOENCODING=utf-8
 
-# Use 11 runs if not told otherwise
-export CHPC_RUNS=${CHPC_RUNS:-11}
+# Use a default number of runs if not told otherwise
+export CHPC_RUNS=${CHPC_RUNS:-15}
 
 # Even if we have some errors, try our best to save the logs.
 set +e

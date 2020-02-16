@@ -249,7 +249,7 @@ ORDER BY h ASC
 Transforms a value according to the explicitly defined mapping of some elements to other ones.
 There are two variations of this function:
 
-1. `transform(x, array_from, array_to, default)`
+### transform(x, array_from, array_to, default)
 
 `x` – What to transform.
 
@@ -291,7 +291,7 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-2. `transform(x, array_from, array_to)`
+### transform(x, array_from, array_to)
 
 Differs from the first variation in that the 'default' argument is omitted.
 If the 'x' value is equal to one of the elements in the 'array_from' array, it returns the matching element (that is numbered the same) from the 'array_to' array. Otherwise, it returns 'x'.
