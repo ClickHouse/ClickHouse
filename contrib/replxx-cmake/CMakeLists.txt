@@ -45,10 +45,7 @@ if (ENABLE_REPLXX)
         endif ()
     endif ()
 
-    if (NOT (COMPILER_GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9))
-        target_compile_options(replxx PUBLIC -Wno-documentation)
-    endif ()
-
+    target_compile_options(replxx PUBLIC -Wno-documentation)
     target_compile_definitions(replxx PUBLIC USE_REPLXX=1)
 
     message (STATUS "Using replxx")
