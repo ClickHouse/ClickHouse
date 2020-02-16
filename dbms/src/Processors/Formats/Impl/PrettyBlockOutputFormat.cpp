@@ -204,14 +204,59 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
             writeChar(' ', out);
     };
 
+    auto writeText = [&]()
+    {
+        /// For more convenience, replace most of ASCII control characters to Unicode Control Pictures.
+
+        String raw;
+        {
+            WriteBufferFromString raw_out(raw);
+            type.serializeAsText(column, row_num, raw_out, format_settings);
+        }
+
+        String replaced;
+        replaced.reserve(raw.size());
+
+        for (auto & c : raw)
+        {
+            /// NOTE It's in question, should we replace ESC (0x1b).
+            /// If we do, the user won't be able to create colorful output in terminal with SQL queries,
+            ///  but terminal wouldn't break from random binary output.
+
+            if (isControlASCII(c) && c != '\n' && c != '\t')
+            {
+                if (format_settings.pretty.color)
+                    writeCString("\033[1m", out);
+                replaced += "\xE2\x90";
+                replaced += '\x80' + c;
+                if (format_settings.pretty.color)
+                    writeCString("\033[0m", out);
+            }
+            else if (c == 0x7F)
+            {
+                if (format_settings.pretty.color)
+                    writeCString("\033[1m", out);
+                replaced += "␡";
+                if (format_settings.pretty.color)
+                    writeCString("\033[0m", out);
+            }
+            else
+            {
+                replaced += c;
+            }
+        }
+
+        writeString(replaced, out);
+    };
+
     if (type.shouldAlignRightInPrettyFormats())
     {
         writePadding();
-        type.serializeAsText(column, row_num, out, format_settings);
+        writeText();
     }
     else
     {
-        type.serializeAsText(column, row_num, out, format_settings);
+        writeText();
         writePadding();
     }
 }
