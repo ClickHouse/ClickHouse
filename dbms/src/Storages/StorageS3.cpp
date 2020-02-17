@@ -28,6 +28,7 @@
 #include <aws/s3/model/ListObjectsRequest.h>
 
 #include <Common/parseGlobs.h>
+#include <Common/quoteString.h>
 #include <re2/re2.h>
 
 

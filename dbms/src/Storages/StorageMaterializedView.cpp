@@ -146,7 +146,7 @@ StorageMaterializedView::StorageMaterializedView(
         create_interpreter.setInternal(true);
         create_interpreter.execute();
 
-        target_table_id = global_context.getTable(manual_create_query->database, manual_create_query->table)->getStorageID();
+        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table})->getStorageID();
     }
 
     if (!select_table_id.empty())

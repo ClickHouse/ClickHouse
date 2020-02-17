@@ -127,8 +127,9 @@ protected:
 private:
     /* Saving thread data */
     Context & context;
-    const String database_name;
-    const String table_name;
+    const StorageID table_id;
+    //const String database_name;
+    //const String table_name;
     const String storage_def;
     StoragePtr table;
     bool is_prepared = false;
@@ -170,11 +171,12 @@ SystemLog<LogElement>::SystemLog(Context & context_,
     const String & table_name_,
     const String & storage_def_,
     size_t flush_interval_milliseconds_)
-    : context(context_),
-    database_name(database_name_), table_name(table_name_), storage_def(storage_def_),
+    : context(context_)
+    , table_id(database_name_, table_name_)
+    , storage_def(storage_def_),
     flush_interval_milliseconds(flush_interval_milliseconds_)
 {
-    log = &Logger::get("SystemLog (" + database_name + "." + table_name + ")");
+    log = &Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
 
     saving_thread = ThreadFromGlobalPool([this] { savingThreadFunction(); });
 }
@@ -338,8 +340,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         /// This is needed to support DEFAULT-columns in table.
 
         std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-        insert->database = database_name;
-        insert->table = table_name;
+        insert->database = table_id.database_name;
+        insert->table = table_id.table_name;
         ASTPtr query_ptr(insert.release());
 
         InterpreterInsertQuery interpreter(query_ptr, context);
@@ -363,9 +365,9 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
-    String description = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name);
+    String description = table_id.getNameForLogs();
 
-    table = context.tryGetTable(database_name, table_name);
+    table = DatabaseCatalog::instance().tryGetTable(table_id);
 
     if (table)
     {
@@ -376,18 +378,18 @@ void SystemLog<LogElement>::prepareTable()
         {
             /// Rename the existing table.
             int suffix = 0;
-            while (DatabaseCatalog::instance().isTableExist({database_name, table_name + "_" + toString(suffix)}, context))
+            while (DatabaseCatalog::instance().isTableExist({table_id.database_name, table_id.table_name + "_" + toString(suffix)}, context))
                 ++suffix;
 
             auto rename = std::make_shared<ASTRenameQuery>();
 
             ASTRenameQuery::Table from;
-            from.database = database_name;
-            from.table = table_name;
+            from.database = table_id.database_name;
+            from.table = table_id.table_name;
 
             ASTRenameQuery::Table to;
-            to.database = database_name;
-            to.table = table_name + "_" + toString(suffix);
+            to.database = table_id.database_name;
+            to.table = table_id.table_name + "_" + toString(suffix);
 
             ASTRenameQuery::Element elem;
             elem.from = from;
@@ -414,8 +416,8 @@ void SystemLog<LogElement>::prepareTable()
 
         auto create = std::make_shared<ASTCreateQuery>();
 
-        create->database = database_name;
-        create->table = table_name;
+        create->database = table_id.database_name;
+        create->table = table_id.table_name;
 
         Block sample = LogElement::createBlock();
 
@@ -433,7 +435,7 @@ void SystemLog<LogElement>::prepareTable()
         interpreter.setInternal(true);
         interpreter.execute();
 
-        table = context.getTable(database_name, table_name);
+        table = DatabaseCatalog::instance().getTable(table_id);
     }
 
     is_prepared = true;

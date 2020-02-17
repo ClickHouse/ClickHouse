@@ -313,14 +313,14 @@ BlockIO InterpreterSystemQuery::execute()
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_name, const String & table_name, Context & system_context)
 {
     context.checkAccess(AccessType::RESTART_REPLICA, database_name, table_name);
-    auto database = DatabaseCatalog::instance().getDatabase(database_name, system_context);
+    auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
     auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, table_name);
     ASTPtr create_ast;
 
     /// Detach actions
     {
-        auto table = system_context.tryGetTable(database_name, table_name);
+        auto table = DatabaseCatalog::instance().tryGetTable({database_name, table_name});
 
         if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
             return nullptr;
@@ -385,11 +385,11 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
 
 void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 {
-    String database_name = !query.database.empty() ? query.database : context.getCurrentDatabase();
+    String database_name = context.resolveDatabase(query.database);
     const String & table_name = query.table;
 
     context.checkAccess(AccessType::SYNC_REPLICA, database_name, table_name);
-    StoragePtr table = context.getTable(database_name, table_name);
+    StoragePtr table = DatabaseCatalog::instance().getTable({database_name, table_name});
 
     if (auto storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
@@ -409,11 +409,11 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 
 void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
 {
-    String database_name = !query.database.empty() ? query.database : context.getCurrentDatabase();
+    String database_name = context.resolveDatabase(query.database);
     String & table_name = query.table;
     context.checkAccess(AccessType::FLUSH_DISTRIBUTED, database_name, table_name);
 
-    if (auto storage_distributed = dynamic_cast<StorageDistributed *>(context.getTable(database_name, table_name).get()))
+    if (auto storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable({database_name, table_name}).get()))
         storage_distributed->flushClusterNodesAllData();
     else
         throw Exception("Table " + database_name + "." + table_name + " is not distributed", ErrorCodes::BAD_ARGUMENTS);

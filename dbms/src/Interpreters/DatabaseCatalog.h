@@ -82,7 +82,7 @@ public:
     DatabasePtr getSystemDatabase() const;
 
     void attachDatabase(const String & database_name, const DatabasePtr & database);
-    DatabasePtr detachDatabase(const String & database_name, bool drop = false);
+    DatabasePtr detachDatabase(const String & database_name, bool drop = false, bool check_empty = true);
 
     DatabasePtr getDatabase(const String & database_name, const Context & local_context) const;
     DatabasePtr getDatabase(const String & database_name) const;

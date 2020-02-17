@@ -33,7 +33,7 @@ try
     Names column_names;
     column_names.push_back("WatchID");
 
-    StoragePtr table = context.getTable("default", "hits6");
+    StoragePtr table = DatabaseCatalog::instance().getTable({"default", "hits6"});
 
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
     BlockInputStreams streams = table->read(column_names, {}, context, stage, settings.max_block_size, settings.max_threads);

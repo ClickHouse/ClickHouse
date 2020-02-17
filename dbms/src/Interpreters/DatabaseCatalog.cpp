@@ -6,6 +6,7 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseMemory.h>
 #include <Poco/File.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -149,14 +150,13 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
 }
 
 
-DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool drop)
+DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool drop, bool check_empty)
 {
     std::lock_guard lock{databases_mutex};
     assertDatabaseExistsUnlocked(database_name);
     auto db = databases.find(database_name)->second;
 
-    if (!db->empty(*global_context))
-    if (!db->empty(*global_context))
+    if (check_empty && !db->empty(*global_context))
         throw Exception("New table appeared in database being dropped or detached. Try again.", ErrorCodes::DATABASE_NOT_EMPTY);
 
     databases.erase(database_name);
