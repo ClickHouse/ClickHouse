@@ -936,16 +936,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         throw Exception("Trying to mutate " + toString(future_part.parts.size()) + " parts, not one. "
             "This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-    bool need_remove_expired_values = false;
-    for (const auto & command : commands)
-    {
-        if (command.type == MutationCommand::MATERIALIZE_TTL)
-        {
-            need_remove_expired_values = true;
-            break;
-        }
-    }
-
     CurrentMetrics::Increment num_mutations{CurrentMetrics::PartMutation};
     const auto & source_part = future_part.parts[0];
     auto storage_from_source_part = StorageFromMergeTreeDataPart::create(source_part);
@@ -1007,6 +997,22 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     UInt64 watch_prev_elapsed = 0;
     MergeStageProgress stage_progress(1.0);
     in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
+
+    bool need_remove_expired_values = false;
+    if (data.hasAnyTTL())
+    {
+        auto in_columns = in_header.getNames();
+        auto dependencies = data.getColumnDependencies(NameSet(in_columns.begin(), in_columns.end()));
+        for (const auto & dependency : dependencies)
+        {
+            if (dependency.kind == ColumnDependency::TTL_EXPRESSION
+                || dependency.kind == ColumnDependency::TTL_TARGET)
+            {
+                need_remove_expired_values = true;
+                break;
+            }
+        }
+    }
 
     if (updated_header.columns() == all_columns.size())
     {
@@ -1106,7 +1112,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             files_to_skip.insert(index->getFileName() + mrk_extension);
         }
 
-        if (!need_remove_expired_values)
+        if (need_remove_expired_values)
             files_to_skip.insert("ttl.txt");
 
         Poco::DirectoryIterator dir_end;
@@ -1158,7 +1164,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         new_data_part->checksums = source_part->checksums;
         new_data_part->checksums.add(std::move(changed_checksums));
 
-        if (!new_data_part->ttl_infos.empty())
+        if (need_remove_expired_values && !new_data_part->ttl_infos.empty())
         {
             /// Write a file with ttl infos in json format.
             WriteBufferFromFile out_ttl(new_part_tmp_path + "ttl.txt", 4096);
