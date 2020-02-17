@@ -46,7 +46,7 @@ done
 export PYTHONIOENCODING=utf-8
 
 # Use a default number of runs if not told otherwise
-export CHPC_RUNS=${CHPC_RUNS:-15}
+export CHPC_RUNS=${CHPC_RUNS:-17}
 
 # Even if we have some errors, try our best to save the logs.
 set +e
