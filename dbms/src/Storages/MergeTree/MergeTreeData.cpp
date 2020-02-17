@@ -3905,35 +3905,67 @@ bool MergeTreeData::moveParts(CurrentlyMovingPartsTagger && moving_tagger)
     return true;
 }
 
-Names MergeTreeData::getColumnsRequiredForTTL() const
+
+ColumnDependencies MergeTreeData::getColumnDependencies(const NameSet & updated_columns) const
 {
-    NameSet res;
-    auto add_columns_to_set = [&](const auto & expression)
+    if (updated_columns.empty())
+        return {};
+
+    ColumnDependencies res;
+
+    NameSet indices_columns;
+    NameSet required_ttl_columns;
+    NameSet updated_ttl_columns;
+
+    auto add_dependent_columns = [&updated_columns](const auto & expression, auto & to_set)
     {
-        auto columns_vec = expression->getRequiredColumns();
-        res.insert(columns_vec.begin(), columns_vec.end());
+        auto requiered_columns = expression->getRequiredColumns();
+        for (const auto & dependency : requiered_columns)
+        {
+            if (updated_columns.count(dependency))
+            {
+                to_set.insert(requiered_columns.begin(), requiered_columns.end());
+                return true;
+            }
+        }
+
+        return false;
     };
 
-    if (hasRowsTTL())
-        add_columns_to_set(rows_ttl_entry.expression);
+    for (const auto & index : skip_indices)
+        add_dependent_columns(index->expr, indices_columns);
 
-    for (const auto & [_, entry] : column_ttl_entries_by_name)
-        add_columns_to_set(entry.expression);
+    if (hasRowsTTL())
+    {
+        if (add_dependent_columns(rows_ttl_entry.expression, required_ttl_columns))
+        {
+            /// Filter all columns, if rows TTL expression have to be recalculated.
+            for (const auto & column : getColumns().getAllPhysical())
+                updated_ttl_columns.insert(column.name);
+        }
+    }
+
+    for (const auto & [name, entry] : column_ttl_entries_by_name)
+    {
+        if (add_dependent_columns(entry.expression, required_ttl_columns))
+            updated_ttl_columns.insert(name);
+        else if (updated_columns.count(name))
+        {
+            updated_ttl_columns.insert(name);
+            add_dependent_columns(entry.expression, required_ttl_columns);
+        }
+    }
 
     for (const auto & entry : move_ttl_entries)
-        add_columns_to_set(entry.expression);
+        add_dependent_columns(entry.expression, required_ttl_columns);
 
-    return Names(res.begin(), res.end());
-}
+    for (const auto & column : indices_columns)
+        res.emplace(column, ColumnDependency::SKIP_INDEX);
+    for (const auto & column : required_ttl_columns)
+        res.emplace(column, ColumnDependency::TTL_EXPRESSION);
+    for (const auto & column : updated_ttl_columns)
+        res.emplace(column, ColumnDependency::TTL_TARGET);
 
-Names MergeTreeData::getColumnsUpdatedByTTL() const
-{
-    if (hasRowsTTL())
-        return getColumns().getAllPhysical().getNames();
-
-    Names res;
-    for (const auto & [name, _] : column_ttl_entries_by_name)
-        res.push_back(name);
     return res;
 }
 

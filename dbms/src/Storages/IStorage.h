@@ -14,6 +14,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/ColumnDependency.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
@@ -443,11 +444,12 @@ public:
     /// Returns names of primary key + secondary sorting columns
     virtual Names getSortingKeyColumns() const { return {}; }
 
-    /// Returns columns required for calculation of TTL expression.
-    virtual Names getColumnsRequiredForTTL() const { return {}; }
-
     /// Returns columns that could be updated by applying TTL rules
     virtual Names getColumnsUpdatedByTTL() const { return {}; }
+
+    /// Retuns columns, whose dependencies (skip indices, TTL expressions) 
+    /// would be affected if we will update @updated_columns set of columns.
+    virtual ColumnDependencies getColumnDependencies(const NameSet & /* updated_columns */) const { return {}; }
 
     /// Returns storage policy if storage supports it
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
