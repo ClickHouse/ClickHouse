@@ -88,6 +88,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     <a name="mergetree_setting-merge_with_ttl_timeout"></a>
     - `merge_with_ttl_timeout` — минимальное время в секундах перед повторным слиянием с TTL. По умолчанию — 86400 (1 день).
     - `write_final_mark` — включает или отключает запись последней засечки индекса в конце куска данных. По умолчанию — 1. Не отключайте её.
+    - `merge_max_block_size` — Максимальное количество строк в блоке для операций слияния. Значение по умолчанию: 8192.
     - `storage_policy` — политика хранения данных. Смотрите [Хранение данных таблицы на нескольких блочных устройствах](#table_engine-mergetree-multiple-volumes).
     
 **Пример задания секций**
