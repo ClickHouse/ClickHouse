@@ -31,6 +31,7 @@ private:
         }
     };
 
+private:
     std::map<int, AlterState> queue_state;
 public:
 
