@@ -26,7 +26,7 @@ namespace ErrorCodes
   * This causes inconveniences - for example, when using ReadBuffer to read from a chunk of memory const char *,
   *  you have to use const_cast.
   *
-  * successors must implement the nextImpl() method.
+  * Derived classes must implement the nextImpl() method.
   */
 class ReadBuffer : public BufferBase
 {
@@ -157,7 +157,7 @@ public:
             throw Exception("Cannot read all data. Bytes read: " + std::to_string(read_bytes) + ". Bytes expected: " + std::to_string(n) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
     }
 
-    /** A method that can be more efficiently implemented in successors, in the case of reading large enough blocks.
+    /** A method that can be more efficiently implemented in derived classes, in the case of reading large enough blocks.
       * The implementation can read data directly into `to`, without superfluous copying, if in `to` there is enough space for work.
       * For example, a CompressedReadBuffer can decompress the data directly into `to`, if the entire decompressed block fits there.
       * By default - the same as read.
