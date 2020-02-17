@@ -6,6 +6,7 @@ nav:
   - 'ClickHouse功能可被视为缺点': 'introduction/features_considered_disadvantages.md'
   - '性能': 'introduction/performance.md'
   - '历史': 'introduction/history.md'
+  - '使用者': 'introduction/adopters.md'
 
 - '入门指南':
   - 'hidden': 'getting_started/index.md'
