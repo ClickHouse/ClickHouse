@@ -147,6 +147,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     bool renamed = false;
     try
     {
+        //FIXME is it possible to attach db only after it was loaded? (no, loadStoredObjects adds view dependencies)
         DatabaseCatalog::instance().attachDatabase(database_name, database);
         added = true;
 
@@ -163,7 +164,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (renamed)
             Poco::File(metadata_file_tmp_path).remove();
         if (added)
-            DatabaseCatalog::instance().detachDatabase(database_name);
+            DatabaseCatalog::instance().detachDatabase(database_name, false, false);
 
         throw;
     }
@@ -411,8 +412,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
     }
     else if (!create.as_table.empty())
     {
-        String as_database_name = create.as_database.empty() ? context.getCurrentDatabase() : create.as_database;
-        StoragePtr as_storage = context.getTable(as_database_name, create.as_table);
+        String as_database_name = context.resolveDatabase(create.as_database);
+        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table});
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockStructureForShare(false, context.getCurrentQueryId());

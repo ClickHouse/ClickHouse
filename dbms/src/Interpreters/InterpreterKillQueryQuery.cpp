@@ -236,23 +236,22 @@ BlockIO InterpreterKillQueryQuery::execute()
         header.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});
 
         MutableColumns res_columns = header.cloneEmptyColumns();
-        String database_name, table_name;
+        auto table_id = StorageID::createEmpty();
 
         for (size_t i = 0; i < mutations_block.rows(); ++i)
         {
-            database_name = database_col.getDataAt(i).toString();
-            table_name = table_col.getDataAt(i).toString();
+            table_id = StorageID{database_col.getDataAt(i).toString(), table_col.getDataAt(i).toString()};
             auto mutation_id = mutation_id_col.getDataAt(i).toString();
 
             CancellationCode code = CancellationCode::Unknown;
             if (!query.test)
             {
-                auto storage = context.tryGetTable(database_name, table_name);
+                auto storage = DatabaseCatalog::instance().tryGetTable(table_id);
                 if (!storage)
                     code = CancellationCode::NotFound;
                 else
                 {
-                    if (!context.getAccessRights()->isGranted(&Poco::Logger::get("InterpreterKillQueryQuery"), AccessType::KILL_MUTATION, database_name, table_name))
+                    if (!context.getAccessRights()->isGranted(&Poco::Logger::get("InterpreterKillQueryQuery"), AccessType::KILL_MUTATION, table_id.database_name, table_id.table_name))
                         continue;
                     code = storage->killMutation(mutation_id);
                 }
@@ -261,9 +260,9 @@ BlockIO InterpreterKillQueryQuery::execute()
             insertResultRow(i, code, mutations_block, header, res_columns);
         }
 
-        if (res_columns[0]->empty() && !table_name.empty())
+        if (res_columns[0]->empty() && table_id)
             throw Exception(
-                "Not allowed to kill mutation on " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name),
+                "Not allowed to kill mutation on " + table_id.getNameForLogs(),
                 ErrorCodes::ACCESS_DENIED);
 
         res_io.in = std::make_shared<OneBlockInputStream>(header.cloneWithColumns(std::move(res_columns)));

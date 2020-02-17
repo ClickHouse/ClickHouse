@@ -41,28 +41,18 @@ BlockIO InterpreterWatchQuery::execute()
 
     BlockIO res;
     const ASTWatchQuery & query = typeid_cast<const ASTWatchQuery &>(*query_ptr);
-    String database;
-    String table;
-    /// Get database
-    if (!query.database.empty())
-        database = query.database;
-    else
-        database = context.getCurrentDatabase();
-
-    /// Get table
-    table = query.table;
+    StorageID table_id{query, context};
 
     /// Get storage
-    storage = context.tryGetTable(database, table);
+    storage = DatabaseCatalog::instance().tryGetTable(table_id);
 
     if (!storage)
-        throw Exception("Table " + backQuoteIfNeed(database) + "." +
-        backQuoteIfNeed(table) + " doesn't exist.",
+        throw Exception("Table " + table_id.getNameForLogs() + " doesn't exist.",
         ErrorCodes::UNKNOWN_TABLE);
 
     /// List of columns to read to execute the query.
     Names required_columns = storage->getColumns().getNamesOfPhysical();
-    context.checkAccess(AccessType::SELECT, database, table, required_columns);
+    context.checkAccess(AccessType::SELECT, table_id.database_name, table_id.table_name, required_columns);
 
     /// Get context settings for this query
     const Settings & settings = context.getSettingsRef();
