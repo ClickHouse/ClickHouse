@@ -59,6 +59,8 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
     if (!query.like.empty())
         rewritten_query << " AND name " << (query.not_like ? "NOT " : "") << "LIKE " << std::quoted(query.like, '\'');
+    else if (query.where_expression)
+        rewritten_query << " AND (" << query.where_expression << ")";
 
     if (query.limit_length)
         rewritten_query << " LIMIT " << query.limit_length;
