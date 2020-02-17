@@ -313,7 +313,7 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
 
         if (query_info.force_tree_shaped_pipeline)
         {
-            BlockInputStreamPtr stream = std::make_shared<MaterializingBlockInputStream>(interpreter.execute().in);
+            BlockInputStreamPtr stream = interpreter.execute().in;
             Pipe pipe(std::make_shared<SourceFromInputStream>(std::move(stream)));
             pipes.emplace_back(std::move(pipe));
         }
