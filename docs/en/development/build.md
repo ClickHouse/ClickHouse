@@ -101,6 +101,7 @@ Example for Fedora Rawhide:
 sudo yum update
 yum --nogpg install git cmake make gcc-c++ python2
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+mkdir build && cd build
 cmake ../ClickHouse
 make -j $(nproc)
 ```
