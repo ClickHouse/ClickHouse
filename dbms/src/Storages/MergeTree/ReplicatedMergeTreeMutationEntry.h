@@ -45,6 +45,8 @@ struct ReplicatedMergeTreeMutationEntry
     /// Version of metadata. Not equal to -1 only if this mutation
     /// was created by ALTER MODIFY/DROP queries.
     int alter_version = -1;
+
+    bool isAlterMutation() const { return alter_version != -1; }
 };
 
 using ReplicatedMergeTreeMutationEntryPtr = std::shared_ptr<const ReplicatedMergeTreeMutationEntry>;
