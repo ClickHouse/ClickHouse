@@ -32,6 +32,10 @@ public:
 
     void drop(TableStructureWriteLockHolder &) override;
 
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
+
+    bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
+
     void startup() override;
     void shutdown() override;
 
@@ -54,12 +58,12 @@ private:
     ASTPtr inner_query;
     ASTPtr final_query;
     ASTPtr fetch_column_query;
-    
+
     Context & global_context;
     bool is_proctime_tumble{false};
     std::atomic<bool> shutdown_called{false};
     mutable Block sample_block;
-    UInt64 inner_table_clear_interval;
+    UInt64 clean_interval;
     const DateLUTImpl & time_zone;
     std::list<UInt32> fire_signal;
     std::list<WindowViewBlockInputStream *> watch_streams;
@@ -89,7 +93,7 @@ private:
     StoragePtr target_storage;
 
     BackgroundSchedulePool::TaskHolder toTableTask;
-    BackgroundSchedulePool::TaskHolder innerTableClearTask;
+    BackgroundSchedulePool::TaskHolder cleanCacheTask;
     BackgroundSchedulePool::TaskHolder fireTask;
 
     ASTPtr innerQueryParser(ASTSelectQuery & inner_query);
@@ -102,9 +106,9 @@ private:
 
     Block getHeader() const;
     void flushToTable(UInt32 timestamp_);
-    void clearInnerTable();
+    void cleanCache();
     void threadFuncToTable();
-    void threadFuncClearInnerTable();
+    void threadFuncCleanCache();
     void threadFuncFire();
     void addFireSignal(UInt32 timestamp_);
 
