@@ -413,7 +413,7 @@ Pipes StorageDistributed::readWithProcessors(
     }
 
     return ClusterProxy::executeQuery(
-        select_stream_factory, cluster, modified_query_ast, context, settings);
+        select_stream_factory, cluster, modified_query_ast, context, settings, query_info);
 }
 
 
