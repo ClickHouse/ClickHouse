@@ -215,7 +215,8 @@ def test_polymorphic_parts_diff_versions_2(start_cluster_diff_versions):
 
     assert node_new.query("SELECT count() FROM polymorphic_table_2") == "100\n"
     assert node_old.query("SELECT count() FROM polymorphic_table_2") == "0\n"
-    assert node_old.contains_in_log("<Error> default.polymorphic_table_2")
+    with pytest.raises(Exception):
+        node_old.query("SYSTEM SYNC REPLICA polymorphic_table_2", timeout=3)
 
     node_old.restart_with_latest_version()
 
