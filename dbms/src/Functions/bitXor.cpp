@@ -8,6 +8,7 @@ template <typename A, typename B>
 struct BitXorImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
+    static constexpr bool allow_fixed_string = true;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -28,7 +29,7 @@ struct BitXorImpl
 };
 
 struct NameBitXor { static constexpr auto name = "bitXor"; };
-using FunctionBitXor = FunctionBinaryArithmetic<BitXorImpl, NameBitXor>;
+using FunctionBitXor = FunctionBinaryArithmetic<BitXorImpl, NameBitXor, true>;
 
 void registerFunctionBitXor(FunctionFactory & factory)
 {
