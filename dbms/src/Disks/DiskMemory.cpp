@@ -55,11 +55,13 @@ bool ReadIndirectBuffer::nextImpl()
 
 off_t ReadIndirectBuffer::seek(off_t off, int whence)
 {
-    if (whence != SEEK_SET)
-        throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+    /// Synchronize position in working buffer and string buffer.
+    buf.seek(offset(), SEEK_SET);
 
+    /// Seek string buffer position.
     off_t result = buf.seek(off, whence);
-    pos = buf.position();
+
+    pos = working_buffer.begin() + result;
 
     return result;
 }
