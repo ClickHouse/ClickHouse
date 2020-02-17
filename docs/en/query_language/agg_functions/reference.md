@@ -933,26 +933,26 @@ The result depends on the order of running the query, and is nondeterministic.
 
 ## median {#median}
 
-Computes [median](https://en.wikipedia.org/wiki/Median) of a numeric data sample.
+Computes an approximate [median](https://en.wikipedia.org/wiki/Median) of a numeric data sequence.
 
-This function uses [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) method with a reservoir size up to 8192. This algorithm uses a random number generator, thus the function is non-deterministic. Also in has low accuracy. To get exact result, use the [medianExact](#medianexact) function.
+This function applies [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192. The function uses a random number generator for reservoir sampling, so its result is non-detetministic and has low-accuracy. To get an exact median, use the [medianExact](#medianexact) function.
 
 **Syntax** 
 
 ```sql
-median(x);
+median(x)
 ```
 
-Median is an alias of [quantile(0.5)(x)](#agg_function-quantile).
+Alias for [quantile(0.5)(x)](#agg_function-quantile).
 
 **Parameters** 
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) and [DateTime](../../data_types/datetime.md).
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) or [DateTime](../../data_types/datetime.md).
 
 **Returned value**
 
-- The middle value for the sample with odd number of values.
-- Arithmetic mean of two middle values for the set with an even number of values.  The function doesn't round the result.  
+- Middle value of a sorted resampled sequence if it contains an odd count of numbers.
+- Arithmetic mean of two middle values of a sorted resampled sequence if it contains an even count of numbers. The function doesn't round the result.  
 
 Type: The same data type as the type of the input data.
 
@@ -972,7 +972,7 @@ Input table:
 Query:
 
 ```sql
-SELECT median(val) FROM table
+SELECT median(val) FROM t
 ```
 
 Result:
@@ -989,29 +989,27 @@ Result:
 
 ## medianDeterministic {#medianDeterministic}
 
-Computes median of numeric data set. This function uses [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192. 
+Computes an approximate [median](https://en.wikipedia.org/wiki/Median) of a numeric data sequence.
 
-
-This algorithm provides very low accuracy.
+This function applies [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192. A result of the function is deterministic and has low-accuracy. To get an exact median, use the [medianExact](#medianexact) function.
 
 **Syntax** 
 
 ```sql
-medianDeterministic(x, determinator);
+medianDeterministic(x, determinator)
 ```
 
-MedianDeterministic is an alias of [quantileDeterministiquantile(0.5)(x)](#agg_function-quantiledeterministic).
+Alias for [quantileDeterministiquantile(0.5)(x)](#agg_function-quantiledeterministic).
 
 **Parameters** 
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) and [DateTime](../../data_types/datetime.md).
-- `determinator` — Number whose hash is used instead of a random number generator in the reservoir sampling algorithm. For the function to work correctly, the same determinator value should not occur too often. For the determinator, you can use an event ID, user ID, and so on. Using integer (0 or greater).
-Function is deterministic due to usage of hash of passed number - the "determinator" - in the algorithm. 
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) or [DateTime](../../data_types/datetime.md).
+- `determinator` — Number whose hash is used instead of a random number generator in the reservoir sampling algorithm to make the result of sampling deterministic. As a determinator you can use any deterministic positive number, for example, a user id or an event id. If the same determinator value occures too often, the function works incorrectly.
 
 **Returned value**
 
-- The middle value will be returned from the set with an odd number of values.
-- For the set with an even number of values arithmetic mean of two middle values will be returned without rounding.  
+- Middle value of a sorted resampled sequence if it contains an odd count of numbers.
+- Arithmetic mean of two middle values of a sorted resampled sequence if it contains an even count of numbers. The function doesn't round the result.  
 
 Type: The same data type as the type of the input data.
 
@@ -1031,8 +1029,7 @@ Input table:
 Query:
 
 ```sql
-SELECT medianDeterministic(val, 1)
-FROM test
+SELECT medianDeterministic(val, 1) FROM t
 ```
 
 Result:
@@ -1049,26 +1046,27 @@ Result:
 
 ## medianExact {#medianexact}
 
-Computes median exactly. This method uses partially sorted array in the algorithm.
-The function consumes O(n) memory, where 'n' is the number of values.
+Computes the exact [median](https://en.wikipedia.org/wiki/Median) of a numeric data sequence.  
+
+Algorithm of the function uses partially sorted arrays and consumes `O(n)` memory, where `n` is a number of values.
 
 **Syntax** 
 
 ```sql
-medianExact(x);
+medianExact(x)
 ```
 
-MedianExact is an alias of [quantileExact(0.5)(x)](#quantileexact).
+Alias for [quantileExact(0.5)(x)](#quantileexact).
 
 
 **Parameters**
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) and [DateTime](../../data_types/datetime.md).
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) or [DateTime](../../data_types/datetime.md).
 
 **Returned value**
 
-- The middle value will be returned from the set with an odd number of values.
-- For the set with an even number of values higher value from two middle values will be returned.
+- Middle value of a sorted sequence if it contains an odd count of numbers.
+- Arithmetic mean of two middle values of a sorted sequence if it contains an even count of numbers. The function doesn't round the result.  
 
 Type: The same data type as the type of the input data.
 
@@ -1077,8 +1075,7 @@ Type: The same data type as the type of the input data.
 Query:
 
 ```sql
-SELECT medianExact(number)
-FROM numbers(10)
+SELECT medianExact(number) FROM numbers(10)
 ```
 
 Result:
@@ -1093,32 +1090,32 @@ Result:
 
 - [quantileExact](#quantileexact)
 
+
 ## medianExactWeighted {#medianexactweighted}
 
-Computes median exactly according to the weight of each value. Weight means that value present 'weight' times.
-The function itself can be considered as a summation of histograms.
+Computes the exact [median](https://en.wikipedia.org/wiki/Median) of a numeric data sequence according to the weight of each sequence member. 
 
-This function works more efficiently then  [medianExact](#medianexact) because it uses hash table in the algorithm.
+This function works more efficiently then [medianExact](#medianexact) because it uses hash table in its algorithm.
 
 
 **Syntax**
 
 ```sql
-medianExactWeighted(x, weight);
+medianExactWeighted(x, weight)
 ```
 
-MedianExactWeighted is an alias of [quantileExactWeighted(0.5)(x)](#quantileexactweighted).
+Alias for [quantileExactWeighted(0.5)(x)](#quantileexactweighted).
 
 
 **Parameters** 
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) and [DateTime](../../data_types/datetime.md).
-- `weight` — Number. Shows how many times `x` value repeated. 
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) or [DateTime](../../data_types/datetime.md).
+- `weight` — Number of `x` occurences. 
 
 **Returned value**
 
-- The middle value will be returned from the set with an odd number of values.
-- For the set with an even number of values lower value from two middle values will be returned.
+- Middle value of a sorted sequence if it contains an odd count of numbers.
+- Arithmetic mean of two middle values of a sorted sequence if it contains an even count of numbers. The function doesn't round the result.
 
 Type: The same data type as the type of the input data.
 
@@ -1127,9 +1124,6 @@ Type: The same data type as the type of the input data.
 Input table:
 
 ```text
-SELECT *
-FROM test1
-
 ┌─n─┬─val─┐
 │ 0 │   3 │
 │ 1 │   2 │
@@ -1141,8 +1135,7 @@ FROM test1
 Query:
 
 ```sql
-SELECT medianExactWeighted(n, val)
-FROM test1
+SELECT medianExactWeighted(n, val) FROM t
 ```
 
 Result:
@@ -1160,36 +1153,34 @@ Result:
 
 ## medianTiming(x) {#mediantiming}
 
-Computes median with determined precision. Optimized for processing of unix timestamps.
-The result is deterministic. The function is intended for analyzing time data like page loading time.
+With the determined precision computes the [median](https://en.wikipedia.org/wiki/Median) of a numeric data sequence.
+
+The result is deterministic. The function is optimized for working with sequences which describe distributions like loading web pages times or backend response times.
 
 **Syntax** 
 
 ```sql
-medianTiming(x);
+medianTiming(x)
 ```
 
-MedianTiming is an alias of [quantileTiming(0.5)(x)](#agg_function-quantiletiming).
+Alias for [quantileTiming(0.5)(x)](#agg_function-quantiletiming).
 
 **Parameters**
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) and [DateTime](../../data_types/datetime.md).
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) or [DateTime](../../data_types/datetime.md).
 
 **Returned value**
 
-- The middle value will be returned from the set with an odd number of values.
-- For the set with an even number of values higher value from two middle values will be returned.
+- Middle value of a sorted sequence if it contains an odd count of numbers.
+- Arithmetic mean of two middle values of a sorted sequence if it contains an even count of numbers. The function doesn't round the result.
 
-Type: `Float32`.
+Type: The same data type as the type of the input data.
 
 **Example**
 
 Input table:
 
 ```text
-SELECT *
-FROM request
-
 ┌─response_time─┐
 │            72 │
 │           112 │
@@ -1206,8 +1197,7 @@ FROM request
 Query:
 
 ```sql
-SELECT medianTiming(response_time)
-FROM request
+SELECT medianTiming(response_time) FROM t
 ```
 
 Result:
@@ -1216,7 +1206,6 @@ Result:
 ┌─medianTiming(response_time)─┐
 │                         126 │
 └─────────────────────────────┘
-
 ```
 
 **See Also**
@@ -1225,39 +1214,36 @@ Result:
 
 ## medianTimingWeighted {#medianTimingWeighted}
 
-Median function optimized for processing of unix timestamps according to the weight of each value. Weight means that value present 'weight' times.
-Computes the median with determined precision.
-The result is deterministic. The function is intended for analyzing time data like page loading time. 
+With the determined precision computes the [median](https://en.wikipedia.org/wiki/Median) of a numeric data sequence according to the weight of each sequence member.
+
+The result is deterministic. The function is optimized for working with sequences which describe distributions like loading web pages times or backend response times.
 
 **Syntax**
 
 ```sql
-medianExactWeighted(x, weight) ;
+medianExactWeighted(x, weight)
 ```
 
-MedianTimingWeighted is an alias of [quantileTimingWeighted(0.5)(x)](#quantiletimingweighted).
+Alias for [quantileTimingWeighted(0.5)(x)](#quantiletimingweighted).
 
 **Parameters** 
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) and [DateTime](../../data_types/datetime.md).
-- `weight` — Number. Shows how many times `x` value repeated. 
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) or [DateTime](../../data_types/datetime.md).
+- `weight` — Number of `x` occurences. 
  
 
 **Returned value**
 
-- The middle value will be returned from the set with an odd number of values.
-- For the set with an even number of values higher value from two middle values will be returned.
+- Middle value of a sorted sequence if it contains an odd count of numbers.
+- Arithmetic mean of two middle values of a sorted sequence if it contains an even count of numbers. The function doesn't round the result.
 
-Type: `Float32`.
+Type: The same data type as the type of the input data.
 
 **Example**
 
 Input table:
 
 ```text
-SELECT *
-FROM request
-
 ┌─response_time─┬─weight─┐
 │            68 │      1 │
 │           104 │      2 │
@@ -1271,8 +1257,7 @@ FROM request
 Query:
 
 ```sql
-SELECT medianTimingWeighted(response_time, weight)
-FROM request
+SELECT medianTimingWeighted(response_time, weight) FROM t
 ```
 
 Result:
@@ -1289,55 +1274,35 @@ Result:
 
 ## medianTDigest {#medianTDigest}
 
-Computes median of numeric data set uses the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm.
-The calculating value depends on the order of running the query, and is nondeterministic.
+Computes the [median](https://en.wikipedia.org/wiki/Median) of a numeric data sequence using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm.
 
-Maximal error is 1% and memory consumption is log(n), where 'n' is the number of values.
+A calculated value depends on the order of the query processing, and is non-deterministic. Maximum error is 1%. Memory consumption is `log(n)`, where `n` is a number of values.
 
 **Syntax**
 
 ```sql
-medianTDiges(x);
+medianTDiges(x)
 ```
 
-MedianTDigest(x) is an alias of [quantileTDigest(0.5)(x)](#quantiletdigest).
+Alias for [quantileTDigest(0.5)(x)](#quantiletdigest).
 
 **Parameters** 
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) and [DateTime](../../data_types/datetime.md).
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) or [DateTime](../../data_types/datetime.md).
 
 **Returned value**
 
-- The middle value will be returned from the set with an odd number of values.
-- For the set with an even number of values higher value from two middle values will be returned.
+- Middle value of a sorted sequence if it contains an odd count of numbers.
+- Arithmetic mean of two middle values of a sorted sequence if it contains an even count of numbers. The function doesn't round the result.
 
 Type: The same data type as the type of the input data.
 
 **Example**
 
-Input table:
-
-```text
-┌─number─┐
-│      0 │
-│      1 │
-│      2 │
-│      3 │
-│      4 │
-│      5 │
-│      6 │
-│      7 │
-│      8 │
-│      9 │
-│     10 │
-└────────┘
-```
-
 Query:
 
 ```sql
-SELECT medianTDigest(number)
-FROM numbers(10)
+SELECT medianTDigest(number) FROM numbers(10)
 ```
 
 Result:
@@ -1354,56 +1319,36 @@ Result:
 
 ## medianTDigestWeighted {#medianTDigestWeighted}
 
-Computes median of numeric data set uses the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm according to the weight of each value. Weight means that value present 'weight' times.
-The result depends on the order of running the query, and is nondeterministic.
+Computes the [median](https://en.wikipedia.org/wiki/Median) of a numeric data sequence using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm. Algorithm of the function takes into account the weight of each sequence member.
 
-Maximal error is 1% and memory consumption is log(n), where 'n' is the number of values.
+A calculated value depends on the order of the query processing, and is non-deterministic. Maximum error is 1%. Memory consumption is `log(n)`, where `n` is a number of values.
 
 **Syntax** 
 
 ```sql
-medianTDigestWeighted(x,weight);
+medianTDigestWeighted(x, weight)
 ```
 
-MedianTDigestWeighted(x,weight) is an alias of quantileTDigestWeighted(0.5)(x).
+Alias for `quantileTDigestWeighted(0.5)(x)`.
 
 **Parameters**
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) and [DateTime](../../data_types/datetime.md).
-- `weight` — Number. Shows how many times `x` value repeated. 
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) or [DateTime](../../data_types/datetime.md).
+- `weight` — Number of `x` occurences.
 
 **Returned value**
 
-- The middle value will be returned from the set with an odd number of values.
-- For the set with an even number of values higher value from two middle values will be returned.
+- Middle value of a sorted sequence if it contains an odd count of numbers.
+- Arithmetic mean of two middle values of a sorted sequence if it contains an even count of numbers. The function doesn't round the result.
 
 Type: The same data type as the type of the input data.
 
 **Example**
 
-Input table:
-
-```text
-┌─number─┐
-│      0 │
-│      1 │
-│      2 │
-│      3 │
-│      4 │
-│      5 │
-│      6 │
-│      7 │
-│      8 │
-│      9 │
-│     10 │
-└────────┘
-```
-
 Query:
 
 ```sql
-SELECT medianTDigestWeighted(number, 1)
-FROM numbers(10)
+SELECT medianTDigestWeighted(number, 1) FROM numbers(10)
 ```
 
 Result:
