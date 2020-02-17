@@ -366,11 +366,20 @@ private:
     /// Do the merge or recommend to make the fetch instead of the merge
     bool tryExecuteMerge(const LogEntry & entry);
 
+    /// Execute alter of table metadata. Set replica/metdata and replica/columns
+    /// nodes in zookeeper and also changes in memory metadata.
+    /// New metadata and columns values stored in entry.
     bool executeMetadataAlter(const LogEntry & entry);
 
+    /// Execute MUTATE_PART entry. Part name and mutation commands
+    /// stored in entry. This function relies on MergerMutator class.
     bool tryExecutePartMutation(const LogEntry & entry);
 
 
+    /// Fetch part from other replica (inserted or merged/mutated)
+    /// NOTE: Attention! First of all tries to find covering part on other replica
+    /// and set it into entry.actual_new_part_name. After that tries to fetch this new covering part.
+    /// If fetch was not successful, clears entry.actual_new_part_name.
     bool executeFetch(LogEntry & entry);
 
     void executeClearColumnOrIndexInPartition(const LogEntry & entry);

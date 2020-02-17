@@ -976,10 +976,13 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     }
     else if (entry.type == LogEntry::MERGE_PARTS)
     {
+        /// Sometimes it's better to fetch merged part instead of merge
+        /// For example when we don't have all source parts for merge
         do_fetch = !tryExecuteMerge(entry);
     }
     else if (entry.type == LogEntry::MUTATE_PART)
     {
+        /// Sometimes it's better to fetch mutated part instead of merge
         do_fetch = !tryExecutePartMutation(entry);
     }
     else if (entry.type == LogEntry::ALTER_METADATA)
@@ -1284,6 +1287,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
 bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
 {
+    /// Looking for covering part. After that entry.actual_new_part_name may be filled.
     String replica = findReplicaHavingCoveringPart(entry, true);
     const auto storage_settings_ptr = getSettings();
 
@@ -3219,6 +3223,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     zookeeper->multi(requests);
 
     {
+        /// TODO (relax this lock)
         auto table_lock = lockExclusively(RWLockImpl::NO_QUERY);
 
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
@@ -3229,7 +3234,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: " << metadata_version);
     }
 
-    /// This transaction may not happen, but it's ok, because on the next retry we will eventually create this node
+    /// This transaction may not happen, but it's OK, because on the next retry we will eventually create/update this node
     zookeeper->createOrUpdate(replica_path + "/metadata_version", std::to_string(metadata_version), zkutil::CreateMode::Persistent);
 
     recalculateColumnSizes();
@@ -3340,6 +3345,7 @@ void StorageReplicatedMergeTree::alter(
         std::optional<EphemeralLocksInAllPartitions> lock_holder;
 
         /// No we will prepare mutations record
+        /// This code pretty same with mutate() function but process results slightly differently
         if (alter_entry->have_mutation)
         {
             String mutations_path = zookeeper_path + "/mutations";
@@ -3371,17 +3377,17 @@ void StorageReplicatedMergeTree::alter(
         {
             if (alter_entry->have_mutation)
             {
-                /// Record in replication /log
+                /// ALTER_METADATA record in replication /log
                 String alter_path = dynamic_cast<const Coordination::CreateResponse &>(*results[2]).path_created;
                 alter_entry->znode_name = alter_path.substr(alter_path.find_last_of('/') + 1);
 
-                /// Record in /mutations
+                /// ReplicatedMergeTreeMutationEntry record in /mutations
                 String mutation_path = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
                 mutation_znode = mutation_path.substr(mutation_path.find_last_of('/') + 1);
             }
             else
             {
-                /// Record in replication /log
+                /// ALTER_METADATA record in replication /log
                 String alter_path = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
                 alter_entry->znode_name = alter_path.substr(alter_path.find_last_of('/') + 1);
             }
@@ -3392,7 +3398,6 @@ void StorageReplicatedMergeTree::alter(
             if (dynamic_cast<const Coordination::SetResponse &>(*results[0]).error)
                 throw Exception("Metadata on replica is not up to date with common metadata in Zookeeper. Cannot alter", ErrorCodes::CANNOT_ASSIGN_ALTER);
 
-            LOG_TRACE(log, "We have version conflict with inserts because of concurrent inserts. Will try to assign alter one more time.");
             continue;
         }
         else

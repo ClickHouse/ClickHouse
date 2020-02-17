@@ -698,7 +698,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                 }
 
                 /// otherwise it's already done
-                if (entry->alter_version != -1 && entry->znode_name > mutation_pointer)
+                if (entry->isAlterMutation() && entry->znode_name > mutation_pointer)
                 {
                     LOG_TRACE(log, "Adding mutation " << entry->znode_name << " with alter version " << entry->alter_version << " to the queue");
                     alter_chain.addMutationForAlter(entry->alter_version, state_lock);
@@ -743,7 +743,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
                 mutations_by_partition.erase(partition_and_block_num.first);
         }
 
-        if (entry->alter_version != -1)
+        if (entry->isAlterMutation())
         {
             LOG_DEBUG(log, "Removed alter " << entry->alter_version << " because mutation " + entry->znode_name + " were killed.");
             alter_chain.finishDataAlter(entry->alter_version, state_lock);
@@ -970,6 +970,8 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     MergeTreeData & data,
     std::lock_guard<std::mutex> & state_lock) const
 {
+    /// If our entry produce part which is alredy covered by
+    /// some other entry which is currently executing, then we can postpone this entry.
     if (entry.type == LogEntry::MERGE_PARTS
         || entry.type == LogEntry::GET_PART
         || entry.type == LogEntry::MUTATE_PART)
@@ -1053,6 +1055,8 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
     }
 
+    /// Alters must be executed one by one. First metadata change, and after that data alter (MUTATE_PART entries with).
+    /// corresponding alter_version.
     if (entry.type == LogEntry::ALTER_METADATA)
     {
         if (!alter_chain.canExecuteMetaAlter(entry.alter_version, state_lock))
@@ -1065,7 +1069,8 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
     }
 
-    if (entry.type == LogEntry::MUTATE_PART && entry.alter_version != -1)
+    /// If this MUTATE_PART is part of alter modify/drop query, than we have to execute them one by one
+    if (entry.isAlterMutation())
     {
         if (!alter_chain.canExecuteDataAlter(entry.alter_version, state_lock))
         {
@@ -1076,7 +1081,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             else
                 out_postpone_reason = "Cannot execute alter data with version: " + std::to_string(entry.alter_version)
                     + " because another alter " + std::to_string(head_alter) + " must be executed before";
-
 
             return false;
         }
@@ -1402,7 +1406,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Mutation " << entry->znode_name << " is done");
                 it->second.is_done = true;
-                if (entry->alter_version != -1)
+                if (entry->isAlterMutation())
                 {
                     LOG_TRACE(log, "Finishing data alter with version " << entry->alter_version << " for entry " << entry->znode_name);
                     alter_chain.finishDataAlter(entry->alter_version, lock);

@@ -175,6 +175,12 @@ struct ReplicatedMergeTreeLogEntryData
 
     /// The quorum value (for GET_PART) is a non-zero value when the quorum write is enabled.
     size_t quorum = 0;
+
+    /// If this MUTATE_PART entry caused by alter(modify/drop) query.
+    bool isAlterMutation() const
+    {
+        return type == MUTATE_PART && alter_version != -1;
+    }
 };
 
 

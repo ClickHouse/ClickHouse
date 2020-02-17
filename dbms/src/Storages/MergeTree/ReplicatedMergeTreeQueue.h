@@ -277,7 +277,7 @@ public:
     void updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
 
     /// Remove a mutation from ZooKeeper and from the local set. Returns the removed entry or nullptr
-    /// if it could not be found.
+    /// if it could not be found. Called during KILL MUTATION query execution.
     ReplicatedMergeTreeMutationEntryPtr removeMutation(zkutil::ZooKeeperPtr zookeeper, const String & mutation_id);
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
@@ -395,8 +395,11 @@ public:
         const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right,
         String * out_reason = nullptr) const;
 
-    /// Return nonempty optional if the part can and should be mutated.
-    /// Returned mutation version number is always the biggest possible.
+    /// Return nonempty optional of desired mutation version and alter version.
+    /// If we have no alter (modify/drop) mutations in mutations queue, than we return biggest possible
+    /// mutation version (and -1 as alter version). In other case, we return biggest mutation version with
+    /// smallest alter version. This required, because we have to execute alter mutations sequentially and
+    /// don't glue them together. Alter is rare operation, so it shouldn't affect performance.
     std::optional<std::pair<Int64, int>> getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const;
 
     bool isMutationFinished(const ReplicatedMergeTreeMutationEntry & mutation) const;
