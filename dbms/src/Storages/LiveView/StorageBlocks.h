@@ -36,7 +36,7 @@ public:
         size_t /*max_block_size*/,
         unsigned /*num_streams*/) override
     {
-        return pipes;
+        return std::move(pipes);
     }
 
 private:
