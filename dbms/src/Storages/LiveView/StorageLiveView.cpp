@@ -412,7 +412,7 @@ void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, co
 
     if (drop_table)
     {
-        if (storage->global_context.tryGetTable(table_id))
+        if (DatabaseCatalog::instance().tryGetTable(table_id))
         {
             try
             {

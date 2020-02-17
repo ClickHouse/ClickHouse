@@ -376,7 +376,7 @@ void SystemLog<LogElement>::prepareTable()
         {
             /// Rename the existing table.
             int suffix = 0;
-            while (context.isTableExist(database_name, table_name + "_" + toString(suffix)))
+            while (DatabaseCatalog::instance().isTableExist({database_name, table_name + "_" + toString(suffix)}, context))
                 ++suffix;
 
             auto rename = std::make_shared<ASTRenameQuery>();

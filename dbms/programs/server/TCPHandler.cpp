@@ -986,7 +986,7 @@ bool TCPHandler::receiveData(bool scalar)
                     storage->startup();
                     query_context->addExternalTable(temporary_id.table_name, storage);
                 } else
-                    storage = DatabaseCatalog::instance().getTable(resolved, *query_context);
+                    storage = DatabaseCatalog::instance().getTable(resolved);
                 /// The data will be written directly to the table.
                 state.io.out = storage->write(ASTPtr(), *query_context);
             }

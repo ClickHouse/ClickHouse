@@ -54,7 +54,7 @@ public:
     {
         return StorageID("", getStorageID().table_name + "_blocks");
     }
-    StoragePtr getParentStorage() const { return global_context.getTable(select_table_id); }
+    StoragePtr getParentStorage() const { return DatabaseCatalog::instance().getTable(select_table_id); }
 
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;

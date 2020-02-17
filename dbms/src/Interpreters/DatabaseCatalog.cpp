@@ -70,8 +70,15 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
 }
 
 
-StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, const Context & local_context, std::optional<Exception> * exception) const
+StoragePtr DatabaseCatalog::getTableImpl(const StorageID & table_id, const Context & local_context, std::optional<Exception> * exception) const
 {
+    if (!table_id)
+    {
+        if (exception)
+            exception->emplace("Cannot find table: StorageID is empty", ErrorCodes::UNKNOWN_TABLE);
+        return {};
+    }
+
     //if (table_id.hasUUID())
     //{
     //    auto db_and_table = tryGetByUUID(table_id.uuid);
@@ -146,11 +153,12 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
 {
     std::lock_guard lock{databases_mutex};
     assertDatabaseExistsUnlocked(database_name);
+    auto db = databases.find(database_name)->second;
 
-    if (!DatabaseCatalog::instance().getDatabase(database_name)->empty(*global_context))
+    if (!db->empty(*global_context))
+    if (!db->empty(*global_context))
         throw Exception("New table appeared in database being dropped or detached. Try again.", ErrorCodes::DATABASE_NOT_EMPTY);
 
-    auto db = databases.find(database_name)->second;
     databases.erase(database_name);
 
     db->shutdown();
@@ -206,9 +214,14 @@ bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, const DB::Con
     //    return tryGetByUUID(table_id.uuid).second != nullptr;
     //else
     //{
-        std::lock_guard lock{databases_mutex};
-        auto db = databases.find(table_id.database_name);
-        return db != databases.end() && db->second->isTableExist(context, table_id.table_name);
+        DatabasePtr db;
+        {
+            std::lock_guard lock{databases_mutex};
+            auto iter = databases.find(table_id.database_name);
+            if (iter != databases.end())
+                db = iter->second;
+        }
+        return db && db->isTableExist(context, table_id.table_name);
     //}
 }
 
@@ -312,6 +325,26 @@ std::unique_ptr<DDLGuard> DatabaseCatalog::getDDLGuard(const String & database, 
 {
     std::unique_lock lock(ddl_guards_mutex);
     return std::make_unique<DDLGuard>(ddl_guards[database], std::move(lock), table);
+}
+
+bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id, const Context & context) const
+{
+    auto db = tryGetDatabase(table_id.getDatabaseName());
+    return db && db->isDictionaryExist(context, table_id.getTableName());
+}
+
+StoragePtr DatabaseCatalog::getTable(const StorageID & table_id) const
+{
+    std::optional<Exception> exc;
+    auto res = getTableImpl(table_id, *global_context, &exc);
+    if (!res)
+        throw *exc;
+    return res;
+}
+
+StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id) const
+{
+    return getTableImpl(table_id, *global_context, nullptr);
 }
 
 
