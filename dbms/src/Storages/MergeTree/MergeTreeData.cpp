@@ -1726,6 +1726,9 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     }
 }
 
+/// This code is not used anymore in StorageReplicatedMergeTree
+/// soon it will be removed from StorageMergeTree as well
+/// TODO(alesap)
 void MergeTreeData::alterDataPart(
     const NamesAndTypesList & new_columns,
     const IndicesASTs & new_indices,
@@ -1853,7 +1856,6 @@ void MergeTreeData::alterDataPart(
             new_checksums.files[it.second] = add_checksums.files[it.first];
     }
 
-    /// NOTE(alesap) Don't miss this
     /// Write the checksums to the temporary file.
     if (!part->checksums.empty())
     {
