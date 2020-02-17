@@ -95,11 +95,11 @@ cmake ../ClickHouse
 ninja
 ```
 
-Example for CentOS 8:
+Example for Fedora Rawhide:
 
 ```
 sudo yum update
-yum install git cmake make gcc-c++ python2
+yum --nogpg install git cmake make gcc-c++ python2
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 cmake ../ClickHouse
 make
