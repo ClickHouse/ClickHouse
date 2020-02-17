@@ -22,10 +22,11 @@ void PartialSortingTransform::transform(Chunk & chunk)
 
     sortBlock(block, description, limit);
 
-    for (auto & column : block.getColumns())
-        column = column->convertToFullColumnIfConst();
+    MutableColumns columns = block.mutateColumns();
+    for (auto & column : columns)
+        column = (*column->convertToFullColumnIfConst()).mutate();
 
-    chunk.setColumns(block.getColumns(), block.rows());
+    chunk.setColumns(std::move(columns), block.rows());
 }
 
 }
