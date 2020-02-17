@@ -152,7 +152,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     if (entry->type == LogEntry::ALTER_METADATA)
     {
         LOG_TRACE(log, "Adding alter metadata version " << entry->alter_version << " to the queue");
-        alter_chain.addMetadataAlter(entry->alter_version, state_lock);
+        alter_chain.addMetadataAlter(entry->alter_version, entry->have_mutation, state_lock);
     }
 }
 
@@ -231,7 +231,7 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
         if (entry->type == LogEntry::ALTER_METADATA)
         {
             LOG_TRACE(log, "Finishing metadata alter with version " << entry->alter_version);
-            alter_chain.finishMetadataAlter(entry->alter_version, entry->have_mutation, state_lock);
+            alter_chain.finishMetadataAlter(entry->alter_version, state_lock);
         }
     }
     else
@@ -1357,12 +1357,12 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Marking mutation " << znode << " done because it is <= mutation_pointer (" << mutation_pointer << ")");
                 mutation.is_done = true;
+                alter_chain.finishDataAlter(mutation.entry->alter_version, lock);
                 if (mutation.parts_to_do.size() != 0)
                 {
                     LOG_INFO(log, "Seems like we jumped over mutation " << znode << " when downloaded part with bigger mutation number."
                         << " It's OK, tasks for rest parts will be skipped, but probably a lot of mutations were executed concurrently on different replicas.");
                     mutation.parts_to_do.clear();
-                    alter_chain.finishDataAlter(mutation.entry->alter_version, lock);
                 }
             }
             else if (mutation.parts_to_do.size() == 0)
