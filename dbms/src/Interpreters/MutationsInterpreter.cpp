@@ -125,20 +125,11 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands)
 
 ColumnDependencies getAllColumnDependencies(const StoragePtr & storage, const NameSet & updated_columns)
 {
-    std::cerr << "getAllColumnDependencies called...\n";
-    int i = 0;
     NameSet new_updated_columns = updated_columns;
     ColumnDependencies dependencies;
     while (!new_updated_columns.empty())
     {
-        std::cerr << "iter: " << i++ << "\n";
         auto new_dependencies = storage->getColumnDependencies(new_updated_columns);
-
-        std::cerr << "new_dependencies: ";
-        for (const auto & d : new_dependencies)
-            std::cerr << d.column_name << "; ";
-        std::cerr << "\n";
-
         new_updated_columns.clear();
         for (const auto & dependency : new_dependencies)
         {
@@ -149,11 +140,6 @@ ColumnDependencies getAllColumnDependencies(const StoragePtr & storage, const Na
                     new_updated_columns.insert(dependency.column_name);
             }
         }
-
-        std::cerr << "new_updated_columns: ";
-        for (const auto & c : new_updated_columns)
-            std::cerr << c << "; ";
-        std::cerr << "\n";
     }
 
     return dependencies;
@@ -419,7 +405,6 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 if (dependency.kind == ColumnDependency::TTL_TARGET)
                     stages.back().column_to_updated.emplace(
                         dependency.column_name, std::make_shared<ASTIdentifier>(dependency.column_name));
-            std::cerr << "column_to_updated: " <<  stages.back().column_to_updated.size() << "\n";
         }
         else
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
