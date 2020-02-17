@@ -268,6 +268,16 @@ endif ()
 add_subdirectory(src/Common/ZooKeeper)
 add_subdirectory(src/Common/Config)
 
+# It's Ok to avoid tracking of unresolved symbols for static linkage because
+# they will be resolved at link time nevertheless.
+function(target_ignore_unresolved_symbols target)
+    if (OS_DARWIN)
+        target_link_libraries (${target} PRIVATE -Wl,-undefined,dynamic_lookup)
+    else()
+        target_link_libraries (${target} PRIVATE -Wl,--unresolved-symbols=ignore-all)
+    endif()
+endfunction()
+
 set (all_modules)
 macro(add_object_library name common_path)
     if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
@@ -276,9 +286,7 @@ macro(add_object_library name common_path)
         list (APPEND all_modules ${name})
         add_headers_and_sources(${name} ${common_path})
         add_library(${name} SHARED ${${name}_sources} ${${name}_headers})
-        # It's Ok to avoid tracking of unresolved symbols for static linkage
-        # because they will be resolved at link time nevertheless.
-        target_link_libraries (${name} PRIVATE -Wl,--unresolved-symbols=ignore-all)
+        target_ignore_unresolved_symbols(${name})
     endif ()
 endmacro()
 
@@ -309,7 +317,7 @@ add_object_library(clickhouse_processors_sources src/Processors/Sources)
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
     set (all_modules dbms)
-    target_link_libraries (dbms PRIVATE -Wl,--unresolved-symbols=ignore-all)
+    target_ignore_unresolved_symbols (dbms)
 else()
     add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
     target_link_libraries (dbms PUBLIC ${all_modules})
