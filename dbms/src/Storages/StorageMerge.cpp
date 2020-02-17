@@ -310,14 +310,24 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
         modified_context.getSettingsRef().max_streams_to_max_threads_ratio = 1;
 
         InterpreterSelectQuery interpreter{modified_query_info.query, modified_context, SelectQueryOptions(processed_stage)};
-        Pipe pipe = interpreter.executeWithProcessors().getPipe();
+
+        if (query_info.force_tree_shaped_pipeline)
+        {
+            BlockInputStreamPtr stream = std::make_shared<MaterializingBlockInputStream>(interpreter.execute().in);
+            Pipe pipe(std::make_shared<SourceFromInputStream>(std::move(stream)));
+            pipes.emplace_back(std::move(pipe));
+        }
+        else
+        {
+            Pipe pipe = interpreter.executeWithProcessors().getPipe();
+            pipes.emplace_back(std::move(pipe));
+        }
 
         /** Materialization is needed, since from distributed storage the constants come materialized.
           * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
           * And this is not allowed, since all code is based on the assumption that in the block stream all types are the same.
           */
-        pipe.addSimpleTransform(std::make_shared<MaterializingTransform>(pipe.getHeader()));
-        pipes.emplace_back(std::move(pipe));
+        pipes.back().addSimpleTransform(std::make_shared<MaterializingTransform>(pipes.back().getHeader()));
     }
 
     if (!pipes.empty())
