@@ -1,11 +1,5 @@
 configure_file (config_common.h.in config_common.h)
 
-add_library(apple_rt apple_rt.cpp)
-target_include_directories(apple_rt PRIVATE ..)  # TODO: replace with proper header-only target.
-if (DEFINED APPLE_HAVE_CLOCK_GETTIME)
-    target_compile_definitions(apple_rt PUBLIC -DAPPLE_HAVE_CLOCK_GETTIME=${APPLE_HAVE_CLOCK_GETTIME})
-endif ()
-
 set (SRCS
     argsToConfig.cpp
     coverage.cpp
@@ -36,7 +30,7 @@ add_library (common ${SRCS})
 target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
 
 if (USE_INTERNAL_MEMCPY)
-    set (MEMCPY_LIBRARIES memcpy)
+    target_link_libraries (common PRIVATE memcpy)
 endif ()
 
 if(CCTZ_INCLUDE_DIR)
@@ -63,13 +57,7 @@ target_link_libraries (common
         ${Poco_Foundation_LIBRARY}
         ${CITYHASH_LIBRARIES}
         ${Boost_SYSTEM_LIBRARY}
-    PRIVATE
-        ${MEMCPY_LIBRARIES}
 )
-
-if (RT_LIBRARY)
-    target_link_libraries (common PRIVATE ${RT_LIBRARY})
-endif ()
 
 if (ENABLE_TESTS)
     add_subdirectory (tests)

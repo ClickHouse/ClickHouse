@@ -1,7 +1,3 @@
-if (USE_DEBUG_HELPERS)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include ${CMAKE_CURRENT_SOURCE_DIR}/common/iostream_debug_helpers.h")
-endif ()
-
 add_subdirectory (common)
 add_subdirectory (loggers)
 add_subdirectory (daemon)
