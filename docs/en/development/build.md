@@ -102,7 +102,7 @@ sudo yum update
 yum --nogpg install git cmake make gcc-c++ python2
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 cmake ../ClickHouse
-make
+make -j $(nproc)
 ```
 
 # You Don't Have to Build ClickHouse
