@@ -1,15 +1,18 @@
+Русский (default)
 Ё
 А
 Я
 а
 я
 ё
+Русский (ru)
 а
 А
 ё
 Ё
 я
 Я
+Русский (ru distributed)
 а
 а
 А
@@ -22,6 +25,7 @@
 я
 Я
 Я
+Türk (default)
 A
 A
 B
@@ -132,6 +136,7 @@ z
 ı
 Ş
 ş
+Türk (tr)
 a
 a
 A
@@ -242,9 +247,62 @@ z
 z
 Z
 Z
+english (default)
+A
+Q
+Z
+c
+e
+english (en_US)
+A
+c
+e
+Q
+Z
+english (en)
+A
+c
+e
+Q
+Z
+español (default)
+F
+J
+z
+Ñ
+español (es)
+F
+J
+Ñ
+z
+Український (default)
+І
+Б
+ї
+ґ
+Український (uk)
+Б
+ґ
+І
+ї
+Русский (ru group by)
 а	1
 А	4
 ё	3
 Ё	6
 я	2
 Я	5
+ζ
+0
+1
+0
+1
+10
+2
+3
+4
+5
+6
+7
+8
+9

@@ -118,8 +118,6 @@ public:
         for (auto it = set.begin(); it != set.end(); ++it, ++i)
             data_to[old_size + i] = it->getValue();
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -255,8 +253,6 @@ public:
             deserializeAndInsert(elem.getValue(), data_to);
         }
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 template <>

@@ -6,8 +6,10 @@
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Access/AccessRightsContext.h>
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -15,7 +17,7 @@ namespace DB
 
 
 StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
-    : name(name_)
+    : IStorage({"system", name_})
 {
     setColumns(ColumnsDescription({
         { "database",                             std::make_shared<DataTypeString>()   },
@@ -48,11 +50,12 @@ StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
         { "absolute_delay",                       std::make_shared<DataTypeUInt64>()   },
         { "total_replicas",                       std::make_shared<DataTypeUInt8>()    },
         { "active_replicas",                      std::make_shared<DataTypeUInt8>()    },
+        { "zookeeper_exception",                  std::make_shared<DataTypeString>()   },
     }));
 }
 
 
-BlockInputStreams StorageSystemReplicas::read(
+Pipes StorageSystemReplicas::readWithProcessors(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -62,6 +65,9 @@ BlockInputStreams StorageSystemReplicas::read(
 {
     check(column_names);
 
+    const auto access_rights = context.getAccessRights();
+    const bool check_access_for_databases = !access_rights->isGranted(AccessType::SHOW);
+
     /// We collect a set of replicated tables.
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
     for (const auto & db : context.getDatabases())
@@ -69,11 +75,14 @@ BlockInputStreams StorageSystemReplicas::read(
         /// Lazy database can not contain replicated tables
         if (db.second->getEngineName() == "Lazy")
             continue;
-        if (context.hasDatabaseAccessRights(db.first))
+        const bool check_access_for_tables = check_access_for_databases && !access_rights->isGranted(AccessType::SHOW, db.first);
+        for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
-                if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
-                    replicated_tables[db.first][iterator->name()] = iterator->table();
+            if (!dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
+                continue;
+            if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW, db.first, iterator->name()))
+                continue;
+            replicated_tables[db.first][iterator->name()] = iterator->table();
         }
     }
 
@@ -85,7 +94,8 @@ BlockInputStreams StorageSystemReplicas::read(
         if (   column_name == "log_max_index"
             || column_name == "log_pointer"
             || column_name == "total_replicas"
-            || column_name == "active_replicas")
+            || column_name == "active_replicas"
+            || column_name == "zookeeper_exception")
         {
             with_zk_fields = true;
             break;
@@ -122,7 +132,7 @@ BlockInputStreams StorageSystemReplicas::read(
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
 
         if (!filtered_block.rows())
-            return BlockInputStreams();
+            return Pipes();
 
         col_database = filtered_block.getByName("database").column;
         col_table = filtered_block.getByName("table").column;
@@ -167,21 +177,27 @@ BlockInputStreams StorageSystemReplicas::read(
         res_columns[col_num++]->insert(status.absolute_delay);
         res_columns[col_num++]->insert(status.total_replicas);
         res_columns[col_num++]->insert(status.active_replicas);
+        res_columns[col_num++]->insert(status.zookeeper_exception);
     }
 
-    Block res = getSampleBlock().cloneEmpty();
-    size_t col_num = 0;
-    res.getByPosition(col_num++).column = col_database;
-    res.getByPosition(col_num++).column = col_table;
-    res.getByPosition(col_num++).column = col_engine;
-    size_t num_columns = res.columns();
-    while (col_num < num_columns)
-    {
-        res.getByPosition(col_num).column = std::move(res_columns[col_num]);
-        ++col_num;
-    }
+    Block header = getSampleBlock();
 
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(res));
+    Columns fin_columns;
+    fin_columns.reserve(res_columns.size());
+
+    for (auto & col : res_columns)
+        fin_columns.emplace_back(std::move(col));
+
+    fin_columns[0] = std::move(col_database);
+    fin_columns[1] = std::move(col_table);
+    fin_columns[2] = std::move(col_engine);
+
+    UInt64 num_rows = fin_columns.at(0)->size();
+    Chunk chunk(std::move(fin_columns), num_rows);
+
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(getSampleBlock(), std::move(chunk)));
+    return pipes;
 }
 
 

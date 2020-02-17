@@ -297,7 +297,7 @@
  *                                 MADV_FREE, though typically with higher
  *                                 system overhead.
  */
-#define JEMALLOC_PURGE_MADVISE_FREE
+// #define JEMALLOC_PURGE_MADVISE_FREE
 #define JEMALLOC_PURGE_MADVISE_DONTNEED
 #define JEMALLOC_PURGE_MADVISE_DONTNEED_ZEROS
 

@@ -51,6 +51,21 @@ MultiplexedConnections::MultiplexedConnections(
     active_connection_count = connections.size();
 }
 
+void MultiplexedConnections::sendScalarsData(Scalars & data)
+{
+    std::lock_guard lock(cancel_mutex);
+
+    if (!sent_query)
+        throw Exception("Cannot send scalars data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
+
+    for (ReplicaState & state : replica_states)
+    {
+        Connection * connection = state.connection;
+        if (connection != nullptr)
+            connection->sendScalarsData(data);
+    }
+}
+
 void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -123,10 +138,10 @@ void MultiplexedConnections::sendQuery(
     sent_query = true;
 }
 
-Connection::Packet MultiplexedConnections::receivePacket()
+Packet MultiplexedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
-    Connection::Packet packet = receivePacketUnlocked();
+    Packet packet = receivePacketUnlocked();
     return packet;
 }
 
@@ -162,19 +177,19 @@ void MultiplexedConnections::sendCancel()
     cancelled = true;
 }
 
-Connection::Packet MultiplexedConnections::drain()
+Packet MultiplexedConnections::drain()
 {
     std::lock_guard lock(cancel_mutex);
 
     if (!cancelled)
         throw Exception("Cannot drain connections: cancel first.", ErrorCodes::LOGICAL_ERROR);
 
-    Connection::Packet res;
+    Packet res;
     res.type = Protocol::Server::EndOfStream;
 
     while (hasActiveConnections())
     {
-        Connection::Packet packet = receivePacketUnlocked();
+        Packet packet = receivePacketUnlocked();
 
         switch (packet.type)
         {
@@ -220,7 +235,7 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
     return os.str();
 }
 
-Connection::Packet MultiplexedConnections::receivePacketUnlocked()
+Packet MultiplexedConnections::receivePacketUnlocked()
 {
     if (!sent_query)
         throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
@@ -232,7 +247,7 @@ Connection::Packet MultiplexedConnections::receivePacketUnlocked()
     if (current_connection == nullptr)
         throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
-    Connection::Packet packet = current_connection->receivePacket();
+    Packet packet = current_connection->receivePacket();
 
     switch (packet.type)
     {

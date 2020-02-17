@@ -568,7 +568,7 @@ uniq(x[, ...])
 uniqCombined(HLL_precision)(x[, ...])
 ```
 
-Функция `uniqCombined` — это хороший выбор для вычисления количества различных значений, однако стоит иметь в виду, что ошибка оценки для больших множеств (более 200 миллионов элементов) будет выше  теоретического значения из-за плохого выбора хэш-функции.
+Функция `uniqCombined` — это хороший выбор для вычисления количества различных значений.
 
 **Параметры**
 
@@ -1524,6 +1524,45 @@ FROM ontime
 └─────────────────────┘
 ```
 
+## topKWeighted {#topkweighted}
+
+Similar to `topK` but takes one additional argument of integer type - `weight`. Every value is accounted `weight` times for frequency calculation.
+
+**Syntax**
+
+```sql
+topKWeighted(N)(x, weight)
+```
+
+**Parameters**
+
+- `N` — The number of elements to return.
+
+**Arguments**
+
+- `x` – The value.
+- `weight` — The weight. [UInt8](../../data_types/int_uint.md).
+
+**Returned value**
+
+Returns an array of the values with maximum approximate sum of weights.
+
+**Example**
+
+Query:
+
+```sql
+SELECT topKWeighted(10)(number, number) FROM numbers(1000)
+```
+
+Result:
+
+```text
+┌─topKWeighted(10)(number, number)──────────┐
+│ [999,998,997,996,995,994,993,992,991,990] │
+└───────────────────────────────────────────┘
+```
+
 ## covarSamp(x, y)
 
 Вычисляет величину `Σ((x - x̅)(y - y̅)) / (n - 1)`.
@@ -1601,38 +1640,39 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 Для прогнозирования мы используем функцию [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), которая принимает в качестве аргументов состояние и свойства для прогнозирования.
 
 <a name="stochasticlinearregression-usage-fitting"></a>
-1. Построение модели
 
-    Пример запроса:
+**1.** Построение модели
 
-    ```sql
-    CREATE TABLE IF NOT EXISTS train_data
-    (
-        param1 Float64,
-        param2 Float64,
-        target Float64
-    ) ENGINE = Memory;
+Пример запроса:
 
-    CREATE TABLE your_model ENGINE = Memory AS SELECT
-    stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
-    AS state FROM train_data;
-    ```
+```sql
+CREATE TABLE IF NOT EXISTS train_data
+(
+    param1 Float64,
+    param2 Float64,
+    target Float64
+) ENGINE = Memory;
 
-    Здесь нам также нужно вставить данные в таблицу `train_data`. Количество параметров не фиксировано, оно зависит только от количества аргументов, перешедших в `linearRegressionState`. Все они должны быть числовыми значениями.
+CREATE TABLE your_model ENGINE = Memory AS SELECT
+stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
+AS state FROM train_data;
+```
+
+Здесь нам также нужно вставить данные в таблицу `train_data`. Количество параметров не фиксировано, оно зависит только от количества аргументов, перешедших в `linearRegressionState`. Все они должны быть числовыми значениями.
 Обратите внимание, что столбец с целевым значением (которое мы хотели бы научиться предсказывать) вставляется в качестве первого аргумента.
 
-2. Прогнозирование
+**2.** Прогнозирование
 
-    После сохранения состояния в таблице мы можем использовать его несколько раз для прогнозирования или смёржить с другими состояниями и создать новые, улучшенные модели.
+После сохранения состояния в таблице мы можем использовать его несколько раз для прогнозирования или смёржить с другими состояниями и создать новые, улучшенные модели.
 
-    ```sql
-    WITH (SELECT state FROM your_model) AS model SELECT
-    evalMLMethod(model, param1, param2) FROM test_data
-    ```
+```sql
+WITH (SELECT state FROM your_model) AS model SELECT
+evalMLMethod(model, param1, param2) FROM test_data
+```
 
-    Запрос возвращает столбец прогнозируемых значений. Обратите внимание, что первый аргумент `evalMLMethod` это объект `AggregateFunctionState`, далее идут столбцы свойств.
+Запрос возвращает столбец прогнозируемых значений. Обратите внимание, что первый аргумент `evalMLMethod` это объект `AggregateFunctionState`, далее идут столбцы свойств.
 
-    `test_data` — это таблица, подобная `train_data`, но при этом может не содержать целевое значение.
+`test_data` — это таблица, подобная `train_data`, но при этом может не содержать целевое значение.
 
 ### Примечания {#agg_functions-stochasticlinearregression-notes}
 
@@ -1706,4 +1746,4 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 - [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
 - [Отличие линейной от логистической регрессии](https://moredez.ru/q/51225972/)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/agg_functions/reference/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/agg_functions/reference/) <!--hide-->

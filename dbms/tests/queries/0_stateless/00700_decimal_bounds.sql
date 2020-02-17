@@ -84,8 +84,8 @@ INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j) VALUES (0.0, 0.0, 0.0, 0.0, 0
 INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j) VALUES (-0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0);
 
 INSERT INTO decimal (a, b, g) VALUES ('42.00000', 42.0000000000000000000000000000000, '0.999990');
-INSERT INTO decimal (a) VALUES ('-9x'); -- { clientError 72 }
-INSERT INTO decimal (a) VALUES ('0x1'); -- { clientError 72 }
+INSERT INTO decimal (a) VALUES ('-9x'); -- { clientError 6 }
+INSERT INTO decimal (a) VALUES ('0x1'); -- { clientError 6 }
 
 INSERT INTO decimal (a, b, c, d, e, f) VALUES ('0.9e9', '0.9e18', '0.9e38', '9e-9', '9e-18', '9e-38');
 INSERT INTO decimal (a, b, c, d, e, f) VALUES ('-0.9e9', '-0.9e18', '-0.9e38', '-9e-9', '-9e-18', '-9e-38');

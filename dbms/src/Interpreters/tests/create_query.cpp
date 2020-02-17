@@ -84,7 +84,7 @@ try
     context.setPath("./");
     auto database = std::make_shared<DatabaseOrdinary>("test", "./metadata/test/", context);
     context.addDatabase("test", database);
-    database->loadTables(context, false);
+    database->loadStoredObjects(context, false);
     context.setCurrentDatabase("test");
 
     InterpreterCreateQuery interpreter(ast, context);
@@ -97,6 +97,6 @@ catch (const Exception & e)
     std::cerr << e.what() << ", " << e.displayText() << std::endl
         << std::endl
         << "Stack trace:" << std::endl
-        << e.getStackTrace().toString();
+        << e.getStackTraceString();
     return 1;
 }

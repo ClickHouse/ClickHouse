@@ -52,8 +52,6 @@ public:
     {
         assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -90,6 +88,10 @@ public:
     {
         Data & data_lhs = this->data(place);
         const Data & data_rhs = this->data(rhs);
+
+        if (!data_rhs.doneFirst)
+            return;
+
         if (!data_lhs.doneFirst)
         {
             data_lhs.doneFirst = true;
@@ -115,8 +117,6 @@ public:
     {
         assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 template <typename Data>

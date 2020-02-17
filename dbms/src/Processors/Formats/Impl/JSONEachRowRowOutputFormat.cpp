@@ -56,7 +56,6 @@ void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory)
     factory.registerOutputFormatProcessor("JSONEachRow", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback callback,
         const FormatSettings & format_settings)
     {

@@ -14,11 +14,11 @@ SELECT [DISTINCT] expr_list
 [GROUP BY expr_list] [WITH TOTALS]
 [HAVING expr]
 [ORDER BY expr_list]
+[LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m]
 [UNION ALL ...]
 [INTO OUTFILE filename]
 [FORMAT format]
-[LIMIT [offset_value, ]n BY columns]
 ```
 
 All the clauses are optional, except for the required list of expressions immediately after SELECT.
@@ -107,13 +107,25 @@ The `FROM` clause specifies the source to read data from:
 `ARRAY JOIN` and the regular `JOIN` may also be included (see below).
 
 Instead of a table, the `SELECT` subquery may be specified in parenthesis.
-In contrast to standard SQL, a synonym does not need to be specified after a subquery. For compatibility, it is possible to write `AS name` after a subquery, but the specified name isn't used anywhere.
+In contrast to standard SQL, a synonym does not need to be specified after a subquery.
 
 To execute a query, all the columns listed in the query are extracted from the appropriate table. Any columns not needed for the external query are thrown out of the subqueries.
 If a query does not list any columns (for example, `SELECT count() FROM t`), some column is extracted from the table anyway (the smallest one is preferred), in order to calculate the number of rows.
 
-The `FINAL` modifier can be used in the `SELECT` select query for engines from the [MergeTree](../operations/table_engines/mergetree.md) family. When you specify `FINAL`, data is selected fully "merged". Keep in mind that using `FINAL` leads to reading columns related to the primary key, in addition to the columns specified in the query. Additionally, the query will be executed in a single thread, and data will be merged during query execution. This means that when using `FINAL`, the query is processed slowly. In the most cases, avoid using `FINAL`.
-The `FINAL` modifier can be applied for all engines of MergeTree family that do data transformations in background merges (except GraphiteMergeTree).
+#### FINAL Modifier {#select-from-final}
+
+Applicable when selecting data from tables from the [MergeTree](../operations/table_engines/mergetree.md)-engine family other than `GraphiteMergeTree`. When `FINAL` is specified, ClickHouse fully merges the data before returning the result and thus performs all data transformations that happen during merges for the given table engine.
+
+Also supported for:
+- [Replicated](../operations/table_engines/replication.md) versions of `MergeTree` engines.
+- [View](../operations/table_engines/view.md), [Buffer](../operations/table_engines/buffer.md), [Distributed](../operations/table_engines/distributed.md), and [MaterializedView](../operations/table_engines/materializedview.md) engines that operate over other engines, provided they were created over `MergeTree`-engine tables.
+
+Queries that use `FINAL` are executed not as fast as similar queries that don't, because:
+
+- Query is executed in a single thread and data is merged during query execution.
+- Queries with `FINAL` read primary key columns in addition to the columns specified in the query.
+
+In most cases, avoid using `FINAL`.
 
 ### SAMPLE Clause {#select-sample-clause}
 
@@ -552,29 +564,29 @@ ClickHouse doesn't directly support syntax with commas, so we don't recommend us
 
 Tables for `ASOF JOIN` must have an ordered sequence column. This column cannot be alone in a table, and should be one of the data types: `UInt32`, `UInt64`, `Float32`, `Float64`, `Date`, and `DateTime`.
 
-You can use the following types of syntax:
+Syntax `ASOF JOIN ... ON`:
 
-- `ASOF JOIN ... ON`
+```sql
+SELECT expressions_list
+FROM table_1
+ASOF LEFT JOIN table_2
+ON equi_cond AND closest_match_cond
+```
 
-    ```sql
-    SELECT expressions_list
-    FROM table_1
-    ASOF LEFT JOIN table_2
-    ON equi_cond AND closest_match_cond
-    ```
+You can use any number of equality conditions and exactly one closest match condition. For example, `SELECT count() FROM table_1 ASOF LEFT JOIN table_2 ON table_1.a == table_2.b AND table_2.t <= table_1.t`. 
 
-    You can use any number of equality conditions and exactly one closest match condition. For example, `SELECT count() FROM A ASOF LEFT JOIN B ON A.a == B.b AND B.t <= A.t`. Only `table_2.some_col <= table_1.some_col` and `table_1.some_col >= table2.some_col` condition types are available. You can't apply other conditions like `>` or `!=`.
+Conditions supported for the closest match: `>`, `>=`, `<`, `<=`.
 
-- `ASOF JOIN ... USING`
+Syntax `ASOF JOIN ... USING`:
 
-    ```sql
-    SELECT expressions_list
-    FROM table_1
-    ASOF JOIN table_2
-    USING (equi_column1, ... equi_columnN, asof_column)
-    ```
+```sql
+SELECT expressions_list
+FROM table_1
+ASOF JOIN table_2
+USING (equi_column1, ... equi_columnN, asof_column)
+```
 
-    `ASOF JOIN` uses `equi_columnX` for joining on equality and `asof_column` for joining on the closest match with the `table_1.asof_column >= table2.asof_column` condition. The `asof_column` column must be the last in the `USING` clause.
+`ASOF JOIN` uses `equi_columnX` for joining on equality and `asof_column` for joining on the closest match with the `table_1.asof_column >= table_2.asof_column` condition. The `asof_column` column always the last one in the `USING` clause.
 
 For example, consider the following tables:
 
@@ -590,7 +602,7 @@ event_1_2 |  13:00  |  42         event_2_3 |  13:00  |   42
               ...                               ...
 ```
 
-`ASOF JOIN` can take the timestamp of a user event from `table_1` and find an event in `table_2` where the timestamp is closest (equal to or less) to the timestamp of the event from `table_1`. Here, the `user_id` column can be used for joining on equality and the `ev_time` column can be used for joining on the closest match. In our example, `event_1_1` can be joined with `event_2_1` and `event_1_2` can be joined with `event_2_3`, but `event_2_2` can't be joined.
+`ASOF JOIN` can take the timestamp of a user event from `table_1` and find an event in `table_2` where the timestamp is closest to the timestamp of the event from `table_1` corresponding to the closest match condition. Equal timestamp values are the closest if available. Here, the `user_id` column can be used for joining on equality and the `ev_time` column can be used for joining on the closest match. In our example, `event_1_1` can be joined with `event_2_1` and `event_1_2` can be joined with `event_2_3`, but `event_2_2` can't be joined.
 
 
 !!! note "Note"
@@ -676,7 +688,7 @@ When any of these limits is reached, ClickHouse acts as the [join_overflow_mode]
 
 #### Processing of Empty or NULL Cells
 
-While joining tables, the empty cells may appear. The setting [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls) define how ClickHouse fills these cells.
+While joining tables, the empty cells may appear. The setting [join_use_nulls](../operations/settings/settings.md#join_use_nulls) define how ClickHouse fills these cells.
 
 If the `JOIN` keys are [Nullable](../data_types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](syntax.md#null-literal) are not joined.
 
@@ -692,7 +704,7 @@ For `ON`, `WHERE`, and `GROUP BY` clauses:
 - Arbitrary expressions cannot be used in `ON`, `WHERE`, and `GROUP BY` clauses, but you can define an expression in a `SELECT` clause and then use it in these clauses via an alias.
 
 
-### WHERE Clause
+### WHERE Clause {#select-where}
 
 If there is a WHERE clause, it must contain an expression with the UInt8 type. This is usually an expression with comparison and logical operators.
 This expression will be used for filtering data before all other transformations.
@@ -964,11 +976,11 @@ External sorting works much less effectively than sorting in RAM.
 
 ### SELECT Clause {#select-select}
 
-[Expressions](syntax.md#syntax-expressions) that specified in the `SELECT` clause are analyzed after the calculations for all the clauses listed above are completed. More specifically, expressions are analyzed that are above the aggregate functions, if there are any aggregate functions. The aggregate functions and everything below them are calculated during aggregation (`GROUP BY`). These expressions work as if they are applied to separate rows in the result.
+[Expressions](syntax.md#syntax-expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](#select-group-by-clause) aggregation.
 
-If you want to get all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
+If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
 
-To match some columns in the result by a [re2](https://en.wikipedia.org/wiki/RE2_(software)) regular expression, you can use the `COLUMNS` expression.
+To match some columns in the result with a [re2](https://en.wikipedia.org/wiki/RE2_(software)) regular expression, you can use the `COLUMNS` expression.
 
 ```sql
 COLUMNS('regexp')
@@ -991,7 +1003,9 @@ SELECT COLUMNS('a') FROM col_names
 └────┴────┘
 ```
 
-You can use multiple `COLUMNS` expressions in a query, also you can apply functions to it.
+The selected columns are returned not in the alphabetical order.
+
+You can use multiple `COLUMNS` expressions in a query and apply functions to them.
 
 For example:
 
@@ -1004,7 +1018,7 @@ SELECT COLUMNS('a'), COLUMNS('c'), toTypeName(COLUMNS('c')) FROM col_names
 └────┴────┴────┴────────────────┘
 ```
 
-Be careful when using functions because the `COLUMN` expression returns variable number of columns, and, if a function doesn't support this number of arguments, ClickHouse throws an exception.
+Each column returned by the `COLUMNS` expression is passed to the function as a separate argument. Also you can pass other arguments to the function if it supports them. Be careful when using functions. If a function doesn't support the number of arguments you have passed to it, ClickHouse throws an exception.
 
 For example:
 
@@ -1016,9 +1030,9 @@ Received exception from server (version 19.14.1):
 Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of arguments for function plus doesn't match: passed 3, should be 2. 
 ```
 
-In this example, `COLUMNS('a')` returns two columns `aa`, `ab`, and `COLUMNS('c')` returns the `bc` column. The `+` operator can't apply to 3 arguments, so ClickHouse throws an exception with the message about it.
+In this example, `COLUMNS('a')` returns two columns: `aa` and `ab`. `COLUMNS('c')` returns the `bc` column. The `+` operator can't apply to 3 arguments, so ClickHouse throws an exception with the relevant message.
 
-Columns that matched by the `COLUMNS` expression can be in different types. If `COLUMNS` doesn't match any columns and it is the single expression in `SELECT`, ClickHouse throws an exception.
+Columns that matched the `COLUMNS` expression can have different data types. If `COLUMNS` doesn't match any columns and is the only expression in `SELECT`, ClickHouse throws an exception.
 
 
 ### DISTINCT Clause {#select-distinct}
@@ -1106,7 +1120,7 @@ The structure of results (the number and type of columns) must match for the que
 
 Queries that are parts of UNION ALL can't be enclosed in brackets. ORDER BY and LIMIT are applied to separate queries, not to the final result. If you need to apply a conversion to the final result, you can put all the queries with UNION ALL in a subquery in the FROM clause.
 
-### INTO OUTFILE Clause
+### INTO OUTFILE Clause {#into-outfile-clause}
 
 Add the `INTO OUTFILE filename` clause (where filename is a string literal) to redirect query output to the specified file.
 In contrast to MySQL, the file is created on the client side. The query will fail if a file with the same filename already exists.
@@ -1114,7 +1128,7 @@ This functionality is available in the command-line client and clickhouse-local 
 
 The default output format is TabSeparated (the same as in the command-line client batch mode).
 
-### FORMAT Clause
+### FORMAT Clause {#format-clause}
 
 Specify 'FORMAT format' to get data in any specified format.
 You can use this for convenience, or for creating dumps.
@@ -1351,4 +1365,4 @@ You can put an asterisk in any part of a query instead of an expression. When th
 
 In all other cases, we don't recommend using the asterisk, since it only gives you the drawbacks of a columnar DBMS instead of the advantages. In other words using the asterisk is not recommended.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/select/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/select/) <!--hide-->

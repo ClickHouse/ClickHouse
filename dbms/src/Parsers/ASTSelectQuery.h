@@ -83,6 +83,7 @@ public:
     ASTPtr array_join_expression_list() const;
     const ASTTablesInSelectQueryElement * join() const;
     bool final() const;
+    bool withFill() const;
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);
     void addTableFunction(ASTPtr & table_function_ptr);
 

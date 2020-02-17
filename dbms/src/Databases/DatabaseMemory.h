@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Databases/DatabasesCommon.h>
+#include <Common/escapeForFileName.h>
+#include <Parsers/ASTCreateQuery.h>
 
 
 namespace Poco { class Logger; }
@@ -17,15 +19,9 @@ namespace DB
 class DatabaseMemory : public DatabaseWithOwnTablesBase
 {
 public:
-    DatabaseMemory(String name_);
-
-    String getDatabaseName() const override;
+    DatabaseMemory(const String & name_);
 
     String getEngineName() const override { return "Memory"; }
-
-    void loadTables(
-        Context & context,
-        bool has_force_restore_data_flag) override;
 
     void createTable(
         const Context & context,
@@ -37,17 +33,17 @@ public:
         const Context & context,
         const String & table_name) override;
 
-    time_t getTableMetadataModificationTime(
-        const Context & context,
-        const String & table_name) override;
+    ASTPtr getCreateDatabaseQuery(const Context & /*context*/) const override;
 
-    ASTPtr getCreateTableQuery(const Context & context, const String & table_name) const override;
-    ASTPtr tryGetCreateTableQuery(const Context &, const String &) const override { return nullptr; }
-
-    ASTPtr getCreateDatabaseQuery(const Context & context) const override;
+    /// DatabaseMemory allows to create tables, which store data on disk.
+    /// It's needed to create such tables in default database of clickhouse-local.
+    /// TODO May be it's better to use DiskMemory for such tables.
+    ///      To save data on disk it's possible to explicitly CREATE DATABASE db ENGINE=Ordinary in clickhouse-local.
+    String getTableDataPath(const String & table_name) const override { return data_path + escapeForFileName(table_name) + "/"; }
+    String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.table); }
 
 private:
-    Poco::Logger * log;
+    String data_path;
 };
 
 }

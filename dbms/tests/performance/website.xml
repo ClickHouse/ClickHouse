@@ -16,9 +16,6 @@
         </any_of>
     </stop_conditions>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
 
     <settings>
         <max_memory_usage>20000000000</max_memory_usage>

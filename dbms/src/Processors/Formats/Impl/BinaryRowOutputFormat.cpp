@@ -52,7 +52,6 @@ void registerOutputFormatProcessorRowBinary(FormatFactory & factory)
     factory.registerOutputFormatProcessor("RowBinary", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback callback,
         const FormatSettings &)
     {
@@ -62,7 +61,6 @@ void registerOutputFormatProcessorRowBinary(FormatFactory & factory)
     factory.registerOutputFormatProcessor("RowBinaryWithNamesAndTypes", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback callback,
         const FormatSettings &)
     {

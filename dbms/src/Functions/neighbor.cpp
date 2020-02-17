@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 
@@ -39,6 +39,8 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
 
     bool isVariadic() const override { return true; }
+
+    bool isStateful() const override { return true; }
 
     bool isDeterministic() const override { return false; }
 

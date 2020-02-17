@@ -11,6 +11,7 @@ namespace DB
 {
 
 class Context;
+class AccessRightsElements;
 class ASTSystemQuery;
 
 class InterpreterSystemQuery : public IInterpreter
@@ -19,6 +20,9 @@ public:
     InterpreterSystemQuery(const ASTPtr & query_ptr_, Context & context_);
 
     BlockIO execute() override;
+
+    bool ignoreQuota() const override { return true; }
+    bool ignoreLimits() const override { return true; }
 
 private:
     ASTPtr query_ptr;
@@ -32,6 +36,8 @@ private:
     void restartReplicas(Context & system_context);
     void syncReplica(ASTSystemQuery & query);
     void flushDistributed(ASTSystemQuery & query);
+
+    AccessRightsElements getRequiredAccessForDDLOnCluster() const;
 };
 
 

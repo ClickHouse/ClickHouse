@@ -27,16 +27,17 @@ static std::string createDirectory(const std::string & file)
     return path.toString();
 };
 
-void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log)
+void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
 {
     text_log = log;
+    text_log_max_priority = max_priority;
 }
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
     if (split)
         if (auto log = text_log.lock())
-            split->addTextLog(log);
+            split->addTextLog(log, text_log_max_priority);
 
     auto current_logger = config.getString("logger", "");
     if (config_logger == current_logger)
@@ -132,10 +133,15 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         split->addChannel(log);
     }
 
+    bool is_tty = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
+
     if (config.getBool("logger.console", false)
-        || (!config.hasProperty("logger.console") && !is_daemon && (isatty(STDIN_FILENO) || isatty(STDERR_FILENO))))
+        || (!config.hasProperty("logger.console") && !is_daemon && is_tty))
     {
-        Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(new OwnPatternFormatter(this), new Poco::ConsoleChannel);
+        bool color_enabled = config.getBool("logger.color_terminal", true) && is_tty;
+
+        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_NOTHING, color_enabled);
+        Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);
         logger.warning("Logging " + log_level + " to console");
         split->addChannel(log);
     }

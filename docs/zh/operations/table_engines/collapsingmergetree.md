@@ -214,4 +214,4 @@ SELECT * FROM UAct FINAL
 
 这种查询数据的方法是非常低效的。不要在大表中使用它。
 
-[来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->
