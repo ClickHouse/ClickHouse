@@ -17,7 +17,10 @@ static std::string setColor(UInt64 num)
     /// Make a random RGB color that has constant brightness.
     /// https://en.wikipedia.org/wiki/YCbCr
 
+    /// Note that this is darker than the middle relative luminance, see "Gamma_correction" and "Luma_(video)".
+    /// It still looks awesome.
     UInt8 y = 128;
+
     UInt8 cb = num % 256;
     UInt8 cr = num / 256 % 256;
 
