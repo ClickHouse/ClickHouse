@@ -17,7 +17,7 @@ class WriteBuffer;
 /// in patitions. We will mutatate all parts with left number less than this numbers.
 ///
 /// These entries processed separately from main replication /log, and produce other entries
-/// -- MUTATE_PART.
+/// -- MUTATE_PART in main replication log.
 struct ReplicatedMergeTreeMutationEntry
 {
     void writeText(WriteBuffer & out) const;

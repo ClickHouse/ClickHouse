@@ -152,7 +152,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     if (entry->type == LogEntry::ALTER_METADATA)
     {
         LOG_TRACE(log, "Adding alter metadata version " << entry->alter_version << " to the queue");
-        alter_chain.addMetadataAlter(entry->alter_version, entry->have_mutation, state_lock);
+        alter_sequence.addMetadataAlter(entry->alter_version, entry->have_mutation, state_lock);
     }
 }
 
@@ -231,7 +231,7 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
         if (entry->type == LogEntry::ALTER_METADATA)
         {
             LOG_TRACE(log, "Finishing metadata alter with version " << entry->alter_version);
-            alter_chain.finishMetadataAlter(entry->alter_version, state_lock);
+            alter_sequence.finishMetadataAlter(entry->alter_version, state_lock);
         }
     }
     else
@@ -701,7 +701,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                 if (entry->isAlterMutation() && entry->znode_name > mutation_pointer)
                 {
                     LOG_TRACE(log, "Adding mutation " << entry->znode_name << " with alter version " << entry->alter_version << " to the queue");
-                    alter_chain.addMutationForAlter(entry->alter_version, state_lock);
+                    alter_sequence.addMutationForAlter(entry->alter_version, state_lock);
                 }
             }
         }
@@ -746,7 +746,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
         if (entry->isAlterMutation())
         {
             LOG_DEBUG(log, "Removed alter " << entry->alter_version << " because mutation " + entry->znode_name + " were killed.");
-            alter_chain.finishDataAlter(entry->alter_version, state_lock);
+            alter_sequence.finishDataAlter(entry->alter_version, state_lock);
         }
 
         mutations_by_znode.erase(it);
@@ -1059,9 +1059,9 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     /// corresponding alter_version.
     if (entry.type == LogEntry::ALTER_METADATA)
     {
-        if (!alter_chain.canExecuteMetaAlter(entry.alter_version, state_lock))
+        if (!alter_sequence.canExecuteMetaAlter(entry.alter_version, state_lock))
         {
-            int head_alter = alter_chain.getHeadAlterVersion(state_lock);
+            int head_alter = alter_sequence.getHeadAlterVersion(state_lock);
             out_postpone_reason = "Cannot execute alter metadata with version: " + std::to_string(entry.alter_version)
                 + " because another alter " + std::to_string(head_alter)
                 + " must be executed before";
@@ -1072,9 +1072,9 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     /// If this MUTATE_PART is part of alter modify/drop query, than we have to execute them one by one
     if (entry.isAlterMutation())
     {
-        if (!alter_chain.canExecuteDataAlter(entry.alter_version, state_lock))
+        if (!alter_sequence.canExecuteDataAlter(entry.alter_version, state_lock))
         {
-            int head_alter = alter_chain.getHeadAlterVersion(state_lock);
+            int head_alter = alter_sequence.getHeadAlterVersion(state_lock);
             if (head_alter == entry.alter_version)
                 out_postpone_reason = "Cannot execute alter data with version: "
                     + std::to_string(entry.alter_version) + " because metadata still not altered";
@@ -1182,7 +1182,8 @@ ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToP
         if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger_mutator, data, lock))
         {
             entry = *it;
-            /// We gave a chance for the entry, move it to the tail of the queue
+            /// We gave a chance for the entry, move it to the tail of the queue, after that
+            /// we move it to the end of the queue.
             queue.splice(queue.end(), queue, it);
             break;
         }
@@ -1209,6 +1210,8 @@ bool ReplicatedMergeTreeQueue::processEntry(
 
     try
     {
+        /// We don't have any backoff for failed entries
+        /// we just count amount of tries for each ot them.
         if (func(entry))
             removeProcessedEntry(get_zookeeper(), entry);
     }
@@ -1363,7 +1366,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Marking mutation " << znode << " done because it is <= mutation_pointer (" << mutation_pointer << ")");
                 mutation.is_done = true;
-                alter_chain.finishDataAlter(mutation.entry->alter_version, lock);
+                alter_sequence.finishDataAlter(mutation.entry->alter_version, lock);
                 if (mutation.parts_to_do.size() != 0)
                 {
                     LOG_INFO(log, "Seems like we jumped over mutation " << znode << " when downloaded part with bigger mutation number."
@@ -1409,7 +1412,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                 if (entry->isAlterMutation())
                 {
                     LOG_TRACE(log, "Finishing data alter with version " << entry->alter_version << " for entry " << entry->znode_name);
-                    alter_chain.finishDataAlter(entry->alter_version, lock);
+                    alter_sequence.finishDataAlter(entry->alter_version, lock);
                 }
             }
         }
