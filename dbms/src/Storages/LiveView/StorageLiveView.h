@@ -126,13 +126,15 @@ public:
 
     void refresh(const Context & context);
 
-    BlockInputStreams read(
+    Pipes readWithProcessors(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
+
+    bool supportProcessorsPipeline() const override { return true; }
 
     BlockInputStreams watch(
         const Names & column_names,
@@ -148,7 +150,7 @@ public:
     /// Collect mergeable blocks and their sample. Must be called holding mutex
     MergeableBlocksPtr collectMergeableBlocks(const Context & context);
     /// Complete query using input streams from mergeable blocks
-    BlockInputStreamPtr completeQuery(BlockInputStreams from);
+    BlockInputStreamPtr completeQuery(Pipes pipes);
 
     void setMergeableBlocks(MergeableBlocksPtr blocks) { mergeable_blocks = blocks; }
     std::shared_ptr<bool> getActivePtr() { return active_ptr; }
@@ -159,7 +161,7 @@ public:
     Block getHeader() const;
 
     /// convert blocks to input streams
-    static BlockInputStreams blocksToInputStreams(BlocksPtrs blocks, Block & sample_block);
+    static Pipes blocksToPipes(BlocksPtrs blocks, Block & sample_block);
 
     static void writeIntoLiveView(
         StorageLiveView & live_view,
