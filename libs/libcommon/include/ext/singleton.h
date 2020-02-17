@@ -2,7 +2,15 @@
 
 #include <memory>
 
-namespace ext {
+namespace ext
+{
+
+/** Thread-unsafe singleton. It works simply like a global variable.
+  * Supports deinitialization.
+  *
+  * In most of the cases, you don't need this class.
+  * Use "Meyers Singleton" instead: static T & instance() { static T x; return x; }
+  */
 
 template <class T>
 class Singleton
@@ -11,14 +19,7 @@ public:
     Singleton()
     {
         if (!instance)
-            instance.reset(new T);
-    }
-
-    template <typename ... Args>
-    Singleton(const Args & ... args)
-    {
-        instance.reset(new T(args...));
-        /// TODO: throw exception on double-creation.
+            instance = std::make_unique<T>();
     }
 
     T * operator->()
