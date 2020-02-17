@@ -1,3 +1,4 @@
+#include "Common/quoteString.h"
 #include <Common/typeid_cast.h>
 #include <Common/PODArray.h>
 #include <Core/Row.h>
@@ -334,7 +335,7 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast,
                 found = true;
 
         if (found)
-            throw Exception("Column " + column_name.get(ast) + " is not under aggregate function and not in GROUP BY.",
+            throw Exception("Column " + backQuote(column_name.get(ast)) + " is not under aggregate function and not in GROUP BY",
                 ErrorCodes::NOT_AN_AGGREGATE);
 
         /// Special check for WITH statement alias. Add alias action to be able to use this alias.

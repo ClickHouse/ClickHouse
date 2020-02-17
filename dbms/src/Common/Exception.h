@@ -95,6 +95,7 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
   * with_stacktrace - prints stack trace for DB::Exception.
   * check_embedded_stacktrace - if DB::Exception has embedded stacktrace then
   *  only this stack trace will be printed.
+  * with_extra_info - add information about the filesystem in case of "No space left on device" and similar.
   */
 std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace = false,
                                        bool with_extra_info = true);

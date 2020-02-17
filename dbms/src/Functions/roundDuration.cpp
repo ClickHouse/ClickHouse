@@ -8,6 +8,7 @@ template <typename A>
 struct RoundDurationImpl
 {
     using ResultType = UInt16;
+    static constexpr const bool allow_fixed_string = false;
 
     static inline ResultType apply(A x)
     {
