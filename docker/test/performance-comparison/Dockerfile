@@ -11,6 +11,7 @@ RUN apt-get update \
             curl \
             g++ \
             git \
+            libc6-dbg \
             moreutils \
             ncdu \
             p7zip-full \
