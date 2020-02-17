@@ -32,8 +32,8 @@ private:
     };
 
     std::map<int, AlterState> queue_state;
-
 public:
+
     int getHeadAlterVersion(std::lock_guard<std::mutex> & /*state_lock*/) const
     {
         if (!queue_state.empty())
@@ -44,25 +44,25 @@ public:
     void addMutationForAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/)
     {
         if (!queue_state.count(alter_version))
-            queue_state.emplace(alter_version, AlterState{false, false});
+            queue_state.emplace(alter_version, AlterState{true, false});
         else
             queue_state[alter_version].data_finished = false;
     }
 
-    void addMetadataAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/)
+    void addMetadataAlter(int alter_version, bool have_mutation, std::lock_guard<std::mutex> & /*state_lock*/)
     {
         if (!queue_state.count(alter_version))
-            queue_state.emplace(alter_version, AlterState{false, true});
+            queue_state.emplace(alter_version, AlterState{false, !have_mutation});
         else
             queue_state[alter_version].metadata_finished = false;
     }
 
-    void finishMetadataAlter(int alter_version, bool have_mutation, std::unique_lock <std::mutex> & /*state_lock*/)
+    void finishMetadataAlter(int alter_version, std::unique_lock <std::mutex> & /*state_lock*/)
     {
         assert(!queue_state.empty());
         assert(queue_state.begin()->first == alter_version);
 
-        if (!have_mutation)
+        if (queue_state[alter_version].data_finished)
             queue_state.erase(alter_version);
         else
             queue_state[alter_version].metadata_finished = true;
