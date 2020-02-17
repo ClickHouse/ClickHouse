@@ -3369,7 +3369,6 @@ void StorageReplicatedMergeTree::alter(
 
         if (rc == Coordination::ZOK)
         {
-            queue.pullLogsToQueue(zookeeper);
             if (alter_entry->have_mutation)
             {
                 /// Record in replication /log
