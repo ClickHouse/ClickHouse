@@ -1,6 +1,7 @@
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/StorageDistributed.h>
+#include <Disks/DiskSpaceMonitor.h>
 
 #include <Parsers/formatAST.h>
 #include <Parsers/queryToString.h>
@@ -13,6 +14,7 @@
 #include <DataStreams/RemoteBlockOutputStream.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/createBlockSelector.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -81,12 +83,27 @@ void DistributedBlockOutputStream::writePrefix()
 
 void DistributedBlockOutputStream::write(const Block & block)
 {
-    if (insert_sync)
-        writeSync(block);
-    else
-        writeAsync(block);
-}
+    Block ordinary_block{ block };
 
+    /* They are added by the AddingDefaultBlockOutputStream, and we will get
+     * different number of columns eventually */
+    for (const auto & col : storage.getColumns().getMaterialized())
+    {
+        if (ordinary_block.has(col.name))
+        {
+            ordinary_block.erase(col.name);
+            LOG_DEBUG(log, storage.getStorageID().getNameForLogs()
+                << ": column " + col.name + " will be removed, "
+                << "because it is MATERIALIZED");
+        }
+    }
+
+
+    if (insert_sync)
+        writeSync(ordinary_block);
+    else
+        writeAsync(ordinary_block);
+}
 
 void DistributedBlockOutputStream::writeAsync(const Block & block)
 {
@@ -167,7 +184,7 @@ void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
         }
 
         if (num_shards > 1)
-            shard_jobs.shard_current_block_permuation.reserve(first_block.rows());
+            shard_jobs.shard_current_block_permutation.reserve(first_block.rows());
     }
 }
 
@@ -220,7 +237,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
         /// Generate current shard block
         if (num_shards > 1)
         {
-            auto & shard_permutation = shard_job.shard_current_block_permuation;
+            auto & shard_permutation = shard_job.shard_current_block_permutation;
             size_t num_shard_rows = shard_permutation.size();
 
             for (size_t j = 0; j < current_block.columns(); ++j)
@@ -333,10 +350,10 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
 
         /// Prepare row numbers for each shard
         for (size_t shard_index : ext::range(0, num_shards))
-            per_shard_jobs[shard_index].shard_current_block_permuation.resize(0);
+            per_shard_jobs[shard_index].shard_current_block_permutation.resize(0);
 
         for (size_t i = 0; i < block.rows(); ++i)
-            per_shard_jobs[current_selector[i]].shard_current_block_permuation.push_back(i);
+            per_shard_jobs[current_selector[i]].shard_current_block_permutation.push_back(i);
     }
 
     try
@@ -500,7 +517,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
         else
         {
             if (shard_info.dir_name_for_internal_replication.empty())
-                throw Exception("Directory name for async inserts is empty, table " + storage.getTableName(), ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Directory name for async inserts is empty, table " + storage.getStorageID().getNameForLogs(), ErrorCodes::LOGICAL_ERROR);
 
             writeToShard(block, {shard_info.dir_name_for_internal_replication});
         }
@@ -548,11 +565,12 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     /// write first file, hardlink the others
     for (const auto & dir_name : dir_names)
     {
-        const auto & path = storage.getPath() + dir_name + '/';
+        const auto & [disk, data_path] = storage.getPath();
+        const std::string path(disk + data_path + dir_name + '/');
 
         /// ensure shard subdirectory creation and notify storage
         if (Poco::File(path).createDirectory())
-            storage.requireDirectoryMonitor(dir_name);
+            storage.requireDirectoryMonitor(disk, dir_name);
 
         const auto & file_name = toString(storage.file_names_increment.get()) + ".bin";
         const auto & block_file_path = path + file_name;
@@ -573,9 +591,22 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             CompressedWriteBuffer compress{out};
             NativeBlockOutputStream stream{compress, ClickHouseRevision::get(), block.cloneEmpty()};
 
-            writeVarUInt(UInt64(DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER), out);
-            context.getSettingsRef().serialize(out);
-            writeStringBinary(query_string, out);
+            /// Prepare the header.
+            /// We wrap the header into a string for compatibility with older versions:
+            /// a shard will able to read the header partly and ignore other parts based on its version.
+            WriteBufferFromOwnString header_buf;
+            writeVarUInt(ClickHouseRevision::get(), header_buf);
+            writeStringBinary(query_string, header_buf);
+            context.getSettingsRef().serialize(header_buf);
+
+            /// Add new fields here, for example:
+            /// writeVarUInt(my_new_data, header_buf);
+
+            /// Write the header.
+            const StringRef header = header_buf.stringRef();
+            writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_HEADER, out);
+            writeStringBinary(header, out);
+            writePODBinary(CityHash_v1_0_2::CityHash128(header.data, header.size), out);
 
             stream.writePrefix();
             stream.write(block);

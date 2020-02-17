@@ -6,4 +6,4 @@
   * [clickhouse4j](https://github.com/blynkkk/clickhouse4j)
 
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/jdbc/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/interfaces/jdbc/) <!--hide-->

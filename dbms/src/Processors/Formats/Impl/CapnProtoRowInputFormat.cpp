@@ -81,12 +81,11 @@ static Field convertNodeToField(const capnp::DynamicValue::Reader & value)
             auto structValue = value.as<capnp::DynamicStruct>();
             const auto & fields = structValue.getSchema().getFields();
 
-            Field field = Tuple(TupleBackend(fields.size()));
-            TupleBackend & tuple = get<Tuple &>(field).toUnderType();
+            Tuple tuple(fields.size());
             for (auto i : kj::indices(fields))
                 tuple[i] = convertNodeToField(structValue.get(fields[i]));
 
-            return field;
+            return tuple;
         }
         case capnp::DynamicValue::CAPABILITY:
             throw Exception("CAPABILITY type not supported", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -271,7 +270,7 @@ bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
                         // Populate array with a single tuple elements
                         for (size_t off = 0; off < size; ++off)
                         {
-                            const TupleBackend & tuple = DB::get<const Tuple &>(collected[off]).toUnderType();
+                            const auto & tuple = DB::get<const Tuple &>(collected[off]);
                             flattened[off] = tuple[column_index];
                         }
                         auto & col = columns[action.columns[column_index]];
@@ -302,10 +301,11 @@ void registerInputFormatProcessorCapnProto(FormatFactory & factory)
 {
     factory.registerInputFormatProcessor(
         "CapnProto",
-        [](ReadBuffer & buf, const Block & sample, const Context & context, IRowInputFormat::Params params, const FormatSettings &)
+        [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings)
         {
             return std::make_shared<CapnProtoRowInputFormat>(buf, sample, std::move(params),
-                                                             FormatSchemaInfo(context, context.getSettingsRef().format_schema, "CapnProto", true));
+                       FormatSchemaInfo(settings.schema.format_schema, "CapnProto", true,
+                                        settings.schema.is_server, settings.schema.format_schema_path));
         });
 }
 

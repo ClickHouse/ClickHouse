@@ -13,7 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -70,7 +70,7 @@ public:
     {
         const auto it = value_to_name_map.find(value);
         if (it == std::end(value_to_name_map))
-            throw Exception{"Unexpected value " + toString(value) + " for type " + getName(), ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Unexpected value " + toString(value) + " for type " + getName(), ErrorCodes::BAD_ARGUMENTS};
 
         return it->second;
     }
@@ -79,9 +79,9 @@ public:
     {
         const auto it = name_to_value_map.find(field_name);
         if (!it)
-            throw Exception{"Unknown element '" + field_name.toString() + "' for type " + getName(), ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Unknown element '" + field_name.toString() + "' for type " + getName(), ErrorCodes::BAD_ARGUMENTS};
 
-        return *lookupResultGetMapped(it);
+        return it->getMapped();
     }
 
     Field castToName(const Field & value_or_name) const override;

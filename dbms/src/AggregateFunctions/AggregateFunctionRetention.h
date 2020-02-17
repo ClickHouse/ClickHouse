@@ -144,11 +144,6 @@ public:
 
         offsets_to.push_back(current_offset);
     }
-
-    const char * getHeaderFilePath() const override
-    {
-        return __FILE__;
-    }
 };
 
 }

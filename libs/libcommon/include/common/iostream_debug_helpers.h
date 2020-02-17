@@ -1,7 +1,7 @@
 #pragma once
 
 #include "demangle.h"
-#include "getThreadNumber.h"
+#include "getThreadId.h"
 #include <type_traits>
 #include <tuple>
 #include <iomanip>
@@ -140,8 +140,8 @@ Out & dump(Out & out, const char * name, T && x)
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 #endif
 
-#define DUMPVAR(VAR) dump(std::cerr, #VAR, (VAR)); std::cerr << "; ";
-#define DUMPHEAD std::cerr << __FILE__ << ':' << __LINE__ << " [ " << getThreadNumber() << " ] ";
+#define DUMPVAR(VAR) ::dump(std::cerr, #VAR, (VAR)); std::cerr << "; ";
+#define DUMPHEAD std::cerr << __FILE__ << ':' << __LINE__ << " [ " << getThreadId() << " ] ";
 #define DUMPTAIL std::cerr << '\n';
 
 #define DUMP1(V1) do { DUMPHEAD DUMPVAR(V1) DUMPTAIL } while(0)

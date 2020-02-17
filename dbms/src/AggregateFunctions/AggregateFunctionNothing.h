@@ -71,8 +71,6 @@ public:
     {
         to.insertDefault();
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }

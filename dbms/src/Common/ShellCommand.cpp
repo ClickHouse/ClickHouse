@@ -4,11 +4,11 @@
 #include <dlfcn.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
+#include <Common/PipeFDs.h>
 #include <common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <port/unistd.h>
 #include <csignal>
-#include <common/Pipe.h>
 
 namespace
 {
@@ -57,7 +57,7 @@ ShellCommand::~ShellCommand()
 std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only, bool terminate_in_destructor)
 {
     /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
-      *  because of the resolving of characters in the shared library
+      *  because of the resolving of symbols in the shared library
       * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
       * Therefore, separate the resolving of the symbol from the call.
       */
@@ -66,9 +66,9 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
     if (!real_vfork)
         throwFromErrno("Cannot find symbol vfork in myself", ErrorCodes::CANNOT_DLSYM);
 
-    Pipe pipe_stdin;
-    Pipe pipe_stdout;
-    Pipe pipe_stderr;
+    PipeFDs pipe_stdin;
+    PipeFDs pipe_stdout;
+    PipeFDs pipe_stderr;
 
     pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
 

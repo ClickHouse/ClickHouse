@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Aliases.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -8,12 +9,11 @@
 namespace DB
 {
 
-NameSet removeDuplicateColumns(NamesAndTypesList & columns);
-
 class ASTFunction;
 class AnalyzedJoin;
 class Context;
 struct SelectQueryOptions;
+using Scalars = std::map<String, Block>;
 
 struct SyntaxAnalyzerResult
 {
@@ -43,8 +43,14 @@ struct SyntaxAnalyzerResult
     /// Predicate optimizer overrides the sub queries
     bool rewrite_subqueries = false;
 
+    /// Results of scalar sub queries
+    Scalars scalars;
+
+    bool maybe_optimize_trivial_count = false;
+
     void collectUsedColumns(const ASTPtr & query, const NamesAndTypesList & additional_source_columns);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
+    const Scalars & getScalars() const { return scalars; }
 };
 
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;

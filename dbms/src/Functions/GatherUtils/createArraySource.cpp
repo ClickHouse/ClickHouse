@@ -1,3 +1,4 @@
+#include "GatherUtils.h"
 #include "Sinks.h"
 #include "Sources.h"
 #include <Core/TypeListNumber.h>
@@ -14,7 +15,9 @@ struct ArraySourceCreator<Type, Types...>
 {
     static std::unique_ptr<IArraySource> create(const ColumnArray & col, const NullMap * null_map, bool is_const, size_t total_rows)
     {
-        if (typeid_cast<const ColumnVector<Type> *>(&col.getData()))
+        using ColVecType = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
+
+        if (typeid_cast<const ColVecType *>(&col.getData()))
         {
             if (null_map)
             {

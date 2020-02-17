@@ -8,6 +8,7 @@ template <typename A, typename B>
 struct BitShiftLeftImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
+    static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)

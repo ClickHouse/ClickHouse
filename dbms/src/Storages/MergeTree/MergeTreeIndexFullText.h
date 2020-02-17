@@ -206,7 +206,7 @@ public:
     size_t bloom_filter_hashes;
     /// Bloom filter seed.
     size_t seed;
-    /// Fucntion for selecting next token.
+    /// Function for selecting next token.
     std::unique_ptr<ITokenExtractor> token_extractor_func;
 };
 

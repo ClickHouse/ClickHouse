@@ -62,4 +62,4 @@ The UUID data type only supports functions which [String](string.md) data type a
 
 The UUID data type is not supported by arithmetic operations (for example, [abs](../query_language/functions/arithmetic_functions.md#arithm_func-abs)) or aggregate functions, such as [sum](../query_language/agg_functions/reference.md#agg_function-sum) and [avg](../query_language/agg_functions/reference.md#agg_function-avg).
 
-[Original article](https://clickhouse.yandex/docs/en/data_types/uuid/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data_types/uuid/) <!--hide-->

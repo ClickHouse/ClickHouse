@@ -63,7 +63,7 @@ using Mutex = std::mutex;
     HashTableAllocator>;*/
 
 
-void aggregate1(Map & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate1(Map & map, Source::const_iterator begin, Source::const_iterator end)
 {
     for (auto it = begin; it != end; ++it)
         ++map[*it];
@@ -74,7 +74,7 @@ void aggregate1(Map & map, Source::const_iterator begin, Source::const_iterator 
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
-void aggregate12(Map & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate12(Map & map, Source::const_iterator begin, Source::const_iterator end)
 {
     Map::LookupResult found = nullptr;
     auto prev_it = end;
@@ -82,24 +82,24 @@ void aggregate12(Map & map, Source::const_iterator begin, Source::const_iterator
     {
         if (prev_it != end && *it == *prev_it)
         {
-            ++*lookupResultGetMapped(found);
+            ++found->getMapped();
             continue;
         }
         prev_it = it;
 
         bool inserted;
         map.emplace(*it, found, inserted);
-        ++*lookupResultGetMapped(found);
+        ++found->getMapped();
     }
 }
 
-void aggregate2(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate2(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
 {
     for (auto it = begin; it != end; ++it)
         ++map[*it];
 }
 
-void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
 {
     MapTwoLevel::LookupResult found = nullptr;
     auto prev_it = end;
@@ -107,14 +107,14 @@ void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_
     {
         if (*it == *prev_it)
         {
-            ++*lookupResultGetMapped(found);
+            ++found->getMapped();
             continue;
         }
         prev_it = it;
 
         bool inserted;
         map.emplace(*it, found, inserted);
-        ++*lookupResultGetMapped(found);
+        ++found->getMapped();
     }
 }
 
@@ -122,14 +122,14 @@ void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_
 #pragma GCC diagnostic pop
 #endif
 
-void merge2(MapTwoLevel * maps, size_t num_threads, size_t bucket)
+static void merge2(MapTwoLevel * maps, size_t num_threads, size_t bucket)
 {
     for (size_t i = 1; i < num_threads; ++i)
         for (auto it = maps[i].impls[bucket].begin(); it != maps[i].impls[bucket].end(); ++it)
-            maps[0].impls[bucket][it->getFirst()] += it->getSecond();
+            maps[0].impls[bucket][it->getKey()] += it->getMapped();
 }
 
-void aggregate3(Map & local_map, Map & global_map, Mutex & mutex, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate3(Map & local_map, Map & global_map, Mutex & mutex, Source::const_iterator begin, Source::const_iterator end)
 {
     static constexpr size_t threshold = 65536;
 
@@ -138,7 +138,7 @@ void aggregate3(Map & local_map, Map & global_map, Mutex & mutex, Source::const_
         auto found = local_map.find(*it);
 
         if (found)
-            ++*lookupResultGetMapped(found);
+            ++found->getMapped();
         else if (local_map.size() < threshold)
             ++local_map[*it];    /// TODO You could do one lookup, not two.
         else
@@ -154,7 +154,7 @@ void aggregate3(Map & local_map, Map & global_map, Mutex & mutex, Source::const_
     }
 }
 
-void aggregate33(Map & local_map, Map & global_map, Mutex & mutex, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate33(Map & local_map, Map & global_map, Mutex & mutex, Source::const_iterator begin, Source::const_iterator end)
 {
     static constexpr size_t threshold = 65536;
 
@@ -163,20 +163,20 @@ void aggregate33(Map & local_map, Map & global_map, Mutex & mutex, Source::const
         Map::LookupResult found;
         bool inserted;
         local_map.emplace(*it, found, inserted);
-        ++*lookupResultGetMapped(found);
+        ++found->getMapped();
 
         if (inserted && local_map.size() == threshold)
         {
             std::lock_guard<Mutex> lock(mutex);
             for (auto & value_type : local_map)
-                global_map[value_type.getFirst()] += value_type.getSecond();
+                global_map[value_type.getKey()] += value_type.getMapped();
 
             local_map.clear();
         }
     }
 }
 
-void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexes, Source::const_iterator begin, Source::const_iterator end)
+static void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexes, Source::const_iterator begin, Source::const_iterator end)
 {
     static constexpr size_t threshold = 65536;
     static constexpr size_t block_size = 8192;
@@ -198,7 +198,7 @@ void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexes, Sour
                 auto found = local_map.find(*it);
 
                 if (found)
-                    ++*lookupResultGetMapped(found);
+                    ++found->getMapped();
                 else
                 {
                     size_t hash_value = global_map.hash(*it);
@@ -311,7 +311,7 @@ int main(int argc, char ** argv)
 
         for (size_t i = 1; i < num_threads; ++i)
             for (auto it = maps[i].begin(); it != maps[i].end(); ++it)
-                maps[0][it->getFirst()] += it->getSecond();
+                maps[0][it->getKey()] += it->getMapped();
 
         watch.stop();
         double time_merged = watch.elapsedSeconds();
@@ -365,7 +365,7 @@ int main(int argc, char ** argv)
 
         for (size_t i = 1; i < num_threads; ++i)
             for (auto it = maps[i].begin(); it != maps[i].end(); ++it)
-                maps[0][it->getFirst()] += it->getSecond();
+                maps[0][it->getKey()] += it->getMapped();
 
         watch.stop();
 
@@ -435,7 +435,7 @@ int main(int argc, char ** argv)
                     continue;
 
                 finish = false;
-                maps[0][iterators[i]->getFirst()] += iterators[i]->getSecond();
+                maps[0][iterators[i]->getKey()] += iterators[i]->getMapped();
                 ++iterators[i];
             }
 
@@ -623,7 +623,7 @@ int main(int argc, char ** argv)
 
         for (size_t i = 0; i < num_threads; ++i)
             for (auto it = local_maps[i].begin(); it != local_maps[i].end(); ++it)
-                global_map[it->getFirst()] += it->getSecond();
+                global_map[it->getKey()] += it->getMapped();
 
         pool.wait();
 
@@ -689,7 +689,7 @@ int main(int argc, char ** argv)
 
         for (size_t i = 0; i < num_threads; ++i)
             for (auto it = local_maps[i].begin(); it != local_maps[i].end(); ++it)
-                global_map[it->getFirst()] += it->getSecond();
+                global_map[it->getKey()] += it->getMapped();
 
         pool.wait();
 
@@ -760,7 +760,7 @@ int main(int argc, char ** argv)
 
         for (size_t i = 0; i < num_threads; ++i)
             for (auto it = local_maps[i].begin(); it != local_maps[i].end(); ++it)
-                global_map[it->getFirst()] += it->getSecond();
+                global_map[it->getKey()] += it->getMapped();
 
         pool.wait();
 

@@ -1,8 +1,10 @@
-import time
+import json
 import pytest
 import random
+import re
 import string
-import json
+import threading
+import time
 from multiprocessing.dummy import Pool
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -14,6 +16,7 @@ node1 = cluster.add_instance('node1',
             config_dir='configs',
             main_configs=['configs/logs_config.xml'],
             with_zookeeper=True,
+            stay_alive=True,
             tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],
             macros={"shard": 0, "replica": 1} )
 
@@ -21,6 +24,7 @@ node2 = cluster.add_instance('node2',
             config_dir='configs',
             main_configs=['configs/logs_config.xml'],
             with_zookeeper=True,
+            stay_alive=True,
             tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],
             macros={"shard": 0, "replica": 2} )
 
@@ -81,6 +85,22 @@ def test_system_tables(start_cluster):
             "move_factor": 0.1,
         },
         {
+            "policy_name": "one_more_small_jbod_with_external",
+            "volume_name": "m",
+            "volume_priority": "1",
+            "disks": ["jbod1"],
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "one_more_small_jbod_with_external",
+            "volume_name": "e",
+            "volume_priority": "2",
+            "disks": ["external"],
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+        },
+        {
             "policy_name": "jbods_with_external",
             "volume_name": "main",
             "volume_priority": "1",
@@ -126,6 +146,38 @@ def test_system_tables(start_cluster):
             "volume_priority": "2",
             "disks": ["external"],
             "max_data_part_size": "20971520",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "special_warning_policy",
+            "volume_name": "special_warning_zero_volume",
+            "volume_priority": "1",
+            "disks": ["default"],
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "special_warning_policy",
+            "volume_name": "special_warning_default_volume",
+            "volume_priority": "2",
+            "disks": ["external"],
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "special_warning_policy",
+            "volume_name": "special_warning_small_volume",
+            "volume_priority": "3",
+            "disks": ["jbod1"],
+            "max_data_part_size": "1024",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "special_warning_policy",
+            "volume_name": "special_warning_big_volume",
+            "volume_priority": "4",
+            "disks": ["jbod2"],
+            "max_data_part_size": "1024000000",
             "move_factor": 0.1,
         },
     ]
@@ -187,11 +239,67 @@ def test_query_parser(start_cluster):
         node1.query("DROP TABLE IF EXISTS table_with_normal_policy")
 
 
+@pytest.mark.parametrize("name,engine", [
+    ("test_alter_policy","MergeTree()"),
+    ("replicated_test_alter_policy","ReplicatedMergeTree('/clickhouse/test_alter_policy', '1')",),
+])
+def test_alter_policy(start_cluster, name, engine):
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                d UInt64
+            ) ENGINE = {engine}
+            ORDER BY d
+            SETTINGS storage_policy='small_jbod_with_external'
+        """.format(name=name, engine=engine))
+
+        assert node1.query("""SELECT storage_policy FROM system.tables WHERE name = '{name}'""".format(name=name)) == "small_jbod_with_external\n"
+
+        with pytest.raises(QueryRuntimeException):
+            node1.query("""ALTER TABLE {name} MODIFY SETTING storage_policy='one_more_small_jbod_with_external'""".format(name=name))
+
+        assert node1.query("""SELECT storage_policy FROM system.tables WHERE name = '{name}'""".format(name=name)) == "small_jbod_with_external\n"
+
+        node1.query("""ALTER TABLE {name} MODIFY SETTING storage_policy='jbods_with_external'""".format(name=name))
+
+        assert node1.query("""SELECT storage_policy FROM system.tables WHERE name = '{name}'""".format(name=name)) == "jbods_with_external\n"
+
+        with pytest.raises(QueryRuntimeException):
+            node1.query("""ALTER TABLE {name} MODIFY SETTING storage_policy='small_jbod_with_external'""".format(name=name))
+
+        assert node1.query("""SELECT storage_policy FROM system.tables WHERE name = '{name}'""".format(name=name)) == "jbods_with_external\n"
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
+
 def get_random_string(length):
     return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(length))
 
 def get_used_disks_for_table(node, table_name):
     return node.query("select disk_name from system.parts where table == '{}' and active=1 order by modification_time".format(table_name)).strip().split('\n')
+
+def test_no_warning_about_zero_max_data_part_size(start_cluster):
+    def get_log(node):
+        return node.exec_in_container(["bash", "-c", "cat /var/log/clickhouse-server/clickhouse-server.log"])
+
+    for node in (node1, node2):
+        node.query("""
+            CREATE TABLE default.test_warning_table (
+                s String
+            ) ENGINE = MergeTree
+            ORDER BY tuple()
+            SETTINGS storage_policy='small_jbod_with_external'
+        """)
+        node.query("""
+            DROP TABLE default.test_warning_table
+        """)
+        log = get_log(node)
+        assert not re.search("Warning.*Volume.*special_warning_zero_volume", log)
+        assert not re.search("Warning.*Volume.*special_warning_default_volume", log)
+        assert re.search("Warning.*Volume.*special_warning_small_volume", log)
+        assert not re.search("Warning.*Volume.*special_warning_big_volume", log)
+
 
 @pytest.mark.parametrize("name,engine", [
     ("mt_on_jbod","MergeTree()"),
@@ -252,6 +360,7 @@ def test_max_data_part_size(start_cluster, name, engine):
     finally:
         node1.query("DROP TABLE IF EXISTS {}".format(name))
 
+@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine", [
     ("mt_with_overflow","MergeTree()"),
     ("replicated_mt_with_overflow","ReplicatedMergeTree('/clickhouse/replicated_mt_with_overflow', '1')",),
@@ -346,6 +455,7 @@ def test_background_move(start_cluster, name, engine):
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
+@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine", [
     ("stopped_moving_mt","MergeTree()"),
     ("stopped_moving_replicated_mt","ReplicatedMergeTree('/clickhouse/stopped_moving_replicated_mt', '1')",),
@@ -462,7 +572,7 @@ def test_alter_move(start_cluster, name, engine):
         node1.query("INSERT INTO {} VALUES(toDate('2019-04-10'), 42)".format(name))
         node1.query("INSERT INTO {} VALUES(toDate('2019-04-11'), 43)".format(name))
         used_disks = get_used_disks_for_table(node1, name)
-        assert all(d.startswith("jbod") for d in used_disks), "All writes shoud go to jbods"
+        assert all(d.startswith("jbod") for d in used_disks), "All writes should go to jbods"
 
         first_part = node1.query("SELECT name FROM system.parts WHERE table = '{}' and active = 1 ORDER BY modification_time LIMIT 1".format(name)).strip()
 
@@ -498,6 +608,91 @@ def test_alter_move(start_cluster, name, engine):
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
+
+@pytest.mark.parametrize("volume_or_disk", [
+    "DISK",
+    "VOLUME"
+])
+def test_alter_move_half_of_partition(start_cluster, volume_or_disk):
+    name = "alter_move_half_of_partition"
+    engine = "MergeTree()"
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                EventDate Date,
+                number UInt64
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            PARTITION BY toYYYYMM(EventDate)
+            SETTINGS storage_policy='jbods_with_external'
+        """.format(name=name, engine=engine))
+
+        node1.query("SYSTEM STOP MERGES {}".format(name))
+
+        node1.query("INSERT INTO {} VALUES(toDate('2019-03-15'), 65)".format(name))
+        node1.query("INSERT INTO {} VALUES(toDate('2019-03-16'), 42)".format(name))
+        used_disks = get_used_disks_for_table(node1, name)
+        assert all(d.startswith("jbod") for d in used_disks), "All writes should go to jbods"
+
+        time.sleep(1)
+        parts = node1.query("SELECT name FROM system.parts WHERE table = '{}' and active = 1".format(name)).splitlines()
+        assert len(parts) == 2
+
+        node1.query("ALTER TABLE {} MOVE PART '{}' TO VOLUME 'external'".format(name, parts[0]))
+        disks = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}' and active = 1".format(name, parts[0])).splitlines()
+        assert disks == ["external"]
+
+        time.sleep(1)
+        node1.query("ALTER TABLE {} MOVE PARTITION 201903 TO {volume_or_disk} 'external'".format(name, volume_or_disk=volume_or_disk))
+        disks = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201903' and active = 1".format(name)).splitlines()
+        assert disks == ["external"]*2
+
+        assert node1.query("SELECT COUNT() FROM {}".format(name)) == "2\n"
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
+
+@pytest.mark.parametrize("volume_or_disk", [
+    "DISK",
+    "VOLUME"
+])
+def test_alter_double_move_partition(start_cluster, volume_or_disk):
+    name = "alter_double_move_partition"
+    engine = "MergeTree()"
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                EventDate Date,
+                number UInt64
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            PARTITION BY toYYYYMM(EventDate)
+            SETTINGS storage_policy='jbods_with_external'
+        """.format(name=name, engine=engine))
+
+        node1.query("SYSTEM STOP MERGES {}".format(name))
+
+        node1.query("INSERT INTO {} VALUES(toDate('2019-03-15'), 65)".format(name))
+        node1.query("INSERT INTO {} VALUES(toDate('2019-03-16'), 42)".format(name))
+        used_disks = get_used_disks_for_table(node1, name)
+        assert all(d.startswith("jbod") for d in used_disks), "All writes should go to jbods"
+
+        time.sleep(1)
+        node1.query("ALTER TABLE {} MOVE PARTITION 201903 TO {volume_or_disk} 'external'".format(name, volume_or_disk=volume_or_disk))
+        disks = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201903' and active = 1".format(name)).splitlines()
+        assert disks == ["external"]*2
+
+        assert node1.query("SELECT COUNT() FROM {}".format(name)) == "2\n"
+
+        time.sleep(1)
+        with pytest.raises(QueryRuntimeException):
+            node1.query("ALTER TABLE {} MOVE PARTITION 201903 TO {volume_or_disk} 'external'".format(name, volume_or_disk=volume_or_disk))
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
+
 def produce_alter_move(node, name):
     move_type = random.choice(["PART", "PARTITION"])
     if move_type == "PART":
@@ -527,6 +722,7 @@ def produce_alter_move(node, name):
         pass
 
 
+@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine", [
     ("concurrently_altering_mt","MergeTree()"),
     ("concurrently_altering_replicated_mt","ReplicatedMergeTree('/clickhouse/concurrently_altering_replicated_mt', '1')",),
@@ -543,10 +739,12 @@ def test_concurrent_alter_move(start_cluster, name, engine):
             SETTINGS storage_policy='jbods_with_external'
         """.format(name=name, engine=engine))
 
+        values = list({ random.randint(1, 1000000) for _ in range(0, 1000) })
+
         def insert(num):
             for i in range(num):
                 day = random.randint(11, 30)
-                value = random.randint(1, 1000000)
+                value = values.pop()
                 month = '0' + str(random.choice([3, 4]))
                 node1.query("INSERT INTO {} VALUES(toDate('2019-{m}-{d}'), {v})".format(name, m=month, d=day, v=value))
 
@@ -571,13 +769,14 @@ def test_concurrent_alter_move(start_cluster, name, engine):
             tasks.append(p.apply_async(optimize_table, (100,)))
 
         for task in tasks:
-            task.get(timeout=60)
+            task.get(timeout=120)
 
         assert node1.query("SELECT 1") == "1\n"
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "500\n"
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
+@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine", [
     ("concurrently_dropping_mt","MergeTree()"),
     ("concurrently_dropping_replicated_mt","ReplicatedMergeTree('/clickhouse/concurrently_dropping_replicated_mt', '1')",),
@@ -594,10 +793,12 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
             SETTINGS storage_policy='jbods_with_external'
         """.format(name=name, engine=engine))
 
+        values = list({ random.randint(1, 1000000) for _ in range(0, 1000) })
+
         def insert(num):
             for i in range(num):
                 day = random.randint(11, 30)
-                value = random.randint(1, 1000000)
+                value = values.pop()
                 month = '0' + str(random.choice([3, 4]))
                 node1.query("INSERT INTO {} VALUES(toDate('2019-{m}-{d}'), {v})".format(name, m=month, d=day, v=value))
 
@@ -629,11 +830,41 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
 
 
 @pytest.mark.parametrize("name,engine", [
+    ("detach_attach_mt","MergeTree()"),
+    ("replicated_detach_attach_mt","ReplicatedMergeTree('/clickhouse/replicated_detach_attach_mt', '1')",),
+])
+def test_detach_attach(start_cluster, name, engine):
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                s1 String
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            SETTINGS storage_policy='moving_jbod_with_external'
+        """.format(name=name, engine=engine))
+
+        data = [] # 5MB in total
+        for i in range(5):
+            data.append(get_random_string(1024 * 1024)) # 1MB row
+        node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+
+        node1.query("ALTER TABLE {} DETACH PARTITION tuple()".format(name))
+        assert node1.query("SELECT count() FROM {}".format(name)).strip() == "0"
+
+        assert node1.query("SELECT disk FROM system.detached_parts WHERE table = '{}'".format(name)).strip() == "jbod1"
+
+        node1.query("ALTER TABLE {} ATTACH PARTITION tuple()".format(name))
+        assert node1.query("SELECT count() FROM {}".format(name)).strip() == "5"
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
+
+@pytest.mark.parametrize("name,engine", [
     ("mutating_mt","MergeTree()"),
     ("replicated_mutating_mt","ReplicatedMergeTree('/clickhouse/replicated_mutating_mt', '1')",),
 ])
 def test_mutate_to_another_disk(start_cluster, name, engine):
-
     try:
         node1.query("""
             CREATE TABLE {name} (
@@ -674,6 +905,8 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
+
+@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine", [
     ("alter_modifying_mt","MergeTree()"),
     ("replicated_alter_modifying_mt","ReplicatedMergeTree('/clickhouse/replicated_alter_modifying_mt', '1')",),
@@ -690,10 +923,12 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
             SETTINGS storage_policy='jbods_with_external'
         """.format(name=name, engine=engine))
 
+        values = list({ random.randint(1, 1000000) for _ in range(0, 1000) })
+
         def insert(num):
             for i in range(num):
                 day = random.randint(11, 30)
-                value = random.randint(1, 1000000)
+                value = values.pop()
                 month = '0' + str(random.choice([3, 4]))
                 node1.query("INSERT INTO {} VALUES(toDate('2019-{m}-{d}'), {v})".format(name, m=month, d=day, v=value))
 
@@ -717,7 +952,7 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
             tasks.append(p.apply_async(alter_modify, (100,)))
 
         for task in tasks:
-            task.get(timeout=60)
+            task.get(timeout=120)
 
         assert node1.query("SELECT 1") == "1\n"
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "100\n"
@@ -858,6 +1093,7 @@ def test_rename(start_cluster):
         node1.query("DROP TABLE IF EXISTS default.renaming_table1")
         node1.query("DROP TABLE IF EXISTS test.renaming_table2")
 
+
 def test_freeze(start_cluster):
     try:
         node1.query("""
@@ -887,6 +1123,110 @@ def test_freeze(start_cluster):
         node1.exec_in_container(["bash", "-c", "find /jbod1/shadow -name '*.mrk2' | grep '.*'"])
         node1.exec_in_container(["bash", "-c", "find /external/shadow -name '*.mrk2' | grep '.*'"])
 
-
     finally:
         node1.query("DROP TABLE IF EXISTS default.freezing_table")
+        node1.exec_in_container(["rm", "-rf", "/jbod1/shadow", "/external/shadow"])
+
+
+def test_kill_while_insert(start_cluster):
+    try:
+        name = "test_kill_while_insert"
+
+        node1.query("""
+            CREATE TABLE {name} (
+                s String
+            ) ENGINE = MergeTree
+            ORDER BY tuple()
+            SETTINGS storage_policy='small_jbod_with_external'
+        """.format(name=name))
+
+        data = []
+        dates = []
+        for i in range(10):
+            data.append(get_random_string(1024 * 1024)) # 1MB value
+        node1.query("INSERT INTO {name} VALUES {}".format(','.join(["('" + s + "')" for s in data]), name=name))
+
+        disks = get_used_disks_for_table(node1, name)
+        assert set(disks) == {"jbod1"}
+
+        start_time = time.time()
+        long_select = threading.Thread(target=node1.query, args=("SELECT sleep(3) FROM {name}".format(name=name),))
+        long_select.start()
+
+        time.sleep(0.5)
+
+        node1.query("ALTER TABLE {name} MOVE PARTITION tuple() TO DISK 'external'".format(name=name))
+        assert time.time() - start_time < 2
+        node1.restart_clickhouse(kill=True)
+
+        try:
+            long_select.join()
+        except:
+            """"""
+
+        time.sleep(0.5)
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["10"]
+
+    finally:
+        try:
+            node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        except:
+            """ClickHouse may be inactive at this moment and we don't want to mask a meaningful exception."""
+
+
+def test_move_while_merge(start_cluster):
+    try:
+        name = "test_move_while_merge"
+
+        node1.query("""
+            CREATE TABLE {name} (
+                n Int64
+            ) ENGINE = MergeTree
+            ORDER BY sleep(2)
+            SETTINGS storage_policy='small_jbod_with_external'
+        """.format(name=name))
+
+        node1.query("INSERT INTO {name} VALUES (1)".format(name=name))
+        node1.query("INSERT INTO {name} VALUES (2)".format(name=name))
+
+        parts = node1.query("SELECT name FROM system.parts WHERE table = '{name}' AND active = 1".format(name=name)).splitlines()
+        assert len(parts) == 2
+
+        def optimize():
+            node1.query("OPTIMIZE TABLE {name}".format(name=name))
+
+        optimize = threading.Thread(target=optimize)
+        optimize.start()
+
+        time.sleep(0.5)
+
+        with pytest.raises(QueryRuntimeException):
+            node1.query("ALTER TABLE {name} MOVE PART '{part}' TO DISK 'external'".format(name=name, part=parts[0]))
+
+        exiting = False
+        no_exception = {}
+
+        def alter():
+            while not exiting:
+                try:
+                    node1.query("ALTER TABLE {name} MOVE PART '{part}' TO DISK 'external'".format(name=name, part=parts[0]))
+                    no_exception['missing'] = 'exception'
+                    break
+                except QueryRuntimeException:
+                    """"""
+
+        alter_thread = threading.Thread(target=alter)
+        alter_thread.start()
+
+        optimize.join()
+
+        time.sleep(0.5)
+
+        exiting = True
+        alter_thread.join()
+        assert len(no_exception) == 0
+
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["2"]
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))

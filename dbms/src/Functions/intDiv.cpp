@@ -19,6 +19,7 @@ struct DivideIntegralByConstantImpl
     : BinaryOperationImplBase<A, B, DivideIntegralImpl<A, B>>
 {
     using ResultType = typename DivideIntegralImpl<A, B>::ResultType;
+    static const constexpr bool allow_fixed_string = false;
 
     static void vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
     {
@@ -28,7 +29,7 @@ struct DivideIntegralByConstantImpl
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
 
-        if (unlikely(std::is_signed_v<B> && b == -1))
+        if (unlikely(is_signed_v<B> && b == -1))
         {
             size_t size = a.size();
             for (size_t i = 0; i < size; ++i)

@@ -1,6 +1,7 @@
 #include "KafkaBlockOutputStream.h"
 
 #include <Formats/FormatFactory.h>
+#include <Storages/Kafka/WriteBufferToKafkaProducer.h>
 
 namespace DB
 {
@@ -27,11 +28,11 @@ Block KafkaBlockOutputStream::getHeader() const
 
 void KafkaBlockOutputStream::writePrefix()
 {
-    buffer = storage.createWriteBuffer();
+    buffer = storage.createWriteBuffer(getHeader());
     if (!buffer)
         throw Exception("Failed to create Kafka producer!", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
 
-    child = FormatFactory::instance().getOutput(storage.getFormatName(), *buffer, getHeader(), context, [this]{ buffer->count_row(); });
+    child = FormatFactory::instance().getOutput(storage.getFormatName(), *buffer, getHeader(), context, [this](const Columns & columns, size_t row){ buffer->count_row(columns, row); });
 }
 
 void KafkaBlockOutputStream::write(const Block & block)
