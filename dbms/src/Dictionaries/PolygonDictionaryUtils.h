@@ -29,8 +29,8 @@ public:
 class DividedCell : public ICell
 {
 public:
-    DividedCell(std::vector<std::unique_ptr<ICell>> children_);
-    const ICell * find(Float64 x, Float64 y) const override;
+    explicit DividedCell(std::vector<std::unique_ptr<ICell>> children_);
+    [[nodiscard]] const ICell * find(Float64 x, Float64 y) const override;
 private:
     std::vector<std::unique_ptr<ICell>> children;
 };
@@ -38,32 +38,33 @@ private:
 class FinalCell : public ICell
 {
 public:
-    FinalCell(std::vector<size_t> polygon_ids_);
+    explicit FinalCell(std::vector<size_t> polygon_ids_);
 
 private:
     std::vector<size_t> polygon_ids;
 
-    const ICell * find(Float64 x, Float64 y) const override;
+    [[nodiscard]] const ICell * find(Float64 x, Float64 y) const override;
 };
 
 class GridRoot : public ICell
 {
 public:
-    GridRoot(const std::vector<Polygon> & polygons_);
-    const ICell * find(Float64 x, Float64 y) const override;
+    explicit GridRoot(const size_t min_intersections_, const size_t max_depth_, const std::vector<Polygon> & polygons_);
+    [[nodiscard]] const ICell * find(Float64 x, Float64 y) const override;
 
     static constexpr size_t kSplit = 10;
 private:
     std::unique_ptr<ICell> root = nullptr;
-    Box box;
+    Float64 min_x = 0, min_y = 0;
+    Float64 max_x = 0, max_y = 0;
     const size_t kMinIntersections = 3;
     const size_t kMaxDepth = 3;
 
     const std::vector<Polygon> & polygons;
 
-    std::unique_ptr<ICell> makeCell(const Box & box, std::vector<size_t> intersecting_ids, size_t depth = 0);
+    std::unique_ptr<ICell> makeCell(Float64 min_x, Float64 min_y, Float64 max_x, Float64 max_y, std::vector<size_t> intersecting_ids, size_t depth = 0);
 
-    static Box getBoundingBox(const std::vector<Polygon> & polygons);
+    void setBoundingBox();
 };
 
 }

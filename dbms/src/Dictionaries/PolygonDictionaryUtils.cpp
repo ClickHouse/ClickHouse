@@ -13,7 +13,7 @@ const ICell * FinalCell::find(Float64, Float64) const
     return this;
 }
 
-DividedCell::DividedCell(std::vector<std::unique_ptr<ICell> children_): children(std::move(children_)) {}
+DividedCell::DividedCell(std::vector<std::unique_ptr<ICell>> children_): children(std::move(children_)) {}
 
 const ICell * DividedCell::find(Float64 x, Float64 y) const
 {
@@ -24,19 +24,19 @@ const ICell * DividedCell::find(Float64 x, Float64 y) const
     return children[x_bin + y_bin * GridRoot::kSplit]->find(x_ratio - x_bin, y_ratio - y_bin);
 }
 
-GridRoot::GridRoot(const std::vector<Polygon> & polygons_): box(getBoundingBox(polygons_)), polygons(polygons_)
+GridRoot::GridRoot(const size_t min_intersections_, const size_t max_depth_, const std::vector<Polygon> & polygons_):
+kMinIntersections(min_intersections_),
+kMaxDepth(max_depth_),
+polygons(polygons_)
 {
+    setBoundingBox();
     std::vector<size_t> ids(polygons.size());
     std::iota(ids.begin(), ids.end(), 0);
-    root = makeCell(box, ids);
+    root = makeCell(min_x, min_y, max_x, max_y, ids);
 }
 
 const ICell * GridRoot::find(Float64 x, Float64 y) const
 {
-    auto min_x = box.min_corner().get<0>();
-    auto min_y = box.min_corner().get<1>();
-    auto max_x = box.max_corner().get<0>();
-    auto max_y = box.max_corner().get<1>();
     if (x < min_x || x >= max_x)
         return nullptr;
     if (y < min_y || y >= max_y)
@@ -44,34 +44,32 @@ const ICell * GridRoot::find(Float64 x, Float64 y) const
     return root->find((x - min_x) / (max_x - min_x), (y - min_y) / (max_y - min_y));
 }
 
-std::unique_ptr<ICell> GridRoot::makeCell(const DB::Box & current_box, std::vector<size_t> possible_ids, size_t depth)
+std::unique_ptr<ICell> GridRoot::makeCell(Float64 current_min_x, Float64 current_min_y, Float64 current_max_x, Float64 current_max_y, std::vector<size_t> possible_ids, size_t depth)
 {
     ++depth;
+    auto current_box = Box(Point(current_min_x, current_min_y), Point(current_max_x, current_max_y));
     possible_ids.erase(std::remove_if(possible_ids.begin(), possible_ids.end(), [&](const auto & id) {
-        return !bg::intersects(box, polygons[id]);
+        return !bg::intersects(current_box, polygons[id]);
     }), possible_ids.end());
     if (possible_ids.size() <= kMinIntersections || depth == kMaxDepth)
         return std::make_unique<FinalCell>(possible_ids);
-    auto min_x = current_box.min_corner().get<0>();
-    auto min_y = current_box.min_corner().get<1>();
-    auto x_shift = (current_box.max_corner().get<0>() - min_x) / kSplit;
-    auto y_shift = (current_box.max_corner().get<1>() - min_y) / kSplit;
+    auto x_shift = (current_max_x - current_min_x) / kSplit;
+    auto y_shift = (current_max_y - current_min_y) / kSplit;
     std::vector<std::unique_ptr<ICell>> children;
     children.reserve(kSplit * kSplit);
-    for (size_t i = 0; i < kSplit; min_x += x_shift, ++i)
+    for (size_t i = 0; i < kSplit; current_min_x += x_shift, ++i)
     {
-        for (size_t j = 0; j < kSplit; min_y += y_shift, ++j)
+        for (size_t j = 0; j < kSplit; current_min_y += y_shift, ++j)
         {
-            children.push_back(makeCell(Box(Point(min_x, min_y), Point(min_x + x_shift, min_y + y_shift)), possible_ids, depth + 1));
+            children.push_back(makeCell(current_min_x, current_min_y, current_min_x + x_shift, current_min_y + y_shift, possible_ids, depth + 1));
         }
     }
     return std::make_unique<DividedCell>(children);
 }
 
-Box GridRoot::getBoundingBox(const std::vector<Polygon> & polygons)
+void GridRoot::setBoundingBox()
 {
     bool first = true;
-    Float64 min_x = 0, min_y = 0, max_x = 0, max_y = 0;
     std::for_each(polygons.begin(), polygons.end(), [&](const auto & polygon) {
         bg::for_each_point(polygon, [&](const Point & point) {
             auto x = point.get<0>();
@@ -87,7 +85,6 @@ Box GridRoot::getBoundingBox(const std::vector<Polygon> & polygons)
             first = false;
         });
     });
-    return Box(Point(min_x, min_y), Point(max_x, max_y));
 }
 
 }
