@@ -1,5 +1,9 @@
 #pragma once
 
+#include <mutex>
+#include <memory>
+
+#include <Core/Block.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/Join.h>
 #include <Interpreters/MergeJoin.h>
@@ -11,19 +15,15 @@ namespace DB
 class JoinSwitcher : public IJoin
 {
 public:
-    JoinSwitcher(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block)
+    JoinSwitcher(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block_)
+        : switched(false)
+        , table_join(table_join_)
+        , right_sample_block(right_sample_block_.cloneEmpty())
     {
-        if (table_join->allowMergeJoin())
-            join = std::make_shared<MergeJoin>(table_join, right_sample_block);
-        else
-            join = std::make_shared<Join>(table_join, right_sample_block);
+        join = std::make_shared<Join>(table_join, right_sample_block);
     }
 
-    bool addJoinedBlock(const Block & block) override
-    {
-        /// TODO: switch Join -> MergeJoin
-        return join->addJoinedBlock(block);
-    }
+    bool addJoinedBlock(const Block & block, bool check_limits = true) override;
 
     void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override
     {
@@ -50,6 +50,11 @@ public:
         return join->getTotalRowCount();
     }
 
+    size_t getTotalByteCount() const override
+    {
+        return join->getTotalByteCount();
+    }
+
     bool alwaysReturnsEmptySet() const override
     {
         return join->alwaysReturnsEmptySet();
@@ -67,6 +72,12 @@ public:
 
 private:
     JoinPtr join;
+    bool switched;
+    mutable std::mutex switch_mutex;
+    std::shared_ptr<AnalyzedJoin> table_join;
+    Block right_sample_block;
+
+    void switchJoin();
 };
 
 }

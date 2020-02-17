@@ -518,7 +518,7 @@ Block Join::structureRightBlock(const Block & block) const
     return structured_block;
 }
 
-bool Join::addJoinedBlock(const Block & source_block)
+bool Join::addJoinedBlock(const Block & source_block, bool check_limits)
 {
     if (empty())
         throw Exception("Logical error: Join was not initialized", ErrorCodes::LOGICAL_ERROR);
@@ -564,6 +564,9 @@ bool Join::addJoinedBlock(const Block & source_block)
 
         if (save_nullmap)
             data->blocks_nullmaps.emplace_back(stored_block, null_map_holder);
+
+        if (!check_limits)
+            return true;
 
         /// TODO: Do not calculate them every time
         total_rows = getTotalRowCount();

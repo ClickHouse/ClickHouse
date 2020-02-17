@@ -153,7 +153,7 @@ public:
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
-    bool addJoinedBlock(const Block & block) override;
+    bool addJoinedBlock(const Block & block, bool check_limits = true) override;
 
     /** Join data from the map (that was previously built by calls to addJoinedBlock) to the block with data from "left" table.
       * Could be called from different threads in parallel.
@@ -184,7 +184,7 @@ public:
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
-    size_t getTotalByteCount() const;
+    size_t getTotalByteCount() const final;
 
     bool alwaysReturnsEmptySet() const final { return isInnerOrRight(getKind()) && data->empty; }
 
@@ -318,6 +318,11 @@ public:
     void reuseJoinedData(const Join & join)
     {
         data = join.data;
+    }
+
+    std::shared_ptr<RightTableData> getJoinedData() const
+    {
+        return data;
     }
 
 private:
