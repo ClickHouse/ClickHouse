@@ -306,6 +306,7 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
           * And this is not allowed, since all code is based on the assumption that in the block stream all types are the same.
           */
         pipe.addSimpleTransform(std::make_shared<MaterializingTransform>(pipe.getHeader()));
+        pipes.emplace_back(std::move(pipe));
     }
 
     if (!pipes.empty())
