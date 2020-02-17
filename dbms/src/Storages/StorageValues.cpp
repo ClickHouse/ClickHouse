@@ -2,6 +2,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageValues.h>
 #include <DataStreams/OneBlockInputStream.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -13,7 +15,7 @@ StorageValues::StorageValues(const StorageID & table_id_, const ColumnsDescripti
     setColumns(columns_);
 }
 
-BlockInputStreams StorageValues::read(
+Pipes StorageValues::readWithProcessors(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
@@ -23,7 +25,12 @@ BlockInputStreams StorageValues::read(
 {
     check(column_names, true);
 
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(res_block));
+    Pipes pipes;
+
+    Chunk chunk(res_block.getColumns(), res_block.rows());
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(res_block.cloneEmpty(), std::move(chunk)));
+
+    return pipes;
 }
 
 }
