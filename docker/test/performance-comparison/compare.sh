@@ -66,6 +66,7 @@ EOF
                 <query_profiler_real_time_period_ns>10000000</query_profiler_real_time_period_ns>
                 <query_profiler_cpu_time_period_ns>0</query_profiler_cpu_time_period_ns>
                 <allow_introspection_functions>1</allow_introspection_functions>
+                <log_queries>1</log_queries>
             </default>
         </profiles>
     </yandex>
@@ -203,8 +204,11 @@ function get_profiles
     right/clickhouse client --port 9001 --query "set query_profiler_cpu_time_period_ns = 0"
     right/clickhouse client --port 9001 --query "set query_profiler_real_time_period_ns = 0"
 
+    left/clickhouse client --port 9001 --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
     left/clickhouse client --port 9001 --query "select * from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
     left/clickhouse client --port 9001 --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > left-addresses.tsv ||: &
+
+    right/clickhouse client --port 9002 --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
     right/clickhouse client --port 9002 --query "select * from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
     right/clickhouse client --port 9002 --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > right-addresses.tsv ||: &
 
@@ -214,8 +218,19 @@ function get_profiles
 # Analyze results
 function report
 {
-result_structure="left float, right float, diff float, rd Array(float), query text"
-rm test-times.tsv test-dump.tsv unstable.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
+
+for x in *.tsv
+do
+    # FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
+    # absolutely atrocious way. This should be done by the file() function itself.
+    paste -d' ' \
+        <(sed -n '1s/\t/\n/gp' "$x" | sed 's/\(^.*$\)/"\1"/') \
+        <(sed -n '2s/\t/\n/gp' "$x" ) \
+        | tr '\n' ', ' | sed 's/,$//' > "$x.columns"
+done
+
+rm *.rep test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
+
 right/clickhouse local --query "
 create table queries engine Memory as select
         replaceAll(_file, '-report.tsv', '') test,
@@ -275,6 +290,48 @@ create table test_times_tsv engine File(TSV, 'test-times.tsv') as
 create table all_queries_tsv engine File(TSV, 'all-queries.tsv') as
     select left, right, diff, rd, test, query
     from queries order by rd[3] desc;
+
+create view right_query_log as select *
+    from file('right-query-log.tsv', TSVWithNamesAndTypes, '$(cat right-query-log.tsv.columns)');
+
+create view right_trace_log as select *
+    from file('right-trace-log.tsv', TSVWithNamesAndTypes, '$(cat right-trace-log.tsv.columns)');
+
+create view right_addresses as select *
+    from file('right-addresses.tsv', TSVWithNamesAndTypes, '$(cat right-addresses.tsv.columns)');
+
+create table unstable_query_ids engine File(TSVWithNamesAndTypes, 'unstable-query-ids.rep') as
+    select query_id from right_query_log
+    join unstable_queries_tsv using query
+    ;
+
+create table unstable_query_metrics engine File(TSVWithNamesAndTypes, 'unstable-query-metrics.rep') as
+    select ProfileEvents.Values value, ProfileEvents.Names metric, query_id, query
+    from right_query_log array join ProfileEvents
+    where query_id in (unstable_query_ids)
+    ;
+
+create table unstable_query_traces engine File(TSVWithNamesAndTypes, 'unstable-query-traces.rep') as
+    select count() value, right_addresses.name metric,
+        unstable_query_ids.query_id, any(right_query_log.query) query
+    from unstable_query_ids
+    join right_query_log on right_query_log.query_id = unstable_query_ids.query_id
+    join right_trace_log on right_trace_log.query_id = unstable_query_ids.query_id
+    join right_addresses on addr = arrayJoin(trace)
+    group by unstable_query_ids.query_id, metric
+    order by count() desc
+    ;
+
+create table metric_devation engine File(TSVWithNamesAndTypes, 'metric-deviation.rep') as
+    select floor((q[3] - q[1])/q[2], 3) d,
+        quantilesExact(0.05, 0.5, 0.95)(value) q, metric, query
+    from (select * from unstable_query_metrics
+        union all select * from unstable_query_traces)
+    join queries using query
+    group by query, metric
+    having d > 0.5
+    order by any(rd[3]) desc, d desc
+    ;
 "
 
 # Remember that grep sets error code when nothing is found, hence the bayan

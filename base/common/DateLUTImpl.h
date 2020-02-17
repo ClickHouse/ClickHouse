@@ -391,9 +391,9 @@ public:
 
     /*
       The bits in week_mode has the following meaning:
-       WeekModeFlag::MONDAY_FIRST (0)  If not set	Sunday is first day of week
-                      If set	Monday is first day of week
-       WeekModeFlag::YEAR (1)	  If not set	Week is in range 0-53
+       WeekModeFlag::MONDAY_FIRST (0)  If not set Sunday is first day of week
+                      If set Monday is first day of week
+       WeekModeFlag::YEAR (1) If not set Week is in range 0-53
 
         Week 0 is returned for the the last week of the previous year (for
         a date at start of january) In this case one can get 53 for the
@@ -401,19 +401,19 @@ public:
         relevant for the given year. Note that this flag is only
         releveant if WeekModeFlag::JANUARY is not set.
 
-                  If set	 Week is in range 1-53.
+                  If set Week is in range 1-53.
 
         In this case one may get week 53 for a date in January (when
         the week is that last week of previous year) and week 1 for a
         date in December.
 
-      WeekModeFlag::FIRST_WEEKDAY (2)  If not set	Weeks are numbered according
+      WeekModeFlag::FIRST_WEEKDAY (2) If not set Weeks are numbered according
                         to ISO 8601:1988
-                  If set	The week that contains the first
+                  If set The week that contains the first
                         'first-day-of-week' is week 1.
 
-      WeekModeFlag::NEWYEAR_DAY (3)   If not set  no meaning
-                  If set	The week that contains the January 1 is week 1.
+      WeekModeFlag::NEWYEAR_DAY (3) If not set no meaning
+                  If set The week that contains the January 1 is week 1.
                             Week is in range 1-53.
                             And ignore WeekModeFlag::YEAR, WeekModeFlag::FIRST_WEEKDAY
 
