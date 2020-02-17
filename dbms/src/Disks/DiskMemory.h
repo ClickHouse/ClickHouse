@@ -19,22 +19,13 @@ class WriteBuffer;
 class ReadIndirectBuffer : public ReadBufferFromFileBase
 {
 public:
-    ReadIndirectBuffer(String path_, const String & data_)
-        : ReadBufferFromFileBase(), buf(ReadBufferFromString(data_)), path(std::move(path_))
-    {
-    }
+    ReadIndirectBuffer(String path_, const String & data_);
 
     std::string getFileName() const override { return path; }
-
-private:
-    bool nextImpl() override;
-
-public:
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
 
 private:
-    bool initialized = false;
     ReadBufferFromString buf;
     String path;
 };
