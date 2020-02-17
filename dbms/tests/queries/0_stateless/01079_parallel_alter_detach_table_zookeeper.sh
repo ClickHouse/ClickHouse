@@ -31,7 +31,7 @@ function correct_alter_thread()
     while true; do
         REPLICA=$(($RANDOM % 3 + 1))
         TYPE=${TYPES[$RANDOM % ${#TYPES[@]} ]}
-        $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_alter_detach_$REPLICA MODIFY COLUMN value1 $TYPE SETTINGS replication_alter_partitions_sync=2"; # additionaly we don't wait anything for more heavy concurrency
+        $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_alter_detach_$REPLICA MODIFY COLUMN value1 $TYPE SETTINGS replication_alter_partitions_sync=0"; # additionaly we don't wait anything for more heavy concurrency
         sleep 0.$RANDOM
     done
 }
@@ -102,7 +102,6 @@ done
 
 for i in `seq $REPLICAS`; do
     $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_alter_detach_$i"
-    $CLICKHOUSE_CLIENT --query "SELECT SUM(toUInt64(value1)) > $INITIAL_SUM FROM concurrent_alter_detach_$i"
     $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.mutations WHERE is_done=0" # all mutations have to be done
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_alter_detach_$i"
 done
