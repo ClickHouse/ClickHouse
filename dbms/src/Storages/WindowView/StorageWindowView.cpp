@@ -800,6 +800,7 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
                 stream->write(std::move(block_));
                 const ColumnUInt32::Container & wend_data
                     = static_cast<const ColumnUInt32 &>(*column_wend).getData();
+                std::unique_lock lock(window_view.fire_signal_mutex);
                 for (size_t i = 0; i < wend_data.size(); ++i)
                 {
                     if (wend_data[i] < timestamp_now)
@@ -827,6 +828,7 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
                 new_mergeable_blocks->push_back(std::move(block_));
                 const ColumnUInt32::Container & wend_data
                     = static_cast<const ColumnUInt32 &>(*column_wend).getData();
+                std::unique_lock lock(window_view.fire_signal_mutex);
                 for (size_t i = 0; i < wend_data.size(); ++i)
                 {
                     if (wend_data[i] < timestamp_now)

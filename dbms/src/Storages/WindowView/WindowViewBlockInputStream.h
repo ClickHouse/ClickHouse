@@ -43,7 +43,7 @@ public:
 
     Block getHeader() const override { return storage->getHeader(); }
 
-    inline void addFireSignal(UInt32 timestamp)
+    void addFireSignal(UInt32 timestamp)
     {
         std::lock_guard lock(fire_signal_mutex);
         fire_signal.push_back(timestamp);
@@ -56,11 +56,6 @@ protected:
         return tryReadImpl();
     }
 
-    /** tryRead method attempts to read a block in either blocking
-     *  or non-blocking mode. If blocking is set to false
-     *  then method return empty block with flag set to false
-     *  to indicate that method would block to get the next block.
-     */
     Block tryReadImpl()
     {
         Block res;
