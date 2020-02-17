@@ -177,9 +177,7 @@ public:
     /// Checks ability to use granularity
     bool canUseAdaptiveGranularity() const override;
 
-    int getMetadataVersion() const {
-        return metadata_version;
-    }
+    int getMetadataVersion() const { return metadata_version; }
 
 private:
 

@@ -3271,8 +3271,8 @@ void StorageReplicatedMergeTree::alter(
     std::optional<ReplicatedMergeTreeLogEntryData> alter_entry;
     std::optional<String> mutation_znode;
 
-    while (true) {
-
+    while (true)
+    {
         /// Clear nodes from previous iteration
         alter_entry.emplace();
         mutation_znode.reset();

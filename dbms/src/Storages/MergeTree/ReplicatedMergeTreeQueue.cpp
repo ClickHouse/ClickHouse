@@ -564,7 +564,9 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
 }
 
 
-namespace {
+namespace
+{
+
 Names getPartNamesToMutate(
     const ReplicatedMergeTreeMutationEntry & mutation, const ActiveDataPartSet & parts)
 {

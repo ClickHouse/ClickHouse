@@ -19,7 +19,9 @@
 namespace DB
 {
 
-namespace {
+namespace
+{
+
 ASTPtr defaultRequiredExpressions(Block & block, const NamesAndTypesList & required_columns, const ColumnDefaults & column_defaults)
 {
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();

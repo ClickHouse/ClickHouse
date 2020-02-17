@@ -1105,7 +1105,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         for (const NameAndTypePair & column : source_part->columns)
         {
             column.type->enumerateStreams(
-                [&](const IDataType::SubstreamPath & substream_path) {
+                [&](const IDataType::SubstreamPath & substream_path)
+                {
                     ++stream_counts[IDataType::getFileNameForStream(column.name, substream_path)];
                 },
                 {});
@@ -1123,7 +1124,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             }
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
-                IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path) {
+                IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
+                {
                     String stream_name = IDataType::getFileNameForStream(command.column_name, substream_path);
                     /// Delete files if they are no longer shared with another column.
                     if (--stream_counts[stream_name] == 0)
