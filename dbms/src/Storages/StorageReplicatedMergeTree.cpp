@@ -1130,6 +1130,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
                     "6. Data corruption in memory due to hardware issue. "
                     "7. Manual modification of source data after server startup. "
                     "8. Manual modification of checksums stored in ZooKeeper. "
+                    "9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas. "
                     "We will download merged part from replica to force byte-identical result.");
 
                 write_part_log(ExecutionStatus::fromCurrentException());
@@ -4085,37 +4086,42 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
     res.replica_path = replica_path;
     res.columns_version = columns_version;
 
-    if (res.is_session_expired || !with_zk_fields)
+    res.log_max_index = 0;
+    res.log_pointer = 0;
+    res.total_replicas = 0;
+    res.active_replicas = 0;
+
+    if (with_zk_fields && !res.is_session_expired)
     {
-        res.log_max_index = 0;
-        res.log_pointer = 0;
-        res.total_replicas = 0;
-        res.active_replicas = 0;
-    }
-    else
-    {
-        auto log_entries = zookeeper->getChildren(zookeeper_path + "/log");
-
-        if (log_entries.empty())
+        try
         {
-            res.log_max_index = 0;
+            auto log_entries = zookeeper->getChildren(zookeeper_path + "/log");
+
+            if (log_entries.empty())
+            {
+                res.log_max_index = 0;
+            }
+            else
+            {
+                const String & last_log_entry = *std::max_element(log_entries.begin(), log_entries.end());
+                res.log_max_index = parse<UInt64>(last_log_entry.substr(strlen("log-")));
+            }
+
+            String log_pointer_str = zookeeper->get(replica_path + "/log_pointer");
+            res.log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
+
+            auto all_replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+            res.total_replicas = all_replicas.size();
+
+            res.active_replicas = 0;
+            for (const String & replica : all_replicas)
+                if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+                    ++res.active_replicas;
         }
-        else
+        catch (const Coordination::Exception &)
         {
-            const String & last_log_entry = *std::max_element(log_entries.begin(), log_entries.end());
-            res.log_max_index = parse<UInt64>(last_log_entry.substr(strlen("log-")));
+            res.zookeeper_exception = getCurrentExceptionMessage(false);
         }
-
-        String log_pointer_str = zookeeper->get(replica_path + "/log_pointer");
-        res.log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
-
-        auto all_replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
-        res.total_replicas = all_replicas.size();
-
-        res.active_replicas = 0;
-        for (const String & replica : all_replicas)
-            if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
-                ++res.active_replicas;
     }
 }
 
