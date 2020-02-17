@@ -848,7 +848,7 @@ The result depends on the order of running the query, and is nondeterministic.
 
 When using multiple `quantile` (and similar) functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the `quantiles` (and similar) functions.
 
-## quantileDeterministic(level)(x, determinator)
+## quantileDeterministic(level)(x, determinator) {#agg_function-quantiledeterministic}
 
 Works the same way as the `quantile` function, but the result is deterministic and does not depend on the order of query execution.
 
@@ -906,22 +906,22 @@ SELECT quantileTiming(0.5)(number / 2) FROM numbers(10)
 └────────────────────────────────────────┘
 ```
 
-## quantileTimingWeighted(level)(x, weight)
+## quantileTimingWeighted(level)(x, weight) {#quantiletimingweighted}
 
 Differs from the `quantileTiming` function in that it has a second argument, "weights". Weight is a non-negative integer.
 The result is calculated as if the `x` value were passed `weight` number of times to the `quantileTiming` function.
 
-## quantileExact(level)(x)
+## quantileExact(level)(x) {#quantileexact}
 
 Computes the quantile of 'level' exactly. To do this, all the passed values ​​are combined into an array, which is then partially sorted. Therefore, the function consumes O(n) memory, where 'n' is the number of values that were passed. However, for a small number of values, the function is very effective.
 
-## quantileExactWeighted(level)(x, weight)
+## quantileExactWeighted(level)(x, weight) {#quantileexactweighted}
 
 Computes the quantile of 'level' exactly. In addition, each value is counted with its weight, as if it is present 'weight' times. The arguments of the function can be considered as histograms, where the value 'x' corresponds to a histogram "column" of the height 'weight', and the function itself can be considered as a summation of histograms.
 
 A hash table is used as the algorithm. Because of this, if the passed values ​​are frequently repeated, the function consumes less RAM than `quantileExact`. You can use this function instead of `quantileExact` and specify the weight as 1.
 
-## quantileTDigest(level)(x)
+## quantileTDigest(level)(x) {#quantiletdigest}
 
 Approximates the quantile level using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm. The maximum error is 1%. Memory consumption by State is proportional to the logarithm of the number of passed values.
 
@@ -929,9 +929,488 @@ The performance of the function is lower than for `quantile` or `quantileTiming`
 
 The result depends on the order of running the query, and is nondeterministic.
 
-## median(x)
+## median {#median}
 
-All the quantile functions have corresponding median functions: `median`, `medianDeterministic`, `medianTiming`, `medianTimingWeighted`, `medianExact`, `medianExactWeighted`, `medianTDigest`. They are synonyms and their behavior is identical.
+Computes [median](https://en.wikipedia.org/wiki/Median) of a numeric data sample.
+
+This function uses [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) method with a reservoir size up to 8192. This algorithm uses a random number generator, thus the function is non-deterministic. Also in has low accuracy. To get exact result, use the [medianExact](#medianexact) function.
+
+**Syntax** 
+
+```sql
+median(x);
+```
+
+Median is an alias of [quantile(0.5)(x)](#agg_function-quantile).
+
+**Parameters** 
+
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) and [DateTime](../../data_types/datetime.md).
+
+**Returned value**
+
+- The middle value for the sample with odd number of values.
+- Arithmetic mean of two middle values for the set with an even number of values.  The function doesn't round the result.  
+
+Type: The same data type as the type of the input data.
+
+**Example**
+
+Input table:
+
+```text
+┌─val─┐
+│   1 │
+│   1 │
+│   2 │
+│   3 │
+└─────┘
+```
+
+Query:
+
+```sql
+SELECT median(val) FROM table
+```
+
+Result:
+
+```text
+┌─median(val)─┐
+│         1.5 │
+└─────────────┘
+```
+
+**See Also**
+
+- [quantile](#agg_function-quantile)
+
+## medianDeterministic {#medianDeterministic}
+
+Computes median of numeric data set. This function uses [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192. 
+
+
+This algorithm provides very low accuracy.
+
+**Syntax** 
+
+```sql
+medianDeterministic(x, determinator);
+```
+
+MedianDeterministic is an alias of [quantileDeterministiquantile(0.5)(x)](#agg_function-quantiledeterministic).
+
+**Parameters** 
+
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) and [DateTime](../../data_types/datetime.md).
+- `determinator` — Number whose hash is used instead of a random number generator in the reservoir sampling algorithm. For the function to work correctly, the same determinator value should not occur too often. For the determinator, you can use an event ID, user ID, and so on. Using integer (0 or greater).
+Function is deterministic due to usage of hash of passed number - the "determinator" - in the algorithm. 
+
+**Returned value**
+
+- The middle value will be returned from the set with an odd number of values.
+- For the set with an even number of values arithmetic mean of two middle values will be returned without rounding.  
+
+Type: The same data type as the type of the input data.
+
+**Example**
+
+Input table:
+
+```text
+┌─val─┐
+│   1 │
+│   1 │
+│   2 │
+│   3 │
+└─────┘
+```
+
+Query:
+
+```sql
+SELECT medianDeterministic(val, 1)
+FROM test
+```
+
+Result:
+
+```text
+┌─medianDeterministic(val, 1)─┐
+│                         1.5 │
+└─────────────────────────────┘
+```
+
+**See Also** 
+
+- [quantileDeterministic](#agg_function-quantiledeterministic)
+
+## medianExact {#medianexact}
+
+Computes median exactly. This method uses partially sorted array in the algorithm.
+The function consumes O(n) memory, where 'n' is the number of values.
+
+**Syntax** 
+
+```sql
+medianExact(x);
+```
+
+MedianExact is an alias of [quantileExact(0.5)(x)](#quantileexact).
+
+
+**Parameters**
+
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) and [DateTime](../../data_types/datetime.md).
+
+**Returned value**
+
+- The middle value will be returned from the set with an odd number of values.
+- For the set with an even number of values higher value from two middle values will be returned.
+
+Type: The same data type as the type of the input data.
+
+**Example**
+
+Query:
+
+```sql
+SELECT medianExact(number)
+FROM numbers(10)
+```
+
+Result:
+
+```text
+┌─medianExact(number)─┐
+│                   5 │
+└─────────────────────┘
+```
+
+**See Also**
+
+- [quantileExact](#quantileexact)
+
+## medianExactWeighted {#medianexactweighted}
+
+Computes median exactly according to the weight of each value. Weight means that value present 'weight' times.
+The function itself can be considered as a summation of histograms.
+
+This function works more efficiently then  [medianExact](#medianexact) because it uses hash table in the algorithm.
+
+
+**Syntax**
+
+```sql
+medianExactWeighted(x, weight);
+```
+
+MedianExactWeighted is an alias of [quantileExactWeighted(0.5)(x)](#quantileexactweighted).
+
+
+**Parameters** 
+
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) and [DateTime](../../data_types/datetime.md).
+- `weight` — Number. Shows how many times `x` value repeated. 
+
+**Returned value**
+
+- The middle value will be returned from the set with an odd number of values.
+- For the set with an even number of values lower value from two middle values will be returned.
+
+Type: The same data type as the type of the input data.
+
+**Example**
+
+Input table:
+
+```text
+SELECT *
+FROM test1
+
+┌─n─┬─val─┐
+│ 0 │   3 │
+│ 1 │   2 │
+│ 2 │   1 │
+│ 5 │   4 │
+└───┴─────┘
+```
+
+Query:
+
+```sql
+SELECT medianExactWeighted(n, val)
+FROM test1
+```
+
+Result:
+
+```text
+┌─medianExactWeighted(n, val)─┐
+│                           1 │
+└─────────────────────────────┘
+```
+
+
+**See Also** 
+
+- [quantileExactWeighted](#quantileexactweighted)
+
+## medianTiming(x) {#mediantiming}
+
+Computes median with determined precision. Optimized for processing of unix timestamps.
+The result is deterministic. The function is intended for analyzing time data like page loading time.
+
+**Syntax** 
+
+```sql
+medianTiming(x);
+```
+
+MedianTiming is an alias of [quantileTiming(0.5)(x)](#agg_function-quantiletiming).
+
+**Parameters**
+
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) and [DateTime](../../data_types/datetime.md).
+
+**Returned value**
+
+- The middle value will be returned from the set with an odd number of values.
+- For the set with an even number of values higher value from two middle values will be returned.
+
+Type: `Float32`.
+
+**Example**
+
+Input table:
+
+```text
+SELECT *
+FROM request
+
+┌─response_time─┐
+│            72 │
+│           112 │
+│           126 │
+│           145 │
+│           104 │
+│           242 │
+│           313 │
+│           168 │
+│           108 │
+└───────────────┘
+```
+
+Query:
+
+```sql
+SELECT medianTiming(response_time)
+FROM request
+```
+
+Result:
+
+```text
+┌─medianTiming(response_time)─┐
+│                         126 │
+└─────────────────────────────┘
+
+```
+
+**See Also**
+
+- [quantileTiming](#agg_function-quantiletiming)
+
+## medianTimingWeighted {#medianTimingWeighted}
+
+Median function optimized for processing of unix timestamps according to the weight of each value. Weight means that value present 'weight' times.
+Computes the median with determined precision.
+The result is deterministic. The function is intended for analyzing time data like page loading time. 
+
+**Syntax**
+
+```sql
+medianExactWeighted(x, weight) ;
+```
+
+MedianTimingWeighted is an alias of [quantileTimingWeighted(0.5)(x)](#quantiletimingweighted).
+
+**Parameters** 
+
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) and [DateTime](../../data_types/datetime.md).
+- `weight` — Number. Shows how many times `x` value repeated. 
+ 
+
+**Returned value**
+
+- The middle value will be returned from the set with an odd number of values.
+- For the set with an even number of values higher value from two middle values will be returned.
+
+Type: `Float32`.
+
+**Example**
+
+Input table:
+
+```text
+SELECT *
+FROM request
+
+┌─response_time─┬─weight─┐
+│            68 │      1 │
+│           104 │      2 │
+│           112 │      3 │
+│           126 │      2 │
+│           138 │      1 │
+│           162 │      1 │
+└───────────────┴────────┘
+```
+
+Query:
+
+```sql
+SELECT medianTimingWeighted(response_time, weight)
+FROM request
+```
+
+Result:
+
+```text
+┌─medianTimingWeighted(response_time, weight)─┐
+│                                         112 │
+└─────────────────────────────────────────────┘
+```
+
+**See Also**
+
+- [quantileTimingWeighted](#quantiletimingweighted)
+
+## medianTDigest {#medianTDigest}
+
+Computes median of numeric data set uses the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm.
+The calculating value depends on the order of running the query, and is nondeterministic.
+
+Maximal error is 1% and memory consumption is log(n), where 'n' is the number of values.
+
+**Syntax**
+
+```sql
+medianTDiges(x);
+```
+
+MedianTDigest(x) is an alias of [quantileTDigest(0.5)(x)](#quantiletdigest).
+
+**Parameters** 
+
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) and [DateTime](../../data_types/datetime.md).
+
+**Returned value**
+
+- The middle value will be returned from the set with an odd number of values.
+- For the set with an even number of values higher value from two middle values will be returned.
+
+Type: The same data type as the type of the input data.
+
+**Example**
+
+Input table:
+
+```text
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+│      9 │
+│     10 │
+└────────┘
+```
+
+Query:
+
+```sql
+SELECT medianTDigest(number)
+FROM numbers(10)
+```
+
+Result:
+
+```text
+┌─medianTDigest(number)─┐
+│                   4.5 │
+└───────────────────────┘
+```
+
+**See Also**
+
+- [quantileTdDigest](#quantiletdigest)
+
+## medianTDigestWeighted {#medianTDigestWeighted}
+
+Computes median of numeric data set uses the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm according to the weight of each value. Weight means that value present 'weight' times.
+The result depends on the order of running the query, and is nondeterministic.
+
+Maximal error is 1% and memory consumption is log(n), where 'n' is the number of values.
+
+**Syntax** 
+
+```sql
+medianTDigestWeighted(x,weight);
+```
+
+MedianTDigestWeighted(x,weight) is an alias of quantileTDigestWeighted(0.5)(x).
+
+**Parameters**
+
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) and [DateTime](../../data_types/datetime.md).
+- `weight` — Number. Shows how many times `x` value repeated. 
+
+**Returned value**
+
+- The middle value will be returned from the set with an odd number of values.
+- For the set with an even number of values higher value from two middle values will be returned.
+
+Type: The same data type as the type of the input data.
+
+**Example**
+
+Input table:
+
+```text
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+│      9 │
+│     10 │
+└────────┘
+```
+
+Query:
+
+```sql
+SELECT medianTDigestWeighted(number, 1)
+FROM numbers(10)
+```
+
+Result:
+
+```text
+┌─medianTDigestWeighted(number, 1)─┐
+│                              4.5 │
+└──────────────────────────────────┘
+```
 
 ## quantiles(level1, level2, ...)(x)
 
