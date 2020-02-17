@@ -6,6 +6,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTGenericRoleSet.h>
+#include <Parsers/ParserGenericRoleSet.h>
 #include <ext/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -208,6 +209,23 @@ namespace
     }
 
 
+    bool parseDefaultRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTGenericRoleSet> & default_roles)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{"DEFAULT ROLE"}.ignore(pos, expected))
+                return false;
+
+            ASTPtr ast;
+            if (!ParserGenericRoleSet{}.allowCurrentUser(false).parse(pos, ast, expected))
+                return false;
+
+            default_roles = typeid_cast<std::shared_ptr<ASTGenericRoleSet>>(ast);
+            return true;
+        });
+    }
+
+
     bool parseProfileName(IParserBase::Pos & pos, Expected & expected, std::optional<String> & profile)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -263,6 +281,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
+    std::shared_ptr<ASTGenericRoleSet> default_roles;
     std::optional<String> profile;
 
     while (true)
@@ -274,6 +293,9 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             continue;
 
         if (!profile && parseProfileName(pos, expected, profile))
+            continue;
+
+        if (!default_roles && parseDefaultRoles(pos, expected, default_roles))
             continue;
 
         if (alter)

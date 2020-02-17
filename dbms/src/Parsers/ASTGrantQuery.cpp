@@ -9,6 +9,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
     using KeywordToColumnsMap = std::map<std::string_view /* keyword */, std::vector<std::string_view> /* columns */>;
@@ -119,13 +124,30 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
     settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << ((kind == Kind::GRANT) ? "GRANT" : "REVOKE")
                   << (settings.hilite ? IAST::hilite_none : "") << " ";
 
-    if (grant_option && (kind == Kind::REVOKE))
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "GRANT OPTION FOR " << (settings.hilite ? hilite_none : "");
+    if (kind == Kind::REVOKE)
+    {
+        if (grant_option)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << "GRANT OPTION FOR " << (settings.hilite ? hilite_none : "");
+        else if (admin_option)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADMIN OPTION FOR " << (settings.hilite ? hilite_none : "");
+    }
 
-    formatAccessRightsElements(access_rights_elements, settings);
+    if ((!!roles + !access_rights_elements.empty()) != 1)
+        throw Exception("Either roles or access rights elements should be set", ErrorCodes::LOGICAL_ERROR);
+
+    if (roles)
+        roles->format(settings);
+    else
+        formatAccessRightsElements(access_rights_elements, settings);
+
     formatToRoles(*to_roles, kind, settings);
 
-    if (grant_option && (kind == Kind::GRANT))
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH GRANT OPTION" << (settings.hilite ? hilite_none : "");
+    if (kind == Kind::GRANT)
+    {
+        if (grant_option)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH GRANT OPTION" << (settings.hilite ? hilite_none : "");
+        else if (admin_option)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH ADMIN OPTION" << (settings.hilite ? hilite_none : "");
+    }
 }
 }

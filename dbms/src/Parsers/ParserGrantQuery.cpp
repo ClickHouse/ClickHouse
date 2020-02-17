@@ -10,6 +10,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+}
+
 namespace
 {
     bool parseRoundBrackets(IParser::Pos & pos, Expected & expected)
@@ -206,6 +211,20 @@ namespace
     }
 
 
+    bool parseRoles(IParser::Pos & pos, Expected & expected, std::shared_ptr<ASTGenericRoleSet> & roles)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            ASTPtr ast;
+            if (!ParserGenericRoleSet{}.allowAll(false).allowCurrentUser(false).parse(pos, ast, expected))
+                return false;
+
+            roles = typeid_cast<std::shared_ptr<ASTGenericRoleSet>>(ast);
+            return true;
+        });
+    }
+
+
     bool parseToRoles(IParser::Pos & pos, Expected & expected, ASTGrantQuery::Kind kind, std::shared_ptr<ASTGenericRoleSet> & to_roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -245,30 +264,46 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     bool grant_option = false;
+    bool admin_option = false;
     if (kind == Kind::REVOKE)
     {
         if (ParserKeyword{"GRANT OPTION FOR"}.ignore(pos, expected))
             grant_option = true;
+        else if (ParserKeyword{"ADMIN OPTION FOR"}.ignore(pos, expected))
+            admin_option = true;
     }
 
     AccessRightsElements elements;
+    std::shared_ptr<ASTGenericRoleSet> roles;
+    if (!parseAccessRightsElements(pos, expected, elements) && !parseRoles(pos, expected, roles))
+        return false;
+
     std::shared_ptr<ASTGenericRoleSet> to_roles;
-    if (!parseAccessRightsElements(pos, expected, elements) && !parseToRoles(pos, expected, kind, to_roles))
+    if (!parseToRoles(pos, expected, kind, to_roles))
         return false;
 
     if (kind == Kind::GRANT)
     {
         if (ParserKeyword{"WITH GRANT OPTION"}.ignore(pos, expected))
             grant_option = true;
+        else if (ParserKeyword{"WITH ADMIN OPTION"}.ignore(pos, expected))
+            admin_option = true;
     }
+
+    if (grant_option && roles)
+        throw Exception("GRANT OPTION should be specified for access types", ErrorCodes::SYNTAX_ERROR);
+    if (admin_option && !elements.empty())
+        throw Exception("ADMIN OPTION should be specified for roles", ErrorCodes::SYNTAX_ERROR);
 
     auto query = std::make_shared<ASTGrantQuery>();
     node = query;
 
     query->kind = kind;
     query->access_rights_elements = std::move(elements);
+    query->roles = std::move(roles);
     query->to_roles = std::move(to_roles);
     query->grant_option = grant_option;
+    query->admin_option = admin_option;
 
     return true;
 }
