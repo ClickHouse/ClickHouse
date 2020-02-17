@@ -412,6 +412,7 @@ BlockInputStreams IStorage::read(
     size_t max_block_size,
     unsigned num_streams)
 {
+    ForceTreeShapedPipeline enable_tree_shape(query_info);
     auto pipes = readWithProcessors(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 
     BlockInputStreams res;

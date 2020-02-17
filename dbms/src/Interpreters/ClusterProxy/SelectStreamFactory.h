@@ -35,6 +35,7 @@ public:
         const Cluster::ShardInfo & shard_info,
         const String & query, const ASTPtr & query_ast,
         const Context & context, const ThrottlerPtr & throttler,
+        const SelectQueryInfo & query_info,
         Pipes & res) override;
 
 private:

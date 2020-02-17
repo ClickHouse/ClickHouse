@@ -39,7 +39,7 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
 
 Pipes executeQuery(
     IStreamFactory & stream_factory, const ClusterPtr & cluster,
-    const ASTPtr & query_ast, const Context & context, const Settings & settings)
+    const ASTPtr & query_ast, const Context & context, const Settings & settings, const SelectQueryInfo & query_info)
 {
     Pipes res;
 
@@ -65,7 +65,7 @@ Pipes executeQuery(
         throttler = user_level_throttler;
 
     for (const auto & shard_info : cluster->getShardsInfo())
-        stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, res);
+        stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, query_info, res);
 
     return res;
 }

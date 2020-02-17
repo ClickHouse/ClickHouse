@@ -9,6 +9,7 @@ namespace DB
 struct Settings;
 class Context;
 class Cluster;
+struct SelectQueryInfo;
 
 class Pipe;
 using Pipes = std::vector<Pipe>;
@@ -27,7 +28,7 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
 /// (currently SELECT, DESCRIBE).
 Pipes executeQuery(
     IStreamFactory & stream_factory, const ClusterPtr & cluster,
-    const ASTPtr & query_ast, const Context & context, const Settings & settings);
+    const ASTPtr & query_ast, const Context & context, const Settings & settings, const SelectQueryInfo & query_info);
 
 }
 
