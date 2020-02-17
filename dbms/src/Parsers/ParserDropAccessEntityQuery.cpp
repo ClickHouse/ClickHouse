@@ -82,12 +82,14 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     using Kind = ASTDropAccessEntityQuery::Kind;
     Kind kind;
-    if (ParserKeyword{"QUOTA"}.ignore(pos, expected))
+    if (ParserKeyword{"USER"}.ignore(pos, expected))
+        kind = Kind::USER;
+    else if (ParserKeyword{"ROLE"}.ignore(pos, expected))
+        kind = Kind::ROLE;
+    else if (ParserKeyword{"QUOTA"}.ignore(pos, expected))
         kind = Kind::QUOTA;
     else if (ParserKeyword{"POLICY"}.ignore(pos, expected) || ParserKeyword{"ROW POLICY"}.ignore(pos, expected))
         kind = Kind::ROW_POLICY;
-    else if (ParserKeyword{"USER"}.ignore(pos, expected))
-        kind = Kind::USER;
     else
         return false;
 
@@ -98,7 +100,7 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     Strings names;
     std::vector<RowPolicy::FullNameParts> row_policies_names;
 
-    if (kind == Kind::USER)
+    if ((kind == Kind::USER) || (kind == Kind::ROLE))
     {
         if (!parseUserNames(pos, expected, names))
             return false;

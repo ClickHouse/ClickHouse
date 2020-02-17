@@ -85,6 +85,9 @@ ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateUserQuery(const ASTShowC
     if (!user->profile.empty())
         create_query->profile = user->profile;
 
+    if (user->default_roles != GenericRoleSet::AllTag{})
+        create_query->default_roles = GenericRoleSet{user->default_roles}.toAST(context.getAccessControlManager());
+
     return create_query;
 }
 

@@ -7,6 +7,7 @@
 namespace DB
 {
 class ASTCreateUserQuery;
+class GenericRoleSet;
 struct User;
 
 
@@ -18,7 +19,7 @@ public:
     BlockIO execute() override;
 
 private:
-    void updateUserFromQuery(User & user, const ASTCreateUserQuery & query);
+    void updateUserFromQuery(User & user, const ASTCreateUserQuery & query, const GenericRoleSet * default_roles_from_query);
 
     ASTPtr query_ptr;
     Context & context;
