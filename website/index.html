@@ -546,7 +546,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
                 $('#announcement>.page').html(result);
             }
         });
-        var name = $('#main-title').text().trim().toLowerCase();
+        var name = $('#logo-text').attr('alt').trim().toLowerCase();
         var feedback_address = name + '-feedback' + '@yandex-team.com';
         var feedback_email = $('#feedback_email');
         feedback_email.attr('href', 'mailto:' + feedback_address);

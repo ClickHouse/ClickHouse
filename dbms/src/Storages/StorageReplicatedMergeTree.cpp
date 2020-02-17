@@ -1130,6 +1130,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
                     "6. Data corruption in memory due to hardware issue. "
                     "7. Manual modification of source data after server startup. "
                     "8. Manual modification of checksums stored in ZooKeeper. "
+                    "9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas. "
                     "We will download merged part from replica to force byte-identical result.");
 
                 write_part_log(ExecutionStatus::fromCurrentException());

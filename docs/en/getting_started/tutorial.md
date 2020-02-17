@@ -602,7 +602,7 @@ ZooKeeper is not a strict requirement: in some simple cases you can duplicate th
 
 ZooKeeper locations need to be specified in configuration file:
 ``` xml
-<zookeeper-servers>
+<zookeeper>
     <node>
         <host>zoo01.yandex.ru</host>
         <port>2181</port>
@@ -615,7 +615,7 @@ ZooKeeper locations need to be specified in configuration file:
         <host>zoo03.yandex.ru</host>
         <port>2181</port>
     </node>
-</zookeeper-servers>
+</zookeeper>
 ```
 
 Also we need to set macros for identifying each shard and replica, it will be used on table creation:
