@@ -234,7 +234,7 @@ bool AnalyzedJoin::allowMergeJoin() const
     bool is_semi = (strictness() == ASTTableJoin::Strictness::Semi);
 
     bool allow_merge_join = (isLeft(kind()) && (is_any || is_all || is_semi)) || (isInner(kind()) && is_all);
-    return allow_merge_join && partial_merge_join;
+    return allow_merge_join;
 }
 
 }

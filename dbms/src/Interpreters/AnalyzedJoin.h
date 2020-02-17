@@ -88,6 +88,8 @@ public:
     const SizeLimits & sizeLimits() const { return size_limits; }
     VolumePtr getTemporaryVolume() { return tmp_volume; }
     bool allowMergeJoin() const;
+    bool forceMergeJoin() const { return allowMergeJoin() && partial_merge_join; }
+    bool forceHashJoin() const { return !allowMergeJoin(); }
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }

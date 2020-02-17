@@ -538,6 +538,15 @@ static ExpressionActionsPtr createJoinedBlockActions(const Context & context, co
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
 }
 
+static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<AnalyzedJoin> analyzed_join, const Block & sample_block)
+{
+    if (analyzed_join->forceHashJoin())
+        return std::make_shared<Join>(analyzed_join, sample_block);
+    else if (analyzed_join->forceMergeJoin())
+        return std::make_shared<MergeJoin>(analyzed_join, sample_block);
+    return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
+}
+
 JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryElement & join_element)
 {
     /// Two JOINs are not supported with the same subquery, but different USINGs.
@@ -564,7 +573,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQuer
 
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
         subquery_for_join.setJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
-        subquery_for_join.join = std::make_shared<JoinSwitcher>(syntax->analyzed_join, subquery_for_join.sample_block);
+        subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block);
     }
 
     return subquery_for_join.join;
