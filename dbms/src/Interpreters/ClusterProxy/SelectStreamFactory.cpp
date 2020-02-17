@@ -81,7 +81,12 @@ Pipe createLocalStream(const ASTPtr & query_ast, const Block & header, const Con
         /// This flag means that pipeline must be tree-shaped,
         /// so we can't enable processors for InterpreterSelectQuery here.
         auto stream = interpreter.execute().in;
-        return Pipe(std::make_shared<SourceFromInputStream>(std::move(stream)));
+        Pipe pipe(std::make_shared<SourceFromInputStream>(std::move(stream)));
+
+        pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
+                pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name, context));
+
+        return pipe;
     }
 
     auto pipeline = interpreter.executeWithProcessors();
