@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataStreams/NullBlockInputStream.h>
 #include <Storages/IStorage.h>
 
 namespace DB
@@ -12,11 +13,25 @@ namespace DB
 class WindowViewProxyStorage : public IStorage
 {
 public:
+    WindowViewProxyStorage(const StorageID & table_id_, StoragePtr parent_storage_, QueryProcessingStage::Enum to_stage_)
+    : IStorage(table_id_)
+    , parent_storage(std::move(parent_storage_))
+    , streams({std::make_shared<NullBlockInputStream>(Block())})
+    , to_stage(to_stage_)
+    {
+        column_des = parent_storage->getColumns();
+        column_des.add({"____timestamp", std::make_shared<DataTypeDateTime>(), false});
+    }
+
     WindowViewProxyStorage(const StorageID & table_id_, StoragePtr parent_storage_, BlockInputStreams streams_, QueryProcessingStage::Enum to_stage_)
     : IStorage(table_id_)
     , parent_storage(std::move(parent_storage_))
     , streams(std::move(streams_))
-    , to_stage(to_stage_) {}
+    , to_stage(to_stage_)
+    {
+        column_des = parent_storage->getColumns();
+        column_des.add({"____timestamp", std::make_shared<DataTypeDateTime>(), false});
+    }
 
 public:
     std::string getName() const override { return "WindowViewProxyStorage(" + parent_storage->getName() + ")"; }
@@ -53,17 +68,29 @@ public:
     Names getColumnsRequiredForSampling() const override { return parent_storage->getColumnsRequiredForSampling(); }
     Names getColumnsRequiredForFinal() const override { return parent_storage->getColumnsRequiredForFinal(); }
 
-    const ColumnsDescription & getColumns() const override { return parent_storage->getColumns(); }
+    const ColumnsDescription & getColumns() const override { return column_des; }
 
     void setColumns(ColumnsDescription columns_) override { return parent_storage->setColumns(columns_); }
 
-    NameAndTypePair getColumn(const String & column_name) const override { return parent_storage->getColumn(column_name); }
+    NameAndTypePair getColumn(const String & column_name) const override
+    {
+        if (column_name == "____timestamp")
+            return {"____timestamp", std::shared_ptr<DataTypeDateTime>()};
+        return parent_storage->getColumn(column_name);
+    }
 
-    bool hasColumn(const String & column_name) const override { return parent_storage->hasColumn(column_name); }
+    bool hasColumn(const String & column_name) const override
+    {
+        if (column_name == "____timestamp")
+            return true;
+        return parent_storage->hasColumn(column_name);
+    }
 
 private:
     StoragePtr parent_storage;
     BlockInputStreams streams;
+    String window_column_name;
+    ColumnsDescription column_des;
     QueryProcessingStage::Enum to_stage;
 };
 }

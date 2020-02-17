@@ -25,20 +25,10 @@ public:
     ~StorageWindowView() override;
     String getName() const override { return "WindowView"; }
 
-    ASTPtr getInnerQuery() const { return inner_query->clone(); }
-
-    /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
 
-    bool isTemporary() { return is_temporary; }
-
-    bool hasActiveUsers() { return active_ptr.use_count() > 1; }
-
     void checkTableCanBeDropped() const override;
-
-    StoragePtr getTargetTable() const;
-    StoragePtr tryGetTargetTable() const;
 
     void drop(TableStructureWriteLockHolder &) override;
 
@@ -56,14 +46,70 @@ public:
     BlocksListPtrs getMergeableBlocksList() { return mergeable_blocks; }
     std::shared_ptr<bool> getActivePtr() { return active_ptr; }
 
-    /// Read new data blocks that store query result
     BlockInputStreamPtr getNewBlocksInputStreamPtr(UInt32 timestamp_);
 
-    BlockInputStreamPtr getNewBlocksInputStreamPtrInnerTable(UInt32 timestamp_);
+    static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, const Context & context);
 
-    BlocksPtr getNewBlocks();
+private:
+    ASTPtr inner_query;
+    ASTPtr final_query;
+    ASTPtr fetch_column_query;
+    
+    Context & global_context;
+    bool is_proctime_tumble{false};
+    std::atomic<bool> shutdown_called{false};
+    mutable Block sample_block;
+    UInt64 inner_table_clear_interval;
+    const DateLUTImpl & time_zone;
+    std::list<UInt32> fire_signal;
+    std::list<WindowViewBlockInputStream *> watch_streams;
+    std::condition_variable condition;
+    BlocksListPtrs mergeable_blocks;
+
+    /// Mutex for the blocks and ready condition
+    std::mutex mutex;
+    std::mutex flush_table_mutex;
+    std::mutex fire_signal_mutex;
+    std::mutex proc_time_signal_mutex;
+
+    /// Active users
+    std::shared_ptr<bool> active_ptr;
+
+    IntervalKind::Kind window_kind;
+    IntervalKind::Kind watermark_kind;
+    Int64 window_num_units;
+    Int64 watermark_num_units = 0;
+    String window_column_name;
+
+    StorageID select_table_id = StorageID::createEmpty();
+    StorageID target_table_id = StorageID::createEmpty();
+    StorageID inner_table_id = StorageID::createEmpty();
+    StoragePtr parent_storage;
+    StoragePtr inner_storage;
+    StoragePtr target_storage;
+
+    BackgroundSchedulePool::TaskHolder toTableTask;
+    BackgroundSchedulePool::TaskHolder innerTableClearTask;
+    BackgroundSchedulePool::TaskHolder fireTask;
+
+    ASTPtr innerQueryParser(ASTSelectQuery & inner_query);
+
+    std::shared_ptr<ASTCreateQuery> generateInnerTableCreateQuery(const ASTCreateQuery & inner_create_query, const String & database_name, const String & table_name);
+
+    UInt32 getWindowLowerBound(UInt32 time_sec, int window_id_skew = 0);
+    UInt32 getWindowUpperBound(UInt32 time_sec, int window_id_skew = 0);
+    UInt32 getWatermark(UInt32 time_sec);
 
     Block getHeader() const;
+    void flushToTable(UInt32 timestamp_);
+    void clearInnerTable();
+    void threadFuncToTable();
+    void threadFuncClearInnerTable();
+    void threadFuncFire();
+    void addFireSignal(UInt32 timestamp_);
+
+    ASTPtr getInnerQuery() const { return inner_query->clone(); }
+    ASTPtr getFinalQuery() const { return final_query->clone(); }
 
     StoragePtr& getParentStorage()
     {
@@ -79,68 +125,12 @@ public:
         return inner_storage;
     }
 
-    static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, const Context & context);
-
-    static void writeIntoWindowViewInnerTable(StorageWindowView & window_view, const Block & block, const Context & context);
-
-    ASTPtr innerQueryParser(ASTSelectQuery & inner_query);
-
-    std::shared_ptr<ASTCreateQuery> generateInnerTableCreateQuery(const ASTCreateQuery & inner_create_query, const String & database_name, const String & table_name);
-
-    inline UInt32 getWindowLowerBound(UInt32 time_sec, int window_id_skew = 0);
-    inline UInt32 getWindowUpperBound(UInt32 time_sec, int window_id_skew = 0);
-    inline UInt32 getWatermark(UInt32 time_sec);
-
-private:
-    StorageID select_table_id = StorageID::createEmpty();
-    ASTPtr inner_query;
-    ASTPtr fetch_column_query;
-    String window_column_name;
-    String timestamp_column_name;
-    Context & global_context;
-    StoragePtr parent_storage;
-    StoragePtr inner_storage;
-    bool is_temporary{false};
-    mutable Block sample_block;
-
-    /// Mutex for the blocks and ready condition
-    std::mutex mutex;
-    std::mutex flush_table_mutex;
-    std::mutex fire_signal_mutex;
-    std::list<UInt32> fire_signal;
-    std::list<WindowViewBlockInputStream *> watch_streams;
-    /// New blocks ready condition to broadcast to readers
-    /// that new blocks are available
-    std::condition_variable condition;
-
-    /// Active users
-    std::shared_ptr<bool> active_ptr;
-    BlocksListPtrs mergeable_blocks;
-
-    IntervalKind::Kind window_kind;
-    Int64 window_num_units;
-    IntervalKind::Kind watermark_kind;
-    Int64 watermark_num_units = 0;
-    const DateLUTImpl & time_zone;
-
-    StorageID target_table_id = StorageID::createEmpty();
-    StorageID inner_table_id = StorageID::createEmpty();
-
-    void flushToTable(UInt32 timestamp_);
-    void clearInnerTable();
-    void threadFuncToTable();
-    void threadFuncClearInnerTable();
-    void threadFuncFire();
-    void addFireSignal(UInt32 timestamp_);
-
-    std::atomic<bool> shutdown_called{false};
-    UInt64 inner_table_clear_interval;
-
-    Poco::Timestamp timestamp;
-
-    BackgroundSchedulePool::TaskHolder toTableTask;
-    BackgroundSchedulePool::TaskHolder innerTableClearTask;
-    BackgroundSchedulePool::TaskHolder fireTask;
+    StoragePtr& getTargetStorage()
+    {
+        if (target_storage == nullptr && !target_table_id.empty())
+            target_storage = global_context.getTable(target_table_id);
+        return target_storage;
+    }
 
     StorageWindowView(
         const StorageID & table_id_,
