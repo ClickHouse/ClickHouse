@@ -592,11 +592,6 @@ Names getPartNamesToMutate(
 
 }
 
-Names ReplicatedMergeTreeQueue::getCurrentPartNamesToMutate(ReplicatedMergeTreeMutationEntry & entry) const
-{
-    return getPartNamesToMutate(entry, current_parts);
-}
-
 void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
 {
     std::lock_guard lock(update_mutations_mutex);
