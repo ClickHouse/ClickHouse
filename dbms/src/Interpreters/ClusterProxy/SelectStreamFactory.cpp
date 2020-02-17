@@ -70,11 +70,20 @@ SelectStreamFactory::SelectStreamFactory(
 namespace
 {
 
-Pipe createLocalStream(const ASTPtr & query_ast, const Block & header, const Context & context, QueryProcessingStage::Enum processed_stage)
+Pipe createLocalStream(const ASTPtr & query_ast, const Block & header, const Context & context, QueryProcessingStage::Enum processed_stage, bool force_tree_shaped_pipeline)
 {
     checkStackSize();
 
     InterpreterSelectQuery interpreter{query_ast, context, SelectQueryOptions(processed_stage)};
+
+    if (force_tree_shaped_pipeline)
+    {
+        /// This flag means that pipeline must be tree-shaped,
+        /// so we can't enable processors for InterpreterSelectQuery here.
+        auto stream = interpreter.execute().in;
+        return Pipe(std::make_shared<SourceFromInputStream>(std::move(stream)));
+    }
+
     auto pipeline = interpreter.executeWithProcessors();
 
     pipeline.addSimpleTransform([&](const Block & source_header)
@@ -111,6 +120,7 @@ void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
     const String &, const ASTPtr & query_ast,
     const Context & context, const ThrottlerPtr & throttler,
+    const SelectQueryInfo & query_info,
     Pipes & res)
 {
     bool force_add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
@@ -122,7 +132,7 @@ void SelectStreamFactory::createForShard(
 
     auto emplace_local_stream = [&]()
     {
-        res.emplace_back(createLocalStream(modified_query_ast, header, context, processed_stage));
+        res.emplace_back(createLocalStream(modified_query_ast, header, context, processed_stage, query_info.force_tree_shaped_pipeline));
     };
 
     String modified_query = formattedAST(modified_query_ast);
@@ -268,7 +278,7 @@ void SelectStreamFactory::createForShard(
             }
 
             if (try_results.empty() || local_delay < max_remote_delay)
-                return std::make_shared<TreeExecutorBlockInputStream>(createLocalStream(modified_query_ast, header, context, stage));
+                return std::make_shared<TreeExecutorBlockInputStream>(createLocalStream(modified_query_ast, header, context, stage, true));
             else
             {
                 std::vector<IConnectionPool::Entry> connections;

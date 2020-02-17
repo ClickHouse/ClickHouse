@@ -267,6 +267,17 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
 
     if (!storage)
     {
+        if (query_info.force_tree_shaped_pipeline)
+        {
+            /// This flag means that pipeline must be tree-shaped,
+            /// so we can't enable processors for InterpreterSelectQuery here.
+            auto stream = InterpreterSelectQuery(modified_query_info.query, modified_context, std::make_shared<OneBlockInputStream>(header),
+                                                 SelectQueryOptions(processed_stage).analyze()).execute().in;
+
+            pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
+            return pipes;
+        }
+
         pipes.emplace_back(
             InterpreterSelectQuery(modified_query_info.query, modified_context,
                                    std::make_shared<OneBlockInputStream>(header),

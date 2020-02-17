@@ -11,6 +11,7 @@ struct Settings;
 class Context;
 class Cluster;
 class Throttler;
+struct SelectQueryInfo;
 
 class Pipe;
 using Pipes = std::vector<Pipe>;
@@ -29,6 +30,7 @@ public:
             const Cluster::ShardInfo & shard_info,
             const String & query, const ASTPtr & query_ast,
             const Context & context, const ThrottlerPtr & throttler,
+            const SelectQueryInfo & query_info,
             Pipes & res) = 0;
 };
 
