@@ -27,7 +27,6 @@ public:
         size_t max_block_size,
         unsigned num_streams) override
     {
-        //std::cerr << "StorageFromMergeTreeDataPart: columns names size:" << column_names.size() << std::endl;
         auto pipes = MergeTreeDataSelectExecutor(part->storage).readFromParts(
                 {part}, column_names, query_info, context, max_block_size, num_streams);
 
@@ -38,7 +37,6 @@ public:
         for (auto & pipe : pipes)
             streams.emplace_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipe)));
 
-        //std::cerr << "Streams header:" << streams.back()->getHeader().dumpStructure() << std::endl;
         return streams;
     }
 

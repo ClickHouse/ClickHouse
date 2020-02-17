@@ -20,7 +20,6 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/queryToString.h>
 
 
 namespace DB

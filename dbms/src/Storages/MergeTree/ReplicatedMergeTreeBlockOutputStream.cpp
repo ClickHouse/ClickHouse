@@ -29,7 +29,6 @@ namespace ErrorCodes
     extern const int KEEPER_EXCEPTION;
     extern const int TIMEOUT_EXCEEDED;
     extern const int NO_ACTIVE_REPLICAS;
-    extern const int CONCURRENT_ALTER_IS_PROCESSING;
 }
 
 
@@ -344,11 +343,6 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
             transaction.rollback();
 
             throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
-        }
-        else if (multi_code == Coordination::ZBADVERSION)
-        {
-            transaction.rollback();
-            throw Exception("Current metadata version is not consistent with version in zookeeper. Concurrent alter of metadata is processing now, client must retry", ErrorCodes::CONCURRENT_ALTER_IS_PROCESSING);
         }
         else
         {
