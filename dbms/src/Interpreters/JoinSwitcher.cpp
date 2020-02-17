@@ -1,5 +1,7 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/JoinSwitcher.h>
+#include <Interpreters/Join.h>
+#include <Interpreters/MergeJoin.h>
 #include <Interpreters/join_common.h>
 
 namespace DB
@@ -13,6 +15,14 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
         JoinCommon::removeColumnNullability(column);
 
     return std::move(column);
+}
+
+JoinSwitcher::JoinSwitcher(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block_)
+    : switched(false)
+    , table_join(table_join_)
+    , right_sample_block(right_sample_block_.cloneEmpty())
+{
+    join = std::make_shared<Join>(table_join, right_sample_block);
 }
 
 bool JoinSwitcher::addJoinedBlock(const Block & block, bool)

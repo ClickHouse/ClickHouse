@@ -1,12 +1,9 @@
 #pragma once
 
 #include <mutex>
-#include <memory>
 
 #include <Core/Block.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/Join.h>
-#include <Interpreters/MergeJoin.h>
 #include <Interpreters/AnalyzedJoin.h>
 
 namespace DB
@@ -15,13 +12,7 @@ namespace DB
 class JoinSwitcher : public IJoin
 {
 public:
-    JoinSwitcher(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block_)
-        : switched(false)
-        , table_join(table_join_)
-        , right_sample_block(right_sample_block_.cloneEmpty())
-    {
-        join = std::make_shared<Join>(table_join, right_sample_block);
-    }
+    JoinSwitcher(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block_);
 
     bool addJoinedBlock(const Block & block, bool check_limits = true) override;
 
