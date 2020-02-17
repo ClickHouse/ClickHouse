@@ -459,7 +459,7 @@ void MergeTreeReader::performRequiredConversions(Columns & res_columns)
             res_columns[pos] = std::move(copy_block.getByName(name_and_type->name).column);
         }
     }
-    catch(Exception & e)
+    catch (Exception & e)
     {
         /// Better diagnostics.
         e.addMessage("(while reading from part " + path + ")");
