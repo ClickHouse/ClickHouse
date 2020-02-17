@@ -387,7 +387,7 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingSeconds, live_view_heartbeat_interval, DEFAULT_LIVE_VIEW_HEARTBEAT_INTERVAL_SEC, "The heartbeat interval in seconds to indicate live query is alive.", 0) \
     M(SettingUInt64, max_live_view_insert_blocks_before_refresh, 64, "Limit maximum number of inserted blocks after which mergeable blocks are dropped and query is re-executed.", 0) \
     M(SettingBool, allow_experimental_window_view, false, "Enable WINDOW VIEW. Not mature enough.", 0) \
-    M(SettingSeconds, window_view_inner_table_clean_interval, DEFAULT_WINDOW_VIEW_INNER_TABLE_CLEAN_INTERVAL_SEC, "The clean interval of window view inner table in seconds to free outdated data.", 0) \
+    M(SettingSeconds, window_view_clean_interval, DEFAULT_WINDOW_VIEW_CLEAN_INTERVAL_SEC, "The clean interval of window view in seconds to free outdated data.", 0) \
     M(SettingUInt64, min_free_disk_space_for_temporary_data, 0, "The minimum disk space to keep while writing temporary data used in external sorting and aggregation.", 0) \
     \
     M(SettingBool, enable_scalar_subquery_optimization, true, "If it is set to true, prevent scalar subqueries from (de)serializing large scalar values and possibly avoid running the same subquery more than once.", 0) \

@@ -276,7 +276,6 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
 {
     if (global_context.tryGetTable(target_table_id))
     {
-        /// We create and execute `drop` query for internal table.
         auto drop_query = std::make_shared<ASTDropQuery>();
         drop_query->database = target_table_id.database_name;
         drop_query->table = target_table_id.table_name;
@@ -300,7 +299,26 @@ void StorageWindowView::drop(TableStructureWriteLockHolder &)
     condition.notify_all();
 }
 
-inline void StorageWindowView::clearInnerTable()
+void StorageWindowView::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
+{
+    if (!inner_table_id.empty())
+        executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, inner_table_id);
+    else
+    {
+        std::lock_guard lock(mutex);
+        mergeable_blocks = std::make_shared<std::list<BlocksListPtr>>();
+    }
+}
+
+bool StorageWindowView::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
+{
+    if (inner_table_id.empty())
+        throw Exception(
+            "OPTIMIZE only supported when creating WINDOW VIEW within INNER table.", ErrorCodes::INCORRECT_QUERY);
+    return getInnerStorage()->optimize(query, partition, final, deduplicate, context);
+}
+
+inline void StorageWindowView::cleanCache()
 {
     //delete fired blocks
     UInt32 timestamp_now = std::time(nullptr);
@@ -477,14 +495,14 @@ inline void StorageWindowView::addFireSignal(UInt32 timestamp_)
     condition.notify_all();
 }
 
-void StorageWindowView::threadFuncClearInnerTable()
+void StorageWindowView::threadFuncCleanCache()
 {
     while (!shutdown_called)
     {
         try
         {
-            clearInnerTable();
-            sleep(inner_table_clear_interval);
+            cleanCache();
+            sleep(clean_interval);
         }
         catch (...)
         {
@@ -493,7 +511,7 @@ void StorageWindowView::threadFuncClearInnerTable()
         }
     }
     if (!shutdown_called)
-        innerTableClearTask->scheduleAfter(RESCHEDULE_MS);
+        cleanCacheTask->scheduleAfter(RESCHEDULE_MS);
 }
 
 void StorageWindowView::threadFuncToTable()
@@ -635,10 +653,8 @@ StorageWindowView::StorageWindowView(
     if (!query.to_table.empty())
         target_table_id = StorageID(query.to_database, query.to_table);
 
-    inner_table_clear_interval = local_context.getSettingsRef().window_view_inner_table_clean_interval.totalSeconds();
-
+    clean_interval = local_context.getSettingsRef().window_view_clean_interval.totalSeconds();
     mergeable_blocks = std::make_shared<std::list<BlocksListPtr>>();
-
     active_ptr = std::make_shared<bool>(true);
 
     if (query.watermark_function)
@@ -692,10 +708,10 @@ StorageWindowView::StorageWindowView(
     }
 
     toTableTask = global_context.getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncToTable(); });
-    innerTableClearTask = global_context.getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncClearInnerTable(); });
+    cleanCacheTask = global_context.getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanCache(); });
     fireTask = global_context.getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncFire(); });
     toTableTask->deactivate();
-    innerTableClearTask->deactivate();
+    cleanCacheTask->deactivate();
     fireTask->deactivate();
 }
 
@@ -743,7 +759,6 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
         StorageID("", "WindowViewProxyStorage"), window_view.getParentStorage(), std::move(streams), QueryProcessingStage::FetchColumns);
     InterpreterSelectQuery select_block(
         window_view.getFinalQuery(), context, window_proxy_storage, QueryProcessingStage::WithMergeableState);
-
     auto data_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(select_block.execute().in);
 
     // extract ____w_end
@@ -837,7 +852,7 @@ void StorageWindowView::startup()
     // Start the working thread
     if (!target_table_id.empty())
         toTableTask->activateAndSchedule();
-    innerTableClearTask->activateAndSchedule();
+    // cleanCacheTask->activateAndSchedule();
     fireTask->activateAndSchedule();
 }
 
@@ -847,7 +862,7 @@ void StorageWindowView::shutdown()
     if (!shutdown_called.compare_exchange_strong(expected, true))
         return;
     toTableTask->deactivate();
-    innerTableClearTask->deactivate();
+    cleanCacheTask->deactivate();
     fireTask->deactivate();
 }
 
