@@ -17,20 +17,22 @@ namespace DB
   */
 class StorageTinyLog : public ext::shared_ptr_helper<StorageTinyLog>, public IStorage
 {
-    friend class TinyLogBlockInputStream;
+    friend class TinyLogSource;
     friend class TinyLogBlockOutputStream;
     friend struct ext::shared_ptr_helper<StorageTinyLog>;
 
 public:
     String getName() const override { return "TinyLog"; }
 
-    BlockInputStreams read(
+    Pipes readWithProcessors(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
+
+    bool supportProcessorsPipeline() const override { return true; }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
