@@ -29,6 +29,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/CheckResults.h>
 
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Pipe.h>
+
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 
 
@@ -47,17 +50,11 @@ namespace ErrorCodes
 }
 
 
-class TinyLogBlockInputStream final : public IBlockInputStream
+class TinyLogSource final : public SourceWithProgress
 {
 public:
-    TinyLogBlockInputStream(size_t block_size_, const NamesAndTypesList & columns_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
-        : block_size(block_size_), columns(columns_),
-        storage(storage_), lock(storage_.rwlock),
-        max_read_buffer_size(max_read_buffer_size_) {}
 
-    String getName() const override { return "TinyLog"; }
-
-    Block getHeader() const override
+    static Block getHeader(const NamesAndTypesList & columns)
     {
         Block res;
 
@@ -67,8 +64,15 @@ public:
         return Nested::flatten(res);
     }
 
+    TinyLogSource(size_t block_size_, const NamesAndTypesList & columns_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
+        : SourceWithProgress(getHeader(columns_))
+        , block_size(block_size_), columns(columns_), storage(storage_), lock(storage_.rwlock)
+        , max_read_buffer_size(max_read_buffer_size_) {}
+
+    String getName() const override { return "TinyLog"; }
+
 protected:
-    Block readImpl() override;
+    Chunk generate() override;
 private:
     size_t block_size;
     NamesAndTypesList columns;
@@ -162,7 +166,7 @@ private:
 };
 
 
-Block TinyLogBlockInputStream::readImpl()
+Chunk TinyLogSource::generate()
 {
     Block res;
 
@@ -174,12 +178,12 @@ Block TinyLogBlockInputStream::readImpl()
           */
         finished = true;
         streams.clear();
-        return res;
+        return {};
     }
 
     /// if there are no files in the folder, it means that the table is empty
     if (storage.disk->isDirectoryEmpty(storage.table_path))
-        return res;
+        return {};
 
     for (const auto & name_type : columns)
     {
@@ -195,7 +199,7 @@ Block TinyLogBlockInputStream::readImpl()
             throw;
         }
 
-        if (column->size())
+        if (!column->empty())
             res.insert(ColumnWithTypeAndName(std::move(column), name_type.type, name_type.name));
     }
 
@@ -205,11 +209,12 @@ Block TinyLogBlockInputStream::readImpl()
         streams.clear();
     }
 
-    return Nested::flatten(res);
+    auto flatten = Nested::flatten(res);
+    return Chunk(flatten.getColumns(), flatten.rows());
 }
 
 
-void TinyLogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, UInt64 limit)
+void TinyLogSource::readData(const String & name, const IDataType & type, IColumn & column, UInt64 limit)
 {
     IDataType::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
     settings.getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
@@ -383,7 +388,7 @@ void StorageTinyLog::rename(const String & new_path_to_table_data, const String 
 }
 
 
-BlockInputStreams StorageTinyLog::read(
+Pipes StorageTinyLog::readWithProcessors(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
@@ -392,10 +397,15 @@ BlockInputStreams StorageTinyLog::read(
     const unsigned /*num_streams*/)
 {
     check(column_names);
+
+    Pipes pipes;
+
 	// When reading, we lock the entire storage, because we only have one file
 	// per column and can't modify it concurrently.
-    return BlockInputStreams(1, std::make_shared<TinyLogBlockInputStream>(
+    pipes.emplace_back(std::make_shared<TinyLogSource>(
         max_block_size, Nested::collect(getColumns().getAllPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
+
+    return pipes;
 }
 
 
