@@ -283,14 +283,14 @@ bool test6(const std::string & filename, const std::string & buf)
 
     DB::ReadBufferAIO in(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
 
-    if (in.getPositionInFile() != 0)
+    if (in.getPosition() != 0)
         return false;
 
     size_t count = in.read(newbuf.data(), newbuf.length());
     if (count != newbuf.length())
         return false;
 
-    if (static_cast<size_t>(in.getPositionInFile()) != buf.length())
+    if (static_cast<size_t>(in.getPosition()) != buf.length())
         return false;
 
     return true;
@@ -646,7 +646,7 @@ bool test20(const std::string & filename, const std::string & buf)
             return false;
     }
 
-    (void) in.getPositionInFile();
+    (void) in.getPosition();
 
     {
         std::string newbuf;
