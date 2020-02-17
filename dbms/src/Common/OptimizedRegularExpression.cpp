@@ -290,6 +290,14 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
                 throw DB::Exception("OptimizedRegularExpression: too many subpatterns in regexp: " + regexp_, DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
         }
     }
+
+    if (!required_substring.empty())
+    {
+        if (is_case_insensitive)
+            case_insensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+        else
+            case_sensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+    }
 }
 
 
@@ -299,9 +307,9 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
     if (is_trivial)
     {
         if (is_case_insensitive)
-            return nullptr != strcasestr(subject, required_substring.data());
+            return nullptr != case_insensitive_substring_searcher->search(reinterpret_cast<const UInt8 *>(subject), subject_size);
         else
-            return nullptr != strstr(subject, required_substring.data());
+            return nullptr != case_sensitive_substring_searcher->search(reinterpret_cast<const UInt8 *>(subject), subject_size);
     }
     else
     {
@@ -309,9 +317,9 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
         {
             const char * pos;
             if (is_case_insensitive)
-                pos = strcasestr(subject, required_substring.data());
+                pos = reinterpret_cast<const char *>(case_insensitive_substring_searcher->search(reinterpret_cast<const UInt8 *>(subject), subject_size));
             else
-                pos = strstr(subject, required_substring.data());
+                pos = reinterpret_cast<const char *>(case_sensitive_substring_searcher->search(reinterpret_cast<const UInt8 *>(subject), subject_size));
 
             if (nullptr == pos)
                 return 0;
@@ -329,9 +337,9 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
     {
         const char * pos;
         if (is_case_insensitive)
-            pos = strcasestr(subject, required_substring.data());
+            pos = reinterpret_cast<const char *>(case_insensitive_substring_searcher->search(reinterpret_cast<const UInt8 *>(subject), subject_size));
         else
-            pos = strstr(subject, required_substring.data());
+            pos = reinterpret_cast<const char *>(case_sensitive_substring_searcher->search(reinterpret_cast<const UInt8 *>(subject), subject_size));
 
         if (pos == nullptr)
             return 0;
@@ -348,9 +356,9 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
         {
             const char * pos;
             if (is_case_insensitive)
-                pos = strcasestr(subject, required_substring.data());
+                pos = reinterpret_cast<const char *>(case_insensitive_substring_searcher->search(reinterpret_cast<const UInt8 *>(subject), subject_size));
             else
-                pos = strstr(subject, required_substring.data());
+                pos = reinterpret_cast<const char *>(case_sensitive_substring_searcher->search(reinterpret_cast<const UInt8 *>(subject), subject_size));
 
             if (nullptr == pos)
                 return 0;
@@ -385,9 +393,9 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
     {
         const char * pos;
         if (is_case_insensitive)
-            pos = strcasestr(subject, required_substring.data());
+            pos = reinterpret_cast<const char *>(case_insensitive_substring_searcher->search(reinterpret_cast<const UInt8 *>(subject), subject_size));
         else
-            pos = strstr(subject, required_substring.data());
+            pos = reinterpret_cast<const char *>(case_sensitive_substring_searcher->search(reinterpret_cast<const UInt8 *>(subject), subject_size));
 
         if (pos == nullptr)
             return 0;
@@ -406,9 +414,9 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
         {
             const char * pos;
             if (is_case_insensitive)
-                pos = strcasestr(subject, required_substring.data());
+                pos = reinterpret_cast<const char *>(case_insensitive_substring_searcher->search(reinterpret_cast<const UInt8 *>(subject), subject_size));
             else
-                pos = strstr(subject, required_substring.data());
+                pos = reinterpret_cast<const char *>(case_sensitive_substring_searcher->search(reinterpret_cast<const UInt8 *>(subject), subject_size));
 
             if (nullptr == pos)
                 return 0;
