@@ -212,7 +212,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
         auto resolved_id = context_handle.tryResolveStorageID(StorageID("", table_name), Context::ResolveExternal);
         if (resolved_id)
         {
-            StoragePtr table = DatabaseCatalog::instance().getTable(resolved_id, context);
+            StoragePtr table = DatabaseCatalog::instance().getTable(resolved_id);
             if (kind == ASTDropQuery::Kind::Truncate)
             {
                 /// If table was already dropped by anyone, an exception will be thrown

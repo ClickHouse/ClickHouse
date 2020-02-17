@@ -280,9 +280,6 @@ public:
     ClientInfo & getClientInfo() { return client_info; }
     const ClientInfo & getClientInfo() const { return client_info; }
 
-    /// Checking the existence of the table/database. Database can be empty - in this case the current database is used.
-    bool isTableExist(const String & database_name, const String & table_name) const;
-    bool isDictionaryExists(const String & database_name, const String & dictionary_name) const;
     bool isExternalTableExist(const String & table_name) const;
 
     enum StorageNamespace
@@ -304,9 +301,7 @@ public:
     const Block & getScalar(const String & name) const;
     Tables getExternalTables() const;
     StoragePtr getTable(const String & database_name, const String & table_name) const;
-    StoragePtr getTable(const StorageID & table_id) const;
     StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
-    StoragePtr tryGetTable(const StorageID & table_id) const;
     void addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast = {});
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;

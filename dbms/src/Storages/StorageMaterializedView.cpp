@@ -210,7 +210,7 @@ BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const 
 
 static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, const StorageID & target_table_id)
 {
-    if (global_context.tryGetTable(target_table_id))
+    if (DatabaseCatalog::instance().tryGetTable(target_table_id))
     {
         /// We create and execute `drop` query for internal table.
         auto drop_query = std::make_shared<ASTDropQuery>();
@@ -365,12 +365,12 @@ void StorageMaterializedView::shutdown()
 
 StoragePtr StorageMaterializedView::getTargetTable() const
 {
-    return global_context.getTable(target_table_id);
+    return DatabaseCatalog::instance().getTable(target_table_id);
 }
 
 StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
-    return global_context.tryGetTable(target_table_id);
+    return DatabaseCatalog::instance().tryGetTable(target_table_id);
 }
 
 Strings StorageMaterializedView::getDataPaths() const

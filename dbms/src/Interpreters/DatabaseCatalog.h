@@ -81,24 +81,27 @@ public:
     DatabasePtr getDatabaseForTemporaryTables() const;
     DatabasePtr getSystemDatabase() const;
 
-    void attachDatabase(const String & database_name, const DatabasePtr & database);     // ca, a
-    DatabasePtr detachDatabase(const String & database_name, bool drop = false);                            // (sr), ca, a
+    void attachDatabase(const String & database_name, const DatabasePtr & database);
+    DatabasePtr detachDatabase(const String & database_name, bool drop = false);
 
     DatabasePtr getDatabase(const String & database_name, const Context & local_context) const;
-    DatabasePtr getDatabase(const String & database_name) const;                         // sr, ca, a
-    DatabasePtr tryGetDatabase(const String & database_name) const;                      // sr
-    bool isDatabaseExist(const String & database_name) const;                                                           // sr, ca
+    DatabasePtr getDatabase(const String & database_name) const;
+    DatabasePtr tryGetDatabase(const String & database_name) const;
+    bool isDatabaseExist(const String & database_name) const;
     Databases getDatabases() const;
 
     DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
 
-    void assertTableDoesntExist(const StorageID & table_id, const Context & context) const;                             // sr, ca
-    bool isTableExist(const StorageID & table_id, const Context & context) const;                                       // sr, ca
+    void assertTableDoesntExist(const StorageID & table_id, const Context & context) const;
+    bool isTableExist(const StorageID & table_id, const Context & context) const;
+    bool isDictionaryExist(const StorageID & table_id, const Context & context) const;
 
     void addUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
     void removeUUIDMapping(const UUID & uuid);
 
-    StoragePtr getTable(const StorageID & table_id, const Context & local_context, std::optional<Exception> * exception = nullptr) const;
+    StoragePtr getTable(const StorageID & table_id) const;
+    StoragePtr tryGetTable(const StorageID & table_id) const;
+    StoragePtr getTableImpl(const StorageID & table_id, const Context & local_context, std::optional<Exception> * exception = nullptr) const;
 
 
     void addDependency(const StorageID & from, const StorageID & where);
@@ -129,7 +132,7 @@ private:
 
 private:
     const Context * global_context;
-    mutable std::recursive_mutex databases_mutex;
+    mutable std::mutex databases_mutex;
 
     ViewDependencies view_dependencies;                     /// Current dependencies
 

@@ -710,22 +710,9 @@ void Context::setUser(const String & name, const String & password, const Poco::
     calculateAccessRights();
 }
 
-bool Context::isTableExist(const String & database_name, const String & table_name) const
-{
-    auto table_id = resolveStorageID({database_name, table_name}, StorageNamespace::ResolveOrdinary);
-    return DatabaseCatalog::instance().isTableExist(table_id, *this);
-}
-
-bool Context::isDictionaryExists(const String & database_name, const String & dictionary_name) const
-{
-    auto lock = getLock();
-    String db = resolveDatabase(database_name);
-    auto db_ptr = DatabaseCatalog::instance().tryGetDatabase(db);
-    return db_ptr && db_ptr->isDictionaryExist(*this, dictionary_name);
-}
-
 bool Context::isExternalTableExist(const String & table_name) const
 {
+    auto lock = getLock();
     return external_tables_mapping.count(table_name);
 }
 
@@ -746,6 +733,7 @@ const Block & Context::getScalar(const String & name) const
 
 Tables Context::getExternalTables() const
 {
+    //FIXME getTable() may acquire some locks. Better not to call it while holding context lock
     auto lock = getLock();
 
     Tables res;
@@ -768,13 +756,9 @@ Tables Context::getExternalTables() const
 
 StoragePtr Context::getTable(const String & database_name, const String & table_name) const
 {
-    return getTable(StorageID(database_name, table_name));
-}
-
-StoragePtr Context::getTable(const StorageID & table_id) const
-{
+    auto resolved_id = resolveStorageID(StorageID(database_name, table_name));
     std::optional<Exception> exc;
-    auto res = getTableImpl(table_id, &exc);
+    auto res = DatabaseCatalog::instance().getTableImpl(resolved_id, *this, &exc);
     if (!res)
         throw *exc;
     return res;
@@ -782,29 +766,19 @@ StoragePtr Context::getTable(const StorageID & table_id) const
 
 StoragePtr Context::tryGetTable(const String & database_name, const String & table_name) const
 {
-    return getTableImpl(StorageID(database_name, table_name), {});
-}
-
-StoragePtr Context::tryGetTable(const StorageID & table_id) const
-{
-    return getTableImpl(table_id, {});
-}
-
-
-StoragePtr Context::getTableImpl(const StorageID & table_id, std::optional<Exception> * exception) const
-{
-    auto resolved_id = resolveStorageID(table_id);
-    return DatabaseCatalog::instance().getTable(resolved_id, *this, exception);
+    auto resolved_id = tryResolveStorageID(StorageID(database_name, table_name));
+    return DatabaseCatalog::instance().getTableImpl(resolved_id, *this, nullptr);
 }
 
 
 void Context::addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast)
 {
+    auto external_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
+    auto holder = std::make_shared<TemporaryTableHolder>(*this, *external_db, storage, ast);
     auto lock = getLock();
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
         throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
-    auto holder = std::make_shared<TemporaryTableHolder>(*this, *DatabaseCatalog::instance().getDatabaseForTemporaryTables(), storage, ast);
     external_tables_mapping.emplace(table_name, std::move(holder));
 }
 
@@ -823,7 +797,16 @@ bool Context::hasScalar(const String & name) const
 
 bool Context::removeExternalTable(const String & table_name)
 {
-    return external_tables_mapping.erase(table_name);
+    std::shared_ptr<TemporaryTableHolder> holder;
+    {
+        auto lock = getLock();
+        auto iter = external_tables_mapping.find(table_name);
+        if (iter == external_tables_mapping.end())
+            return false;
+        holder = iter->second;
+        external_tables_mapping.erase(iter);
+    }
+    return true;
 }
 
 
@@ -863,11 +846,15 @@ StoragePtr Context::getViewSource()
 
 ASTPtr Context::getCreateExternalTableQuery(const String & table_name) const
 {
-    auto it = external_tables_mapping.find(table_name);
-    if (external_tables_mapping.end() == it)
-        throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
-
-    return DatabaseCatalog::instance().getDatabaseForTemporaryTables()->getCreateTableQuery(*this, it->second->getGlobalTableID().table_name);
+    StorageID external_id = StorageID::createEmpty();
+    {
+        auto lock = getLock();
+        auto it = external_tables_mapping.find(table_name);
+        if (external_tables_mapping.end() == it)
+            throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
+        external_id = it->second->getGlobalTableID();
+    }
+    return DatabaseCatalog::instance().getDatabaseForTemporaryTables()->getCreateTableQuery(*this, external_id.table_name);
 }
 
 Settings Context::getSettings() const
