@@ -3299,7 +3299,7 @@ void StorageReplicatedMergeTree::alter(
             future_metadata_in_zk.skip_indices = new_indices_str;
 
         String new_constraints_str = future_metadata.constraints.toString();
-        if (new_constraints_str != current_metadata.indices.toString())
+        if (new_constraints_str != current_metadata.constraints.toString())
             future_metadata_in_zk.constraints = new_constraints_str;
 
         Coordination::Requests ops;
