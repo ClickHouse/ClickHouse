@@ -40,6 +40,7 @@ limitations under the License. */
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Access/AccessFlags.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -123,26 +124,24 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(const Context & conte
     return new_mergeable_blocks;
 }
 
-BlockInputStreams StorageLiveView::blocksToInputStreams(BlocksPtrs blocks, Block & sample_block)
+Pipes StorageLiveView::blocksToPipes(BlocksPtrs blocks, Block & sample_block)
 {
-    BlockInputStreams streams;
+    Pipes pipes;
     for (auto & blocks_ : *blocks)
-    {
-        BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks_), sample_block);
-        streams.push_back(std::move(stream));
-    }
-    return streams;
+        pipes.emplace_back(std::make_shared<BlocksSource>(std::make_shared<BlocksPtr>(blocks_), sample_block));
+
+    return pipes;
 }
 
 /// Complete query using input streams from mergeable blocks
-BlockInputStreamPtr StorageLiveView::completeQuery(BlockInputStreams from)
+BlockInputStreamPtr StorageLiveView::completeQuery(Pipes pipes)
 {
     auto block_context = std::make_unique<Context>(global_context);
     block_context->makeQueryContext();
 
     auto blocks_storage_id = getBlocksStorageID();
     auto blocks_storage = StorageBlocks::createStorage(blocks_storage_id, getParentStorage()->getColumns(),
-        std::move(from), QueryProcessingStage::WithMergeableState);
+        std::move(pipes), QueryProcessingStage::WithMergeableState);
 
     block_context->addExternalTable(blocks_storage_id.table_name, blocks_storage);
 
@@ -179,7 +178,7 @@ void StorageLiveView::writeIntoLiveView(
     }
 
     bool is_block_processed = false;
-    BlockInputStreams from;
+    Pipes from;
     MergeableBlocksPtr mergeable_blocks;
     BlocksPtr new_mergeable_blocks = std::make_shared<Blocks>();
 
@@ -191,7 +190,7 @@ void StorageLiveView::writeIntoLiveView(
         {
             mergeable_blocks = live_view.collectMergeableBlocks(context);
             live_view.setMergeableBlocks(mergeable_blocks);
-            from = live_view.blocksToInputStreams(mergeable_blocks->blocks, mergeable_blocks->sample_block);
+            from = live_view.blocksToPipes(mergeable_blocks->blocks, mergeable_blocks->sample_block);
             is_block_processed = true;
         }
     }
@@ -205,10 +204,11 @@ void StorageLiveView::writeIntoLiveView(
         if (live_view.getInnerSubQuery())
             mergeable_query = live_view.getInnerSubQuery();
 
-        BlockInputStreams streams = {std::make_shared<OneBlockInputStream>(block)};
+        Pipes pipes;
+        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), Chunk(block.getColumns(), block.rows())));
 
         auto blocks_storage = StorageBlocks::createStorage(blocks_storage_id,
-            live_view.getParentStorage()->getColumns(), std::move(streams), QueryProcessingStage::FetchColumns);
+            live_view.getParentStorage()->getColumns(), std::move(pipes), QueryProcessingStage::FetchColumns);
 
         InterpreterSelectQuery select_block(mergeable_query, context, blocks_storage,
             QueryProcessingStage::WithMergeableState);
@@ -227,11 +227,11 @@ void StorageLiveView::writeIntoLiveView(
 
             mergeable_blocks = live_view.getMergeableBlocks();
             mergeable_blocks->blocks->push_back(new_mergeable_blocks);
-            from = live_view.blocksToInputStreams(mergeable_blocks->blocks, mergeable_blocks->sample_block);
+            from = live_view.blocksToPipes(mergeable_blocks->blocks, mergeable_blocks->sample_block);
         }
     }
 
-    BlockInputStreamPtr data = live_view.completeQuery(from);
+    BlockInputStreamPtr data = live_view.completeQuery(std::move(from));
     copyData(*data, *output);
 }
 
@@ -331,8 +331,8 @@ bool StorageLiveView::getNewBlocks()
     BlocksMetadataPtr new_blocks_metadata = std::make_shared<BlocksMetadata>();
 
     mergeable_blocks = collectMergeableBlocks(*live_view_context);
-    BlockInputStreams from = blocksToInputStreams(mergeable_blocks->blocks, mergeable_blocks->sample_block);
-    BlockInputStreamPtr data = completeQuery({from});
+    Pipes from = blocksToPipes(mergeable_blocks->blocks, mergeable_blocks->sample_block);
+    BlockInputStreamPtr data = completeQuery(std::move(from));
 
     while (Block block = data->read())
     {
@@ -520,7 +520,7 @@ void StorageLiveView::refresh(const Context & context)
     }
 }
 
-BlockInputStreams StorageLiveView::read(
+Pipes StorageLiveView::readWithProcessors(
     const Names & /*column_names*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
@@ -528,7 +528,7 @@ BlockInputStreams StorageLiveView::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    std::shared_ptr<BlocksBlockInputStream> stream;
+    Pipes pipes;
     {
         std::lock_guard lock(mutex);
         if (!(*blocks_ptr))
@@ -536,9 +536,9 @@ BlockInputStreams StorageLiveView::read(
             if (getNewBlocks())
                 condition.notify_all();
         }
-        stream = std::make_shared<BlocksBlockInputStream>(blocks_ptr, getHeader());
+        pipes.emplace_back(std::make_shared<BlocksSource>(blocks_ptr, getHeader()));
     }
-    return { stream };
+    return pipes;
 }
 
 BlockInputStreams StorageLiveView::watch(
