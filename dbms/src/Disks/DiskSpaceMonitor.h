@@ -157,6 +157,9 @@ public:
         return getVolume(it->second);
     }
 
+    /// Mutex for background moves of this policy
+    mutable std::mutex moving_parts_mutex;
+
 private:
     Volumes volumes;
     const String name;

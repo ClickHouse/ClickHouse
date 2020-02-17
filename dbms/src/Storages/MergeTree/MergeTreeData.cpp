@@ -3784,6 +3784,9 @@ bool MergeTreeData::selectPartsAndMove()
 {
     if (parts_mover.moves_blocker.isCancelled())
         return false;
+    std::unique_lock<std::mutex> lock(storage_policy->moving_parts_mutex, std::try_to_lock);
+    if (!lock.owns_lock())
+        return false;
 
     auto moving_tagger = selectPartsForMove();
     if (moving_tagger.parts_to_move.empty())
