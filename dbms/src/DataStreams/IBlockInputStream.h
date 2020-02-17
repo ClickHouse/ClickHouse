@@ -284,7 +284,7 @@ private:
     /// The approximate total number of rows to read. For progress bar.
     size_t total_rows_approx = 0;
 
-    /// The successors must implement this function.
+    /// Derived classes must implement this function.
     virtual Block readImpl() = 0;
 
     /// Here you can do a preliminary initialization.
