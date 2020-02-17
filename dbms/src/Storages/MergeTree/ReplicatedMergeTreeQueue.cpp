@@ -749,6 +749,12 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
                 mutations_by_partition.erase(partition_and_block_num.first);
         }
 
+        if (entry->alter_version != -1)
+        {
+            LOG_DEBUG(log, "Removed alter " << entry->alter_version << " because mutation " + entry->znode_name + " were killed.");
+            alter_chain.finishDataAlter(entry->alter_version, state_lock);
+        }
+
         mutations_by_znode.erase(it);
         LOG_DEBUG(log, "Removed mutation " + entry->znode_name + " from local state.");
     }
