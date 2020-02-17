@@ -382,7 +382,7 @@ enum class InstructionFail
 
 static std::string instructionFailToString(InstructionFail fail)
 {
-    switch(fail)
+    switch (fail)
     {
         case InstructionFail::NONE:
             return "NONE";
