@@ -1340,7 +1340,8 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
     /// Skip updated files
     for (const auto & entry : updated_header)
     {
-        IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path) {
+        IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
+        {
             String stream_name = IDataType::getFileNameForStream(entry.name, substream_path);
             files_to_skip.insert(stream_name + ".bin");
             files_to_skip.insert(stream_name + mrk_extension);
