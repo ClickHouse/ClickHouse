@@ -58,12 +58,26 @@ void JoinSwitcher::switchJoin()
     /// Destroy old join & create new one. Destroy first in case of memory saving.
     join = std::make_shared<MergeJoin>(table_join, right_sample_block);
 
-    for (Block & block : right_blocks)
+    /// names to positions optimization
+    std::vector<size_t> positions;
+    std::vector<bool> is_nullable;
+    if (right_blocks.size())
     {
+        positions.reserve(right_sample_block.columns());
+        Block & tmp_block = *right_blocks.begin();
         for (const auto & sample_column : right_sample_block)
         {
-            auto & column = block.getByName(sample_column.name);
-            block.insert(correctNullability(std::move(column), sample_column.type->isNullable()));
+            positions.emplace_back(tmp_block.getPositionByName(sample_column.name));
+            is_nullable.emplace_back(sample_column.type->isNullable());
+        }
+    }
+
+    for (Block & block : right_blocks)
+    {
+        for (size_t i = 0; i < positions.size(); ++i)
+        {
+            auto & column = block.getByPosition(positions[i]);
+            block.insert(correctNullability(std::move(column), is_nullable[i]));
             join->addJoinedBlock(block);
         }
     }
