@@ -30,6 +30,8 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/JoinSwitcher.h>
+#include <Interpreters/Join.h>
+#include <Interpreters/MergeJoin.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
