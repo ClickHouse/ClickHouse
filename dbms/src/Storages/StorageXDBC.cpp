@@ -15,6 +15,8 @@
 #include <Common/ShellCommand.h>
 #include <ext/range.h>
 
+#include <Processors/Pipe.h>
+
 namespace DB
 {
 namespace ErrorCodes
