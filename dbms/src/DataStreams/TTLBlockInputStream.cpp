@@ -1,6 +1,6 @@
 #include <DataStreams/TTLBlockInputStream.h>
 #include <DataTypes/DataTypeDate.h>
-#include <Interpreters/evaluateMissingDefaults.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 

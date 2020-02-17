@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnArray.h>
-#include <Interpreters/evaluateMissingDefaults.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Common/typeid_cast.h>
 
