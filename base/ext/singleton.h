@@ -2,7 +2,8 @@
 
 #include <memory>
 
-namespace ext {
+namespace ext
+{
 
 template <class T>
 class Singleton
