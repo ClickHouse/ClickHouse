@@ -45,8 +45,8 @@ done
 # Set python output encoding so that we can print queries with Russian letters.
 export PYTHONIOENCODING=utf-8
 
-# Use 11 runs if not told otherwise
-export CHPC_RUNS=${CHPC_RUNS:-13}
+# Use a default number of runs if not told otherwise
+export CHPC_RUNS=${CHPC_RUNS:-15}
 
 # Even if we have some errors, try our best to save the logs.
 set +e
