@@ -1,13 +1,14 @@
 #pragma once
 
-#include <ctime>
+#include <IO/BufferWithOwnMemory.h>
+#include <IO/SeekableReadBuffer.h>
+#include <common/time.h>
+
 #include <functional>
 #include <string>
+
 #include <fcntl.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <IO/ReadBuffer.h>
-#include <port/clock.h>
-#include "SeekableReadBuffer.h"
+
 
 namespace DB
 {
