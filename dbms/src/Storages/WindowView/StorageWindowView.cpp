@@ -38,9 +38,10 @@
 #include <boost/lexical_cast.hpp>
 #include <Common/typeid_cast.h>
 
+#include <Storages/WindowView/AddingTimestampBlockInputStream.h>
+#include <Storages/WindowView/BlocksListInputStream.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/WindowView/WindowViewBlockInputStream.h>
-#include <Storages/WindowView/BlocksListInputStream.h>
 #include <Storages/WindowView/WindowViewProxyStorage.h>
 
 
@@ -111,11 +112,48 @@ namespace
                     std::static_pointer_cast<ASTFunction>(ptr_)->setAlias("");
                     auto arrayJoin = makeASTFunction("arrayJoin", ptr_);
                     arrayJoin->alias = node.alias;
-                    data.window_column_name = arrayJoin->getColumnName();
                     node_ptr = arrayJoin;
+                    data.window_column_name = arrayJoin->getColumnName();
                 }
                 else if (serializeAST(node) != serializeAST(*data.window_function))
                     throw Exception("WINDOW VIEW only support ONE WINDOW FUNCTION", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
+            }
+        }
+    };
+
+    class ParserProcTimeFinalMatcher
+    {
+    public:
+        using Visitor = InDepthNodeVisitor<ParserProcTimeFinalMatcher, true>;
+
+        struct Data
+        {
+            bool is_proctime_tumble = false;
+            String window_column_name;
+        };
+
+        static bool needChildVisit(ASTPtr &, const ASTPtr &)
+        {
+            return true;
+        }
+
+        static void visit(ASTPtr & ast, Data & data)
+        {
+            if (const auto * t = ast->as<ASTFunction>())
+                visit(*t, ast, data);
+        }
+
+    private:
+        static void visit(const ASTFunction & node, ASTPtr & node_ptr, Data & data)
+        {
+            if (node.name == "TUMBLE")
+            {
+                if (const auto * t = node.arguments->children[0]->as<ASTFunction>(); t && t->name == "now")
+                {
+                    data.is_proctime_tumble = true;
+                    node_ptr->children[0]->children[0] = std::make_shared<ASTIdentifier>("____timestamp");
+                    data.window_column_name = node.getColumnName();
+                }
             }
         }
     };
@@ -299,7 +337,7 @@ inline void StorageWindowView::clearInnerTable()
 inline void StorageWindowView::flushToTable(UInt32 timestamp_)
 {
     //write into dependent table
-    StoragePtr target_table = getTargetTable();
+    StoragePtr target_table = getTargetStorage();
     auto _blockInputStreamPtr = getNewBlocksInputStreamPtr(timestamp_);
     auto _lock = target_table->lockStructureForShare(true, global_context.getCurrentQueryId());
     auto stream = target_table->write(getInnerQuery(), global_context);
@@ -315,12 +353,21 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
 
     auto new_columns_list = std::make_shared<ASTColumns>();
 
-    auto storage = getParentStorage();
     auto sample_block_
-        = InterpreterSelectQuery(getInnerQuery(), global_context, storage, SelectQueryOptions(QueryProcessingStage::WithMergeableState))
+        = InterpreterSelectQuery(getInnerQuery(), global_context, getParentStorage(), SelectQueryOptions(QueryProcessingStage::WithMergeableState))
               .getSampleBlock();
 
     auto columns_list = std::make_shared<ASTExpressionList>();
+
+    if (is_proctime_tumble)
+    {
+        auto column_window = std::make_shared<ASTColumnDeclaration>();
+        column_window->name = window_column_name;
+        column_window->type
+            = makeASTFunction("Tuple", std::make_shared<ASTIdentifier>("DateTime"), std::make_shared<ASTIdentifier>("DateTime"));
+        columns_list->children.push_back(column_window);
+    }
+
     for (auto & column_ : sample_block_.getColumnsWithTypeAndName())
     {
         ParserIdentifierWithOptionalParameters parser;
@@ -331,10 +378,10 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
         column_dec->type = ast;
         columns_list->children.push_back(column_dec);
     }
-    auto column_fire_status = std::make_shared<ASTColumnDeclaration>();
-    column_fire_status->name = "____w_end";
-    column_fire_status->type = std::make_shared<ASTIdentifier>("DateTime");
-    columns_list->children.push_back(column_fire_status);
+    auto column_wend = std::make_shared<ASTColumnDeclaration>();
+    column_wend->name = "____w_end";
+    column_wend->type = std::make_shared<ASTIdentifier>("DateTime");
+    columns_list->children.push_back(column_wend);
 
     new_columns_list->set(new_columns_list->columns, columns_list);
     manual_create_query->set(manual_create_query->columns_list, new_columns_list);
@@ -569,6 +616,13 @@ StorageWindowView::StorageWindowView(
     select_table_id = StorageID(select_database_name, select_table_name);
     inner_query = innerQueryParser(select_query);
 
+    final_query = inner_query->clone();
+    ParserProcTimeFinalMatcher::Data final_query_data;
+    ParserProcTimeFinalMatcher::Visitor(final_query_data).visit(final_query);
+    is_proctime_tumble = final_query_data.is_proctime_tumble;
+    if (is_proctime_tumble)
+        window_column_name = final_query_data.window_column_name;
+
     /// If the table is not specified - use the table `system.one`
     if (select_table_name.empty())
     {
@@ -581,7 +635,6 @@ StorageWindowView::StorageWindowView(
     if (!query.to_table.empty())
         target_table_id = StorageID(query.to_database, query.to_table);
 
-    is_temporary = query.temporary;
     inner_table_clear_interval = local_context.getSettingsRef().window_view_inner_table_clean_interval.totalSeconds();
 
     mergeable_blocks = std::make_shared<std::list<BlocksListPtr>>();
@@ -590,6 +643,9 @@ StorageWindowView::StorageWindowView(
 
     if (query.watermark_function)
     {
+        if (is_proctime_tumble)
+            throw Exception("WATERMARK is not support for Processing time processing.", ErrorCodes::INCORRECT_QUERY);
+
         // parser watermark function
         const auto & watermark_function = std::static_pointer_cast<ASTFunction>(query.watermark_function);
         if (!startsWith(watermark_function->name, "toInterval"))
@@ -603,7 +659,7 @@ StorageWindowView::StorageWindowView(
         {
             watermark_num_units = boost::lexical_cast<int>(interval_units_p1->value.get<String>());
         }
-        catch (const boost::bad_lexical_cast & exec)
+        catch (const boost::bad_lexical_cast &)
         {
             throw Exception("Cannot parse string '" + interval_units_p1->value.get<String>() + "' as Integer.", ErrorCodes::CANNOT_PARSE_TEXT);
         }
@@ -661,8 +717,6 @@ ASTPtr StorageWindowView::innerQueryParser(ASTSelectQuery & query)
     // parser window function
     ASTFunction & window_function = typeid_cast<ASTFunction &>(*stageMergeableOneData.window_function);
     const auto & arguments = window_function.arguments->children;
-    const auto & arg0 = std::static_pointer_cast<ASTIdentifier>(arguments.at(0));
-    timestamp_column_name = arg0->IAST::getAliasOrColumnName();
     const auto & arg1 = std::static_pointer_cast<ASTFunction>(arguments.at(1));
     if (!arg1 || !startsWith(arg1->name, "toInterval"))
         throw Exception("Illegal type of last argument of function " + arg1->name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
@@ -678,12 +732,17 @@ ASTPtr StorageWindowView::innerQueryParser(ASTSelectQuery & query)
 void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, const Block & block, const Context & context)
 {
     UInt32 timestamp_now = std::time(nullptr);
+    auto block_stream = std::make_shared<OneBlockInputStream>(block);
+    BlockInputStreams streams;
+    if (window_view.is_proctime_tumble)
+        streams = {std::make_shared<AddingTimestampBlockInputStream>(block_stream, timestamp_now)};
+    else
+        streams = {block_stream};
 
-    BlockInputStreams streams = {std::make_shared<OneBlockInputStream>(block)};
     auto window_proxy_storage = std::make_shared<WindowViewProxyStorage>(
         StorageID("", "WindowViewProxyStorage"), window_view.getParentStorage(), std::move(streams), QueryProcessingStage::FetchColumns);
     InterpreterSelectQuery select_block(
-        window_view.getInnerQuery(), context, window_proxy_storage, QueryProcessingStage::WithMergeableState);
+        window_view.getFinalQuery(), context, window_proxy_storage, QueryProcessingStage::WithMergeableState);
 
     auto data_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(select_block.execute().in);
 
@@ -701,35 +760,35 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
     actions_->add(ExpressionAction::removeColumn("____tuple_arg"));
 
     BlockInputStreamPtr in_stream;
-    if (window_view.watermark_num_units != 0)
-    {
-        UInt32 watermark = window_view.getWatermark(timestamp_now);
-        actions_->add(
-            ExpressionAction::addColumn({std::make_shared<DataTypeUInt32>()->createColumnConst(1, toField(watermark)), std::make_shared<DataTypeDateTime>(), "____watermark"}));
-        const auto & function_greater = FunctionFactory::instance().get("greaterOrEquals", context);
-        actions_->add(ExpressionAction::applyFunction(function_greater, Names{"____w_end", "____watermark"}, "____filter"));
-        actions_->add(ExpressionAction::removeColumn("____watermark"));
-        in_stream = std::make_shared<FilterBlockInputStream>(data_mergeable_stream, actions_, "____filter", true);
-    }
-    else
-        in_stream = std::make_shared<ExpressionBlockInputStream>(data_mergeable_stream, actions_);
+    UInt32 watermark = window_view.getWatermark(timestamp_now);
+    actions_->add(ExpressionAction::addColumn({std::make_shared<DataTypeUInt32>()->createColumnConst(1, toField(watermark)),
+                                               std::make_shared<DataTypeDateTime>(),
+                                               "____watermark"}));
+    const auto & function_greater = FunctionFactory::instance().get("greaterOrEquals", context);
+    actions_->add(ExpressionAction::applyFunction(function_greater, Names{"____w_end", "____watermark"}, "____filter"));
+    actions_->add(ExpressionAction::removeColumn("____watermark"));
+    in_stream = std::make_shared<FilterBlockInputStream>(data_mergeable_stream, actions_, "____filter", true);
 
     if (!window_view.inner_table_id.empty())
     {
         auto stream = window_view.getInnerStorage()->write(window_view.getInnerQuery(), context);
-        if (window_view.watermark_num_units != 0)
+        if (window_view.is_proctime_tumble)
+        {
+            std::unique_lock lock(window_view.fire_signal_mutex);
+            copyData(*in_stream, *stream);
+        }
+        else if (window_view.watermark_num_units != 0)
         {
             while (Block block_ = in_stream->read())
             {
+                auto column_wend = block_.getByName("____w_end").column;
                 stream->write(std::move(block_));
                 const ColumnUInt32::Container & wend_data
-                    = static_cast<const ColumnUInt32 &>(*block_.getByName("____w_end").column.get()).getData();
+                    = static_cast<const ColumnUInt32 &>(*column_wend).getData();
                 for (size_t i = 0; i < wend_data.size(); ++i)
                 {
                     if (wend_data[i] < timestamp_now)
-                    {
                         window_view.addFireSignal(wend_data[i]);
-                    }
                 }
             }
         }
@@ -739,13 +798,20 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
     else
     {
         BlocksListPtr new_mergeable_blocks = std::make_shared<BlocksList>();
+        if (window_view.is_proctime_tumble)
+        {
+            std::unique_lock lock(window_view.fire_signal_mutex);
+            while (Block block_ = in_stream->read())
+                new_mergeable_blocks->push_back(std::move(block_));
+        }
         if (window_view.watermark_num_units != 0)
         {
             while (Block block_ = in_stream->read())
             {
+                auto column_wend = block_.getByName("____w_end").column;
                 new_mergeable_blocks->push_back(std::move(block_));
                 const ColumnUInt32::Container & wend_data
-                    = static_cast<const ColumnUInt32 &>(*block_.getByName("____w_end").column.get()).getData();
+                    = static_cast<const ColumnUInt32 &>(*column_wend).getData();
                 for (size_t i = 0; i < wend_data.size(); ++i)
                 {
                     if (wend_data[i] < timestamp_now)
@@ -764,16 +830,6 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
             window_view.getMergeableBlocksList()->push_back(new_mergeable_blocks);
         }
     }
-}
-
-StoragePtr StorageWindowView::getTargetTable() const
-{
-    return global_context.getTable(target_table_id);
-}
-
-StoragePtr StorageWindowView::tryGetTargetTable() const
-{
-    return global_context.tryGetTable(target_table_id);
 }
 
 void StorageWindowView::startup()
@@ -802,45 +858,41 @@ StorageWindowView::~StorageWindowView()
 
 BlockInputStreamPtr StorageWindowView::getNewBlocksInputStreamPtr(UInt32 timestamp_)
 {
+    BlockInputStreamPtr stream;
+
     if (!inner_table_id.empty())
-        return getNewBlocksInputStreamPtrInnerTable(timestamp_);
+    {
+        auto & storage = getInnerStorage();
+        InterpreterSelectQuery fetch(fetch_column_query, global_context, storage, SelectQueryOptions(QueryProcessingStage::FetchColumns));
 
-    if (mergeable_blocks->empty())
-        return {std::make_shared<NullBlockInputStream>(getHeader())};
+        ColumnsWithTypeAndName columns_;
+        columns_.emplace_back(nullptr, std::make_shared<DataTypeDateTime>(), "____w_end");
 
-    BlockInputStreams from;
-    auto sample_block_ = mergeable_blocks->front()->front().cloneEmpty();
-    BlockInputStreamPtr stream = std::make_shared<BlocksListInputStream>(mergeable_blocks, sample_block_, timestamp_);
-    from.push_back(std::move(stream));
-    auto proxy_storage = std::make_shared<WindowViewProxyStorage>(
-        StorageID("", "WindowViewProxyStorage"), getParentStorage(), std::move(from), QueryProcessingStage::WithMergeableState);
-
-    InterpreterSelectQuery select(getInnerQuery(), global_context, proxy_storage, QueryProcessingStage::Complete);
-    BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
-    return data;
-}
-
-BlockInputStreamPtr StorageWindowView::getNewBlocksInputStreamPtrInnerTable(UInt32 timestamp_)
-{
-    auto & storage = getInnerStorage();
-    InterpreterSelectQuery fetch(fetch_column_query, global_context, storage, SelectQueryOptions(QueryProcessingStage::FetchColumns));
-
-    ColumnsWithTypeAndName columns_;
-    columns_.emplace_back(nullptr, std::make_shared<DataTypeDateTime>(), "____w_end");
-
-    ExpressionActionsPtr actions_ = std::make_shared<ExpressionActions>(columns_, global_context);
-    actions_->add(ExpressionAction::addColumn({std::make_shared<DataTypeDateTime>()->createColumnConst(1, toField(timestamp_)), std::make_shared<DataTypeDateTime>(), "____w_end_now"}));
-    const auto & function_equals = FunctionFactory::instance().get("equals", global_context);
-    ExpressionActionsPtr apply_function_actions = std::make_shared<ExpressionActions>(columns_, global_context);
-    actions_->add(ExpressionAction::applyFunction(function_equals, Names{"____w_end", "____w_end_now"}, "____filter"));
-    auto stream = std::make_shared<FilterBlockInputStream>(fetch.execute().in, actions_, "____filter", true);
+        ExpressionActionsPtr actions_ = std::make_shared<ExpressionActions>(columns_, global_context);
+        actions_->add(ExpressionAction::addColumn({std::make_shared<DataTypeDateTime>()->createColumnConst(1, toField(timestamp_)),
+                                                   std::make_shared<DataTypeDateTime>(),
+                                                   "____timestamp_now"}));
+        const auto & function_equals = FunctionFactory::instance().get("equals", global_context);
+        ExpressionActionsPtr apply_function_actions = std::make_shared<ExpressionActions>(columns_, global_context);
+        actions_->add(ExpressionAction::applyFunction(function_equals, Names{"____w_end", "____timestamp_now"}, "____filter"));
+        actions_->add(ExpressionAction::removeColumn("____w_end"));
+        actions_->add(ExpressionAction::removeColumn("____timestamp_now"));
+        stream = std::make_shared<FilterBlockInputStream>(fetch.execute().in, actions_, "____filter", true);
+    }
+    else
+    {
+        if (mergeable_blocks->empty())
+            return std::make_shared<NullBlockInputStream>(getHeader());
+        auto sample_block_ = mergeable_blocks->front()->front().cloneEmpty();
+        stream = std::make_shared<BlocksListInputStream>(mergeable_blocks, sample_block_, timestamp_);
+    }
 
     BlockInputStreams from;
     from.push_back(std::move(stream));
     auto proxy_storage = std::make_shared<WindowViewProxyStorage>(
         StorageID("", "WindowViewProxyStorage"), getParentStorage(), std::move(from), QueryProcessingStage::WithMergeableState);
 
-    InterpreterSelectQuery select(getInnerQuery(), global_context, proxy_storage, QueryProcessingStage::Complete);
+    InterpreterSelectQuery select(getFinalQuery(), global_context, proxy_storage, QueryProcessingStage::Complete);
     BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
     return data;
 }
