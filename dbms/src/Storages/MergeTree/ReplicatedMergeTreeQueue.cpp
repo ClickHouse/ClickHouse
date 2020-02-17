@@ -424,7 +424,6 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
 
-    //std::cerr << "Pooling logs to queue\n";
     String index_str = zookeeper->get(replica_path + "/log_pointer");
     UInt64 index;
 

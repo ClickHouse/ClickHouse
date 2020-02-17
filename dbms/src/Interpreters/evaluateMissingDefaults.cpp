@@ -1,6 +1,5 @@
 #include "evaluateMissingDefaults.h"
 
-#include <iostream>
 #include <Core/Block.h>
 #include <Parsers/queryToString.h>
 #include <Storages/ColumnDefault.h>

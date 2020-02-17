@@ -155,7 +155,6 @@ MarkRanges MergeTreeReadPool::getRestMarks(const MergeTreeDataPart & part, const
 
 Block MergeTreeReadPool::getHeader() const
 {
-    ////std::cerr << "COLUMN NAMES IN POOL:" << column_names.front() <<    std::endl;
     return data.getSampleBlockForColumns(column_names);
 }
 

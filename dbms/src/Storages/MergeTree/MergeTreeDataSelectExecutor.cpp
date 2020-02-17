@@ -431,7 +431,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         if (upper_limit_rational < size_of_universum)
             has_upper_limit = true;
 
-        /*//std::cerr << std::fixed << std::setprecision(100)
+        /*std::cerr << std::fixed << std::setprecision(100)
             << "relative_sample_size: " << relative_sample_size << "\n"
             << "relative_sample_offset: " << relative_sample_offset << "\n"
             << "lower_limit_float: " << lower_limit_rational << "\n"
@@ -790,7 +790,6 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         {
             RangesInDataPart & part = parts[part_index];
 
-            //std::cerr << "Creating sequential stream from part:" << part_index << std::endl;
             auto source = std::make_shared<MergeTreeSelectProcessor>(
                 data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                 settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,

@@ -230,7 +230,6 @@ void MergeTreeReader::readData(
     size_t from_mark, bool continue_reading, size_t max_rows_to_read,
     bool with_offsets)
 {
-    ////std::cerr << "READ DATA:" << name << " with type:" << type.getName() << std::endl;
     auto get_stream_getter = [&](bool stream_for_prefix) -> IDataType::InputStreamGetter
     {
         return [&, stream_for_prefix](const IDataType::SubstreamPath & substream_path) -> ReadBuffer *
@@ -382,7 +381,6 @@ void MergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_ev
 
 void MergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns & res_columns)
 {
-    //std::cerr << "EVALUATING\n";
     try
     {
         size_t num_columns = columns.size();

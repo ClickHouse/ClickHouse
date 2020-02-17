@@ -323,7 +323,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
-    //std::cerr << "Source header:" << source_header.dumpStructure() << std::endl;
     if (storage)
     {
         table_lock = storage->lockStructureForShare(false, context->getInitialQueryId());

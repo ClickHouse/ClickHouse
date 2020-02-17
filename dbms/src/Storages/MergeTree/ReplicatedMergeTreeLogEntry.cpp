@@ -189,10 +189,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         in.readStrict(&metadata_str[0], metadata_size);
     }
 
-    //std::cerr << "Read backn\n";
     in >> "\n";
-
-    //std::cerr << "Readed\n";
 
     /// Optional field.
     if (!in.eof())
