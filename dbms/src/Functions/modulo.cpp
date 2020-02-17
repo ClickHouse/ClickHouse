@@ -20,6 +20,7 @@ template <typename A, typename B>
 struct ModuloImpl
 {
     using ResultType = typename NumberTraits::ResultOfModulo<A, B>::Type;
+    static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -38,6 +39,7 @@ struct ModuloByConstantImpl
     : BinaryOperationImplBase<A, B, ModuloImpl<A, B>>
 {
     using ResultType = typename ModuloImpl<A, B>::ResultType;
+    static const constexpr bool allow_fixed_string = false;
 
     static void vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
     {

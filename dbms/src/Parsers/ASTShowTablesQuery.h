@@ -20,6 +20,7 @@ public:
     String from;
     String like;
     bool not_like{false};
+    ASTPtr where_expression;
     ASTPtr limit_length;
 
     /** Get the text that identifies this element. */
