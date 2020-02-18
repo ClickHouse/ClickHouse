@@ -39,6 +39,14 @@ private:
     std::vector<String>::iterator iter;
 };
 
+ReadIndirectBuffer::ReadIndirectBuffer(String path_, const String & data_)
+    : ReadBufferFromFileBase(), buf(ReadBufferFromString(data_)), path(std::move(path_))
+{
+    internal_buffer = buf.buffer();
+    working_buffer = internal_buffer;
+    pos = working_buffer.begin();
+}
+
 off_t ReadIndirectBuffer::seek(off_t offset, int whence)
 {
     if (whence == SEEK_SET)
@@ -77,14 +85,6 @@ off_t ReadIndirectBuffer::seek(off_t offset, int whence)
 off_t ReadIndirectBuffer::getPosition()
 {
     return pos - working_buffer.begin();
-}
-
-ReadIndirectBuffer::ReadIndirectBuffer(String path_, const String & data_)
-    : ReadBufferFromFileBase(), buf(ReadBufferFromString(data_)), path(std::move(path_))
-{
-    internal_buffer = buf.buffer();
-    working_buffer = internal_buffer;
-    pos = working_buffer.begin();
 }
 
 void WriteIndirectBuffer::finalize()
