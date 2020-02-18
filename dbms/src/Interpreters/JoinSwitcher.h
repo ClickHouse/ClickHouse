@@ -66,7 +66,7 @@ private:
     bool switched;
     mutable std::mutex switch_mutex;
     std::shared_ptr<AnalyzedJoin> table_join;
-    Block right_sample_block;
+    const Block right_sample_block;
 
     void switchJoin();
 };

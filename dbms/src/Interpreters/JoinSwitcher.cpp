@@ -64,7 +64,7 @@ void JoinSwitcher::switchJoin()
     if (right_blocks.size())
     {
         positions.reserve(right_sample_block.columns());
-        Block & tmp_block = *right_blocks.begin();
+        const Block & tmp_block = *right_blocks.begin();
         for (const auto & sample_column : right_sample_block)
         {
             positions.emplace_back(tmp_block.getPositionByName(sample_column.name));
@@ -72,14 +72,15 @@ void JoinSwitcher::switchJoin()
         }
     }
 
-    for (Block & block : right_blocks)
+    for (Block & saved_block : right_blocks)
     {
+        Block restored_block;
         for (size_t i = 0; i < positions.size(); ++i)
         {
-            auto & column = block.getByPosition(positions[i]);
-            block.insert(correctNullability(std::move(column), is_nullable[i]));
-            join->addJoinedBlock(block);
+            auto & column = saved_block.getByPosition(positions[i]);
+            restored_block.insert(correctNullability(std::move(column), is_nullable[i]));
         }
+        join->addJoinedBlock(restored_block);
     }
 
     switched = true;
