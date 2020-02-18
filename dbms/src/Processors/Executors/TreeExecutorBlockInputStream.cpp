@@ -220,9 +220,9 @@ void TreeExecutorBlockInputStream::calcRowsBeforeLimit()
         {
             if (auto & stream = source->getStream())
             {
-                auto & info = stream->getProfileInfo();
-                if (info.hasAppliedLimit())
-                    rows_before_limit += info.getRowsBeforeLimit();
+                auto & profile_info = stream->getProfileInfo();
+                if (profile_info.hasAppliedLimit())
+                    rows_before_limit += profile_info.getRowsBeforeLimit();
             }
         }
 
