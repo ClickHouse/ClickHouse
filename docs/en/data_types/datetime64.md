@@ -27,7 +27,7 @@ select toDateTime64('2020-01-01 11:22:33.123456', 3)
 ```sql
 CREATE TABLE dt
 (
-    `timestamp` DateTime64(3,'Europe/Moscow'), 
+    `timestamp` DateTime64(3, 'Europe/Moscow'), 
     `event_id` UInt8
 )
 ENGINE = TinyLog
@@ -90,4 +90,3 @@ FROM dt
 - [Operators for working with dates and times](../query_language/operators.md#operators-datetime)
 - [`Date` data type](date.md)
 - [`DateTime` data type](datetime.md)
-
