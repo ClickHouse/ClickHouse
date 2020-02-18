@@ -19,10 +19,14 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
 
 JoinSwitcher::JoinSwitcher(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block_)
     : switched(false)
+    , limits(table_join_->sizeLimits())
     , table_join(table_join_)
     , right_sample_block(right_sample_block_.cloneEmpty())
 {
     join = std::make_shared<Join>(table_join, right_sample_block);
+
+    if (!limits.hasLimits())
+        limits.max_bytes = table_join->defaultMaxBytes();
 }
 
 bool JoinSwitcher::addJoinedBlock(const Block & block, bool)
@@ -43,7 +47,6 @@ bool JoinSwitcher::addJoinedBlock(const Block & block, bool)
     size_t rows = join->getTotalRowCount();
     size_t bytes = join->getTotalByteCount();
 
-    auto & limits = table_join->sizeLimits();
     if (!limits.softCheck(rows, bytes))
         switchJoin();
 
