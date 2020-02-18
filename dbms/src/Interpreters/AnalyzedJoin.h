@@ -44,7 +44,9 @@ class AnalyzedJoin
     const size_t default_max_bytes;
     const bool join_use_nulls;
     const size_t max_joined_block_rows = 0;
-    const bool partial_merge_join = false;
+    const bool force_hash_join = false;
+    const bool force_partial_merge_join = false;
+    const bool prefer_partial_merge_join = false;
     const bool partial_merge_join_optimizations = false;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
 
@@ -88,8 +90,9 @@ public:
     const SizeLimits & sizeLimits() const { return size_limits; }
     VolumePtr getTemporaryVolume() { return tmp_volume; }
     bool allowMergeJoin() const;
-    bool forceMergeJoin() const { return allowMergeJoin() && partial_merge_join; }
-    bool forceHashJoin() const { return !allowMergeJoin(); }
+    bool preferMergeJoin() const { return allowMergeJoin() && prefer_partial_merge_join; }
+    bool forceMergeJoin() const { return force_partial_merge_join; }
+    bool forceHashJoin() const { return force_hash_join; }
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }

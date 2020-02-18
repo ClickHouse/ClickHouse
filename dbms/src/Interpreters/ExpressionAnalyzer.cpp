@@ -544,7 +544,7 @@ static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<AnalyzedJoin> analyzed_jo
 {
     if (analyzed_join->forceHashJoin())
         return std::make_shared<Join>(analyzed_join, sample_block);
-    else if (analyzed_join->forceMergeJoin())
+    else if (analyzed_join->forceMergeJoin() || analyzed_join->preferMergeJoin())
         return std::make_shared<MergeJoin>(analyzed_join, sample_block);
     return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
 }
