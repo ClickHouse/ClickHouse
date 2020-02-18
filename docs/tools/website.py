@@ -59,11 +59,11 @@ def minify_website(args):
                 logging.info('Minifying %s', path)
                 with open(path, 'rb') as f:
                     content = f.read().decode('utf-8')
-                    if filename.endswith('.html'):
-                        content = htmlmin.minify(content, remove_empty_space=False)
-                    elif filename.endswith('.css'):
-                        content = cssmin.cssmin(content)
-                    elif filename.endswith('.js'):
-                        content = jsmin.jsmin(content)
+                if filename.endswith('.html'):
+                    content = htmlmin.minify(content, remove_empty_space=False)
+                elif filename.endswith('.css'):
+                    content = cssmin.cssmin(content)
+                elif filename.endswith('.js'):
+                    content = jsmin.jsmin(content)
                 with open(path, 'wb') as f:
                     f.write(content.encode('utf-8'))
