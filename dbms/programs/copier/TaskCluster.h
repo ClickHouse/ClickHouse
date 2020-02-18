@@ -53,7 +53,7 @@ void TaskCluster::loadTasks(const Poco::Util::AbstractConfiguration &config, con
     Poco::Util::AbstractConfiguration::Keys tables_keys;
     config.keys(prefix + "tables", tables_keys);
 
-    for (const auto &table_key : tables_keys) {
+    for (const auto & table_key : tables_keys) {
         table_tasks.emplace_back(*this, config, prefix + "tables", table_key);
     }
 }

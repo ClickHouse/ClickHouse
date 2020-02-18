@@ -36,7 +36,7 @@ struct ShardPartitionPiece {
 
 String ShardPartitionPiece::getPartitionPiecePath() const
 {
-    return shard_partition.getPartitionPath() + "/piece" + std::to_string(current_piece_number);
+    return shard_partition.getPartitionPath() + "/piece_" + std::to_string(current_piece_number);
 }
 
 String ShardPartitionPiece::getPartitionPieceCleanStartPath() const
