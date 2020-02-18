@@ -6,19 +6,23 @@
 
 namespace DB
 {
-/// ALTERs in StorageReplicatedMergeTree have to be executed sequentially (one by one).
-/// But ReplicatedMergeTreeQueue execute all entries almost concurrently. The only depency between
-/// entries is data parts, but they are not suitable in alters case.
+/// ALTERs in StorageReplicatedMergeTree have to be executed sequentially (one
+/// by one). But ReplicatedMergeTreeQueue execute all entries almost
+/// concurrently. The only depency between entries is data parts, but they are
+/// not suitable in alters case.
 ///
-/// This class stores information about current alters in ReplicatedMergeTreeQueue, and control their order of execution.
-/// All methods have to be called under ReplicatedMergeTreeQueue state lock.
+/// This class stores information about current alters in
+/// ReplicatedMergeTreeQueue, and control their order of execution. Actually
+/// it's a part of ReplicatedMergeTreeQueue and shouldn't be used directly by
+/// other classes, also methods have to be called under ReplicatedMergeTreeQueue
+/// state lock.
 class ReplicatedMergeTreeAltersSequence
 {
 private:
-    /// In general case alter consist of two stages
-    /// Alter data and alter metadata. First we alter storage metadata
-    /// and then we can apply corresponding data changes (MUTATE_PART).
-    /// After that, we can remove alter from this sequence (alter is processed).
+    /// In general case alter consist of two stages Alter data and alter
+    /// metadata. First we alter storage metadata and then we can apply
+    /// corresponding data changes (MUTATE_PART). After that, we can remove
+    /// alter from this sequence (alter is processed).
     struct AlterState
     {
         bool metadata_finished = false;
