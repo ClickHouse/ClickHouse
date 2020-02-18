@@ -3,6 +3,7 @@
 #include <Interpreters/ProcessList.h>
 #include <stack>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 
 namespace DB
 {
@@ -215,7 +216,21 @@ Block TreeExecutorBlockInputStream::readImpl()
         }
 
         if (input_port->hasData())
-            return getHeader().cloneWithColumns(input_port->pull().detachColumns());
+        {
+            auto chunk = input_port->pull();
+            Block block = getHeader().cloneWithColumns(chunk.detachColumns());
+
+            if (auto & info = chunk.getChunkInfo())
+            {
+                if (auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get()))
+                {
+                    block.info.bucket_num = agg_info->bucket_num;
+                    block.info.is_overflows = agg_info->is_overflows;
+                }
+            }
+
+            return block;
+        }
 
         execute(false);
     }
