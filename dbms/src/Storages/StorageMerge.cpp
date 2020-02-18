@@ -337,7 +337,7 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
             auto concat = std::make_shared<ConcatProcessor>(pipes.at(0).getHeader(), pipes.size());
             Pipe pipe(std::move(pipes), std::move(concat));
 
-            pipes.clear();
+            pipes = Pipes();
             pipes.emplace_back(std::move(pipe));
         }
 
