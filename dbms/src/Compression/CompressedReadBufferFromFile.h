@@ -1,10 +1,9 @@
 #pragma once
 
-#include <memory>
-#include <time.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <port/clock.h>
 #include "CompressedReadBufferBase.h"
+#include <IO/ReadBufferFromFileBase.h>
+#include <time.h>
+#include <memory>
 
 
 namespace DB
