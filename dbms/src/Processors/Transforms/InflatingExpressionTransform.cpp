@@ -1,5 +1,6 @@
 #include <Processors/Transforms/InflatingExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {

@@ -2,7 +2,6 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
-#include <port/clock.h>
 
 
 namespace DB
@@ -61,7 +60,7 @@ public:
 
     size_t getFirstMarkToRead() const
     {
-        return all_mark_ranges.back().begin;
+        return all_mark_ranges.front().begin;
     }
 private:
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;

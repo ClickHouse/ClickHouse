@@ -261,7 +261,7 @@ using FunctionReinterpretAsDate = FunctionReinterpretStringAs<DataTypeDate,     
 using FunctionReinterpretAsDateTime = FunctionReinterpretStringAs<DataTypeDateTime, NameReinterpretAsDateTime>;
 
 using FunctionReinterpretAsString = FunctionReinterpretAsStringImpl<NameReinterpretAsString>;
-using FunctionReinterpretAsFixedString = FunctionReinterpretAsStringImpl<NameReinterpretAsFixedString>;
+using FunctionReinterpretAsFixedString = FunctionReinterpretAsFixedStringImpl<NameReinterpretAsFixedString>;
 
 
 }
