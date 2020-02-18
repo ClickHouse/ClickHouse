@@ -48,7 +48,7 @@ StatusFile::StatusFile(const std::string & path_)
             LOG_INFO(&Logger::get("StatusFile"), "Status file " << path << " already exists and is empty - probably unclean hardware restart.");
     }
 
-    fd = ::open(path.c_str(), O_WRONLY | O_CREAT, 0666);
+    fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
 
     if (-1 == fd)
         throwFromErrnoWithPath("Cannot open file " + path, path, ErrorCodes::CANNOT_OPEN_FILE);
