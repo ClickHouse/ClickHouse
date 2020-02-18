@@ -1,4 +1,4 @@
-alabaster==0.7.10
+alabaster==0.7.12
 Babel==2.5.1
 backports-abc==0.5
 beautifulsoup4==4.8.2
