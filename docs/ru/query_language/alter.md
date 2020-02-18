@@ -190,6 +190,7 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 - [ATTACH PARTITION|PART](#alter_attach-partition) – добавить партицию/кусок в таблицу из директории `detached`;
 - [ATTACH PARTITION FROM](#alter_attach-partition-from) – скопировать партицию из другой таблицы;
 - [REPLACE PARTITION](#alter_replace-partition) – скопировать партицию из другой таблицы с заменой;
+- [MOVE PARTITION TO TABLE] (#alter_move_to_table-partition) - переместить партицию в другую таблицу;
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) – удалить все значения в столбце для заданной партиции;
 - [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - очистить построенные вторичные индексы для заданной партиции;
 - [FREEZE PARTITION](#alter_freeze-partition) – создать резервную копию партиции;
@@ -286,6 +287,20 @@ ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 - Для таблиц должен быть задан одинаковый ключ партиционирования.
 
 Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
+
+#### MOVE PARTITION TO TABLE {#alter_move_to_table-partition}
+
+``` sql
+ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
+```
+
+Перемещает партицию из таблицы `table_source` в таблицу `table_dest` (добавляет к существующим данным в `table_dest`), с удалением данных из таблицы `table_source`.
+
+Следует иметь в виду:
+
+- Таблицы должны иметь одинаковую структуру.
+- Для таблиц должен быть задан одинаковый ключ партиционирования.
+
 
 #### CLEAR COLUMN IN PARTITION {#alter_clear-column-partition}
 
@@ -460,4 +475,4 @@ ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
 
 Записи о последних выполненных мутациях удаляются не сразу (количество сохраняемых мутаций определяется параметром движка таблиц `finished_mutations_to_keep`). Более старые записи удаляются.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/alter/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/) <!--hide-->

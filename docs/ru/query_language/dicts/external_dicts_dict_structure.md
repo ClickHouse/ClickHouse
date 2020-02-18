@@ -2,7 +2,7 @@
 
 Секция `<structure>` описывает ключ словаря и поля, доступные для запросов.
 
-Общий вид структуры:
+Описание в формате XML:
 
 ```xml
 <dictionary>
@@ -21,16 +21,34 @@
 </dictionary>
 ```
 
-В структуре описываются столбцы:
+Атрибуты описываются элементами:
 
-- `<id>` — [ключевой столбец](external_dicts_dict_structure.md#ext_dict_structure-key).
-- `<attribute>` — [столбец данных](external_dicts_dict_structure.md#ext_dict_structure-attributes). Столбцов может быть много.
+- `<id>` — [столбец с ключом](external_dicts_dict_structure.md#ext_dict_structure-key).
+- `<attribute>` — [столбец данных](external_dicts_dict_structure.md#ext_dict_structure-attributes). Можно задать несколько столбцов.
+
+
+Запрос создания словаря:
+
+```sql
+CREATE DICTIONARY dict_name (
+    Id UInt64,
+    -- attributes
+)
+PRIMARY KEY Id
+...
+```
+
+Атрибуты задаются в теле запроса:
+
+- `PRIMARY KEY` — [столбец с ключом](external_dicts_dict_structure.md#ext_dict_structure-key)
+- `AttrName AttrType` — [столбец данных](external_dicts_dict_structure.md#ext_dict_structure-attributes). Можно задать несколько столбцов.
+
 
 ## Ключ {#ext_dict_structure-key}
 
 ClickHouse поддерживает следующие виды ключей:
 
-- Числовой ключ. UInt64. Описывается в теге `<id>`.
+- Числовой ключ. `UInt64`. Описывается в теге `<id>`.
 - Составной ключ. Набор значений разного типа. Описывается в теге `<key>`.
 
 Структура может содержать либо `<id>` либо `<key>`.
@@ -38,7 +56,7 @@ ClickHouse поддерживает следующие виды ключей:
 !!! warning "Обратите внимание"
     Ключ не надо дополнительно описывать в атрибутах.
 
-### Числовой ключ
+### Числовой ключ {#ext_dict-numeric-key}
 
 Тип: `UInt64`.
 
@@ -109,8 +127,12 @@ ClickHouse поддерживает следующие виды ключей:
 | `type` | Тип данных ClickHouse.<br/>ClickHouse пытается привести значение из словаря к заданному типу данных. Например, в случае MySQL, в таблице-источнике поле может быть `TEXT`, `VARCHAR`, `BLOB`, но загружено может быть как `String`. [Nullable](../../data_types/nullable.md) не поддерживается. | Да |
 | `null_value` | Значение по умолчанию для несуществующего элемента.<br/>В примере это пустая строка. Нельзя указать значение `NULL`. | Да |
 | `expression` | [Выражение](../syntax.md#syntax-expressions), которое ClickHouse выполняет со значением.<br/>Выражением может быть имя столбца в удаленной SQL базе. Таким образом, вы можете использовать его для создания псевдонима удаленного столбца.<br/><br/>Значение по умолчанию: нет выражения. | Нет |
-| `hierarchical` | Поддержка иерархии. Отображение в идентификатор родителя.<br/><br/>Значение по умолчанию: `false`. | Нет |
-| `injective` | Признак [инъективности](https://ru.wikipedia.org/wiki/Инъекция_(математика)) отображения `id -> attribute`. <br/>Если `true`, то обращения к словарям с включенной инъективностью могут быть автоматически переставлены ClickHouse за стадию `GROUP BY`, что как правило существенно сокращает их количество.<br/><br/>Значение по умолчанию: `false`. | Нет |
+<a name="hierarchical-dict-attr"></a> `hierarchical` | Если `true`, то атрибут содержит ключ предка для текущего элемента. Смотрите [Иерархические словари](external_dicts_dict_hierarchical.md).<br/><br/>Default value: `false`. | No| `injective` | Признак [инъективности](https://ru.wikipedia.org/wiki/Инъекция_(математика)) отображения `id -> attribute`. <br/>Если `true`, то обращения к словарям с включенной инъективностью могут быть автоматически переставлены ClickHouse за стадию `GROUP BY`, что как правило существенно сокращает их количество.<br/><br/>Значение по умолчанию: `false`. | Нет |
 | `is_object_id` | Признак того, что запрос выполняется к документу MongoDB по `ObjectID`.<br/><br/>Значение по умолчанию: `false`. | Нет |
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/dicts/external_dicts_dict_structure/) <!--hide-->
+
+## Смотрите также
+
+ - [Функции для работы с внешними словарями](../functions/ext_dict_functions.md).
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

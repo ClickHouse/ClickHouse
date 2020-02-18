@@ -162,35 +162,48 @@ def test_inserts_local(started_cluster):
     assert instance.query("SELECT count(*) FROM local").strip() == '1'
 
 def test_prefer_localhost_replica(started_cluster):
-    test_query = "SELECT * FROM distributed ORDER BY id;"
+    test_query = "SELECT * FROM distributed ORDER BY id"
+
     node1.query("INSERT INTO distributed VALUES (toDate('2017-06-17'), 11)")
     node2.query("INSERT INTO distributed VALUES (toDate('2017-06-17'), 22)")
     time.sleep(1.0)
+
     expected_distributed = '''\
 2017-06-17\t11
 2017-06-17\t22
 '''
-    assert TSV(node1.query(test_query)) == TSV(expected_distributed)
-    assert TSV(node2.query(test_query)) == TSV(expected_distributed)
-    with PartitionManager() as pm:
-        pm.partition_instances(node1, node2, action='REJECT --reject-with tcp-reset')
-        node1.query("INSERT INTO replicated VALUES (toDate('2017-06-17'), 33)")
-        node2.query("INSERT INTO replicated VALUES (toDate('2017-06-17'), 44)")
-        time.sleep(1.0)
+
     expected_from_node2 =  '''\
 2017-06-17\t11
 2017-06-17\t22
 2017-06-17\t44
 '''
-    # Query is sent to node2, as it local and prefer_localhost_replica=1
-    assert TSV(node2.query(test_query)) == TSV(expected_from_node2)
+
     expected_from_node1 =  '''\
 2017-06-17\t11
 2017-06-17\t22
 2017-06-17\t33
 '''
+
+    assert TSV(node1.query(test_query)) == TSV(expected_distributed)
+    assert TSV(node2.query(test_query)) == TSV(expected_distributed)
+
+    # Make replicas inconsistent by disabling merges and fetches
+    #  for possibility of determining to which replica the query was send
+    node1.query("SYSTEM STOP MERGES")
+    node1.query("SYSTEM STOP FETCHES")
+    node2.query("SYSTEM STOP MERGES")
+    node2.query("SYSTEM STOP FETCHES")
+
+    node1.query("INSERT INTO replicated VALUES (toDate('2017-06-17'), 33)")
+    node2.query("INSERT INTO replicated VALUES (toDate('2017-06-17'), 44)")
+    time.sleep(1.0)
+
+    # Query is sent to node2, as it local and prefer_localhost_replica=1
+    assert TSV(node2.query(test_query)) == TSV(expected_from_node2)
+
     # Now query is sent to node1, as it higher in order
-    assert TSV(node2.query("SET load_balancing='in_order'; SET prefer_localhost_replica=0;" + test_query)) == TSV(expected_from_node1)
+    assert TSV(node2.query(test_query + " SETTINGS load_balancing='in_order', prefer_localhost_replica=0")) == TSV(expected_from_node1)
 
 def test_inserts_low_cardinality(started_cluster):
     instance = shard1

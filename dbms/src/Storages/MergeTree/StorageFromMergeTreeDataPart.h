@@ -54,6 +54,12 @@ public:
         return part->storage.getColumnDependencies(updated_columns);
     }
 
+    StorageInMemoryMetadata getInMemoryMetadata() const override
+    {
+        return part->storage.getInMemoryMetadata();
+    }
+
+
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(getIDFromPart(part_), part_->storage.getVirtuals())

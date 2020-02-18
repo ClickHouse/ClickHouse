@@ -192,7 +192,7 @@ The following operations with [partitions](../operations/table_engines/custom_pa
 - [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another.
 - [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
 - [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another and replaces.
-- [MOVE PARTITION](#alter_move-partition) - Move the data partition from one table to another.
+- [MOVE PARTITION TO TABLE] (#alter_move_to_table-partition) - Move the data partition from one table to another.
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Resets the value of a specified column in a partition.
 - [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Resets the specified secondary index in a partition.
 - [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
@@ -285,7 +285,7 @@ For the query to run successfully, the following conditions must be met:
 - Both tables must have the same structure.
 - Both tables must have the same partition key.
 
-#### MOVE PARTITION {#alter_move-partition}
+#### MOVE PARTITION TO TABLE {#alter_move_to_table-partition}
 
 ``` sql
 ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
@@ -476,4 +476,4 @@ A mutation query returns immediately after the mutation entry is added (in case 
 
 Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter). Older mutation entries are deleted.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/alter/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->

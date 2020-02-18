@@ -88,6 +88,9 @@ try
             && !endsWith(it->path, "/columns")
             && !endsWith(it->path, "/checksums"))
         {
+            /// The node is related to part.
+
+            /// If it is the part in old format (the node contains children) - convert it to the new format.
             if (!children_response.names.empty())
             {
                 auto part_header =  DB::ReplicatedMergeTreePartHeader::fromColumnsAndChecksumsZNodes(
@@ -103,6 +106,7 @@ try
         }
         else
         {
+            /// Recursively add children to the queue.
             for (const auto & name : children_response.names)
             {
                 std::string child_path = it->path == "/" ? it->path + name : it->path + '/' + name;

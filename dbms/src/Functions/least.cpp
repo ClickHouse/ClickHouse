@@ -9,6 +9,7 @@ template <typename A, typename B>
 struct LeastBaseImpl
 {
     using ResultType = NumberTraits::ResultOfLeast<A, B>;
+    static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -34,6 +35,7 @@ template <typename A, typename B>
 struct LeastSpecialImpl
 {
     using ResultType = std::make_signed_t<A>;
+    static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)

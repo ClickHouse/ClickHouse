@@ -6,6 +6,7 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
+#include <Interpreters/Context.h>
 #include <mysqlxx/Pool.h>
 
 

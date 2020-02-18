@@ -58,6 +58,8 @@ protected:
     /// Call this method to provide information about progress.
     void progress(const Progress & value);
 
+    void work() override;
+
 private:
     LocalLimits limits;
     std::shared_ptr<QuotaContext> quota;
@@ -70,6 +72,10 @@ private:
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};    /// Time with waiting time.
     /// According to total_stopwatch in microseconds.
     UInt64 last_profile_events_update_time = 0;
+
+    /// This flag checks if progress() was manually called at generate() call.
+    /// If not, it will be called for chunk after generate() was finished.
+    bool was_progress_called = false;
 };
 
 }

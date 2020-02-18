@@ -274,4 +274,4 @@ SELECT a, b, c FROM (SELECT ...)
 
 Отсутствует отдельный запрос для удаления представлений. Чтобы удалить представление, следует использовать `DROP TABLE`.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/create/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/create/) <!--hide-->

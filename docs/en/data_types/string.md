@@ -12,4 +12,4 @@ Similarly, certain functions for working with strings have separate variations t
 For example, the 'length' function calculates the string length in bytes, while the 'lengthUTF8' function calculates the string length in Unicode code points, assuming that the value is UTF-8 encoded.
 
 
-[Original article](https://clickhouse.yandex/docs/en/data_types/string/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data_types/string/) <!--hide-->

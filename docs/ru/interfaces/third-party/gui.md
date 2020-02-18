@@ -116,4 +116,20 @@
 - Подготовка данных и возможности ETL.
 - Моделирование данных с помощью SQL для их реляционного отображения.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/third-party/gui/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/gui/) <!--hide-->
+
+### Looker
+[Looker](https://looker.com) — платформа для обработки данных и бизнес-аналитики. Поддерживает более 50 диалектов баз данных, включая ClickHouse.  Looker можно установить самостоятельно или воспользоваться готовой платформой SaaS. 
+
+Просмотр данных, построение отображений и дашбордов, планирование отчётов и обмен данными с коллегами доступны с помощью браузера. Также, Looker предоставляет ряд инструментов, позволяющих встраивать сервис в другие приложения и API для обмена данными.
+
+Основные возможности:
+
+- Язык LookML, поддерживающий [моделирование данных](https://looker.com/platform/data-modeling).
+- Интеграция с различными системами с помощью [Data Actions](https://looker.com/platform/actions).
+- Инструменты для встраивания сервиса в приложения.
+- API.
+
+[Как сконфигурировать ClickHouse в Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
+
+[Original article](https://clickhouse.tech/docs/ru/interfaces/third-party/gui/) <!--hide-->

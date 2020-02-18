@@ -12,12 +12,12 @@ ClickHouse реализует параллельную обработку дан
 
 Мы рекомендуем использовать как минимум 4 ГБ оперативной памяти, чтобы иметь возможность выполнять нетривиальные запросы. Сервер ClickHouse может работать с гораздо меньшим объёмом RAM, память требуется для обработки запросов.
 
-Необходимый объем RAM зависит от:
+Необходимый объём RAM зависит от:
 
 - Сложности запросов.
 - Объёма данных, обрабатываемых в запросах.
 
-Для расчета объема RAM необходимо оценить размер промежуточных данных для операций [GROUP BY](../query_language/select.md#select-group-by-clause), [DISTINCT](../query_language/select.md#select-distinct), [JOIN](../query_language/select.md#select-join) а также других операций, которыми вы пользуетесь.
+Для расчета объёма RAM необходимо оценить размер промежуточных данных для операций [GROUP BY](../query_language/select.md#select-group-by-clause), [DISTINCT](../query_language/select.md#select-distinct), [JOIN](../query_language/select.md#select-join) а также других операций, которыми вы пользуетесь.
 
 ClickHouse может использовать внешнюю память для промежуточных данных. Подробнее смотрите в разделе [GROUP BY во внешней памяти](../query_language/select.md#select-group-by-in-external-memory).
 
