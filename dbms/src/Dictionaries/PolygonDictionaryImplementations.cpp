@@ -16,8 +16,8 @@ SimplePolygonDictionary::SimplePolygonDictionary(
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         InputType input_type_,
-        PointType point_type_)
-        : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_)
+        PointType point_type_):
+        IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_)
 {
 }
 
