@@ -214,6 +214,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess() const
                 required_access.emplace_back(AccessType::MODIFY_TTL, alter.database, alter.table);
                 break;
             }
+            case ASTAlterCommand::MATERIALIZE_TTL:
+            {
+                required_access.emplace_back(AccessType::MATERIALIZE_TTL, alter.database, alter.table);
+                break;
+            }
             case ASTAlterCommand::MODIFY_SETTING:
             {
                 required_access.emplace_back(AccessType::MODIFY_SETTING, alter.database, alter.table);

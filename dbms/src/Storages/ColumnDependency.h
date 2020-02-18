@@ -9,11 +9,11 @@ namespace DB
 
 struct ColumnDependency
 {
-    enum Kind
+    enum Kind : UInt8
     {
-        SKIP_INDEX,
-        TTL_EXPRESSION,
-        TTL_TARGET
+        SKIP_INDEX = 1,
+        TTL_EXPRESSION = 2,
+        TTL_TARGET = 4
     };
 
     ColumnDependency(const String & column_name_, Kind kind_)

@@ -48,6 +48,7 @@ public:
     }
 
     bool hasAnyTTL() const override { return part->storage.hasAnyTTL(); }
+    bool hasRowsTTL() const override { return part->storage.hasRowsTTL(); }
 
     ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override
     {

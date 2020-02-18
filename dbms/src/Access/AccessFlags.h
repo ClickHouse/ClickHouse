@@ -282,6 +282,8 @@ private:
 
         auto modify_ttl = std::make_unique<Node>("MODIFY TTL", next_flag++, TABLE_LEVEL);
         modify_ttl->aliases.push_back("ALTER MODIFY TTL");
+        auto materialize_ttl = std::make_unique<Node>("MATERIALIZE TTL", next_flag++, TABLE_LEVEL);
+        materialize_ttl->aliases.push_back("ALTER MATERIALIZE TTL");
 
         auto modify_setting = std::make_unique<Node>("MODIFY SETTING", next_flag++, TABLE_LEVEL);
         modify_setting->aliases.push_back("ALTER MODIFY SETTING");
@@ -293,7 +295,7 @@ private:
         auto freeze_partition = std::make_unique<Node>("FREEZE PARTITION", next_flag++, TABLE_LEVEL);
         ext::push_back(freeze_partition->aliases, "ALTER FREEZE PARTITION");
 
-        auto alter_table = std::make_unique<Node>("ALTER TABLE", std::move(update), std::move(delet), std::move(alter_column), std::move(index), std::move(alter_constraint), std::move(modify_ttl), std::move(modify_setting), std::move(move_partition), std::move(fetch_partition), std::move(freeze_partition));
+        auto alter_table = std::make_unique<Node>("ALTER TABLE", std::move(update), std::move(delet), std::move(alter_column), std::move(index), std::move(alter_constraint), std::move(modify_ttl), std::move(materialize_ttl), std::move(modify_setting), std::move(move_partition), std::move(fetch_partition), std::move(freeze_partition));
 
         auto refresh_view = std::make_unique<Node>("REFRESH VIEW", next_flag++, VIEW_LEVEL);
         ext::push_back(refresh_view->aliases, "ALTER LIVE VIEW REFRESH");

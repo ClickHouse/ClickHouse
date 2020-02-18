@@ -3955,11 +3955,6 @@ ColumnDependencies MergeTreeData::getColumnDependencies(const NameSet & updated_
     {
         if (add_dependent_columns(entry.expression, required_ttl_columns))
             updated_ttl_columns.insert(name);
-        else if (updated_columns.count(name))
-        {
-            updated_ttl_columns.insert(name);
-            add_dependent_columns(entry.expression, required_ttl_columns);
-        }
     }
 
     for (const auto & entry : move_ttl_entries)
