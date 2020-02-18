@@ -34,7 +34,7 @@ public:
         init();
     }
 
-    String getName() const override { return root->getName(); }
+    String getName() const override { return "TreeExecutor"; }
     Block getHeader() const override { return root->getOutputs().front().getHeader(); }
 
     /// This methods does not affect TreeExecutor as IBlockInputStream itself.
