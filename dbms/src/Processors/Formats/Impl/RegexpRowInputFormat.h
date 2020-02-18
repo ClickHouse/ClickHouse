@@ -15,7 +15,7 @@ class ReadBuffer;
 class RegexpRowInputFormat : public IRowInputFormat
 {
 public:
-    RegexpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_,  const FormatSettings & format_settings_);
+    RegexpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "RegexpRowInputFormat"; }
 
