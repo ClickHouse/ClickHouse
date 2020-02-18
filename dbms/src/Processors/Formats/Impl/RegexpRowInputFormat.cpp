@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 RegexpRowInputFormat::RegexpRowInputFormat(
-        ReadBuffer & in_, const Block & header_, Params params_,  const FormatSettings & format_settings_)
+        ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
         : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), regexp(format_settings_.regexp.regexp)
 {
     field_format = stringToFormat(format_settings_.regexp.escaping_rule);
