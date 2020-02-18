@@ -6,7 +6,7 @@
 | Company | Industry | Usecase | Cluster Size | (Un)Compressed Data Size<abbr title="of single replica"><sup>*</sup></abbr> | Reference |
 | --- | --- | --- | --- | --- | --- |
 | [2gis](https://2gis.ru) | Maps | Monitoring | — | — | [Talk in Russian, July 2019](https://youtu.be/58sPkXfq6nw) |
-| [Amadeus](https://amadeus.com/) | Travel | — | — | — | [Press Release, April 2018](https://www.altinity.com/blog/2018/4/5/amadeus-technologies-launches-investment-and-insights-tool-based-on-machine-learning-and-strategy-algorithms) |
+| [Amadeus](https://amadeus.com/) | Travel | Analytics | — | — | [Press Release, April 2018](https://www.altinity.com/blog/2018/4/5/amadeus-technologies-launches-investment-and-insights-tool-based-on-machine-learning-and-strategy-algorithms) |
 | [Appsflyer](https://www.appsflyer.com) | Mobile analytics | Main product | — | — | [Talk in Russian, July 2019](https://www.youtube.com/watch?v=M3wbRlcpBbY) |
 | [Badoo](https://badoo.com) | Dating | Timeseries | — | — | [Slides in Russian, December 2019](https://presentations.clickhouse.tech/meetup38/forecast.pdf) |
 | [CERN](http://public.web.cern.ch/public/) | Research  | Experiment | — | — | [Press release, April 2012](https://www.yandex.com/company/press_center/press_releases/2012/2012-04-10/) |
