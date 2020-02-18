@@ -21,8 +21,6 @@ else()
 endif()
 include(../cmake/limit_jobs.cmake)
 
-include(cmake/find_vectorclass.cmake)
-
 set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config_version.h)
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config.h)
 

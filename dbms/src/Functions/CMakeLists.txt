@@ -47,10 +47,6 @@ if (USE_ICU)
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${ICU_INCLUDE_DIRS})
 endif ()
 
-if (USE_VECTORCLASS)
-    target_include_directories (clickhouse_functions SYSTEM PRIVATE ${VECTORCLASS_INCLUDE_DIR})
-endif ()
-
 if (USE_FASTOPS)
     target_include_directories (clickhouse_functions SYSTEM PRIVATE ${FASTOPS_INCLUDE_DIR})
 endif ()
