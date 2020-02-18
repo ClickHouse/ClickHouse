@@ -22,7 +22,7 @@
 
 #include <Interpreters/Context.h>
 #include <Parsers/ASTLiteral.h>
-
+#include "StorageLogSettings.h"
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 #define DBMS_STORAGE_LOG_MARKS_FILE_NAME "__marks.mrk"
@@ -627,30 +627,24 @@ CheckResults StorageLog::checkData(const ASTPtr & /* query */, const Context & /
 
 void registerStorageLog(StorageFactory & factory)
 {
+    StorageFactory::StorageFeatures features{
+        .supports_settings = true
+    };
+
     factory.registerStorage("Log", [](const StorageFactory::Arguments & args)
     {
-        ASTs & engine_args = args.engine_args;
-
-        if (engine_args.size() > 1)
+        if (!args.engine_args.empty())
             throw Exception(
-                "Engine " + args.engine_name + " requires 0 or 1 arguments: [disk_name] (" + toString(args.engine_args.size()) + " given)",
+                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        for (size_t i = 0; i < engine_args.size(); ++i)
-            engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
-
-        DiskPtr disk = args.context.getDefaultDisk();
-
-        if (engine_args.size() == 1)
-        {
-            String disk_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-            disk = args.context.getDisk(disk_name);
-        }
+        String disk_name = getDiskName(*args.storage_def);
+        DiskPtr disk = args.context.getDisk(disk_name);
 
         return StorageLog::create(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
             args.context.getSettings().max_compress_block_size);
-    });
+    }, features);
 }
 
 }
