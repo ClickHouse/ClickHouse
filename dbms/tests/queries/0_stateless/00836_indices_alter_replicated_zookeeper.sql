@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS test.minmax_idx_r;
 DROP TABLE IF EXISTS test.minmax_idx2;
 DROP TABLE IF EXISTS test.minmax_idx2_r;
 
+SET replication_alter_partitions_sync = 2;
 
 CREATE TABLE test.minmax_idx
 (
@@ -98,7 +99,7 @@ SYSTEM SYNC REPLICA test.minmax_idx2_r;
 SELECT * FROM test.minmax_idx2 WHERE u64 * i32 >= 2 ORDER BY (u64, i32);
 SELECT * FROM test.minmax_idx2_r WHERE u64 * i32 >= 2 ORDER BY (u64, i32);
 
-ALTER TABLE test.minmax_idx2_r DROP INDEX idx1, DROP INDEX idx2 SETTINGS replication_alter_partitions_sync = 2;
+ALTER TABLE test.minmax_idx2_r DROP INDEX idx1, DROP INDEX idx2;
 
 SHOW CREATE TABLE test.minmax_idx2;
 SHOW CREATE TABLE test.minmax_idx2_r;
