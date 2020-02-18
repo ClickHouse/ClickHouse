@@ -4,6 +4,8 @@
 #include <stack>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/LimitTransform.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
 
 namespace DB
 {
@@ -199,6 +201,49 @@ void TreeExecutorBlockInputStream::execute(bool on_totals)
     }
 }
 
+void TreeExecutorBlockInputStream::calcRowsBeforeLimit()
+{
+    std::stack<IProcessor *> stack;
+    stack.push(root);
+
+    size_t rows_before_limit = 0;
+
+    while (!stack.empty())
+    {
+        auto processor = stack.top();
+        stack.pop();
+
+        if (auto * limit = typeid_cast<const LimitTransform *>(processor))
+            rows_before_limit += limit->getRowsBeforeLimitAtLeast();
+
+        if (auto * source = typeid_cast<SourceFromInputStream *>(processor))
+        {
+            if (auto & stream = source->getStream())
+            {
+                auto & info = stream->getProfileInfo();
+                if (info.hasAppliedLimit())
+                    rows_before_limit += info.getRowsBeforeLimit();
+            }
+        }
+
+        if (auto * sorting = typeid_cast<const PartialSortingTransform *>(processor))
+        {
+            rows_before_limit += sorting->getNumReadRows();
+
+            /// Don't go to children. Take rows_before_limit from last PartialSortingTransform.
+            continue;
+        }
+
+        for (auto & child_port : processor->getInputs())
+        {
+            auto * child_processor = &child_port.getOutputPort().getProcessor();
+            stack.push(child_processor);
+        }
+    }
+
+    info.setRowsBeforeLimit(rows_before_limit);
+}
+
 Block TreeExecutorBlockInputStream::readImpl()
 {
     while (true)
@@ -211,6 +256,8 @@ Block TreeExecutorBlockInputStream::readImpl()
                 if (input_totals_port->hasData())
                     totals = getHeader().cloneWithColumns(input_totals_port->pull().detachColumns());
             }
+
+            calcRowsBeforeLimit();
 
             return {};
         }
