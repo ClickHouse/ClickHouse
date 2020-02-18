@@ -31,7 +31,7 @@
 #include <Dictionaries/ComplexKeyCacheDictionary.h>
 #include <Dictionaries/RangeHashedDictionary.h>
 #include <Dictionaries/TrieDictionary.h>
-#include <Dictionaries/PolygonDictionary.h>
+#include <Dictionaries/PolygonDictionaryImplementations.h>
 
 #include <ext/range.h>
 
