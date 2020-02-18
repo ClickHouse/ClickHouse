@@ -285,7 +285,7 @@ SELECT * FROM system.metrics LIMIT 10
 
 ## system.metric_log {#system_tables-metric_log}
 
-Contains history of metrics values from tables `system.metrics` и `system.events`, periodically flush to disc with MegreTree() table engine
+Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
 For turn on metrics history collection on `system.metric_log`, create `/etc/clickhouse-server/config.d/metric_log.xml` with following content:
 ```xml
 <yandex>
