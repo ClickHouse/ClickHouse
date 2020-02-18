@@ -73,12 +73,13 @@ public:
 
 protected:
     Chunk generate() override;
+
 private:
     size_t block_size;
     NamesAndTypesList columns;
     StorageTinyLog & storage;
     std::shared_lock<std::shared_mutex> lock;
-    bool finished = false;
+    bool is_finished = false;
     size_t max_read_buffer_size;
 
     struct Stream
@@ -170,13 +171,13 @@ Chunk TinyLogSource::generate()
 {
     Block res;
 
-    if (finished || (!streams.empty() && streams.begin()->second->compressed.eof()))
+    if (is_finished || (!streams.empty() && streams.begin()->second->compressed.eof()))
     {
         /** Close the files (before destroying the object).
           * When many sources are created, but simultaneously reading only a few of them,
           * buffers don't waste memory.
           */
-        finished = true;
+        is_finished = true;
         streams.clear();
         return {};
     }
@@ -205,7 +206,7 @@ Chunk TinyLogSource::generate()
 
     if (!res || streams.begin()->second->compressed.eof())
     {
-        finished = true;
+        is_finished = true;
         streams.clear();
     }
 
