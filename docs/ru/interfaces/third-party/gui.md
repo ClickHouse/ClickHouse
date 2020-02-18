@@ -115,7 +115,7 @@
 - Поддержка множества источников данных.
 - Хранение материализованных данных.
 
-DataLens предоставляет [бесплатный тариф](https://cloud.yandex.ru/docs/datalens/pricing) для небольших проектов.
+Для небольших проектов DataLens [доступен бесплатно](https://cloud.yandex.ru/docs/datalens/pricing), в том числе и для коммерческого использования.
 
 - [Документация DataLens](https://cloud.yandex.ru/docs/datalens/).
 - [Визуализация данных из ClickHouse](https://cloud.yandex.ru/docs/solutions/datalens/data-from-ch-visualization).
