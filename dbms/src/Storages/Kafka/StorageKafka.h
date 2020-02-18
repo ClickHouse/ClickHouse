@@ -3,6 +3,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/Buffer_fwd.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/Semaphore.h>
 #include <ext/shared_ptr_helper.h>
@@ -53,7 +54,7 @@ public:
     ConsumerBufferPtr popReadBuffer();
     ConsumerBufferPtr popReadBuffer(std::chrono::milliseconds timeout);
 
-    ProducerBufferPtr createWriteBuffer();
+    ProducerBufferPtr createWriteBuffer(const Block & header);
 
     const auto & getTopics() const { return topics; }
     const auto & getFormatName() const { return format_name; }

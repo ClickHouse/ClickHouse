@@ -262,8 +262,11 @@ StorageLiveView::StorageLiveView(
 
     global_context.addDependency(select_table_id, table_id_);
 
-    is_temporary = query.temporary;
-    temporary_live_view_timeout = local_context.getSettingsRef().temporary_live_view_timeout.totalSeconds();
+    if (query.live_view_timeout)
+    {
+        is_temporary = true;
+        temporary_live_view_timeout = *query.live_view_timeout;
+    }
 
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
@@ -566,7 +569,7 @@ BlockInputStreams StorageLiveView::watch(
             std::static_pointer_cast<StorageLiveView>(shared_from_this()),
             blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit,
             context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
-            context.getSettingsRef().temporary_live_view_timeout.totalSeconds());
+            temporary_live_view_timeout);
 
         {
             std::lock_guard no_users_thread_lock(no_users_thread_mutex);
@@ -597,7 +600,7 @@ BlockInputStreams StorageLiveView::watch(
             std::static_pointer_cast<StorageLiveView>(shared_from_this()),
             blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit,
             context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
-            context.getSettingsRef().temporary_live_view_timeout.totalSeconds());
+            temporary_live_view_timeout);
 
         {
             std::lock_guard no_users_thread_lock(no_users_thread_mutex);

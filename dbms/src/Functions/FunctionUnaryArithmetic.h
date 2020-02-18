@@ -2,9 +2,11 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/Native.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnFixedString.h>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/castTypeToEither.h>
@@ -51,6 +53,18 @@ struct UnaryOperationImpl
 };
 
 
+template <typename Op>
+struct FixedStringUnaryOperationImpl
+{
+    static void NO_INLINE vector(const ColumnFixedString::Chars & a, ColumnFixedString::Chars & c)
+    {
+        size_t size = a.size();
+        for (size_t i = 0; i < size; ++i)
+            c[i] = Op::apply(a[i]);
+    }
+};
+
+
 template <typename FunctionName>
 struct FunctionUnaryArithmeticMonotonicity;
 
@@ -65,6 +79,7 @@ template <template <typename> class Op, typename Name, bool is_injective>
 class FunctionUnaryArithmetic : public IFunction
 {
     static constexpr bool allow_decimal = std::is_same_v<Op<Int8>, NegateImpl<Int8>> || std::is_same_v<Op<Int8>, AbsImpl<Int8>>;
+    static constexpr bool allow_fixed_string = Op<UInt8>::allow_fixed_string;
 
     template <typename F>
     static bool castType(const IDataType * type, F && f)
@@ -82,7 +97,8 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeFloat64,
             DataTypeDecimal<Decimal32>,
             DataTypeDecimal<Decimal64>,
-            DataTypeDecimal<Decimal128>
+            DataTypeDecimal<Decimal128>,
+            DataTypeFixedString
         >(type, std::forward<F>(f));
     }
 
@@ -106,16 +122,25 @@ public:
         bool valid = castType(arguments[0].get(), [&](const auto & type)
         {
             using DataType = std::decay_t<decltype(type)>;
-            using T0 = typename DataType::FieldType;
-
-            if constexpr (IsDataTypeDecimal<DataType>)
+            if constexpr (std::is_same_v<DataTypeFixedString, DataType>)
             {
-                if constexpr (!allow_decimal)
+                if constexpr (!Op<DataTypeFixedString>::allow_fixed_string)
                     return false;
-                result = std::make_shared<DataType>(type.getPrecision(), type.getScale());
+                result = std::make_shared<DataType>(type.getN());
             }
             else
-                result = std::make_shared<DataTypeNumber<typename Op<T0>::ResultType>>();
+            {
+                using T0 = typename DataType::FieldType;
+
+                if constexpr (IsDataTypeDecimal<DataType>)
+                {
+                    if constexpr (!allow_decimal)
+                        return false;
+                    result = std::make_shared<DataType>(type.getPrecision(), type.getScale());
+                }
+                else
+                    result = std::make_shared<DataTypeNumber<typename Op<T0>::ResultType>>();
+            }
             return true;
         });
         if (!valid)
@@ -129,10 +154,25 @@ public:
         bool valid = castType(block.getByPosition(arguments[0]).type.get(), [&](const auto & type)
         {
             using DataType = std::decay_t<decltype(type)>;
-            using T0 = typename DataType::FieldType;
 
-            if constexpr (IsDataTypeDecimal<DataType>)
+            if constexpr (std::is_same_v<DataTypeFixedString, DataType>)
             {
+                if constexpr (allow_fixed_string)
+                {
+                    if (auto col = checkAndGetColumn<ColumnFixedString>(block.getByPosition(arguments[0]).column.get()))
+                    {
+                        auto col_res = ColumnFixedString::create(col->getN());
+                        auto & vec_res = col_res->getChars();
+                        vec_res.resize(col->size() * col->getN());
+                        FixedStringUnaryOperationImpl<Op<UInt8>>::vector(col->getChars(), vec_res);
+                        block.getByPosition(result).column = std::move(col_res);
+                        return true;
+                    }
+                }
+            }
+            else if constexpr (IsDataTypeDecimal<DataType>)
+            {
+                using T0 = typename DataType::FieldType;
                 if constexpr (allow_decimal)
                 {
                     if (auto col = checkAndGetColumn<ColumnDecimal<T0>>(block.getByPosition(arguments[0]).column.get()))
@@ -148,6 +188,7 @@ public:
             }
             else
             {
+                using T0 = typename DataType::FieldType;
                 if (auto col = checkAndGetColumn<ColumnVector<T0>>(block.getByPosition(arguments[0]).column.get()))
                 {
                     auto col_res = ColumnVector<typename Op<T0>::ResultType>::create();
@@ -171,7 +212,10 @@ public:
         return castType(arguments[0].get(), [&](const auto & type)
         {
             using DataType = std::decay_t<decltype(type)>;
-            return !IsDataTypeDecimal<DataType> && Op<typename DataType::FieldType>::compilable;
+            if constexpr (std::is_same_v<DataTypeFixedString, DataType>)
+                return false;
+            else
+                return !IsDataTypeDecimal<DataType> && Op<typename DataType::FieldType>::compilable;
         });
     }
 
@@ -181,14 +225,19 @@ public:
         castType(types[0].get(), [&](const auto & type)
         {
             using DataType = std::decay_t<decltype(type)>;
-            using T0 = typename DataType::FieldType;
-            using T1 = typename Op<T0>::ResultType;
-            if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
+            if constexpr (std::is_same_v<DataTypeFixedString, DataType>)
+                return false;
+            else
             {
-                auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                auto * v = nativeCast(b, types[0], values[0](), std::make_shared<DataTypeNumber<T1>>());
-                result = Op<T0>::compile(b, v, is_signed_v<T1>);
-                return true;
+                using T0 = typename DataType::FieldType;
+                using T1 = typename Op<T0>::ResultType;
+                if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
+                {
+                    auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+                    auto * v = nativeCast(b, types[0], values[0](), std::make_shared<DataTypeNumber<T1>>());
+                    result = Op<T0>::compile(b, v, is_signed_v<T1>);
+                    return true;
+                }
             }
             return false;
         });

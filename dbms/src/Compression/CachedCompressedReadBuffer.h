@@ -5,7 +5,6 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include "CompressedReadBufferBase.h"
 #include <IO/UncompressedCache.h>
-#include <port/clock.h>
 
 
 namespace DB

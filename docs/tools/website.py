@@ -21,25 +21,27 @@ def build_website(args):
         )
     )
 
-def minify_website(args):
-    for root, _, filenames in os.walk(args.output_dir):
-        for filename in filenames:
-            path = os.path.join(root, filename)
-            if not (
-                filename.endswith('.html') or 
-                filename.endswith('.css') or 
-                filename.endswith('.js')
-            ):
-                continue
 
-            logging.info('Minifying %s', path)
-            with open(path, 'rb') as f:
-                content = f.read().decode('utf-8')
-            if filename.endswith('.html'):
-                content = htmlmin.minify(content, remove_empty_space=False)
-            elif filename.endswith('.css'):
-                content = cssmin.cssmin(content)
-            elif filename.endswith('.js'):
-                content = jsmin.jsmin(content)
-            with open(path, 'wb') as f:
-                f.write(content.encode('utf-8'))
+def minify_website(args):
+    if args.minify:
+        for root, _, filenames in os.walk(args.output_dir):
+            for filename in filenames:
+                path = os.path.join(root, filename)
+                if not (
+                    filename.endswith('.html') or
+                    filename.endswith('.css') or
+                    filename.endswith('.js')
+                ):
+                    continue
+    
+                logging.info('Minifying %s', path)
+                with open(path, 'rb') as f:
+                    content = f.read().decode('utf-8')
+                if filename.endswith('.html'):
+                    content = htmlmin.minify(content, remove_empty_space=False)
+                elif filename.endswith('.css'):
+                    content = cssmin.cssmin(content)
+                elif filename.endswith('.js'):
+                    content = jsmin.jsmin(content)
+                with open(path, 'wb') as f:
+                    f.write(content.encode('utf-8'))
