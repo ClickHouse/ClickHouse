@@ -369,7 +369,7 @@ private:
 
     /// Modify (structure) right block to save it in block list
     Block structureRightBlock(const Block & stored_block) const;
-    void initRightBlockStructure();
+    void initRightBlockStructure(Block & saved_block_sample);
     void initRequiredRightKeys();
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>

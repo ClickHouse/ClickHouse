@@ -316,7 +316,7 @@ void Join::setSampleBlock(const Block & block)
 
     ColumnRawPtrs key_columns = JoinCommon::extractKeysForJoin(key_names_right, block, right_table_keys, sample_block_with_columns_to_add);
 
-    initRightBlockStructure();
+    initRightBlockStructure(data->sample_block);
     initRequiredRightKeys();
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
@@ -481,13 +481,12 @@ void Join::initRequiredRightKeys()
     }
 }
 
-void Join::initRightBlockStructure()
+void Join::initRightBlockStructure(Block & saved_block_sample)
 {
-    auto & saved_block_sample = data->sample_block;
-
-    if (isRightOrFull(kind))
+    /// We could remove key columns for LEFT | INNER HashJoin but we should keep them for JoinSwitcher (if any).
+    bool save_key_columns = !table_join->forceHashJoin() || isRightOrFull(kind);
+    if (save_key_columns)
     {
-        /// Save keys for NonJoinedBlockInputStream
         saved_block_sample = right_table_keys.cloneEmpty();
     }
     else if (strictness == ASTTableJoin::Strictness::Asof)
