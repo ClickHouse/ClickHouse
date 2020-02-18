@@ -578,6 +578,25 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->initializeTraceCollector();
 #endif
 
+    /// Describe multiple reasons when query profiler cannot work.
+
+#if !USE_UNWIND
+    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work without bundled unwind (stack unwinding) library.");
+#endif
+
+#if WITH_COVERAGE
+    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they work extremely slow with test coverage.");
+#endif
+
+#if defined(SANITIZER)
+    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work under sanitizers"
+        " when two different stack unwinding methods will interfere with each other.");
+#endif
+
+    if (!hasPHDRCache())
+        LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
+            " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
+
     global_context->setCurrentDatabase(default_database);
 
     if (has_zookeeper && config().has("distributed_ddl"))

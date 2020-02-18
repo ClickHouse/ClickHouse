@@ -1,6 +1,5 @@
 /// Taken from SMHasher.
 #include "Random.h"
-#include <port/clock.h>
 
 Rand g_rand1(1);
 Rand g_rand2(2);

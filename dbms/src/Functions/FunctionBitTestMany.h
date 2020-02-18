@@ -142,8 +142,9 @@ private:
         {
             if (auto pos_col_const = checkAndGetColumnConst<ColumnVector<ValueType>>(block.getByPosition(arguments[i]).column.get()))
             {
-                const auto pos = pos_col_const->template getValue<ValueType>();
-                mask = mask | (1 << pos);
+                const auto pos = pos_col_const->getUInt(0);
+                if (pos < 8 * sizeof(ValueType))
+                    mask = mask | (ValueType(1) << pos);
             }
             else
             {
@@ -175,21 +176,22 @@ private:
     }
 
     template <typename PosType, typename ValueType>
-    bool addToMaskImpl(PaddedPODArray<ValueType> & mask, const IColumn * const pos_col_untyped)
+    bool NO_SANITIZE_UNDEFINED addToMaskImpl(PaddedPODArray<ValueType> & mask, const IColumn * const pos_col_untyped)
     {
         if (const auto pos_col = checkAndGetColumn<ColumnVector<PosType>>(pos_col_untyped))
         {
             const auto & pos = pos_col->getData();
 
             for (const auto i : ext::range(0, mask.size()))
-                mask[i] = mask[i] | (1 << pos[i]);
+                if (pos[i] < 8 * sizeof(ValueType))
+                    mask[i] = mask[i] | (ValueType(1) << pos[i]);
 
             return true;
         }
         else if (const auto pos_col_const = checkAndGetColumnConst<ColumnVector<PosType>>(pos_col_untyped))
         {
             const auto & pos = pos_col_const->template getValue<PosType>();
-            const auto new_mask = 1 << pos;
+            const auto new_mask = pos < 8 * sizeof(ValueType) ? ValueType(1) << pos : 0;
 
             for (const auto i : ext::range(0, mask.size()))
                 mask[i] = mask[i] | new_mask;
