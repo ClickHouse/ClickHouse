@@ -18,7 +18,7 @@ livereload==2.5.1
 Markdown==2.6.11
 MarkupSafe==1.0
 mkdocs==1.0.4
-Pygments==2.2.0
+Pygments==2.5.2
 python-slugify==1.2.6
 pytz==2017.3
 PyYAML==5.3
