@@ -75,8 +75,7 @@ bool ReplicatedMergeTreeAltersSequence::canExecuteDataAlter(int alter_version, s
 
 bool ReplicatedMergeTreeAltersSequence::canExecuteMetaAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/) const
 {
-    if (queue_state.empty())
-        return true;
+    assert(!queue_state.empty());
 
     /// We can execute only alters of metadata which are in head.
     return queue_state.begin()->first == alter_version;

@@ -2933,15 +2933,15 @@ void StorageReplicatedMergeTree::startup()
     data_parts_exchange_endpoint = std::make_shared<DataPartsExchange::Service>(*this);
     global_context.getInterserverIOHandler().addEndpoint(data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint);
 
-    queue_task_handle = global_context.getBackgroundPool().addTask([this] { return queueTask(); });
-    if (areBackgroundMovesNeeded())
-        move_parts_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
-
     /// In this thread replica will be activated.
     restarting_thread.start();
 
     /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attmept to do it
     startup_event.wait();
+
+    queue_task_handle = global_context.getBackgroundPool().addTask([this] { return queueTask(); });
+    if (areBackgroundMovesNeeded())
+        move_parts_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
 }
 
 
