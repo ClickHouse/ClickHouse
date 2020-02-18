@@ -18,19 +18,21 @@ using Point = IPolygonDictionary::Point;
 using Polygon = IPolygonDictionary::Polygon;
 using Box = bg::model::box<IPolygonDictionary::Point>;
 
+class FinalCell;
+
 class ICell
 {
 public:
     virtual ~ICell() = default;
 
-    virtual const ICell * find(Float64 x, Float64 y) const = 0;
+    [[nodiscard]] virtual const FinalCell * find(Float64 x, Float64 y) const = 0;
 };
 
 class DividedCell : public ICell
 {
 public:
     explicit DividedCell(std::vector<std::unique_ptr<ICell>> children_);
-    [[nodiscard]] const ICell * find(Float64 x, Float64 y) const override;
+    [[nodiscard]] const FinalCell * find(Float64 x, Float64 y) const override;
 private:
     std::vector<std::unique_ptr<ICell>> children;
 };
@@ -39,18 +41,19 @@ class FinalCell : public ICell
 {
 public:
     explicit FinalCell(std::vector<size_t> polygon_ids_);
-
-private:
     std::vector<size_t> polygon_ids;
 
-    [[nodiscard]] const ICell * find(Float64 x, Float64 y) const override;
+private:
+
+    [[nodiscard]] const FinalCell * find(Float64 x, Float64 y) const override;
 };
 
 class GridRoot : public ICell
 {
 public:
-    explicit GridRoot(const size_t min_intersections_, const size_t max_depth_, const std::vector<Polygon> & polygons_);
-    [[nodiscard]] const ICell * find(Float64 x, Float64 y) const override;
+    GridRoot(size_t min_intersections_, size_t max_depth_, const std::vector<Polygon> & polygons_);
+    void init(const std::vector<size_t> & order_);
+    [[nodiscard]] const FinalCell * find(Float64 x, Float64 y) const override;
 
     static constexpr size_t kSplit = 10;
 private:
