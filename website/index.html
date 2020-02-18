@@ -1,31 +1,6 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8"/>
-    <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
-    <meta name="viewport" content="width=device-width,initial-scale=1">
+{% extends 'base.html' %}
 
-    <title>ClickHouse — open source distributed column-oriented DBMS</title>
-
-    <link rel="shortcut icon" href="favicon.ico"/>
-
-    <meta property="og:title" content="ClickHouse DBMS"/>
-    <meta property="og:description"
-          content="ClickHouse is an open source column-oriented database management system that allows generating analytical data reports in real time using SQL queries."/>
-    <meta property="og:type" content="website"/>
-    <meta property="og:url" content="https://clickhouse.tech"/>
-    <meta property="og:image" content="https://clickhouse.tech/images/logo.png"/>
-
-    <meta property="twitter:title" content="ClickHouse DBMS"/>
-
-    <meta name="description"
-          content="ClickHouse is an open source distributed column-oriented database management system that allows generating analytical data reports in real time using SQL queries. Сreated by Yandex ClickHouse manages extremely large volumes of data in a stable and sustainable manner."/>
-    <meta name="keywords"
-          content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics" />
-
-    <link href="index.css?{{ rev_short }}" media="all" rel="stylesheet" />
-</head>
-<body>
+{% block content %}
 <div id="navbar">
     <div id="navbar-inner">
         <div id="top-menu" class="desktop-only">
@@ -496,137 +471,17 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
         if you are interested and we'll get in touch.
         Short reports about previous meetups are <a href="https://clickhouse.yandex/blog/en?tag=meetup" target="_blank">published in official ClickHouse blog</a>.</p>
 
-    <p class="warranty"><a href="https://github.com/ClickHouse/ClickHouse/blob/master/LICENSE"
-                           rel="external nofollow" target="_blank">
-        ClickHouse source code is published under Apache 2.0 License.</a> Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-        KIND, either express or implied.</p>
 
-    <p id="footer">&copy; 2016–2020 <a href="https://yandex.com/company/" rel="external nofollow">Yandex LLC</a></p>
+    </div>
 
-</div>
+    <a id="github_link"
+       href="https://github.com/ClickHouse/ClickHouse"
+       rel="external nofollow"
+       target="_blank"
+    ><div id="github">Fork me on GitHub</div></a>
 
-<a id="github_link"
-   href="https://github.com/ClickHouse/ClickHouse"
-   rel="external nofollow"
-   target="_blank"
-><div id="github">Fork me on GitHub</div></a>
+{% endblock %}
 
-<script type="text/javascript" src="https://yastatic.net/jquery/3.1.1/jquery.min.js"></script>
-<script type="text/javascript">
-    $(document).ready(function () {
-        $.get('https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/README.md', function(e) {
-            var skip = true;
-            var lines = e.split('\n');
-            var result = [];
-            $.each(lines, function(idx) {
-                var line = lines[idx];
-                if (skip) {
-                    if (line.includes('Upcoming Events')) {
-                        skip = false;
-                    }
-                } else {
-                    if (!line) { return; };
-                    line = line.split('](');
-                    var tail = line[1].split(') ');
-                    result.push(
-                        '<a class="announcement-link" rel="external nofollow" target="_blank" href="' +
-                        tail[0] + '">' + line[0].replace('* [', '').replace('ClickHouse Meetup in ', '') +
-                        '</a> ' + tail[1].slice(0, -1)
-                    );
-                }
-            });
-            if (result.length) {
-                if (result.length == 1) {
-                    result = 'Upcoming Meetup: ' + result[0];
-                } else {
-                    result = 'Upcoming Meetups: ' + result.join(', ');
-                    var offset = result.lastIndexOf(', ');
-                    result = result.slice(0, offset) + result.slice(offset).replace(', ', ' and ');
-                }
-                $('#announcement>.page').html(result);
-            }
-        });
-        var name = $('#logo-text').attr('alt').trim().toLowerCase();
-        var feedback_address = name + '-feedback' + '@yandex-team.com';
-        var feedback_email = $('#feedback_email');
-        feedback_email.attr('href', 'mailto:' + feedback_address);
-        feedback_email.html(feedback_address);
-
-        $("a[href^='#']").on('click', function (e) {
-            e.preventDefault();
-            var selector = $(e.target).attr('href');
-            var offset = 0;
-
-            if (selector) {
-                offset = $(selector).offset().top - $('#logo').height() * 1.5;
-            }
-            $('html, body').animate({
-                scrollTop: offset
-            }, 500);
-            window.history.replaceState('', document.title, window.location.href.replace(location.hash, '') + this.hash);
-        });
-
-        var hostParts = window.location.host.split('.');
-        if (hostParts.length > 2 && hostParts[0] != 'test' && hostParts[1] != 'github') {
-            window.location.host = hostParts[0] + '.' + hostParts[1];
-        }
-
-        var available_distributives = ['deb', 'rpm', 'tgz'];
-        var selected_distributive = 'deb';
-
-        function refresh_distributives() {
-            available_distributives.forEach(function (name) {
-                if (name == selected_distributive) {
-                    $('#repo_' + name).attr("class", "distributive_selected");
-                    $('#instruction_' + name).show();
-                } else {
-                    $('#repo_' + name).attr("class", "distributive_not_selected");
-                    $('#instruction_' + name).hide();
-                }
-            });
-        };
-
-        refresh_distributives();
-
-        available_distributives.forEach(function (name) {
-            $('#repo_' + name).on('click', function () {
-                selected_distributive = name;
-                refresh_distributives();
-            });
-        });
-    });
-</script>
-
-<!-- Yandex.Metrika counter -->
-<script type="text/javascript">
-    (function (d, w, c) {
-        (w[c] = w[c] || []).push(function() {
-            try {
-                w.yaCounter18343495 = new Ya.Metrika2({
-                    id:18343495,
-                    clickmap:true,
-                    trackLinks:true,
-                    accurateTrackBounce:true,
-                    webvisor:true
-                });
-            } catch(e) { }
-        });
-
-        var n = d.getElementsByTagName("script")[0],
-            s = d.createElement("script"),
-            f = function () { n.parentNode.insertBefore(s, n); };
-        s.type = "text/javascript";
-        s.async = true;
-        s.src = "https://mc.yandex.ru/metrika/tag.js";
-
-        if (w.opera == "[object Opera]") {
-            d.addEventListener("DOMContentLoaded", f, false);
-        } else { f(); }
-    })(document, window, "yandex_metrika_callbacks2");
-</script>
-<noscript>
-    <div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt=""/></div>
-</noscript>
-<!-- /Yandex.Metrika counter -->
-</body>
-</html>
+{% block extrajs %}
+<script type="text/javascript" src="js/index.js?{{ rev_short }}"></script>
+{% endblock %}

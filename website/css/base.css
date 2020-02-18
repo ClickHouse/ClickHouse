@@ -175,7 +175,6 @@ a:hover, a:active {
 }
 
 #call_to_action {
-    background: url('images/yandex-white-button.png') no-repeat;
     color: #ededed;
 }
 
@@ -184,7 +183,6 @@ a:hover, a:active {
 }
 
 #benchmark_learn_more {
-    background: url('images/yandex-black-button.png') no-repeat;
     float: right;
     color: #000;
 }
