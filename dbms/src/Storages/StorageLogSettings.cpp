@@ -15,7 +15,6 @@ String getDiskName(ASTStorage & storage_def)
                 return it->value.safeGet<String>();
         }
     }
-
     return "default";
 }
 
