@@ -65,6 +65,8 @@ private:
     /// Execute tree step-by-step until root returns next chunk or execution is finished.
     void execute(bool on_totals);
 
+    void calcRowsBeforeLimit();
+
     /// Moved from pipe.
     std::vector<std::shared_ptr<Context>> interpreter_context;
     std::vector<StoragePtr> storage_holders;
