@@ -60,7 +60,7 @@ std::unique_ptr<ICell> GridRoot::makeCell(Float64 current_min_x, Float64 current
             children.push_back(makeCell(current_min_x, current_min_y, current_min_x + x_shift, current_min_y + y_shift, possible_ids, depth));
         }
     }
-    return std::make_unique<DividedCell>(children);
+    return std::make_unique<DividedCell>(std::move(children));
 }
 
 void GridRoot::setBoundingBox()

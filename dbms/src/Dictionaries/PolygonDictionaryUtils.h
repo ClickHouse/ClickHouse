@@ -44,7 +44,6 @@ public:
     std::vector<size_t> polygon_ids;
 
 private:
-
     [[nodiscard]] const FinalCell * find(Float64 x, Float64 y) const override;
 };
 
