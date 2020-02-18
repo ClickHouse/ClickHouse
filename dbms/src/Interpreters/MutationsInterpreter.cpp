@@ -315,7 +315,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         validateUpdateColumns(storage, updated_columns, column_to_affected_materialized);
     }
 
-    /// Columns, that we need to read for calculation of skip indices or TTL expressions
+    /// Columns, that we need to read for calculation of skip indices or TTL expressions.
     auto dependencies = getAllColumnDependencies(storage, updated_columns);
 
     /// First, break a sequence of commands into stages.
@@ -394,18 +394,38 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
-            if (stages.empty() || !stages.back().column_to_updated.empty())
-                stages.emplace_back(context);
-            if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
-                stages.emplace_back(context);
+            if (storage->hasRowsTTL())
+            {
+                for (const auto & column : all_columns)
+                    dependencies.emplace(column.name, ColumnDependency::TTL_TARGET);
+            }
+            else
+            {
+                NameSet new_updated_columns;
+                auto column_ttls = storage->getColumns().getColumnTTLs();
+                for (const auto & elem : column_ttls)
+                {
+                    dependencies.emplace(elem.first, ColumnDependency::TTL_TARGET);
+                    new_updated_columns.insert(elem.first);
+                }
 
-            auto all_columns_vec = all_columns.getNames();
-            dependencies = getAllColumnDependencies(storage, NameSet(all_columns_vec.begin(), all_columns_vec.end()));
+                auto all_columns_vec = all_columns.getNames();
+                auto all_dependencies = getAllColumnDependencies(storage, NameSet(all_columns_vec.begin(), all_columns_vec.end()));
 
-            for (const auto & dependency : dependencies)
-                if (dependency.kind == ColumnDependency::TTL_TARGET)
-                    stages.back().column_to_updated.emplace(
-                        dependency.column_name, std::make_shared<ASTIdentifier>(dependency.column_name));
+                for (const auto & dependency : all_dependencies)
+                {
+                    if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
+                        dependencies.insert(dependency);
+                }
+
+                /// Recalc only skip indices of columns, that could be updated by TTL.
+                auto new_dependencies = storage->getColumnDependencies(new_updated_columns);
+                for (const auto & dependency : new_dependencies)
+                {
+                    if (dependency.kind == ColumnDependency::SKIP_INDEX)
+                        dependencies.insert(dependency);
+                }
+            }
         }
         else
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
@@ -413,35 +433,58 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
     /// We cares about affected indices because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
-    /// The same about colums, that are need for calculation of TTL expressions.
+    /// The same about colums, that are needed for calculation of TTL expressions.
     if (!dependencies.empty())
     {
-        if (!stages.empty())
-        {
-            std::vector<Stage> stages_copy;
-            /// Copy all filled stages except index calculation stage.
-            for (const auto & stage : stages)
-            {
-                stages_copy.emplace_back(context);
-                stages_copy.back().column_to_updated = stage.column_to_updated;
-                stages_copy.back().output_columns = stage.output_columns;
-                stages_copy.back().filters = stage.filters;
-            }
-
-            const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
-            InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
-
-            auto first_stage_header = interpreter.getSampleBlock();
-            auto in = std::make_shared<NullBlockInputStream>(first_stage_header);
-            updated_header = std::make_unique<Block>(addStreamsForLaterStages(stages_copy, in)->getHeader());
-        }
-        /// Special step to recalculate affected indices and TTL expressions.
-        stages.emplace_back(context);
+        NameSet changed_columns;
+        NameSet unchanged_columns;
         for (const auto & dependency : dependencies)
         {
             if (dependency.isReadOnly())
+                unchanged_columns.insert(dependency.column_name);
+            else
+                changed_columns.insert(dependency.column_name);
+        }
+
+        if (!changed_columns.empty())
+        {
+            if (stages.empty() || !stages.back().column_to_updated.empty())
+                stages.emplace_back(context);
+            if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
+                stages.emplace_back(context);
+
+            for (const auto & column : changed_columns)
                 stages.back().column_to_updated.emplace(
-                    dependency.column_name, std::make_shared<ASTIdentifier>(dependency.column_name));
+                    column, std::make_shared<ASTIdentifier>(column));
+        }
+
+        if (!unchanged_columns.empty())
+        {
+            if (!stages.empty())
+            {
+                std::vector<Stage> stages_copy;
+                /// Copy all filled stages except index calculation stage.
+                for (const auto & stage : stages)
+                {
+                    stages_copy.emplace_back(context);
+                    stages_copy.back().column_to_updated = stage.column_to_updated;
+                    stages_copy.back().output_columns = stage.output_columns;
+                    stages_copy.back().filters = stage.filters;
+                }
+
+                const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
+                InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
+
+                auto first_stage_header = interpreter.getSampleBlock();
+                auto in = std::make_shared<NullBlockInputStream>(first_stage_header);
+                updated_header = std::make_unique<Block>(addStreamsForLaterStages(stages_copy, in)->getHeader());
+            }
+
+            /// Special step to recalculate affected indices and TTL expressions.
+            stages.emplace_back(context);
+            for (const auto & column : unchanged_columns)
+                stages.back().column_to_updated.emplace(
+                    column, std::make_shared<ASTIdentifier>(column));
         }
     }
 

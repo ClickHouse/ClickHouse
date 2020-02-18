@@ -129,8 +129,11 @@ public:
     /// Example is StorageSystemNumbers.
     virtual bool hasEvenlyDistributedRead() const { return false; }
 
-    /// Returns true if there is set table TTL, any column TTL or any move TTL
+    /// Returns true if there is set table TTL, any column TTL or any move TTL.
     virtual bool hasAnyTTL() const { return false; }
+
+    /// Returns true if there is set TTL for rows.
+    virtual bool hasRowsTTL() const { return false; }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -459,7 +462,7 @@ public:
     /// Returns columns that could be updated by applying TTL rules
     virtual Names getColumnsUpdatedByTTL() const { return {}; }
 
-    /// Retuns columns, whose dependencies (skip indices, TTL expressions) 
+    /// Returns columns, whose dependencies (skip indices, TTL expressions) 
     /// would be affected if we will update @updated_columns set of columns.
     virtual ColumnDependencies getColumnDependencies(const NameSet & /* updated_columns */) const { return {}; }
 

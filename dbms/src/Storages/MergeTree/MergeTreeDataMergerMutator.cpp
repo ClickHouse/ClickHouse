@@ -998,21 +998,24 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     MergeStageProgress stage_progress(1.0);
     in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
 
-    bool need_remove_expired_values = false;
-    if (data.hasAnyTTL())
+    auto should_execute_ttl = [&](const auto & in_columns)
     {
-        auto in_columns = in_header.getNames();
+        if (!data.hasAnyTTL())
+            return false;
+
+        for (const auto & command : commands_for_part)
+            if (command.type == MutationCommand::MATERIALIZE_TTL)
+                return true;
+
         auto dependencies = data.getColumnDependencies(NameSet(in_columns.begin(), in_columns.end()));
         for (const auto & dependency : dependencies)
-        {
-            if (dependency.kind == ColumnDependency::TTL_EXPRESSION
-                || dependency.kind == ColumnDependency::TTL_TARGET)
-            {
-                need_remove_expired_values = true;
-                break;
-            }
-        }
-    }
+            if (dependency.kind == ColumnDependency::TTL_EXPRESSION || dependency.kind == ColumnDependency::TTL_TARGET)
+                return true;
+
+        return false;
+    };
+
+    bool need_remove_expired_values = should_execute_ttl(in_header.getNamesAndTypesList().getNames());
 
     if (updated_header.columns() == all_columns.size())
     {

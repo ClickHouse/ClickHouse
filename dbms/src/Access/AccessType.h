@@ -45,6 +45,7 @@ enum class AccessType
     ALTER_CONSTRAINT,   /// allows to execute ALTER {ADD|DROP} CONSTRAINT
 
     MODIFY_TTL,          /// allows to execute ALTER MODIFY TTL
+    MATERIALIZE_TTL,     /// allows to execute ALTER MATERIALIZE TTL
     MODIFY_SETTING,      /// allows to execute ALTER MODIFY SETTING
 
     MOVE_PARTITION,
@@ -214,6 +215,7 @@ namespace impl
             ACCESS_TYPE_TO_KEYWORD_CASE(ALTER_CONSTRAINT);
 
             ACCESS_TYPE_TO_KEYWORD_CASE(MODIFY_TTL);
+            ACCESS_TYPE_TO_KEYWORD_CASE(MATERIALIZE_TTL);
             ACCESS_TYPE_TO_KEYWORD_CASE(MODIFY_SETTING);
 
             ACCESS_TYPE_TO_KEYWORD_CASE(MOVE_PARTITION);
