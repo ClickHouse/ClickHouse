@@ -11,7 +11,7 @@ docutils==0.16
 futures==3.1.1
 htmlmin==0.1.12
 idna==2.6
-imagesize==0.7.1
+imagesize==1.2.0
 Jinja2==2.11.1
 jsmin==2.2.2
 livereload==2.5.1
