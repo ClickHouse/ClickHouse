@@ -205,9 +205,6 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
         for (const String & virtual_part_name : entry->getVirtualPartNames())
         {
             Strings replaced_parts;
-            /// In most cases we will replace only current parts, but sometimes
-            /// we can even replace virtual parts. For example when we failed to
-            /// GET source part and dowloaded merged/mutated part instead.
             current_parts.add(virtual_part_name, &replaced_parts);
 
             /// Each part from `replaced_parts` should become Obsolete as a result of executing the entry.
@@ -1896,4 +1893,10 @@ String padIndex(Int64 index)
     return std::string(10 - index_str.size(), '0') + index_str;
 }
 
+void ReplicatedMergeTreeQueue::removeCurrentPartsFromMutations()
+{
+    std::lock_guard state_lock(state_mutex);
+    for (const auto & part_name : current_parts.getParts())
+        removePartFromMutations(part_name);
+}
 }

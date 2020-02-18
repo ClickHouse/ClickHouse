@@ -180,6 +180,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
         /// because cleanup_thread doesn't delete log_pointer of active replicas.
         storage.queue.pullLogsToQueue(zookeeper);
+        storage.queue.removeCurrentPartsFromMutations();
         storage.last_queue_update_finish_time.store(time(nullptr));
 
         updateQuorumIfWeHavePart();

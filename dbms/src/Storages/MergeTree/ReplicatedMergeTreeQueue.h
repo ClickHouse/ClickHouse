@@ -383,6 +383,7 @@ public:
 
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
 
+    void removeCurrentPartsFromMutations();
 };
 
 class ReplicatedMergeTreeMergePredicate
