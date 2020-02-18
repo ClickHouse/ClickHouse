@@ -108,10 +108,11 @@ Features:
 Features:
 
 - Creation of simple visualizations and complex dashboards.
+- Public dashboards.
 - Support for multiple data sources.
 - Storage for materialized data.
 
-DataLens provides a [free plan](https://cloud.yandex.com/docs/datalens/pricing#materialized-data) for low-load projects and free public dashboards.
+DataLens provides a [free plan](https://cloud.yandex.com/docs/datalens/pricing) for low-load projects.
 
 - [DataLens documentation](https://cloud.yandex.com/docs/datalens/).
 - [Visualizing data from a ClickHouse database](https://cloud.yandex.com/docs/datalens/solutions/data-from-db-visualization) tutorial.

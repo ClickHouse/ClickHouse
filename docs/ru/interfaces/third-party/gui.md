@@ -111,13 +111,14 @@
 Основные возможности:
 
 - Возможность простой визуализации данных и создания сложных дашбордов.
+- Публичные дашборды.
 - Поддержка множества источников данных.
 - Хранение материализованных данных.
 
-DataLens предоставляет [бесплатный тариф](https://cloud.yandex.ru/docs/datalens/pricing#materialized-data) для небольших проектов, а также возможность бесплатной публикации дашбордов.
+DataLens предоставляет [бесплатный тариф](https://cloud.yandex.ru/docs/datalens/pricing) для небольших проектов.
 
 - [Документация DataLens](https://cloud.yandex.ru/docs/datalens/).
-- [Визуализация данных из ClickHouse](https://cloud.yandex.ru/docs/datalens/solutions/data-from-db-visualization).
+- [Визуализация данных из ClickHouse](https://cloud.yandex.ru/docs/solutions/datalens/data-from-ch-visualization).
 
 ### Holistics Software
 
