@@ -84,6 +84,7 @@ public:
 
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
 
+    bool supportsParallelInsert() const override { return true; }
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
 
@@ -149,6 +150,8 @@ public:
         UInt64 absolute_delay;
         UInt8 total_replicas;
         UInt8 active_replicas;
+        /// If the error has happened fetching the info from ZooKeeper, this field will be set.
+        String zookeeper_exception;
     };
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.

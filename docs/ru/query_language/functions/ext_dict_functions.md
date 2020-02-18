@@ -111,24 +111,27 @@ dictHas('dict_name', id)
 
 Тип — `UInt8`.
 
-## dictGetHierarchy
+## dictGetHierarchy {#dictgethierarchy}
 
-Для иерархического словаря возвращает массив ключей словаря, начиная с переданного `id_expr` и продолжая цепочкой родительских элементов.
+Создаёт массив, содержащий цепочку предков для заданного ключа в [иерархическом словаре](../dicts/external_dicts_dict_hierarchical.md).
+
+**Синтаксис**
 
 ```sql
-dictGetHierarchy('dict_name', id)
+dictGetHierarchy('dict_name', key)
 ```
 
 **Параметры**
 
 - `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
-- `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../data_types/int_uint.md).
+- `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../data_types/int_uint.md).
 
 **Возвращаемое значение**
 
-Иерархия ключей словаря.
+- Цепочка предков заданного ключа.
 
-Тип — Array(UInt64).
+Type: [Array(UInt64)](../../data_types/array.md).
+
 
 ## dictIsIn
 
@@ -189,4 +192,4 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 Если значение атрибута не удалось обработать или оно не соответствует типу данных атрибута, то ClickHouse генерирует исключение.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/ext_dict_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/ext_dict_functions/) <!--hide-->

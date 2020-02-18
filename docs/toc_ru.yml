@@ -7,6 +7,7 @@ nav:
   - 'Производительность': 'introduction/performance.md'
   - 'История': 'introduction/history.md'
   - 'Информационная поддержка': 'introduction/info.md'
+  - 'Пользователи': 'introduction/adopters.md'
 
 - 'Начало работы':
   - 'hidden': 'getting_started/index.md'
@@ -122,6 +123,7 @@ nav:
     - 'Функции для работы с географическими координатами': 'query_language/functions/geo.md'
     - 'Функции c Nullable аргументами': 'query_language/functions/functions_for_nulls.md'
     - 'Функции машинного обучения': 'query_language/functions/machine_learning_functions.md'
+    - 'Функции для интроспекции': 'query_language/functions/introspection.md'
     - 'Прочие функции': 'query_language/functions/other_functions.md'
   - 'Агрегатные функции':
     - 'Введение': 'query_language/agg_functions/index.md'
@@ -138,7 +140,7 @@ nav:
     - 'mysql': 'query_language/table_functions/mysql.md'
     - 'jdbc': 'query_language/table_functions/jdbc.md'
     - 'odbc': 'query_language/table_functions/odbc.md'
-    - 'hdfs': 'query_language/table_functions/hdfs.md'    
+    - 'hdfs': 'query_language/table_functions/hdfs.md'
     - 'input': 'query_language/table_functions/input.md'
   - 'Словари':
     - 'Введение': 'query_language/dicts/index.md'
@@ -149,6 +151,7 @@ nav:
       - 'Обновление словарей': 'query_language/dicts/external_dicts_dict_lifetime.md'
       - 'Источники внешних словарей': 'query_language/dicts/external_dicts_dict_sources.md'
       - 'Ключ и поля словаря': 'query_language/dicts/external_dicts_dict_structure.md'
+      - 'Иерархические словари': 'query_language/dicts/external_dicts_dict_hierarchical.md'
     - 'Встроенные словари': 'query_language/dicts/internal_dicts.md'
   - 'Операторы': 'query_language/operators.md'
   - 'Типы данных':
@@ -197,6 +200,8 @@ nav:
   - 'Конфигурационные файлы': 'operations/configuration_files.md'
   - 'Квоты': 'operations/quotas.md'
   - 'Системные таблицы': 'operations/system_tables.md'
+  - 'Оптимизация производительности':
+    - 'Профилирование запросов': 'operations/performance/sampling_query_profiler.md'
   - 'Тестирование оборудования': 'operations/performance_test.md'
   - 'Конфигурационные параметры сервера':
     - 'Введение': 'operations/server_settings/index.md'
@@ -216,13 +221,14 @@ nav:
 
 - 'Разработка':
   - 'hidden': 'development/index.md'
+  - 'Инструкция для начинающего разработчика ClickHouse': 'development/developer_instruction.md'
   - 'Обзор архитектуры ClickHouse': 'development/architecture.md'
+  - 'Навигация по коду ClickHouse': 'development/browse_code.md'
   - 'Как собрать ClickHouse на Linux': 'development/build.md'
   - 'Как собрать ClickHouse на Mac OS X': 'development/build_osx.md'
   - 'Как собрать ClickHouse на Linux для Mac OS X': 'development/build_cross_osx.md'
   - 'Как писать код на C++': 'development/style.md'
   - 'Как запустить тесты': 'development/tests.md'
-  - 'Инструкция для начинающего разработчика ClickHouse': 'development/developer_instruction.md'
   - 'Сторонние библиотеки': 'development/contrib.md'
 
 - 'Что нового':

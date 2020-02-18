@@ -62,7 +62,7 @@ void SettingNumber<Type>::set(const Field & x)
 template <typename Type>
 void SettingNumber<Type>::set(const String & x)
 {
-    set(completeParse<Type>(x));
+    set(parseWithSizeSuffix<Type>(x));
 }
 
 template <>
@@ -393,6 +393,47 @@ template <typename EnumType, typename Tag>
 void SettingEnum<EnumType, Tag>::set(const Field & x)
 {
     set(safeGet<const String &>(x));
+}
+
+
+
+String SettingURI::toString() const
+{
+    return value.toString();
+}
+
+Field SettingURI::toField() const
+{
+    return value.toString();
+}
+
+void SettingURI::set(const Poco::URI & x)
+{
+    value = x;
+    changed = true;
+}
+
+void SettingURI::set(const Field & x)
+{
+    const String & s = safeGet<const String &>(x);
+    set(s);
+}
+
+void SettingURI::set(const String & x)
+{
+    set(Poco::URI(x));
+}
+
+void SettingURI::serialize(WriteBuffer & buf, SettingsBinaryFormat) const
+{
+    writeStringBinary(toString(), buf);
+}
+
+void SettingURI::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
+{
+    String s;
+    readStringBinary(s, buf);
+    set(s);
 }
 
 

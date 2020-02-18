@@ -1,6 +1,7 @@
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Join.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -70,7 +71,7 @@ void StorageJoin::truncate(const ASTPtr &, const Context &, TableStructureWriteL
 
 HashJoinPtr StorageJoin::getJoin(std::shared_ptr<AnalyzedJoin> analyzed_join) const
 {
-    if (kind != analyzed_join->kind() || strictness != analyzed_join->strictness())
+    if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
         throw Exception("Table " + getStorageID().getNameForLogs() + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 
     if ((analyzed_join->forceNullableRight() && !use_nulls) ||
@@ -95,7 +96,7 @@ size_t StorageJoin::getSize() const { return join->getTotalRowCount(); }
 
 void registerStorageJoin(StorageFactory & factory)
 {
-    factory.registerStorage("Join", [](const StorageFactory::Arguments & args)
+    auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         /// Join(ANY, LEFT, k1, k2, ...)
 
@@ -209,7 +210,9 @@ void registerStorageJoin(StorageFactory & factory)
             args.constraints,
             join_any_take_last_row,
             args.context);
-    });
+    };
+
+    factory.registerStorage("Join", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
 
 template <typename T>

@@ -444,7 +444,7 @@ JOIN的行为受 [join_use_nulls](../operations/settings/settings.md) 的影响�
 如果JOIN的key是 [Nullable](../data_types/nullable.md) 类型的字段，则其中至少一个存在 [NULL](syntax.md) 值的key不会被关联。
 
 
-### WHERE 子句
+### WHERE 子句 {#select-where}
 
 如果存在WHERE子句, 则在该子句中必须包含一个UInt8类型的表达式。 这个表达是通常是一个带有比较和逻辑的表达式。
 这个表达式将会在所有数据转换前用来过滤数据。
@@ -975,4 +975,4 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
 
 在所有的其他情况下，我们不建议使用星号，因为它是列式数据库的缺点而不是优点。
 
-[来源文章](https://clickhouse.yandex/docs/zh/query_language/select/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/zh/query_language/select/) <!--hide-->

@@ -161,4 +161,4 @@ Fields for `pattern` and `default` sections:
 </graphite_rollup>
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->

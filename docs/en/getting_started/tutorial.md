@@ -6,7 +6,7 @@ By going through this tutorial you'll learn how to set up basic ClickHouse clust
 
 ## Single Node Setup
 
-To postpone complexities of distributed environment, we'll start with deploying ClickHouse on a single server or virtual machine. ClickHouse is usually installed from [deb](index.md#from-deb-packages) or [rpm](index.md#from-rpm-packages) packages, but there are [alternatives](index.md#from-docker-image) for the operating systems that do no support them.
+To postpone complexities of distributed environment, we'll start with deploying ClickHouse on a single server or virtual machine. ClickHouse is usually installed from [deb](index.md#install-from-deb-packages) or [rpm](index.md#from-rpm-packages) packages, but there are [alternatives](index.md#from-docker-image) for the operating systems that do no support them.
 
 For example, you have chosen `deb` packages and executed:
 ``` bash
@@ -602,7 +602,7 @@ ZooKeeper is not a strict requirement: in some simple cases you can duplicate th
 
 ZooKeeper locations need to be specified in configuration file:
 ``` xml
-<zookeeper-servers>
+<zookeeper>
     <node>
         <host>zoo01.yandex.ru</host>
         <port>2181</port>
@@ -615,7 +615,7 @@ ZooKeeper locations need to be specified in configuration file:
         <host>zoo03.yandex.ru</host>
         <port>2181</port>
     </node>
-</zookeeper-servers>
+</zookeeper>
 ```
 
 Also we need to set macros for identifying each shard and replica, it will be used on table creation:

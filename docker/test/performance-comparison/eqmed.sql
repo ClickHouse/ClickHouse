@@ -1,14 +1,14 @@
 -- input is table(query text, run UInt32, version int, time float)
 select
 --   abs(diff_percent) > rd_quantiles_percent[3] fail,
-   floor(original_medians_array.time_by_version[1], 4) left,
-   floor(original_medians_array.time_by_version[2], 4) right,
-   floor((right - left) / left, 3) diff_percent,
-   arrayMap(x -> floor(x / left, 3), rd.rd_quantiles) rd_quantiles_percent,
+   floor(original_medians_array.time_by_version[1], 4) l,
+   floor(original_medians_array.time_by_version[2], 4) r,
+   floor((r - l) / l, 3) diff_percent,
+   arrayMap(x -> floor(x / l, 3), rd.rd_quantiles) rd_quantiles_percent,
    query 
 from
    (
-      select query, quantiles(0.05, 0.5, 0.95)(abs(time_by_label[1] - time_by_label[2])) rd_quantiles -- quantiles of randomization distribution
+      select query, quantiles(0.05, 0.5, 0.95, 0.99)(abs(time_by_label[1] - time_by_label[2])) rd_quantiles -- quantiles of randomization distribution
       from
          (
             select query, virtual_run, groupArrayInsertAt(median_time, random_label) time_by_label -- make array 'random label' -> 'median time'

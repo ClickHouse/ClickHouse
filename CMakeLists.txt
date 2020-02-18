@@ -229,6 +229,10 @@ endif ()
 # Using system libs can cause a lot of warnings in includes (on macro expansion).
 if (UNBUNDLED OR NOT (OS_LINUX OR OS_DARWIN) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
+
+    if (NOT NO_WERROR)
+        add_warning(error)
+    endif ()
 endif ()
 
 # Make this extra-checks for correct library dependencies.
@@ -326,7 +330,6 @@ include (cmake/find/poco.cmake)
 include (cmake/find/lz4.cmake)
 include (cmake/find/xxhash.cmake)
 include (cmake/find/sparsehash.cmake)
-include (cmake/find/rt.cmake)
 include (cmake/find/execinfo.cmake)
 include (cmake/find/re2.cmake)
 include (cmake/find/libgsasl.cmake)
@@ -341,6 +344,7 @@ endif()
 include (cmake/find/libxml2.cmake)
 include (cmake/find/brotli.cmake)
 include (cmake/find/protobuf.cmake)
+include (cmake/find/grpc.cmake)
 include (cmake/find/pdqsort.cmake)
 include (cmake/find/hdfs3.cmake) # uses protobuf
 include (cmake/find/s3.cmake)
@@ -364,9 +368,9 @@ if (ENABLE_TESTS)
 endif ()
 
 # Need to process before "contrib" dir:
-include (libs/libcommon/cmake/find_jemalloc.cmake)
-include (libs/libcommon/cmake/find_cctz.cmake)
-include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
+include (cmake/find/jemalloc.cmake)
+include (cmake/find/cctz.cmake)
+include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
@@ -398,7 +402,7 @@ macro (add_executable target)
     endif()
 endmacro()
 
-add_subdirectory (libs)
+add_subdirectory (base)
 add_subdirectory (utils)
 add_subdirectory (dbms)
 

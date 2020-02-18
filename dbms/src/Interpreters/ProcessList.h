@@ -64,9 +64,8 @@ struct QueryStatusInfo
     ClientInfo client_info;
     bool is_cancelled;
 
-    /// Optional fields, filled by request
-    std::vector<UInt32> thread_numbers;
-    std::vector<UInt32> os_thread_ids;
+    /// Optional fields, filled by query
+    std::vector<UInt64> thread_ids;
     std::shared_ptr<ProfileEvents::Counters> profile_counters;
     std::shared_ptr<Settings> query_settings;
 };
