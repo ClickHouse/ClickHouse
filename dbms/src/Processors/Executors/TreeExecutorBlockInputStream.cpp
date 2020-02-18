@@ -207,6 +207,7 @@ void TreeExecutorBlockInputStream::calcRowsBeforeLimit()
     stack.push(root);
 
     size_t rows_before_limit = 0;
+    bool has_limit = false;
 
     while (!stack.empty())
     {
@@ -214,7 +215,10 @@ void TreeExecutorBlockInputStream::calcRowsBeforeLimit()
         stack.pop();
 
         if (auto * limit = typeid_cast<const LimitTransform *>(processor))
+        {
+            has_limit = true;
             rows_before_limit += limit->getRowsBeforeLimitAtLeast();
+        }
 
         if (auto * source = typeid_cast<SourceFromInputStream *>(processor))
         {
@@ -222,13 +226,17 @@ void TreeExecutorBlockInputStream::calcRowsBeforeLimit()
             {
                 auto & profile_info = stream->getProfileInfo();
                 if (profile_info.hasAppliedLimit())
+                {
+                    has_limit = true;
                     rows_before_limit += profile_info.getRowsBeforeLimit();
+                }
             }
         }
 
         if (auto * sorting = typeid_cast<const PartialSortingTransform *>(processor))
         {
             rows_before_limit += sorting->getNumReadRows();
+            has_limit = true;
 
             /// Don't go to children. Take rows_before_limit from last PartialSortingTransform.
             continue;
@@ -241,7 +249,8 @@ void TreeExecutorBlockInputStream::calcRowsBeforeLimit()
         }
     }
 
-    info.setRowsBeforeLimit(rows_before_limit);
+    if (has_limit)
+        info.setRowsBeforeLimit(rows_before_limit);
 }
 
 Block TreeExecutorBlockInputStream::readImpl()
