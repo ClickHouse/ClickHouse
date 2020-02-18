@@ -169,7 +169,7 @@ void registerDictionaryPolygon(DictionaryFactory & factory)
 {
 
     factory.registerLayout("polygon", createLayout<SimplePolygonDictionary>, true);
-    factory.registerLayout("grid-polygon", createLayout<GridPolygonDictionary>, true);
+    factory.registerLayout("grid_polygon", createLayout<GridPolygonDictionary>, true);
 }
 
 }
