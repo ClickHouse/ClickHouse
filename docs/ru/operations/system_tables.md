@@ -277,7 +277,7 @@ SELECT * FROM system.metrics LIMIT 10
 
 ## system.metric_log {#system_tables-metric_log}
 
-Содержит историю значений метрик из таблиц `system.metrics` и `system.events`, периодически сбрасываемую на диск с помощью MegreTree()
+Содержит историю значений метрик из таблиц `system.metrics` и `system.events`, периодически сбрасываемую на диск.
 Для включения сбора истории метрик в таблице `system.metric_log`  создайте `/etc/clickhouse-server/config.d/metric_log.xml` следующего содержания:
 ```xml
 <yandex>
