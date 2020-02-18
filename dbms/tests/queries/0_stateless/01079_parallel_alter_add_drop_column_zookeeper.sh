@@ -96,6 +96,11 @@ done
 
 echo "Equal number of columns"
 
+# This alter will finish all previous, but replica 1 maybe still not up-to-date
+while [[ $($CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_alter_add_drop_1 MODIFY COLUMN value0 String SETTINGS replication_alter_partitions_sync=2" 2>&1) ]]; do
+    sleep 1
+done
+
 for i in `seq $REPLICAS`; do
     $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_alter_add_drop_$i"
     $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.mutations WHERE is_done = 0 and table = 'concurrent_alter_add_drop_$i'"
