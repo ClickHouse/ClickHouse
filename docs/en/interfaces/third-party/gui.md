@@ -101,6 +101,21 @@ Features:
 - Refactorings.
 - Search and Navigation.
 
+### Yandex DataLens {#yandex-datalens}
+
+[Yandex DataLens](https://cloud.yandex.ru/services/datalens) is a service of data visualization and analytics.
+
+Features:
+
+- Creation of simple visualizations and complex dashboards.
+- Support for multiple data sources.
+- Storage for materialized data.
+
+DataLens provides a [free plan](https://cloud.yandex.com/docs/datalens/pricing#materialized-data) for low-load projects and free public dashboards.
+
+- [DataLens documentation](https://cloud.yandex.com/docs/datalens/).
+- [Visualizing data from a ClickHouse database](https://cloud.yandex.com/docs/datalens/solutions/data-from-db-visualization) tutorial.
+
 ### Holistics Software
 
 [Holistics](https://www.holistics.io/) is a full-stack data platform and business intelligence tool. 

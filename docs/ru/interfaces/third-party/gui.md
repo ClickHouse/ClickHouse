@@ -104,6 +104,21 @@
 - Рефакторинги.
 - Поиск и навигация.
 
+### Yandex DataLens {#yandex-datalens}
+
+[Yandex DataLens](https://cloud.yandex.ru/services/datalens) — cервис визуализации и анализа данных.
+
+Основные возможности:
+
+- Возможность простой визуализации данных и создания сложных дашбордов.
+- Поддержка множества источников данных.
+- Хранение материализованных данных.
+
+DataLens предоставляет [бесплатный тариф](https://cloud.yandex.ru/docs/datalens/pricing#materialized-data) для небольших проектов, а также возможность бесплатной публикации дашбордов.
+
+- [Документация DataLens](https://cloud.yandex.ru/docs/datalens/).
+- [Визуализация данных из ClickHouse](https://cloud.yandex.ru/docs/datalens/solutions/data-from-db-visualization).
+
 ### Holistics Software
 
 [Holistics](https://www.holistics.io/) — full-stack платформа для обработки данных и бизнес-аналитики.
