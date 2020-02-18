@@ -37,18 +37,31 @@ $(document).ready(function () {
     feedback_email.attr('href', 'mailto:' + feedback_address);
     feedback_email.html(feedback_address);
 
-    $("a[href^='#']").on('click', function (e) {
-        e.preventDefault();
-        var selector = $(e.target).attr('href');
-        var offset = 0;
+    $(document).click(function (event) {
+        var target = $(event.target);
+        var target_id = target.attr('id');
+        var selector = target.attr('href');
 
-        if (selector) {
-            offset = $(selector).offset().top - $('#logo').height() * 1.5;
+        $('#navbar-toggle').collapse('hide');
+
+        if (target_id && target_id.startsWith('logo-')) {
+            selector = '#';
         }
-        $('html, body').animate({
-            scrollTop: offset
-        }, 500);
-        window.history.replaceState('', document.title, window.location.href.replace(location.hash, '') + this.hash);
+
+        if (selector && selector.startsWith('#')) {
+            event.preventDefault();
+            var dst = window.location.href.replace(window.location.hash, '');
+            var offset = 0;
+
+            if (selector !== '#') {
+                offset = $(selector).offset().top - $('#navbar-toggle').height() * 2;
+                dst += selector;
+            }
+            $('html, body').animate({
+                scrollTop: offset
+            }, 500);
+            window.history.replaceState('', document.title, dst);
+        }
     });
 
     var hostParts = window.location.host.split('.');

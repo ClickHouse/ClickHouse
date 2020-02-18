@@ -11,9 +11,7 @@ import jsmin
 def build_website(args):
     logging.info('Building website')
     env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(
-            os.path.join(args.website_dir, 'templates')
-        )
+        loader=jinja2.FileSystemLoader(args.website_dir)
     )
 
     shutil.copytree(
@@ -26,7 +24,8 @@ def build_website(args):
             'docs',
             'public',
             'node_modules',
-            'templates'
+            'templates',
+            'feathericons'
         )
     )
 

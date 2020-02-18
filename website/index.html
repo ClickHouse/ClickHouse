@@ -1,72 +1,72 @@
-{% extends 'base.html' %}
+{% extends "templates/base.html" %}
 
 {% block content %}
-<div id="navbar">
-    <div id="navbar-inner">
-        <div id="top-menu" class="desktop-only">
-            <a class="menu_item" href="#quick-start">Quick Start</a>
-            <a class="menu_item" href="#performance">Performance</a>
-            <a class="menu_item" href="docs/en/">Documentation</a>
-            <a class="menu_item" href="https://clickhouse.yandex/blog/en/">Blog</a>
-            <a class="menu_item" href="#contacts">Contacts</a>
-        </div>
-
-        <a id="logo" href="#">
-            <h1 id="main-title">
-                <svg id="title-logo" xmlns="http://www.w3.org/2000/svg" width="48" height="44" viewBox="0 0 9 8">
-                    <path class="red" d="M0,7 h1 v1 h-1 z"></path>
-                    <path class="orange" d="M0,0 h1 v7 h-1 z"></path>
-                    <path class="orange" d="M2,0 h1 v8 h-1 z"></path>
-                    <path class="orange" d="M4,0 h1 v8 h-1 z"></path>
-                    <path class="orange" d="M6,0 h1 v8 h-1 z"></path>
-                    <path class="orange" d="M8,3.25 h1 v1.5 h-1 z"></path>
-                </svg>
-
-                <img id="logo-text" src="images/clickhouse-black.svg?{{ rev_short }}" alt="ClickHouse" />
-            </h1>
+<nav class="navbar navbar-expand-lg navbar-light bg-white sticky-top">
+    <div class="container">
+        <a class="navbar-brand" href="#">
+            <img id="logo-icon" src="images/logo.svg" />
+            <img id="logo-text" src="images/clickhouse-black.svg" alt="ClickHouse" />
         </a>
-    </div>
-</div>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbar-toggle" aria-controls="navbar-toggle" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
 
-<div id="hero">
-    <div class="page">
-        <div class="block-70">
-            <p id="short-description">ClickHouse is an <span class="orange">open&nbsp;source</span> column-oriented
-                database management system
-                capable of <span class="orange">real&nbsp;time</span> generation of analytical data reports using <span
-                        class="orange">SQL</span>&nbsp;queries.</p>
-            <a id="call_to_action" href="#quick-start">
-                Quick Start
-            </a>
-        </div>
-        <div class="block-30">
-            <ul id="index_ul" class="dashed">
-                <li>
-                    <a class="index_item" href="#blazing-fast">Blazing Fast</a>
+        <div class="collapse navbar-collapse" id="navbar-toggle">
+            <ul class="navbar-nav ml-auto mt-2 mt-lg-0 justify-content-end">
+                <li class="nav-item">
+                    <a class="nav-link" href="#quick-start">Quick Start</a>
                 </li>
-                <li>
-                    <a class="index_item" href="#linearly-scalable">Linearly Scalable</a>
+                <li class="nav-item">
+                    <a class="nav-link" href="docs/en/">Documentation</a>
                 </li>
-                <li>
-                    <a class="index_item" href="#hardware-efficient">Hardware Efficient</a>
+                <li class="nav-item">
+                    <a class="nav-link" href="https://clickhouse.yandex/blog/en/"
+                       rel="external nofollow">Blog</a>
                 </li>
-                <li>
-                    <a class="index_item" href="#fault-tolerant">Fault Tolerant</a>
-                </li>
-                <li>
-                    <a class="index_item" href="#key-features">Feature Rich</a>
-                </li>
-                <li>
-                    <a class="index_item" href="#highly-reliable">Highly Reliable</a>
-                </li>
-                <li>
-                    <a class="index_item" href="#simple-and-handy">Simple and Handy</a>
+                <li class="nav-item">
+                    <a class="nav-link" href="#contacts">Contacts</a>
                 </li>
             </ul>
         </div>
-        <div class="clear"></div>
+    </div>
+</nav>
+
+<div class="container">
+    <div class="row">
+        <div class="col-lg-7 py-5">
+            <h1 class="display-5">ClickHouse is a fast <a href="https://github.com/ClickHouse/ClickHouse" rel="external nofollow" target="_blank">open-source</a> database management system</h1>
+            <p class="lead">It is column-oriented and allows to generate analytical reports using SQL queries in real-time.</p>
+            <div class="row lead my-3">
+                <div class="col-lg">
+                    <ul class="list-unstyled">
+                        <li><a class="stealth-link" href="#blazing-fast">✓ Blazing fast</a></li>
+                        <li><a class="stealth-link" href="#linearly-scalable">✓ Linearly scalable</a></li>
+                        <li><a class="stealth-link" href="#feature-rich">✓ Feature rich</a></li>
+                    </ul>
+                </div>
+                <div class="col-lg">
+                    <ul class="list-unstyled">
+                        <li><a class="stealth-link" href="#hardware-efficient">✓ Hardware efficient</a></li>
+                        <li><a class="stealth-link" href="#fault-tolerant">✓ Fault tolerant</a></li>
+                        <li><a class="stealth-link" href="#highly-reliable">✓ Highly reliable</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="row lead">
+                <div class="col-lg">
+                    <a href="#quick-start" class="btn btn-lg btn-yellow w-100" role="button">Quick Start</a>
+                </div>
+                <div class="col-lg">
+                    <a href="docs/en/" class="btn btn-lg btn-outline-orange w-100" role="button">Go to documentation</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-5 py-5">
+            <img src="images/intro.svg" alt="ClickHouse is capable of generating analytical data reports in real time" />
+        </div>
     </div>
 </div>
+
 <div id="announcement" class="colored-block">
      <div class="page">
      </div>
@@ -82,54 +82,6 @@
             <li>Look at your data from new angles</li>
             <li>Discover new dimensions</li>
         </ul>
-    </div>
-    <div class="block-30">
-        <svg id="placeholder" class="desktop-only" viewBox="0 0 76 76" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-                <rect id="path-1" x="0" y="16" width="60" height="60" rx="1"></rect>
-                <mask id="mask-2" maskContentUnits="userSpaceOnUse" maskUnits="objectBoundingBox" x="0" y="0" width="60" height="60" fill="white">
-                    <use xlink:href="#path-1"></use>
-                </mask>
-                <rect id="path-3" x="16" y="0" width="60" height="60" rx="1"></rect>
-                <mask id="mask-4" maskContentUnits="userSpaceOnUse" maskUnits="objectBoundingBox" x="0" y="0" width="60" height="60" fill="white">
-                    <use xlink:href="#path-3"></use>
-                </mask>
-                <rect id="path-5" x="0" y="8" width="20" height="20" rx="1"></rect>
-                <mask id="mask-6" maskContentUnits="userSpaceOnUse" maskUnits="objectBoundingBox" x="0" y="0" width="20" height="20" fill="white">
-                    <use xlink:href="#path-5"></use>
-                </mask>
-                <rect id="path-7" x="8" y="0" width="20" height="20" rx="1"></rect>
-                <mask id="mask-8" maskContentUnits="userSpaceOnUse" maskUnits="objectBoundingBox" x="0" y="0" width="20" height="20" fill="white">
-                    <use xlink:href="#path-7"></use>
-                </mask>
-            </defs>
-            <g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd" stroke-linecap="round">
-                <g id="Clickhouse_2" transform="translate(-558.000000, -1293.000000)">
-                    <g id="Group-11" transform="translate(558.000000, 1293.000000)">
-                        <use stroke="#FFCC00" mask="url(#mask-2)" stroke-width="4" xlink:href="#path-1"></use>
-                        <use stroke="#FFCC00" mask="url(#mask-4)" stroke-width="4" xlink:href="#path-3"></use>
-                        <path d="M0.989013672,17.017334 L16.8210449,1.16748047" stroke="#FFCC00" stroke-width="2"></path>
-                        <path d="M59.0788574,74.9973145 L74.7983398,59.2650146" stroke="#FFCC00" stroke-width="2"></path>
-                        <path d="M59.1091309,17.1687012 L74.9368896,1.10351562" stroke="#FFCC00" stroke-width="2"></path>
-                        <path d="M1.07910156,17.2504883 L26.0395508,33.4033203" stroke="#FFCC00" stroke-width="2"></path>
-                        <path d="M17.2602539,1.18457031 L34.0175781,25.1796875" stroke="#FFCC00" stroke-width="2"></path>
-                        <path d="M51.2958984,25.4736328 L58.8277588,17" stroke="#FFCC00" stroke-width="2"></path>
-                        <path d="M1.01904297,50.942627 L25.9216309,75.064209" stroke="#FFCC00" stroke-width="2" transform="translate(13.470337, 63.003418) scale(-1, 1) translate(-13.470337, -63.003418) "></path>
-                        <path d="M44.1804199,51.300293 L58.9638672,75.010498" stroke="#FFCC00" stroke-width="2"></path>
-                        <path d="M52.0131836,43.1345215 L75.0227051,58.9299316" stroke="#FFCC00" stroke-width="2"></path>
-                        <g id="Group-3" transform="translate(25.000000, 24.000000)" stroke="#444444">
-                            <use mask="url(#mask-6)" stroke-width="4" xlink:href="#path-5"></use>
-                            <use mask="url(#mask-8)" stroke-width="4" xlink:href="#path-7"></use>
-                            <path d="M19.2587891,1.08825684 L26.7729492,8.8046875" stroke-width="2" transform="translate(23.015869, 4.946472) scale(-1, 1) translate(-23.015869, -4.946472) "></path>
-                            <path d="M1.05773926,1.04125977 L8.82080078,8.9654541" stroke-width="2" transform="translate(4.939270, 5.003357) scale(-1, 1) translate(-4.939270, -5.003357) "></path>
-                            <path d="M1.12487793,18.887207 L9.26220703,26.8897705" stroke-width="2" transform="translate(5.193542, 22.888489) scale(-1, 1) translate(-5.193542, -22.888489) "></path>
-                            <path d="M19.038208,19.1968994 L26.9085693,26.9760742" stroke-width="2" transform="translate(22.973389, 23.086487) scale(-1, 1) translate(-22.973389, -23.086487) "></path>
-                        </g>
-                    </g>
-                </g>
-            </g>
-        </svg>
-
     </div>
     <div class="clear"></div>
 
@@ -473,12 +425,6 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 
 
     </div>
-
-    <a id="github_link"
-       href="https://github.com/ClickHouse/ClickHouse"
-       rel="external nofollow"
-       target="_blank"
-    ><div id="github">Fork me on GitHub</div></a>
 
 {% endblock %}
 
