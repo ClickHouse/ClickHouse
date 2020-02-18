@@ -4,7 +4,7 @@ Stores a moment in time, like DateTime, but with 2 differences:
 * Data is stored in 'ticks', not seconds
 * Data is stored in `Int64` instead of `Int32` in DateTime
 
-Синтаксис:
+Syntax:
 
 ```sql
 DateTime64(precision, [timezone])
@@ -19,7 +19,7 @@ Result:
 `2020-01-01 11:22:33.123` - '3' means millisecond precision
 
 
-## Пример
+## Examples
 
 **1.** Creating a table with a `DateTim64e`-type column and inserting data into it:
 
