@@ -22,3 +22,6 @@
 | [Yandex Cloud](https://cloud.yandex.ru/services/managed-clickhouse) | Public Cloud | Main product | — | — | [Talk in Russian, December 2019](https://www.youtube.com/watch?v=pgnak9e_E0o) |
 | [Yandex DataLens](https://cloud.yandex.ru/services/datalens) | Business Intelligence | Main product | — | — | [Slides in Russian, December 2019](https://presentations.clickhouse.tech/meetup38/datalens.pdf) |
 | [Yandex Metrica](https://metrica.yandex.com) | Web analytics | Main product | 360 servers in one cluster, 1862 servers in one department | 66.41 PiB / 5.68 PiB | [Slides, February 2020](https://presentations.clickhouse.tech/meetup40/introduction/#13) |
+
+
+[Original article](https://clickhouse.tech/docs/en/introduction/adopters/) <!--hide-->
