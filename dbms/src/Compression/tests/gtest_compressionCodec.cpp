@@ -158,8 +158,8 @@ public:
 
     explicit BinaryDataAsSequenceOfValuesIterator(const Container & container_)
         : container(container_),
-          data(&container[0]),
-          data_end(reinterpret_cast<const char *>(data) + container.size()),
+          data(container.data()),
+          data_end(container.data() + container.size()),
           current_value(T{})
     {
         static_assert(sizeof(container[0]) == 1 && std::is_pod<std::decay_t<decltype(container[0])>>::value, "Only works on containers of byte-size PODs.");
@@ -789,12 +789,14 @@ auto FFand0Generator = []()
 };
 
 
-// Makes many sequences with generator, first sequence length is 1, second is 2... up to `sequences_count`.
+// Makes many sequences with generator, first sequence length is 0, second is 1..., third is 2 up to `sequences_count`.
 template <typename T, typename Generator>
 std::vector<CodecTestSequence> generatePyramidOfSequences(const size_t sequences_count, Generator && generator, const char* generator_name)
 {
     std::vector<CodecTestSequence> sequences;
     sequences.reserve(sequences_count);
+
+    sequences.push_back(makeSeq<T>()); // sequence of size 0
     for (size_t i = 1; i < sequences_count; ++i)
     {
         std::string name = generator_name + std::string(" from 0 to ") + std::to_string(i);
