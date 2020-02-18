@@ -111,13 +111,10 @@ namespace
         ASTPtr getResult() &&
         {
             /// Process permissive conditions.
-            if (!permissions.empty())
-                restrictions.push_back(applyFunctionOR(std::move(permissions)));
+            restrictions.push_back(applyFunctionOR(std::move(permissions)));
 
             /// Process restrictive conditions.
-            if (!restrictions.empty())
-                return applyFunctionAND(std::move(restrictions));
-            return nullptr;
+            return applyFunctionAND(std::move(restrictions));
         }
 
     private:
@@ -276,10 +273,10 @@ void RowPolicyContextFactory::mixConditionsForContext(RowPolicyContext & context
 
     for (const auto & [policy_id, info] : all_policies)
     {
+        const auto & policy = *info.policy;
+        auto & mixers = map_of_mixers[std::pair{policy.getDatabase(), policy.getTableName()}];
         if (info.canUseWithContext(context))
         {
-            const auto & policy = *info.policy;
-            auto & mixers = map_of_mixers[std::pair{policy.getDatabase(), policy.getTableName()}];
             mixers.policy_ids.push_back(policy_id);
             for (auto index : ext::range(0, MAX_CONDITION_INDEX))
                 if (info.parsed_conditions[index])
