@@ -15,7 +15,7 @@ imagesize==0.7.1
 Jinja2==2.11.1
 jsmin==2.2.2
 livereload==2.5.1
-Markdown==2.6.11
+Markdown==3.2.1
 MarkupSafe==1.0
 mkdocs==1.0.4
 Pygments==2.2.0
