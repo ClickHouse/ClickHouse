@@ -265,61 +265,68 @@ namespace
 
     std::vector<AccessEntityPtr> parseRowPolicies(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
     {
-        std::vector<AccessEntityPtr> policies;
+        std::map<std::pair<String /* database */, String /* table */>, std::unordered_map<String /* user */, String /* filter */>> all_filters_map;
         Poco::Util::AbstractConfiguration::Keys user_names;
-        config.keys("users", user_names);
 
-        for (const String & user_name : user_names)
+        try
         {
-            const String databases_config = "users." + user_name + ".databases";
-            if (config.has(databases_config))
+            config.keys("users", user_names);
+            for (const String & user_name : user_names)
             {
-                Poco::Util::AbstractConfiguration::Keys databases;
-                config.keys(databases_config, databases);
-
-                /// Read tables within databases
-                for (const String & database : databases)
+                const String databases_config = "users." + user_name + ".databases";
+                if (config.has(databases_config))
                 {
-                    const String database_config = databases_config + "." + database;
-                    Poco::Util::AbstractConfiguration::Keys keys_in_database_config;
-                    config.keys(database_config, keys_in_database_config);
+                    Poco::Util::AbstractConfiguration::Keys databases;
+                    config.keys(databases_config, databases);
 
-                    /// Read table properties
-                    for (const String & key_in_database_config : keys_in_database_config)
+                    /// Read tables within databases
+                    for (const String & database : databases)
                     {
-                        String table_name = key_in_database_config;
-                        String filter_config = database_config + "." + table_name + ".filter";
+                        const String database_config = databases_config + "." + database;
+                        Poco::Util::AbstractConfiguration::Keys keys_in_database_config;
+                        config.keys(database_config, keys_in_database_config);
 
-                        if (key_in_database_config.starts_with("table["))
+                        /// Read table properties
+                        for (const String & key_in_database_config : keys_in_database_config)
                         {
-                            const auto table_name_config = database_config + "." + table_name + "[@name]";
-                            if (config.has(table_name_config))
-                            {
-                                table_name = config.getString(table_name_config);
-                                filter_config = database_config + ".table[@name='" + table_name + "']";
-                            }
-                        }
+                            String table_name = key_in_database_config;
+                            String filter_config = database_config + "." + table_name + ".filter";
 
-                        if (config.has(filter_config))
-                        {
-                            try
+                            if (key_in_database_config.starts_with("table["))
                             {
-                                auto policy = std::make_shared<RowPolicy>();
-                                policy->setFullName(database, table_name, user_name);
-                                policy->conditions[RowPolicy::SELECT_FILTER] = config.getString(filter_config);
-                                policy->roles.add(generateID(typeid(User), user_name));
-                                policies.push_back(policy);
+                                const auto table_name_config = database_config + "." + table_name + "[@name]";
+                                if (config.has(table_name_config))
+                                {
+                                    table_name = config.getString(table_name_config);
+                                    filter_config = database_config + ".table[@name='" + table_name + "']";
+                                }
                             }
-                            catch (...)
-                            {
-                                tryLogCurrentException(
-                                    log,
-                                    "Could not parse row policy " + backQuote(user_name) + " on table " + backQuoteIfNeed(database) + "."
-                                        + backQuoteIfNeed(table_name));
-                            }
+
+                            all_filters_map[{database, table_name}][user_name] = config.getString(filter_config);
                         }
                     }
                 }
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Could not parse row policies");
+        }
+
+        std::vector<AccessEntityPtr> policies;
+        for (auto & [database_and_table_name, user_to_filters] : all_filters_map)
+        {
+            const auto & [database, table_name] = database_and_table_name;
+            for (const String & user_name : user_names)
+            {
+                auto it = user_to_filters.find(user_name);
+                String filter = (it != user_to_filters.end()) ? it->second : "1";
+
+                auto policy = std::make_shared<RowPolicy>();
+                policy->setFullName(database, table_name, user_name);
+                policy->conditions[RowPolicy::SELECT_FILTER] = filter;
+                policy->roles.add(generateID(typeid(User), user_name));
+                policies.push_back(policy);
             }
         }
         return policies;
