@@ -22,6 +22,9 @@
 #include <Common/config_version.h>
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
+#include <Processors/Pipe.h>
+#include <Processors/ISink.h>
+#include <Processors/Executors/PipelineExecutor.h>
 
 #include <Common/config.h>
 #if USE_POCO_NETSSL
@@ -535,6 +538,36 @@ void Connection::sendScalarsData(Scalars & data)
 }
 
 
+class ExternalTableDataSink : public ISink
+{
+public:
+    using OnCancell = std::function<void()>;
+
+    ExternalTableDataSink(Block header, Connection & connection_, ExternalTableData & table_data_, OnCancell callback)
+        : ISink(std::move(header))
+        , connection(connection_), table_data(table_data_), on_cancell(std::move(callback)) {}
+
+    String getName() const override { return "ExternalTableSink"; }
+
+protected:
+    void consume(Chunk chunk) override
+    {
+        if (table_data.is_cancelled)
+        {
+            on_cancell();
+            return;
+        }
+
+        auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+        connection.sendData(block, table_data.table_name);
+    }
+
+private:
+    Connection & connection;
+    ExternalTableData & table_data;
+    OnCancell on_cancell;
+};
+
 void Connection::sendExternalTablesData(ExternalTablesData & data)
 {
     if (data.empty())
@@ -553,13 +586,17 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 
     for (auto & elem : data)
     {
-        elem.first->readPrefix();
-        while (Block block = elem.first->read())
-        {
-            rows += block.rows();
-            sendData(block, elem.second);
-        }
-        elem.first->readSuffix();
+        PipelineExecutorPtr executor;
+        auto on_cancel = [& executor]() { executor->cancel(); };
+
+        auto sink = std::make_shared<ExternalTableDataSink>(elem->pipe->getHeader(), *this, *elem, std::move(on_cancel));
+        DB::connect(elem->pipe->getPort(), sink->getPort());
+
+        auto processors = std::move(*elem->pipe).detachProcessors();
+        processors.push_back(std::move(sink));
+
+        executor = std::make_shared<PipelineExecutor>(processors);
+        executor->execute(/*num_threads = */ 1);
     }
 
     /// Send empty block, which means end of data transfer.
