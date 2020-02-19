@@ -874,7 +874,7 @@ private:
         if (!select && !external_tables.empty())
             throw Exception("External tables could be sent only with select query", ErrorCodes::BAD_ARGUMENTS);
 
-        std::vector<ExternalTableData> data;
+        std::vector<ExternalTableDataPtr> data;
         for (auto & table : external_tables)
             data.emplace_back(table.getData(context));
 
