@@ -85,6 +85,8 @@ wait
 
 echo "Finishing alters"
 
+sleep 1
+
 for i in `seq $REPLICAS`; do
     $CLICKHOUSE_CLIENT --query "ATTACH TABLE concurrent_alter_detach_$i" 2> /dev/null
 done
