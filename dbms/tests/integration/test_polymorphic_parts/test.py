@@ -38,9 +38,15 @@ def create_tables(name, nodes, node_settings, shard):
         ORDER BY id
         SETTINGS index_granularity = {index_granularity}, index_granularity_bytes = {index_granularity_bytes}, 
         min_rows_for_wide_part = {min_rows_for_wide_part}, min_bytes_for_wide_part = {min_bytes_for_wide_part}
-        '''.format(name=name, shard=shard, repl=i, **settings)
-        )
+        '''.format(name=name, shard=shard, repl=i, **settings))
 
+def create_tables_old_format(name, nodes, shard):
+    for i, node in enumerate(nodes):
+        node.query(
+        '''
+        CREATE TABLE {name}(date Date, id UInt32, s String, arr Array(Int32))
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{shard}/{name}', '{repl}', date, id, 64)
+        '''.format(name=name, shard=shard, repl=i))
 
 node1 = cluster.add_instance('node1', config_dir="configs", with_zookeeper=True)
 node2 = cluster.add_instance('node2', config_dir="configs", with_zookeeper=True)
@@ -54,6 +60,8 @@ node4 = cluster.add_instance('node4', config_dir="configs", main_configs=['confi
 settings_compact = {'index_granularity' : 64, 'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_bytes_for_wide_part' : 0}
 settings_wide = {'index_granularity' : 64, 'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 0, 'min_bytes_for_wide_part' : 0}
 
+node5 = cluster.add_instance('node5', config_dir='configs', main_configs=['configs/compact_parts.xml'], with_zookeeper=True)
+node6 = cluster.add_instance('node6', config_dir='configs', main_configs=['configs/compact_parts.xml'], with_zookeeper=True)
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -64,64 +72,71 @@ def start_cluster():
         create_tables('non_adaptive_table', [node1, node2], [settings_not_adaptive, settings_default], "shard1")
         create_tables('polymorphic_table_compact', [node3, node4], [settings_compact, settings_wide], "shard2")
         create_tables('polymorphic_table_wide', [node3, node4], [settings_wide, settings_compact], "shard2")
+        create_tables_old_format('polymorphic_table', [node5, node6], "shard3")
 
         yield cluster
 
     finally:
         cluster.shutdown()
 
-
-def test_polymorphic_parts_basics(start_cluster):
-    node1.query("SYSTEM STOP MERGES")
-    node2.query("SYSTEM STOP MERGES")
+@pytest.mark.parametrize(
+    ('first_node', 'second_node'),
+    [
+        (node1, node2),
+        (node5, node6)
+    ]
+)
+def test_polymorphic_parts_basics(start_cluster, first_node, second_node):
+    first_node.query("SYSTEM STOP MERGES")
+    second_node.query("SYSTEM STOP MERGES")
 
     for size in [300, 300, 600]:
-        insert_random_data('polymorphic_table', node1, size)
-    node2.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
+        insert_random_data('polymorphic_table', first_node, size)
+    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
 
-    assert node1.query("SELECT count() FROM polymorphic_table") == "1200\n"
-    assert node2.query("SELECT count() FROM polymorphic_table") == "1200\n"
+    assert first_node.query("SELECT count() FROM polymorphic_table") == "1200\n"
+    assert second_node.query("SELECT count() FROM polymorphic_table") == "1200\n"
 
     expected = "Compact\t2\nWide\t1\n"
 
-    assert TSV(node1.query("SELECT part_type, count() FROM system.parts " \
+    assert TSV(first_node.query("SELECT part_type, count() FROM system.parts " \
         "WHERE table = 'polymorphic_table' AND active GROUP BY part_type ORDER BY part_type")) == TSV(expected)
-    assert TSV(node2.query("SELECT part_type, count() FROM system.parts " \
+    assert TSV(second_node.query("SELECT part_type, count() FROM system.parts " \
         "WHERE table = 'polymorphic_table' AND active GROUP BY part_type ORDER BY part_type")) == TSV(expected)
 
-    node1.query("SYSTEM START MERGES")
-    node2.query("SYSTEM START MERGES")
+    first_node.query("SYSTEM START MERGES")
+    second_node.query("SYSTEM START MERGES")
 
     for _ in range(40):
-        insert_random_data('polymorphic_table', node1, 10)
-        insert_random_data('polymorphic_table', node2, 10)
+        insert_random_data('polymorphic_table', first_node, 10)
+        insert_random_data('polymorphic_table', second_node, 10)
 
-    node1.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
-    node2.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
+    first_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
+    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
 
-    assert node1.query("SELECT count() FROM polymorphic_table") == "2000\n"
-    assert node2.query("SELECT count() FROM polymorphic_table") == "2000\n"
+    assert first_node.query("SELECT count() FROM polymorphic_table") == "2000\n"
+    assert second_node.query("SELECT count() FROM polymorphic_table") == "2000\n"
 
-    node1.query("OPTIMIZE TABLE polymorphic_table FINAL")
-    node2.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
+    first_node.query("OPTIMIZE TABLE polymorphic_table FINAL")
+    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
 
-    assert node1.query("SELECT count() FROM polymorphic_table") == "2000\n"
-    assert node2.query("SELECT count() FROM polymorphic_table") == "2000\n"
+    assert first_node.query("SELECT count() FROM polymorphic_table") == "2000\n"
+    assert second_node.query("SELECT count() FROM polymorphic_table") == "2000\n"
 
-    assert node1.query("SELECT DISTINCT part_type FROM system.parts WHERE table = 'polymorphic_table' AND active") == "Wide\n"
-    assert node2.query("SELECT DISTINCT part_type FROM system.parts WHERE table = 'polymorphic_table' AND active") == "Wide\n"
+    assert first_node.query("SELECT DISTINCT part_type FROM system.parts WHERE table = 'polymorphic_table' AND active") == "Wide\n"
+    assert second_node.query("SELECT DISTINCT part_type FROM system.parts WHERE table = 'polymorphic_table' AND active") == "Wide\n"
 
     # Check alters and mutations also work
-    node1.query("ALTER TABLE polymorphic_table ADD COLUMN ss String")
-    node1.query("ALTER TABLE polymorphic_table UPDATE ss = toString(id) WHERE 1")
+    first_node.query("ALTER TABLE polymorphic_table ADD COLUMN ss String")
+    first_node.query("ALTER TABLE polymorphic_table UPDATE ss = toString(id) WHERE 1")
 
-    node2.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
+    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
 
-    node1.query("SELECT count(ss) FROM polymorphic_table") == "2000\n"
-    node1.query("SELECT uniqExact(ss) FROM polymorphic_table") == "600\n"
+    first_node.query("SELECT count(ss) FROM polymorphic_table") == "2000\n"
+    first_node.query("SELECT uniqExact(ss) FROM polymorphic_table") == "600\n"
 
-    node2.query("SELECT count(ss) FROM polymorphic_table") == "2000\n"
-    node2.query("SELECT uniqExact(ss) FROM polymorphic_table") == "600\n"
+    second_node.query("SELECT count(ss) FROM polymorphic_table") == "2000\n"
+    second_node.query("SELECT uniqExact(ss) FROM polymorphic_table") == "600\n"
 
 
 # Check that follower replicas create parts of the same type, which leader has chosen at merge.
@@ -167,7 +182,7 @@ def start_cluster_diff_versions():
             node7.query(
             '''
             CREATE TABLE {name}(date Date, id UInt32, s String, arr Array(Int32))
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/shard4/{name}', '1')
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/shard5/{name}', '1')
             PARTITION BY toYYYYMM(date)
             ORDER BY id
             SETTINGS index_granularity = {index_granularity}, index_granularity_bytes = {index_granularity_bytes}
@@ -177,7 +192,7 @@ def start_cluster_diff_versions():
             node8.query(
             '''
             CREATE TABLE {name}(date Date, id UInt32, s String, arr Array(Int32))
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/shard4/{name}', '2')
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/shard5/{name}', '2')
             PARTITION BY toYYYYMM(date)
             ORDER BY id
             SETTINGS index_granularity = {index_granularity}, index_granularity_bytes = {index_granularity_bytes},
