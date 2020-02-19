@@ -1151,7 +1151,7 @@ Result:
 
 - [quantileExactWeighted](#quantileexactweighted)
 
-## medianTiming(x) {#mediantiming}
+## medianTiming {#mediantiming}
 
 With the determined precision computes the [median](https://en.wikipedia.org/wiki/Median) of a numeric data sequence.
 
@@ -1281,7 +1281,7 @@ A calculated value depends on the order of the query processing, and is non-dete
 **Syntax**
 
 ```sql
-medianTDiges(x)
+medianTDigest(x)
 ```
 
 Alias for [quantileTDigest(0.5)(x)](#quantiletdigest).
