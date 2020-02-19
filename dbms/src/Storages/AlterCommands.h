@@ -4,7 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
-
+#include <Storages/ColumnsDescription.h>
 
 #include <Common/SettingsChanges.h>
 
@@ -117,6 +117,20 @@ class AlterCommands : public std::vector<AlterCommand>
 {
 private:
     bool prepared = false;
+private:
+    DataTypePtr getDefaultExpressionType(
+        const ASTPtr default_expression,
+        const String & column_name,
+        const ColumnsDescription & all_columns,
+        const Context & context) const;
+
+    void validateDefaultExpressionForNewColumn(
+        const ASTPtr default_expression,
+        const String & column_name,
+        const DataTypePtr column_type,
+        const ColumnsDescription & all_columns,
+        const Context & context) const;
+
 public:
     /// Validate that commands can be applied to metadata.
     /// Checks that all columns exist and dependecies between them.
