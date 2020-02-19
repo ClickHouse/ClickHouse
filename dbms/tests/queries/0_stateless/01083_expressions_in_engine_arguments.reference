@@ -1,0 +1,6 @@
+CREATE TABLE test_01083.file (`n` Int8) ENGINE = File(\'TSVWithNamesAndTypes\')
+CREATE TABLE test_01083.buffer (`n` Int8) ENGINE = Buffer(\'test_01083\', \'file\', 16, 10, 200, 10000, 1000000, 10000000, 1000000000)
+CREATE TABLE test_01083.merge (`n` Int8) ENGINE = Merge(\'test_01083\', \'file\')
+CREATE TABLE test_01083.merge_tf AS merge(\'test_01083\', \'.*\')
+CREATE TABLE test_01083.distributed (`n` Int8) ENGINE = Distributed(test_cluster, \'test_01083\', \'file\')
+CREATE TABLE test_01083.distributed_tf AS cluster(\'test_cluster\', \'test_01083\', \'file\')
