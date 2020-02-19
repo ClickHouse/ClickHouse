@@ -765,8 +765,7 @@ void AlterCommands::validateDefaultExpressionForColumn(
         auto default_with_cast = makeASTFunction("CAST", copy_expression, std::make_shared<ASTLiteral>(column_type->getName()));
         auto query_with_alias = setAlias(default_with_cast, tmp_column_name);
         auto syntax_result = SyntaxAnalyzer(context).analyze(query_with_alias, all_columns.getAll());
-        const auto actions = ExpressionAnalyzer(query_with_alias, syntax_result, context).getActions(true);
-        auto sample_block = actions->getSampleBlock();
+        ExpressionAnalyzer(query_with_alias, syntax_result, context).getActions(true);
     }
     catch (Exception & ex)
     {
