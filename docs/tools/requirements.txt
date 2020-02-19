@@ -5,7 +5,7 @@ beautifulsoup4==4.8.2
 certifi==2017.11.5
 chardet==3.0.4
 click==6.7
-CommonMark==0.5.4
+CommonMark==0.9.1
 cssmin==0.2.0
 docutils==0.16
 futures==3.1.1
