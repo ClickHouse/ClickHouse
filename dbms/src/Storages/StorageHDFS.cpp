@@ -94,6 +94,7 @@ public:
         SourcesInfoPtr source_info_,
         String uri_,
         String format_,
+        String compression_method_,
         Block sample_block_,
         const Context & context_,
         UInt64 max_block_size_)
@@ -101,6 +102,7 @@ public:
         , source_info(std::move(source_info_))
         , uri(std::move(uri_))
         , format(std::move(format_))
+        , compression_method(compression_method_)
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
         , context(context_)
@@ -125,7 +127,7 @@ public:
                 auto path =  source_info->uris[pos];
                 current_path = uri + path;
 
-                auto compression = chooseCompressionMethod(path, format);
+                auto compression = chooseCompressionMethod(path, compression_method);
                 auto read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(current_path), compression);
                 auto input_stream = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
 
@@ -166,6 +168,7 @@ private:
     SourcesInfoPtr source_info;
     String uri;
     String format;
+    String compression_method;
     String current_path;
 
     UInt64 max_block_size;
@@ -297,7 +300,7 @@ Pipes StorageHDFS::readWithProcessors(
 
     for (size_t i = 0; i < num_streams; ++i)
         pipes.emplace_back(std::make_shared<HDFSSource>(
-                sources_info, uri_without_path, format_name, getSampleBlock(), context_, max_block_size));
+                sources_info, uri_without_path, format_name, compression_method, getSampleBlock(), context_, max_block_size));
 
     return pipes;
 }
