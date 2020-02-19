@@ -70,6 +70,8 @@ private:
         size_t estimated_size);
 
     SerializationStates serialization_states;
+
+    using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
 };
 

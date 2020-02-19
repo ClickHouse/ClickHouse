@@ -24,7 +24,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     if (settings.is_writing_temp_files)
         data_file_name += DataPart::TEMP_FILE_SUFFIX;
 
-    stream = std::make_unique<ColumnStream>(
+    stream = std::make_unique<Stream>(
         data_file_name,
         part_path + data_file_name, DataPart::DATA_FILE_EXTENSION,
         part_path + data_file_name, marks_file_extension,

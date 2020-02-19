@@ -1688,7 +1688,7 @@ static MergeTreeDataPartType getPartTypeFromMarkExtension(const String & mrk_ext
     if (mrk_ext == getAdaptiveMrkExtension(MergeTreeDataPartType::COMPACT))
         return MergeTreeDataPartType::COMPACT;
 
-    return MergeTreeDataPartType::UNKNOWN;
+    throw Exception("Can't determine part type, because of unknown mark extension " + mrk_ext, ErrorCodes::UNKNOWN_PART_TYPE);
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(

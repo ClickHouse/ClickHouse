@@ -17,8 +17,6 @@ void MergeTreeDataPartType::fromString(const String & str)
         value = COMPACT;
     else if (str == "InMemory")
         value = IN_MEMORY;
-    else if (str == "Unknown")
-        value = UNKNOWN;
     else
         throw DB::Exception("Unexpected string for part type: " + str, ErrorCodes::UNKNOWN_PART_TYPE);
 }
@@ -33,11 +31,9 @@ String MergeTreeDataPartType::toString() const
             return "Compact";
         case IN_MEMORY:
             return "InMemory";
-        case UNKNOWN:
+        default:
             return "Unknown";
     }
-
-    __builtin_unreachable();
 }
 
 }

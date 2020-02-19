@@ -5,7 +5,13 @@
 namespace DB
 {
 
-/// Description of the data part.
+/** In wide format data of each column is stored in one or several (for complex types) files.
+  * Every data file is followed by marks file.
+  * Can be used in tables with both adaptive and non-adaptive granularity.
+  * This is the regular format of parts for MergeTree and suitable for big parts, as it's the most efficient.
+  * Data part would be created in wide format if it's uncompressed size in bytes or number of rows would exceed
+  * thresholds `min_bytes_for_wide_part` and `min_rows_for_wide_part`.
+  */
 class MergeTreeDataPartWide : public IMergeTreeDataPart
 {
 public:
