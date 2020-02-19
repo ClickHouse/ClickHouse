@@ -33,7 +33,9 @@ void ReplicatedMergeTreeAltersSequence::addMetadataAlter(
 
 void ReplicatedMergeTreeAltersSequence::finishMetadataAlter(int alter_version, std::unique_lock<std::mutex> & /*state_lock*/)
 {
+    /// Sequence must not be empty
     assert(!queue_state.empty());
+    /// Alters have to be finished in order
     assert(queue_state.begin()->first == alter_version);
 
     /// If metadata stage finished (or was never added) than we can remove this alter
@@ -45,15 +47,16 @@ void ReplicatedMergeTreeAltersSequence::finishMetadataAlter(int alter_version, s
 
 void ReplicatedMergeTreeAltersSequence::finishDataAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/)
 {
-    /// queue can be empty after load of finished mutation without move of mutation pointer
+    /// Queue can be empty after load of finished mutation without move of mutation pointer
     if (queue_state.empty())
         return;
 
     /// Mutations may finish multiple times (for example, after server restart, before update of mutation pointer)
     if (alter_version >= queue_state.begin()->first)
     {
-        /// All alter versions bigger than head have to be present in queue.
+        /// All alter versions bigger than head must present in queue.
         assert(queue_state.count(alter_version));
+
         if (queue_state[alter_version].metadata_finished)
             queue_state.erase(alter_version);
         else
@@ -63,6 +66,8 @@ void ReplicatedMergeTreeAltersSequence::finishDataAlter(int alter_version, std::
 
 bool ReplicatedMergeTreeAltersSequence::canExecuteDataAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/) const
 {
+    /// Queue maybe empty when we start after server shutdown
+    /// and have some MUTATE_PART records in queue
     if (queue_state.empty())
         return true;
 
