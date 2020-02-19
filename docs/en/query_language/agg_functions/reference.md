@@ -947,7 +947,7 @@ Alias for [quantile(0.5)(x)](#agg_function-quantile).
 
 **Parameters** 
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) or [DateTime](../../data_types/datetime.md).
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
 
 **Returned value**
 
@@ -1003,7 +1003,7 @@ Alias for [quantileDeterministiquantile(0.5)(x)](#agg_function-quantiledetermini
 
 **Parameters** 
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) or [DateTime](../../data_types/datetime.md).
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
 - `determinator` — Number whose hash is used instead of a random number generator in the reservoir sampling algorithm to make the result of sampling deterministic. As a determinator you can use any deterministic positive number, for example, a user id or an event id. If the same determinator value occures too often, the function works incorrectly.
 
 **Returned value**
@@ -1061,7 +1061,7 @@ Alias for [quantileExact(0.5)(x)](#quantileexact).
 
 **Parameters**
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) or [DateTime](../../data_types/datetime.md).
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
 
 **Returned value**
 
@@ -1109,7 +1109,7 @@ Alias for [quantileExactWeighted(0.5)(x)](#quantileexactweighted).
 
 **Parameters** 
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) or [DateTime](../../data_types/datetime.md).
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
 - `weight` — Number of `x` occurences. 
 
 **Returned value**
@@ -1167,7 +1167,7 @@ Alias for [quantileTiming(0.5)(x)](#agg_function-quantiletiming).
 
 **Parameters**
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) or [DateTime](../../data_types/datetime.md).
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
 
 **Returned value**
 
@@ -1228,7 +1228,7 @@ Alias for [quantileTimingWeighted(0.5)(x)](#quantiletimingweighted).
 
 **Parameters** 
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) or [DateTime](../../data_types/datetime.md).
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
 - `weight` — Number of `x` occurences. 
  
 
@@ -1288,7 +1288,7 @@ Alias for [quantileTDigest(0.5)(x)](#quantiletdigest).
 
 **Parameters** 
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) or [DateTime](../../data_types/datetime.md).
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
 
 **Returned value**
 
@@ -1333,7 +1333,7 @@ Alias for `quantileTDigestWeighted(0.5)(x)`.
 
 **Parameters**
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) or [DateTime](../../data_types/datetime.md).
+- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
 - `weight` — Number of `x` occurences.
 
 **Returned value**
