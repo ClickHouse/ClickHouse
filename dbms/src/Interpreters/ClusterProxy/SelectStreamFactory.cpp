@@ -296,7 +296,8 @@ void SelectStreamFactory::createForShard(
             }
         };
 
-        auto source = std::make_shared<SourceFromInputStream>("LazyShardWithLocalReplica", header, lazily_create_stream, force_add_agg_info);
+        auto lazy_stream = std::make_shared<LazyBlockInputStream>("LazyShardWithLocalReplica", header, lazily_create_stream);
+        auto source = std::make_shared<SourceFromInputStream>(std::move(lazy_stream), force_add_agg_info);
 
         if (add_totals_port)
             source->addTotalsPort();
