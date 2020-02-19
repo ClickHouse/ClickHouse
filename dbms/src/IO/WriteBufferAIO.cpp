@@ -58,6 +58,7 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 
     int open_flags = (flags_ == -1) ? (O_RDWR | O_TRUNC | O_CREAT) : flags_;
     open_flags |= O_DIRECT;
+    open_flags |= O_CLOEXEC;
 
     fd = ::open(filename.c_str(), open_flags, mode_);
     if (fd == -1)
