@@ -82,7 +82,7 @@ enum class AccessType
     KILL_MUTATION,      /// allows to kill a mutation
     KILL,               /// allows to execute KILL {MUTATION|QUERY}
 
-    CREATE_USER,        /// allows to create, alter and drop users, roles, quotas, row policies.
+    CREATE_USER,
     ALTER_USER,
     DROP_USER,
     CREATE_ROLE,
