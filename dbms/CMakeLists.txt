@@ -696,6 +696,18 @@ target_precompile_headers(clickhouse_common_io
                           <boost/uuid/nil_generator.hpp>
                           <boost/uuid/random_generator.hpp>
                           <boost/uuid/uuid.hpp>
+
+                          <Poco/Foundation.h>
+                          <Poco/Bugcheck.h>
+
+                          <Columns/IColumn.h>
+                          <Common/PODArray.h>
+                          <Core/Field.h>
+                          <Core/Block.h>
+                          <Functions/IFunction.h>
+                          <Functions/FunctionFactory.h>
+                          <Storages/IStorage.h>
+                          <DataTypes/IDataType.h>
                           )
 
 target_precompile_headers(dbms REUSE_FROM clickhouse_common_io)
