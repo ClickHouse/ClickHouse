@@ -31,6 +31,6 @@ Sphinx==1.6.5
 sphinxcontrib-websupport==1.0.1
 tornado==5.1
 typing==3.7.4.1
-Unidecode==1.0.23
+Unidecode==1.1.1
 urllib3==1.25.8
 gitpython==2.1.14
