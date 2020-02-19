@@ -4,8 +4,10 @@ set -ex
 BASE_DIR=$(dirname $(readlink -f $0))
 BUILD_DIR="${BASE_DIR}/../build"
 PUBLISH_DIR="${BASE_DIR}/../publish"
-GIT_TEST_URI="git@github.com:ClickHouse/clickhouse-test.github.io.git"
+TEST_DOMAIN="${TEST_DOMAIN:-test.clickhouse.tech}"
+GIT_TEST_URI="${GIT_TEST_URI:-git@github.com:ClickHouse/clickhouse-test.github.io.git}"
 GIT_PROD_URI="git@github.com:ClickHouse/clickhouse.github.io.git"
+EXTRA_BUILD_ARGS="${EXTRA_BUILD_ARGS:---enable-stable-releases}"
 
 if [[ -z "$1" ]]
 then
@@ -17,7 +19,7 @@ DOCKER_HASH="$2"
 if [[ -z "$1" ]]
 then
     source "${BASE_DIR}/venv/bin/activate"
-    python "${BASE_DIR}/build.py" "--enable-stable-releases"
+    python "${BASE_DIR}/build.py" ${EXTRA_BUILD_ARGS}
     rm -rf "${PUBLISH_DIR}" || true
     git clone "${GIT_TEST_URI}" "${PUBLISH_DIR}"
     cd "${PUBLISH_DIR}"
@@ -25,7 +27,7 @@ then
     git config user.name "robot-clickhouse"
     git rm -rf *
     cp -R "${BUILD_DIR}"/* .
-    echo -n "test.clickhouse.tech" > CNAME
+    echo -n "${TEST_DOMAIN}" > CNAME
     echo -n "" > README.md
     echo -n "" > ".nojekyll"
     cp "${BASE_DIR}/../../LICENSE" .
