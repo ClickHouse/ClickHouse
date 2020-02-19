@@ -69,7 +69,8 @@
 
 #include "Aliases.h"
 
-namespace DB {
+namespace DB
+{
 
 namespace ErrorCodes
 {
@@ -88,14 +89,16 @@ String getQuotedTable(const String & database, const String & table);
 String getQuotedTable(const DatabaseAndTableName & db_and_table);
 
 
-enum class TaskState {
+enum class TaskState
+{
     Started = 0,
     Finished,
     Unknown
 };
 
 /// Used to mark status of shard partition tasks
-struct TaskStateWithOwner {
+struct TaskStateWithOwner
+{
     TaskStateWithOwner() = default;
 
     TaskStateWithOwner(TaskState state_, const String & owner_) : state(state_), owner(owner_) {}
@@ -151,7 +154,8 @@ enum class PartitionTaskStatus
 };
 
 
-struct MultiTransactionInfo {
+struct MultiTransactionInfo
+{
     int32_t code;
     Coordination::Requests requests;
     Coordination::Responses responses;
