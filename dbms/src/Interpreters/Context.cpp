@@ -2153,6 +2153,26 @@ void Context::resetInputCallbacks()
 }
 
 
+class SessionCleaner
+{
+public:
+    SessionCleaner(Context & context_)
+        : context{context_}
+    {
+    }
+    ~SessionCleaner();
+
+private:
+    void run();
+
+    Context & context;
+
+    std::mutex mutex;
+    std::condition_variable cond;
+    std::atomic<bool> quit{false};
+    ThreadFromGlobalPool thread{&SessionCleaner::run, this};
+};
+
 SessionCleaner::~SessionCleaner()
 {
     try
@@ -2185,6 +2205,11 @@ void SessionCleaner::run()
         if (cond.wait_for(lock, interval, [this]() -> bool { return quit; }))
             break;
     }
+}
+
+void Context::createSessionCleaner()
+{
+    session_cleaner = std::make_unique<SessionCleaner>(*this);
 }
 
 

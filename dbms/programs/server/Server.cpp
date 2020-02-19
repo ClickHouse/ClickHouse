@@ -1009,7 +1009,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 global_context->getConfigRef(), graphite_key, async_metrics));
         }
 
-        SessionCleaner session_cleaner(*global_context);
+        global_context->createSessionCleaner();
 
         waitForTerminationRequest();
     }
