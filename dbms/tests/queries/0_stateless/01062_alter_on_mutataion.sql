@@ -50,7 +50,7 @@ SELECT sum(cast(value as UInt64)) from test_alter_on_mutation;
 -- TODO(alesap)
 OPTIMIZE table test_alter_on_mutation FINAL;
 
-ALTER TABLE test_alter_on_mutation MODIFY COLUMN value UInt64;
+ALTER TABLE test_alter_on_mutation MODIFY COLUMN value UInt64 DEFAULT 10;
 
 SELECT sum(value) from test_alter_on_mutation;
 

@@ -5,6 +5,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/ColumnsDescription.h>
 
 
 #include <Common/SettingsChanges.h>
@@ -19,7 +20,8 @@ class ASTAlterCommand;
 /// Adding Nested columns is not expanded to add individual columns.
 struct AlterCommand
 {
-    ASTPtr ast; /// The AST of the whole command
+    /// The AST of the whole command
+    ASTPtr ast;
 
     enum Type
     {
@@ -111,6 +113,9 @@ struct AlterCommand
     /// Checks that only comment changed by alter
     bool isCommentAlter() const;
 
+    /// If possible, convert alter command to mutation command. In other case
+    /// return empty optional. Some storages may execute mutations after
+    /// metadata changes.
     std::optional<MutationCommand> tryConvertToMutationCommand(const StorageInMemoryMetadata & metadata) const;
 };
 
@@ -124,6 +129,20 @@ class AlterCommands : public std::vector<AlterCommand>
 {
 private:
     bool prepared = false;
+private:
+    DataTypePtr getDefaultExpressionType(
+        const ASTPtr default_expression,
+        const String & column_name,
+        const ColumnsDescription & all_columns,
+        const Context & context) const;
+
+    void validateDefaultExpressionForNewColumn(
+        const ASTPtr default_expression,
+        const String & column_name,
+        const DataTypePtr column_type,
+        const ColumnsDescription & all_columns,
+        const Context & context) const;
+
 public:
     /// Validate that commands can be applied to metadata.
     /// Checks that all columns exist and dependecies between them.
@@ -148,9 +167,10 @@ public:
     /// At least one command modify comments.
     bool isCommentAlter() const;
 
+    /// Return mutation commands which some storages may execute as part of
+    /// alter. If alter can be performed is pure metadata update, than result is
+    /// empty.
     MutationCommands getMutationCommands(const StorageInMemoryMetadata & metadata) const;
 };
 
-
-MutationCommands extractMutationCommandsFromAlterCommands(const StorageInMemoryMetadata & metadata, AlterCommands & commands);
 }

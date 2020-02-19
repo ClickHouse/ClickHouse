@@ -34,7 +34,10 @@ ASTPtr defaultRequiredExpressions(Block & block, const NamesAndTypesList & requi
 
         /// expressions must be cloned to prevent modification by the ExpressionAnalyzer
         if (it != column_defaults.end())
-            default_expr_list->children.emplace_back(setAlias(it->second.expression->clone(), it->first));
+        {
+            auto cast_func = makeASTFunction("CAST", it->second.expression->clone(), std::make_shared<ASTLiteral>(column.type->getName()));
+            default_expr_list->children.emplace_back(setAlias(cast_func, it->first));
+        }
     }
 
     if (default_expr_list->children.empty())
