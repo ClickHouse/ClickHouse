@@ -425,6 +425,13 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                     if (dependency.kind == ColumnDependency::SKIP_INDEX)
                         dependencies.insert(dependency);
                 }
+
+                if (dependencies.empty())
+                {
+                    /// Very rare case. It can happen if we have only one MOVE TTL with constant expression.
+                    /// But we still have to read at least one column.
+                    dependencies.emplace(all_columns.front().name, ColumnDependency::TTL_EXPRESSION);
+                }
             }
         }
         else
