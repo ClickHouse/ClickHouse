@@ -178,17 +178,14 @@
     M(OSReadChars, "Number of bytes read from filesystem, including page cache.") \
     M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
     \
-    M(PERF_COUNT_SW_CPU_CLOCK, "") \
-    M(PERF_COUNT_SW_TASK_CLOCK, "") \
-    M(PERF_COUNT_SW_PAGE_FAULTS, "") \
-    M(PERF_COUNT_SW_CONTEXT_SWITCHES, "") \
-    M(PERF_COUNT_SW_CPU_MIGRATIONS, "") \
-    M(PERF_COUNT_SW_PAGE_FAULTS_MIN, "") \
-    M(PERF_COUNT_SW_PAGE_FAULTS_MAJ, "") \
-    M(PERF_COUNT_SW_ALIGNMENT_FAULTS, "") \
-    M(PERF_COUNT_SW_EMULATION_FAULTS, "") \
-    M(PERF_COUNT_SW_DUMMY, "") \
-    M(PERF_COUNT_SW_BPF_OUTPUT, "") \
+    M(PERF_COUNT_SW_TASK_CLOCK, "A clock count specific to the task that is running") \
+    M(PERF_COUNT_SW_PAGE_FAULTS, "Number of page faults") \
+    M(PERF_COUNT_SW_CONTEXT_SWITCHES, "Number of context switches") \
+    M(PERF_COUNT_SW_CPU_MIGRATIONS, "Number of times the process has migrated to a new CPU") \
+    M(PERF_COUNT_SW_PAGE_FAULTS_MIN, "Number of minor page faults. These did not require disk I/O to handle") \
+    M(PERF_COUNT_SW_PAGE_FAULTS_MAJ, "Number of major page faults. These required disk I/O to handle") \
+    M(PERF_COUNT_SW_ALIGNMENT_FAULTS, "Number of alignment faults. These happen when unaligned memory accesses happen; the kernel can handle these but it reduces performance. This happens only on some architectures (never on x86).") \
+    M(PERF_COUNT_SW_EMULATION_FAULTS, "Number of emulation faults. The kernel sometimes traps on unimplemented instructions and emulates them for user space. This can negatively impact performance.") \
     \
     M(CreatedHTTPConnections, "Total amount of created HTTP connections (closed or opened).") \
     \
