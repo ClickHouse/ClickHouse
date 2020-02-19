@@ -57,5 +57,7 @@ set -m
 time ../compare.sh 0 $ref_sha $PR_TO_TEST $SHA_TO_TEST 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
 set +m
 
+dmesg > dmesg.log
+
 7z a /output/output.7z *.log *.tsv *.html *.txt *.rep
 cp compare.log /output
