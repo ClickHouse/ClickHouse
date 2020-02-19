@@ -18,8 +18,8 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
 }
 
 JoinSwitcher::JoinSwitcher(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block_)
-    : switched(false)
-    , limits(table_join_->sizeLimits())
+    : limits(table_join_->sizeLimits())
+    , switched(false)
     , table_join(table_join_)
     , right_sample_block(right_sample_block_.cloneEmpty())
 {

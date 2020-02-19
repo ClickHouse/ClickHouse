@@ -864,6 +864,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             {
                 Block header_before_join;
                 JoinPtr join = expressions.before_join->getTableJoinAlgo();
+                bool inflating_join = join && !typeid_cast<Join *>(join.get());
 
                 if constexpr (pipeline_with_processors)
                 {
@@ -881,10 +882,10 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     {
                         bool on_totals = type == QueryPipeline::StreamType::Totals;
                         std::shared_ptr<IProcessor> ret;
-                        if (!join || typeid_cast<Join *>(join.get()))
-                            ret = std::make_shared<ExpressionTransform>(header, expressions.before_join, on_totals, default_totals);
-                        else
+                        if (inflating_join)
                             ret = std::make_shared<InflatingExpressionTransform>(header, expressions.before_join, on_totals, default_totals);
+                        else
+                            ret = std::make_shared<ExpressionTransform>(header, expressions.before_join, on_totals, default_totals);
 
                         return ret;
                     });
