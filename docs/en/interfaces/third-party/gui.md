@@ -110,7 +110,7 @@ Features:
 - Creation of simple visualizations and complex dashboards.
 - Public dashboards.
 - Support for multiple data sources including ClickHouse.
-- Storage for materialized data.
+- Storage for materialized data based on ClickHouse.
 
 For low-load projects, DataLens is [available for free](https://cloud.yandex.com/docs/datalens/pricing), including for commercial use.
 
