@@ -12,9 +12,7 @@ class SourceFromInputStream : public ISourceWithProgress
 {
 public:
     explicit SourceFromInputStream(BlockInputStreamPtr stream_, bool force_add_aggregating_info_ = false);
-    /// Constructor which works like LazyBlockInputStream. First 'generate' method creates stream using callback.
-    SourceFromInputStream(String name, Block header, std::function<BlockInputStreamPtr()> stream_builder_, bool force_add_aggregating_info_ = false);
-    String getName() const override { return source_name.empty() ? "SourceFromInputStream" : source_name; }
+    String getName() const override { return "SourceFromInputStream"; }
 
     Status prepare() override;
     void work() override;
@@ -39,9 +37,6 @@ private:
     bool has_aggregate_functions = false;
     bool force_add_aggregating_info = false;
     BlockInputStreamPtr stream;
-
-    std::function<BlockInputStreamPtr()> stream_builder;
-    String source_name;
 
     Chunk totals;
     bool has_totals_port = false;
