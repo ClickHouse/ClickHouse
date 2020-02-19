@@ -9,5 +9,3 @@ endif ()
 if (USE_INTERNAL_CONSISTENT_HASHING_LIBRARY)
     add_subdirectory (consistent-hashing)
 endif ()
-
-add_subdirectory (consistent-hashing-sumbur)
