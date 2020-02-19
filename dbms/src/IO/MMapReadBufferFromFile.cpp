@@ -26,7 +26,7 @@ void MMapReadBufferFromFile::open()
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
-    fd = ::open(file_name.c_str(), O_RDONLY);
+    fd = ::open(file_name.c_str(), O_RDONLY | O_CLOEXEC);
 
     if (-1 == fd)
         throwFromErrnoWithPath("Cannot open file " + file_name, file_name,
