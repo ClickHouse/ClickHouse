@@ -25,7 +25,7 @@ class StorageStripeLog : public ext::shared_ptr_helper<StorageStripeLog>, public
 public:
     String getName() const override { return "StripeLog"; }
 
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

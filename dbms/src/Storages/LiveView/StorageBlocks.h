@@ -28,7 +28,7 @@ public:
     std::string getName() const override { return "Blocks"; }
     QueryProcessingStage::Enum getQueryProcessingStage(const Context & /*context*/) const override { return to_stage; }
 
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & /*column_names*/,
         const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,

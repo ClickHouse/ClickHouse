@@ -24,7 +24,7 @@ class StorageTinyLog : public ext::shared_ptr_helper<StorageTinyLog>, public ISt
 public:
     String getName() const override { return "TinyLog"; }
 
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

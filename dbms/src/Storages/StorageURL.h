@@ -16,7 +16,7 @@ namespace DB
 class IStorageURLBase : public IStorage
 {
 public:
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

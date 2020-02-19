@@ -378,7 +378,7 @@ private:
 };
 
 
-Pipes StorageFile::readWithProcessors(
+Pipes StorageFile::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,

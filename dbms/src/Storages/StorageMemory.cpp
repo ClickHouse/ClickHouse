@@ -83,7 +83,7 @@ StorageMemory::StorageMemory(const StorageID & table_id_, ColumnsDescription col
 }
 
 
-Pipes StorageMemory::readWithProcessors(
+Pipes StorageMemory::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,

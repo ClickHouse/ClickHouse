@@ -15,7 +15,7 @@ StorageValues::StorageValues(const StorageID & table_id_, const ColumnsDescripti
     setColumns(columns_);
 }
 
-Pipes StorageValues::readWithProcessors(
+Pipes StorageValues::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,

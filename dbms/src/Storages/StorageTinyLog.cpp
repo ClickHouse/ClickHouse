@@ -389,7 +389,7 @@ void StorageTinyLog::rename(const String & new_path_to_table_data, const String 
 }
 
 
-Pipes StorageTinyLog::readWithProcessors(
+Pipes StorageTinyLog::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,

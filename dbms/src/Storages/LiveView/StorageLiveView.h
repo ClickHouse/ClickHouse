@@ -126,7 +126,7 @@ public:
 
     void refresh(const Context & context);
 
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

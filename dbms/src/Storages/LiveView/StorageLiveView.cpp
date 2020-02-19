@@ -520,7 +520,7 @@ void StorageLiveView::refresh(const Context & context)
     }
 }
 
-Pipes StorageLiveView::readWithProcessors(
+Pipes StorageLiveView::read(
     const Names & /*column_names*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,

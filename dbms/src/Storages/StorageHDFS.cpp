@@ -267,7 +267,7 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
 }
 
 
-Pipes StorageHDFS::readWithProcessors(
+Pipes StorageHDFS::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context_,

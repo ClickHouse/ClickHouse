@@ -185,7 +185,7 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(con
 }
 
 
-Pipes IStorageURLBase::readWithProcessors(const Names & column_names,
+Pipes IStorageURLBase::read(const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
