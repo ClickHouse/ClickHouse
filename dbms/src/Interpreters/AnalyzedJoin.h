@@ -78,6 +78,7 @@ public:
         : size_limits(limits)
         , default_max_bytes(0)
         , join_use_nulls(use_nulls)
+        , force_hash_join(true)
         , key_names_right(key_names_right_)
     {
         table_join.kind = kind;
