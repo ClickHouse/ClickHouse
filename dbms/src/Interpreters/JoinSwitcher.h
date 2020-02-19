@@ -63,8 +63,8 @@ public:
 
 private:
     JoinPtr join;
-    bool switched;
     SizeLimits limits;
+    mutable std::atomic<bool> switched;
     mutable std::mutex switch_mutex;
     std::shared_ptr<AnalyzedJoin> table_join;
     const Block right_sample_block;

@@ -33,7 +33,7 @@ bool JoinSwitcher::addJoinedBlock(const Block & block, bool)
 {
     /// Trying to make MergeJoin without lock
 
-    if (switched)
+    if (switched.load(std::memory_order_relaxed))
         return join->addJoinedBlock(block);
 
     std::lock_guard lock(switch_mutex);
@@ -58,7 +58,7 @@ void JoinSwitcher::switchJoin()
     std::shared_ptr<Join::RightTableData> joined_data = static_cast<const Join &>(*join).getJoinedData();
     BlocksList right_blocks = std::move(joined_data->blocks);
 
-    /// Destroy old join & create new one. Destroy first in case of memory saving.
+    /// Destroy old join & create new one. Early destroy for memory saving.
     join = std::make_shared<MergeJoin>(table_join, right_sample_block);
 
     /// names to positions optimization
