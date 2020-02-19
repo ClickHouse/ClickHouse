@@ -10,8 +10,8 @@
 
 int value = 0;
 
-void f() { ++value; }
-void * g(void *) { f(); return {}; }
+static void f() { ++value; }
+static void * g(void *) { f(); return {}; }
 
 
 namespace DB

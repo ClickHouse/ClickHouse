@@ -39,7 +39,10 @@ RegionsNamesDataProvider::RegionsNamesDataProvider(const std::string & directory
 ILanguageRegionsNamesDataSourcePtr RegionsNamesDataProvider::getLanguageRegionsNamesSource(const std::string & language) const
 {
     const auto data_file = getDataFilePath(language);
-    return std::make_unique<LanguageRegionsNamesDataSource>(data_file, language);
+    if (Poco::File(data_file).exists())
+        return std::make_unique<LanguageRegionsNamesDataSource>(data_file, language);
+    else
+        return {};
 }
 
 std::string RegionsNamesDataProvider::getDataFilePath(const std::string & language) const

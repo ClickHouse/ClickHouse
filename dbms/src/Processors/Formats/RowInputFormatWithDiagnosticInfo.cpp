@@ -164,4 +164,17 @@ String RowInputFormatWithDiagnosticInfo::alignedName(const String & name, size_t
     return name + ", " + std::string(spaces_count, ' ');
 }
 
+void RowInputFormatWithDiagnosticInfo::resetParser()
+{
+    IRowInputFormat::resetParser();
+    row_num = 0;
+    bytes_read_at_start_of_buffer_on_current_row = 0;
+    bytes_read_at_start_of_buffer_on_prev_row = 0;
+    offset_of_current_row = std::numeric_limits<size_t>::max();
+    offset_of_prev_row = std::numeric_limits<size_t>::max();
+    max_length_of_column_name = 0;
+    max_length_of_data_type_name = 0;
+}
+
+
 }

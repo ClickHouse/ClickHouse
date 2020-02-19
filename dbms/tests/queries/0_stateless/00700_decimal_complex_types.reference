@@ -1,8 +1,8 @@
-Array(Decimal(9, 3))	Array(Decimal(18, 3))	Array(Decimal(38, 3))
+Array(Decimal32(3))	Array(Decimal64(3))	Array(Decimal128(3))
 Array(Decimal(9, 2))	Array(Decimal(18, 2))	Array(Decimal(38, 2))
-Decimal(9, 3)	Decimal(18, 3)	Decimal(38, 3)
+Decimal32(3)	Decimal64(3)	Decimal128(3)
 Decimal(9, 2)	Decimal(18, 2)	Decimal(38, 2)
-Tuple(Decimal(9, 1), Decimal(18, 1), Decimal(38, 1))	Decimal(9, 1)	Decimal(18, 1)	Decimal(38, 1)
+Tuple(Decimal32(1), Decimal64(1), Decimal128(1))	Decimal32(1)	Decimal64(1)	Decimal128(1)
 0.100
 0.200
 0.300

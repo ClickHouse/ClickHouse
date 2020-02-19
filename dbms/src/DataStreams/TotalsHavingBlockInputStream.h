@@ -10,7 +10,7 @@ class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 
 class ExpressionActions;
-
+enum class TotalsMode;
 
 /** Takes blocks after grouping, with non-finalized aggregate functions.
   * Calculates total values according to totals_mode.

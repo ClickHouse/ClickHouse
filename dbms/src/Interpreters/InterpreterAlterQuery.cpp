@@ -4,12 +4,14 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
 #include <Storages/IStorage.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/LiveView/LiveViewCommands.h>
 #include <Storages/LiveView/StorageLiveView.h>
+#include <Access/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
@@ -36,7 +38,9 @@ BlockIO InterpreterAlterQuery::execute()
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
 
     if (!alter.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, {alter.database});
+        return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccess());
+
+    context.checkAccess(getRequiredAccess());
 
     const String & table_name = alter.table;
     String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
@@ -103,11 +107,168 @@ BlockIO InterpreterAlterQuery::execute()
     if (!alter_commands.empty())
     {
         auto table_lock_holder = table->lockAlterIntention(context.getCurrentQueryId());
-        alter_commands.validate(*table, context);
+        StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
+        alter_commands.validate(metadata, context);
+        alter_commands.prepare(metadata, context);
+        table->checkAlterIsPossible(alter_commands, context.getSettingsRef());
         table->alter(alter_commands, context, table_lock_holder);
     }
 
     return {};
+}
+
+
+AccessRightsElements InterpreterAlterQuery::getRequiredAccess() const
+{
+    AccessRightsElements required_access;
+    const auto & alter = query_ptr->as<ASTAlterQuery &>();
+    for (ASTAlterCommand * command_ast : alter.command_list->commands)
+    {
+        auto column_name = [&]() -> String { return getIdentifierName(command_ast->column); };
+        auto column_name_from_col_decl = [&]() -> std::string_view { return command_ast->col_decl->as<ASTColumnDeclaration &>().name; };
+        auto column_names_from_update_assignments = [&]() -> std::vector<std::string_view>
+        {
+            std::vector<std::string_view> column_names;
+            for (const ASTPtr & assignment_ast : command_ast->update_assignments->children)
+                column_names.emplace_back(assignment_ast->as<const ASTAssignment &>().column_name);
+            return column_names;
+        };
+
+        switch (command_ast->type)
+        {
+            case ASTAlterCommand::UPDATE:
+            {
+                required_access.emplace_back(AccessType::UPDATE, alter.database, alter.table, column_names_from_update_assignments());
+                break;
+            }
+            case ASTAlterCommand::DELETE:
+            {
+                required_access.emplace_back(AccessType::DELETE, alter.database, alter.table);
+                break;
+            }
+            case ASTAlterCommand::ADD_COLUMN:
+            {
+                required_access.emplace_back(AccessType::ADD_COLUMN, alter.database, alter.table, column_name_from_col_decl());
+                break;
+            }
+            case ASTAlterCommand::DROP_COLUMN:
+            {
+                if (command_ast->clear_column)
+                    required_access.emplace_back(AccessType::CLEAR_COLUMN, alter.database, alter.table, column_name());
+                else
+                    required_access.emplace_back(AccessType::DROP_COLUMN, alter.database, alter.table, column_name());
+                break;
+            }
+            case ASTAlterCommand::MODIFY_COLUMN:
+            {
+                required_access.emplace_back(AccessType::MODIFY_COLUMN, alter.database, alter.table, column_name_from_col_decl());
+                break;
+            }
+            case ASTAlterCommand::COMMENT_COLUMN:
+            {
+                required_access.emplace_back(AccessType::COMMENT_COLUMN, alter.database, alter.table, column_name());
+                break;
+            }
+            case ASTAlterCommand::MODIFY_ORDER_BY:
+            {
+                required_access.emplace_back(AccessType::ALTER_ORDER_BY, alter.database, alter.table);
+                break;
+            }
+            case ASTAlterCommand::ADD_INDEX:
+            {
+                required_access.emplace_back(AccessType::ADD_INDEX, alter.database, alter.table);
+                break;
+            }
+            case ASTAlterCommand::DROP_INDEX:
+            {
+                if (command_ast->clear_index)
+                    required_access.emplace_back(AccessType::CLEAR_INDEX, alter.database, alter.table);
+                else
+                    required_access.emplace_back(AccessType::DROP_INDEX, alter.database, alter.table);
+                break;
+            }
+            case ASTAlterCommand::MATERIALIZE_INDEX:
+            {
+                required_access.emplace_back(AccessType::MATERIALIZE_INDEX, alter.database, alter.table);
+                break;
+            }
+            case ASTAlterCommand::ADD_CONSTRAINT:
+            {
+                required_access.emplace_back(AccessType::ADD_CONSTRAINT, alter.database, alter.table);
+                break;
+            }
+            case ASTAlterCommand::DROP_CONSTRAINT:
+            {
+                required_access.emplace_back(AccessType::DROP_CONSTRAINT, alter.database, alter.table);
+                break;
+            }
+            case ASTAlterCommand::MODIFY_TTL:
+            {
+                required_access.emplace_back(AccessType::MODIFY_TTL, alter.database, alter.table);
+                break;
+            }
+            case ASTAlterCommand::MODIFY_SETTING:
+            {
+                required_access.emplace_back(AccessType::MODIFY_SETTING, alter.database, alter.table);
+                break;
+            }
+            case ASTAlterCommand::ATTACH_PARTITION:
+            {
+                required_access.emplace_back(AccessType::INSERT, alter.database, alter.table);
+                break;
+            }
+            case ASTAlterCommand::DROP_PARTITION: [[fallthrough]];
+            case ASTAlterCommand::DROP_DETACHED_PARTITION:
+            {
+                required_access.emplace_back(AccessType::DELETE, alter.database, alter.table);
+                break;
+            }
+            case ASTAlterCommand::MOVE_PARTITION:
+            {
+                if ((command_ast->move_destination_type == PartDestinationType::DISK)
+                    || (command_ast->move_destination_type == PartDestinationType::VOLUME))
+                {
+                    required_access.emplace_back(AccessType::MOVE_PARTITION, alter.database, alter.table);
+                }
+                else if (command_ast->move_destination_type == PartDestinationType::TABLE)
+                {
+                    required_access.emplace_back(AccessType::SELECT | AccessType::DELETE, alter.database, alter.table);
+                    required_access.emplace_back(AccessType::INSERT, command_ast->to_database, command_ast->to_table);
+                }
+                break;
+            }
+            case ASTAlterCommand::REPLACE_PARTITION:
+            {
+                required_access.emplace_back(AccessType::SELECT, command_ast->from_database, command_ast->from_table);
+                required_access.emplace_back(AccessType::DELETE | AccessType::INSERT, alter.database, alter.table);
+                break;
+            }
+            case ASTAlterCommand::FETCH_PARTITION:
+            {
+                required_access.emplace_back(AccessType::FETCH_PARTITION, alter.database, alter.table);
+                break;
+            }
+            case ASTAlterCommand::FREEZE_PARTITION: [[fallthrough]];
+            case ASTAlterCommand::FREEZE_ALL:
+            {
+                required_access.emplace_back(AccessType::FREEZE_PARTITION, alter.database, alter.table);
+                break;
+            }
+            case ASTAlterCommand::MODIFY_QUERY:
+            {
+                required_access.emplace_back(AccessType::MODIFY_VIEW_QUERY, alter.database, alter.table);
+                break;
+            }
+            case ASTAlterCommand::LIVE_VIEW_REFRESH:
+            {
+                required_access.emplace_back(AccessType::REFRESH_VIEW, alter.database, alter.table);
+                break;
+            }
+            case ASTAlterCommand::NO_TYPE: break;
+        }
+    }
+
+    return required_access;
 }
 
 }

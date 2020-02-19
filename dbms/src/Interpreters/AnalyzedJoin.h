@@ -2,7 +2,6 @@
 
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/SettingsCommon.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/asof.h>
@@ -21,6 +20,9 @@ struct DatabaseAndTableWithAlias;
 class Block;
 
 struct Settings;
+
+class Volume;
+using VolumePtr = std::shared_ptr<Volume>;
 
 class AnalyzedJoin
 {
@@ -41,6 +43,7 @@ class AnalyzedJoin
     const SizeLimits size_limits;
     const size_t default_max_bytes;
     const bool join_use_nulls;
+    const size_t max_joined_block_rows = 0;
     const bool partial_merge_join = false;
     const bool partial_merge_join_optimizations = false;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
@@ -62,10 +65,10 @@ class AnalyzedJoin
     /// Original name -> name. Only ranamed columns.
     std::unordered_map<String, String> renames;
 
-    String tmp_path;
+    VolumePtr tmp_volume;
 
 public:
-    AnalyzedJoin(const Settings &, const String & tmp_path);
+    AnalyzedJoin(const Settings &, VolumePtr tmp_volume);
 
     /// for StorageJoin
     AnalyzedJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
@@ -81,12 +84,14 @@ public:
 
     ASTTableJoin::Kind kind() const { return table_join.kind; }
     ASTTableJoin::Strictness strictness() const { return table_join.strictness; }
+    bool sameStrictnessAndKind(ASTTableJoin::Strictness, ASTTableJoin::Kind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
-    const String & getTemporaryPath() const { return tmp_path; }
+    VolumePtr getTemporaryVolume() { return tmp_volume; }
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
     size_t defaultMaxBytes() const { return default_max_bytes; }
+    size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
     bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
 
@@ -97,7 +102,6 @@ public:
     bool hasOn() const { return table_join.on_expression != nullptr; }
 
     NameSet getQualifiedColumnsSet() const;
-    NameSet getOriginalColumnsSet() const;
     NamesWithAliases getNamesWithAliases(const NameSet & required_columns) const;
     NamesWithAliases getRequiredColumns(const Block & sample, const Names & action_columns) const;
 
@@ -120,12 +124,12 @@ public:
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
     const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 
+    /// StorageJoin overrides key names (cause of different names qualification)
+    void setRightKeys(const Names & keys) { key_names_right = keys; }
+
     static bool sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y);
     friend JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block);
 };
-
-struct ASTTableExpression;
-NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context);
 
 bool isMergeJoin(const JoinPtr &);
 

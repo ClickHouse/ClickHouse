@@ -9,6 +9,7 @@ class IOutputFormat;
 
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
+/// Wrapper. Implements IBlockOutputStream interface using IOutputFormat object.
 class OutputStreamToOutputFormat : public IBlockOutputStream
 {
 public:

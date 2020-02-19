@@ -1,7 +1,5 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/Context.h>
 #include <Dictionaries/DictionaryFactory.h>
-#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
 #if USE_MYSQL
 #   include <mysqlxx/PoolFactory.h>
@@ -15,16 +13,11 @@ ExternalDictionariesLoader::ExternalDictionariesLoader(Context & context_)
     : ExternalLoader("external dictionary", &Logger::get("ExternalDictionariesLoader"))
     , context(context_)
 {
+    setConfigSettings({"dictionary", "name", "database"});
     enableAsyncLoading(true);
     enablePeriodicUpdates(true);
 }
 
-
-ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
-        const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config) const
-{
-    return DictionaryFactory::instance().create(name, config, key_in_config, context);
-}
 
 void ExternalDictionariesLoader::reload(const String & name, bool load_never_loading)
 {
@@ -58,5 +51,15 @@ void ExternalDictionariesLoader::addDictionaryWithConfig(
         repo_name,
         getDictionaryConfigurationFromAST(query),
         "dictionary", load_never_loading);
+}
+
+ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
+        const std::string & name, const Poco::Util::AbstractConfiguration & config,
+        const std::string & key_in_config, const std::string & repository_name) const
+{
+    /// For dictionaries from databases (created with DDL queries) we have to perform
+    /// additional checks, so we identify them here.
+    bool dictionary_from_database = !repository_name.empty();
+    return DictionaryFactory::instance().create(name, config, key_in_config, context, dictionary_from_database);
 }
 }

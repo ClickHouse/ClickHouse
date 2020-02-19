@@ -2,6 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionAvg.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include "registerAggregateFunctions.h"
 
 namespace DB
 {
@@ -13,7 +14,7 @@ template <typename T>
 struct Avg
 {
     using FieldType = std::conditional_t<IsDecimalNumber<T>, Decimal128, NearestFieldType<T>>;
-    using Function = AggregateFunctionAvg<T, AggregateFunctionAvgData<FieldType>>;
+    using Function = AggregateFunctionAvg<T, AggregateFunctionAvgData<FieldType, UInt64>>;
 };
 
 template <typename T>

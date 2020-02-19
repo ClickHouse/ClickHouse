@@ -1,8 +1,8 @@
 #pragma once
 
-#include <port/unistd.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadBuffer.h>
+
+#include <unistd.h>
 
 
 namespace DB
@@ -37,10 +37,10 @@ public:
         return pos_in_file - (working_buffer.end() - pos);
     }
 
-private:
     /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
-    off_t doSeek(off_t offset, int whence) override;
+    off_t seek(off_t off, int whence) override;
 
+private:
     /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
     bool poll(size_t timeout_microseconds);
 };

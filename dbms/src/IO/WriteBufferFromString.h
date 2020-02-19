@@ -34,7 +34,7 @@ public:
 
     std::string & str()
     {
-        finish();
+        finalize();
         return value;
     }
 };

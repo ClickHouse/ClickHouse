@@ -1,5 +1,5 @@
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
-#include <sched.h>
+#if defined (OS_LINUX)
+#   include <sched.h>
 #endif
 
 #include <iostream>
@@ -9,10 +9,9 @@
 #include <Common/Stopwatch.h>
 #include <Core/Defines.h>
 #include "AvalancheTest.h"  /// Taken from SMHasher.
-#include <port/clock.h>
 
 
-void setAffinity()
+static void setAffinity()
 {
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
     cpu_set_t mask;
@@ -200,7 +199,7 @@ const size_t BUF_SIZE = 1024;
 using Source = std::vector<UInt64>;
 
 
-void report(const char * name, size_t n, double elapsed, UInt64 tsc_diff, size_t res)
+static void report(const char * name, size_t n, double elapsed, UInt64 tsc_diff, size_t res)
 {
     std::cerr << name << std::endl
         << "Done in " << elapsed

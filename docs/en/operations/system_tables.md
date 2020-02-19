@@ -41,6 +41,7 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 - [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 - [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
 - [system.events](#system_tables-events) — Contains a number of events that have occurred.
+- [system.metric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 
 ## system.clusters
 
@@ -193,6 +194,7 @@ SELECT * FROM system.events LIMIT 5
 
 - [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 - [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
+- [system.metric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 - [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## system.functions
@@ -206,7 +208,7 @@ Columns:
 
 ## system.graphite_retentions
 
-Contains information about parameters [graphite_rollup](server_settings/settings.md#server_settings-graphite_rollup) which are used in tables with [*GraphiteMergeTree](table_engines/graphitemergetree.md) engines.
+Contains information about parameters [graphite_rollup](server_settings/settings.md#server_settings-graphite_rollup) which are used in tables with [\*GraphiteMergeTree](table_engines/graphitemergetree.md) engines.
 
 Columns:
 
@@ -273,10 +275,68 @@ SELECT * FROM system.metrics LIMIT 10
 │ DistributedSend            │     0 │ Number of connections to remote servers sending data that was INSERTed into Distributed tables. Both synchronous and asynchronous mode.                                                          │
 └────────────────────────────┴───────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
 **See Also**
 
 - [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 - [system.events](#system_tables-events) — Contains a number of events that occurred.
+- [system.metric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+- [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
+
+## system.metric_log {#system_tables-metric_log}
+
+Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
+To turn on metrics history collection on `system.metric_log`, create `/etc/clickhouse-server/config.d/metric_log.xml` with following content:
+```xml
+<yandex>
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+    </metric_log>
+</yandex>
+```
+
+**Example**
+
+```sql
+SELECT * FROM system.metric_log LIMIT 1 FORMAT Vertical;
+```
+
+
+```text
+Row 1:
+──────
+event_date:                                                 2020-02-18
+event_time:                                                 2020-02-18 07:15:33
+milliseconds:                                               554
+ProfileEvent_Query:                                         0
+ProfileEvent_SelectQuery:                                   0
+ProfileEvent_InsertQuery:                                   0
+ProfileEvent_FileOpen:                                      0
+ProfileEvent_Seek:                                          0
+ProfileEvent_ReadBufferFromFileDescriptorRead:              1
+ProfileEvent_ReadBufferFromFileDescriptorReadFailed:        0
+ProfileEvent_ReadBufferFromFileDescriptorReadBytes:         0
+ProfileEvent_WriteBufferFromFileDescriptorWrite:            1
+ProfileEvent_WriteBufferFromFileDescriptorWriteFailed:      0
+ProfileEvent_WriteBufferFromFileDescriptorWriteBytes:       56
+...
+CurrentMetric_Query:                                        0
+CurrentMetric_Merge:                                        0
+CurrentMetric_PartMutation:                                 0
+CurrentMetric_ReplicatedFetch:                              0
+CurrentMetric_ReplicatedSend:                               0
+CurrentMetric_ReplicatedChecks:                             0
+...    
+```
+
+**See also**
+
+- [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+- [system.events](#system_tables-events) — Contains a number of events that occurred.
+- [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
 - [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## system.numbers
@@ -395,7 +455,35 @@ Columns:
 - `query` (String) – The query text. For `INSERT`, it doesn't include the data to insert.
 - `query_id` (String) – Query ID, if defined.
 
-## system.query_log {#system_tables-query-log}
+## system.text_log {#system_tables-text_log}
+
+Contains logging entries. Logging level which goes to this table can be limited with `text_log.level` server setting.
+
+Columns:
+
+- `event_date` (`Date`) - Date of the entry.
+- `event_time` (`DateTime`) - Time of the entry.
+- `microseconds` (`UInt32`) - Microseconds of the entry.
+- `thread_name` (String) — Name of the thread from which the logging was done.
+- `thread_id` (UInt64) — OS thread ID.
+- `level` (`Enum8`) - Entry level.
+    - `'Fatal' = 1`
+    - `'Critical' = 2`
+    - `'Error' = 3`
+    - `'Warning' = 4`
+    - `'Notice' = 5`
+    - `'Information' = 6`
+    - `'Debug' = 7`
+    - `'Trace' = 8`
+- `query_id` (`String`) - ID of the query.
+- `logger_name` (`LowCardinality(String)`) - Name of the logger (i.e. `DDLWorker`)
+- `message` (`String`) - The message itself.
+- `revision` (`UInt32`) - ClickHouse revision.
+- `source_file` (`LowCardinality(String)`) - Source file from which the logging was done.
+- `source_line` (`UInt64`) - Source line from which the logging was done.
+
+
+## system.query_log {#system_tables-query_log}
 
 Contains information about execution of queries. For each query, you can see processing start time, duration of processing, error messages and other information.
 
@@ -418,8 +506,8 @@ Columns:
     - `'QueryFinish' = 2` — Successful end of query execution.
     - `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
     - `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
-- `event_date` (Date) — Event date.
-- `event_time` (DateTime) — Event time.
+- `event_date` (Date) — Query starting date.
+- `event_time` (DateTime) — Query starting time.
 - `query_start_time` (DateTime) — Start time of query execution.
 - `query_duration_ms` (UInt64) — Duration of query execution.
 - `read_rows` (UInt64) — Number of read rows.
@@ -437,36 +525,32 @@ Columns:
     - 0 — Query was initiated by another query for distributed query execution.
 - `user` (String) — Name of the user who initiated the current query.
 - `query_id` (String) — ID of the query.
-- `address` (FixedString(16)) — IP address the query was initiated from.
-- `port` (UInt16) — The server port that was used to receive the query.
-- `initial_user` (String) —  Name of the user who ran the parent query (for distributed query execution).
-- `initial_query_id` (String) — ID of the parent query.
-- `initial_address` (FixedString(16)) — IP address that the parent query was launched from.
-- `initial_port` (UInt16) — The server port that was used to receive the parent query from the client.
+- `address` (IPv6) — IP address that was used to make the query.
+- `port` (UInt16) — The client port that was used to make the query.
+- `initial_user` (String) —  Name of the user who ran the initial query (for distributed query execution).
+- `initial_query_id` (String) — ID of the initial query (for distributed query execution).
+- `initial_address` (IPv6) — IP address that the parent query was launched from.
+- `initial_port` (UInt16) — The client port that was used to make the parent query.
 - `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     - 1 — TCP.
     - 2 — HTTP.
-- `os_user` (String) — User's OS.
-- `client_hostname` (String) — Server name that the [clickhouse-client](../interfaces/cli.md) is connected to.
-- `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) name.
-- `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md).
-- `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md).
-- `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md).
-- `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) version.
+- `os_user` (String) — OS's username who runs [clickhouse-client](../interfaces/cli.md).
+- `client_hostname` (String) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
+- `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
+- `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
 - `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
     - 0 — The query was launched from the TCP interface.
     - 1 — `GET` method was used.
     - 2 — `POST` method was used.
 - `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
-- `quota_key` (String) — The quota key specified in the [quotas](quotas.md) setting.
+- `quota_key` (String) — The "quota key" specified in the [quotas](quotas.md) setting (see `keyed`).
 - `revision` (UInt32) — ClickHouse revision.
 - `thread_numbers` (Array(UInt32)) — Number of threads that are participating in query execution.
-- `ProfileEvents.Names` (Array(String)) — Counters that measure the following metrics:
-    - Time spent on reading and writing over the network.
-    - Time spent on reading and writing to a disk.
-    - Number of network errors.
-    - Time spent on waiting when the network bandwidth is limited.
-- `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the&#160;`ProfileEvents.Names` column.
+- `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [system.events](#system_tables-events)
+- `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the `ProfileEvents.Names` column.
 - `Settings.Names` (Array(String)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parameter to 1.
 - `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` column.
 
@@ -484,6 +568,114 @@ When the table is deleted manually, it will be automatically created on the fly.
     The storage period for logs is unlimited. Logs aren't automatically deleted from the table. You need to organize the removal of outdated logs yourself.
 
 You can specify an arbitrary partitioning key for the `system.query_log` table in the [query_log](server_settings/settings.md#server_settings-query-log) server setting (see the `partition_by` parameter).
+
+## system.query_thread_log {#system_tables-query-thread-log}
+
+The table contains information about each query execution thread.
+
+ClickHouse creates this table only if the [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
+
+To enable query logging, set the [log_query_threads](settings/settings.md#settings-log-query-threads) parameter to 1. For details, see the [Settings](settings/settings.md) section.
+
+Columns:
+
+- `event_date` (Date) — the date when the thread has finished execution of the query.
+- `event_time` (DateTime) — the date and time when the thread has finished execution of the query.
+- `query_start_time` (DateTime) — Start time of query execution.
+- `query_duration_ms` (UInt64) — Duration of query execution.
+- `read_rows` (UInt64) — Number of read rows.
+- `read_bytes` (UInt64) — Number of read bytes.
+- `written_rows` (UInt64) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
+- `written_bytes` (UInt64) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
+- `memory_usage` (Int64) — The difference between the amount of allocated and freed memory in context of this thread.
+- `peak_memory_usage` (Int64) — The maximum difference between the amount of allocated and freed memory in context of this thread.
+- `thread_name` (String) — Name of the thread.
+- `thread_number` (UInt32) — Internal thread ID.
+- `os_thread_id` (Int32) — OS thread ID.
+- `master_thread_id` (UInt64) — OS initial ID of initial thread.
+- `query` (String) — Query string.
+- `is_initial_query` (UInt8) — Query type. Possible values:
+    - 1 — Query was initiated by the client.
+    - 0 — Query was initiated by another query for distributed query execution.
+- `user` (String) — Name of the user who initiated the current query.
+- `query_id` (String) — ID of the query.
+- `address` (IPv6) — IP address that was used to make the query.
+- `port` (UInt16) — The client port that was used to make the query.
+- `initial_user` (String) —  Name of the user who ran the initial query (for distributed query execution).
+- `initial_query_id` (String) — ID of the initial query (for distributed query execution).
+- `initial_address` (IPv6) — IP address that the parent query was launched from.
+- `initial_port` (UInt16) — The client port that was used to make the parent query.
+- `interface` (UInt8) — Interface that the query was initiated from. Possible values:
+    - 1 — TCP.
+    - 2 — HTTP.
+- `os_user` (String) — OS's username who runs [clickhouse-client](../interfaces/cli.md).
+- `client_hostname` (String) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
+- `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
+- `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
+- `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
+    - 0 — The query was launched from the TCP interface.
+    - 1 — `GET` method was used.
+    - 2 — `POST` method was used.
+- `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
+- `quota_key` (String) — The "quota key" specified in the [quotas](quotas.md) setting (see `keyed`).
+- `revision` (UInt32) — ClickHouse revision.
+- `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events)
+- `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` column.
+
+By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
+
+When the table is deleted manually, it will be automatically created on the fly. Note that all the previous logs will be deleted.
+
+!!! note
+    The storage period for logs is unlimited. Logs aren't automatically deleted from the table. You need to organize the removal of outdated logs yourself.
+
+You can specify an arbitrary partitioning key for the `system.query_thread_log` table in the [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) server setting (see the `partition_by` parameter).
+
+## system.trace_log {#system_tables-trace_log}
+
+Contains stack traces collected by the sampling query profiler.
+
+ClickHouse creates this table when the [trace_log](server_settings/settings.md#server_settings-trace_log) server configuration section is set. Also the [query_profiler_real_time_period_ns](settings/settings.md#query_profiler_real_time_period_ns) and [query_profiler_cpu_time_period_ns](settings/settings.md#query_profiler_cpu_time_period_ns) settings should be set.
+
+To analyze logs, use the `addressToLine`, `addressToSymbol` and `demangle` introspection functions.
+
+Columns:
+
+- `event_date`([Date](../data_types/date.md)) — Date of sampling moment.
+- `event_time`([DateTime](../data_types/datetime.md)) — Timestamp of sampling moment.
+- `revision`([UInt32](../data_types/int_uint.md)) — ClickHouse server build revision.
+
+    When connecting to server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
+
+- `timer_type`([Enum8](../data_types/enum.md)) — Timer type:
+
+    - `Real` represents wall-clock time.
+    - `CPU` represents CPU time.
+
+- `thread_number`([UInt32](../data_types/int_uint.md)) — Thread identifier.
+- `query_id`([String](../data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](#system_tables-query_log) system table.
+- `trace`([Array(UInt64)](../data_types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
+
+**Example**
+
+```sql
+SELECT * FROM system.trace_log LIMIT 1 \G
+```
+
+```text
+Row 1:
+──────
+event_date:    2019-11-15
+event_time:    2019-11-15 15:09:38
+revision:      54428
+timer_type:    Real
+thread_number: 48
+query_id:      acc4d61f-5bd1-4a3e-bc91-2180be37c915
+trace:         [94222141367858,94222152240175,94222152325351,94222152329944,94222152330796,94222151449980,94222144088167,94222151682763,94222144088167,94222151682763,94222144088167,94222144058283,94222144059248,94222091840750,94222091842302,94222091831228,94222189631488,140509950166747,140509942945935]
+```
 
 ## system.replicas {#system_tables-replicas}
 
@@ -639,6 +831,43 @@ WHERE changed
 └────────────────────────┴─────────────┴─────────┘
 ```
 
+## system.table_engines
+
+Contains description of table engines supported by server and their feature support information.
+
+This table contains the following columns (the column type is shown in brackets):
+
+- `name` (String) — The name of table engine.
+- `supports_settings` (UInt8) — Flag that indicates if table engine supports `SETTINGS` clause.
+- `supports_skipping_indices` (UInt8) — Flag that indicates if table engine supports [skipping indices](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes).
+- `supports_ttl` (UInt8) — Flag that indicates if table engine supports [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
+- `supports_sort_order` (UInt8) — Flag that indicates if table engine supports clauses `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` and `SAMPLE_BY`.
+- `supports_replication` (UInt8) — Flag that indicates if table engine supports [data replication](table_engines/replication/).
+- `supports_duduplication` (UInt8) — Flag that indicates if table engine supports data deduplication.
+
+Example:
+
+```sql
+SELECT *
+FROM system.table_engines
+WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
+```
+
+```text
+┌─name──────────────────────────┬─supports_settings─┬─supports_skipping_indices─┬─supports_sort_order─┬─supports_ttl─┬─supports_replication─┬─supports_deduplication─┐
+│ Kafka                         │                 1 │                         0 │                   0 │            0 │                    0 │                      0 │
+│ MergeTree                     │                 1 │                         1 │                   1 │            1 │                    0 │                      0 │
+│ ReplicatedCollapsingMergeTree │                 1 │                         1 │                   1 │            1 │                    1 │                      1 │
+└───────────────────────────────┴───────────────────┴───────────────────────────┴─────────────────────┴──────────────┴──────────────────────┴────────────────────────┘
+```
+
+**See also**
+
+- MergeTree family [query clauses](table_engines/mergetree.md#mergetree-query-clauses)
+- Kafka [settings](table_engines/kafka.md#table_engine-kafka-creating-a-table)
+- Join [settings](table_engines/join.md#join-limitations-and-settings)
+
+
 ## system.tables
 
 Contains metadata of each table that the server knows about. Detached tables are not shown in `system.tables`.
@@ -763,7 +992,7 @@ If there were problems with mutating some parts, the following columns contain a
 
 ## system.disks {#system_tables-disks}
 
-Contains information about disks defined in the [server configuration](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure). 
+Contains information about disks defined in the [server configuration](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
 Columns:
 
@@ -789,4 +1018,4 @@ Columns:
 
 If the storage policy contains more then one volume, then information for each volume is stored in the individual row of the table.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/system_tables/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/) <!--hide-->

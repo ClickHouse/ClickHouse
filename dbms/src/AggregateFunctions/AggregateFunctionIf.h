@@ -109,8 +109,6 @@ public:
     {
         return nested_func->isState();
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }

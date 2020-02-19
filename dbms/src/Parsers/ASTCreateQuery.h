@@ -4,6 +4,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 
 namespace DB
@@ -48,8 +49,6 @@ public:
 };
 
 
-class ASTSelectWithUnionQuery;
-
 /// CREATE TABLE or ATTACH TABLE query
 class ASTCreateQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
@@ -73,6 +72,7 @@ public:
     ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
+    std::optional<UInt64> live_view_timeout;    /// For CREATE LIVE VIEW ... WITH TIMEOUT ...
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + database) + delim + table; }

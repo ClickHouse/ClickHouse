@@ -74,7 +74,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
 
-        socket->connect(*current_resolved_address, timeouts.connection_timeout);
+        const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
+        socket->connect(*current_resolved_address, connection_timeout);
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
@@ -409,7 +410,11 @@ void Connection::sendQuery(
 
     /// Per query settings.
     if (settings)
-        settings->serialize(*out);
+    {
+        auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
+                                                                                                          : SettingsBinaryFormat::OLD;
+        settings->serialize(*out, settings_format);
+    }
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
 
@@ -435,6 +440,10 @@ void Connection::sendQuery(
 
 void Connection::sendCancel()
 {
+    /// If we already disconnected.
+    if (!out)
+        return;
+
     //LOG_TRACE(log_wrapper.get(), "Sending cancel");
 
     writeVarUInt(Protocol::Client::Cancel, *out);
@@ -612,7 +621,7 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Connection::Packet Connection::receivePacket()
+Packet Connection::receivePacket()
 {
     try
     {
@@ -766,9 +775,7 @@ std::unique_ptr<Exception> Connection::receiveException()
 {
     //LOG_TRACE(log_wrapper.get(), "Receiving exception");
 
-    Exception e;
-    readException(e, *in, "Received from " + getDescription());
-    return std::unique_ptr<Exception>{ e.clone() };
+    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription()));
 }
 
 

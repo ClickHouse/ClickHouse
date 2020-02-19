@@ -1,0 +1,19 @@
+<yandex>
+    <logger>
+        <level>trace</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <size>1000M</size>
+        <count>10</count>
+        <stderr>/var/log/clickhouse-server/stderr.log</stderr>
+        <stdout>/var/log/clickhouse-server/stdout.log</stdout>
+    </logger>
+
+    <storage_configuration>
+        <disks>
+            <default>
+                <type>memory</type>
+            </default>
+        </disks>
+    </storage_configuration>
+</yandex>

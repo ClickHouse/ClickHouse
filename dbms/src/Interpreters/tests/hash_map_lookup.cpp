@@ -63,7 +63,9 @@ void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
     for (size_t i = 0, size = data.size(); i < size; ++i)
     {
         auto it = map.find(data[i]);
-        ++it->getMapped();
+        auto curr = ++it;
+        if (curr)
+            curr->getMapped();
     }
     watch.stop();
     std::cerr << std::fixed << std::setprecision(2) << "HashMap (" << name << "). Size: " << map.size()

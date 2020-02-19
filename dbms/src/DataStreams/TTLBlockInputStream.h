@@ -58,6 +58,9 @@ private:
     /// Removes rows with expired table ttl and computes new ttl_infos for part
     void removeRowsWithExpiredTableTTL(Block & block);
 
+    /// Updates TTL for moves
+    void updateMovesTTL(Block & block);
+
     UInt32 getTimestampByIndex(const IColumn * column, size_t ind);
     bool isTTLExpired(time_t ttl);
 };
