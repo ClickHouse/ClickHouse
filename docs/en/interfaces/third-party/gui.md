@@ -115,7 +115,7 @@ Features:
 DataLens is [available for free](https://cloud.yandex.com/docs/datalens/pricing) for low-load projects, even for commercial use.
 
 - [DataLens documentation](https://cloud.yandex.com/docs/datalens/).
-- [Visualizing data from a ClickHouse database](https://cloud.yandex.com/docs/datalens/solutions/data-from-db-visualization) tutorial.
+- [Tutorial](https://cloud.yandex.com/docs/datalens/solutions/data-from-db-visualization) on visualizing data from a ClickHouse database.
 
 ### Holistics Software
 
