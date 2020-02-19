@@ -206,6 +206,7 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
         {
             Strings replaced_parts;
             current_parts.add(virtual_part_name, &replaced_parts);
+            virtual_parts.add(virtual_part_name, &replaced_parts);
 
             /// Each part from `replaced_parts` should become Obsolete as a result of executing the entry.
             /// So it is one less part to mutate for each mutation with block number greater or equal than part_info.getDataVersion()
