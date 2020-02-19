@@ -20,9 +20,9 @@
     M(ReadBufferAIOReadBytes, "") \
     M(WriteBufferAIOWrite, "") \
     M(WriteBufferAIOWriteBytes, "") \
-    M(ReadCompressedBytes, "Number of bytes read from compressed sources (files or over a network).") \
-    M(CompressedReadBufferBlocks, "Number of blocks read from compressed sources (files or over a network).") \
-    M(CompressedReadBufferBytes, "Number of uncompressed bytes read from compressed sources (files or over a network).") \
+    M(ReadCompressedBytes, "Number of bytes (the number of bytes before decompression) read from compressed sources (files, network).") \
+    M(CompressedReadBufferBlocks, "Number of compressed blocks (the blocks of data that are compressed independent of each other) read from compressed sources (files, network).") \
+    M(CompressedReadBufferBytes, "Number of uncompressed bytes (the number of bytes after decompression) read from compressed sources (files, network).") \
     M(UncompressedCacheHits, "") \
     M(UncompressedCacheMisses, "") \
     M(UncompressedCacheWeightLost, "") \
