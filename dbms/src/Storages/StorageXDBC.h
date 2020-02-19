@@ -23,7 +23,7 @@ public:
                             size_t max_block_size,
                             unsigned num_streams) override;
 
-    bool supportProcessorsPipeline() const override { return true; }
+
 
     StorageXDBC(const StorageID & table_id_,
                 const std::string & remote_database_name,

@@ -35,7 +35,7 @@ public:
         return pipes;
     }
 
-    bool supportProcessorsPipeline() const override { return true; }
+
 
     BlockOutputStreamPtr write(const ASTPtr &, const Context &) override
     {

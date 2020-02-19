@@ -134,7 +134,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    bool supportProcessorsPipeline() const override { return true; }
+
 
     BlockInputStreams watch(
         const Names & column_names,
