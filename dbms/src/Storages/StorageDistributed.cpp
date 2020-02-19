@@ -253,6 +253,10 @@ StorageDistributed::StorageDistributed(
         if (num_local_shards && remote_database == id_.database_name && remote_table == id_.table_name)
             throw Exception("Distributed table " + id_.table_name + " looks at itself", ErrorCodes::INFINITE_LOOP);
     }
+    if (remote_database.empty())
+    {
+        LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
+    }
 }
 
 

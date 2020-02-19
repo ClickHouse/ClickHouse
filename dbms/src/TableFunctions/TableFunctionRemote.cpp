@@ -65,8 +65,8 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     if (is_cluster_function)
     {
-        ASTPtr ast_name = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-        cluster_name = ast_name->as<ASTLiteral &>().value.safeGet<const String &>();
+        args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
+        cluster_name = args[arg_num]->as<ASTLiteral &>().value.safeGet<const String &>();
     }
     else
     {
