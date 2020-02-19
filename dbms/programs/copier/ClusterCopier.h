@@ -1,4 +1,6 @@
 #pragma once
+#include <Poco/Util/ServerApplication.h>
+#include <daemon/BaseDaemon.h>
 
 #include "Internals.h"
 #include "TaskCluster.h"

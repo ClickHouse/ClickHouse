@@ -1,6 +1,12 @@
 #include "ClusterCopier.h"
 
+#include "Internals.h"
+
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
+
 namespace DB
+
 {
 
 void ClusterCopier::init()
@@ -42,7 +48,7 @@ void ClusterCopier::init()
 }
 
 template <typename T>
-decltype(auto) ClusterCopier::retry(T && func, UInt64 max_tries = 100)
+decltype(auto) ClusterCopier::retry(T && func, UInt64 max_tries)
 {
     std::exception_ptr exception;
 
@@ -153,14 +159,13 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
             ss << " " << missing_partition;
 
         LOG_WARNING(log, "There are no " << missing_partitions.size() << " partitions from enabled_partitions in shard "
-                                         << task_shard->getDescription() << " :" << ss.str());
+                         << task_shard->getDescription() << " :" << ss.str());
     }
 
     LOG_DEBUG(log, "Will copy " << task_shard->partition_tasks.size() << " partitions from shard " << task_shard->getDescription());
 }
 
-/// Compute set of partitions, assume set of partitions aren't changed during the processing
-void ClusterCopier::discoverTablePartitions(const ConnectionTimeouts & timeouts, TaskTable & task_table, UInt64 num_threads = 0)
+void ClusterCopier::discoverTablePartitions(const ConnectionTimeouts & timeouts, TaskTable & task_table, UInt64 num_threads)
 {
     /// Fetch partitions list from a shard
     {
@@ -305,38 +310,12 @@ void ClusterCopier::process(const ConnectionTimeouts & timeouts)
     }
 }
 
-/// Disables DROP PARTITION commands that used to clear data after errors
-void ClusterCopier::setSafeMode(bool is_safe_mode_ = true)
-{
-    is_safe_mode = is_safe_mode_;
-}
-
-void ClusterCopier::setCopyFaultProbability(double copy_fault_probability_)
-{
-    copy_fault_probability = copy_fault_probability_;
-}
-
 /// Protected section
 
-String ClusterCopier::getWorkersPath() const
-{
-    return task_cluster->task_zookeeper_path + "/task_active_workers";
-}
-
-String ClusterCopier::getWorkersPathVersion() const
-{
-    return getWorkersPath() + "_version";
-}
-
-String ClusterCopier::getCurrentWorkerNodePath() const
-{
-    return getWorkersPath() + "/" + host_id;
-}
-
 zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNeed(
-        const zkutil::ZooKeeperPtr & zookeeper,
-        const String & description,
-        bool unprioritized)
+    const zkutil::ZooKeeperPtr & zookeeper,
+    const String & description,
+    bool unprioritized)
 {
     std::chrono::milliseconds current_sleep_time = default_sleep_time;
     static constexpr std::chrono::milliseconds max_sleep_time(30000); // 30 sec
@@ -354,7 +333,7 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
     {
         updateConfigIfNeeded();
 
-        Coordination::Stat stat{};
+        Coordination::Stat stat;
         zookeeper->get(workers_version_path, &stat);
         auto version = stat.version;
         zookeeper->get(workers_path, &stat);
@@ -362,7 +341,7 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
         if (static_cast<UInt64>(stat.numChildren) >= task_cluster->max_workers)
         {
             LOG_DEBUG(log, "Too many workers (" << stat.numChildren << ", maximum " << task_cluster->max_workers << ")"
-                                                << ". Postpone processing " << description);
+                << ". Postpone processing " << description);
 
             if (unprioritized)
                 current_sleep_time = std::min(max_sleep_time, current_sleep_time + default_sleep_time);
@@ -774,13 +753,9 @@ bool ClusterCopier::tryDropPartition(ShardPartition & task_partition, const zkut
     return true;
 }
 
-
-static constexpr UInt64 max_table_tries = 1000;
-static constexpr UInt64 max_shard_partition_tries = 600;
-
 bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTable & task_table)
 {
-    /// A heuristic: if previous shard is already done, then check next one without sleeps due to max_workers constraint
+    /// An heuristic: if previous shard is already done, then check next one without sleeps due to max_workers constraint
     bool previous_shard_is_instantly_finished = false;
 
     /// Process each partition that is present in cluster

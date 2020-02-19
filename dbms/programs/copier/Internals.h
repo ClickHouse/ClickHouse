@@ -69,6 +69,8 @@
 #include <Databases/DatabaseMemory.h>
 #include <Common/StatusFile.h>
 
+#include "Aliases.h"
+
 namespace DB
 {
 
@@ -81,22 +83,13 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
-using DatabaseAndTableName = std::pair<String, String>;
 
-String getQuotedTable(const String & database, const String & table)
-{
-    if (database.empty())
-    {
-        return backQuoteIfNeed(table);
-    }
+ConfigurationPtr getConfigurationFromXMLString(const std::string & xml_data);
 
-    return backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);
-}
+String getQuotedTable(const String & database, const String & table);
 
-String getQuotedTable(const DatabaseAndTableName & db_and_table)
-{
-    return getQuotedTable(db_and_table.first, db_and_table.second);
-}
+String getQuotedTable(const DatabaseAndTableName & db_and_table);
+
 
 enum class TaskState
 {
@@ -109,25 +102,23 @@ enum class TaskState
 struct TaskStateWithOwner
 {
     TaskStateWithOwner() = default;
+
     TaskStateWithOwner(TaskState state_, const String & owner_) : state(state_), owner(owner_) {}
 
     TaskState state{TaskState::Unknown};
     String owner;
 
-    static String getData(TaskState state, const String & owner)
-    {
+    static String getData(TaskState state, const String &owner) {
         return TaskStateWithOwner(state, owner).toString();
     }
 
-    String toString()
-    {
+    String toString() {
         WriteBufferFromOwnString wb;
         wb << static_cast<UInt32>(state) << "\n" << escape << owner;
         return wb.str();
     }
 
-    static TaskStateWithOwner fromString(const String & data)
-    {
+    static TaskStateWithOwner fromString(const String &data) {
         ReadBufferFromString rb(data);
         TaskStateWithOwner res;
         UInt32 state;
@@ -143,23 +134,6 @@ struct TaskStateWithOwner
 };
 
 
-/// Hierarchical description of the tasks
-struct ShardPartitionPiece;
-struct ShardPartition;
-struct TaskShard;
-struct TaskTable;
-struct TaskCluster;
-struct ClusterPartition;
-
-using PartitionPieces = std::vector<ShardPartitionPiece>;
-using TasksPartition = std::map<String, ShardPartition, std::greater<>>;
-using ShardInfo = Cluster::ShardInfo;
-using TaskShardPtr = std::shared_ptr<TaskShard>;
-using TasksShard = std::vector<TaskShardPtr>;
-using TasksTable = std::list<TaskTable>;
-using ClusterPartitions = std::map<String, ClusterPartition, std::greater<>>;
-
-
 
 struct ShardPriority
 {
@@ -167,60 +141,18 @@ struct ShardPriority
     size_t hostname_difference = 0;
     UInt8 random = 0;
 
-    static bool greaterPriority(const ShardPriority & current, const ShardPriority & other)
-    {
+    static bool greaterPriority(const ShardPriority & current, const ShardPriority & other) {
         return std::forward_as_tuple(current.is_remote, current.hostname_difference, current.random)
                < std::forward_as_tuple(other.is_remote, other.hostname_difference, other.random);
     }
 };
 
-/// Tables has many shards and table's partiton can be stored on different shards.
-/// When we copy partition we have to discover it's shards (shards which store this partition)
-/// For simplier retrieval of which partitions are stored in particular shard we created TaskShard.
-struct TaskShard
+/// Execution status of a task
+enum class PartitionTaskStatus
 {
-    TaskShard(TaskTable & parent, const ShardInfo & info_) : task_table(parent), info(info_) {}
-
-    TaskTable & task_table;
-
-    ShardInfo info;
-    UInt32 numberInCluster() const { return info.shard_num; }
-    UInt32 indexInCluster() const { return info.shard_num - 1; }
-
-    String getDescription() const;
-    String getHostNameExample() const;
-
-    /// Used to sort clusters by their proximity
-    ShardPriority priority;
-
-    /// Column with unique destination partitions (computed from engine_push_partition_key expr.) in the shard
-    ColumnWithTypeAndName partition_key_column;
-
-    /// There is a task for each destination partition
-    TasksPartition partition_tasks;
-
-    /// Which partitions have been checked for existence
-    /// If some partition from this lists is exists, it is in partition_tasks
-    std::set<String> checked_partitions;
-
-    /// Last CREATE TABLE query of the table of the shard
-    ASTPtr current_pull_table_create_query;
-
-    /// Internal distributed tables
-    DatabaseAndTableName table_read_shard;
-    DatabaseAndTableName table_split_shard;
-};
-
-
-/// Contains info about all shards that contain a partition
-struct ClusterPartition
-{
-    double elapsed_time_seconds = 0;
-    UInt64 bytes_copied = 0;
-    UInt64 rows_copied = 0;
-    UInt64 blocks_copied = 0;
-
-    UInt64 total_tries = 0;
+    Active,
+    Finished,
+    Error,
 };
 
 
@@ -233,187 +165,18 @@ struct MultiTransactionInfo
 
 // Creates AST representing 'ENGINE = Distributed(cluster, db, table, [sharding_key])
 std::shared_ptr<ASTStorage> createASTStorageDistributed(
-        const String & cluster_name, const String & database, const String & table, const ASTPtr & sharding_key_ast = nullptr)
-{
-    auto args = std::make_shared<ASTExpressionList>();
-    args->children.emplace_back(std::make_shared<ASTLiteral>(cluster_name));
-    args->children.emplace_back(std::make_shared<ASTIdentifier>(database));
-    args->children.emplace_back(std::make_shared<ASTIdentifier>(table));
-    if (sharding_key_ast)
-        args->children.emplace_back(sharding_key_ast);
-
-    auto engine = std::make_shared<ASTFunction>();
-    engine->name = "Distributed";
-    engine->arguments = args;
-
-    auto storage = std::make_shared<ASTStorage>();
-    storage->set(storage->engine, engine);
-
-    return storage;
-}
+        const String & cluster_name, const String & database, const String & table,
+        const ASTPtr & sharding_key_ast = nullptr);
 
 
-BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream)
-{
-    return std::make_shared<SquashingBlockInputStream>(
-            stream,
-            std::numeric_limits<size_t>::max(),
-            std::numeric_limits<size_t>::max());
-}
+BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream);
 
-Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream)
-{
-    return squashStreamIntoOneBlock(stream)->read();
-}
+Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream);
 
+bool isExtendedDefinitionStorage(const ASTPtr & storage_ast);
 
-static bool isExtendedDefinitionStorage(const ASTPtr & storage_ast)
-{
-    const auto & storage = storage_ast->as<ASTStorage &>();
-    return storage.partition_by || storage.order_by || storage.sample_by;
-}
+ASTPtr extractPartitionKey(const ASTPtr & storage_ast);
 
-static ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
-{
-    String storage_str = queryToString(storage_ast);
-
-    const auto & storage = storage_ast->as<ASTStorage &>();
-    const auto & engine = storage.engine->as<ASTFunction &>();
-
-    if (!endsWith(engine.name, "MergeTree"))
-    {
-        throw Exception("Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
-                        ErrorCodes::BAD_ARGUMENTS);
-    }
-
-    if (isExtendedDefinitionStorage(storage_ast))
-    {
-        if (storage.partition_by)
-            return storage.partition_by->clone();
-
-        static const char * all = "all";
-        return std::make_shared<ASTLiteral>(Field(all, strlen(all)));
-    }
-    else
-    {
-        bool is_replicated = startsWith(engine.name, "Replicated");
-        size_t min_args = is_replicated ? 3 : 1;
-
-        if (!engine.arguments)
-            throw Exception("Expected arguments in " + storage_str, ErrorCodes::BAD_ARGUMENTS);
-
-        ASTPtr arguments_ast = engine.arguments->clone();
-        ASTs & arguments = arguments_ast->children;
-
-        if (arguments.size() < min_args)
-            throw Exception("Expected at least " + toString(min_args) + " arguments in " + storage_str, ErrorCodes::BAD_ARGUMENTS);
-
-        ASTPtr & month_arg = is_replicated ? arguments[2] : arguments[1];
-        return makeASTFunction("toYYYYMM", month_arg->clone());
-    }
-}
-
-/*
- * Choosing a Primary Key that Differs from the Sorting Key
- * It is possible to specify a primary key (an expression with values that are written in the index file for each mark)
- * that is different from the sorting key (an expression for sorting the rows in data parts).
- * In this case the primary key expression tuple must be a prefix of the sorting key expression tuple.
- * This feature is helpful when using the SummingMergeTree and AggregatingMergeTree table engines.
- * In a common case when using these engines, the table has two types of columns: dimensions and measures.
- * Typical queries aggregate values of measure columns with arbitrary GROUP BY and filtering by dimensions.
- * Because SummingMergeTree and AggregatingMergeTree aggregate rows with the same value of the sorting key,
- * it is natural to add all dimensions to it. As a result, the key expression consists of a long list of columns
- * and this list must be frequently updated with newly added dimensions.
- * In this case it makes sense to leave only a few columns in the primary key that will provide efficient
- * range scans and add the remaining dimension columns to the sorting key tuple.
- * ALTER of the sorting key is a lightweight operation because when a new column is simultaneously added t
- * o the table and to the sorting key, existing data parts don't need to be changed.
- * Since the old sorting key is a prefix of the new sorting key and there is no data in the newly added column,
- * the data is sorted by both the old and new sorting keys at the moment of table modification.
- *
- * */
-[[maybe_unused]] static ASTPtr extractPrimaryKeyOrOrderBy(const ASTPtr & storage_ast)
-{
-    String storage_str = queryToString(storage_ast);
-
-    const auto & storage = storage_ast->as<ASTStorage &>();
-    const auto & engine = storage.engine->as<ASTFunction &>();
-
-    if (!endsWith(engine.name, "MergeTree"))
-    {
-        throw Exception("Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
-                        ErrorCodes::BAD_ARGUMENTS);
-    }
-
-    /// FIXME
-    if (!isExtendedDefinitionStorage(storage_ast))
-    {
-        throw Exception("Is not extended deginition storage " + storage_str + " Will be fixed later.",
-                        ErrorCodes::BAD_ARGUMENTS);
-    }
-
-    if (storage.primary_key)
-        return storage.primary_key->clone();
-
-    return storage.order_by->clone();
-}
-
-[[maybe_unused]] static String createCommaSeparatedStringFrom(const Strings & strings)
-{
-    String answer;
-    for (auto & string: strings)
-        answer += string + ", ";
-
-    /// Remove last comma and space
-    answer.pop_back();
-    answer.pop_back();
-    return answer;
-}
-
-[[maybe_unused]] static Strings extractPrimaryKeyString(const ASTPtr & storage_ast)
-{
-    const auto primary_key_or_order_by = extractPrimaryKeyOrOrderBy(storage_ast)->as<ASTFunction &>();
-
-    ASTPtr primary_key_or_order_by_arguments_ast = primary_key_or_order_by.arguments->clone();
-    ASTs & primary_key_or_order_by_arguments = primary_key_or_order_by_arguments_ast->children;
-
-    Strings answer;
-    answer.reserve(primary_key_or_order_by_arguments.size());
-
-    for (auto & column : primary_key_or_order_by_arguments)
-        answer.push_back(column->getColumnName());
-
-    return answer;
-}
-
-
-
-static ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std::string & local_hostname, UInt8 random)
-{
-    ShardPriority res;
-
-    if (replicas.empty())
-        return res;
-
-    res.is_remote = 1;
-    for (auto & replica : replicas)
-    {
-        if (isLocalAddress(DNSResolver::instance().resolveHost(replica.host_name)))
-        {
-            res.is_remote = 0;
-            break;
-        }
-    }
-
-    res.hostname_difference = std::numeric_limits<size_t>::max();
-    for (auto & replica : replicas)
-    {
-        size_t difference = getHostNameDifference(local_hostname, replica.host_name);
-        res.hostname_difference = std::min(difference, res.hostname_difference);
-    }
-
-    res.random = random;
-    return res;
-}
+ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std::string & local_hostname, UInt8 random);
 
 }
