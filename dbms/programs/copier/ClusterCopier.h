@@ -14,10 +14,10 @@ class ClusterCopier
 {
 public:
 
-    ClusterCopier(const String &task_path_,
-                  const String &host_id_,
-                  const String &proxy_database_name_,
-                  Context &context_)
+    ClusterCopier(const String & task_path_,
+                  const String & host_id_,
+                  const String & proxy_database_name_,
+                  Context & context_)
             :
             task_zookeeper_path(task_path_),
             host_id(host_id_),
@@ -28,14 +28,14 @@ public:
     void init();
 
     template<typename T>
-    decltype(auto) retry(T &&func, UInt64 max_tries = 100);
+    decltype(auto) retry(T && func, UInt64 max_tries = 100);
 
     void discoverShardPartitions(const ConnectionTimeouts & timeouts, const TaskShardPtr & task_shard) ;
 
     /// Compute set of partitions, assume set of partitions aren't changed during the processing
-    void discoverTablePartitions(const ConnectionTimeouts &timeouts, TaskTable &task_table, UInt64 num_threads = 0);
+    void discoverTablePartitions(const ConnectionTimeouts & timeouts, TaskTable & task_table, UInt64 num_threads = 0);
 
-    void uploadTaskDescription(const std::string &task_path, const std::string &task_file, const bool force);
+    void uploadTaskDescription(const std::string & task_path, const std::string & task_file, const bool force);
 
     void reloadTaskDescription();
 
@@ -82,26 +82,26 @@ protected:
      * We have to ensure that all shards have the finished state and there is no dirty flag.
      * Moreover, we have to check status twice and check zxid, because state can change during the checking.
      */
-    bool checkPartitionIsDone(const TaskTable &task_table, const String &partition_name,
-                              const TasksShard &shards_with_partition);
+    bool checkPartitionIsDone(const TaskTable & task_table, const String & partition_name,
+                              const TasksShard & shards_with_partition);
 
     /// Removes MATERIALIZED and ALIAS columns from create table query
     static ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr &query_ast);
 
     /// Replaces ENGINE and table name in a create query
     std::shared_ptr<ASTCreateQuery>
-    rewriteCreateQueryStorage(const ASTPtr &create_query_ast, const DatabaseAndTableName &new_table,
-                              const ASTPtr &new_storage_ast);
+    rewriteCreateQueryStorage(const ASTPtr & create_query_ast, const DatabaseAndTableName & new_table,
+                              const ASTPtr & new_storage_ast);
 
-    bool tryDropPartition(ShardPartition &task_partition,
-                          const zkutil::ZooKeeperPtr &zookeeper,
-                          const CleanStateClock &clean_state_clock);
+    bool tryDropPartition(ShardPartition & task_partition,
+                          const zkutil::ZooKeeperPtr & zookeeper,
+                          const CleanStateClock & clean_state_clock);
 
 
     static constexpr UInt64 max_table_tries = 1000;
     static constexpr UInt64 max_shard_partition_tries = 600;
 
-    bool tryProcessTable(const ConnectionTimeouts &timeouts, TaskTable &task_table);
+    bool tryProcessTable(const ConnectionTimeouts & timeouts, TaskTable & task_table);
 
     PartitionTaskStatus tryProcessPartitionTask(const ConnectionTimeouts & timeouts,
                                                 ShardPartition & task_partition,
@@ -137,10 +137,10 @@ protected:
       * Returns number of shards for which at least one replica executed query successfully
       */
     UInt64 executeQueryOnCluster(
-            const ClusterPtr &cluster,
-            const String &query,
-            const ASTPtr &query_ast_ = nullptr,
-            const Settings *settings = nullptr,
+            const ClusterPtr & cluster,
+            const String & query,
+            const ASTPtr & query_ast_ = nullptr,
+            const Settings * settings = nullptr,
             PoolMode pool_mode = PoolMode::GET_ALL,
             UInt64 max_successful_executions_per_shard = 0) const;
 
@@ -166,8 +166,8 @@ private:
     bool is_safe_mode = false;
     double copy_fault_probability = 0.0;
 
-    Context &context;
-    Poco::Logger *log;
+    Context & context;
+    Poco::Logger * log;
 
     std::chrono::milliseconds default_sleep_time{1000};
 };

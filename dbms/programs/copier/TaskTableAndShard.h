@@ -221,14 +221,14 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
 }
 
 template<typename RandomEngine>
-inline void TaskTable::initShards(RandomEngine &&random_engine) {
+inline void TaskTable::initShards(RandomEngine && random_engine) {
     const String & fqdn_name = getFQDNOrHostName();
     std::uniform_int_distribution<UInt8> get_urand(0, std::numeric_limits<UInt8>::max());
 
     // Compute the priority
-    for (auto &shard_info : cluster_pull->getShardsInfo()) {
+    for (auto & shard_info : cluster_pull->getShardsInfo()) {
         TaskShardPtr task_shard = std::make_shared<TaskShard>(*this, shard_info);
-        const auto &replicas = cluster_pull->getShardsAddresses().at(task_shard->indexInCluster());
+        const auto & replicas = cluster_pull->getShardsAddresses().at(task_shard->indexInCluster());
         task_shard->priority = getReplicasPriority(replicas, fqdn_name, get_urand(random_engine));
 
         all_shards.emplace_back(task_shard);
@@ -236,13 +236,13 @@ inline void TaskTable::initShards(RandomEngine &&random_engine) {
 
     // Sort by priority
     std::sort(all_shards.begin(), all_shards.end(),
-              [](const TaskShardPtr &lhs, const TaskShardPtr &rhs) {
+              [](const TaskShardPtr & lhs, const TaskShardPtr & rhs) {
                   return ShardPriority::greaterPriority(lhs->priority, rhs->priority);
               });
 
     // Cut local shards
     auto it_first_remote = std::lower_bound(all_shards.begin(), all_shards.end(), 1,
-                                            [](const TaskShardPtr &lhs, UInt8 is_remote) {
+                                            [](const TaskShardPtr & lhs, UInt8 is_remote) {
                                                 return lhs->priority.is_remote < is_remote;
                                             });
 
