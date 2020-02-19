@@ -105,7 +105,9 @@ public:
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
         const std::vector<MutationCommand> & commands,
-        MergeListEntry & merge_entry, const Context & context,
+        MergeListEntry & merge_entry,
+        time_t time_of_mutation,
+        const Context & context,
         const ReservationPtr & disk_reservation,
         TableStructureReadLockHolder & table_lock_holder);
 

@@ -918,6 +918,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     const FutureMergedMutatedPart & future_part,
     const std::vector<MutationCommand> & commands,
     MergeListEntry & merge_entry,
+    time_t time_of_mutation,
     const Context & context,
     const ReservationPtr & space_reservation,
     TableStructureReadLockHolder & table_lock_holder)
@@ -1025,7 +1026,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 std::make_shared<ExpressionBlockInputStream>(in, data.primary_key_and_skip_indices_expr));
 
         if (need_remove_expired_values)
-            in = std::make_shared<TTLBlockInputStream>(in, data, new_data_part, time(nullptr), true);
+            in = std::make_shared<TTLBlockInputStream>(in, data, new_data_part, time_of_mutation, true);
 
         MergeTreeDataPart::MinMaxIndex minmax_idx;
 
@@ -1133,7 +1134,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         merge_entry->columns_written = all_columns.size() - updated_header.columns();
 
         if (need_remove_expired_values)
-            in = std::make_shared<TTLBlockInputStream>(in, data, new_data_part, time(nullptr), true);
+            in = std::make_shared<TTLBlockInputStream>(in, data, new_data_part, time_of_mutation, true);
 
         IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
         MergedColumnOnlyOutputStream out(

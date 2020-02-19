@@ -785,8 +785,8 @@ bool StorageMergeTree::tryMutatePart()
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, *merge_entry, global_context,
-            tagger->reserved_space, table_lock_holder);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, *merge_entry,
+            time(nullptr), global_context, tagger->reserved_space, table_lock_holder);
 
         renameTempPartAndReplace(new_part);
         removeEmptyColumnsFromPart(new_part);
