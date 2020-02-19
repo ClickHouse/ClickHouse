@@ -355,6 +355,9 @@ void AccessRightsContext::checkGrantOption(const AccessRightsElements & access) 
 
 void AccessRightsContext::checkAdminOption(const UUID & role_id) const
 {
+    if (isGranted(AccessType::ROLE_ADMIN))
+        return;
+
     boost::shared_ptr<const boost::container::flat_set<UUID>> enabled_roles = enabled_roles_with_admin_option.load();
     if (!enabled_roles)
     {
@@ -429,7 +432,7 @@ boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess
     static const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
     static const AccessFlags all_dcl = AccessType::CREATE_USER | AccessType::CREATE_ROLE | AccessType::CREATE_POLICY
         | AccessType::CREATE_QUOTA | AccessType::ALTER_USER | AccessType::ALTER_POLICY | AccessType::ALTER_QUOTA | AccessType::DROP_USER
-        | AccessType::DROP_ROLE | AccessType::DROP_POLICY | AccessType::DROP_QUOTA;
+        | AccessType::DROP_ROLE | AccessType::DROP_POLICY | AccessType::DROP_QUOTA | AccessType::ROLE_ADMIN;
 
     /// Anyone has access to the "system" database.
     if (!result.isGranted(AccessType::SELECT, "system"))
