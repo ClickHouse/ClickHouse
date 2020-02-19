@@ -20,7 +20,7 @@ const FinalCell * DividedCell::find(Float64 x, Float64 y) const
     auto y_ratio = y * GridRoot::kSplit;
     auto x_bin = static_cast<int>(x_ratio);
     auto y_bin = static_cast<int>(y_ratio);
-    return children[x_bin + y_bin * GridRoot::kSplit]->find(x_ratio - x_bin, y_ratio - y_bin);
+    return children[y_bin + x_bin * GridRoot::kSplit]->find(x_ratio - x_bin, y_ratio - y_bin);
 }
 
 GridRoot::GridRoot(const size_t min_intersections_, const size_t max_depth_, const std::vector<Polygon> & polygons_):
@@ -53,7 +53,8 @@ std::unique_ptr<ICell> GridRoot::makeCell(Float64 current_min_x, Float64 current
     auto y_shift = (current_max_y - current_min_y) / kSplit;
     std::vector<std::unique_ptr<ICell>> children;
     children.reserve(kSplit * kSplit);
-    for (size_t i = 0; i < kSplit; current_min_x += x_shift, ++i)
+    auto copy = current_min_y;
+    for (size_t i = 0; i < kSplit; current_min_x += x_shift, current_min_y = copy, ++i)
     {
         for (size_t j = 0; j < kSplit; current_min_y += y_shift, ++j)
         {
