@@ -2,23 +2,24 @@
 
 namespace DB {
 
-
-ConfigurationPtr getConfigurationFromXMLString(const std::string & xml_data) {
+ConfigurationPtr getConfigurationFromXMLString(const std::string & xml_data)
+{
     std::stringstream ss(xml_data);
     Poco::XML::InputSource input_source{ss};
     return {new Poco::Util::XMLConfiguration{&input_source}};
 }
 
 
-String getQuotedTable(const String & database, const String & table) {
-    if (database.empty()) {
+String getQuotedTable(const String & database, const String & table)
+{
+    if (database.empty())
         return backQuoteIfNeed(table);
-    }
 
     return backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);
 }
 
-String getQuotedTable(const DatabaseAndTableName & db_and_table) {
+String getQuotedTable(const DatabaseAndTableName & db_and_table)
+{
     return getQuotedTable(db_and_table.first, db_and_table.second);
 }
 
@@ -26,7 +27,8 @@ String getQuotedTable(const DatabaseAndTableName & db_and_table) {
 // Creates AST representing 'ENGINE = Distributed(cluster, db, table, [sharding_key])
 std::shared_ptr<ASTStorage> createASTStorageDistributed(
         const String & cluster_name, const String & database, const String & table,
-        const ASTPtr & sharding_key_ast) {
+        const ASTPtr & sharding_key_ast)
+{
     auto args = std::make_shared<ASTExpressionList>();
     args->children.emplace_back(std::make_shared<ASTLiteral>(cluster_name));
     args->children.emplace_back(std::make_shared<ASTIdentifier>(database));
@@ -45,42 +47,50 @@ std::shared_ptr<ASTStorage> createASTStorageDistributed(
 }
 
 
-BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream) {
+BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream)
+{
     return std::make_shared<SquashingBlockInputStream>(
             stream,
             std::numeric_limits<size_t>::max(),
             std::numeric_limits<size_t>::max());
 }
 
-Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream) {
+Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream)
+{
     return squashStreamIntoOneBlock(stream)->read();
 }
 
 
-bool isExtendedDefinitionStorage(const ASTPtr & storage_ast) {
+bool isExtendedDefinitionStorage(const ASTPtr & storage_ast)
+{
     const auto & storage = storage_ast->as<ASTStorage &>();
     return storage.partition_by || storage.order_by || storage.sample_by;
 }
 
-ASTPtr extractPartitionKey(const ASTPtr & storage_ast) {
+ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
+{
     String storage_str = queryToString(storage_ast);
 
     const auto & storage = storage_ast->as<ASTStorage &>();
     const auto & engine = storage.engine->as<ASTFunction &>();
 
-    if (!endsWith(engine.name, "MergeTree")) {
+    if (!endsWith(engine.name, "MergeTree"))
+    {
         throw Exception(
                 "Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
                 ErrorCodes::BAD_ARGUMENTS);
     }
 
-    if (isExtendedDefinitionStorage(storage_ast)) {
+    if (isExtendedDefinitionStorage(storage_ast))
+    {
         if (storage.partition_by)
             return storage.partition_by->clone();
 
         static const char * all = "all";
         return std::make_shared<ASTLiteral>(Field(all, strlen(all)));
-    } else {
+    }
+    else
+    {
         bool is_replicated = startsWith(engine.name, "Replicated");
         size_t min_args = is_replicated ? 3 : 1;
 
@@ -99,7 +109,8 @@ ASTPtr extractPartitionKey(const ASTPtr & storage_ast) {
     }
 }
 
-ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std::string & local_hostname, UInt8 random) {
+ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std::string & local_hostname, UInt8 random)
+{
     ShardPriority res;
 
     if (replicas.empty())
