@@ -60,14 +60,14 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 
 или
 
- ```sql
+```sql
 SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
 ```
 
 Поля настройки:
 
--   `path` - Абсолютный путь к файлу.
--   `format` - Формат файла. Поддерживаются все форматы, описанные в разделе "[Форматы](../../interfaces/formats.md#formats)".
+- `path` — Абсолютный путь к файлу.
+- `format` — Формат файла. Поддерживаются все форматы, описанные в разделе "[Форматы](../../interfaces/formats.md#formats)".
 
 
 ## Исполняемый файл {#dicts-external_dicts_dict_sources-executable}
@@ -93,8 +93,8 @@ SOURCE(EXECUTABLE(command 'cat /opt/dictionaries/os.tsv' format 'TabSeparated'))
 
 Поля настройки:
 
--   `command` - Абсолютный путь к исполняемому файлу или имя файла (если каталог программы прописан в `PATH`).
--   `format` - Формат файла. Поддерживаются все форматы, описанные в разделе "[Форматы](../../interfaces/formats.md#formats)".
+-   `command` — Абсолютный путь к исполняемому файлу или имя файла (если каталог программы прописан в `PATH`).
+-   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе "[Форматы](../../interfaces/formats.md#formats)".
 
 
 ## HTTP(s) {#dicts-external_dicts_dict_sources-http}
@@ -137,8 +137,8 @@ SOURCE(HTTP(
 
 Поля настройки:
 
--   `url` - URL источника.
--   `format` - Формат файла. Поддерживаются все форматы, описанные в разделе "[Форматы](../../interfaces/formats.md#formats)".
+-   `url` — URL источника.
+-   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе "[Форматы](../../interfaces/formats.md#formats)".
 
 
 ## ODBC {#dicts-external_dicts_dict_sources-odbc}
@@ -171,10 +171,10 @@ SOURCE(ODBC(
 
 Поля настройки:
 
--   `db` - имя базы данных. Не указывать, если имя базы задано в параметрах. `<connection_string>`.
--   `table` - имя таблицы и схемы, если она есть.
--   `connection_string` - строка соединения.
--   `invalidate_query` - запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md).
+-   `db` — имя базы данных. Не указывать, если имя базы задано в параметрах. `<connection_string>`.
+-   `table` — имя таблицы и схемы, если она есть.
+-   `connection_string` — строка соединения.
+-   `invalidate_query` — запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md).
 
 ClickHouse получает от ODBC-драйвера информацию о квотировании и квотирует настройки в запросах к драйверу, поэтому имя таблицы нужно указывать в соответствии с регистром имени таблицы в базе данных.
 
@@ -510,14 +510,14 @@ SOURCE(CLICKHOUSE(
 
 Поля настройки:
 
--   `host` - хост ClickHouse. Если host локальный, то запрос выполняется без сетевого взаимодействия. Чтобы повысить отказоустойчивость решения, можно создать таблицу типа [Distributed](../../operations/table_engines/distributed.md) и прописать её в дальнейших настройках.
--   `port` - порт сервера ClickHouse.
--   `user` - имя пользователя ClickHouse.
--   `password` - пароль пользователя ClickHouse.
--   `db` - имя базы данных.
--   `table` - имя таблицы.
--   `where` - условие выбора. Может отсутствовать.
--   `invalidate_query` - запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md).
+-   `host` — хост ClickHouse. Если host локальный, то запрос выполняется без сетевого взаимодействия. Чтобы повысить отказоустойчивость решения, можно создать таблицу типа [Distributed](../../operations/table_engines/distributed.md) и прописать её в дальнейших настройках.
+-   `port` — порт сервера ClickHouse.
+-   `user` — имя пользователя ClickHouse.
+-   `password` — пароль пользователя ClickHouse.
+-   `db` — имя базы данных.
+-   `table` — имя таблицы.
+-   `where` — условие выбора. Может отсутствовать.
+-   `invalidate_query` — запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md).
 
 
 ### MongoDB {#dicts-external_dicts_dict_sources-mongodb}
@@ -552,12 +552,12 @@ SOURCE(MONGO(
 
 Поля настройки:
 
--   `host` - хост MongoDB.
--   `port` - порт сервера MongoDB.
--   `user` - имя пользователя MongoDB.
--   `password` - пароль пользователя MongoDB.
--   `db` - имя базы данных.
--   `collection` - имя коллекции.
+-   `host` — хост MongoDB.
+-   `port` — порт сервера MongoDB.
+-   `user` — имя пользователя MongoDB.
+-   `password` — пароль пользователя MongoDB.
+-   `db` — имя базы данных.
+-   `collection` — имя коллекции.
 
 ### Redis {#dicts-external_dicts_dict_sources-redis}
 
