@@ -93,6 +93,7 @@ class DiskSelector;
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 class StoragePolicySelector;
+class SessionCleaner;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -186,6 +187,7 @@ private:
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
 
+    std::unique_ptr<SessionCleaner> session_cleaner;    /// It will launch a thread to clean old named HTTP sessions. See 'createSessionCleaner'.
     UInt64 session_close_cycle = 0;
     bool session_is_used = false;
 
@@ -593,6 +595,8 @@ public:
     void dropCompiledExpressionCache() const;
 #endif
 
+    void createSessionCleaner();
+
     /// Add started bridge command. It will be killed after context destruction
     void addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
 
@@ -661,27 +665,6 @@ private:
     Map::iterator it;
     std::unique_lock<std::mutex> guards_lock;
     std::unique_lock<std::mutex> table_lock;
-};
-
-
-class SessionCleaner
-{
-public:
-    SessionCleaner(Context & context_)
-        : context{context_}
-    {
-    }
-    ~SessionCleaner();
-
-private:
-    void run();
-
-    Context & context;
-
-    std::mutex mutex;
-    std::condition_variable cond;
-    std::atomic<bool> quit{false};
-    ThreadFromGlobalPool thread{&SessionCleaner::run, this};
 };
 
 }
