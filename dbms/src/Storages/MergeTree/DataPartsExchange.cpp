@@ -2,8 +2,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <IO/HTTPCommon.h>
-#include <Poco/File.h>
 #include <ext/scope_guard.h>
+#include <Poco/File.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequest.h>
 
@@ -36,6 +36,8 @@ namespace
 
 static constexpr auto REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE = "0";
 static constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = "1";
+static constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS = "2";
+
 
 std::string getEndpointId(const std::string & node_id)
 {
@@ -53,10 +55,11 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 {
     String client_protocol_version = params.get("client_protocol_version", REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE);
 
-
     String part_name = params.get("part");
 
-    if (client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE && client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE)
+    if (client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS
+        && client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE
+        && client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE)
         throw Exception("Unsupported fetch protocol version", ErrorCodes::UNKNOWN_PROTOCOL);
 
     const auto data_settings = data.getSettings();
@@ -75,7 +78,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
         response.setChunkedTransferEncoding(false);
         return;
     }
-    response.addCookie({"server_protocol_version", REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE});
+    response.addCookie({"server_protocol_version", REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS});
 
     ++total_sends;
     SCOPE_EXIT({--total_sends;});
@@ -103,9 +106,15 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
         MergeTreeData::DataPart::Checksums data_checksums;
 
-
-        if (client_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
+        if (client_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE || client_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)
             writeBinary(checksums.getTotalSizeOnDisk(), out);
+
+        if (client_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)
+        {
+            WriteBufferFromOwnString ttl_infos_buffer;
+            part->ttl_infos.write(ttl_infos_buffer);
+            writeBinary(ttl_infos_buffer.str(), out);
+        }
 
         writeBinary(checksums.files.size(), out);
         for (const auto & it : checksums.files)
@@ -192,7 +201,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     {
         {"endpoint",                getEndpointId(replica_path)},
         {"part",                    part_name},
-        {"client_protocol_version", REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE},
+        {"client_protocol_version", REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS},
         {"compress",                "false"}
     });
 
@@ -218,11 +227,22 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
 
     ReservationPtr reservation;
-    if (server_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
+    if (server_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE || server_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)
     {
         size_t sum_files_size;
         readBinary(sum_files_size, in);
-        reservation = data.reserveSpace(sum_files_size);
+        if (server_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)
+        {
+            MergeTreeDataPart::TTLInfos ttl_infos;
+            String ttl_infos_string;
+            readBinary(ttl_infos_string, in);
+            ReadBufferFromString ttl_infos_buffer(ttl_infos_string);
+            assertString("ttl format version: 1\n", ttl_infos_buffer);
+            ttl_infos.read(ttl_infos_buffer);
+            reservation = data.reserveSpacePreferringTTLRules(sum_files_size, ttl_infos, std::time(nullptr));
+        }
+        else
+            reservation = data.reserveSpace(sum_files_size);
     }
     else
     {
