@@ -965,7 +965,7 @@ Aлиас для [quantile(0.5)(x)](#agg_function-quantile).
 
 **Параметры** 
 
-- `x` — Число. Выражение, возращающее значение [числового типа](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) или [DateTime](../../data_types/datetime.md).
+- `x` — Число. Выражение, возращающее значение [числового типа](../../data_types/index.md#data_types), [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md).
 
 
 **Возвращаемое значение**
@@ -1029,7 +1029,7 @@ Aлиас для [quantileDeterministiс(0.5)(x)](#agg_function-quantiledetermin
 
 **Параметры** 
 
-- `x` — Число. Выражение, возращающее значение [числового типа](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) или [DateTime](../../data_types/datetime.md).
+- `x` — Число. Выражение, возращающее значение [числового типа](../../data_types/index.md#data_types), [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md).
 - `determinator` — Число, хэш которого используется вместо генератора случайных чисел в алгоритме резервуарной выборки, чтобы сделать результат детерминированным. В качестве детерминатора можно использовать любое детерминированное положительное число, например идентификатор пользователя или идентификатор события. Если одно и то же значение детерминатора встречается слишком часто, функция работает некорректно.
 
 
@@ -1089,7 +1089,7 @@ medianExact(x)
 
 **Параметры** 
 
-- `x` — Число. Выражение, возращающее значение [числового типа](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) или [DateTime](../../data_types/datetime.md).
+- `x` — Число. Выражение, возращающее значение [числового типа](../../data_types/index.md#data_types), [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md).
 
 
 **Возвращаемое значение**
@@ -1138,7 +1138,7 @@ medianExactWeighted(x, weight)
 
 **Параметры** 
 
-- `x` — Число. Выражение, возращающее значение [числового типа](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) или [DateTime](../../data_types/datetime.md).
+- `x` — Число. Выражение, возращающее значение [числового типа](../../data_types/index.md#data_types), [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md).
 - `weight` — Число повторений значения `x`.
 
 
@@ -1198,7 +1198,7 @@ medianTiming(x)
 
 **Параметры**
 
-- `x` — Число. Выражение, возращающее значение [числового типа](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) или [DateTime](../../data_types/datetime.md).
+- `x` — Число. Выражение, возращающее значение [числового типа](../../data_types/index.md#data_types), [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md).
 
 **Возвращаемое значение**
 
@@ -1262,7 +1262,7 @@ medianExactWeighted(x, weight)
 
 **Параметры** 
 
-- `x` — Число. Выражение, возращающее значение [числового типа](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) или [DateTime](../../data_types/datetime.md).
+- `x` — Число. Выражение, возращающее значение [числового типа](../../data_types/index.md#data_types), [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md).
 - `weight` — Число повторений значения `x`.
  
 
@@ -1323,7 +1323,7 @@ medianTDigest(x)
 
 **Параметры** 
 
-- `x` — Число. Выражение, возращающее значение [числового типа](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) или [DateTime](../../data_types/datetime.md).
+- `x` — Число. Выражение, возращающее значение [числового типа](../../data_types/index.md#data_types), [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md).
 
 **Возвращаемое значение**
 
@@ -1368,7 +1368,7 @@ medianTDigestWeighted(x,weight)
 
 **Параметры**
 
-- `x` — Число. Выражение, возращающее значение [числового типа](../../data_types/index.md#data_types), [Date](../../data_types/date.md#date) или [DateTime](../../data_types/datetime.md).
+- `x` — Число. Выражение, возращающее значение [числового типа](../../data_types/index.md#data_types), [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md).
 - `weight` — Число повторений значения `x`.
 
 
