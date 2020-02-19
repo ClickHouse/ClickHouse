@@ -1,8 +1,11 @@
 #include <DataTypes/DataTypeDateTime.h>
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
+#include <Core/DecimalFunctions.h>
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
+
+#include <time.h>
 
 
 namespace DB
@@ -10,15 +13,14 @@ namespace DB
 {
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)
 
-class PreparedFunctionNow : public PreparedFunctionImpl
+class ExecutableFunctionNow : public IExecutableFunctionImpl
 {
 public:
-    explicit PreparedFunctionNow(time_t time_) : time_value(time_) {}
+    explicit ExecutableFunctionNow(time_t time_) : time_value(time_) {}
 
     String getName() const override { return "now"; }
 
-protected:
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    void execute(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         block.getByPosition(result).column = DataTypeDateTime().createColumnConst(
                 input_rows_count,
@@ -29,7 +31,7 @@ private:
     time_t time_value;
 };
 
-class FunctionBaseNow : public IFunctionBase
+class FunctionBaseNow : public IFunctionBaseImpl
 {
 public:
     explicit FunctionBaseNow(time_t time_) : time_value(time_), return_type(std::make_shared<DataTypeDateTime>()) {}
@@ -47,9 +49,9 @@ public:
         return return_type;
     }
 
-    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
-        return std::make_shared<PreparedFunctionNow>(time_value);
+        return std::make_unique<ExecutableFunctionNow>(time_value);
     }
 
     bool isDeterministic() const override { return false; }
@@ -60,7 +62,7 @@ private:
     DataTypePtr return_type;
 };
 
-class FunctionBuilderNow : public FunctionBuilderImpl
+class NowOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = "now";
@@ -70,20 +72,19 @@ public:
     bool isDeterministic() const override { return false; }
 
     size_t getNumberOfArguments() const override { return 0; }
-    static FunctionBuilderPtr create(const Context &) { return std::make_shared<FunctionBuilderNow>(); }
+    static FunctionOverloadResolverImplPtr create(const Context &) { return std::make_unique<NowOverloadResolver>(); }
 
-protected:
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeDateTime>(); }
+    DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeDateTime>(); }
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
-        return std::make_shared<FunctionBaseNow>(time(nullptr));
+        return std::make_unique<FunctionBaseNow>(time(nullptr));
     }
 };
 
 void registerFunctionNow(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionBuilderNow>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<NowOverloadResolver>(FunctionFactory::CaseInsensitive);
 }
 
 }

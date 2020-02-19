@@ -10,6 +10,9 @@ This engine supports the [Nullable](../../data_types/nullable.md) data type.
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
+(
+    columns list...
+)
 ENGINE = JDBC(dbms_uri, external_database, external_table)
 ```
 
@@ -51,18 +54,14 @@ mysql> select * from test;
 Creating a table in ClickHouse server and selecting data from it:
 
 ```sql
-CREATE TABLE jdbc_table ENGINE JDBC('jdbc:mysql://localhost:3306/?user=root&password=root', 'test', 'test')
-```
-```sql
-DESCRIBE TABLE jdbc_table
-```
-```text
-┌─name───────────────┬─type───────────────┬─default_type─┬─default_expression─┐
-│ int_id             │ Int32              │              │                    │
-│ int_nullable       │ Nullable(Int32)    │              │                    │
-│ float              │ Float32            │              │                    │
-│ float_nullable     │ Nullable(Float32)  │              │                    │
-└────────────────────┴────────────────────┴──────────────┴────────────────────┘
+CREATE TABLE jdbc_table
+(
+    `int_id` Int32,
+    `int_nullable` Nullable(Int32),
+    `float` Float32,
+    `float_nullable` Nullable(Float32)
+)
+ENGINE JDBC('jdbc:mysql://localhost:3306/?user=root&password=root', 'test', 'test')
 ```
 ```sql
 SELECT *
@@ -79,4 +78,4 @@ FROM jdbc_table
 
 - [JDBC table function](../../query_language/table_functions/jdbc.md).
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/jdbc/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/jdbc/) <!--hide-->

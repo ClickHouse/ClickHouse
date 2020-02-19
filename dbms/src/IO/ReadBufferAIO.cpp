@@ -49,6 +49,7 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
 
     int open_flags = (flags_ == -1) ? O_RDONLY : flags_;
     open_flags |= O_DIRECT;
+    open_flags |= O_CLOEXEC;
 
     fd = ::open(filename.c_str(), open_flags);
     if (fd == -1)
@@ -149,7 +150,7 @@ bool ReadBufferAIO::nextImpl()
     return true;
 }
 
-off_t ReadBufferAIO::doSeek(off_t off, int whence)
+off_t ReadBufferAIO::seek(off_t off, int whence)
 {
     off_t new_pos_in_file;
 

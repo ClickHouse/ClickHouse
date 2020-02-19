@@ -8,7 +8,7 @@
 
 ## system.asynchronous_metrics {#system_tables-asynchronous_metrics}
 
-Содержит метрики, которые периодически вычисляются в фоновом режиме. Например, объем используемой оперативной памяти.
+Содержит метрики, которые периодически вычисляются в фоновом режиме. Например, объём используемой оперативной памяти.
 
 Столбцы:
 
@@ -41,6 +41,7 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 - [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
 - [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
 - [system.events](#system_tables-events) — таблица с количеством произошедших событий.
+- [system.metric_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
 
 ## system.clusters
 
@@ -185,6 +186,7 @@ SELECT * FROM system.events LIMIT 5
 
 - [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
 - [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
+- [system.metric_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
 - [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
 
 ## system.functions
@@ -201,6 +203,7 @@ SELECT * FROM system.events LIMIT 5
 Содержит информацию о том, какие параметры [graphite_rollup](server_settings/settings.md#server_settings-graphite_rollup) используются в таблицах с движками [\*GraphiteMergeTree](table_engines/graphitemergetree.md).
 
 Столбцы:
+
 - `config_name`     (String) - Имя параметра, используемого для `graphite_rollup`.
 - `regexp`          (String) - Шаблон имени метрики.
 - `function`        (String) - Имя агрегирующей функции.
@@ -269,6 +272,63 @@ SELECT * FROM system.metrics LIMIT 10
 
 - [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
 - [system.events](#system_tables-events) — таблица с количеством произошедших событий.
+- [system.metric_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
+- [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
+
+## system.metric_log {#system_tables-metric_log}
+
+Содержит историю значений метрик из таблиц `system.metrics` и `system.events`, периодически сбрасываемую на диск.
+Для включения сбора истории метрик в таблице `system.metric_log`  создайте `/etc/clickhouse-server/config.d/metric_log.xml` следующего содержания:
+```xml
+<yandex>
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+    </metric_log>
+</yandex>
+```
+
+**Пример**
+
+```sql
+SELECT * FROM system.metric_log LIMIT 1 FORMAT Vertical;
+```
+
+
+```text
+Row 1:
+──────
+event_date:                                                 2020-02-18
+event_time:                                                 2020-02-18 07:15:33
+milliseconds:                                               554
+ProfileEvent_Query:                                         0
+ProfileEvent_SelectQuery:                                   0
+ProfileEvent_InsertQuery:                                   0
+ProfileEvent_FileOpen:                                      0
+ProfileEvent_Seek:                                          0
+ProfileEvent_ReadBufferFromFileDescriptorRead:              1
+ProfileEvent_ReadBufferFromFileDescriptorReadFailed:        0
+ProfileEvent_ReadBufferFromFileDescriptorReadBytes:         0
+ProfileEvent_WriteBufferFromFileDescriptorWrite:            1
+ProfileEvent_WriteBufferFromFileDescriptorWriteFailed:      0
+ProfileEvent_WriteBufferFromFileDescriptorWriteBytes:       56
+...
+CurrentMetric_Query:                                        0
+CurrentMetric_Merge:                                        0
+CurrentMetric_PartMutation:                                 0
+CurrentMetric_ReplicatedFetch:                              0
+CurrentMetric_ReplicatedSend:                               0
+CurrentMetric_ReplicatedChecks:                             0
+...    
+```
+
+**Смотрите также**
+
+- [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
+- [system.events](#system_tables-events) — таблица с количеством произошедших событий.
+- [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
 - [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
 
 ## system.numbers
@@ -323,8 +383,8 @@ SELECT * FROM system.metrics LIMIT 10
 - `max_block_number` (`UInt64`) – максимальное число кусков, из которых состоит текущий после слияния.
 - `level` (`UInt32`) - глубина дерева слияний. Если слияний не было, то `level=0`.
 - `data_version` (`UInt64`) – число, которое используется для определения того, какие мутации необходимо применить к куску данных (мутации с версией большей, чем `data_version`).
-- `primary_key_bytes_in_memory` (`UInt64`) – объем памяти (в байтах), занимаемой значениями первичных ключей.
-- `primary_key_bytes_in_memory_allocated` (`UInt64`) – объем памяти (в байтах) выделенный для размещения первичных ключей.
+- `primary_key_bytes_in_memory` (`UInt64`) – объём памяти (в байтах), занимаемой значениями первичных ключей.
+- `primary_key_bytes_in_memory_allocated` (`UInt64`) – объём памяти (в байтах) выделенный для размещения первичных ключей.
 - `is_frozen` (`UInt8`) – Признак, показывающий существование бэкапа партиции. 1, бэкап есть. 0, бэкапа нет. Смотрите раздел [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition).
 - `database` (`String`) – имя базы данных.
 - `table` (`String`) – имя таблицы.
@@ -410,54 +470,50 @@ ClickHouse создаёт таблицу только в том случае, к
     - `'QueryFinish' = 2` — успешное завершение выполнения запроса.
     - `'ExceptionBeforeStart' = 3` — исключение перед началом обработки запроса.
     - `'ExceptionWhileProcessing' = 4` — исключение во время обработки запроса.
-- `event_date` (Date) — дата события.
-- `event_time` (DateTime) — время события.
+- `event_date` (Date) — дата начала запроса.
+- `event_time` (DateTime) — время начала запроса.
 - `query_start_time` (DateTime) — время начала обработки запроса.
 - `query_duration_ms` (UInt64) — длительность обработки запроса.
 - `read_rows` (UInt64) — количество прочитанных строк.
 - `read_bytes` (UInt64) — количество прочитанных байтов.
 - `written_rows` (UInt64) — количество записанных строк для запросов `INSERT`. Для других запросов, значение столбца 0.
-- `written_bytes` (UInt64) — объем записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
+- `written_bytes` (UInt64) — объём записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
 - `result_rows` (UInt64) — количество строк в результате.
 - `result_bytes` (UInt64) — объём результата в байтах.
 - `memory_usage` (UInt64) — потребление RAM запросом.
-- `query` (String) — строка запроса.
-- `exception` (String) — сообщение исключения.
+- `query` (String) — текст запроса.
+- `exception` (String) — сообщение исключения, если запрос завершился по исключению.
 - `stack_trace` (String) — трассировка (список функций, последовательно вызванных перед ошибкой). Пустая строка, если запрос успешно завершен.
 - `is_initial_query` (UInt8) — вид запроса. Возможные значения:
     - 1 — запрос был инициирован клиентом.
     - 0 — запрос был инициирован другим запросом при распределенном запросе.
 - `user` (String) — пользователь, запустивший текущий запрос.
 - `query_id` (String) — ID запроса.
-- `address` (FixedString(16)) — IP адрес, с которого пришел запрос.
-- `port` (UInt16) — порт, на котором сервер принял запрос.
+- `address` (IPv6) — IP адрес, с которого пришел запрос.
+- `port` (UInt16) — порт, с которого клиент сделал запрос
 - `initial_user` (String) —  пользователь, запустивший первоначальный запрос (для распределенных запросов).
 - `initial_query_id` (String) — ID родительского запроса.
-- `initial_address` (FixedString(16)) — IP адрес, с которого пришел родительский запрос.
-- `initial_port` (UInt16) — порт, на котором сервер принял родительский запрос от клиента.
+- `initial_address` (IPv6) — IP адрес, с которого пришел родительский запрос.
+- `initial_port` (UInt16) — порт, с которого клиент сделал родительский запрос.
 - `interface` (UInt8) — интерфейс, с которого ушёл запрос. Возможные значения:
     - 1 — TCP.
     - 2 — HTTP.
-- `os_user` (String) — операционная система пользователя.
-- `client_hostname` (String) — имя сервера, к которому присоединился [clickhouse-client](../interfaces/cli.md).
-- `client_name` (String) — [clickhouse-client](../interfaces/cli.md).
-- `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md).
-- `client_version_major` (UInt32) — старшая версия [clickhouse-client](../interfaces/cli.md).
-- `client_version_minor` (UInt32) — младшая версия [clickhouse-client](../interfaces/cli.md).
-- `client_version_patch` (UInt32) — патч [clickhouse-client](../interfaces/cli.md).
+- `os_user` (String) — имя пользователя в OS, который запустил [clickhouse-client](../interfaces/cli.md).
+- `client_hostname` (String) — имя сервера, с которого присоединился [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+- `client_name` (String) — [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+- `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_major` (UInt32) — старшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_minor` (UInt32) — младшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_patch` (UInt32) — патч [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
 - `http_method` (UInt8) — HTTP метод, инициировавший запрос. Возможные значения:
     - 0 — запрос запущен с интерфейса TCP.
     - 1 — `GET`.
     - 2 — `POST`.
 - `http_user_agent` (String) — HTTP заголовок `UserAgent`.
-- `quota_key` (String) — идентификатор квоты из настроек [квот](quotas.md).
+- `quota_key` (String) — "ключ квоты" из настроек [квот](quotas.md) (см. `keyed`).
 - `revision` (UInt32) — ревизия ClickHouse.
 - `thread_numbers` (Array(UInt32)) — количество потоков, участвующих в обработке запросов.
-- `ProfileEvents.Names` (Array(String)) — Счетчики для изменения метрик:
-    - Время, потраченное на чтение и запись по сети.
-    - Время, потраченное на чтение и запись на диск.
-    - Количество сетевых ошибок.
-    - Время, потраченное на ожидание, когда пропускная способность сети ограничена.
+- `ProfileEvents.Names` (Array(String)) — Счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](#system_tables-events
 - `ProfileEvents.Values` (Array(UInt64)) — метрики, перечисленные в столбце `ProfileEvents.Names`.
 - `Settings.Names` (Array(String)) — имена настроек, которые меняются, когда клиент выполняет запрос. Чтобы разрешить логирование изменений настроек, установите параметр `log_query_settings` равным 1.
 - `Settings.Values` (Array(String)) — Значения настроек, которые перечислены в столбце `Settings.Names`.
@@ -477,6 +533,197 @@ ClickHouse создаёт таблицу только в том случае, к
 
 Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query_log](server_settings/settings.md#server_settings-query-log)  (параметр `partition_by`).
 
+## system.query_log {#system_tables-query_log}
+
+Contains information about execution of queries. For each query, you can see processing start time, duration of processing, error messages and other information.
+
+!!! note "Note"
+    The table doesn't contain input data for `INSERT` queries.
+
+ClickHouse creates this table only if the [query_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
+
+To enable query logging, set the [log_queries](settings/settings.md#settings-log-queries) parameter to 1. For details, see the [Settings](settings/settings.md) section.
+
+The `system.query_log` table registers two kinds of queries:
+
+1. Initial queries that were run directly by the client.
+2. Child queries that were initiated by other queries (for distributed query execution). For these types of queries, information about the parent queries is shown in the `initial_*` columns.
+
+Columns:
+
+- `type` (`Enum8`) — Type of event that occurred when executing the query. Values:
+    - `'QueryStart' = 1` — Successful start of query execution.
+    - `'QueryFinish' = 2` — Successful end of query execution.
+    - `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
+    - `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
+- `event_date` (Date) — Query starting date.
+- `event_time` (DateTime) — Query starting time.
+- `query_start_time` (DateTime) — Start time of query execution.
+- `query_duration_ms` (UInt64) — Duration of query execution.
+- `read_rows` (UInt64) — Number of read rows.
+- `read_bytes` (UInt64) — Number of read bytes.
+- `written_rows` (UInt64) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
+- `written_bytes` (UInt64) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
+- `result_rows` (UInt64) — Number of rows in the result.
+- `result_bytes` (UInt64) — Number of bytes in the result.
+- `memory_usage` (UInt64) — Memory consumption by the query.
+- `query` (String) — Query string.
+- `exception` (String) — Exception message.
+- `stack_trace` (String) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
+- `is_initial_query` (UInt8) — Query type. Possible values:
+    - 1 — Query was initiated by the client.
+    - 0 — Query was initiated by another query for distributed query execution.
+- `user` (String) — Name of the user who initiated the current query.
+- `query_id` (String) — ID of the query.
+- `address` (IPv6) — IP address that was used to make the query.
+- `port` (UInt16) — The client port that was used to make the query.
+- `initial_user` (String) —  Name of the user who ran the initial query (for distributed query execution).
+- `initial_query_id` (String) — ID of the initial query (for distributed query execution).
+- `initial_address` (IPv6) — IP address that the parent query was launched from.
+- `initial_port` (UInt16) — The client port that was used to make the parent query.
+- `interface` (UInt8) — Interface that the query was initiated from. Possible values:
+    - 1 — TCP.
+    - 2 — HTTP.
+- `os_user` (String) — OS's username who runs [clickhouse-client](../interfaces/cli.md).
+- `client_hostname` (String) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
+- `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
+- `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
+- `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
+    - 0 — The query was launched from the TCP interface.
+    - 1 — `GET` method was used.
+    - 2 — `POST` method was used.
+- `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
+- `quota_key` (String) — The "quota key" specified in the [quotas](quotas.md) setting (see `keyed`).
+- `revision` (UInt32) — ClickHouse revision.
+- `thread_numbers` (Array(UInt32)) — Number of threads that are participating in query execution.
+- `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [system.events](#system_tables-events)
+- `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the `ProfileEvents.Names` column.
+- `Settings.Names` (Array(String)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parameter to 1.
+- `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` column.
+
+Each query creates one or two rows in the `query_log` table, depending on the status of the query:
+
+1. If the query execution is successful, two events with types 1 and 2 are created (see the `type` column).
+2. If an error occurred during query processing, two events with types 1 and 4 are created.
+3. If an error occurred before launching the query, a single event with type 3 is created.
+
+By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query_log](server_settings/settings.md#server_settings-query-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
+
+When the table is deleted manually, it will be automatically created on the fly. Note that all the previous logs will be deleted.
+
+!!! note
+    The storage period for logs is unlimited. Logs aren't automatically deleted from the table. You need to organize the removal of outdated logs yourself.
+
+You can specify an arbitrary partitioning key for the `system.query_log` table in the [query_log](server_settings/settings.md#server_settings-query-log) server setting (see the `partition_by` parameter).
+## system.query_thread_log {#system_tables-query-thread-log}
+
+Содержит информацию о каждом потоке выполняемых запросов.
+
+ClickHouse создаёт таблицу только в том случае, когда установлен конфигурационный параметр сервера [query_thread_log](server_settings/settings.md#server_settings-query-thread-log). Параметр задаёт правила ведения лога, такие как интервал логирования или имя таблицы, в которую будут логгироваться запросы.
+
+Чтобы включить логирование, задайте значение параметра [log_query_threads](settings/settings.md#settings-log-query-threads) равным 1. Подробности смотрите в разделе [Настройки](settings/settings.md).
+
+Столбцы:
+
+- `event_date` (Date) — дата завершения выполнения запроса потоком.
+- `event_time` (DateTime) — дата и время завершения выполнения запроса потоком.
+- `query_start_time` (DateTime) — время начала обработки запроса.
+- `query_duration_ms` (UInt64) — длительность обработки запроса в миллисекундах.
+- `read_rows` (UInt64) — количество прочитанных строк.
+- `read_bytes` (UInt64) — количество прочитанных байтов.
+- `written_rows` (UInt64) — количество записанных строк для запросов `INSERT`. Для других запросов, значение столбца 0.
+- `written_bytes` (UInt64) — объём записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
+- `memory_usage` (Int64) — разница между выделенной и освобождённой памятью в контексте потока.
+- `peak_memory_usage` (Int64) — максимальная разница между выделенной и освобождённой памятью в контексте потока.
+- `thread_name` (String) — Имя потока.
+- `thread_id` (UInt64) — tid (ID потока операционной системы).
+- `master_thread_id` (UInt64) — tid (ID потока операционной системы) главного потока.
+- `query` (String) — текст запроса.
+- `is_initial_query` (UInt8) — вид запроса. Возможные значения:
+    - 1 — запрос был инициирован клиентом.
+    - 0 — запрос был инициирован другим запросом при распределенном запросе.
+- `user` (String) — пользователь, запустивший текущий запрос.
+- `query_id` (String) — ID запроса.
+- `address` (IPv6) — IP адрес, с которого пришел запрос.
+- `port` (UInt16) — порт, с которого пришел запрос.
+- `initial_user` (String) —  пользователь, запустивший первоначальный запрос (для распределенных запросов).
+- `initial_query_id` (String) — ID родительского запроса.
+- `initial_address` (IPv6) — IP адрес, с которого пришел родительский запрос.
+- `initial_port` (UInt16) — порт, пришел родительский запрос.
+- `interface` (UInt8) — интерфейс, с которого ушёл запрос. Возможные значения:
+    - 1 — TCP.
+    - 2 — HTTP.
+- `os_user` (String) — имя пользователя в OS, который запустил [clickhouse-client](../interfaces/cli.md).
+- `client_hostname` (String) — hostname клиентской машины, с которой присоединился [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+- `client_name` (String) — [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+- `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_major` (UInt32) — старшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_minor` (UInt32) — младшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_patch` (UInt32) — патч [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `http_method` (UInt8) — HTTP метод, инициировавший запрос. Возможные значения:
+    - 0 — запрос запущен с интерфейса TCP.
+    - 1 — `GET`.
+    - 2 — `POST`.
+- `http_user_agent` (String) — HTTP заголовок `UserAgent`.
+- `quota_key` (String) — "ключ квоты" из настроек [квот](quotas.md) (см. `keyed`).
+- `revision` (UInt32) — ревизия ClickHouse.
+- `ProfileEvents.Names` (Array(String)) — Счетчики для изменения различных метрик для данного потока. Описание метрик можно получить из таблицы [system.events](#system_tables-events
+- `ProfileEvents.Values` (Array(UInt64)) — метрики для данного потока, перечисленные в столбце `ProfileEvents.Names`.
+
+По умолчанию, строки добавляются в таблицу логирования с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос `SYSTEM FLUSH LOGS`.
+
+Если таблицу удалить вручную, она пересоздастся автоматически "на лету". При этом все логи на момент удаления таблицы будут удалены.
+
+!!! note "Примечание"
+    Срок хранения логов не ограничен. Логи не удаляются из таблицы автоматически. Вам необходимо самостоятельно организовать удаление устаревших логов.
+
+Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) (параметр `partition_by`).
+
+## system.trace_log {#system_tables-trace_log}
+
+Contains stack traces collected by the sampling query profiler.
+
+ClickHouse creates this table when the [trace_log](server_settings/settings.md#server_settings-trace_log) server configuration section is set. Also the [query_profiler_real_time_period_ns](settings/settings.md#query_profiler_real_time_period_ns) and [query_profiler_cpu_time_period_ns](settings/settings.md#query_profiler_cpu_time_period_ns) settings should be set.
+
+To analyze logs, use the `addressToLine`, `addressToSymbol` and `demangle` introspection functions.
+
+Columns:
+
+- `event_date`([Date](../data_types/date.md)) — Date of sampling moment.
+- `event_time`([DateTime](../data_types/datetime.md)) — Timestamp of sampling moment.
+- `revision`([UInt32](../data_types/int_uint.md)) — ClickHouse server build revision.
+
+    When connecting to server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
+
+- `timer_type`([Enum8](../data_types/enum.md)) — Timer type:
+
+    - `Real` represents wall-clock time.
+    - `CPU` represents CPU time.
+
+- `thread_number`([UInt32](../data_types/int_uint.md)) — Thread identifier.
+- `query_id`([String](../data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](#system_tables-query_log) system table.
+- `trace`([Array(UInt64)](../data_types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
+
+**Example**
+
+```sql
+SELECT * FROM system.trace_log LIMIT 1 \G
+```
+
+```text
+Row 1:
+──────
+event_date:    2019-11-15
+event_time:    2019-11-15 15:09:38
+revision:      54428
+timer_type:    Real
+thread_number: 48
+query_id:      acc4d61f-5bd1-4a3e-bc91-2180be37c915
+trace:         [94222141367858,94222152240175,94222152325351,94222152329944,94222152330796,94222151449980,94222144088167,94222151682763,94222144088167,94222151682763,94222144088167,94222144058283,94222144059248,94222091840750,94222091842302,94222091831228,94222189631488,140509950166747,140509942945935]
+```
 ## system.replicas {#system_tables-replicas}
 
 Содержит информацию и статус для реплицируемых таблиц, расположенных на локальном сервере.
@@ -632,6 +879,43 @@ WHERE changed
 └────────────────────────┴─────────────┴─────────┘
 ```
 
+## system.table_engines
+
+Содержит информацию про движки таблиц, поддерживаемые сервером, а также об их возможностях.
+
+Эта таблица содержит следующие столбцы (тип столбца показан в скобках):
+
+- `name` (String) — имя движка.
+- `supports_settings` (UInt8) — флаг, показывающий поддержку секции `SETTINGS`.
+- `supports_skipping_indices` (UInt8) — флаг, показывающий поддержку [индексов пропуска данных](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes).
+- `supports_ttl` (UInt8) — флаг, показывающий поддержку [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
+- `supports_sort_order` (UInt8) — флаг, показывающий поддержку секций `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` и `SAMPLE_BY`.
+- `supports_replication` (UInt8) — флаг, показвыающий поддержку [репликации](table_engines/replication/).
+- `supports_duduplication` (UInt8) — флаг, показывающий наличие в движке дедупликации данных.
+
+Пример:
+
+```sql
+SELECT *
+FROM system.table_engines
+WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
+```
+
+```text
+┌─name──────────────────────────┬─supports_settings─┬─supports_skipping_indices─┬─supports_sort_order─┬─supports_ttl─┬─supports_replication─┬─supports_deduplication─┐
+│ Kafka                         │                 1 │                         0 │                   0 │            0 │                    0 │                      0 │
+│ MergeTree                     │                 1 │                         1 │                   1 │            1 │                    0 │                      0 │
+│ ReplicatedCollapsingMergeTree │                 1 │                         1 │                   1 │            1 │                    1 │                      1 │
+└───────────────────────────────┴───────────────────┴───────────────────────────┴─────────────────────┴──────────────┴──────────────────────┴────────────────────────┘
+```
+
+**Смотрите также**
+
+- [Секции движка](table_engines/mergetree/#mergetree-query-clauses) семейства MergeTree
+- [Настройки](table_engines/kafka.md#table_engine-kafka-creating-a-table) Kafka
+- [Настройки](table_engines/join/#join-limitations-and-settings) Join
+
+
 ## system.tables
 
 Содержит метаданные каждой таблицы, о которой знает сервер. Отсоединённые таблицы не отображаются в `system.tables`.
@@ -756,7 +1040,7 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 ## system.disks {#system_tables-disks}
 
-Cодержит информацию о дисках, заданных в [конфигурации сервера](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure). 
+Cодержит информацию о дисках, заданных в [конфигурации сервера](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
 Столбцы:
 
@@ -782,4 +1066,4 @@ Cодержит информацию о дисках, заданных в [ко�
 
 Если политика хранения содержит несколько томов, то каждому тому соответствует отдельная запись в таблице.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/system_tables/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/) <!--hide-->

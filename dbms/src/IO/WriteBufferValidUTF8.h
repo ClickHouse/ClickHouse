@@ -35,10 +35,7 @@ public:
         const char * replacement_ = "\xEF\xBF\xBD",
         size_t size = DEFAULT_SIZE);
 
-    virtual ~WriteBufferValidUTF8() override
-    {
-        finish();
-    }
+    ~WriteBufferValidUTF8() override;
 };
 
 }

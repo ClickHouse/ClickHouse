@@ -15,8 +15,8 @@ namespace DB
 {
 
 
-ReplicasStatusHandler::ReplicasStatusHandler(Context & context_)
-    : context(context_)
+ReplicasStatusHandler::ReplicasStatusHandler(IServer & server)
+    : context(server.context())
 {
 }
 
@@ -76,6 +76,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         }
         else
         {
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
             response.send() << message.rdbuf();
         }
     }

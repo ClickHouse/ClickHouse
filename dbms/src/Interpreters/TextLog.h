@@ -12,8 +12,7 @@ struct TextLogElement
     UInt32 microseconds;
 
     String thread_name;
-    UInt32 os_thread_id;
-    UInt32 thread_number;
+    UInt64 thread_id;
 
     Message::Priority level = Message::PRIO_TRACE;
 
@@ -31,7 +30,13 @@ struct TextLogElement
 
 class TextLog : public SystemLog<TextLogElement>
 {
-    using SystemLog<TextLogElement>::SystemLog;
+public:
+    TextLog(
+        Context & context_,
+        const String & database_name_,
+        const String & table_name_,
+        const String & storage_def_,
+        size_t flush_interval_milliseconds_);
 };
 
 }

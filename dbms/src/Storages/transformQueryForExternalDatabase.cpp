@@ -109,7 +109,7 @@ bool isCompatible(const IAST & node)
             return false;
 
         /// A tuple with zero or one elements is represented by a function tuple(x) and is not compatible,
-        /// but a normal tuple with more than one element is represented as a parenthesed expression (x, y) and is perfectly compatible.
+        /// but a normal tuple with more than one element is represented as a parenthesized expression (x, y) and is perfectly compatible.
         if (name == "tuple" && function->arguments->children.size() <= 1)
             return false;
 

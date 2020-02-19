@@ -18,6 +18,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -139,7 +140,7 @@ bool isStorageTouchedByMutations(
             return true;
     }
 
-    context_copy.getSettingsRef().merge_tree_uniform_read_distribution = 0;
+    context_copy.getSettingsRef().max_streams_to_max_threads_ratio = 1;
     context_copy.getSettingsRef().max_threads = 1;
 
     ASTPtr select_query = prepareQueryAffectedAST(commands);
@@ -173,7 +174,7 @@ MutationsInterpreter::MutationsInterpreter(
     , can_execute(can_execute_)
 {
     mutation_ast = prepare(!can_execute);
-    auto limits = SelectQueryOptions().analyze(!can_execute).ignoreLimits();
+    SelectQueryOptions limits = SelectQueryOptions().analyze(!can_execute).ignoreLimits();
     select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, limits);
 }
 
@@ -339,6 +340,8 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                         affected_materialized.emplace(mat_column);
                 }
 
+                /// Just to be sure, that we don't change type
+                /// after update expression execution.
                 const auto & update_expr = kv.second;
                 auto updated_column = makeASTFunction("CAST",
                     makeASTFunction("if",
@@ -418,7 +421,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     return prepareInterpreterSelectQuery(stages, dry_run);
 }
 
-ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run)
+ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & prepared_stages, bool dry_run)
 {
     NamesAndTypesList all_columns = storage->getColumns().getAllPhysical();
 
@@ -522,6 +525,39 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> &p
             where_expression = std::move(coalesced_predicates);
         }
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
+    }
+    auto metadata = storage->getInMemoryMetadata();
+    /// We have to execute select in order of primary key
+    /// because we don't sort results additionaly and don't have
+    /// any guarantees on data order without ORDER BY. It's almost free, because we
+    /// have optimization for data read in primary key order.
+    if (metadata.order_by_ast)
+    {
+        ASTPtr dummy;
+
+        ASTPtr key_expr;
+        if (metadata.primary_key_ast)
+            key_expr = metadata.primary_key_ast;
+        else
+            key_expr = metadata.order_by_ast;
+
+        bool empty = false;
+        /// In all other cases we cannot have empty key
+        if (auto key_function = key_expr->as<ASTFunction>())
+            empty = key_function->arguments->children.size() == 0;
+
+        /// Not explicitely spicified empty key
+        if (!empty)
+        {
+            auto order_by_expr = std::make_shared<ASTOrderByElement>(1, 1, false, dummy, false, dummy, dummy, dummy);
+
+
+            order_by_expr->children.push_back(key_expr);
+            auto res = std::make_shared<ASTExpressionList>();
+            res->children.push_back(order_by_expr);
+
+            select->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(res));
+        }
     }
 
     return select;

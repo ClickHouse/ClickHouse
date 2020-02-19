@@ -2,7 +2,7 @@
 
 [CatBoost](https://catboost.ai) is a free and open-source gradient boosting library developed at [Yandex](https://yandex.com/company/) for machine learning.
 
-With this instruction, you will learn to apply pre-trained models in ClickHouse: as a result, you run the model inference from SQL.
+With this instruction, you will learn to apply pre-trained models in ClickHouse by running model inference from SQL.
 
 To apply a CatBoost model in ClickHouse:
 
@@ -74,7 +74,7 @@ $ clickhouse client
     ROLE_FAMILY UInt32, 
     ROLE_CODE UInt32
 )
-ENGINE = MergeTree()
+ENGINE = MergeTree ORDER BY date
 ```
 
 **3.** Exit from ClickHouse console client:

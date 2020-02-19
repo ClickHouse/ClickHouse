@@ -42,6 +42,21 @@ using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
 
 
+/// Packet that could be received from server.
+struct Packet
+{
+    UInt64 type;
+
+    Block block;
+    std::unique_ptr<Exception> exception;
+    std::vector<String> multistring_message;
+    Progress progress;
+    BlockStreamProfileInfo profile_info;
+
+    Packet() : type(Protocol::Server::Hello) {}
+};
+
+
 /** Connection with database server, to use by client.
   * How to use - see Core/Protocol.h
   * (Implementation of server end - see Server/TCPHandler.h)
@@ -86,20 +101,6 @@ public:
         throttler = throttler_;
     }
 
-
-    /// Packet that could be received from server.
-    struct Packet
-    {
-        UInt64 type;
-
-        Block block;
-        std::unique_ptr<Exception> exception;
-        std::vector<String> multistring_message;
-        Progress progress;
-        BlockStreamProfileInfo profile_info;
-
-        Packet() : type(Protocol::Server::Hello) {}
-    };
 
     /// Change default database. Changes will take effect on next reconnect.
     void setDefaultDatabase(const String & database);

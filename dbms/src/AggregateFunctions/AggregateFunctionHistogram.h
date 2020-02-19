@@ -369,8 +369,6 @@ public:
         offsets_to.push_back(to_tuple.size());
     }
 
-    const char * getHeaderFilePath() const override { return __FILE__; }
-
     String getName() const override { return "histogram"; }
 };
 

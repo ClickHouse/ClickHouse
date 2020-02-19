@@ -54,7 +54,7 @@ private:
     {
         AggregateFunctionForEachData & state = data(place);
 
-        /// Ensure we have aggreate states for new_size elements, allocate
+        /// Ensure we have aggregate states for new_size elements, allocate
         /// from arena if needed. When reallocating, we can't copy the
         /// states to new buffer with memcpy, because they may contain pointers
         /// to themselves. In particular, this happens when a state contains
@@ -247,8 +247,6 @@ public:
     {
         return true;
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 

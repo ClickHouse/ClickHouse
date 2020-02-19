@@ -394,8 +394,6 @@ public:
         this->data(place).returnWeights(to);
     }
 
-    const char * getHeaderFilePath() const override { return __FILE__; }
-
 private:
     UInt64 param_num;
     Float64 learning_rate;

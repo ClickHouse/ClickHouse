@@ -21,7 +21,7 @@ $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL&query_id=hello&replace_running_query=1" -d
 # Wait for it to be replaced
 wait
 
-${CLICKHOUSE_CLIENT} --user=readonly --query_id=42 --query='SELECT 2, count() FROM system.numbers' 2>&1 | grep -cF 'was cancelled' &
+${CLICKHOUSE_CLIENT_BINARY} --user=readonly --query_id=42 --query='SELECT 2, count() FROM system.numbers' 2>&1 | grep -cF 'was cancelled' &
 wait_for_query_to_start '42'
 
 # Trying to run another query with the same query_id

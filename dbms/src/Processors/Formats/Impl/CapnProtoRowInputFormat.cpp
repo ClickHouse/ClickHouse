@@ -301,10 +301,11 @@ void registerInputFormatProcessorCapnProto(FormatFactory & factory)
 {
     factory.registerInputFormatProcessor(
         "CapnProto",
-        [](ReadBuffer & buf, const Block & sample, const Context & context, IRowInputFormat::Params params, const FormatSettings &)
+        [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings)
         {
             return std::make_shared<CapnProtoRowInputFormat>(buf, sample, std::move(params),
-                                                             FormatSchemaInfo(context, context.getSettingsRef().format_schema, "CapnProto", true));
+                       FormatSchemaInfo(settings.schema.format_schema, "CapnProto", true,
+                                        settings.schema.is_server, settings.schema.format_schema_path));
         });
 }
 

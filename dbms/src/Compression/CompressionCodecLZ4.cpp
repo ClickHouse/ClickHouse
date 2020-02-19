@@ -9,9 +9,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
 
-#ifdef __clang__
-    #pragma clang diagnostic ignored "-Wold-style-cast"
-#endif
+#pragma GCC diagnostic ignored "-Wold-style-cast"
 
 
 namespace DB

@@ -1,12 +1,12 @@
+#include "StorageXDBC.h"
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageXDBC.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <common/logger_useful.h>
-
+#include <Formats/FormatFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/File.h>
@@ -14,6 +14,7 @@
 #include <Poco/Path.h>
 #include <Common/ShellCommand.h>
 #include <ext/range.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -23,15 +24,20 @@ namespace ErrorCodes
 
 
 StorageXDBC::StorageXDBC(
-    const std::string & database_name_,
-    const std::string & table_name_,
+    const StorageID & table_id_,
     const std::string & remote_database_name_,
     const std::string & remote_table_name_,
     const ColumnsDescription & columns_,
     const Context & context_,
     const BridgeHelperPtr bridge_helper_)
     /// Please add support for constraints as soon as StorageODBC or JDBC will support insertion.
-    : IStorageURLBase(Poco::URI(), context_, database_name_, table_name_, IXDBCBridgeHelper::DEFAULT_FORMAT, columns_, ConstraintsDescription{})
+    : IStorageURLBase(Poco::URI(),
+                      context_,
+                      table_id_,
+                      IXDBCBridgeHelper::DEFAULT_FORMAT,
+                      columns_,
+                      ConstraintsDescription{},
+                      "" /* CompressionMethod */)
     , bridge_helper(bridge_helper_)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
@@ -105,7 +111,7 @@ namespace
     template <typename BridgeHelperMixin>
     void registerXDBCStorage(StorageFactory & factory, const std::string & name)
     {
-        factory.registerStorage(name, [&name](const StorageFactory::Arguments & args)
+        factory.registerStorage(name, [name](const StorageFactory::Arguments & args)
         {
             ASTs & engine_args = args.engine_args;
 
@@ -119,7 +125,7 @@ namespace
             BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(args.context,
                 args.context.getSettingsRef().http_receive_timeout.value,
                 engine_args[0]->as<ASTLiteral &>().value.safeGet<String>());
-            return std::make_shared<StorageXDBC>(args.database_name, args.table_name,
+            return std::make_shared<StorageXDBC>(args.table_id,
                 engine_args[1]->as<ASTLiteral &>().value.safeGet<String>(),
                 engine_args[2]->as<ASTLiteral &>().value.safeGet<String>(),
                 args.columns,

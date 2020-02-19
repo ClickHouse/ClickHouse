@@ -39,7 +39,7 @@ namespace DB
 
         static void arrowTableToCHChunk(Chunk &res, std::shared_ptr<arrow::Table> &table,
                                         arrow::Status &read_status, const Block &header,
-                                        int &row_group_current, const Context &context, std::string format_name);
+                                        int &row_group_current, std::string format_name);
     };
 }
 #endif

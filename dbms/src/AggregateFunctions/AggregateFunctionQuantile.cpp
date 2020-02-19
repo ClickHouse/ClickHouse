@@ -4,6 +4,7 @@
 #include <AggregateFunctions/Helpers.h>
 
 #include <Core/Field.h>
+#include "registerAggregateFunctions.h"
 
 namespace DB
 {

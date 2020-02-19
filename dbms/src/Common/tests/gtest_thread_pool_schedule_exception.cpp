@@ -5,7 +5,7 @@
 #include <gtest/gtest.h>
 
 
-bool check()
+static bool check()
 {
     ThreadPool pool(10);
 

@@ -208,6 +208,12 @@ void ColumnsDescription::flattenNested()
             continue;
         }
 
+        if (!type_tuple->haveExplicitNames())
+        {
+            ++it;
+            continue;
+        }
+
         ColumnDescription column = std::move(*it);
         it = columns.get<0>().erase(it);
 

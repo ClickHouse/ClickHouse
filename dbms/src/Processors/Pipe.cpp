@@ -61,6 +61,11 @@ Pipe::Pipe(ProcessorPtr source)
     processors.emplace_back(std::move(source));
 }
 
+Pipe::Pipe(Processors processors_, OutputPort * output_port_, OutputPort * totals_)
+    : processors(std::move(processors_)), output_port(output_port_), totals(totals_)
+{
+}
+
 Pipe::Pipe(Pipes && pipes, ProcessorPtr transform)
 {
     checkSingleOutput(*transform);
@@ -97,7 +102,7 @@ void Pipe::setLimits(const ISourceWithProgress::LocalLimits & limits)
     }
 }
 
-void Pipe::setQuota(QuotaForIntervals & quota)
+void Pipe::setQuota(const std::shared_ptr<QuotaContext> & quota)
 {
     for (auto & processor : processors)
     {
@@ -112,6 +117,15 @@ void Pipe::pinSources(size_t executor_number)
     {
         if (auto * source = dynamic_cast<ISource *>(processor.get()))
             source->setStream(executor_number);
+    }
+}
+
+void Pipe::enableQuota()
+{
+    for (auto & processor : processors)
+    {
+        if (auto * source = dynamic_cast<ISource *>(processor.get()))
+            source->enableQuota();
     }
 }
 

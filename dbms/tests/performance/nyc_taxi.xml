@@ -12,9 +12,6 @@
         </any_of>
     </stop_conditions>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
 
     <preconditions>
         <table_exists>default.trips_mergetree</table_exists>

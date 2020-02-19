@@ -41,7 +41,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [ORDER BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
-[TTL expr]
+[TTL expr [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'], ...]
 [SETTINGS name=value, ...]
 ```
 
@@ -50,7 +50,7 @@ For a description of parameters, see the [CREATE query description](../../query_
 !!!note "Note"
     `INDEX` is an experimental feature, see [Data Skipping Indexes](#table_engine-mergetree-data_skipping-indexes).
 
-### Query Clauses
+### Query Clauses {#mergetree-query-clauses}
 
 - `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine does not have parameters.
 
@@ -70,10 +70,12 @@ For a description of parameters, see the [CREATE query description](../../query_
 
     If a sampling expression is used, the primary key must contain it. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
-- `TTL` — An expression for setting storage time for rows.
+- `TTL` — A list of rules specifying storage duration of rows and defining logic of automatic parts movement [between disks and volumes](#table_engine-mergetree-multiple-volumes).
 
-    It must depend on the `Date` or `DateTime` column and have one `Date` or `DateTime` column as a result. Example:
+    Expression must have one `Date` or `DateTime` column as a result. Example:
     `TTL date + INTERVAL 1 DAY`
+
+    Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'` specifies an action to be done with the part if the expression is satisfied (reaches current time): removal of expired rows, moving a part (if expression is satisfied for all rows in a part) to specified disk (`TO DISK 'xxx'`) or to volume (`TO VOLUME 'xxx'`). Default type of the rule is removal (`DELETE`). List of multiple rules can specified, but there should be no more than one `DELETE` rule.
 
     For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
@@ -86,6 +88,7 @@ For a description of parameters, see the [CREATE query description](../../query_
     <a name="mergetree_setting-merge_with_ttl_timeout"></a>
     - `merge_with_ttl_timeout` — Minimum delay in seconds before repeating a merge with TTL. Default value: 86400 (1 day).
     - `write_final_mark` — Enables or disables writing the final index mark at the end of data part. Default value: 1. Don't turn it off.
+    - `merge_max_block_size` — Maximum number of rows in block for merge operations. Default value: 8192.
     - `storage_policy` — Storage policy. See [Using Multiple Block Devices for Data Storage](#table_engine-mergetree-multiple-volumes).
 
 
@@ -329,10 +332,10 @@ Function (operator) / Index | primary key | minmax | ngrambf_v1 | tokenbf_v1 | b
 [equals (=, ==)](../../query_language/functions/comparison_functions.md#function-equals) | ✔ | ✔ | ✔ | ✔ | ✔ 
 [notEquals(!=, <>)](../../query_language/functions/comparison_functions.md#function-notequals) | ✔ | ✔ | ✔ | ✔ | ✔
 [like](../../query_language/functions/string_search_functions.md#function-like) | ✔ | ✔ | ✔ | ✗ |  ✗
-[notLike](../../query_language/functions/string_search_functions.md#function-notlike) | ✔ | ✔ | ✔ | ✔ | ✗
+[notLike](../../query_language/functions/string_search_functions.md#function-notlike) | ✔ | ✔ | ✔ | ✗ | ✗
 [startsWith](../../query_language/functions/string_functions.md#function-startswith) | ✔ | ✔ | ✔ | ✔ | ✗
 [endsWith](../../query_language/functions/string_functions.md#function-endswith) | ✗ | ✗ | ✔ | ✔ | ✗
-[multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany) | ✗ | ✗ | ✔ | ✔ | ✗
+[multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany) | ✗ | ✗ | ✔ | ✗ | ✗
 [in](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
 [notIn](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
 [less (<)](../../query_language/functions/comparison_functions.md#function-less) | ✔ | ✔ | ✗ | ✗ | ✗
@@ -371,9 +374,11 @@ Reading from a table is automatically parallelized.
 
 Determines the lifetime of values.
 
-The `TTL` clause can be set for the whole table and for each individual column. If both `TTL` are set, ClickHouse uses that `TTL` which expires earlier.
+The `TTL` clause can be set for the whole table and for each individual column. Table-level TTL can also specify logic of automatic move of data between disks and volumes.
 
-The table must have the column in the [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type. To define the lifetime of data, use operations on this time column, for example:
+Expressions must evaluate to [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type.
+
+Example:
 
 ```sql
 TTL time_column
@@ -428,7 +433,17 @@ ALTER TABLE example_table
 
 **Table TTL**
 
-When data in a table expires, ClickHouse deletes all corresponding rows.
+Table can have an expression for removal of expired rows, and multiple expressions for automatic move of parts between [disks or volumes](#table_engine-mergetree-multiple-volumes). When rows in the table expire, ClickHouse deletes all corresponding rows. For parts moving feature, all rows of a part must satisfy the movement expression criteria.
+
+```sql
+TTL expr [DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'], ...
+```
+
+Type of TTL rule may follow each TTL expression. It affects an action which is to be done once the expression is satisfied (reaches current time):
+
+- `DELETE` - delete expired rows (default action);
+- `TO DISK 'aaa'` - move part to the disk `aaa`;
+- `TO VOLUME 'bbb'` - move part to the disk `bbb`.
 
 Examples:
 
@@ -443,7 +458,9 @@ CREATE TABLE example_table
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(d)
 ORDER BY d
-TTL d + INTERVAL 1 MONTH;
+TTL d + INTERVAL 1 MONTH [DELETE],
+    d + INTERVAL 1 WEEK TO VOLUME 'aaa',
+    d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
 
 Altering TTL of the table
@@ -461,7 +478,7 @@ When ClickHouse see that data is expired, it performs an off-schedule merge. To 
 
 If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query before `SELECT`.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/mergetree/) <!--hide-->
 
 
 ## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
@@ -488,21 +505,25 @@ Disks, volumes and storage policies should be declared inside the `<storage_conf
 Configuration structure:
 
 ```xml
-<disks>
-    <disk_name_1> <!-- disk name -->
-        <path>/mnt/fast_ssd/clickhouse</path>
-    </disk_name_1>
-    <disk_name_2>
-        <path>/mnt/hdd1/clickhouse</path>
-        <keep_free_space_bytes>10485760</keep_free_space_bytes>_
-    </disk_name_2>
-    <disk_name_3>
-        <path>/mnt/hdd2/clickhouse</path>
-        <keep_free_space_bytes>10485760</keep_free_space_bytes>_
-    </disk_name_3>
+<storage_configuration>
+    <disks>
+        <disk_name_1> <!-- disk name -->
+            <path>/mnt/fast_ssd/clickhouse</path>
+        </disk_name_1>
+        <disk_name_2>
+            <path>/mnt/hdd1/clickhouse</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_2>
+        <disk_name_3>
+            <path>/mnt/hdd2/clickhouse</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_3>
 
+        ...
+    </disks>
+    
     ...
-</disks>
+</storage_configuration>
 ```
 
 Tags:
@@ -516,26 +537,30 @@ The order of the disk definition is not important.
 Storage policies configuration markup:
 
 ```xml
-<policies>
-    <policy_name_1>
-        <volumes>
-            <volume_name_1>
-                <disk>disk_name_from_disks_configuration</disk>
-                <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
-            </volume_name_1>
-            <volume_name_2>
-                <!-- configuration -->
-            </volume_name_2>
-            <!-- more volumes -->
-        </volumes>
-        <move_factor>0.2</move_factor>
-    </policy_name_1>
-    <policy_name_2>
-        <!-- configuration -->
-    </policy_name_2>
+<storage_configuration>
+    ...
+    <policies>
+        <policy_name_1>
+            <volumes>
+                <volume_name_1>
+                    <disk>disk_name_from_disks_configuration</disk>
+                    <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
+                </volume_name_1>
+                <volume_name_2>
+                    <!-- configuration -->
+                </volume_name_2>
+                <!-- more volumes -->
+            </volumes>
+            <move_factor>0.2</move_factor>
+        </policy_name_1>
+        <policy_name_2>
+            <!-- configuration -->
+        </policy_name_2>
 
-    <!-- more policies -->
-</policies>
+        <!-- more policies -->
+    </policies>
+    ...
+</storage_configuration>
 ```
 
 Tags:
@@ -549,29 +574,33 @@ Tags:
 Cofiguration examples:
 
 ```xml
-<policies>
-    <hdd_in_order> <!-- policy name -->
-        <volumes>
-            <single> <!-- volume name -->
-                <disk>disk1</disk>
-                <disk>disk2</disk>
-            </single>
-        </volumes>
-    </hdd_in_order>
+<storage_configuration>
+    ...
+    <policies>
+        <hdd_in_order> <!-- policy name -->
+            <volumes>
+                <single> <!-- volume name -->
+                    <disk>disk1</disk>
+                    <disk>disk2</disk>
+                </single>
+            </volumes>
+        </hdd_in_order>
 
-    <moving_from_ssd_to_hdd>
-        <volumes>
-            <hot>
-                <disk>fast_ssd</disk>
-                <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
-            </hot>
-            <cold>
-                <disk>disk1</disk>
-            </cold>            
-        </volumes>
-        <move_factor>0.2</move_factor>
-    </moving_from_ssd_to_hdd>
-</policies>
+        <moving_from_ssd_to_hdd>
+            <volumes>
+                <hot>
+                    <disk>fast_ssd</disk>
+                    <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
+                </hot>
+                <cold>
+                    <disk>disk1</disk>
+                </cold>            
+            </volumes>
+            <move_factor>0.2</move_factor>
+        </moving_from_ssd_to_hdd>
+    </policies>
+    ...
+</storage_configuration>
 ```
 
 In given example, the `hdd_in_order` policy implements the [round-robin](https://en.wikipedia.org/wiki/Round-robin_scheduling) approach. Thus this policy defines only one volume (`single`), the data parts are stored on all its disks in circular order. Such policy can be quite useful if there are several similar disks are mounted to the system, but RAID is not configured. Keep in mind that each individual disk drive is not reliable and you might want to compensate it with replication factor of 3 or more.
@@ -623,4 +652,4 @@ Moving data does not interfere with data replication. Therefore, different stora
 After the completion of background merges and mutations, old parts are removed only after a certain amount of time (`old_parts_lifetime`).
 During this time, they are not moved to other volumes or disks. Therefore, until the parts are finally removed, they are still taken into account for evaluation of the occupied disk space.
 
-[Original article](https://clickhouse.yandex/docs/ru/operations/table_engines/mergetree/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/ru/operations/table_engines/mergetree/) <!--hide-->
