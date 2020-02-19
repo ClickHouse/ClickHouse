@@ -537,17 +537,20 @@ void Connection::sendScalarsData(Scalars & data)
     LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
 }
 
-
+namespace
+{
 class ExternalTableDataSink : public ISink
 {
 public:
     using OnCancell = std::function<void()>;
 
     ExternalTableDataSink(Block header, Connection & connection_, ExternalTableData & table_data_, OnCancell callback)
-        : ISink(std::move(header))
-        , connection(connection_), table_data(table_data_), on_cancell(std::move(callback)) {}
+            : ISink(std::move(header)), connection(connection_), table_data(table_data_),
+              on_cancell(std::move(callback))
+    {}
 
-    String getName() const override { return "ExternalTableSink"; }
+    String getName() const override
+    { return "ExternalTableSink"; }
 
 protected:
     void consume(Chunk chunk) override
@@ -567,6 +570,7 @@ private:
     ExternalTableData & table_data;
     OnCancell on_cancell;
 };
+}
 
 void Connection::sendExternalTablesData(ExternalTablesData & data)
 {
