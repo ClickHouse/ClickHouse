@@ -96,6 +96,8 @@ namespace
             if (!initialized)
                 reader->readPrefix();
 
+            initialized = true;
+
             if (auto block = reader->read())
                 return Chunk(block.getColumns(), block.rows());
 
