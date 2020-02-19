@@ -7,6 +7,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 #include <utility>
 #include <DataTypes/DataTypesNumber.h>
 
