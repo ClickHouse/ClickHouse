@@ -47,7 +47,7 @@ StorageView::StorageView(
 }
 
 
-Pipes StorageView::readWithProcessors(
+Pipes StorageView::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,

@@ -56,7 +56,7 @@ void StorageInput::setInputStream(BlockInputStreamPtr input_stream_)
 }
 
 
-Pipes StorageInput::readWithProcessors(const Names & /*column_names*/,
+Pipes StorageInput::read(const Names & /*column_names*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,

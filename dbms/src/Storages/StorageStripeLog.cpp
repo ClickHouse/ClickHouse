@@ -249,7 +249,7 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Strin
 }
 
 
-Pipes StorageStripeLog::readWithProcessors(
+Pipes StorageStripeLog::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,

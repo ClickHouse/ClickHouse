@@ -15,7 +15,7 @@ class StorageValues : public ext::shared_ptr_helper<StorageValues>, public IStor
 public:
     std::string getName() const override { return "Values"; }
 
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

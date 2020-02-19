@@ -22,7 +22,7 @@ class StorageNull : public ext::shared_ptr_helper<StorageNull>, public IStorage
 public:
     std::string getName() const override { return "Null"; }
 
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo &,
         const Context & /*context*/,

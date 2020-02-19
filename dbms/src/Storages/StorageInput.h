@@ -17,7 +17,7 @@ public:
     /// A table will read from this stream.
     void setInputStream(BlockInputStreamPtr input_stream_);
 
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

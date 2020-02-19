@@ -445,7 +445,7 @@ private:
 
 
 // TODO: multiple stream read and index read
-Pipes StorageJoin::readWithProcessors(
+Pipes StorageJoin::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,

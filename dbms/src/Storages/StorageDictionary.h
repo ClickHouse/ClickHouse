@@ -25,7 +25,7 @@ class StorageDictionary : public ext::shared_ptr_helper<StorageDictionary>, publ
 public:
     std::string getName() const override { return "Dictionary"; }
 
-    Pipes readWithProcessors(const Names & column_names,
+    Pipes read(const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,

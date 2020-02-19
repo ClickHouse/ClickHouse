@@ -61,7 +61,7 @@ StorageMySQL::StorageMySQL(
 }
 
 
-Pipes StorageMySQL::readWithProcessors(
+Pipes StorageMySQL::read(
     const Names & column_names_,
     const SelectQueryInfo & query_info_,
     const Context & context_,

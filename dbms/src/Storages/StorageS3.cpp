@@ -266,7 +266,7 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
 }
 
 
-Pipes StorageS3::readWithProcessors(
+Pipes StorageS3::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
