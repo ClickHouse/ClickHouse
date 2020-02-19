@@ -1167,7 +1167,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         new_data_part->checksums = source_part->checksums;
         new_data_part->checksums.add(std::move(changed_checksums));
 
-        if (need_remove_expired_values && !new_data_part->ttl_infos.empty())
+        if (need_remove_expired_values)
         {
             /// Write a file with ttl infos in json format.
             WriteBufferFromFile out_ttl(new_part_tmp_path + "ttl.txt", 4096);
