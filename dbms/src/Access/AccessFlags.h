@@ -304,15 +304,10 @@ private:
         ext::push_back(all, std::move(alter));
 
         auto create_database = std::make_unique<Node>("CREATE DATABASE", next_flag++, DATABASE_LEVEL);
-        ext::push_back(create_database->aliases, "ATTACH DATABASE");
         auto create_table = std::make_unique<Node>("CREATE TABLE", next_flag++, TABLE_LEVEL);
-        ext::push_back(create_table->aliases, "ATTACH TABLE");
         auto create_view = std::make_unique<Node>("CREATE VIEW", next_flag++, VIEW_LEVEL);
-        ext::push_back(create_view->aliases, "ATTACH VIEW");
         auto create_dictionary = std::make_unique<Node>("CREATE DICTIONARY", next_flag++, DICTIONARY_LEVEL);
-        ext::push_back(create_dictionary->aliases, "ATTACH DICTIONARY");
         auto create = std::make_unique<Node>("CREATE", std::move(create_database), std::move(create_table), std::move(create_view), std::move(create_dictionary));
-        ext::push_back(create->aliases, "ATTACH");
         ext::push_back(all, std::move(create));
 
         auto create_temporary_table = std::make_unique<Node>("CREATE TEMPORARY TABLE", next_flag++, GLOBAL_LEVEL);
@@ -324,13 +319,6 @@ private:
         auto drop_dictionary = std::make_unique<Node>("DROP DICTIONARY", next_flag++, DICTIONARY_LEVEL);
         auto drop = std::make_unique<Node>("DROP", std::move(drop_database), std::move(drop_table), std::move(drop_view), std::move(drop_dictionary));
         ext::push_back(all, std::move(drop));
-
-        auto detach_database = std::make_unique<Node>("DETACH DATABASE", next_flag++, DATABASE_LEVEL);
-        auto detach_table = std::make_unique<Node>("DETACH TABLE", next_flag++, TABLE_LEVEL);
-        auto detach_view = std::make_unique<Node>("DETACH VIEW", next_flag++, VIEW_LEVEL);
-        auto detach_dictionary = std::make_unique<Node>("DETACH DICTIONARY", next_flag++, DICTIONARY_LEVEL);
-        auto detach = std::make_unique<Node>("DETACH", std::move(detach_database), std::move(detach_table), std::move(detach_view), std::move(detach_dictionary));
-        ext::push_back(all, std::move(detach));
 
         auto truncate_table = std::make_unique<Node>("TRUNCATE TABLE", next_flag++, TABLE_LEVEL);
         auto truncate_view = std::make_unique<Node>("TRUNCATE VIEW", next_flag++, VIEW_LEVEL);

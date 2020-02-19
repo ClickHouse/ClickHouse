@@ -330,8 +330,8 @@ boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess
 
     static const AccessFlags table_ddl = AccessType::CREATE_DATABASE | AccessType::CREATE_TABLE | AccessType::CREATE_VIEW
         | AccessType::ALTER_TABLE | AccessType::ALTER_VIEW | AccessType::DROP_DATABASE | AccessType::DROP_TABLE | AccessType::DROP_VIEW
-        | AccessType::DETACH_DATABASE | AccessType::DETACH_TABLE | AccessType::DETACH_VIEW | AccessType::TRUNCATE;
-    static const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY | AccessType::DETACH_DICTIONARY;
+        | AccessType::TRUNCATE;
+    static const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
     static const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
     static const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
 
