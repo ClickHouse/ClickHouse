@@ -39,6 +39,8 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMETED;
 }
+
+/// Description of the data part.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
 public:

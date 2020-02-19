@@ -20,9 +20,11 @@ class IMergeTreeDataPartWriter : private boost::noncopyable
 public:
     using WrittenOffsetColumns = std::set<std::string>;
 
-    struct ColumnStream
+    /// Helper class, which holds chain of buffers to write data file with marks.
+    /// It is used to write: one column, skip index or all columns (in compact format).
+    struct Stream
     {
-        ColumnStream(
+        Stream(
             const String & escaped_column_name_,
             const String & data_path_,
             const std::string & data_file_extension_,
@@ -54,8 +56,7 @@ public:
         void addToChecksums(IMergeTreeDataPart::Checksums & checksums);
     };
 
-    using ColumnStreamPtr = std::unique_ptr<ColumnStream>;
-    using ColumnStreams = std::map<String, ColumnStreamPtr>;
+    using StreamPtr = std::unique_ptr<Stream>;
 
     IMergeTreeDataPartWriter(
         const String & part_path,
@@ -137,11 +138,11 @@ protected:
     size_t next_mark = 0;
     size_t next_index_offset = 0;
 
-    /// Number of mark in data from which skip indices have to start
+    /// Number of marsk in data from which skip indices have to start
     /// aggregation. I.e. it's data mark number, not skip indices mark.
     size_t skip_index_data_mark = 0;
 
-    std::vector<std::unique_ptr<IMergeTreeDataPartWriter::ColumnStream>> skip_indices_streams;
+    std::vector<StreamPtr> skip_indices_streams;
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_filling;
 

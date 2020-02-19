@@ -10,20 +10,20 @@ namespace
     constexpr auto INDEX_FILE_EXTENSION = ".idx";
 }
 
-void IMergeTreeDataPartWriter::ColumnStream::finalize()
+void IMergeTreeDataPartWriter::Stream::finalize()
 {
     compressed.next();
     plain_file->next();
     marks.next();
 }
 
-void IMergeTreeDataPartWriter::ColumnStream::sync()
+void IMergeTreeDataPartWriter::Stream::sync()
 {
     plain_file->sync();
     marks_file.sync();
 }
 
-IMergeTreeDataPartWriter::ColumnStream::ColumnStream(
+IMergeTreeDataPartWriter::Stream::Stream(
     const String & escaped_column_name_,
     const String & data_path_,
     const std::string & data_file_extension_,
@@ -42,7 +42,7 @@ IMergeTreeDataPartWriter::ColumnStream::ColumnStream(
 {
 }
 
-void IMergeTreeDataPartWriter::ColumnStream::addToChecksums(MergeTreeData::DataPart::Checksums & checksums)
+void IMergeTreeDataPartWriter::Stream::addToChecksums(MergeTreeData::DataPart::Checksums & checksums)
 {
     String name = escaped_column_name;
 
@@ -182,7 +182,7 @@ void IMergeTreeDataPartWriter::initSkipIndices()
     {
         String stream_name = index->getFileName();
         skip_indices_streams.emplace_back(
-                std::make_unique<IMergeTreeDataPartWriter::ColumnStream>(
+                std::make_unique<IMergeTreeDataPartWriter::Stream>(
                         stream_name,
                         part_path + stream_name, INDEX_FILE_EXTENSION,
                         part_path + stream_name, marks_file_extension,

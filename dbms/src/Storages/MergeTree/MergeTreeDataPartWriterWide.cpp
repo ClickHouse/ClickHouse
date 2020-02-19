@@ -42,7 +42,7 @@ void MergeTreeDataPartWriterWide::addStreams(
         if (column_streams.count(stream_name))
             return;
 
-        column_streams[stream_name] = std::make_unique<ColumnStream>(
+        column_streams[stream_name] = std::make_unique<Stream>(
             stream_name,
             part_path + stream_name, DATA_FILE_EXTENSION,
             part_path + stream_name, marks_file_extension,
@@ -138,7 +138,7 @@ void MergeTreeDataPartWriterWide::writeSingleMark(
          if (is_offsets && offset_columns.count(stream_name))
              return;
 
-         ColumnStream & stream = *column_streams[stream_name];
+         Stream & stream = *column_streams[stream_name];
 
          /// There could already be enough data to compress into the new block.
          if (stream.compressed.offset() >= settings.min_compress_block_size)
@@ -291,7 +291,7 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
         }
     }
 
-    for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
+    for (auto it = column_streams.begin(); it != column_streams.end(); ++it)
     {
         it->second->finalize();
         if (sync)

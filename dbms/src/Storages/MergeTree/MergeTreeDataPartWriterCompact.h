@@ -31,7 +31,7 @@ private:
 
     void writeBlock(const Block & block);
 
-    ColumnStreamPtr stream;
+    StreamPtr stream;
 
     Block header;
 
