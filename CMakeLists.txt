@@ -120,12 +120,8 @@ endif ()
 
 option (ENABLE_TESTS "Enables tests" ON)
 
-if (ARCH_AMD64)
-    option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
-endif ()
-
 if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
-    option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
+    option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux" ON)
 endif ()
 
 if (NOT CMAKE_VERSION VERSION_GREATER "3.9.0")

@@ -40,10 +40,6 @@ add_library (common ${SRCS})
 
 target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
 
-if (USE_INTERNAL_MEMCPY)
-    target_link_libraries (common PRIVATE memcpy)
-endif ()
-
 if(CCTZ_INCLUDE_DIR)
     target_include_directories(common BEFORE PRIVATE ${CCTZ_INCLUDE_DIR})
 endif()
@@ -90,6 +86,7 @@ target_link_libraries (common
         ${Poco_Foundation_LIBRARY}
         ${CITYHASH_LIBRARIES}
         ${Boost_SYSTEM_LIBRARY}
+        FastMemcpy
 )
 
 if (ENABLE_TESTS)

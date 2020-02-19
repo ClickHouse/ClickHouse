@@ -335,3 +335,4 @@ endif()
 add_subdirectory(grpc-cmake)
 
 add_subdirectory(replxx-cmake)
+add_subdirectory(FastMemcpy-cmake)
