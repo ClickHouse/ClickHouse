@@ -11,7 +11,7 @@ String getDiskName(ASTStorage & storage_def)
         SettingsChanges changes = storage_def.settings->changes;
         for (auto it = changes.begin(); it != changes.end(); ++it)
         {
-            if (it->name == "disk_name")
+            if (it->name == "disk")
                 return it->value.safeGet<String>();
         }
     }
