@@ -189,6 +189,10 @@ function run_tests
         grep ^client-time "$test_name-raw.tsv" | cut -f2- > "$test_name-client-time.tsv"
         # this may be slow, run it in background
         right/clickhouse local --file "$test_name-queries.tsv" --structure 'query text, run int, version UInt32, time float' --query "$(cat $script_dir/eqmed.sql)" > "$test_name-report.tsv" &
+
+        # Check that both servers are alive, to fail faster if they die.
+        left/clickhouse client --port 9001 --query "select 1 format Null"
+        right/clickhouse client --port 9002 --query "select 1 format Null"
     done
 
     unset TIMEFORMAT
