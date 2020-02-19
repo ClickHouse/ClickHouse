@@ -345,7 +345,8 @@ private:
         auto create_quota = std::make_unique<Node>("CREATE QUOTA", next_flag++, GLOBAL_LEVEL);
         auto alter_quota = std::make_unique<Node>("ALTER QUOTA", next_flag++, GLOBAL_LEVEL);
         auto drop_quota = std::make_unique<Node>("DROP QUOTA", next_flag++, GLOBAL_LEVEL);
-        ext::push_back(all, std::move(create_user), std::move(alter_user), std::move(drop_user), std::move(create_role), std::move(drop_role), std::move(create_policy), std::move(alter_policy), std::move(drop_policy), std::move(create_quota), std::move(alter_quota), std::move(drop_quota));
+        auto role_admin = std::make_unique<Node>("ROLE ADMIN", next_flag++, GLOBAL_LEVEL);
+        ext::push_back(all, std::move(create_user), std::move(alter_user), std::move(drop_user), std::move(create_role), std::move(drop_role), std::move(create_policy), std::move(alter_policy), std::move(drop_policy), std::move(create_quota), std::move(alter_quota), std::move(drop_quota), std::move(role_admin));
 
         auto shutdown = std::make_unique<Node>("SHUTDOWN", next_flag++, GLOBAL_LEVEL);
         ext::push_back(shutdown->aliases, "SYSTEM SHUTDOWN", "SYSTEM KILL");

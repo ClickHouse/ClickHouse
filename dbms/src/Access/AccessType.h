@@ -94,6 +94,8 @@ enum class AccessType
     ALTER_QUOTA,
     DROP_QUOTA,
 
+    ROLE_ADMIN,         /// allows to grant and revoke any roles.
+
     SHUTDOWN,
     DROP_CACHE,
     RELOAD_CONFIG,
@@ -250,6 +252,7 @@ namespace impl
             ACCESS_TYPE_TO_KEYWORD_CASE(CREATE_QUOTA);
             ACCESS_TYPE_TO_KEYWORD_CASE(ALTER_QUOTA);
             ACCESS_TYPE_TO_KEYWORD_CASE(DROP_QUOTA);
+            ACCESS_TYPE_TO_KEYWORD_CASE(ROLE_ADMIN);
 
             ACCESS_TYPE_TO_KEYWORD_CASE(SHUTDOWN);
             ACCESS_TYPE_TO_KEYWORD_CASE(DROP_CACHE);
