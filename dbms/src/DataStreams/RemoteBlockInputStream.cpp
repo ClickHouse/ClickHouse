@@ -149,17 +149,8 @@ void RemoteBlockInputStream::sendExternalTables()
 
                 Pipes pipes;
 
-                if (cur->supportProcessorsPipeline())
-                    pipes = cur->readWithProcessors(cur->getColumns().getNamesOfPhysical(), {}, context,
-                            read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
-                else
-                {
-                    auto streams = cur->read(cur->getColumns().getNamesOfPhysical(), {}, context,
-                            read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
-
-                    for (auto & stream : streams)
-                        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
-                }
+                pipes = cur->read(cur->getColumns().getNamesOfPhysical(), {}, context,
+                        read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;

@@ -292,14 +292,7 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
         if (real_column_names.empty())
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage->getColumns().getAllPhysical()));
 
-        if (storage->supportProcessorsPipeline())
-            pipes = storage->readWithProcessors(real_column_names, modified_query_info, modified_context, processed_stage, max_block_size, UInt32(streams_num));
-        else
-        {
-            auto streams = storage->read(real_column_names, modified_query_info, modified_context, processed_stage, max_block_size, UInt32(streams_num));
-            for (auto & stream : streams)
-                pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
-        }
+        pipes = storage->read(real_column_names, modified_query_info, modified_context, processed_stage, max_block_size, UInt32(streams_num));
     }
     else if (processed_stage > storage->getQueryProcessingStage(modified_context))
     {
