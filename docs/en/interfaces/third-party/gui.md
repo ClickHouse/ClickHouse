@@ -112,7 +112,7 @@ Features:
 - Support for multiple data sources including ClickHouse.
 - Storage for materialized data based on ClickHouse.
 
-For low-load projects, DataLens is [available for free](https://cloud.yandex.com/docs/datalens/pricing), including for commercial use.
+DataLens is [available for free](https://cloud.yandex.com/docs/datalens/pricing) for low-load projects, even for commercial use.
 
 - [DataLens documentation](https://cloud.yandex.com/docs/datalens/).
 - [Visualizing data from a ClickHouse database](https://cloud.yandex.com/docs/datalens/solutions/data-from-db-visualization) tutorial.
