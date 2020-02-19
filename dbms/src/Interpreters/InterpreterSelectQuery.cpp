@@ -1402,16 +1402,12 @@ void InterpreterSelectQuery::executeFetchColumns(
         BlockInputStreams streams;
         Pipes pipes;
 
-        /// Will work with pipes directly if storage support processors.
-        /// Code is temporarily copy-pasted while moving to new pipeline.
-        bool use_pipes = pipeline_with_processors && storage->supportProcessorsPipeline();
-
-        if (use_pipes)
-            pipes = storage->readWithProcessors(required_columns, query_info, *context, processing_stage, max_block_size, max_streams);
+        if (pipeline_with_processors)
+            pipes = storage->read(required_columns, query_info, *context, processing_stage, max_block_size, max_streams);
         else
-            streams = storage->read(required_columns, query_info, *context, processing_stage, max_block_size, max_streams);
+            streams = storage->readStreams(required_columns, query_info, *context, processing_stage, max_block_size, max_streams);
 
-        if (streams.empty() && !use_pipes)
+        if (streams.empty() && !pipeline_with_processors)
         {
             streams = {std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns))};
 
@@ -1442,7 +1438,8 @@ void InterpreterSelectQuery::executeFetchColumns(
         }
 
         /// Copy-paste from prev if.
-        if (pipes.empty() && use_pipes)
+        /// Code is temporarily copy-pasted while moving to new pipeline.
+        if (pipes.empty() && pipeline_with_processors)
         {
             Pipe pipe(std::make_shared<NullSource>(storage->getSampleBlockForColumns(required_columns)));
 
@@ -1471,8 +1468,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         if constexpr (pipeline_with_processors)
         {
             /// Table lock is stored inside pipeline here.
-            if (use_pipes)
-                pipeline.addTableLock(table_lock);
+            pipeline.addTableLock(table_lock);
         }
 
         /// Set the limits and quota for reading data, the speed and time of the query.

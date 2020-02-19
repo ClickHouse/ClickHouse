@@ -193,15 +193,7 @@ Pipes StorageMaterializedView::readWithProcessors(
     if (query_info.order_by_optimizer)
         query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(storage);
 
-    Pipes pipes;
-    if (storage->supportProcessorsPipeline())
-        pipes = storage->readWithProcessors(column_names, query_info, context, processed_stage, max_block_size, num_streams);
-    else
-    {
-        auto streams = storage->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
-        for (auto & stream : streams)
-            pipes.emplace_back(std::make_shared<SourceFromInputStream>(stream));
-    }
+    Pipes pipes = storage->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 
     for (auto & pipe : pipes)
         pipe.addTableLock(lock);

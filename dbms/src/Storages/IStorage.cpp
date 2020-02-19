@@ -404,7 +404,7 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Settin
     }
 }
 
-BlockInputStreams IStorage::read(
+BlockInputStreams IStorage::readStreams(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -413,7 +413,7 @@ BlockInputStreams IStorage::read(
     unsigned num_streams)
 {
     ForceTreeShapedPipeline enable_tree_shape(query_info);
-    auto pipes = readWithProcessors(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+    auto pipes = read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 
     BlockInputStreams res;
     res.reserve(pipes.size());
