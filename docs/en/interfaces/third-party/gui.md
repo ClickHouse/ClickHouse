@@ -107,7 +107,7 @@ Features:
 
 Features:
 
-- Creation of simple visualizations and complex dashboards.
+- Wide range of available visualisations, from simple bar charts to complex dashboards.
 - Public dashboards.
 - Support for multiple data sources including ClickHouse.
 - Storage for materialized data based on ClickHouse.
