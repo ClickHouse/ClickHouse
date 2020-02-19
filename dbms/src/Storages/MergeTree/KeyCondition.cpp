@@ -286,7 +286,7 @@ bool isLogicalOperator(const String & func_name)
 }
 
 /// The node can be one of:
-///   - Logical operator (AND, OR, NOT + indexHint (a logical NOOP))
+///   - Logical operator (AND, OR, NOT and indexHint() - logical NOOP)
 ///   - An "atom" (relational operator, constant, expression)
 ///   - A logical constant expression
 ///   - Any other function
@@ -297,12 +297,17 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
     if (func && isLogicalOperator(func->name))
     {
         if (func->name == "not")
+        {
             return cloneASTWithInversionPushDown(func->arguments->children.front(), !need_inversion);
+        }
 
         const auto result_node = makeASTFunction(func->name);
-        /// "indexHint" is a special case - logical NOOP function
+
+        /// indexHint() is a special case - logical NOOP function
         if (result_node->name != "indexHint" && need_inversion)
+        {
             result_node->name = (result_node->name == "and") ? "or" : "and";
+        }
 
         if (func->arguments)
         {
@@ -320,7 +325,9 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
     if (func && inverse_relations.find(func->name) != inverse_relations.cend())
     {
         if (need_inversion)
+        {
             cloned_node->as<ASTFunction>()->name = inverse_relations.at(func->name);
+        }
 
         return cloned_node;
     }
