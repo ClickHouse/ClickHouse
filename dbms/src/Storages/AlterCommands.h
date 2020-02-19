@@ -119,6 +119,8 @@ private:
     bool prepared = false;
 private:
 
+    /// Validate that default expression and type are compatible, i.e. default
+    /// expression result can be casted to column_type
     void validateDefaultExpressionForColumn(
         const ASTPtr default_expression,
         const String & column_name,
@@ -133,8 +135,8 @@ public:
     /// More accurate check have to be performed with storage->checkAlterIsPossible.
     void validate(const StorageInMemoryMetadata & metadata, const Context & context) const;
 
-    /// Prepare alter commands. Set ignore flag to some of them
-    /// and additional commands for dependent columns.
+    /// Prepare alter commands. Set ignore flag to some of them and set some
+    /// parts to commands from storage's metadata (for example, absent default)
     void prepare(const StorageInMemoryMetadata & metadata, const Context & context);
 
     /// Apply all alter command in sequential order to storage metadata.
