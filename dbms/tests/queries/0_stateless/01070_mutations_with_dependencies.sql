@@ -30,7 +30,7 @@ select count() from ttl where s = 'b';
 
 drop table ttl;
 
--- check only that it doesn't throws exceptions.
+-- check only that it doesn't throw exceptions.
 create table ttl (i Int, s String) engine = MergeTree order by i ttl toDate('2000-01-01') TO DISK 'default';
 alter table ttl materialize ttl;
 drop table ttl;

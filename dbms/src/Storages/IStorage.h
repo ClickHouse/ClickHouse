@@ -459,9 +459,6 @@ public:
     /// Returns names of primary key + secondary sorting columns
     virtual Names getSortingKeyColumns() const { return {}; }
 
-    /// Returns columns that could be updated by applying TTL rules
-    virtual Names getColumnsUpdatedByTTL() const { return {}; }
-
     /// Returns columns, whose dependencies (skip indices, TTL expressions) 
     /// would be affected if we will update @updated_columns set of columns.
     virtual ColumnDependencies getColumnDependencies(const NameSet & /* updated_columns */) const { return {}; }
