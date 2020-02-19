@@ -11,8 +11,10 @@ import jsmin
 def build_website(args):
     logging.info('Building website')
     env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(args.website_dir)
+        loader=jinja2.FileSystemLoader(args.website_dir),
+        extensions=['jinja2_highlight.HighlightExtension']
     )
+    env.extend(jinja2_highlight_cssclass='syntax p-3 my-3')
 
     shutil.copytree(
         args.website_dir,
@@ -29,10 +31,21 @@ def build_website(args):
         )
     )
 
+    icons_dir = os.path.join(args.output_dir, 'images', 'icons')
+    os.makedirs(icons_dir)
+    for icon in [
+        'github',
+        'edit'
+    ]:
+        icon = '%s.svg' % icon
+        icon_src = os.path.join(args.website_dir, 'images', 'feathericons', 'icons', icon)
+        icon_dst = os.path.join(icons_dir, icon)
+        shutil.copy2(icon_src, icon_dst)
+
     for root, _, filenames in os.walk(args.output_dir):
         for filename in filenames:
             path = os.path.join(root, filename)
-            if not filename.endswith('.html'):
+            if not (filename.endswith('.html') or filename.endswith('.css')):
                 continue
             logging.info('Processing %s', path)
             with open(path, 'rb') as f:

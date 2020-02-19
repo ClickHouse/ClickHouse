@@ -36,7 +36,7 @@ def choose_latest_releases():
 
     logging.info('Found stable releases: %s', str(seen.keys()))
     return seen.items()
-    
+
 
 def process_release(args, callback, release):
     name, (full_name, tarball_url,) = release

@@ -13,22 +13,21 @@ $(document).ready(function () {
                 if (!line) { return; };
                 line = line.split('](');
                 var tail = line[1].split(') ');
+                var event_date = tail[1].slice(0, -1).replace('on ', '');
                 result.push(
-                    '<a class="announcement-link" rel="external nofollow" target="_blank" href="' +
-                    tail[0] + '">' + line[0].replace('* [', '').replace('ClickHouse Meetup in ', '') +
-                    '</a> ' + tail[1].slice(0, -1)
+                    '<a class="stealth-link" rel="external nofollow" target="_blank" href="' +
+                    tail[0] + '"><span class="text-orange">'+ event_date + '</span>&nbsp;' +
+                    line[0].replace('* [', '') + '</a> '
                 );
             }
         });
         if (result.length) {
             if (result.length == 1) {
-                result = 'Upcoming Meetup: ' + result[0];
+                result = '<h2>Upcoming Event</h2><p class="lead">' + result[0] + '</p>';
             } else {
-                result = 'Upcoming Meetups: ' + result.join(', ');
-                var offset = result.lastIndexOf(', ');
-                result = result.slice(0, offset) + result.slice(offset).replace(', ', ' and ');
+                result = '<h2>Upcoming Events</h2><ul class="lead list-unstyled"><li>' + result.join('</li><li>') + '</li></ul>';
             }
-            $('#announcement>.page').html(result);
+            $('#events>.container').html(result);
         }
     });
     var name = $('#logo-text').attr('alt').trim().toLowerCase();
@@ -41,6 +40,7 @@ $(document).ready(function () {
         var target = $(event.target);
         var target_id = target.attr('id');
         var selector = target.attr('href');
+        var is_tab = target.attr('role') === 'tab';
 
         $('#navbar-toggle').collapse('hide');
 
@@ -48,13 +48,13 @@ $(document).ready(function () {
             selector = '#';
         }
 
-        if (selector && selector.startsWith('#')) {
+        if (selector && selector.startsWith('#') && !is_tab) {
             event.preventDefault();
             var dst = window.location.href.replace(window.location.hash, '');
             var offset = 0;
 
             if (selector !== '#') {
-                offset = $(selector).offset().top - $('#navbar-toggle').height() * 2;
+                offset = $(selector).offset().top - $('#navbar-toggle').height() * 1.5;
                 dst += selector;
             }
             $('html, body').animate({
@@ -62,34 +62,5 @@ $(document).ready(function () {
             }, 500);
             window.history.replaceState('', document.title, dst);
         }
-    });
-
-    var hostParts = window.location.host.split('.');
-    if (hostParts.length > 2 && hostParts[0] != 'test' && hostParts[1] != 'github') {
-        window.location.host = hostParts[0] + '.' + hostParts[1];
-    }
-
-    var available_distributives = ['deb', 'rpm', 'tgz'];
-    var selected_distributive = 'deb';
-
-    function refresh_distributives() {
-        available_distributives.forEach(function (name) {
-            if (name == selected_distributive) {
-                $('#repo_' + name).attr("class", "distributive_selected");
-                $('#instruction_' + name).show();
-            } else {
-                $('#repo_' + name).attr("class", "distributive_not_selected");
-                $('#instruction_' + name).hide();
-            }
-        });
-    };
-
-    refresh_distributives();
-
-    available_distributives.forEach(function (name) {
-        $('#repo_' + name).on('click', function () {
-            selected_distributive = name;
-            refresh_distributives();
-        });
     });
 });
