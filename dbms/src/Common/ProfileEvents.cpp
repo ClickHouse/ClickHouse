@@ -20,9 +20,9 @@
     M(ReadBufferAIOReadBytes, "") \
     M(WriteBufferAIOWrite, "") \
     M(WriteBufferAIOWriteBytes, "") \
-    M(ReadCompressedBytes, "") \
-    M(CompressedReadBufferBlocks, "") \
-    M(CompressedReadBufferBytes, "") \
+    M(ReadCompressedBytes, "Number of bytes read from compressed sources (files or over a network).") \
+    M(CompressedReadBufferBlocks, "Number of blocks read from compressed sources (files or over a network).") \
+    M(CompressedReadBufferBytes, "Number of uncompressed bytes read from compressed sources (files or over a network).") \
     M(UncompressedCacheHits, "") \
     M(UncompressedCacheMisses, "") \
     M(UncompressedCacheWeightLost, "") \
@@ -51,9 +51,9 @@
     M(QueryMaskingRulesMatch, "Number of times query masking rules was successfully matched.") \
     \
     M(ReplicatedPartFetches, "Number of times a data part was downloaded from replica of a ReplicatedMergeTree table.") \
-    M(ReplicatedPartFailedFetches, "") \
+    M(ReplicatedPartFailedFetches, "Number of times a data part was failed to download from replica of a ReplicatedMergeTree table.") \
     M(ObsoleteReplicatedParts, "") \
-    M(ReplicatedPartMerges, "") \
+    M(ReplicatedPartMerges, "Number of times a data part of ReplicatedMergeTree tables were successfully merged.") \
     M(ReplicatedPartFetchesOfMerged, "Number of times we prefer to download already merged part from replica of ReplicatedMergeTree table instead of performing a merge ourself (usually we prefer doing a merge ourself to save network traffic). This happens when we have not all source parts to perform a merge or when the data part is old enough.") \
     M(ReplicatedPartMutations, "") \
     M(ReplicatedPartChecks, "") \
