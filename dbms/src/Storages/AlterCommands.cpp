@@ -630,13 +630,11 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, const Cont
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
-        bool has_column = columns.has(command.column_name);
+        bool has_column = columns.has(command.column_name) || columns.hasNested(command.column_name);
         if (command.type == AlterCommand::MODIFY_COLUMN)
         {
             if (!has_column && command.if_exists)
-            {
                 command.ignore = true;
-            }
 
             if (has_column)
             {
@@ -648,9 +646,13 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, const Cont
                 }
             }
         }
-        else if (command.type == AlterCommand::ADD_COLUMN
-            || command.type == AlterCommand::DROP_COLUMN
-            || command.type == AlterCommand::COMMENT_COLUMN)
+        else if (command.type == AlterCommand::ADD_COLUMN)
+        {
+            if (has_column && command.if_not_exists)
+                command.ignore = true;
+        }
+        else if (command.type == AlterCommand::DROP_COLUMN
+                || command.type == AlterCommand::COMMENT_COLUMN)
         {
             if (!has_column && command.if_exists)
                 command.ignore = true;
@@ -662,6 +664,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, const Cont
 
 void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Context & context) const
 {
+    auto all_columns = metadata.columns;
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
@@ -670,29 +673,45 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         if (command.type == AlterCommand::ADD_COLUMN)
         {
             if (metadata.columns.has(column_name) || metadata.columns.hasNested(column_name))
+            {
                 if (!command.if_not_exists)
                     throw Exception{"Cannot add column " + column_name + ": column with this name already exists", ErrorCodes::ILLEGAL_COLUMN};
+                else
+                    continue;
+            }
 
             if (!command.data_type)
                 throw Exception{"Data type have to be specified for column " + column_name + " to add", ErrorCodes::ILLEGAL_COLUMN};
 
             if (command.default_expression)
-                validateDefaultExpressionForNewColumn(command.default_expression, column_name, command.data_type, metadata.columns, context);
+                validateDefaultExpressionForNewColumn(command.default_expression, column_name, command.data_type, all_columns, context);
+
+            all_columns.add(ColumnDescription(column_name, command.data_type, false));
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
             if (!metadata.columns.has(column_name))
+            {
                 if (!command.if_exists)
                     throw Exception{"Wrong column name. Cannot find column " + column_name + " to modify", ErrorCodes::ILLEGAL_COLUMN};
+                else
+                    continue;
+            }
 
+            auto column_in_table = metadata.columns.get(column_name);
             if (command.default_expression)
             {
                 if (!command.data_type)
                     validateDefaultExpressionForNewColumn(
-                        command.default_expression, column_name, metadata.columns.get(column_name).type, metadata.columns, context);
+                        command.default_expression, column_name, column_in_table.type, all_columns, context);
                 else
                     validateDefaultExpressionForNewColumn(
-                        command.default_expression, column_name, command.data_type, metadata.columns, context);
+                        command.default_expression, column_name, command.data_type, all_columns, context);
+            }
+            else if (column_in_table.default_desc.expression && command.data_type)
+            {
+                validateDefaultExpressionForNewColumn(
+                    column_in_table.default_desc.expression, column_name, command.data_type, all_columns, context);
             }
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
