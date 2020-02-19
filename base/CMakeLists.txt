@@ -5,7 +5,3 @@ add_subdirectory (daemon)
 if (USE_MYSQL)
     add_subdirectory (mysqlxx)
 endif ()
-
-if (USE_INTERNAL_CONSISTENT_HASHING_LIBRARY)
-    add_subdirectory (consistent-hashing)
-endif ()
