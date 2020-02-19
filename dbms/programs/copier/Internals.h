@@ -81,11 +81,11 @@ namespace ErrorCodes
 }
 
 
-[[maybe_unused]] ConfigurationPtr getConfigurationFromXMLString(const std::string &xml_data);
+ConfigurationPtr getConfigurationFromXMLString(const std::string & xml_data);
 
-[[maybe_unused]] String getQuotedTable(const String &database, const String &table);
+String getQuotedTable(const String & database, const String & table);
 
-[[maybe_unused]] String getQuotedTable(const DatabaseAndTableName &db_and_table);
+String getQuotedTable(const DatabaseAndTableName & db_and_table);
 
 
 enum class TaskState {
@@ -98,7 +98,7 @@ enum class TaskState {
 struct TaskStateWithOwner {
     TaskStateWithOwner() = default;
 
-    TaskStateWithOwner(TaskState state_, const String &owner_) : state(state_), owner(owner_) {}
+    TaskStateWithOwner(TaskState state_, const String & owner_) : state(state_), owner(owner_) {}
 
     TaskState state{TaskState::Unknown};
     String owner;
@@ -136,7 +136,7 @@ struct ShardPriority
     size_t hostname_difference = 0;
     UInt8 random = 0;
 
-    static bool greaterPriority(const ShardPriority &current, const ShardPriority &other) {
+    static bool greaterPriority(const ShardPriority & current, const ShardPriority & other) {
         return std::forward_as_tuple(current.is_remote, current.hostname_difference, current.random)
                < std::forward_as_tuple(other.is_remote, other.hostname_difference, other.random);
     }
@@ -158,19 +158,19 @@ struct MultiTransactionInfo {
 };
 
 // Creates AST representing 'ENGINE = Distributed(cluster, db, table, [sharding_key])
-[[maybe_unused]] std::shared_ptr<ASTStorage> createASTStorageDistributed(
-        const String &cluster_name, const String &database, const String &table,
-        const ASTPtr &sharding_key_ast = nullptr);
+std::shared_ptr<ASTStorage> createASTStorageDistributed(
+        const String & cluster_name, const String & database, const String & table,
+        const ASTPtr & sharding_key_ast = nullptr);
 
 
-[[maybe_unused]] BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr &stream);
+BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream);
 
-[[maybe_unused]] Block getBlockWithAllStreamData(const BlockInputStreamPtr &stream);
+Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream);
 
-[[maybe_unused]] bool isExtendedDefinitionStorage(const ASTPtr &storage_ast);
+bool isExtendedDefinitionStorage(const ASTPtr & storage_ast);
 
-[[maybe_unused]] ASTPtr extractPartitionKey(const ASTPtr &storage_ast);
+ASTPtr extractPartitionKey(const ASTPtr & storage_ast);
 
-[[maybe_unused]] ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std::string & local_hostname, UInt8 random);
+ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std::string & local_hostname, UInt8 random);
 
 }
