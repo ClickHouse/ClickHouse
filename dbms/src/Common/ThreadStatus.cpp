@@ -37,6 +37,7 @@ ThreadStatus::ThreadStatus()
 
     last_rusage = std::make_unique<RUsageCounters>();
     last_taskstats = std::make_unique<TasksStatsCounters>();
+    perf_events = std::make_unique<PerfEventsCounters>();
 
     memory_tracker.setDescription("(for thread)");
     log = &Poco::Logger::get("ThreadStatus");
@@ -85,6 +86,15 @@ void ThreadStatus::initPerformanceCounters()
 
     try
     {
+        PerfEventsCounters::initializeProfileEvents(*perf_events);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    try
+    {
         if (TaskStatsInfoGetter::checkPermissions())
         {
             if (!taskstats_getter)
@@ -105,7 +115,6 @@ void ThreadStatus::updatePerformanceCounters()
     try
     {
         RUsageCounters::updateProfileEvents(*last_rusage, performance_counters);
-        PerfEventsCounters::updateProfileEvents(performance_counters);
         if (taskstats_getter)
             TasksStatsCounters::updateProfileEvents(*last_taskstats, performance_counters);
     }

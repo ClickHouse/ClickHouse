@@ -5,42 +5,50 @@
 #include <linux/perf_event.h>
 #include <syscall.h>
 #include <sys/ioctl.h>
+#include <cerrno>
 #endif
 
 namespace DB {
 
 #if defined(__linux__)
 
-    static constexpr int perf_event_configs[] = {
-            perf_sw_ids::PERF_COUNT_SW_CPU_CLOCK,
+    // todo: think about event counters' overflow
+    // todo: ask about the usual error reporting (whether stderr is an accepted way)
+
+    // descriptions' source: http://man7.org/linux/man-pages/man2/perf_event_open.2.html
+    const int PerfEventsCounters::perf_event_configs[] = {
+            // This reports the CPU clock, a high-resolution per-CPU timer.
+//            perf_sw_ids::PERF_COUNT_SW_CPU_CLOCK,
+            // This reports a clock count specific to the task that is running.
             perf_sw_ids::PERF_COUNT_SW_TASK_CLOCK,
+            // This reports the number of page faults.
             perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS,
+            // This counts context switches.
+            // Until Linux 2.6.34, these were all reported as user-space events,
+            // after that they are reported as happening in the kernel
             perf_sw_ids::PERF_COUNT_SW_CONTEXT_SWITCHES,
+            // This reports the number of times the process has migrated to a new CPU.
             perf_sw_ids::PERF_COUNT_SW_CPU_MIGRATIONS,
+            // This counts the number of minor page faults. These did not require disk I/O to handle.
             perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS_MIN,
+            // This counts the number of major page faults. These required disk I/O to handle.
             perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS_MAJ,
+            // This counts the number of alignment faults. These happen when unaligned memory accesses happen;
+            // the kernel can handle these but it reduces performance.
+            // This happens only on some architectures (never on x86).
             perf_sw_ids::PERF_COUNT_SW_ALIGNMENT_FAULTS,
-            perf_sw_ids::PERF_COUNT_SW_EMULATION_FAULTS,
-            perf_sw_ids::PERF_COUNT_SW_DUMMY,
-            perf_sw_ids::PERF_COUNT_SW_BPF_OUTPUT
+            // This counts the number of emulation faults. The kernel sometimes traps on unimplemented instructions and
+            // emulates them for user space. This can negatively impact performance.
+            perf_sw_ids::PERF_COUNT_SW_EMULATION_FAULTS
+            // This is a placeholder event that counts nothing. Informational sample record types such as mmap or
+            // comm must be associated with an active event. This dummy event allows gathering such records
+            // without requiring a counting event.
+//            perf_sw_ids::PERF_COUNT_SW_DUMMY
     };
 
-    static const std::string perf_event_names[] = {
-            "PERF_COUNT_SW_CPU_CLOCK",
-            "PERF_COUNT_SW_TASK_CLOCK",
-            "PERF_COUNT_SW_PAGE_FAULTS",
-            "PERF_COUNT_SW_CONTEXT_SWITCHES",
-            "PERF_COUNT_SW_CPU_MIGRATIONS",
-            "PERF_COUNT_SW_PAGE_FAULTS_MIN",
-            "PERF_COUNT_SW_PAGE_FAULTS_MAJ",
-            "PERF_COUNT_SW_ALIGNMENT_FAULTS",
-            "PERF_COUNT_SW_EMULATION_FAULTS",
-            "PERF_COUNT_SW_DUMMY",
-            "PERF_COUNT_SW_BPF_OUTPUT"
-    };
-
-    static const ProfileEvents::Event perf_events[] = {
-            ProfileEvents::PERF_COUNT_SW_CPU_CLOCK,
+    const ProfileEvents::Event PerfEventsCounters::perf_events[] = {
+            // a bit broken according to this: https://stackoverflow.com/a/56967896
+//            ProfileEvents::PERF_COUNT_SW_CPU_CLOCK,
             ProfileEvents::PERF_COUNT_SW_TASK_CLOCK,
             ProfileEvents::PERF_COUNT_SW_PAGE_FAULTS,
             ProfileEvents::PERF_COUNT_SW_CONTEXT_SWITCHES,
@@ -48,18 +56,12 @@ namespace DB {
             ProfileEvents::PERF_COUNT_SW_PAGE_FAULTS_MIN,
             ProfileEvents::PERF_COUNT_SW_PAGE_FAULTS_MAJ,
             ProfileEvents::PERF_COUNT_SW_ALIGNMENT_FAULTS,
-            ProfileEvents::PERF_COUNT_SW_EMULATION_FAULTS,
-            ProfileEvents::PERF_COUNT_SW_DUMMY,
-            ProfileEvents::PERF_COUNT_SW_BPF_OUTPUT
+            ProfileEvents::PERF_COUNT_SW_EMULATION_FAULTS
+//            ProfileEvents::PERF_COUNT_SW_DUMMY,
     };
 
-    constexpr size_t NUMBER_OF_EVENTS = std::size(perf_event_configs);
-
-    static_assert(std::size(perf_event_names) == NUMBER_OF_EVENTS);
-    static_assert(std::size(perf_events) == NUMBER_OF_EVENTS);
-
-    static int events_descriptors[NUMBER_OF_EVENTS];
-    static bool perf_events_opened = false;
+    static_assert(std::size(PerfEventsCounters::perf_event_configs) == PerfEventsCounters::NUMBER_OF_EVENTS);
+    static_assert(std::size(PerfEventsCounters::perf_events) == PerfEventsCounters::NUMBER_OF_EVENTS);
 
     static int openPerfEvent(perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, unsigned long flags) {
         return static_cast<int>(syscall(SYS_perf_event_open, hw_event, pid, cpu, group_fd, flags));
@@ -87,53 +89,22 @@ namespace DB {
         return true;
     }
 
-    static void perf_event_start(int perf_event_paranoid, int perf_event_type, int perf_event_config, int &event_file_descriptor) {
+    static void perfEventStart(int perf_event_paranoid, int perf_event_type, int perf_event_config, int &event_file_descriptor) {
         perf_event_attr pe = perf_event_attr();
         pe.type = perf_event_type;
         pe.size = sizeof(struct perf_event_attr);
         pe.config = perf_event_config;
+        // disable by default to add as little extra time as possible
         pe.disabled = 1;
         // can record kernel only when `perf_event_paranoid` <= 1
         pe.exclude_kernel = perf_event_paranoid >= 2;
-        pe.exclude_hv = 1;
 
-        event_file_descriptor = openPerfEvent(&pe, 0, -1, -1, 0);
+        event_file_descriptor = openPerfEvent(&pe, /* measure the calling thread */ 0, /* on any cpu */ -1, -1, 0);
     }
 
-//    static void disable_events() {
-//        if (!perf_events_opened)
-//            return;
-//
-//        for (int & fd : events_descriptors) {
-//            if (fd == -1)
-//                continue;
-//
-//            ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
-//            close(fd);
-//            fd = -1;
-//        }
-//
-//        perf_events_opened = false;
-//    }
-
-    void PerfEventsCounters::updateProfileEvents(ProfileEvents::Counters &profile_events) {
-        if (perf_events_opened) {
-            for (size_t i = 0; i < NUMBER_OF_EVENTS; ++i) {
-                int fd = events_descriptors[i];
-                if (fd == -1)
-                    continue;
-
-                long long count;
-                read(fd, &count, sizeof(count));
-
-                profile_events.increment(perf_events[i], static_cast<ProfileEvents::Count>(count));
-//                printf("%s: %lld\n", perf_event_names[i].c_str(), count);
-
-                ioctl(fd, PERF_EVENT_IOC_RESET, 0);
-            }
-
+    void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters & counters) {
+        if (counters.perf_events_recording)
             return;
-        }
 
         int perf_event_paranoid = 0;
         bool is_pref_available = getPerfEventParanoid(perf_event_paranoid);
@@ -144,27 +115,54 @@ namespace DB {
 
         for (size_t i = 0; i < NUMBER_OF_EVENTS; ++i)
         {
-            int eventConfig = perf_event_configs[i];
-            std::string eventName = perf_event_names[i];
-
-            perf_event_start(perf_event_paranoid, perf_type_id::PERF_TYPE_SOFTWARE, eventConfig, events_descriptors[i]);
+            perfEventStart(perf_event_paranoid, perf_type_id::PERF_TYPE_SOFTWARE, perf_event_configs[i], counters.events_descriptors[i]);
         }
 
         for (size_t i = 0; i < NUMBER_OF_EVENTS; ++i)
         {
-            int fd = events_descriptors[i];
-            if (fd == -1)
+            int fd = counters.events_descriptors[i];
+            if (fd == -1) {
                 fprintf(stderr, "Event config %d is unsupported\n", perf_event_configs[i]);
-            else
-                ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+                continue;
+            }
+
+            ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
         }
 
-        perf_events_opened = true;
+        counters.perf_events_recording = true;
+    }
+
+    void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, ProfileEvents::Counters & profile_events) {
+        if (!counters.perf_events_recording)
+            return;
+
+        for (size_t i = 0; i < NUMBER_OF_EVENTS; ++i) {
+            int & fd = counters.events_descriptors[i];
+            if (fd == -1)
+                continue;
+
+            long long count;
+            read(fd, &count, sizeof(count));
+
+            profile_events.increment(perf_events[i], static_cast<ProfileEvents::Count>(count));
+//                printf("%s: %lld\n", perf_event_names[i].c_str(), count);
+
+            if (ioctl(fd, PERF_EVENT_IOC_DISABLE, 0))
+                fprintf(stderr, "Can't disable perf event with file descriptor: %d\n", fd);
+
+            if (close(fd))
+                fprintf(stderr, "Can't close perf event file descriptor: %d; error: %d - %s\n", fd, errno, strerror(errno));
+
+            fd = -1;
+        }
+
+        counters.perf_events_recording = false;
     }
 
 #else
 
-    void PerfEventsCounters::updateProfileEvents(ProfileEvents::Counters &) {}
+    void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters &) {}
+    void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters &, ProfileEvents::Counters &) {}
 
 #endif
 

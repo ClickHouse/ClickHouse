@@ -35,7 +35,7 @@ namespace ProfileEvents
     extern const Event OSReadBytes;
     extern const Event OSWriteBytes;
 
-    extern const Event PERF_COUNT_SW_CPU_CLOCK;
+//    extern const Event PERF_COUNT_SW_CPU_CLOCK;
     extern const Event PERF_COUNT_SW_TASK_CLOCK;
     extern const Event PERF_COUNT_SW_PAGE_FAULTS;
     extern const Event PERF_COUNT_SW_CONTEXT_SWITCHES;
@@ -44,8 +44,6 @@ namespace ProfileEvents
     extern const Event PERF_COUNT_SW_PAGE_FAULTS_MAJ;
     extern const Event PERF_COUNT_SW_ALIGNMENT_FAULTS;
     extern const Event PERF_COUNT_SW_EMULATION_FAULTS;
-    extern const Event PERF_COUNT_SW_DUMMY;
-    extern const Event PERF_COUNT_SW_BPF_OUTPUT;
 #endif
 }
 
@@ -144,7 +142,19 @@ struct PerfEventsCounters
     // that restricts perf_event_open() to processes with the CAP_SYS_ADMIN capability
     // todo: check whether perf_event_open() is available with CAP_SYS_ADMIN
 
-    static void updateProfileEvents(ProfileEvents::Counters & profile_events);
+#if defined(__linux__)
+    static constexpr size_t NUMBER_OF_EVENTS = 8;
+
+    static const int perf_event_configs[];
+    static const ProfileEvents::Event perf_events[];
+
+    int events_descriptors[NUMBER_OF_EVENTS];
+    bool perf_events_recording = false;
+#endif
+
+    static void initializeProfileEvents(PerfEventsCounters & counters);
+
+    static void finalizeProfileEvents(PerfEventsCounters & counters, ProfileEvents::Counters & profile_events);
 };
 
 #if defined(__linux__)

@@ -138,6 +138,15 @@ void ThreadStatus::finalizePerformanceCounters()
 
     try
     {
+        PerfEventsCounters::finalizeProfileEvents(*perf_events, performance_counters);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+
+    try
+    {
         if (global_context && query_context)
         {
             auto & settings = query_context->getSettingsRef();
