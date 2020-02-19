@@ -11,4 +11,3 @@ if (USE_INTERNAL_CONSISTENT_HASHING_LIBRARY)
 endif ()
 
 add_subdirectory (consistent-hashing-sumbur)
-add_subdirectory (widechar_width)
