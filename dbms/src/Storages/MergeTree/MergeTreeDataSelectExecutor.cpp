@@ -912,7 +912,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             RangesInDataPart part = parts.back();
             parts.pop_back();
 
-            size_t & marks_in_part = sum_marks_in_parts.front();
+            size_t & marks_in_part = sum_marks_in_parts.back();
 
             /// We will not take too few rows from a part.
             if (marks_in_part >= min_marks_for_concurrent_read &&
