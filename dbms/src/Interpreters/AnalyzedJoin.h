@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/SettingsCollection.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/asof.h>
@@ -44,9 +45,7 @@ class AnalyzedJoin
     const size_t default_max_bytes;
     const bool join_use_nulls;
     const size_t max_joined_block_rows = 0;
-    const bool force_hash_join = false;
-    const bool force_partial_merge_join = false;
-    const bool prefer_partial_merge_join = false;
+    JoinAlgorithm join_algorithm;
     const bool partial_merge_join_optimizations = false;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
 
@@ -78,7 +77,7 @@ public:
         : size_limits(limits)
         , default_max_bytes(0)
         , join_use_nulls(use_nulls)
-        , force_hash_join(true)
+        , join_algorithm(JoinAlgorithm::HASH)
         , key_names_right(key_names_right_)
     {
         table_join.kind = kind;
@@ -91,9 +90,9 @@ public:
     const SizeLimits & sizeLimits() const { return size_limits; }
     VolumePtr getTemporaryVolume() { return tmp_volume; }
     bool allowMergeJoin() const;
-    bool preferMergeJoin() const { return allowMergeJoin() && prefer_partial_merge_join; }
-    bool forceMergeJoin() const { return force_partial_merge_join; }
-    bool forceHashJoin() const { return force_hash_join; }
+    bool preferMergeJoin() const { return allowMergeJoin() && join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE; }
+    bool forceMergeJoin() const { return join_algorithm == JoinAlgorithm::PARTIAL_MERGE; }
+    bool forceHashJoin() const { return join_algorithm == JoinAlgorithm::HASH; }
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }

@@ -22,13 +22,14 @@ AnalyzedJoin::AnalyzedJoin(const Settings & settings, VolumePtr tmp_volume_)
     , default_max_bytes(settings.default_max_bytes_in_join)
     , join_use_nulls(settings.join_use_nulls)
     , max_joined_block_rows(settings.max_joined_block_size_rows)
-    , force_hash_join(settings.join_algorithm == JoinAlgorithm::HASH)
-    , force_partial_merge_join(settings.join_algorithm == JoinAlgorithm::PARTIAL_MERGE)
-    , prefer_partial_merge_join(settings.join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE || settings.partial_merge_join)
+    , join_algorithm(settings.join_algorithm)
     , partial_merge_join_optimizations(settings.partial_merge_join_optimizations)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
     , tmp_volume(tmp_volume_)
-{}
+{
+    if (settings.partial_merge_join)
+        join_algorithm = JoinAlgorithm::PREFER_PARTIAL_MERGE;
+}
 
 void AnalyzedJoin::addUsingKey(const ASTPtr & ast)
 {
