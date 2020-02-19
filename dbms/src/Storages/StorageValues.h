@@ -23,7 +23,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    bool supportProcessorsPipeline() const override { return true; }
+
 
 private:
     Block res_block;

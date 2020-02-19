@@ -31,7 +31,7 @@ public:
                 {part}, column_names, query_info, context, max_block_size, num_streams);
     }
 
-    bool supportProcessorsPipeline() const override { return true; }
+
 
     bool supportsIndexForIn() const override { return true; }
 
