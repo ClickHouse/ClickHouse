@@ -564,7 +564,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                 throw Exception{"Data type have to be specified for column " + column_name + " to add", ErrorCodes::ILLEGAL_COLUMN};
 
             if (command.default_expression)
-                validateDefaultExpressionForNewColumn(command.default_expression, column_name, command.data_type, all_columns, context);
+                validateDefaultExpressionForColumn(command.default_expression, column_name, command.data_type, all_columns, context);
 
             all_columns.add(ColumnDescription(column_name, command.data_type, false));
         }
@@ -582,15 +582,15 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
             if (command.default_expression)
             {
                 if (!command.data_type)
-                    validateDefaultExpressionForNewColumn(
+                    validateDefaultExpressionForColumn(
                         command.default_expression, column_name, column_in_table.type, all_columns, context);
                 else
-                    validateDefaultExpressionForNewColumn(
+                    validateDefaultExpressionForColumn(
                         command.default_expression, column_name, command.data_type, all_columns, context);
             }
             else if (column_in_table.default_desc.expression && command.data_type)
             {
-                validateDefaultExpressionForNewColumn(
+                validateDefaultExpressionForColumn(
                     column_in_table.default_desc.expression, column_name, command.data_type, all_columns, context);
             }
         }
@@ -629,26 +629,8 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         }
     }
 }
-DataTypePtr AlterCommands::getDefaultExpressionType(
-    const ASTPtr default_expression,
-    const String & column_name,
-    const ColumnsDescription & all_columns,
-    const Context & context) const
-{
-    String tmp_column_name = "__tmp" + column_name;
-    auto copy_expression = default_expression->clone();
-    auto query_with_alias = setAlias(copy_expression, tmp_column_name);
-    auto syntax_result = SyntaxAnalyzer(context).analyze(query_with_alias, all_columns.getAll());
-    const auto actions = ExpressionAnalyzer(query_with_alias, syntax_result, context).getActions(true);
-    const auto & sample_block = actions->getSampleBlock();
 
-    auto result_column = sample_block.getByName(tmp_column_name);
-
-    return result_column.type;
-}
-
-
-void AlterCommands::validateDefaultExpressionForNewColumn(
+void AlterCommands::validateDefaultExpressionForColumn(
     const ASTPtr default_expression,
     const String & column_name,
     const DataTypePtr column_type,

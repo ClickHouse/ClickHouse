@@ -118,13 +118,8 @@ class AlterCommands : public std::vector<AlterCommand>
 private:
     bool prepared = false;
 private:
-    DataTypePtr getDefaultExpressionType(
-        const ASTPtr default_expression,
-        const String & column_name,
-        const ColumnsDescription & all_columns,
-        const Context & context) const;
 
-    void validateDefaultExpressionForNewColumn(
+    void validateDefaultExpressionForColumn(
         const ASTPtr default_expression,
         const String & column_name,
         const DataTypePtr column_type,
