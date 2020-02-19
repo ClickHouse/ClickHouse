@@ -440,6 +440,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     zkutil::ZooKeeperNodeCache * zk_node_cache,
     const zkutil::EventPtr & zk_changed_event)
 {
+    LOG_DEBUG(log, "Processing configuration file '" + path + "'.");
+
     XMLDocumentPtr config = dom_parser.parse(path);
 
     std::vector<std::string> contributing_files;
@@ -449,6 +451,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     {
         try
         {
+            LOG_DEBUG(log, "Merging configuration file '" + merge_file + "'.");
+
             XMLDocumentPtr with = dom_parser.parse(merge_file);
             merge(config, with);
             contributing_files.push_back(merge_file);
@@ -484,6 +488,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         }
         if (!include_from_path.empty())
         {
+            LOG_DEBUG(log, "Including configuration file '" + include_from_path + "'.");
+
             contributing_files.push_back(include_from_path);
             include_from = dom_parser.parse(include_from_path);
         }
@@ -613,6 +619,7 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
                 Poco::File(preprocessed_path_parent).createDirectories();
         }
         DOMWriter().writeNode(preprocessed_path, loaded_config.preprocessed_xml);
+        LOG_DEBUG(log, "Saved preprocessed configuration to '" << preprocessed_path << "'.");
     }
     catch (Poco::Exception & e)
     {

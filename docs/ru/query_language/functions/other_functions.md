@@ -1017,15 +1017,15 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 
 ## identity {#identity}
 
-Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn't look inside `identity` functions.
+Возвращает свой аргумент. Используется для отладки и тестирования, позволяет отменить использование индекса, и получить результат и производительность полного сканирования таблицы. Это работает, потому что оптимизатор запросов не может "заглянуть" внутрь функции `identity`.
 
-**Syntax**
+**Синтаксис**
 
 ```sql
 identity(x)
 ```
 
-**Example**
+**Пример**
 
 Query:
 
@@ -1033,7 +1033,7 @@ Query:
 SELECT identity(42)
 ```
 
-Result:
+Результат:
 
 ```text
 ┌─identity(42)─┐

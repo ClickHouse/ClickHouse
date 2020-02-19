@@ -10,6 +10,7 @@ template <typename A>
 struct BitNotImpl
 {
     using ResultType = typename NumberTraits::ResultOfBitNot<A>::Type;
+    static const constexpr bool allow_fixed_string = true;
 
     static inline ResultType apply(A a)
     {

@@ -23,7 +23,7 @@
     <meta name="keywords"
           content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics" />
 
-    <link href="index.css" media="all" rel="stylesheet" />
+    <link href="index.css?{{ rev_short }}" media="all" rel="stylesheet" />
 </head>
 <body>
 <div id="navbar">
@@ -47,7 +47,7 @@
                     <path class="orange" d="M8,3.25 h1 v1.5 h-1 z"></path>
                 </svg>
 
-                <img id="logo-text" src="images/clickhouse-black.svg" alt="ClickHouse" />
+                <img id="logo-text" src="images/clickhouse-black.svg?{{ rev_short }}" alt="ClickHouse" />
             </h1>
         </a>
     </div>
@@ -546,7 +546,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
                 $('#announcement>.page').html(result);
             }
         });
-        var name = $('#main-title').text().trim().toLowerCase();
+        var name = $('#logo-text').attr('alt').trim().toLowerCase();
         var feedback_address = name + '-feedback' + '@yandex-team.com';
         var feedback_email = $('#feedback_email');
         feedback_email.attr('href', 'mailto:' + feedback_address);
