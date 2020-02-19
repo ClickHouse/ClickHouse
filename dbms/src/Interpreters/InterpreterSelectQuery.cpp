@@ -50,6 +50,7 @@
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/AnalyzedJoin.h>
+#include <Interpreters/Join.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -862,6 +863,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             if (expressions.hasJoin())
             {
                 Block header_before_join;
+                JoinPtr join = expressions.before_join->getTableJoinAlgo();
 
                 if constexpr (pipeline_with_processors)
                 {
@@ -879,10 +881,11 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     {
                         bool on_totals = type == QueryPipeline::StreamType::Totals;
                         std::shared_ptr<IProcessor> ret;
-                        if (settings.partial_merge_join)
-                            ret = std::make_shared<InflatingExpressionTransform>(header, expressions.before_join, on_totals, default_totals);
-                        else
+                        if (!join || typeid_cast<Join *>(join.get()))
                             ret = std::make_shared<ExpressionTransform>(header, expressions.before_join, on_totals, default_totals);
+                        else
+                            ret = std::make_shared<InflatingExpressionTransform>(header, expressions.before_join, on_totals, default_totals);
+
                         return ret;
                     });
                 }
@@ -894,7 +897,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                         stream = std::make_shared<InflatingExpressionBlockInputStream>(stream, expressions.before_join);
                 }
 
-                if (JoinPtr join = expressions.before_join->getTableJoinAlgo())
+                if (join)
                 {
                     Block join_result_sample = ExpressionBlockInputStream(
                         std::make_shared<OneBlockInputStream>(header_before_join), expressions.before_join).getHeader();
