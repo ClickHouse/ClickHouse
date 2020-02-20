@@ -23,7 +23,7 @@
     <meta name="keywords"
           content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics" />
 
-    <link href="index.css" media="all" rel="stylesheet" />
+    <link href="index.css?{{ rev_short }}" media="all" rel="stylesheet" />
 </head>
 <body>
 <div id="navbar">
@@ -47,7 +47,7 @@
                     <path class="orange" d="M8,3.25 h1 v1.5 h-1 z"></path>
                 </svg>
 
-                ClickHouse
+                <img id="logo-text" src="images/clickhouse-black.svg?{{ rev_short }}" alt="ClickHouse" />
             </h1>
         </a>
     </div>
@@ -450,7 +450,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
         <a href="https://hub.docker.com/r/yandex/clickhouse-server/" rel="external nofollow"
            target="_blank">
             official Docker images of ClickHouse</a>, this is not the only <a href="https://clickhouse.tech/docs/en/getting_started/">option</a> though.
-        Alternatively, you can easily get a running ClickHouse instance or cluster at 
+        Alternatively, you can easily get a running ClickHouse instance or cluster at
         <a href="https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link1" rel="external nofollow" target="_blank">
             Yandex Managed Service for ClickHouse</a>.
     </p>
@@ -529,15 +529,15 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
                     line = line.split('](');
                     var tail = line[1].split(') ');
                     result.push(
-                        '<a class="announcement-link" rel="external nofollow" target="_blank" href="' + 
-                        tail[0] + '">' + line[0].replace('* [', '').replace('ClickHouse Meetup in ', '') + 
+                        '<a class="announcement-link" rel="external nofollow" target="_blank" href="' +
+                        tail[0] + '">' + line[0].replace('* [', '').replace('ClickHouse Meetup in ', '') +
                         '</a> ' + tail[1].slice(0, -1)
                     );
                 }
             });
             if (result.length) {
                 if (result.length == 1) {
-                    result = 'Upcoming Meetup: ' + result[0]; 
+                    result = 'Upcoming Meetup: ' + result[0];
                 } else {
                     result = 'Upcoming Meetups: ' + result.join(', ');
                     var offset = result.lastIndexOf(', ');
@@ -546,7 +546,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
                 $('#announcement>.page').html(result);
             }
         });
-        var name = $('#main-title').text().trim().toLowerCase();
+        var name = $('#logo-text').attr('alt').trim().toLowerCase();
         var feedback_address = name + '-feedback' + '@yandex-team.com';
         var feedback_email = $('#feedback_email');
         feedback_email.attr('href', 'mailto:' + feedback_address);

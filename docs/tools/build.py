@@ -68,7 +68,7 @@ def build_for_lang(lang, args):
             'search_index_only': False,
             'static_templates': ['404.html'],
             'extra': {
-                'now': int(time.mktime(datetime.datetime.now().timetuple())) # TODO better way to avoid caching
+                'now': int(time.mktime(datetime.datetime.now().timetuple()))  # TODO better way to avoid caching
             }
         }
 
@@ -84,7 +84,7 @@ def build_for_lang(lang, args):
             site_dir = os.path.join(args.docs_output_dir, args.version_prefix, lang)
         else:
             site_dir = os.path.join(args.docs_output_dir, lang)
-            
+
         cfg = config.load_config(
             config_file=config_path,
             site_name=site_names.get(lang, site_names['en']) % args.version_prefix,
@@ -98,7 +98,7 @@ def build_for_lang(lang, args):
             repo_name='ClickHouse/ClickHouse',
             repo_url='https://github.com/ClickHouse/ClickHouse/',
             edit_uri='edit/master/docs/%s' % lang,
-            extra_css=['assets/stylesheets/custom.css'],
+            extra_css=['assets/stylesheets/custom.css?%s' % args.rev_short],
             markdown_extensions=[
                 'clickhouse',
                 'admonition',
@@ -115,7 +115,10 @@ def build_for_lang(lang, args):
             plugins=[],
             extra={
                 'stable_releases': args.stable_releases,
-                'version_prefix': args.version_prefix
+                'version_prefix': args.version_prefix,
+                'rev':       args.rev,
+                'rev_short': args.rev_short,
+                'rev_url':   args.rev_url
             }
         )
 
@@ -247,7 +250,8 @@ def build_redirects(args):
 def build_docs(args):
     tasks = []
     for lang in args.lang.split(','):
-        tasks.append((lang, args,))
+        if lang:
+            tasks.append((lang, args,))
     util.run_function_in_parallel(build_for_lang, tasks, threads=False)
     build_redirects(args)
 
@@ -260,7 +264,7 @@ def build(args):
         build_website(args)
 
     build_docs(args)
-    
+
     from github import build_releases
     build_releases(args, build_docs)
 
@@ -281,7 +285,7 @@ def build(args):
 
 if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(__file__), '..'))
-    
+
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument('--lang', default='en,ru,zh,ja,fa')
     arg_parser.add_argument('--docs-dir', default='.')
@@ -294,14 +298,18 @@ if __name__ == '__main__':
     arg_parser.add_argument('--skip-single-page', action='store_true')
     arg_parser.add_argument('--skip-pdf', action='store_true')
     arg_parser.add_argument('--skip-website', action='store_true')
+    arg_parser.add_argument('--minify', action='store_true')
     arg_parser.add_argument('--save-raw-single-page', type=str)
     arg_parser.add_argument('--verbose', action='store_true')
 
     args = arg_parser.parse_args()
     args.docs_output_dir = os.path.join(os.path.abspath(args.output_dir), 'docs')
-    
+
     from github import choose_latest_releases
     args.stable_releases = choose_latest_releases() if args.enable_stable_releases else []
+    args.rev = subprocess.check_output('git rev-parse HEAD', shell=True).strip()
+    args.rev_short = subprocess.check_output('git rev-parse --short HEAD', shell=True).strip()
+    args.rev_url = 'https://github.com/ClickHouse/ClickHouse/commit/%s' % args.rev
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,

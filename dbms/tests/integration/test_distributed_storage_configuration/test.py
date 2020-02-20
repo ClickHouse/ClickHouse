@@ -25,7 +25,7 @@ def _files_in_dist_mon(node, root, table):
         'bash',
         '-c',
         # `-maxdepth 1` to avoid /tmp/ subdirectory
-        'find /{root}/data/default/{table}/default@127%2E0%2E0%2E2:9000 -maxdepth 1 -type f | wc -l'.format(root=root, table=table)
+        'find /{root}/data/default/{table}/shard2_replica1 -maxdepth 1 -type f | wc -l'.format(root=root, table=table)
     ]).split('\n')[0])
 
 def test_different_versions(start_cluster):

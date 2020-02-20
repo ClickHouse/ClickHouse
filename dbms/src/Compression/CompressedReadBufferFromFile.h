@@ -4,7 +4,6 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <time.h>
 #include <memory>
-#include <port/clock.h>
 
 
 namespace DB

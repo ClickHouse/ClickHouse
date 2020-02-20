@@ -45,8 +45,8 @@ done
 # Set python output encoding so that we can print queries with Russian letters.
 export PYTHONIOENCODING=utf-8
 
-# Use 11 runs if not told otherwise
-export CHPC_RUNS=${CHPC_RUNS:-13}
+# Use a default number of runs if not told otherwise
+export CHPC_RUNS=${CHPC_RUNS:-17}
 
 # Even if we have some errors, try our best to save the logs.
 set +e
@@ -57,5 +57,7 @@ set -m
 time ../compare.sh 0 $ref_sha $PR_TO_TEST $SHA_TO_TEST 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
 set +m
 
-7z a /output/output.7z *.log *.tsv *.html *.txt
+dmesg > dmesg.log
+
+7z a /output/output.7z *.log *.tsv *.html *.txt *.rep
 cp compare.log /output
