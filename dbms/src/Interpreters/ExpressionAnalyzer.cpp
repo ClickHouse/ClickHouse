@@ -542,9 +542,11 @@ static ExpressionActionsPtr createJoinedBlockActions(const Context & context, co
 
 static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<AnalyzedJoin> analyzed_join, const Block & sample_block)
 {
-    if (analyzed_join->forceHashJoin())
+    bool allow_merge_join = analyzed_join->allowMergeJoin();
+
+    if (analyzed_join->forceHashJoin() || (analyzed_join->preferMergeJoin() && !allow_merge_join))
         return std::make_shared<Join>(analyzed_join, sample_block);
-    else if (analyzed_join->forceMergeJoin() || analyzed_join->preferMergeJoin())
+    else if (analyzed_join->forceMergeJoin() || (analyzed_join->preferMergeJoin() && allow_merge_join))
         return std::make_shared<MergeJoin>(analyzed_join, sample_block);
     return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
 }
