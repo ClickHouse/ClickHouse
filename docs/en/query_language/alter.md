@@ -105,7 +105,7 @@ This query changes the `name` column properties:
 - Default expression
 - TTL
 
-    For examples of columns TTL modifying, see [../operations/table_engines/mergetree.md#table_engine-mergetree-ttl].
+    For examples of columns TTL modifying, see [Column TTL](../operations/table_engines/mergetree.md#mergetree-column-ttl).
 
 
 If the `IF EXISTS` clause is specified, the query won't return an error if the column doesn't exist.
@@ -445,13 +445,11 @@ The examples of `ALTER ... PARTITION` queries are demonstrated in the tests [`00
 
 ### Manipulations with Table TTL
 
-You can change table TTL with a request of the following form:
+You can change [table TTL](../operations/table_engines/mergetree.md#mergetree-table-ttl) with a request of the following form:
 
 ```sql
 ALTER TABLE table-name MODIFY TTL ttl-expression
 ```
-
-For example of columns TTL modifying, see [../operations/table_engines/mergetree.md#mergetree-table-ttl].
 
 ### Synchronicity of ALTER Queries
 
