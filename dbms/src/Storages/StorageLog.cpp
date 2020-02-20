@@ -541,15 +541,8 @@ void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLo
 const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 {
     /// There should be at least one physical column
-    auto begin = getColumns().begin();
-    while (begin != getColumns().end() && begin->default_desc == ColumnDefaultKind::Alias)
-        ++begin;
-
-    if (begin == getColumns().end())
-        throw Exception("No physical columns found!", ErrorCodes::LOGICAL_ERROR);
-
-    const String & column_name = begin->name;
-    const IDataType & column_type = *begin->type;
+    const String & column_name = getColumns().getAllPhysical().begin()->name;
+    const IDataType & column_type = *getColumns().getAllPhysical().begin()->type;
     String filename;
 
     /** We take marks from first column.
