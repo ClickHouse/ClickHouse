@@ -36,7 +36,7 @@ SELECT * FROM dt
 └─────────────────────┴──────────┘
 ```
 
-* When inserting datetime as Unix timestamp, it is treated as UTC. `1546300800000` expectedly represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Europe/Moscow` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
+* When inserting datetime as an integer, it is treated as an appropriately scaled Unix Timestamp (UTC). `1546300800000` (with precision 3) represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Europe/Moscow` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
 * When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Europe/Moscow` timezone and saved as `1546290000000`.
 
 **2.** Filtering on `DateTime64` values
