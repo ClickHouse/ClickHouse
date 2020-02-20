@@ -2,6 +2,7 @@
 
 #include <Interpreters/Cluster.h>
 
+
 namespace DB
 
 {
@@ -10,12 +11,14 @@ namespace DB
     using DatabaseAndTableName = std::pair<String, String>;
 
     /// Hierarchical description of the tasks
+    struct ShardPartitionPiece;
     struct ShardPartition;
     struct TaskShard;
     struct TaskTable;
     struct TaskCluster;
     struct ClusterPartition;
 
+    using PartitionPieces = std::vector<ShardPartitionPiece>;
     using TasksPartition = std::map<String, ShardPartition, std::greater<>>;
     using ShardInfo = Cluster::ShardInfo;
     using TaskShardPtr = std::shared_ptr<TaskShard>;
