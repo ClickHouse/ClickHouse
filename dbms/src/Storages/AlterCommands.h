@@ -137,7 +137,7 @@ public:
 
     /// Prepare alter commands. Set ignore flag to some of them and set some
     /// parts to commands from storage's metadata (for example, absent default)
-    void prepare(const StorageInMemoryMetadata & metadata, const Context & context);
+    void prepare(const StorageInMemoryMetadata & metadata);
 
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.
