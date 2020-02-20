@@ -55,7 +55,10 @@ SELECT * FROM dt
 └─────────────────────┴──────────┘
 ```
 
-Unix timestamp `1546300800` represents the `'2019-01-01 00:00:00'` date and time in `Europe/London` (UTC+0) time zone, but the `timestamp` column stores values in the `Europe/Moscow` (UTC+3) timezone, so the value inserted as Unix timestamp is formatted as `2019-01-01 03:00:00`.
+* When inserting datetime as Unix timestamp, it is treated as UTC. `1546300800` expectedly represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Europe/Moscow` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
+* When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Europe/Moscow` timezone and saved as `1546290000`.
+
+**2.** Filtering on `DateTime` values
 
 ```sql
 SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Europe/Moscow')
@@ -65,8 +68,17 @@ SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Europe/Mos
 │ 2019-01-01 00:00:00 │        2 │
 └─────────────────────┴──────────┘
 ```
+`DateTime` column values can be filtered using a string value in `WHERE` predicate. It will be converted to `DateTime` automatically:
+```sql
+SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
+```
+```text
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 03:00:00 │        1 │
+└─────────────────────┴──────────┘
+```
 
-**2.** Getting a time zone for a `DateTime`-type value:
+**3.** Getting a time zone for a `DateTime`-type value:
 
 ```sql
 SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
@@ -77,7 +89,7 @@ SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
 └─────────────────────┴───────────────────────────┘
 ```
 
-**3.** Timezone conversion
+**4.** Timezone conversion
 
 ```sql
 SELECT 
@@ -100,5 +112,6 @@ FROM dt
 - [The `timezone` server configuration parameter](../operations/server_settings/settings.md#server_settings-timezone)
 - [Operators for working with dates and times](../query_language/operators.md#operators-datetime)
 - [The `Date` data type](date.md)
+- [The `DateTime64` data type](datetime64.md)
 
 [Original article](https://clickhouse.tech/docs/en/data_types/datetime/) <!--hide-->

@@ -14,13 +14,13 @@ DateTime([timezone])
 
 ## Использование
 
-Момент времени сохраняется как Unix timestamp, независимо от часового пояса и переходов на летнее/зимнее время. Дополнительно, `DateTime` позволяет хранить часовой пояс, который влияет на то, как буду отображаться значения типа `DateTime` в текстовом виде и как будут парситься входные строки. Список поддержанных временных зон можно найти в [IANA Time Zone Database](https://www.iana.org/time-zones).
+Момент времени сохраняется как Unix timestamp, независимо от часового пояса и переходов на летнее/зимнее время. Дополнительно, `DateTime` позволяет хранить часовой пояс, который влияет на то, как будут отображаться значения типа `DateTime` в текстовом виде и как будут парситься входные строки. Список поддерживаемых временных зон можно найти в [IANA Time Zone Database](https://www.iana.org/time-zones).
 
 Часовой пояс для столбца типа `DateTime` можно в явном виде установить при создании таблицы. Если часовой пояс не установлен, то ClickHouse использует значение параметра [timezone](../operations/server_settings/settings.md#server_settings-timezone), установленное в конфигурации сервера или в настройках операционной системы на момент запуска сервера.
 
 Консольный клиент ClickHouse по умолчанию использует часовой пояс сервера, если для значения `DateTime` часовой пояс не был задан в явном виде при инициализации типа данных. Чтобы использовать часовой пояс клиента, запустите [clickhouse-client](../interfaces/cli.md) с параметром `--use_client_time_zone`.
 
-ClickHouse по умолчанию выводит значение в формате `YYYY-MM-DD hh:mm:ss`. Формат можно поменять с помощь функции [formatDateTime](../query_language/functions/date_time_functions.md#formatdatetime).
+ClickHouse по умолчанию выводит значение в формате `YYYY-MM-DD hh:mm:ss`. Формат можно поменять с помощью функции [formatDateTime](../query_language/functions/date_time_functions.md#formatdatetime).
 
 При вставке данных в ClickHouse, можно использовать различные форматы даты и времени в зависимости от значения настройки [date_time_input_format](../operations/settings/settings.md#settings-date_time_input_format).
 
@@ -48,7 +48,10 @@ SELECT * FROM dt
 └─────────────────────┴──────────┘
 ```
 
-Unix timestamp `1546300800` в часовом поясе `Europe/London (UTC+0)` представляет время `'2019-01-01 00:00:00'`, однако столбец `timestamp` хранит время в часовом поясе `Europe/Moscow (UTC+3)`, таким образом значение, вставленное в виде Unix timestamp, представляет время `2019-01-01 03:00:00`.
+* При вставке даты-времени как целого числа, оно трактуется как Unix Timestamp (UTC). Unix timestamp `1546300800` в часовом поясе `Europe/London (UTC+0)` представляет время `'2019-01-01 00:00:00'`. Однако, столбец `timestamp` имеет тип `DateTime('Europe/Moscow (UTC+3)')`, так что при выводе в виде строки время отобразится как `2019-01-01 03:00:00`.
+* При вставке даты-времени в виде строки, время трактуется соответственно часовому поясу установленному для колонки. `'2019-01-01 00:00:00'` трактуется как время по Москве (и в базу сохраняется `1546290000`)
+
+**2.** Фильтрация по значениям даты-времени
 
 ```sql
 SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Europe/Moscow')
@@ -58,8 +61,17 @@ SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Europe/Mos
 │ 2019-01-01 00:00:00 │        2 │
 └─────────────────────┴──────────┘
 ```
+Фильтровать по колонке типа `DateTime` можно, указывая строковое значение в фильтре `WHERE`. Конвертация будет выполнена автоматически:
+```sql
+SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
+```
+```text
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 03:00:00 │        1 │
+└─────────────────────┴──────────┘
+```
 
-**2.** Получение часового пояса для значения типа `DateTime`:
+**3.** Получение часового пояса для значения типа `DateTime`:
 
 ```sql
 SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
@@ -70,7 +82,7 @@ SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
 └─────────────────────┴───────────────────────────┘
 ```
 
-**3.** Конвертация часовых поясов
+**4.** Конвертация часовых поясов
 
 ```sql
 SELECT 
@@ -93,5 +105,6 @@ FROM dt
 - [Конфигурационный параметр сервера `timezone`](../operations/server_settings/settings.md#server_settings-timezone)
 - [Операторы для работы с датой и временем](../query_language/operators.md#operators-datetime)
 - [Тип данных `Date`](date.md)
+- [Тип данных `DateTime64`](datetime64.md)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/datetime/) <!--hide-->

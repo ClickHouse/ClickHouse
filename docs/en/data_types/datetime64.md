@@ -9,20 +9,11 @@ Syntax:
 DateTime64(precision, [timezone])
 ```
 
-Internally, stores data as number of 'ticks' since epoch start (1970/1/1) as UInt64
+Internally, stores data as number of 'ticks' since epoch start (1970/1/1 00:00:00 UTC) as UInt64
 
 ## Examples
 
-**1.** Parsing
-
-```sql
-select toDateTime64('2020-01-01 11:22:33.123456', 3)
-```
-```text
-2020-01-01 11:22:33.123
-```
-
-**2.** Creating a table with `DateTime64`-type column and inserting data into it:
+**1.** Creating a table with `DateTime64`-type column and inserting data into it:
 
 ```sql
 CREATE TABLE dt
@@ -45,16 +36,20 @@ SELECT * FROM dt
 └─────────────────────┴──────────┘
 ```
 
-Unix timestamp `1546300800000` (in milliseconds, as precision=3) represents the `'2019-01-01 00:00:00'` date and time in `Europe/London` (UTC+0) time zone, but the `timestamp` column stores values in the `Europe/Moscow` (UTC+3) timezone, so the value inserted as Unix timestamp is formatted as `2019-01-01 03:00:00`.
+* When inserting datetime as Unix timestamp, it is treated as UTC. `1546300800000` expectedly represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Europe/Moscow` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
+* When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Europe/Moscow` timezone and saved as `1546290000000`.
+
+**2.** Filtering on `DateTime64` values
 
 ```sql
 SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Europe/Moscow')
 ```
 ```text
-┌───────────────timestamp─┬─event_id─┐
-│ 2019-01-01 00:00:00.000 │        2 │
-└─────────────────────────┴──────────┘
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 00:00:00 │        2 │
+└─────────────────────┴──────────┘
 ```
+Unlike `DateTime`, `DateTime64` values are not converted from `String` automatically
 
 **3.** Getting a time zone for a `DateTime64`-type value:
 
