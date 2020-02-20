@@ -25,8 +25,6 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-
-
 private:
     BlockInputStreamPtr input_stream;
 

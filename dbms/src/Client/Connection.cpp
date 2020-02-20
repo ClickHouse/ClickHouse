@@ -539,6 +539,7 @@ void Connection::sendScalarsData(Scalars & data)
 
 namespace
 {
+/// Sink which sends data for external table.
 class ExternalTableDataSink : public ISink
 {
 public:

@@ -26,8 +26,6 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-
-
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
 protected:

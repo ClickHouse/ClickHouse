@@ -134,8 +134,6 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-
-
     BlockInputStreams watch(
         const Names & column_names,
         const SelectQueryInfo & query_info,

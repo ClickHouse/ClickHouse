@@ -23,8 +23,6 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-
-
 private:
     Block res_block;
 

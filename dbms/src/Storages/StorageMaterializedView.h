@@ -74,8 +74,6 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-
-
     Strings getDataPaths() const override;
 
 private:

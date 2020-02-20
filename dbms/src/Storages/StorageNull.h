@@ -35,8 +35,6 @@ public:
         return pipes;
     }
 
-
-
     BlockOutputStreamPtr write(const ASTPtr &, const Context &) override
     {
         return std::make_shared<NullBlockOutputStream>(getSampleBlock());
