@@ -4,7 +4,7 @@
 # This test checks mutations concurrent execution with concurrent inserts.
 # There was a bug in mutations finalization, when mutation finishes not after all
 # MUTATE_PART tasks execution, but after GET of already mutated part from other replica.
-# To test it we stop replicated sends on some replicas to delay fetch of required parts for mutation.
+# To test it we stop some replicas to delay fetch of required parts for mutation.
 # Since our replication queue executing tasks concurrently it may happen, that we dowload already mutated
 # part before source part.
 
@@ -15,34 +15,32 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPLICAS=5
 
 for i in `seq $REPLICAS`; do
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_alter_mt_$i"
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_mutate_mt_$i"
 done
 
 for i in `seq $REPLICAS`; do
-    $CLICKHOUSE_CLIENT --query "CREATE TABLE concurrent_alter_mt_$i (key UInt64, value1 UInt64, value2 String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/concurrent_alter_mt', '$i') ORDER BY key"
+    $CLICKHOUSE_CLIENT --query "CREATE TABLE concurrent_mutate_mt_$i (key UInt64, value1 UInt64, value2 String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/concurrent_mutate_mt', '$i') ORDER BY key SETTINGS max_replicated_mutations_in_queue=1000, number_of_free_entries_in_pool_to_execute_mutation=0,max_replicated_merges_in_queue=1000"
 done
 
-$CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_alter_mt_1 SELECT number, number + 10, toString(number) from numbers(10)"
-$CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_alter_mt_1 SELECT number, number + 10, toString(number) from numbers(10, 40)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_mutate_mt_1 SELECT number, number + 10, toString(number) from numbers(10)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_mutate_mt_1 SELECT number, number + 10, toString(number) from numbers(10, 40)"
 
 for i in `seq $REPLICAS`; do
-    $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_alter_mt_$i"
+    $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_mutate_mt_$i"
 done
 
 for i in `seq $REPLICAS`; do
-    $CLICKHOUSE_CLIENT --query "SELECT SUM(value1) FROM concurrent_alter_mt_$i"
+    $CLICKHOUSE_CLIENT --query "SELECT SUM(value1) FROM concurrent_mutate_mt_$i"
 done
 
-INITIAL_SUM=`$CLICKHOUSE_CLIENT --query "SELECT SUM(value1) FROM concurrent_alter_mt_1"`
+INITIAL_SUM=`$CLICKHOUSE_CLIENT --query "SELECT SUM(value1) FROM concurrent_mutate_mt_1"`
 
 # Run mutation on random replica
 function correct_alter_thread()
 {
-    TYPES=(Float64 String UInt8 UInt32)
     while true; do
         REPLICA=$(($RANDOM % 5 + 1))
-        TYPE=${TYPES[$RANDOM % ${#TYPES[@]} ]}
-        $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_alter_mt_$REPLICA UPDATE value1 = value1 + 1 WHERE 1";
+        $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_mutate_mt_$REPLICA UPDATE value1 = value1 + 1 WHERE 1";
         sleep 0.$RANDOM
     done
 }
@@ -55,23 +53,20 @@ function insert_thread()
     while true; do
         REPLICA=$(($RANDOM % 5 + 1))
         VALUE=${VALUES[$RANDOM % ${#VALUES[@]} ]}
-        $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_alter_mt_$REPLICA VALUES($RANDOM, $VALUE, toString($VALUE))"
+        $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_mutate_mt_$REPLICA VALUES($RANDOM, $VALUE, toString($VALUE))"
         sleep 0.$RANDOM
     done
 }
 
-# Stop sends for some times on random replica
-function stop_sends_thread()
+function detach_attach_thread()
 {
-
     while true; do
         REPLICA=$(($RANDOM % 5 + 1))
-        $CLICKHOUSE_CLIENT --query "SYSTEM STOP REPLICATED SENDS concurrent_alter_mt_$REPLICA"
+        $CLICKHOUSE_CLIENT --query "DETACH TABLE concurrent_mutate_mt_$REPLICA"
         sleep 0.$RANDOM
         sleep 0.$RANDOM
         sleep 0.$RANDOM
-        $CLICKHOUSE_CLIENT --query "SYSTEM START REPLICATED SENDS concurrent_alter_mt_$REPLICA"
-        sleep 0.$RANDOM
+        $CLICKHOUSE_CLIENT --query "ATTACH TABLE concurrent_mutate_mt_$REPLICA"
     done
 }
 
@@ -80,16 +75,15 @@ echo "Starting alters"
 
 export -f correct_alter_thread;
 export -f insert_thread;
-export -f stop_sends_thread;
+export -f detach_attach_thread;
 
-TIMEOUT=30
+# We assign a lot of mutations so timeout shouldn't be too big
+TIMEOUT=15
 
-timeout $TIMEOUT bash -c stop_sends_thread 2> /dev/null &
+timeout $TIMEOUT bash -c detach_attach_thread 2> /dev/null &
 
 timeout $TIMEOUT bash -c correct_alter_thread 2> /dev/null &
 
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
@@ -103,21 +97,25 @@ wait
 echo "Finishing alters"
 
 for i in `seq $REPLICAS`; do
-    $CLICKHOUSE_CLIENT --query "SYSTEM START REPLICATED SENDS concurrent_alter_mt_$i"
+    $CLICKHOUSE_CLIENT --query "ATTACH TABLE concurrent_mutate_mt_$i" 2> /dev/null
 done
 
-# This alter will wait for all previous mutations
-$CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_alter_mt_1 UPDATE value1 = value1 + 1 WHERE 1 SETTINGS mutations_sync = 2"
+sleep 1
 
-# maybe it's redundant
-for i in `seq $REPLICAS`; do
-    $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_alter_mt_$i"
+counter=0
+
+while [[ $($CLICKHOUSE_CLIENT --query "select * from system.mutations where table like 'concurrent_mutate_mt_%' and is_done=0" 2>&1) ]]; do
+    if [ "$counter" -gt 20 ]
+    then
+        break
+    fi
+    sleep 1
+    counter=$(($counter + 1))
 done
 
-
 for i in `seq $REPLICAS`; do
-    $CLICKHOUSE_CLIENT --query "SELECT SUM(toUInt64(value1)) > $INITIAL_SUM FROM concurrent_alter_mt_$i"
-    $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.mutations WHERE is_done=0" # all mutations have to be done
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM system.mutations WHERE is_done=0" # for verbose output
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_alter_mt_$i"
+    $CLICKHOUSE_CLIENT --query "SELECT SUM(toUInt64(value1)) > $INITIAL_SUM FROM concurrent_mutate_mt_$i"
+    $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.mutations WHERE table='concurrent_mutate_mt_$i' and is_done=0" # all mutations have to be done
+    $CLICKHOUSE_CLIENT --query "SELECT * FROM system.mutations WHERE table='concurrent_mutate_mt_$i' and is_done=0" # for verbose output
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_mutate_mt_$i"
 done
