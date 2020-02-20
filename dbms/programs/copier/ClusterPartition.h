@@ -5,7 +5,7 @@
 namespace DB
 {
     /// Contains info about all shards that contain a partition
-    struct ClusterPartition 
+    struct ClusterPartition
     {
         double elapsed_time_seconds = 0;
         UInt64 bytes_copied = 0;
