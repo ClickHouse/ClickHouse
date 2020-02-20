@@ -155,6 +155,12 @@ enum class PartitionTaskStatus
     Error,
 };
 
+enum class PartititonPieceTaskStatus
+{
+    Active,
+    Finished,
+    Error,
+};
 
 struct MultiTransactionInfo
 {

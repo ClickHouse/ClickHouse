@@ -919,7 +919,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
 /// Job for copying partition from particular shard.
 PartitionTaskStatus ClusterCopier::tryProcessPartitionTask(const ConnectionTimeouts & timeouts, ShardPartition & task_partition, bool is_unprioritized_task)
 {
-    PartitionTaskStatus res{Active};
+    PartitionTaskStatus res;
 
     try
     {
@@ -1324,7 +1324,7 @@ void ClusterCopier::dropLocalTableIfExists(const DatabaseAndTableName & table_na
     interpreter.execute();
 }
 
-String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings * settings = nullptr)
+String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings * settings)
 {
     String query = "SHOW CREATE TABLE " + getQuotedTable(table);
     Block block = getBlockWithAllStreamData(std::make_shared<RemoteBlockInputStream>(
@@ -1347,7 +1347,8 @@ ASTPtr ClusterCopier::getCreateTableForPullShard(const ConnectionTimeouts & time
 }
 
 /// If it is implicitly asked to create split Distributed table for certain piece on current shard, we will do it.
-void ClusterCopier::createShardInternalTables(const ConnectionTimeouts & timeouts, TaskShard & task_shard, bool create_split = true, const size_t piece_number = 0)
+void ClusterCopier::createShardInternalTables(const ConnectionTimeouts & timeouts,
+        TaskShard & task_shard, bool create_split, const size_t piece_number)
 {
     TaskTable & task_table = task_shard.task_table;
 
@@ -1423,14 +1424,16 @@ std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & ti
     return res;
 }
 
-bool ClusterCopier::checkShardHasPartition(const ConnectionTimeouts & timeouts, TaskShard & task_shard, const String & partition_quoted_name)
+bool ClusterCopier::checkShardHasPartition(const ConnectionTimeouts & timeouts,
+        TaskShard & task_shard, const String & partition_quoted_name)
 {
     createShardInternalTables(timeouts, task_shard, false);
 
     TaskTable & task_table = task_shard.task_table;
 
     std::string query = "SELECT 1 FROM " + getQuotedTable(task_shard.table_read_shard)
-                        + " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = (" + partition_quoted_name + " AS partition_key))";
+                        + " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) +
+                        " = (" + partition_quoted_name + " AS partition_key))";
 
     if (!task_table.where_condition_str.empty())
         query += " AND (" + task_table.where_condition_str + ")";
@@ -1451,14 +1454,15 @@ bool ClusterCopier::checkShardHasPartition(const ConnectionTimeouts & timeouts, 
 /// TODO: Implement checkPresentPartitionPiecesOnCurrentShard();
 /// Just copypaste the function above
 bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTimeouts & timeouts,
-                                               TaskShard & task_shard, const String & partition_quoted_name, size_t current_piece_number)
+                           TaskShard & task_shard, const String & partition_quoted_name, size_t current_piece_number)
 {
     createShardInternalTables(timeouts, task_shard, false);
 
     TaskTable & task_table = task_shard.task_table;
 
     std::string query = "SELECT 1 FROM " + getQuotedTable(task_shard.table_read_shard)
-                        + " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = (" + partition_quoted_name + " AS partition_key))";
+                        + " WHERE (" + queryToString(task_table.engine_push_partition_key_ast)
+                        + " = (" + partition_quoted_name + " AS partition_key))";
 
     const size_t number_of_splits = task_table.number_of_splits;
     const String & primary_key_comma_separated = task_table.primary_key_comma_separated;
@@ -1495,10 +1499,10 @@ bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTi
 UInt64 ClusterCopier::executeQueryOnCluster(
         const ClusterPtr & cluster,
         const String & query,
-        const ASTPtr & query_ast_ = nullptr,
-        const Settings * settings = nullptr,
-        PoolMode pool_mode = PoolMode::GET_ALL,
-        UInt64 max_successful_executions_per_shard = 0) const
+        const ASTPtr & query_ast_,
+        const Settings * settings,
+        PoolMode pool_mode,
+        UInt64 max_successful_executions_per_shard) const
 {
     auto num_shards = cluster->getShardsInfo().size();
     std::vector<UInt64> per_shard_num_successful_replicas(num_shards, 0);

@@ -1,5 +1,4 @@
 #include "ClusterCopierApp.h"
-#include "ClusterCopier.h"
 
 namespace DB
 {

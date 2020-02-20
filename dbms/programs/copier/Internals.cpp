@@ -2,13 +2,14 @@
 
 namespace DB {
 
+using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
+
 ConfigurationPtr getConfigurationFromXMLString(const std::string & xml_data)
 {
     std::stringstream ss(xml_data);
     Poco::XML::InputSource input_source{ss};
     return {new Poco::Util::XMLConfiguration{&input_source}};
 }
-
 
 String getQuotedTable(const String & database, const String & table)
 {

@@ -12,15 +12,6 @@
 namespace DB
 {
 
-using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
-
-ConfigurationPtr getConfigurationFromXMLString(const std::string & xml_data)
-{
-    std::stringstream ss(xml_data);
-    Poco::XML::InputSource input_source{ss};
-    return {new Poco::Util::XMLConfiguration{&input_source}};
-}
-
 class ClusterCopier
 {
 public:
@@ -34,9 +25,7 @@ public:
             host_id(std::move(host_id_)),
             working_database_name(std::move(proxy_database_name_)),
             context(context_),
-            log(&Poco::Logger::get("ClusterCopier"))
-    {
-    }
+            log(&Poco::Logger::get("ClusterCopier")) {}
 
     void init();
 
@@ -57,17 +46,32 @@ public:
     void process(const ConnectionTimeouts & timeouts);
 
     /// Disables DROP PARTITION commands that used to clear data after errors
-    void setSafeMode(bool is_safe_mode_ = true);
+    void setSafeMode(bool is_safe_mode_ = true)
+    {
+        is_safe_mode = is_safe_mode_;
+    }
 
-    void setCopyFaultProbability(double copy_fault_probability_);
+    void setCopyFaultProbability(double copy_fault_probability_)
+    {
+        copy_fault_probability = copy_fault_probability_;
+    }
 
-    protected:
+protected:
 
-    String getWorkersPath() const;
+    String getWorkersPath() const
+    {
+        return task_cluster->task_zookeeper_path + "/task_active_workers";
+    }
 
-    String getWorkersPathVersion() const;
+    String getWorkersPathVersion() const
+    {
+        return getWorkersPath() + "_version";
+    }
 
-    String getCurrentWorkerNodePath() const;
+    String getCurrentWorkerNodePath() const
+    {
+        return getWorkersPath() + "/" + host_id;
+    }
 
     zkutil::EphemeralNodeHolder::Ptr createTaskWorkerNodeAndWaitIfNeed(
             const zkutil::ZooKeeperPtr & zookeeper,
@@ -104,22 +108,6 @@ public:
     static constexpr UInt64 max_shard_partition_tries = 600;
 
     bool tryProcessTable(const ConnectionTimeouts & timeouts, TaskTable & task_table);
-
-    /// Execution status of a task
-    enum class PartitionTaskStatus
-    {
-        Active,
-        Finished,
-        Error,
-    };
-
-
-    enum class PartititonPieceTaskStatus
-    {
-        Active,
-        Finished,
-        Error,
-    };
 
     /// Job for copying partition from particular shard.
     PartitionTaskStatus tryProcessPartitionTask(const ConnectionTimeouts & timeouts, ShardPartition & task_partition, bool is_unprioritized_task);
