@@ -124,6 +124,10 @@ public:
         {
             /// leave other comparisons as is
         }
+        else if (functionIsLikeOperator(node.name)) /// LIKE, NOT LIKE
+        {
+            /// leave as is
+        }
         else if (functionIsInOperator(node.name)) /// IN, NOT IN
         {
             if (auto ident = node.arguments->children.at(0)->as<ASTIdentifier>())
