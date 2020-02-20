@@ -56,7 +56,7 @@ inline String ShardPartitionPiece::getPartitionPieceIsCleanedPath() const
 
 inline String ShardPartitionPiece::getPartitionPieceActiveWorkersPath() const
 {
-    return getPartitionPiecePath() + "/partition_active_workers";
+    return getPartitionPiecePath() + "/partition_piece_active_workers";
 }
 
 inline String ShardPartitionPiece::getActiveWorkerPath() const

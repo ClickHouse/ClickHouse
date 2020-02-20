@@ -156,8 +156,8 @@ private:
     String working_database_name;
 
     /// Auto update config stuff
-    UInt64 task_descprtion_current_version = 1;
-    std::atomic<UInt64> task_descprtion_version{1};
+    UInt64 task_description_current_version = 1;
+    std::atomic<UInt64> task_description_version{1};
     Coordination::WatchCallback task_description_watch_callback;
     /// ZooKeeper session used to set the callback
     zkutil::ZooKeeperPtr task_description_watch_zookeeper;

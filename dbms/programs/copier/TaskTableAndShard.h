@@ -20,11 +20,11 @@ struct TaskTable {
 
     String getPartitionPath(const String & partition_name) const;
 
-    [[maybe_unused]] String getPartitionPiecePath(const String & partition_name, const size_t piece_number) const;
+    String getPartitionPiecePath(const String & partition_name, const size_t piece_number) const;
 
     String getCertainPartitionIsDirtyPath(const String & partition_name) const;
 
-    [[maybe_unused]] String getCertainPartitionPieceIsDirtyPath(const String & partition_name, const size_t piece_number) const
+    String getCertainPartitionPieceIsDirtyPath(const String & partition_name, const size_t piece_number) const
     {
         UNUSED(partition_name);
         UNUSED(piece_number);
@@ -33,7 +33,7 @@ struct TaskTable {
 
     String getCertainPartitionIsCleanedPath(const String & partition_name) const;
 
-    [[maybe_unused]] String getCertainPartitionPieceIsCleanedPath(const String & partition_name, const size_t piece_number) const
+    String getCertainPartitionPieceIsCleanedPath(const String & partition_name, const size_t piece_number) const
     {
         UNUSED(partition_name);
         UNUSED(piece_number);
@@ -42,7 +42,7 @@ struct TaskTable {
 
     String getCertainPartitionTaskStatusPath(const String & partition_name) const;
 
-    [[maybe_unused]] String getCertainPartitionPieceTaskStatusPath(const String & partition_name, const size_t piece_number) const
+    String getCertainPartitionPieceTaskStatusPath(const String & partition_name, const size_t piece_number) const
     {
         UNUSED(partition_name);
         UNUSED(piece_number);
@@ -181,7 +181,10 @@ struct TaskShard
 
     /// Internal distributed tables
     DatabaseAndTableName table_read_shard;
+
     DatabaseAndTableName table_split_shard;
+
+    std::vector<DatabaseAndTableName> list_of_split_tables_on_shard;
 };
 
 
@@ -255,7 +258,7 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
             auxiliary_engine_split_asts.emplace_back
                     (
                             createASTStorageDistributed(cluster_push_name, table_push.first,
-                                                        table_push.second + ".piece_" + toString(piece_number), sharding_key_ast)
+                                                        table_push.second + "_piece_" + toString(piece_number), sharding_key_ast)
                     );
         }
     }
