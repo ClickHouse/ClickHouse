@@ -1,5 +1,9 @@
 option (ENABLE_FASTMEMCPY "Enable FastMemcpy library (only internal)" ${ENABLE_LIBRARIES})
 
+if (NOT OS_LINUX)
+    set (ENABLE_FASTMEMCPY OFF)
+endif ()
+
 if (ENABLE_FASTMEMCPY)
     set (LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/FastMemcpy)
 
