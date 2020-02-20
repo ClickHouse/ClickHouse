@@ -324,7 +324,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
                 query_ptr, syntax_analyzer_result, *context,
                 NameSet(required_result_column_names.begin(), required_result_column_names.end()),
-                options.subquery_depth, !options.only_analyze);
+                !options.only_analyze, options);
 
         if (!options.only_analyze)
         {

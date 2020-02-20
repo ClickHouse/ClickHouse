@@ -294,7 +294,7 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
         return;
     }
 
-    auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {});
+    auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, {}, query_options);
     BlockIO res = interpreter_subquery->execute();
 
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true);
@@ -583,7 +583,7 @@ void SelectQueryExpressionAnalyzer::makeSubqueryForJoin(const ASTTablesInSelectQ
     for (auto & pr : required_columns_with_aliases)
         original_columns.push_back(pr.first);
 
-    auto interpreter = interpretSubquery(join_element.table_expression, context, subquery_depth, original_columns);
+    auto interpreter = interpretSubquery(join_element.table_expression, context, original_columns, query_options);
 
     subquery_for_set.makeSource(interpreter, std::move(required_columns_with_aliases));
 }
