@@ -540,8 +540,9 @@ void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLo
 
 const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 {
-    const String & column_name = getColumns().begin()->name;
-    const IDataType & column_type = *getColumns().begin()->type;
+    /// There should be at least one physical column
+    const String & column_name = getColumns().getAllPhysical().begin()->name;
+    const IDataType & column_type = *getColumns().getAllPhysical().begin()->type;
     String filename;
 
     /** We take marks from first column.

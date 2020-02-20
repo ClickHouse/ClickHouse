@@ -34,7 +34,7 @@ The configuration looks like this:
 </yandex>
 ```
 
-in case of [DDL-query](../create.md#create-dictionary-query), equal configuration will looks like
+Corresponding [DDL-query](../create.md#create-dictionary-query):
 
 ```sql
 CREATE DICTIONARY (...)
