@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <utility>
 #include <Disks/IDisk.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
 namespace DB
@@ -13,7 +15,22 @@ class DiskMemory;
 class ReadBuffer;
 class WriteBuffer;
 
-// This class is responsible to update files metadata after buffer is finalized.
+/// Adapter with actual behaviour as ReadBufferFromString.
+class ReadIndirectBuffer : public ReadBufferFromFileBase
+{
+public:
+    ReadIndirectBuffer(String path_, const String & data_);
+
+    std::string getFileName() const override { return path; }
+    off_t seek(off_t off, int whence) override;
+    off_t getPosition() override;
+
+private:
+    ReadBufferFromString buf;
+    String path;
+};
+
+/// This class is responsible to update files metadata after buffer is finalized.
 class WriteIndirectBuffer : public WriteBufferFromOwnString
 {
 public:
@@ -76,7 +93,7 @@ public:
 
     void copyFile(const String & from_path, const String & to_path) override;
 
-    std::unique_ptr<SeekableReadBuffer> readFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const override;
 
     std::unique_ptr<WriteBuffer>
     writeFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, WriteMode mode = WriteMode::Rewrite) override;
