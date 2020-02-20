@@ -30,15 +30,6 @@ public:
         if (isCancelled() || storage->is_dropped)
             return;
         IBlockInputStream::cancel(kill);
-        std::lock_guard lock(storage->fire_signal_mutex);
-        for (auto it = storage->watch_streams.begin() ; it != storage->watch_streams.end() ; ++it)
-        {
-            if (*it == this)
-            {
-                storage->watch_streams.erase(it);
-                break;
-            }
-        }
     }
 
     Block getHeader() const override { return storage->getHeader(); }
@@ -125,6 +116,6 @@ private:
     bool end_of_blocks = false;
     BlockInputStreamPtr in_stream;
     std::mutex fire_signal_mutex;
-    std::list<UInt32> fire_signal;
+    std::deque<UInt32> fire_signal;
 };
 }
