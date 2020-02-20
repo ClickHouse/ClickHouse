@@ -66,7 +66,7 @@ private:
     UInt64 clean_interval;
     const DateLUTImpl & time_zone;
     std::list<UInt32> fire_signal;
-    std::list<WindowViewBlockInputStream *> watch_streams;
+    std::list<std::weak_ptr<WindowViewBlockInputStream>> watch_streams;
     std::condition_variable condition;
     BlocksListPtrs mergeable_blocks;
 
@@ -95,6 +95,8 @@ private:
     BackgroundSchedulePool::TaskHolder toTableTask;
     BackgroundSchedulePool::TaskHolder cleanCacheTask;
     BackgroundSchedulePool::TaskHolder fireTask;
+
+    ExpressionActionsPtr writeExpressions;
 
     ASTPtr innerQueryParser(ASTSelectQuery & inner_query);
 
