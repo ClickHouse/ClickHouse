@@ -264,6 +264,78 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 };
 
 
+static const std::map<std::string, std::string> inverse_relations = {
+        {"equals", "notEquals"},
+        {"notEquals", "equals"},
+        {"less", "greaterOrEquals"},
+        {"greaterOrEquals", "less"},
+        {"greater", "lessOrEquals"},
+        {"lessOrEquals", "greater"},
+        {"in", "notIn"},
+        {"notIn", "in"},
+        {"like", "notLike"},
+        {"notLike", "like"},
+        {"empty", "notEmpty"},
+        {"notEmpty", "empty"},
+};
+
+
+bool isLogicalOperator(const String & func_name)
+{
+    return (func_name == "and" || func_name == "or" || func_name == "not" || func_name == "indexHint");
+}
+
+/// The node can be one of:
+///   - Logical operator (AND, OR, NOT and indexHint() - logical NOOP)
+///   - An "atom" (relational operator, constant, expression)
+///   - A logical constant expression
+///   - Any other function
+ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversion = false)
+{
+    const ASTFunction * func = node->as<ASTFunction>();
+
+    if (func && isLogicalOperator(func->name))
+    {
+        if (func->name == "not")
+        {
+            return cloneASTWithInversionPushDown(func->arguments->children.front(), !need_inversion);
+        }
+
+        const auto result_node = makeASTFunction(func->name);
+
+        /// indexHint() is a special case - logical NOOP function
+        if (result_node->name != "indexHint" && need_inversion)
+        {
+            result_node->name = (result_node->name == "and") ? "or" : "and";
+        }
+
+        if (func->arguments)
+        {
+            for (const auto & child : func->arguments->children)
+            {
+                result_node->arguments->children.push_back(cloneASTWithInversionPushDown(child, need_inversion));
+            }
+        }
+
+        return result_node;
+    }
+
+    const auto cloned_node = node->clone();
+
+    if (func && inverse_relations.find(func->name) != inverse_relations.cend())
+    {
+        if (need_inversion)
+        {
+            cloned_node->as<ASTFunction>()->name = inverse_relations.at(func->name);
+        }
+
+        return cloned_node;
+    }
+
+    return need_inversion ? makeASTFunction("not", cloned_node) : cloned_node;
+}
+
+
 inline bool Range::equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs); }
 inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
 
@@ -345,21 +417,23 @@ KeyCondition::KeyCondition(
       */
     Block block_with_constants = getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
 
-    /// Trasform WHERE section to Reverse Polish notation
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-    if (select.where())
+    const ASTSelectQuery & select = query_info.query->as<ASTSelectQuery &>();
+    if (select.where() || select.prewhere())
     {
-        traverseAST(select.where(), context, block_with_constants);
+        ASTPtr filter_query;
+        if (select.where() && select.prewhere())
+            filter_query = makeASTFunction("and", select.where(), select.prewhere());
+        else
+            filter_query = select.where() ? select.where() : select.prewhere();
 
-        if (select.prewhere())
-        {
-            traverseAST(select.prewhere(), context, block_with_constants);
-            rpn.emplace_back(RPNElement::FUNCTION_AND);
-        }
-    }
-    else if (select.prewhere())
-    {
-        traverseAST(select.prewhere(), context, block_with_constants);
+        /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
+          * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
+          * This is caused by rewriting in KeyCondition::tryParseAtomFromAST of relational operators to less strict
+          * when parsing the AST into internal RPN representation.
+          * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
+          * are pushed down and applied (when possible) to leaf nodes.
+          */
+        traverseAST(cloneASTWithInversionPushDown(filter_query), context, block_with_constants);
     }
     else
     {
@@ -432,9 +506,9 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
 {
     RPNElement element;
 
-    if (auto * func = node->as<ASTFunction>())
+    if (const auto * func = node->as<ASTFunction>())
     {
-        if (operatorFromAST(func, element))
+        if (tryParseLogicalOperatorFromAST(func, element))
         {
             auto & args = func->arguments->children;
             for (size_t i = 0, size = args.size(); i < size; ++i)
@@ -452,7 +526,7 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
         }
     }
 
-    if (!atomFromAST(node, context, block_with_constants, element))
+    if (!tryParseAtomFromAST(node, context, block_with_constants, element))
     {
         element.function = RPNElement::FUNCTION_UNKNOWN;
     }
@@ -680,7 +754,7 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
 }
 
 
-bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
+bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
 {
     /** Functions < > = != <= >= in `notIn`, where one argument is a constant, and the other is one of columns of key,
       *  or itself, wrapped in a chain of possibly-monotonic functions,
@@ -768,7 +842,9 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
                     func_name = "lessOrEquals";
                 else if (func_name == "lessOrEquals")
                     func_name = "greaterOrEquals";
-                else if (func_name == "in" || func_name == "notIn" || func_name == "like")
+                else if (func_name == "in" || func_name == "notIn" ||
+                         func_name == "like" || func_name == "notLike" ||
+                         func_name == "startsWith")
                 {
                     /// "const IN data_column" doesn't make sense (unlike "data_column IN const")
                     return false;
@@ -809,7 +885,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
     return false;
 }
 
-bool KeyCondition::operatorFromAST(const ASTFunction * func, RPNElement & out)
+bool KeyCondition::tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out)
 {
     /// Functions AND, OR, NOT.
     /** Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
