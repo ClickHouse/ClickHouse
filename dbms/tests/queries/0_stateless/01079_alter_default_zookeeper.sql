@@ -11,7 +11,7 @@ ORDER BY key;
 INSERT INTO alter_default select toDate('2020-01-05'), number from system.numbers limit 100;
 
 -- Cannot add column without type
-ALTER TABLE alter_default ADD COLUMN value DEFAULT '10'; --{serverError 44}
+ALTER TABLE alter_default ADD COLUMN value DEFAULT '10'; --{serverError 36}
 
 ALTER TABLE alter_default ADD COLUMN value String DEFAULT '10';
 
