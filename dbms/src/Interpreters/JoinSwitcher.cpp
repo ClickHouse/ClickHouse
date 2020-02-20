@@ -31,11 +31,6 @@ JoinSwitcher::JoinSwitcher(std::shared_ptr<AnalyzedJoin> table_join_, const Bloc
 
 bool JoinSwitcher::addJoinedBlock(const Block & block, bool)
 {
-    /// Trying to make MergeJoin without lock
-
-    if (switched.load(std::memory_order_relaxed))
-        return join->addJoinedBlock(block);
-
     std::lock_guard lock(switch_mutex);
 
     if (switched)
