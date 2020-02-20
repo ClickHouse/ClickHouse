@@ -81,7 +81,7 @@ SELECT name FROM system.dictionaries WHERE database = <db> [AND name LIKE <patte
 
 **Example**
 
-The following query selects the first two rows from the list of tables in the `system` database, whose names contain `co`.
+The following query selects the first two rows from the list of tables in the `system` database, whose names contain `reg`.
 
 ```sql
 SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
@@ -92,3 +92,5 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 │ region_names │
 └──────────────┘
 ```
+
+[Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->

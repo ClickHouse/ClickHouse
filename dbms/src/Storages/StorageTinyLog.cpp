@@ -10,6 +10,7 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
+#include <IO/ReadBufferFromFileBase.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -25,9 +26,12 @@
 
 #include <Interpreters/Context.h>
 
-#include <Storages/StorageTinyLog.h>
-#include <Storages/StorageFactory.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/CheckResults.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageTinyLog.h>
+#include "StorageLogSettings.h"
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 
@@ -434,6 +438,10 @@ void StorageTinyLog::drop(TableStructureWriteLockHolder &)
 
 void registerStorageTinyLog(StorageFactory & factory)
 {
+    StorageFactory::StorageFeatures features{
+        .supports_settings = true
+    };
+
     factory.registerStorage("TinyLog", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
@@ -441,10 +449,13 @@ void registerStorageTinyLog(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+        String disk_name = getDiskName(*args.storage_def);
+        DiskPtr disk = args.context.getDisk(disk_name);
+
         return StorageTinyLog::create(
-            args.context.getDefaultDisk(), args.relative_data_path, args.table_id, args.columns, args.constraints,
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
             args.attach, args.context.getSettings().max_compress_block_size);
-    });
+    }, features);
 }
 
 }
