@@ -15,6 +15,8 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int DIRECTORY_DOESNT_EXIST;
     extern const int CANNOT_DELETE_DIRECTORY;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
 
 
@@ -37,8 +39,59 @@ private:
     std::vector<String>::iterator iter;
 };
 
+ReadIndirectBuffer::ReadIndirectBuffer(String path_, const String & data_)
+    : ReadBufferFromFileBase(), buf(ReadBufferFromString(data_)), path(std::move(path_))
+{
+    internal_buffer = buf.buffer();
+    working_buffer = internal_buffer;
+    pos = working_buffer.begin();
+}
+
+off_t ReadIndirectBuffer::seek(off_t offset, int whence)
+{
+    if (whence == SEEK_SET)
+    {
+        if (offset >= 0 && working_buffer.begin() + offset < working_buffer.end())
+        {
+            pos = working_buffer.begin() + offset;
+            return size_t(pos - working_buffer.begin());
+        }
+        else
+            throw Exception(
+                "Seek position is out of bounds. "
+                "Offset: "
+                    + std::to_string(offset) + ", Max: " + std::to_string(size_t(working_buffer.end() - working_buffer.begin())),
+                ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+    }
+    else if (whence == SEEK_CUR)
+    {
+        Position new_pos = pos + offset;
+        if (new_pos >= working_buffer.begin() && new_pos < working_buffer.end())
+        {
+            pos = new_pos;
+            return size_t(pos - working_buffer.begin());
+        }
+        else
+            throw Exception(
+                "Seek position is out of bounds. "
+                "Offset: "
+                    + std::to_string(offset) + ", Max: " + std::to_string(size_t(working_buffer.end() - working_buffer.begin())),
+                ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+    }
+    else
+        throw Exception("Only SEEK_SET and SEEK_CUR seek modes allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+}
+
+off_t ReadIndirectBuffer::getPosition()
+{
+    return pos - working_buffer.begin();
+}
+
 void WriteIndirectBuffer::finalize()
 {
+    if (isFinished())
+        return;
+
     next();
     WriteBufferFromVector::finalize();
 
@@ -249,7 +302,7 @@ void DiskMemory::copyFile(const String & /*from_path*/, const String & /*to_path
     throw Exception("Method copyFile is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-std::unique_ptr<SeekableReadBuffer> DiskMemory::readFile(const String & path, size_t /*buf_size*/) const
+std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, size_t /*buf_size*/) const
 {
     std::lock_guard lock(mutex);
 
@@ -257,7 +310,7 @@ std::unique_ptr<SeekableReadBuffer> DiskMemory::readFile(const String & path, si
     if (iter == files.end())
         throw Exception("File '" + path + "' does not exist", ErrorCodes::FILE_DOESNT_EXIST);
 
-    return std::make_unique<ReadBufferFromString>(iter->second.data);
+    return std::make_unique<ReadIndirectBuffer>(path, iter->second.data);
 }
 
 std::unique_ptr<WriteBuffer> DiskMemory::writeFile(const String & path, size_t /*buf_size*/, WriteMode mode)
