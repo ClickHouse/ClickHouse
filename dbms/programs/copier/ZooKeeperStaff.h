@@ -157,11 +157,8 @@ public:
 
     bool is_clean() const
     {
-        return
-                !is_stale()
-                && (
-                        !discovery_zxid.hasHappened()
-                        || (clean_state_zxid.hasHappened() && discovery_zxid <= clean_state_zxid));
+        return !is_stale()
+            && (!discovery_zxid.hasHappened() || (clean_state_zxid.hasHappened() && discovery_zxid <= clean_state_zxid));
     }
 
     bool is_stale() const
