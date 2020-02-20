@@ -10,7 +10,7 @@ cssmin==0.2.0
 docutils==0.16
 futures==3.1.1
 htmlmin==0.1.12
-idna==2.6
+idna==2.9
 imagesize==1.2.0
 Jinja2==2.11.1
 jsmin==2.2.2
