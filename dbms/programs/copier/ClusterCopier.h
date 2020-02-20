@@ -102,7 +102,8 @@ protected:
     std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_query_ast,
             const DatabaseAndTableName & new_table, const ASTPtr & new_storage_ast);
 
-    bool tryDropPartition(ShardPartition & task_partition, const zkutil::ZooKeeperPtr & zookeeper, const CleanStateClock & clean_state_clock);
+    bool tryDropPartitionPiece(ShardPartition & task_partition, const size_t current_piece_number,
+            const zkutil::ZooKeeperPtr & zookeeper, const CleanStateClock & clean_state_clock);
 
     static constexpr UInt64 max_table_tries = 1000;
     static constexpr UInt64 max_shard_partition_tries = 600;
