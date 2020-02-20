@@ -99,8 +99,8 @@ public:
                 res += delta;
 
                 DB::WriteBufferFromFileDescriptor wb(fd, SMALL_READ_WRITE_BUFFER_SIZE);
-                wb.seek(0);
-                wb.truncate();
+                wb.seek(0, SEEK_SET);
+                wb.truncate(0);
                 DB::writeIntText(res, wb);
                 DB::writeChar('\n', wb);
                 wb.sync();
@@ -169,8 +169,8 @@ public:
             if (broken)
             {
                 DB::WriteBufferFromFileDescriptor wb(fd, SMALL_READ_WRITE_BUFFER_SIZE);
-                wb.seek(0);
-                wb.truncate();
+                wb.seek(0, SEEK_SET);
+                wb.truncate(0);
                 DB::writeIntText(value, wb);
                 DB::writeChar('\n', wb);
                 wb.sync();
