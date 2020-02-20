@@ -50,12 +50,13 @@ class MergeJoin : public IJoin
 public:
     MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block);
 
-    bool addJoinedBlock(const Block & block) override;
+    bool addJoinedBlock(const Block & block, bool check_limits = true) override;
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
     void joinTotals(Block &) const override;
     void setTotals(const Block &) override;
     bool hasTotals() const override { return totals; }
     size_t getTotalRowCount() const override { return right_blocks_row_count; }
+    size_t getTotalByteCount() const override { return right_blocks_bytes; }
 
 private:
     struct NotProcessed : public ExtraBlock
