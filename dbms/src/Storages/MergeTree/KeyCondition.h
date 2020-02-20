@@ -369,8 +369,8 @@ private:
         BoolMask initial_mask) const;
 
     void traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants);
-    bool atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
-    bool operatorFromAST(const ASTFunction * func, RPNElement & out);
+    bool tryParseAtomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
+    bool tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out);
 
     /** Is node the key column
       *  or expression in which column of key is wrapped by chain of functions,
