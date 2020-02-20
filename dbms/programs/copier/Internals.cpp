@@ -1,6 +1,7 @@
 #include "Internals.h"
 
-namespace DB {
+namespace DB
+{
 
 using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
