@@ -7,6 +7,8 @@ namespace DB
 class IBlockOutputStream;
 using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 
+/// Sink which writes data to IBlockOutputStream.
+/// It's a temporary wrapper.
 class SinkToOutputStream : public ISink
 {
 public:

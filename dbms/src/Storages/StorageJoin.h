@@ -44,8 +44,6 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-
-
 private:
     Block sample_block;
     const Names key_names;

@@ -32,6 +32,7 @@ namespace DB
 class ClientInfo;
 class Pipe;
 
+/// Struct which represents data we are going to send for external table.
 struct ExternalTableData
 {
     /// Pipe of data form table;
