@@ -25,7 +25,7 @@ PyYAML==5.3
 recommonmark==0.4.0
 requests==2.23.0
 singledispatch==3.4.0.3
-six==1.11.0
+six==1.14.0
 snowballstemmer==1.2.1
 Sphinx==1.6.5
 sphinxcontrib-websupport==1.0.1
