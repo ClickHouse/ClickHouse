@@ -549,8 +549,9 @@ public:
               on_cancell(std::move(callback))
     {}
 
-    String getName() const override
-    { return "ExternalTableSink"; }
+    String getName() const override { return "ExternalTableSink"; }
+
+    size_t getNumReadRows() const { return num_rows; }
 
 protected:
     void consume(Chunk chunk) override
@@ -561,6 +562,8 @@ protected:
             return;
         }
 
+        num_rows += chunk.getNumRows();
+
         auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
         connection.sendData(block, table_data.table_name);
     }
@@ -569,6 +572,7 @@ private:
     Connection & connection;
     ExternalTableData & table_data;
     OnCancell on_cancell;
+    size_t num_rows = 0;
 };
 }
 
@@ -597,10 +601,17 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         DB::connect(elem->pipe->getPort(), sink->getPort());
 
         auto processors = std::move(*elem->pipe).detachProcessors();
-        processors.push_back(std::move(sink));
+        processors.push_back(sink);
 
         executor = std::make_shared<PipelineExecutor>(processors);
         executor->execute(/*num_threads = */ 1);
+
+        auto read_rows = sink->getNumReadRows();
+        rows += read_rows;
+
+        /// If table is empty, send empty block with name.
+        if (read_rows == 0)
+            sendData(sink->getPort().getHeader(), elem->table_name);
     }
 
     /// Send empty block, which means end of data transfer.
