@@ -11,7 +11,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/SyntaxAnalyzer.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
@@ -659,7 +658,6 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                 command.ignore = true;
         }
     }
-
     prepared = true;
 }
 

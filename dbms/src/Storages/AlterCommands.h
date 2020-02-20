@@ -6,8 +6,6 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/ColumnsDescription.h>
-
-
 #include <Common/SettingsChanges.h>
 
 
