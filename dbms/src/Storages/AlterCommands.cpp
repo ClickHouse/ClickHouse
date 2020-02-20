@@ -15,7 +15,6 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -37,8 +36,10 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_SETTING;
+    extern const int DUPLICATE_COLUMN;
 }
 
 
@@ -623,7 +624,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata) const
 }
 
 
-void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, const Context & /*context*/)
+void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 {
     auto columns = metadata.columns;
 
@@ -675,13 +676,15 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
             if (metadata.columns.has(column_name) || metadata.columns.hasNested(column_name))
             {
                 if (!command.if_not_exists)
-                    throw Exception{"Cannot add column " + column_name + ": column with this name already exists", ErrorCodes::ILLEGAL_COLUMN};
+                    throw Exception{"Cannot add column " + backQuote(column_name) + ": column with this name already exists",
+                                    ErrorCodes::DUPLICATE_COLUMN};
                 else
                     continue;
             }
 
             if (!command.data_type)
-                throw Exception{"Data type have to be specified for column " + column_name + " to add", ErrorCodes::ILLEGAL_COLUMN};
+                throw Exception{"Data type have to be specified for column " + backQuote(column_name) + " to add",
+                                ErrorCodes::BAD_ARGUMENTS};
 
             if (command.default_expression)
                 validateDefaultExpressionForColumn(command.default_expression, column_name, command.data_type, all_columns, context);
@@ -693,7 +696,8 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
             if (!metadata.columns.has(column_name))
             {
                 if (!command.if_exists)
-                    throw Exception{"Wrong column name. Cannot find column " + column_name + " to modify", ErrorCodes::ILLEGAL_COLUMN};
+                    throw Exception{"Wrong column name. Cannot find column " + backQuote(column_name) + " to modify",
+                                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
                 else
                     continue;
             }
@@ -730,21 +734,23 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
 
                         if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
                             throw Exception(
-                                "Cannot drop column " + command.column_name + ", because column " + column.name + " depends on it",
+                                "Cannot drop column " + backQuote(command.column_name) + ", because column " + backQuote(column.name) + " depends on it",
                                 ErrorCodes::ILLEGAL_COLUMN);
                     }
                 }
             }
             else if (!command.if_exists)
-                throw Exception("Wrong column name. Cannot find column " + command.column_name + " to drop",
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(
+                    "Wrong column name. Cannot find column " + backQuote(command.column_name) + " to drop",
+                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
         else if (command.type == AlterCommand::COMMENT_COLUMN)
         {
             if (!metadata.columns.has(command.column_name))
             {
                 if (!command.if_exists)
-                    throw Exception{"Wrong column name. Cannot find column " + command.column_name + " to comment", ErrorCodes::ILLEGAL_COLUMN};
+                    throw Exception{"Wrong column name. Cannot find column " + backQuote(command.column_name) + " to comment",
+                                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
             }
         }
     }
@@ -769,8 +775,8 @@ void AlterCommands::validateDefaultExpressionForColumn(
     }
     catch (Exception & ex)
     {
-        ex.addMessage("default expression and column type are incompatible. Cannot alter column '" + column_name + "'");
-        throw(ex);
+        ex.addMessage("default expression and column type are incompatible. Cannot alter column " + backQuote(column_name));
+        throw;
     }
 }
 
