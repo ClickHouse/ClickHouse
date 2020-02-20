@@ -20,7 +20,7 @@ if (ENABLE_FASTMEMCPY)
 
     message (STATUS "Using FastMemcpy")
 else ()
-    add_library (FastMemcpy UNKNOWN IMPORTED)
+    add_library (FastMemcpy INTERFACE)
 
     target_compile_definitions(FastMemcpy INTERFACE USE_FASTMEMCPY=0)
 
