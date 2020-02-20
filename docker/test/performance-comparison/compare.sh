@@ -27,13 +27,16 @@ function download
         wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv  &
         wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$right_pr/$right_sha/performance/performance.tgz" -O- | tar -C right --strip-components=1 -zxv &
     else
-        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv && cp -al left right
+        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv && cp -a left right &
     fi
 
     cd db0 && wget -nv -nd -c "https://s3.mds.yandex.net/clickhouse-private-datasets/hits_10m_single/partitions/hits_10m_single.tar" -O- | tar -xv &
     cd db0 && wget -nv -nd -c "https://s3.mds.yandex.net/clickhouse-private-datasets/hits_100m_single/partitions/hits_100m_single.tar" -O- | tar -xv &
     cd db0 && wget -nv -nd -c "https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_v1.tar" -O- | tar -xv &
     cd db0 && wget -nv -nd -c "https://clickhouse-datasets.s3.yandex.net/values_with_expressions/partitions/test_values.tar" -O- | tar -xv &
+
+    mkdir ~/fg ; cd ~/fg && wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl" && chmod +x ~/fg/flamegraph.pl &
+
     wait
 }
 
@@ -189,6 +192,10 @@ function run_tests
         grep ^client-time "$test_name-raw.tsv" | cut -f2- > "$test_name-client-time.tsv"
         # this may be slow, run it in background
         right/clickhouse local --file "$test_name-queries.tsv" --structure 'query text, run int, version UInt32, time float' --query "$(cat $script_dir/eqmed.sql)" > "$test_name-report.tsv" &
+
+        # Check that both servers are alive, to fail faster if they die.
+        left/clickhouse client --port 9001 --query "select 1 format Null"
+        right/clickhouse client --port 9002 --query "select 1 format Null"
     done
 
     unset TIMEFORMAT
@@ -219,13 +226,13 @@ function get_profiles
 function report
 {
 
-for x in *.tsv
+for x in {right,left}-{addresses,{query,trace}-log}.tsv
 do
     # FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
     # absolutely atrocious way. This should be done by the file() function itself.
     paste -d' ' \
-        <(sed -n '1s/\t/\n/gp' "$x" | sed 's/\(^.*$\)/"\1"/') \
-        <(sed -n '2s/\t/\n/gp' "$x" ) \
+        <(sed -n '1{s/\t/\n/g;p;q}' "$x" | sed 's/\(^.*$\)/"\1"/') \
+        <(sed -n '2{s/\t/\n/g;p;q}' "$x" ) \
         | tr '\n' ', ' | sed 's/,$//' > "$x.columns"
 done
 
@@ -297,42 +304,84 @@ create view right_query_log as select *
 create view right_trace_log as select *
     from file('right-trace-log.tsv', TSVWithNamesAndTypes, '$(cat right-trace-log.tsv.columns)');
 
-create view right_addresses as select *
+create view right_addresses_src as select *
     from file('right-addresses.tsv', TSVWithNamesAndTypes, '$(cat right-addresses.tsv.columns)');
 
-create table unstable_query_ids engine File(TSVWithNamesAndTypes, 'unstable-query-ids.rep') as
-    select query_id from right_query_log
+create table right_addresses_join engine Join(any, left, address) as
+    select addr address, name from right_addresses_src;
+
+create table unstable_query_runs engine File(TSVWithNamesAndTypes, 'unstable-query-runs.rep') as
+    select query_id, query from right_query_log
     join unstable_queries_tsv using query
+    where query_id not like 'prewarm %'
     ;
 
-create table unstable_query_metrics engine File(TSVWithNamesAndTypes, 'unstable-query-metrics.rep') as
+create table unstable_query_log engine File(Vertical, 'unstable-query-log.rep') as
+    select * from right_query_log
+    where query_id in (select query_id from unstable_query_runs);
+
+create table unstable_run_metrics engine File(TSVWithNamesAndTypes, 'unstable-run-metrics.rep') as
     select ProfileEvents.Values value, ProfileEvents.Names metric, query_id, query
     from right_query_log array join ProfileEvents
-    where query_id in (unstable_query_ids)
+    where query_id in (select query_id from unstable_query_runs)
     ;
 
-create table unstable_query_traces engine File(TSVWithNamesAndTypes, 'unstable-query-traces.rep') as
-    select count() value, right_addresses.name metric,
-        unstable_query_ids.query_id, any(right_query_log.query) query
-    from unstable_query_ids
-    join right_query_log on right_query_log.query_id = unstable_query_ids.query_id
-    join right_trace_log on right_trace_log.query_id = unstable_query_ids.query_id
-    join right_addresses on addr = arrayJoin(trace)
-    group by unstable_query_ids.query_id, metric
+create table unstable_run_metrics_2 engine File(TSVWithNamesAndTypes, 'unstable-run-metrics-2.rep') as
+    select v, n, query_id, query
+    from
+        (select
+            ['memory_usage', 'read_bytes', 'written_bytes'] n,
+            [memory_usage, read_bytes, written_bytes] v,
+            query,
+            query_id
+        from right_query_log
+        where query_id in (select query_id from unstable_query_runs))
+    array join n, v;
+
+create table unstable_run_traces engine File(TSVWithNamesAndTypes, 'unstable-run-traces.rep') as
+    select count() value, joinGet(right_addresses_join, 'name', arrayJoin(trace)) metric,
+        unstable_query_runs.query_id, any(unstable_query_runs.query) query
+    from unstable_query_runs
+    join right_trace_log on right_trace_log.query_id = unstable_query_runs.query_id
+    group by unstable_query_runs.query_id, metric
     order by count() desc
     ;
 
 create table metric_devation engine File(TSVWithNamesAndTypes, 'metric-deviation.rep') as
     select floor((q[3] - q[1])/q[2], 3) d,
-        quantilesExact(0.05, 0.5, 0.95)(value) q, metric, query
-    from (select * from unstable_query_metrics
-        union all select * from unstable_query_traces)
+        quantilesExact(0, 0.5, 1)(value) q, metric, query
+    from (select * from unstable_run_metrics
+        union all select * from unstable_run_traces
+        union all select * from unstable_run_metrics_2)
     join queries using query
     group by query, metric
     having d > 0.5
     order by any(rd[3]) desc, d desc
     ;
+
+create table stacks engine File(TSV, 'stacks.rep') as
+    select
+        query,
+        arrayStringConcat(
+            arrayMap(x -> joinGet(right_addresses_join, 'name', x),
+                arrayReverse(trace)
+            ),
+            ';'
+        ) readable_trace,
+        count()
+    from right_trace_log
+    join unstable_query_runs using query_id
+    group by query, trace
+    ;
 "
+
+IFS=$'\n'
+for q in $(cut -d'	' -f1 stacks.rep | sort | uniq)
+do
+    grep -F "$q" stacks.rep | cut -d'	' -f 2- | tee "$q.stacks.rep" | ~/fg/flamegraph.pl > "$q.svg" &
+done
+wait
+unset IFS
 
 # Remember that grep sets error code when nothing is found, hence the bayan
 # operator
