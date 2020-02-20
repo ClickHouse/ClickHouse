@@ -639,18 +639,23 @@ std::shared_ptr<ASTCreateQuery> ClusterCopier::rewriteCreateQueryStorage(const A
 
 /// TODO: implement tryDropPartitionPiece which is simply tryDropPartition, but on different table.
 
-bool ClusterCopier::tryDropPartition(ShardPartition & task_partition, const zkutil::ZooKeeperPtr & zookeeper, const CleanStateClock & clean_state_clock)
+bool ClusterCopier::tryDropPartitionPiece(
+        ShardPartition & task_partition,
+        const size_t current_piece_number,
+        const zkutil::ZooKeeperPtr & zookeeper,
+        const CleanStateClock & clean_state_clock)
 {
     if (is_safe_mode)
         throw Exception("DROP PARTITION is prohibited in safe mode", ErrorCodes::NOT_IMPLEMENTED);
 
     TaskTable & task_table = task_partition.task_shard.task_table;
+    ShardPartitionPiece & partition_piece = task_partition.pieces[current_piece_number];
 
-    const String current_shards_path                  = task_partition.getPartitionShardsPath();
-    const String current_partition_active_workers_dir = task_partition.getPartitionActiveWorkersPath();
-    const String is_dirty_flag_path                   = task_partition.getCommonPartitionIsDirtyPath();
-    const String dirty_cleaner_path                   = is_dirty_flag_path + "/cleaner";
-    const String is_dirty_cleaned_path                = task_partition.getCommonPartitionIsCleanedPath();
+    const String current_shards_path                  = partition_piece.getPartitionPieceShardsPath();
+    const String current_partition_active_workers_dir = partition_piece.getPartitionPieceActiveWorkersPath();
+    const String is_dirty_flag_path                   = partition_piece.getPartitionPieceIsDirtyPath();
+    const String dirty_cleaner_path                   = partition_piece.getPartitionPieceCleanerPath();
+    const String is_dirty_cleaned_path                = partition_piece.getPartitionPieceIsCleanedPath();
 
     zkutil::EphemeralNodeHolder::Ptr cleaner_holder;
     try
@@ -661,7 +666,8 @@ bool ClusterCopier::tryDropPartition(ShardPartition & task_partition, const zkut
     {
         if (e.code == Coordination::ZNODEEXISTS)
         {
-            LOG_DEBUG(log, "Partition " << task_partition.name << " is cleaning now by somebody, sleep");
+            LOG_DEBUG(log, "Partition " << task_partition.name << " piece "
+                            << toString(current_piece_number) << " is cleaning now by somebody, sleep");
             std::this_thread::sleep_for(default_sleep_time);
             return false;
         }
@@ -674,7 +680,8 @@ bool ClusterCopier::tryDropPartition(ShardPartition & task_partition, const zkut
     {
         if (stat.numChildren != 0)
         {
-            LOG_DEBUG(log, "Partition " << task_partition.name << " contains " << stat.numChildren << " active workers while trying to drop it. Going to sleep.");
+            LOG_DEBUG(log, "Partition " << task_partition.name << " contains " << stat.numChildren
+                            << " active workers while trying to drop it. Going to sleep.");
             std::this_thread::sleep_for(default_sleep_time);
             return false;
         }
@@ -703,7 +710,7 @@ bool ClusterCopier::tryDropPartition(ShardPartition & task_partition, const zkut
 
         // Lock the dirty flag
         zookeeper->set(is_dirty_flag_path, host_id, clean_state_clock.discovery_version.value());
-        zookeeper->tryRemove(task_partition.getPartitionCleanStartPath());
+        zookeeper->tryRemove(partition_piece.getPartitionPieceCleanStartPath());
         CleanStateClock my_clock(zookeeper, is_dirty_flag_path, is_dirty_cleaned_path);
 
         /// Remove all status nodes
@@ -716,7 +723,7 @@ bool ClusterCopier::tryDropPartition(ShardPartition & task_partition, const zkut
                 }
         }
 
-        String query = "ALTER TABLE " + getQuotedTable(task_table.table_push);
+        String query = "ALTER TABLE " + getQuotedTable(task_table.table_push) + "_piece_" + toString(current_piece_number);
         query += " DROP PARTITION " + task_partition.name + "";
 
         /// TODO: use this statement after servers will be updated up to 1.1.54310
@@ -754,7 +761,8 @@ bool ClusterCopier::tryDropPartition(ShardPartition & task_partition, const zkut
             return false;
         }
 
-        LOG_INFO(log, "Partition " << task_partition.name << " was dropped on cluster " << task_table.cluster_push_name);
+        LOG_INFO(log, "Partition " << task_partition.name <<  " piece " << toString(current_piece_number)
+                       << " was dropped on cluster " << task_table.cluster_push_name);
         if (zookeeper->tryCreate(current_shards_path, host_id, zkutil::CreateMode::Persistent) == Coordination::ZNODEEXISTS)
             zookeeper->set(current_shards_path, host_id);
     }
@@ -1065,7 +1073,7 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         try
         {
             /// TODO: tryDropPartitionPiece.
-            tryDropPartition(task_partition, zookeeper, clean_state_clock);
+            tryDropPartitionPiece(task_partition, current_piece_number, zookeeper, clean_state_clock);
         }
         catch (...)
         {

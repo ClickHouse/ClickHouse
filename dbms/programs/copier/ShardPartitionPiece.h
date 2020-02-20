@@ -27,6 +27,8 @@ struct ShardPartitionPiece {
 
     [[maybe_unused]] String getShardStatusPath() const;
 
+    String getPartitionPieceCleanerPath() const;
+
     bool is_absent_piece;
     const size_t current_piece_number;
 
@@ -73,6 +75,11 @@ inline String ShardPartitionPiece::getPartitionPieceShardsPath() const
 inline String ShardPartitionPiece::getShardStatusPath() const
 {
     return getPartitionPieceShardsPath() + "/" + toString(shard_partition.task_shard.numberInCluster());
+}
+
+inline String ShardPartitionPiece::getPartitionPieceCleanerPath() const
+{
+    return getPartitionPieceIsDirtyPath() + "/cleaner";
 }
 
 
