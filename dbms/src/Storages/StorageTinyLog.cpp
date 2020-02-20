@@ -11,6 +11,7 @@
 #include <Common/typeid_cast.h>
 
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>

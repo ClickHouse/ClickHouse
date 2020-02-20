@@ -8,6 +8,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/Exception.h>
 
+#include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
