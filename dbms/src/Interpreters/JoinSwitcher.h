@@ -9,11 +9,17 @@
 namespace DB
 {
 
+/// Used when setting 'join_algorithm' set to JoinAlgorithm::AUTO.
+/// Starts JOIN with join-in-memory algorithm and switches to join-on-disk on the fly if there's no memory to place right table.
+/// Current join-in-memory and join-on-disk are JoinAlgorithm::HASH and JoinAlgorithm::PARTIAL_MERGE joins respectively.
 class JoinSwitcher : public IJoin
 {
 public:
     JoinSwitcher(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block_);
 
+    /// Add block of data from right hand of JOIN into current join object.
+    /// If join-in-memory memory limit exceeded switches to join-on-disk and continue with it.
+    /// @returns false, if join-on-disk disk limit exceeded
     bool addJoinedBlock(const Block & block, bool check_limits = true) override;
 
     void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override
@@ -69,6 +75,8 @@ private:
     std::shared_ptr<AnalyzedJoin> table_join;
     const Block right_sample_block;
 
+    /// Change join-in-memory to join-on-disk moving right hand JOIN data from one to another.
+    /// Throws an error if join-on-disk do not support JOIN kind or strictness.
     void switchJoin();
 };
 
