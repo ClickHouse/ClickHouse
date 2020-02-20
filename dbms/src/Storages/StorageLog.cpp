@@ -545,8 +545,8 @@ void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLo
 const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 {
     /// There should be at least one physical column
-    const String & column_name = getColumns().getAllPhysical().begin()->name;
-    const IDataType & column_type = *getColumns().getAllPhysical().begin()->type;
+    const String column_name = getColumns().getAllPhysical().begin()->name;
+    const auto column_type = getColumns().getAllPhysical().begin()->type;
     String filename;
 
     /** We take marks from first column.
@@ -554,7 +554,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
       * (Example: for Array data type, first stream is array sizes; and number of array sizes is the number of arrays).
       */
     IDataType::SubstreamPath substream_root_path;
-    column_type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    column_type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
     {
         if (filename.empty())
             filename = IDataType::getFileNameForStream(column_name, substream_path);
