@@ -517,7 +517,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, const Cont
             if (!has_column && command.if_exists)
                 command.ignore = true;
 
-            if (has_column)
+            if (has_column && command.data_type)
             {
                 auto column_from_table = columns.get(command.column_name);
                 if (!command.default_expression && column_from_table.default_desc.expression)
