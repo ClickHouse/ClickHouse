@@ -19,7 +19,7 @@ The following actions are supported:
 - [DROP COLUMN](#alter_drop-column) — Deletes the column.
 - [CLEAR COLUMN](#alter_clear-column) — Resets column values.
 - [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
-- [MODIFY COLUMN](#alter_modify-column) — Changes column's type and/or default expression.
+- [MODIFY COLUMN](#alter_modify-column) — Changes column's type, default expression and TTL.
 
 These actions are described in detail below.
 
@@ -96,10 +96,19 @@ ALTER TABLE visits COMMENT COLUMN browser 'The table shows the browser used for 
 #### MODIFY COLUMN {#alter_modify-column}
 
 ```sql
-MODIFY COLUMN [IF EXISTS] name [type] [default_expr]
+MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
 ```
 
-This query changes the `name` column's type to `type` and/or the default expression to `default_expr`. If the `IF EXISTS` clause is specified, the query won't return an error if the column doesn't exist.
+This query changes the `name` column properties:
+
+- Type
+- Default expression
+- TTL
+
+    For examples of columns TTL modifying, see [../operations/table_engines/mergetree.md#table_engine-mergetree-ttl].
+
+
+If the `IF EXISTS` clause is specified, the query won't return an error if the column doesn't exist.
 
 When changing the type, values are converted as if the [toType](functions/type_conversion_functions.md) functions were applied to them. If only the default expression is changed, the query doesn't do anything complex, and is completed almost instantly.
 
@@ -432,6 +441,17 @@ OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ```
 
 The examples of `ALTER ... PARTITION` queries are demonstrated in the tests [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_local.sql) and [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
+
+
+### Manipulations with Table TTL
+
+You can change table TTL with a request of the following form:
+
+```sql
+ALTER TABLE table-name MODIFY TTL ttl-expression
+```
+
+For example of columns TTL modifying, see [../operations/table_engines/mergetree.md#mergetree-table-ttl].
 
 ### Synchronicity of ALTER Queries
 
