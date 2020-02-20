@@ -23,7 +23,7 @@ python-slugify==1.2.6
 pytz==2017.3
 PyYAML==5.3
 recommonmark==0.4.0
-requests==2.21.0
+requests==2.23.0
 singledispatch==3.4.0.3
 six==1.11.0
 snowballstemmer==1.2.1
