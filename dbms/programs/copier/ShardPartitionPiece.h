@@ -34,43 +34,43 @@ struct ShardPartitionPiece {
 };
 
 
-String ShardPartitionPiece::getPartitionPiecePath() const
+inline String ShardPartitionPiece::getPartitionPiecePath() const
 {
     return shard_partition.getPartitionPath() + "/piece_" + std::to_string(current_piece_number);
 }
 
-String ShardPartitionPiece::getPartitionPieceCleanStartPath() const
+inline String ShardPartitionPiece::getPartitionPieceCleanStartPath() const
 {
     return getPartitionPiecePath() + "/clean_start";
 }
 
-String ShardPartitionPiece::getPartitionPieceIsDirtyPath() const
+inline String ShardPartitionPiece::getPartitionPieceIsDirtyPath() const
 {
     return getPartitionPiecePath() + "/is_dirty";
 }
 
-String ShardPartitionPiece::getPartitionPieceIsCleanedPath() const
+inline String ShardPartitionPiece::getPartitionPieceIsCleanedPath() const
 {
     return getPartitionPieceIsDirtyPath() + "/is_cleaned";
 }
 
-String ShardPartitionPiece::getPartitionPieceActiveWorkersPath() const
+inline String ShardPartitionPiece::getPartitionPieceActiveWorkersPath() const
 {
     return getPartitionPiecePath() + "/partition_active_workers";
 }
 
-String ShardPartitionPiece::getActiveWorkerPath() const
+inline String ShardPartitionPiece::getActiveWorkerPath() const
 {
     return getPartitionPieceActiveWorkersPath() + "/" + toString(shard_partition.task_shard.numberInCluster());
 }
 
 /// On what shards do we have current partition.
-String ShardPartitionPiece::getPartitionPieceShardsPath() const
+inline String ShardPartitionPiece::getPartitionPieceShardsPath() const
 {
     return getPartitionPiecePath() + "/shards";
 }
 
-String ShardPartitionPiece::getShardStatusPath() const
+inline String ShardPartitionPiece::getShardStatusPath() const
 {
     return getPartitionPieceShardsPath() + "/" + toString(shard_partition.task_shard.numberInCluster());
 }

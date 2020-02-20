@@ -1,6 +1,9 @@
 #pragma once
+
 #include <Poco/Util/ServerApplication.h>
 #include <daemon/BaseDaemon.h>
+
+#include "ClusterCopier.h"
 
 /* clickhouse cluster copier util
  * Copies tables data from one cluster to new tables of other (possibly the same) cluster in distributed fault-tolerant manner.

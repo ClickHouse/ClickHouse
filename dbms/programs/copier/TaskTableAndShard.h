@@ -184,25 +184,27 @@ struct TaskTable {
 };
 
 
-inline String TaskTable::getPartitionPiecePath(const String & partition_name, size_t piece_number) const
-{
+inline String TaskTable::getPartitionPath(const String &partition_name) const {
+    return task_cluster.task_zookeeper_path             // root
+           + "/tables/" + table_id                      // tables/dst_cluster.merge.hits
+           + "/" + escapeForFileName(partition_name);   // 201701
+}
+
+inline String TaskTable::getPartitionPiecePath(const String & partition_name, size_t piece_number) const {
     assert(piece_number < number_of_splits);
     return getPartitionPath(partition_name) + "/" +
            std::to_string(piece_number);  // 1...number_of_splits
 }
 
-inline String TaskTable::getCertainPartitionIsDirtyPath(const String &partition_name) const
-{
+inline String TaskTable::getCertainPartitionIsDirtyPath(const String &partition_name) const {
     return getPartitionPath(partition_name) + "/is_dirty";
 }
 
-inline String TaskTable::getCertainPartitionIsCleanedPath(const String &partition_name) const
-{
+inline String TaskTable::getCertainPartitionIsCleanedPath(const String &partition_name) const {
     return getCertainPartitionIsDirtyPath(partition_name) + "/cleaned";
 }
 
-inline String TaskTable::getCertainPartitionTaskStatusPath(const String &partition_name) const
-{
+inline String TaskTable::getCertainPartitionTaskStatusPath(const String &partition_name) const {
     return getPartitionPath(partition_name) + "/shards";
 }
 
