@@ -8,7 +8,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/Exception.h>
 
-#include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -26,8 +25,11 @@
 
 #include <Interpreters/Context.h>
 
-#include <Storages/StorageStripeLog.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageStripeLog.h>
+#include "StorageLogSettings.h"
 
 
 namespace DB
@@ -120,7 +122,7 @@ private:
             String data_file_path = storage.table_path + "data.bin";
             size_t buffer_size = std::min(max_read_buffer_size, storage.disk->getFileSize(data_file_path));
 
-            data_in.emplace(fullPath(storage.disk, data_file_path), 0, 0, buffer_size);
+            data_in.emplace(storage.disk->readFile(data_file_path, buffer_size));
             block_in.emplace(*data_in, 0, index_begin, index_end);
         }
     }
@@ -253,7 +255,7 @@ BlockInputStreams StorageStripeLog::read(
     if (!disk->exists(index_file))
         return { std::make_shared<NullBlockInputStream>(getSampleBlockForColumns(column_names)) };
 
-    CompressedReadBufferFromFile index_in(fullPath(disk, index_file), 0, 0, 0, INDEX_BUFFER_SIZE);
+    CompressedReadBufferFromFile index_in(disk->readFile(index_file, INDEX_BUFFER_SIZE));
     std::shared_ptr<const IndexForNativeFormat> index{std::make_shared<IndexForNativeFormat>(index_in, column_names_set)};
 
     BlockInputStreams res;
@@ -305,6 +307,10 @@ void StorageStripeLog::truncate(const ASTPtr &, const Context &, TableStructureW
 
 void registerStorageStripeLog(StorageFactory & factory)
 {
+    StorageFactory::StorageFeatures features{
+        .supports_settings = true
+    };
+
     factory.registerStorage("StripeLog", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
@@ -312,10 +318,13 @@ void registerStorageStripeLog(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+        String disk_name = getDiskName(*args.storage_def);
+        DiskPtr disk = args.context.getDisk(disk_name);
+
         return StorageStripeLog::create(
-            args.context.getDefaultDisk(), args.relative_data_path, args.table_id, args.columns, args.constraints,
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
             args.attach, args.context.getSettings().max_compress_block_size);
-    });
+    }, features);
 }
 
 }
