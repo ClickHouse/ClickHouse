@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
 
-exception_pattern="Code: 44.*Cannot drop column id, because column id2 depends on it"
+exception_pattern="Code: 44.*Cannot drop column \`id\`, because column \`id2\` depends on it"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_00575;"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_00575 (dt Date DEFAULT now(), id UInt32, id2 UInt32 DEFAULT id + 1) ENGINE = MergeTree(dt, dt, 8192);"

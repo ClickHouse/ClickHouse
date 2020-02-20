@@ -137,17 +137,17 @@ namespace
 
     // Reads data from S3.
     // It supports reading from multiple S3 paths that resides in Metadata.
-    class ReadIndirectBufferFromS3 : public BufferWithOwnMemory<SeekableReadBuffer>
+    class ReadIndirectBufferFromS3 : public ReadBufferFromFileBase
     {
     public:
         ReadIndirectBufferFromS3(
             std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, Metadata metadata_, size_t buf_size_)
-            : BufferWithOwnMemory(buf_size_)
+            : ReadBufferFromFileBase()
             , client_ptr(std::move(client_ptr_))
             , bucket(bucket_)
             , metadata(std::move(metadata_))
             , buf_size(buf_size_)
-            , offset(0)
+            , absolute_position(0)
             , initialized(false)
             , current_buf_idx(0)
             , current_buf(nullptr)
@@ -156,9 +156,6 @@ namespace
 
         off_t seek(off_t offset_, int whence) override
         {
-            if (initialized)
-                throw Exception("Seek is allowed only before first read attempt from the buffer.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
-
             if (whence != SEEK_SET)
                 throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
@@ -169,14 +166,23 @@ namespace
                         + std::to_string(offset_) + ", Max: " + std::to_string(metadata.total_size),
                     ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
 
-            offset = offset_;
+            absolute_position = offset_;
 
-            return offset;
+            /// TODO: Do not re-initialize buffer if current position within working buffer.
+            current_buf = initialize();
+            pos = working_buffer.end();
+
+            return absolute_position;
         }
+
+        off_t getPosition() override { return absolute_position - available(); }
+
+        std::string getFileName() const override { return metadata.metadata_file_path; }
 
     private:
         std::unique_ptr<ReadBufferFromS3> initialize()
         {
+            size_t offset = absolute_position;
             for (UInt32 i = 0; i < metadata.s3_objects_count; ++i)
             {
                 current_buf_idx = i;
@@ -190,6 +196,7 @@ namespace
                 }
                 offset -= size;
             }
+            initialized = true;
             return nullptr;
         }
 
@@ -199,14 +206,13 @@ namespace
             if (!initialized)
             {
                 current_buf = initialize();
-
-                initialized = true;
             }
 
             // If current buffer has remaining data - use it.
             if (current_buf && current_buf->next())
             {
                 working_buffer = current_buf->buffer();
+                absolute_position += working_buffer.size();
                 return true;
             }
 
@@ -219,6 +225,7 @@ namespace
             current_buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, path, buf_size);
             current_buf->next();
             working_buffer = current_buf->buffer();
+            absolute_position += working_buffer.size();
 
             return true;
         }
@@ -229,7 +236,7 @@ namespace
         Metadata metadata;
         size_t buf_size;
 
-        size_t offset;
+        size_t absolute_position = 0;
         bool initialized;
         UInt32 current_buf_idx;
         std::unique_ptr<ReadBufferFromS3> current_buf;
@@ -337,8 +344,13 @@ private:
 };
 
 
-DiskS3::DiskS3(String name_, std::shared_ptr<Aws::S3::S3Client> client_, String bucket_, String s3_root_path_,
-               String metadata_path_, size_t min_upload_part_size_)
+DiskS3::DiskS3(
+    String name_,
+    std::shared_ptr<Aws::S3::S3Client> client_,
+    String bucket_,
+    String s3_root_path_,
+    String metadata_path_,
+    size_t min_upload_part_size_)
     : name(std::move(name_))
     , client(std::move(client_))
     , bucket(std::move(bucket_))
@@ -445,7 +457,7 @@ void DiskS3::copyFile(const String & from_path, const String & to_path)
     to.save();
 }
 
-std::unique_ptr<SeekableReadBuffer> DiskS3::readFile(const String & path, size_t buf_size) const
+std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, size_t buf_size) const
 {
     Metadata metadata(metadata_path + path);
 
@@ -628,8 +640,8 @@ void registerDiskS3(DiskFactory & factory)
 
         String metadata_path = context.getPath() + "disks/" + name + "/";
 
-        auto s3disk = std::make_shared<DiskS3>(name, client, uri.bucket, uri.key, metadata_path,
-                                               context.getSettingsRef().s3_min_upload_part_size);
+        auto s3disk
+            = std::make_shared<DiskS3>(name, client, uri.bucket, uri.key, metadata_path, context.getSettingsRef().s3_min_upload_part_size);
 
         /// This code is used only to check access to the corresponding disk.
         checkWriteAccess(s3disk);
