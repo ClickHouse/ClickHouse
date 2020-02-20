@@ -67,13 +67,6 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & 
     /// If it's already a literal.
     if (node->as<ASTLiteral>())
         return node;
-
-    /// Skip table functions.
-    ///FIXME it's very surprising that function which evaluates smth as literal may return ASTFunction instead of ASTLiteral
-    if (const auto * table_func_ptr = node->as<ASTFunction>())
-        if (TableFunctionFactory::instance().isTableFunctionName(table_func_ptr->name))
-            return node;
-
     return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
 
