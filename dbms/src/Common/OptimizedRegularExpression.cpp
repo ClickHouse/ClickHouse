@@ -290,31 +290,44 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
                 throw DB::Exception("OptimizedRegularExpression: too many subpatterns in regexp: " + regexp_, DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
         }
     }
+
+    if (!required_substring.empty())
+    {
+        if (is_case_insensitive)
+            case_insensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+        else
+            case_sensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+    }
 }
 
 
 template <bool thread_safe>
 bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size) const
 {
+    const UInt8 * haystack = reinterpret_cast<const UInt8 *>(subject);
+    const UInt8 * haystack_end = haystack + subject_size;
+
     if (is_trivial)
     {
         if (is_case_insensitive)
-            return nullptr != strcasestr(subject, required_substring.data());
+            return haystack_end != case_insensitive_substring_searcher->search(haystack, subject_size);
         else
-            return nullptr != strstr(subject, required_substring.data());
+            return haystack_end != case_sensitive_substring_searcher->search(haystack, subject_size);
     }
     else
     {
         if (!required_substring.empty())
         {
-            const char * pos;
             if (is_case_insensitive)
-                pos = strcasestr(subject, required_substring.data());
+            {
+                if (haystack_end == case_insensitive_substring_searcher->search(haystack, subject_size))
+                    return false;
+            }
             else
-                pos = strstr(subject, required_substring.data());
-
-            if (nullptr == pos)
-                return 0;
+            {
+                if (haystack_end == case_sensitive_substring_searcher->search(haystack, subject_size))
+                    return false;
+            }
         }
 
         return re2->Match(StringPieceType(subject, subject_size), 0, subject_size, RegexType::UNANCHORED, nullptr, 0);
@@ -325,19 +338,22 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
 template <bool thread_safe>
 bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size, Match & match) const
 {
+    const UInt8 * haystack = reinterpret_cast<const UInt8 *>(subject);
+    const UInt8 * haystack_end = haystack + subject_size;
+
     if (is_trivial)
     {
-        const char * pos;
+        const UInt8 * pos;
         if (is_case_insensitive)
-            pos = strcasestr(subject, required_substring.data());
+            pos = case_insensitive_substring_searcher->search(haystack, subject_size);
         else
-            pos = strstr(subject, required_substring.data());
+            pos = case_sensitive_substring_searcher->search(haystack, subject_size);
 
-        if (pos == nullptr)
-            return 0;
+        if (haystack_end == pos)
+            return false;
         else
         {
-            match.offset = pos - subject;
+            match.offset = pos - haystack;
             match.length = required_substring.size();
             return 1;
         }
@@ -346,25 +362,25 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
     {
         if (!required_substring.empty())
         {
-            const char * pos;
+            const UInt8 * pos;
             if (is_case_insensitive)
-                pos = strcasestr(subject, required_substring.data());
+                pos = case_insensitive_substring_searcher->search(haystack, subject_size);
             else
-                pos = strstr(subject, required_substring.data());
+                pos = case_sensitive_substring_searcher->search(haystack, subject_size);
 
-            if (nullptr == pos)
-                return 0;
+            if (haystack_end == pos)
+                return false;
         }
 
         StringPieceType piece;
 
         if (!RegexType::PartialMatch(StringPieceType(subject, subject_size), *re2, &piece))
-            return 0;
+            return false;
         else
         {
             match.offset = piece.data() - subject;
             match.length = piece.length();
-            return 1;
+            return true;
         }
     }
 }
@@ -373,6 +389,9 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
 template <bool thread_safe>
 unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const
 {
+    const UInt8 * haystack = reinterpret_cast<const UInt8 *>(subject);
+    const UInt8 * haystack_end = haystack + subject_size;
+
     matches.clear();
 
     if (limit == 0)
@@ -383,18 +402,18 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
 
     if (is_trivial)
     {
-        const char * pos;
+        const UInt8 * pos;
         if (is_case_insensitive)
-            pos = strcasestr(subject, required_substring.data());
+            pos = case_insensitive_substring_searcher->search(haystack, subject_size);
         else
-            pos = strstr(subject, required_substring.data());
+            pos = case_sensitive_substring_searcher->search(haystack, subject_size);
 
-        if (pos == nullptr)
+        if (haystack_end == pos)
             return 0;
         else
         {
             Match match;
-            match.offset = pos - subject;
+            match.offset = pos - haystack;
             match.length = required_substring.size();
             matches.push_back(match);
             return 1;
@@ -404,17 +423,17 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
     {
         if (!required_substring.empty())
         {
-            const char * pos;
+            const UInt8 * pos;
             if (is_case_insensitive)
-                pos = strcasestr(subject, required_substring.data());
+                pos = case_insensitive_substring_searcher->search(haystack, subject_size);
             else
-                pos = strstr(subject, required_substring.data());
+                pos = case_sensitive_substring_searcher->search(haystack, subject_size);
 
-            if (nullptr == pos)
+            if (haystack_end == pos)
                 return 0;
         }
 
-        DB::PODArrayWithStackMemory<StringPieceType, sizeof(StringPieceType) * (MAX_SUBPATTERNS+1)> pieces(limit);
+        DB::PODArrayWithStackMemory<StringPieceType, sizeof(StringPieceType) * (MAX_SUBPATTERNS + 1)> pieces(limit);
 
         if (!re2->Match(StringPieceType(subject, subject_size), 0, subject_size, RegexType::UNANCHORED, pieces.data(), pieces.size()))
             return 0;
