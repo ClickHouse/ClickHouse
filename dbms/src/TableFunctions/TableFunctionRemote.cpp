@@ -75,8 +75,6 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     }
     ++arg_num;
 
-    args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-
     const auto * function = args[arg_num]->as<ASTFunction>();
 
     if (function && TableFunctionFactory::instance().isTableFunctionName(function->name))
@@ -86,6 +84,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     }
     else
     {
+        args[arg_num] = evaluateConstantExpressionForDatabaseName(args[arg_num], context);
         remote_database = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
 
         ++arg_num;
