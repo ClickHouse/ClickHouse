@@ -56,5 +56,6 @@ CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/; \
+    ln -s /usr/share/clickhouse-test/config/disks.xml /etc/clickhouse-server/config.d/; \
     service zookeeper start; sleep 5; \
     service clickhouse-server start && sleep 5 && clickhouse-test --testname --shard --zookeeper $ADDITIONAL_OPTIONS $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt

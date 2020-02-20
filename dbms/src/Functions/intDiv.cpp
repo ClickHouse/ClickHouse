@@ -19,6 +19,7 @@ struct DivideIntegralByConstantImpl
     : BinaryOperationImplBase<A, B, DivideIntegralImpl<A, B>>
 {
     using ResultType = typename DivideIntegralImpl<A, B>::ResultType;
+    static const constexpr bool allow_fixed_string = false;
 
     static void vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
     {
