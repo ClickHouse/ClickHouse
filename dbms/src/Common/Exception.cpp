@@ -193,7 +193,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
         {
             stream << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
                 << ", e.displayText() = " << e.displayText()
-                << (with_stacktrace ? getExceptionStackTraceString(e) : "")
+                << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + getExceptionStackTraceString(e) : "")
                 << (with_extra_info ? getExtraExceptionInfo(e) : "")
                 << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
@@ -210,9 +210,9 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
                 name += " (demangling status: " + toString(status) + ")";
 
             stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what()
-                << (with_stacktrace ? getExceptionStackTraceString(e) : "")
+                << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + getExceptionStackTraceString(e) : "")
                 << (with_extra_info ? getExtraExceptionInfo(e) : "")
-                << ", version = " << VERSION_STRING << VERSION_OFFICIAL;
+                << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
         catch (...) {}
     }
