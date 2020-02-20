@@ -28,7 +28,7 @@ singledispatch==3.4.0.3
 six==1.11.0
 snowballstemmer==1.2.1
 Sphinx==1.6.5
-sphinxcontrib-websupport==1.0.1
+sphinxcontrib-websupport==1.2.0
 tornado==5.1
 typing==3.7.4.1
 Unidecode==1.1.1
