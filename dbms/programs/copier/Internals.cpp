@@ -109,6 +109,60 @@ ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
     }
 }
 
+ASTPtr extractPrimaryKeyOrOrderBy(const ASTPtr & storage_ast)
+{
+    String storage_str = queryToString(storage_ast);
+
+    const auto & storage = storage_ast->as<ASTStorage &>();
+    const auto & engine = storage.engine->as<ASTFunction &>();
+
+    if (!endsWith(engine.name, "MergeTree"))
+    {
+        throw Exception("Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
+                        ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    /// FIXME
+    if (!isExtendedDefinitionStorage(storage_ast))
+    {
+        throw Exception("Is not extended deginition storage " + storage_str + " Will be fixed later.",
+                        ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    if (storage.primary_key)
+        return storage.primary_key->clone();
+
+    return storage.order_by->clone();
+}
+
+String createCommaSeparatedStringFrom(const Strings & strings)
+{
+    String answer;
+    for (auto & string: strings)
+        answer += string + ", ";
+
+    /// Remove last comma and space
+    answer.pop_back();
+    answer.pop_back();
+    return answer;
+}
+
+Strings extractPrimaryKeyString(const ASTPtr & storage_ast)
+{
+    const auto primary_key_or_order_by = extractPrimaryKeyOrOrderBy(storage_ast)->as<ASTFunction &>();
+
+    ASTPtr primary_key_or_order_by_arguments_ast = primary_key_or_order_by.arguments->clone();
+    ASTs & primary_key_or_order_by_arguments = primary_key_or_order_by_arguments_ast->children;
+
+    Strings answer;
+    answer.reserve(primary_key_or_order_by_arguments.size());
+
+    for (auto & column : primary_key_or_order_by_arguments)
+        answer.push_back(column->getColumnName());
+
+    return answer;
+}
+
 ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std::string & local_hostname, UInt8 random)
 {
     ShardPriority res;

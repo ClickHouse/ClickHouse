@@ -1,20 +1,20 @@
 #pragma once
-#include <Poco/Util/ServerApplication.h>
-#include <daemon/BaseDaemon.h>
 
+#include "Aliases.h"
 #include "Internals.h"
 #include "TaskCluster.h"
+#include "TaskTableAndShard.h"
 #include "ShardPartition.h"
 #include "ShardPartitionPiece.h"
-#include "TaskTable.h"
-#include "ZookeeperStaff.h"
+#include "ZooKeeperStaff.h"
+
 
 namespace DB
 {
 
 using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
-static ConfigurationPtr getConfigurationFromXMLString(const std::string & xml_data)
+ConfigurationPtr getConfigurationFromXMLString(const std::string & xml_data)
 {
     std::stringstream ss(xml_data);
     Poco::XML::InputSource input_source{ss};
@@ -92,10 +92,10 @@ public:
                                    size_t piece_number, const TasksShard & shards_with_partition);
 
     /// Removes MATERIALIZED and ALIAS columns from create table query
-    static ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast);
+    ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast);
 
     /// Replaces ENGINE and table name in a create query
-    static std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_query_ast,
+    std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_query_ast,
             const DatabaseAndTableName & new_table, const ASTPtr & new_storage_ast);
 
     bool tryDropPartition(ShardPartition & task_partition, const zkutil::ZooKeeperPtr & zookeeper, const CleanStateClock & clean_state_clock);

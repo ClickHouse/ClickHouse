@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Internals.h"
-#include "TaskTable.h"
+#include "Aliases.h"
+#include "TaskTableAndShard.h"
 
 namespace DB {
 

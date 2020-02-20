@@ -578,7 +578,7 @@ bool ClusterCopier::checkPartitionPieceIsDone(const TaskTable & task_table, cons
 }
 
 /// Removes MATERIALIZED and ALIAS columns from create table query
-static ASTPtr ClusterCopier::removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast)
+ASTPtr ClusterCopier::removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast)
 {
     const ASTs & column_asts = query_ast->as<ASTCreateQuery &>().columns_list->columns->children;
     auto new_columns = std::make_shared<ASTExpressionList>();
@@ -611,7 +611,7 @@ static ASTPtr ClusterCopier::removeAliasColumnsFromCreateQuery(const ASTPtr & qu
 }
 
 /// Replaces ENGINE and table name in a create query
-static std::shared_ptr<ASTCreateQuery> ClusterCopier::rewriteCreateQueryStorage(const ASTPtr & create_query_ast, const DatabaseAndTableName & new_table, const ASTPtr & new_storage_ast)
+std::shared_ptr<ASTCreateQuery> ClusterCopier::rewriteCreateQueryStorage(const ASTPtr & create_query_ast, const DatabaseAndTableName & new_table, const ASTPtr & new_storage_ast)
 {
     const auto & create = create_query_ast->as<ASTCreateQuery &>();
     auto res = std::make_shared<ASTCreateQuery>(create);
@@ -919,7 +919,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
 /// Job for copying partition from particular shard.
 PartitionTaskStatus ClusterCopier::tryProcessPartitionTask(const ConnectionTimeouts & timeouts, ShardPartition & task_partition, bool is_unprioritized_task)
 {
-    PartitionTaskStatus res;
+    PartitionTaskStatus res{Active};
 
     try
     {
@@ -941,7 +941,7 @@ PartitionTaskStatus ClusterCopier::tryProcessPartitionTask(const ConnectionTimeo
         tryLogCurrentException(log, "An error occurred while updating the config");
     }
 
-    return res;
+    return PartitionTaskStatus::Finished;
 }
 
 PartitionTaskStatus ClusterCopier::iterateThroughAllPiecesInPartition(const ConnectionTimeouts & timeouts, ShardPartition & task_partition,
