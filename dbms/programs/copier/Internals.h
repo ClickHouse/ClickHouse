@@ -106,19 +106,19 @@ struct TaskStateWithOwner
     TaskState state{TaskState::Unknown};
     String owner;
 
-    static String getData(TaskState state, const String &owner) 
+    static String getData(TaskState state, const String &owner)
     {
         return TaskStateWithOwner(state, owner).toString();
     }
 
-    String toString() 
+    String toString()
     {
         WriteBufferFromOwnString wb;
         wb << static_cast<UInt32>(state) << "\n" << escape << owner;
         return wb.str();
     }
 
-    static TaskStateWithOwner fromString(const String & data) 
+    static TaskStateWithOwner fromString(const String & data)
     {
         ReadBufferFromString rb(data);
         TaskStateWithOwner res;
@@ -142,7 +142,7 @@ struct ShardPriority
     size_t hostname_difference = 0;
     UInt8 random = 0;
 
-    static bool greaterPriority(const ShardPriority & current, const ShardPriority & other) 
+    static bool greaterPriority(const ShardPriority & current, const ShardPriority & other)
     {
         return std::forward_as_tuple(current.is_remote, current.hostname_difference, current.random)
                < std::forward_as_tuple(other.is_remote, other.hostname_difference, other.random);

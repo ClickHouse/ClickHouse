@@ -1,6 +1,6 @@
 #include "Internals.h"
 
-namespace DB 
+namespace DB
 {
 
 ConfigurationPtr getConfigurationFromXMLString(const std::string & xml_data)
