@@ -70,10 +70,7 @@ namespace
 
         /// Load metadata by path or create empty if `create` flag is set.
         explicit Metadata(const String & file_path, bool create = false)
-            : metadata_file_path(file_path)
-            , s3_objects_count(0)
-            , total_size(0)
-            , s3_objects(0)
+            : metadata_file_path(file_path), s3_objects_count(0), total_size(0), s3_objects(0)
         {
             if (create)
                 return;
@@ -119,7 +116,7 @@ namespace
         void save(bool sync = false)
         {
             WriteBufferFromFile buf(metadata_file_path, 1024);
-            
+
             writeIntText(VERSION, buf);
             writeChar('\n', buf);
 
