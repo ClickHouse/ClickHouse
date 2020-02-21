@@ -116,7 +116,7 @@ for q in test_queries:
     # Prewarm: run once on both servers. Helps to bring the data into memory,
     # precompile the queries, etc.
     for conn_index, c in enumerate(connections):
-        res = c.execute(q)
+        res = c.execute(q, query_id = 'prewarm {} {}'.format(0, q))
         print('prewarm\t' + tsv_escape(q) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
 
     # Now, perform measured runs.

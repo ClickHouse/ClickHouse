@@ -5,6 +5,9 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
 
+#include <IO/createReadBufferFromFileBase.h>
+#include <IO/createWriteBufferFromFileBase.h>
+
 
 namespace DB
 {
@@ -46,8 +49,10 @@ private:
 class DiskLocalDirectoryIterator : public IDiskDirectoryIterator
 {
 public:
-    explicit DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_) :
-        dir_path(dir_path_), iter(disk_path_ + dir_path_) {}
+    explicit DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_)
+        : dir_path(dir_path_), iter(disk_path_ + dir_path_)
+    {
+    }
 
     void next() override { ++iter; }
 
@@ -200,15 +205,17 @@ void DiskLocal::copyFile(const String & from_path, const String & to_path)
     Poco::File(disk_path + from_path).copyTo(disk_path + to_path);
 }
 
-std::unique_ptr<SeekableReadBuffer> DiskLocal::readFile(const String & path, size_t buf_size) const
+std::unique_ptr<ReadBufferFromFileBase>
+DiskLocal::readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const
 {
-    return std::make_unique<ReadBufferFromFile>(disk_path + path, buf_size);
+    return createReadBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, mmap_threshold, buf_size);
 }
 
-std::unique_ptr<WriteBuffer> DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
+std::unique_ptr<WriteBufferFromFileBase>
+DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t aio_threshold)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
-    return std::make_unique<WriteBufferFromFile>(disk_path + path, buf_size, flags);
+    return createWriteBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, buf_size, flags);
 }
 
 void DiskLocal::remove(const String & path)
