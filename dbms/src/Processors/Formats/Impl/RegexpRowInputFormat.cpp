@@ -1,10 +1,8 @@
-#include <string>
 #include <common/find_symbols.h>
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
-
-#include <iostream>
+#include <re2/stringpiece.h>
 
 namespace DB
 {
@@ -17,8 +15,20 @@ namespace ErrorCodes
 
 RegexpRowInputFormat::RegexpRowInputFormat(
         ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
-        : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), regexp(format_settings_.regexp.regexp)
+        : IRowInputFormat(header_, in_, std::move(params_)), buf(in_), format_settings(format_settings_), regexp(format_settings_.regexp.regexp)
 {
+    size_t fields_count = regexp.NumberOfCapturingGroups();
+    matched_fields.resize(fields_count);
+    re2_arguments.resize(fields_count);
+    re2_arguments_ptrs.resize(fields_count);
+    for (size_t i = 0; i != fields_count; ++i)
+    {
+        // Bind an argument to a matched field.
+        re2_arguments[i] = &matched_fields[i];
+        // Save pointer to argument.
+        re2_arguments_ptrs[i] = &re2_arguments[i];
+    }
+
     field_format = stringToFormat(format_settings_.regexp.escaping_rule);
 }
 
@@ -40,7 +50,7 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
     const auto & type = getPort().getHeader().getByPosition(index).type;
     bool parse_as_nullable = format_settings.null_as_default && !type->isNullable();
     bool read = true;
-    ReadBuffer field_buf(matched_fields[index + 1].first, matched_fields[index + 1].length(), 0);
+    ReadBuffer field_buf(matched_fields[index].data(), matched_fields[index].size(), 0);
     try
     {
         switch (field_format)
@@ -82,7 +92,7 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
 
 void RegexpRowInputFormat::readFieldsFromMatch(MutableColumns & columns, RowReadExtension & ext)
 {
-    if (matched_fields.size() != columns.size() + 1)
+    if (matched_fields.size() != columns.size())
         throw Exception("The number of matched fields in line doesn't match the number of columns.", ErrorCodes::INCORRECT_DATA);
 
     ext.read_columns.assign(columns.size(), false);
@@ -94,23 +104,44 @@ void RegexpRowInputFormat::readFieldsFromMatch(MutableColumns & columns, RowRead
 
 bool RegexpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
-    if (in.eof())
+    if (buf.eof())
         return false;
 
-    char * line_end = find_first_symbols<'\n', '\r'>(in.position(), in.buffer().end());
-    bool match = std::regex_match(in.position(), line_end, matched_fields, regexp);
+    PeekableReadBufferCheckpoint checkpoint{buf};
+
+    size_t line_size = 0;
+
+    while (!buf.eof() && *buf.position() != '\n' && *buf.position() != '\r')
+    {
+        ++buf.position();
+        ++line_size;
+    }
+
+    buf.makeContinuousMemoryFromCheckpointToPos();
+    buf.rollbackToCheckpoint();
+
+    bool match = RE2::FullMatchN(re2::StringPiece(buf.position(), line_size), regexp, re2_arguments_ptrs.data(), re2_arguments_ptrs.size());
+    bool read_line = true;
 
     if (!match)
     {
         if (!format_settings.regexp.skip_unmatched)
-            throw Exception("Line \"" + std::string(in.position(), line_end) + "\" doesn't match the regexp.", ErrorCodes::INCORRECT_DATA);
-        in.position() = line_end + 1;
-        return true;
+            throw Exception("Line \"" + std::string(buf.position(), line_size) + "\" doesn't match the regexp.", ErrorCodes::INCORRECT_DATA);
+        read_line = false;
     }
 
-    readFieldsFromMatch(columns, ext);
+    if (read_line)
+        readFieldsFromMatch(columns, ext);
 
-    in.position() = line_end + 1;
+    buf.position() += line_size;
+
+    // Two sequential increments are needed to support DOS-style newline ("\r\n").
+    if (!buf.eof() && *buf.position() == '\r')
+        ++buf.position();
+
+    if (!buf.eof() && *buf.position() == '\n')
+        ++buf.position();
+
     return true;
 }
 
