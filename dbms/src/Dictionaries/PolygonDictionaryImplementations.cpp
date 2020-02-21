@@ -62,7 +62,7 @@ GridPolygonDictionary::GridPolygonDictionary(
         InputType input_type_,
         PointType point_type_):
         IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_),
-        grid(3, 5, polygons)
+        grid(kMinIntersections, kMaxDepth,polygons)
 {
     std::vector<size_t> order(polygons.size());
     std::iota(order.begin(), order.end(), 0);
