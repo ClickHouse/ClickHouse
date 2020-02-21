@@ -14,7 +14,7 @@ CREATE TABLE url (n UInt64, _path String) ENGINE=URL
 (
     replace
     (
-        'http://localhost:8123/?query='  || 'select n, _path from ' || currentDatabase() || '.file format CSV', ' ', '+'    -- replace `file` with `merge` here after #9246 is fixed
+        'https://localhost:8443/?query='  || 'select n, _path from ' || currentDatabase() || '.file format CSV', ' ', '+'    -- replace `file` with `merge` here after #9246 is fixed
     ),
     CSV
 );
