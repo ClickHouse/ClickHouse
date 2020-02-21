@@ -7,13 +7,21 @@
 namespace DB
 {
 
+/// Represents dependency from other column.
+/// Used to determine, which columns we have to read, if we want to update some other column.
+/// Necessary, because table can have some depenendecies, which requires several columns for calculation.
 struct ColumnDependency
 {
     enum Kind : UInt8
     {
-        SKIP_INDEX = 1,
-        TTL_EXPRESSION = 2,
-        TTL_TARGET = 4
+        /// Exists any skip index, that requires @column_name
+        SKIP_INDEX,
+
+        /// Exists any TTL expression, that requires @column_name
+        TTL_EXPRESSION,
+
+        /// TTL is set for @column_name.
+        TTL_TARGET
     };
 
     ColumnDependency(const String & column_name_, Kind kind_)

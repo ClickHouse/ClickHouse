@@ -459,8 +459,8 @@ public:
     /// Returns names of primary key + secondary sorting columns
     virtual Names getSortingKeyColumns() const { return {}; }
 
-    /// Returns columns, whose dependencies (skip indices, TTL expressions) 
-    /// would be affected if we will update @updated_columns set of columns.
+    /// Returns columns, which will be needed to calculate dependencies
+    /// (skip indices, TTL expressions) if we update @updated_columns set of columns.
     virtual ColumnDependencies getColumnDependencies(const NameSet & /* updated_columns */) const { return {}; }
 
     /// Returns storage policy if storage supports it
