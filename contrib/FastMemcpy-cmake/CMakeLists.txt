@@ -1,6 +1,6 @@
 option (ENABLE_FASTMEMCPY "Enable FastMemcpy library (only internal)" ${ENABLE_LIBRARIES})
 
-if (NOT OS_LINUX)
+if (NOT OS_LINUX OR ARCH_AARCH64)
     set (ENABLE_FASTMEMCPY OFF)
 endif ()
 
