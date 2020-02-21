@@ -5,6 +5,8 @@
 #include <ctime>
 #include <sys/resource.h>
 #include <pthread.h>
+#include <map>
+#include <common/logger_useful.h>
 
 #if defined(__linux__)
 #include <linux/taskstats.h>
@@ -35,6 +37,17 @@ namespace ProfileEvents
     extern const Event OSReadBytes;
     extern const Event OSWriteBytes;
 
+    extern const Event PERF_COUNT_HW_CPU_CYCLES;
+    extern const Event PERF_COUNT_HW_INSTRUCTIONS;
+    extern const Event PERF_COUNT_HW_CACHE_REFERENCES;
+    extern const Event PERF_COUNT_HW_CACHE_MISSES;
+    extern const Event PERF_COUNT_HW_BRANCH_INSTRUCTIONS;
+    extern const Event PERF_COUNT_HW_BRANCH_MISSES;
+    extern const Event PERF_COUNT_HW_BUS_CYCLES;
+    extern const Event PERF_COUNT_HW_STALLED_CYCLES_FRONTEND;
+    extern const Event PERF_COUNT_HW_STALLED_CYCLES_BACKEND;
+    extern const Event PERF_COUNT_HW_REF_CPU_CYCLES;
+
 //    extern const Event PERF_COUNT_SW_CPU_CLOCK;
     extern const Event PERF_COUNT_SW_TASK_CLOCK;
     extern const Event PERF_COUNT_SW_PAGE_FAULTS;
@@ -44,6 +57,9 @@ namespace ProfileEvents
     extern const Event PERF_COUNT_SW_PAGE_FAULTS_MAJ;
     extern const Event PERF_COUNT_SW_ALIGNMENT_FAULTS;
     extern const Event PERF_COUNT_SW_EMULATION_FAULTS;
+
+    extern const Event PERF_CUSTOM_INSTRUCTIONS_PER_CPU_CYCLE_SCALED;
+    extern const Event PERF_CUSTOM_INSTRUCTIONS_PER_CPU_CYCLE;
 #endif
 }
 
@@ -127,6 +143,18 @@ struct RUsageCounters
     }
 };
 
+#if defined(__linux__)
+
+    struct PerfEventInfo {
+        // see perf_event.h/perf_type_id enum
+        int event_type;
+        // see configs in perf_event.h
+        int event_config;
+        ProfileEvents::Event profile_event;
+    };
+
+#endif
+
 struct PerfEventsCounters
 {
     // cat /proc/sys/kernel/perf_event_paranoid - if perf_event_paranoid is set to 3, all calls to `perf_event_open` are rejected (even for the current process)
@@ -143,18 +171,28 @@ struct PerfEventsCounters
     // todo: check whether perf_event_open() is available with CAP_SYS_ADMIN
 
 #if defined(__linux__)
-    static constexpr size_t NUMBER_OF_EVENTS = 8;
+    static constexpr size_t NUMBER_OF_RAW_EVENTS = 18;
 
-    static const int perf_event_configs[];
-    static const ProfileEvents::Event perf_events[];
+    static const PerfEventInfo perf_raw_events_info[];
+    static const std::map<int, int> event_config_to_info_index;
 
-    int events_descriptors[NUMBER_OF_EVENTS];
+    int events_descriptors[NUMBER_OF_RAW_EVENTS];
+    // temp array just to not create it each time event processing finishes
+    long long raw_event_values[NUMBER_OF_RAW_EVENTS];
     bool perf_events_recording = false;
 #endif
 
     static void initializeProfileEvents(PerfEventsCounters & counters);
 
     static void finalizeProfileEvents(PerfEventsCounters & counters, ProfileEvents::Counters & profile_events);
+
+private:
+    // used to write information about perf event availability only once for all threads
+    static std::atomic<bool> events_availability_logged;
+
+    static Logger * getLogger();
+
+    long long getRawValue(int event_config);
 };
 
 #if defined(__linux__)

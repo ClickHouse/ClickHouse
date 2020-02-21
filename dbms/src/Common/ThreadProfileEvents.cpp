@@ -12,56 +12,103 @@ namespace DB {
 
 #if defined(__linux__)
 
-    // todo: think about event counters' overflow
-    // todo: ask about the usual error reporting (whether stderr is an accepted way)
+    static PerfEventInfo softwareEvent(int event_config, ProfileEvents::Event profile_event)
+    {
+        return PerfEventInfo
+        {
+            .event_type = perf_type_id::PERF_TYPE_SOFTWARE,
+            .event_config = event_config,
+            .profile_event = profile_event
+        };
+    }
+
+    static PerfEventInfo hardwareEvent(int event_config, ProfileEvents::Event profile_event)
+    {
+        return PerfEventInfo
+        {
+            .event_type = perf_type_id::PERF_TYPE_HARDWARE,
+            .event_config = event_config,
+            .profile_event = profile_event
+        };
+    }
 
     // descriptions' source: http://man7.org/linux/man-pages/man2/perf_event_open.2.html
-    const int PerfEventsCounters::perf_event_configs[] = {
+    const PerfEventInfo PerfEventsCounters::perf_raw_events_info[] = {
+
+            // Total cycles. Be wary of what happens during CPU frequency scaling.
+            hardwareEvent(perf_hw_id::PERF_COUNT_HW_CPU_CYCLES, ProfileEvents::PERF_COUNT_HW_CPU_CYCLES),
+            // Retired instructions. Be careful, these can be affected by various issues, most notably hardware
+            // interrupt counts.
+            hardwareEvent(perf_hw_id::PERF_COUNT_HW_INSTRUCTIONS, ProfileEvents::PERF_COUNT_HW_INSTRUCTIONS),
+            // Cache accesses. Usually this indicates Last Level Cache accesses but this may vary depending on your CPU.
+            // This may include prefetches and coherency messages; again this depends on the design of your CPU.
+            hardwareEvent(perf_hw_id::PERF_COUNT_HW_CACHE_REFERENCES, ProfileEvents::PERF_COUNT_HW_CACHE_REFERENCES),
+            // Cache misses. Usually this indicates Last Level Cache misses; this is intended to be used in con‐junction
+            // with the PERF_COUNT_HW_CACHE_REFERENCES event to calculate cache miss rates.
+            hardwareEvent(perf_hw_id::PERF_COUNT_HW_CACHE_MISSES, ProfileEvents::PERF_COUNT_HW_CACHE_MISSES),
+            // Retired branch instructions. Prior to Linux 2.6.35, this used the wrong event on AMD processors.
+            hardwareEvent(perf_hw_id::PERF_COUNT_HW_BRANCH_INSTRUCTIONS, ProfileEvents::PERF_COUNT_HW_BRANCH_INSTRUCTIONS),
+            // Mispredicted branch instructions.
+            hardwareEvent(perf_hw_id::PERF_COUNT_HW_BRANCH_MISSES, ProfileEvents::PERF_COUNT_HW_BRANCH_MISSES),
+            // Bus cycles, which can be different from total cycles.
+            hardwareEvent(perf_hw_id::PERF_COUNT_HW_BUS_CYCLES, ProfileEvents::PERF_COUNT_HW_BUS_CYCLES),
+            // Stalled cycles during issue.
+            hardwareEvent(perf_hw_id::PERF_COUNT_HW_STALLED_CYCLES_FRONTEND, ProfileEvents::PERF_COUNT_HW_STALLED_CYCLES_FRONTEND),
+            // Stalled cycles during retirement.
+            hardwareEvent(perf_hw_id::PERF_COUNT_HW_STALLED_CYCLES_BACKEND, ProfileEvents::PERF_COUNT_HW_STALLED_CYCLES_BACKEND),
+            // Total cycles; not affected by CPU frequency scaling.
+            hardwareEvent(perf_hw_id::PERF_COUNT_HW_REF_CPU_CYCLES, ProfileEvents::PERF_COUNT_HW_REF_CPU_CYCLES),
+            
             // This reports the CPU clock, a high-resolution per-CPU timer.
-//            perf_sw_ids::PERF_COUNT_SW_CPU_CLOCK,
+            // a bit broken according to this: https://stackoverflow.com/a/56967896
+//            makeInfo(perf_type_id::PERF_TYPE_SOFTWARE, perf_sw_ids::PERF_COUNT_SW_CPU_CLOCK, ProfileEvents::PERF_COUNT_SW_CPU_CLOCK),
             // This reports a clock count specific to the task that is running.
-            perf_sw_ids::PERF_COUNT_SW_TASK_CLOCK,
+            softwareEvent(perf_sw_ids::PERF_COUNT_SW_TASK_CLOCK, ProfileEvents::PERF_COUNT_SW_TASK_CLOCK),
             // This reports the number of page faults.
-            perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS,
+            softwareEvent(perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS, ProfileEvents::PERF_COUNT_SW_PAGE_FAULTS),
             // This counts context switches.
             // Until Linux 2.6.34, these were all reported as user-space events,
             // after that they are reported as happening in the kernel
-            perf_sw_ids::PERF_COUNT_SW_CONTEXT_SWITCHES,
+            softwareEvent(perf_sw_ids::PERF_COUNT_SW_CONTEXT_SWITCHES, ProfileEvents::PERF_COUNT_SW_CONTEXT_SWITCHES),
             // This reports the number of times the process has migrated to a new CPU.
-            perf_sw_ids::PERF_COUNT_SW_CPU_MIGRATIONS,
+            softwareEvent(perf_sw_ids::PERF_COUNT_SW_CPU_MIGRATIONS, ProfileEvents::PERF_COUNT_SW_CPU_MIGRATIONS),
             // This counts the number of minor page faults. These did not require disk I/O to handle.
-            perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS_MIN,
+            softwareEvent(perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS_MIN, ProfileEvents::PERF_COUNT_SW_PAGE_FAULTS_MIN),
             // This counts the number of major page faults. These required disk I/O to handle.
-            perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS_MAJ,
+            softwareEvent(perf_sw_ids::PERF_COUNT_SW_PAGE_FAULTS_MAJ, ProfileEvents::PERF_COUNT_SW_PAGE_FAULTS_MAJ),
             // This counts the number of alignment faults. These happen when unaligned memory accesses happen;
             // the kernel can handle these but it reduces performance.
             // This happens only on some architectures (never on x86).
-            perf_sw_ids::PERF_COUNT_SW_ALIGNMENT_FAULTS,
+            softwareEvent(perf_sw_ids::PERF_COUNT_SW_ALIGNMENT_FAULTS, ProfileEvents::PERF_COUNT_SW_ALIGNMENT_FAULTS),
             // This counts the number of emulation faults. The kernel sometimes traps on unimplemented instructions and
             // emulates them for user space. This can negatively impact performance.
-            perf_sw_ids::PERF_COUNT_SW_EMULATION_FAULTS
+            softwareEvent(perf_sw_ids::PERF_COUNT_SW_EMULATION_FAULTS, ProfileEvents::PERF_COUNT_SW_EMULATION_FAULTS)
             // This is a placeholder event that counts nothing. Informational sample record types such as mmap or
             // comm must be associated with an active event. This dummy event allows gathering such records
             // without requiring a counting event.
-//            perf_sw_ids::PERF_COUNT_SW_DUMMY
+//            softwareEventInfo(perf_sw_ids::PERF_COUNT_SW_DUMMY, ProfileEvents::PERF_COUNT_SW_DUMMY)
     };
 
-    const ProfileEvents::Event PerfEventsCounters::perf_events[] = {
-            // a bit broken according to this: https://stackoverflow.com/a/56967896
-//            ProfileEvents::PERF_COUNT_SW_CPU_CLOCK,
-            ProfileEvents::PERF_COUNT_SW_TASK_CLOCK,
-            ProfileEvents::PERF_COUNT_SW_PAGE_FAULTS,
-            ProfileEvents::PERF_COUNT_SW_CONTEXT_SWITCHES,
-            ProfileEvents::PERF_COUNT_SW_CPU_MIGRATIONS,
-            ProfileEvents::PERF_COUNT_SW_PAGE_FAULTS_MIN,
-            ProfileEvents::PERF_COUNT_SW_PAGE_FAULTS_MAJ,
-            ProfileEvents::PERF_COUNT_SW_ALIGNMENT_FAULTS,
-            ProfileEvents::PERF_COUNT_SW_EMULATION_FAULTS
-//            ProfileEvents::PERF_COUNT_SW_DUMMY,
-    };
+    static_assert(std::size(PerfEventsCounters::perf_raw_events_info) == PerfEventsCounters::NUMBER_OF_RAW_EVENTS);
 
-    static_assert(std::size(PerfEventsCounters::perf_event_configs) == PerfEventsCounters::NUMBER_OF_EVENTS);
-    static_assert(std::size(PerfEventsCounters::perf_events) == PerfEventsCounters::NUMBER_OF_EVENTS);
+    const std::map<int, int> PerfEventsCounters::event_config_to_info_index = [] {
+        std::map<int, int> map;
+        for (size_t i = 0; i < PerfEventsCounters::NUMBER_OF_RAW_EVENTS; ++i)
+            map.emplace(PerfEventsCounters::perf_raw_events_info[i].event_config, i);
+        return map;
+    } ();
+
+    std::atomic<bool> PerfEventsCounters::events_availability_logged = false;
+
+    Logger * PerfEventsCounters::getLogger()
+    {
+        return &Logger::get("PerfEventsCounters");
+    }
+
+    long long PerfEventsCounters::getRawValue(int event_config)
+    {
+        return raw_event_values[event_config_to_info_index.find(event_config)->second];
+    }
 
     static int openPerfEvent(perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, unsigned long flags) {
         return static_cast<int>(syscall(SYS_perf_event_open, hw_event, pid, cpu, group_fd, flags));
@@ -89,7 +136,7 @@ namespace DB {
         return true;
     }
 
-    static void perfEventStart(int perf_event_paranoid, int perf_event_type, int perf_event_config, int &event_file_descriptor) {
+    static void perfEventOpenDisabled(int perf_event_paranoid, int perf_event_type, int perf_event_config, int &event_file_descriptor) {
         perf_event_attr pe = perf_event_attr();
         pe.type = perf_event_type;
         pe.size = sizeof(struct perf_event_attr);
@@ -113,20 +160,28 @@ namespace DB {
         if (!is_pref_available)
             return;
 
-        for (size_t i = 0; i < NUMBER_OF_EVENTS; ++i)
+        bool expected = false;
+        bool log_unsupported_event = events_availability_logged.compare_exchange_strong(expected, true);
+        for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
         {
-            perfEventStart(perf_event_paranoid, perf_type_id::PERF_TYPE_SOFTWARE, perf_event_configs[i], counters.events_descriptors[i]);
+            counters.raw_event_values[i] = 0;
+            const PerfEventInfo & event_info = perf_raw_events_info[i];
+            int & fd = counters.events_descriptors[i];
+            perfEventOpenDisabled(perf_event_paranoid, event_info.event_type, event_info.event_config, fd);
+
+            if (fd == -1 && log_unsupported_event)
+            {
+                LOG_WARNING(
+                        getLogger(),
+                        "Perf event is unsupported: event_type=" << event_info.event_type
+                            << ", event_config=" << event_info.event_config);
+            }
         }
 
-        for (size_t i = 0; i < NUMBER_OF_EVENTS; ++i)
+        for (int fd : counters.events_descriptors)
         {
-            int fd = counters.events_descriptors[i];
-            if (fd == -1) {
-                fprintf(stderr, "Event config %d is unsupported\n", perf_event_configs[i]);
-                continue;
-            }
-
-            ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+            if (fd != -1)
+                ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
         }
 
         counters.perf_events_recording = true;
@@ -136,25 +191,47 @@ namespace DB {
         if (!counters.perf_events_recording)
             return;
 
-        for (size_t i = 0; i < NUMBER_OF_EVENTS; ++i) {
+        // process raw events
+
+        // only read counters here to have as little overhead for processing as possible
+        for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
+        {
+            int fd = counters.events_descriptors[i];
+            if (fd != -1)
+                read(fd, &counters.raw_event_values[i], sizeof(long long));
+        }
+
+        // actually process counters' values and release resources
+        for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
+        {
             int & fd = counters.events_descriptors[i];
             if (fd == -1)
                 continue;
 
-            long long count;
-            read(fd, &count, sizeof(count));
-
-            profile_events.increment(perf_events[i], static_cast<ProfileEvents::Count>(count));
-//                printf("%s: %lld\n", perf_event_names[i].c_str(), count);
+            profile_events.increment(perf_raw_events_info[i].profile_event, counters.raw_event_values[i]);
 
             if (ioctl(fd, PERF_EVENT_IOC_DISABLE, 0))
-                fprintf(stderr, "Can't disable perf event with file descriptor: %d\n", fd);
+                LOG_WARNING(getLogger(), "Can't disable perf event with file descriptor: " << fd);
 
             if (close(fd))
-                fprintf(stderr, "Can't close perf event file descriptor: %d; error: %d - %s\n", fd, errno, strerror(errno));
+                LOG_WARNING(getLogger(), "Can't close perf event file descriptor: " << fd << "; error: " << errno << " - " << strerror(errno));
 
             fd = -1;
         }
+
+        // process custom events which depend on the raw ones
+        long long hw_cpu_cycles = counters.getRawValue(perf_hw_id::PERF_COUNT_HW_CPU_CYCLES);
+        long long hw_ref_cpu_cycles = counters.getRawValue(perf_hw_id::PERF_COUNT_HW_REF_CPU_CYCLES);
+
+        long long instructions_per_cpu_scaled = hw_cpu_cycles != 0
+                ? counters.getRawValue(perf_hw_id::PERF_COUNT_HW_INSTRUCTIONS) / hw_cpu_cycles
+                : 0;
+        long long instructions_per_cpu = hw_ref_cpu_cycles != 0
+                ? counters.getRawValue(perf_hw_id::PERF_COUNT_HW_INSTRUCTIONS) / hw_ref_cpu_cycles
+                : 0;
+
+        profile_events.increment(ProfileEvents::PERF_CUSTOM_INSTRUCTIONS_PER_CPU_CYCLE_SCALED, instructions_per_cpu_scaled);
+        profile_events.increment(ProfileEvents::PERF_CUSTOM_INSTRUCTIONS_PER_CPU_CYCLE, instructions_per_cpu);
 
         counters.perf_events_recording = false;
     }
