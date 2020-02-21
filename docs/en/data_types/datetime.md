@@ -97,11 +97,12 @@ toDateTime(timestamp, 'Europe/London') as lon_time,
 toDateTime(timestamp, 'Europe/Moscow') as mos_time
 FROM dt
 ```
+```text
 ┌───────────lon_time──┬────────────mos_time─┐
 │ 2019-01-01 00:00:00 │ 2019-01-01 03:00:00 │
 │ 2018-12-31 21:00:00 │ 2019-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
-
+```
 
 ## See Also
 
