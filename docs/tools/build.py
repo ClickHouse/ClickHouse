@@ -307,19 +307,6 @@ if __name__ == '__main__':
     args = arg_parser.parse_args()
     args.docs_output_dir = os.path.join(os.path.abspath(args.output_dir), 'docs')
 
-    if args.livereload:
-        new_args = [arg for arg in sys.argv if not arg.startswith('--livereload')]
-        new_args = sys.executable + ' ' + ' '.join(new_args)
-
-        server = livereload.Server()
-        server.watch(args.website_dir + '**/*', livereload.shell(new_args, cwd='tools', shell=True))
-        server.watch(args.docs_dir + '**/*', livereload.shell(new_args, cwd='tools', shell=True))
-        server.serve(
-            root=args.output_dir,
-            port=args.livereload
-        )
-        sys.exit(0)
-
     from github import choose_latest_releases
     args.stable_releases = choose_latest_releases() if args.enable_stable_releases else []
     args.rev = subprocess.check_output('git rev-parse HEAD', shell=True).strip()
@@ -335,3 +322,16 @@ if __name__ == '__main__':
 
     from build import build
     build(args)
+    
+    if args.livereload:
+        new_args = [arg for arg in sys.argv if not arg.startswith('--livereload')]
+        new_args = sys.executable + ' ' + ' '.join(new_args)
+
+        server = livereload.Server()
+        server.watch(args.website_dir + '**/*', livereload.shell(new_args, cwd='tools', shell=True))
+        server.watch(args.docs_dir + '**/*', livereload.shell(new_args, cwd='tools', shell=True))
+        server.serve(
+            root=args.output_dir,
+            port=args.livereload
+        )
+        sys.exit(0)
