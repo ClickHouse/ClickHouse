@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 #include <re2/stringpiece.h>
+#include <stdlib.h>
 
 namespace DB
 {
@@ -85,6 +86,7 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
     }
     catch (Exception & e)
     {
+        e.addMessage("(while read the value of key " +  getPort().getHeader().getByPosition(index).name + ")");
         throw;
     }
     return read;
@@ -160,17 +162,21 @@ void registerInputFormatProcessorRegexp(FormatFactory & factory)
 static bool fileSegmentationEngineRegexpImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     char * pos = in.position();
-    bool need_more_data = true;
 
-    while (loadAtPosition(in, memory, pos) && need_more_data)
+    while (loadAtPosition(in, memory, pos) && (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size))
     {
         pos = find_first_symbols<'\n', '\r'>(pos, in.buffer().end());
         if (pos == in.buffer().end())
             continue;
 
-        if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
-            need_more_data = false;
-        ++pos;
+        // Support DOS-style newline ("\r\n")
+        if (*pos++ == '\r')
+        {
+            if (pos == in.buffer().end())
+                loadAtPosition(in, memory, pos);
+            if (*pos == '\n')
+                ++pos;
+        }
     }
 
     saveUpToPosition(in, memory, pos);
