@@ -4,7 +4,7 @@ backports-abc==0.5
 beautifulsoup4==4.8.2
 certifi==2019.11.28
 chardet==3.0.4
-click==6.7
+click==7.0
 CommonMark==0.9.1
 cssmin==0.2.0
 docutils==0.16
