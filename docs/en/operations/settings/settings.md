@@ -1169,4 +1169,13 @@ Possible values: 32 (32 bytes) - 1073741824 (1 GiB)
 
 Default value: 32768 (32 KiB)
 
+## format_avro_schema_registry_url {#settings-format_avro_schema_registry_url}
+
+Sets Confluent Schema Registry URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format
+
+Type: URL
+
+Default value: Empty
+
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
