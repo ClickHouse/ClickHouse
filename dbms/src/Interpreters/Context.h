@@ -136,7 +136,6 @@ struct IHostContext
 
 using IHostContextPtr = std::shared_ptr<IHostContext>;
 
-
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
   *  and copied part (which can be its own for each session or query).
@@ -156,6 +155,8 @@ private:
     InputBlocksReader input_blocks_reader;
 
     std::optional<UUID> user_id;
+    std::vector<UUID> current_roles;
+    bool use_default_roles = false;
     AccessRightsContextPtr access_rights;
     RowPolicyContextPtr initial_row_policy;
     String current_database;
@@ -243,6 +244,13 @@ public:
     UserPtr getUser() const;
     String getUserName() const;
     UUID getUserID() const;
+
+    void setCurrentRoles(const std::vector<UUID> & current_roles_);
+    void setCurrentRolesDefault();
+    std::vector<UUID> getCurrentRoles() const;
+    Strings getCurrentRolesNames() const;
+    std::vector<UUID> getEnabledRoles() const;
+    Strings getEnabledRolesNames() const;
 
     /// Checks access rights.
     /// Empty database means the current database.

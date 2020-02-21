@@ -20,7 +20,7 @@ public:
     QuotaContextFactory(const AccessControlManager & access_control_manager_);
     ~QuotaContextFactory();
 
-    QuotaContextPtr createContext(const UUID & user_id, const String & user_name, const Poco::Net::IPAddress & address, const String & client_key);
+    QuotaContextPtr createContext(const String & user_name, const UUID & user_id, const std::vector<UUID> & enabled_roles, const Poco::Net::IPAddress & address, const String & client_key);
     std::vector<QuotaUsageInfo> getUsageInfo() const;
 
 private:

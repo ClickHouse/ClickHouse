@@ -42,7 +42,7 @@ void QuotaContextFactory::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUI
 
 bool QuotaContextFactory::QuotaInfo::canUseWithContext(const QuotaContext & context) const
 {
-    return roles->match(context.user_id);
+    return roles->match(context.user_id, context.enabled_roles);
 }
 
 
@@ -175,11 +175,11 @@ QuotaContextFactory::~QuotaContextFactory()
 }
 
 
-QuotaContextPtr QuotaContextFactory::createContext(const UUID & user_id, const String & user_name, const Poco::Net::IPAddress & address, const String & client_key)
+QuotaContextPtr QuotaContextFactory::createContext(const String & user_name, const UUID & user_id, const std::vector<UUID> & enabled_roles, const Poco::Net::IPAddress & address, const String & client_key)
 {
     std::lock_guard lock{mutex};
     ensureAllQuotasRead();
-    auto context = ext::shared_ptr_helper<QuotaContext>::create(user_id, user_name, address, client_key);
+    auto context = ext::shared_ptr_helper<QuotaContext>::create(user_name, user_id, enabled_roles, address, client_key);
     contexts.push_back(context);
     chooseQuotaForContext(context);
     return context;

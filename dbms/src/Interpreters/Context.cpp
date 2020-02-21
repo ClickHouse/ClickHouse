@@ -658,12 +658,14 @@ void Context::setUser(const String & name, const String & password, const Poco::
         client_info.quota_key = quota_key;
 
     auto new_user_id = getAccessControlManager().getID<User>(name);
-    auto new_access_rights = getAccessControlManager().getAccessRightsContext(new_user_id, settings, current_database, client_info);
+    auto new_access_rights = getAccessControlManager().getAccessRightsContext(new_user_id, {}, true, settings, current_database, client_info);
     new_access_rights->checkHostIsAllowed();
     new_access_rights->checkPassword(password);
 
     user_id = new_user_id;
     access_rights = std::move(new_access_rights);
+    current_roles.clear();
+    use_default_roles = true;
 
     calculateUserSettings();
 }
@@ -689,11 +691,52 @@ UUID Context::getUserID() const
 }
 
 
+void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
+{
+    auto lock = getLock();
+    if (current_roles == current_roles_ && !use_default_roles)
+        return;
+    current_roles = current_roles_;
+    use_default_roles = false;
+    calculateAccessRights();
+}
+
+void Context::setCurrentRolesDefault()
+{
+    auto lock = getLock();
+    if (use_default_roles)
+        return;
+    current_roles.clear();
+    use_default_roles = true;
+    calculateAccessRights();
+}
+
+std::vector<UUID> Context::getCurrentRoles() const
+{
+    return getAccessRights()->getCurrentRoles();
+}
+
+Strings Context::getCurrentRolesNames() const
+{
+    return getAccessRights()->getCurrentRolesNames();
+}
+
+std::vector<UUID> Context::getEnabledRoles() const
+{
+    return getAccessRights()->getEnabledRoles();
+}
+
+Strings Context::getEnabledRolesNames() const
+{
+    return getAccessRights()->getEnabledRolesNames();
+}
+
+
 void Context::calculateAccessRights()
 {
     auto lock = getLock();
     if (user_id)
-        access_rights = getAccessControlManager().getAccessRightsContext(*user_id, settings, current_database, client_info);
+        access_rights = getAccessControlManager().getAccessRightsContext(*user_id, current_roles, use_default_roles, settings, current_database, client_info);
 }
 
 
@@ -728,7 +771,7 @@ void Context::setInitialRowPolicy()
     auto lock = getLock();
     auto initial_user_id = getAccessControlManager().find<User>(client_info.initial_user);
     if (initial_user_id)
-        initial_row_policy = getAccessControlManager().getRowPolicyContext(*initial_user_id);
+        initial_row_policy = getAccessControlManager().getRowPolicyContext(*initial_user_id, {});
 }
 
 RowPolicyContextPtr Context::getInitialRowPolicy() const

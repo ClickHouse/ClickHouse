@@ -79,7 +79,7 @@ ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateUserQuery(const ASTShowC
     auto create_query = std::make_shared<ASTCreateUserQuery>();
     create_query->name = user->getName();
 
-    if (!user->allowed_client_hosts.containsAnyHost())
+    if (user->allowed_client_hosts != AllowedClientHosts::AnyHostTag{})
         create_query->hosts = user->allowed_client_hosts;
 
     if (!user->profile.empty())

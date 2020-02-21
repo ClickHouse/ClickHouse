@@ -22,6 +22,11 @@ namespace DB
 class AccessRightsContext;
 using AccessRightsContextPtr = std::shared_ptr<const AccessRightsContext>;
 class AccessRightsContextFactory;
+struct User;
+using UserPtr = std::shared_ptr<const User>;
+struct RoleContext;
+using RoleContextPtr = std::shared_ptr<const RoleContext>;
+class RoleContextFactory;
 class RowPolicyContext;
 using RowPolicyContextPtr = std::shared_ptr<const RowPolicyContext>;
 class RowPolicyContextFactory;
@@ -43,17 +48,33 @@ public:
     void loadFromConfig(const Poco::Util::AbstractConfiguration & users_config);
 
     AccessRightsContextPtr getAccessRightsContext(
-        const UUID & user_id, const Settings & settings, const String & current_database, const ClientInfo & client_info) const;
+        const UUID & user_id,
+        const std::vector<UUID> & current_roles,
+        bool use_default_roles,
+        const Settings & settings,
+        const String & current_database,
+        const ClientInfo & client_info) const;
 
-    RowPolicyContextPtr getRowPolicyContext(const UUID & user_id) const;
+    RoleContextPtr getRoleContext(
+        const std::vector<UUID> & current_roles,
+        const std::vector<UUID> & current_roles_with_admin_option) const;
+
+    RowPolicyContextPtr getRowPolicyContext(
+        const UUID & user_id,
+        const std::vector<UUID> & enabled_roles) const;
 
     QuotaContextPtr getQuotaContext(
-        const UUID & user_id, const String & user_name, const Poco::Net::IPAddress & address, const String & custom_quota_key) const;
+        const String & user_name,
+        const UUID & user_id,
+        const std::vector<UUID> & enabled_roles,
+        const Poco::Net::IPAddress & address,
+        const String & custom_quota_key) const;
 
     std::vector<QuotaUsageInfo> getQuotaUsageInfo() const;
 
 private:
     std::unique_ptr<AccessRightsContextFactory> access_rights_context_factory;
+    std::unique_ptr<RoleContextFactory> role_context_factory;
     std::unique_ptr<RowPolicyContextFactory> row_policy_context_factory;
     std::unique_ptr<QuotaContextFactory> quota_context_factory;
 };

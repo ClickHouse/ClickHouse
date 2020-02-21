@@ -164,7 +164,7 @@ void RowPolicyContextFactory::PolicyInfo::setPolicy(const RowPolicyPtr & policy_
 
 bool RowPolicyContextFactory::PolicyInfo::canUseWithContext(const RowPolicyContext & context) const
 {
-    return roles->match(context.user_id);
+    return roles->match(context.user_id, context.enabled_roles);
 }
 
 
@@ -176,11 +176,11 @@ RowPolicyContextFactory::RowPolicyContextFactory(const AccessControlManager & ac
 RowPolicyContextFactory::~RowPolicyContextFactory() = default;
 
 
-RowPolicyContextPtr RowPolicyContextFactory::createContext(const UUID & user_id)
+RowPolicyContextPtr RowPolicyContextFactory::createContext(const UUID & user_id, const std::vector<UUID> & enabled_roles)
 {
     std::lock_guard lock{mutex};
     ensureAllRowPoliciesRead();
-    auto context = ext::shared_ptr_helper<RowPolicyContext>::create(user_id);
+    auto context = ext::shared_ptr_helper<RowPolicyContext>::create(user_id, enabled_roles);
     contexts.push_back(context);
     mixConditionsForContext(*context);
     return context;

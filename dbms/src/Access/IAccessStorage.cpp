@@ -1,5 +1,6 @@
 #include <Access/IAccessStorage.h>
 #include <Access/User.h>
+#include <Access/Role.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
@@ -17,6 +18,7 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_FOUND_DUPLICATES;
     extern const int ACCESS_ENTITY_STORAGE_READONLY;
     extern const int UNKNOWN_USER;
+    extern const int UNKNOWN_ROLE;
 }
 
 
@@ -370,6 +372,8 @@ void IAccessStorage::throwNotFound(std::type_index type, const String & name) co
     int error_code;
     if (type == typeid(User))
         error_code = ErrorCodes::UNKNOWN_USER;
+    else if (type == typeid(Role))
+        error_code = ErrorCodes::UNKNOWN_ROLE;
     else
         error_code = ErrorCodes::ACCESS_ENTITY_NOT_FOUND;
 

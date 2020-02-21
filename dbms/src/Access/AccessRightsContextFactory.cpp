@@ -24,12 +24,16 @@ AccessRightsContextPtr AccessRightsContextFactory::createContext(const Params & 
 
 AccessRightsContextPtr AccessRightsContextFactory::createContext(
     const UUID & user_id,
+    const std::vector<UUID> & current_roles,
+    bool use_default_roles,
     const Settings & settings,
     const String & current_database,
     const ClientInfo & client_info)
 {
     Params params;
     params.user_id = user_id;
+    params.current_roles = current_roles;
+    params.use_default_roles = use_default_roles;
     params.current_database = current_database;
     params.readonly = settings.readonly;
     params.allow_ddl = settings.allow_ddl;
