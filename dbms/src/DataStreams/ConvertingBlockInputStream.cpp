@@ -98,6 +98,8 @@ Block ConvertingBlockInputStream::readImpl()
         return src;
 
     Block res = header.cloneEmpty();
+    /// This is important because header.cloneEmpty() doesn't copy info about aggregation bucket.
+    /// Otherwise information in buckets may be lost (and aggregation will return wrong result).
     res.info = src.info;
 
     for (size_t res_pos = 0, size = conversion.size(); res_pos < size; ++res_pos)
