@@ -1301,9 +1301,9 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         DatabaseAndTableName original_table = task_table.table_push;
         DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(current_piece_number));
 
-        query_alter_ast_string +=  "ALTER TABLE " + getQuotedTable(helping_table) +
-                                   " MOVE PARTITION " + task_partition.name +
-                                   " TO TABLE " + getQuotedTable(original_table);
+        query_alter_ast_string +=  " ALTER TABLE " + getQuotedTable(original_table) +
+                                   " REPLACE PARTITION " + task_partition.name +
+                                   " FROM " + getQuotedTable(helping_table);
 
         LOG_DEBUG(log, "Executing ALTER query: " << query_alter_ast_string);
 
