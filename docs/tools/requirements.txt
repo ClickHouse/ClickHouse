@@ -1,5 +1,5 @@
 alabaster==0.7.12
-Babel==2.5.1
+Babel==2.8.0
 backports-abc==0.5
 beautifulsoup4==4.8.2
 certifi==2019.11.28
