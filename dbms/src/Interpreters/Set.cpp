@@ -517,7 +517,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         else
         {
             if (invert_left_infinities)
-                left_point.push_back(FieldWithInfinity::getPlusinfinity());
+                left_point.push_back(FieldWithInfinity::getPlusInfinity());
             else
                 left_point.push_back(FieldWithInfinity::getMinusInfinity());
         }
@@ -534,7 +534,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
             if (invert_right_infinities)
                 right_point.push_back(FieldWithInfinity::getMinusInfinity());
             else
-                right_point.push_back(FieldWithInfinity::getPlusinfinity());
+                right_point.push_back(FieldWithInfinity::getPlusInfinity());
         }
     }
 
@@ -557,13 +557,41 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         return extract_tuple(i) < rhs;
     };
 
+    auto compare_one = [this](size_t i, const IColumn & rhs)
+    {
+        return ordered_set[0]->compareAt(i, 0, rhs, 1) < 0;
+    };
+
+    auto lower_for_field = [&](const FieldWithInfinity & field)
+    {
+        if (field == FieldWithInfinity::getMinusInfinity())
+            return indices.begin();
+        if (field == FieldWithInfinity::getPlusInfinity())
+            return indices.end();
+
+        auto temp_column = ordered_set[0]->cloneEmpty();
+        temp_column->insert(field.getFieldIfFinite());
+        return std::lower_bound(indices.begin(), indices.end(), *temp_column, compare_one);
+    };
+
+    decltype(indices.begin()) left_lower;
+    decltype(indices.begin()) right_lower;
+
     /** Because each parallelogram maps to a contiguous sequence of elements
-      * layed out in the lexicographically increasing order, the set intersects the range
-      * if and only if either bound coincides with an element or at least one element
-      * is between the lower bounds
-      */
-    auto left_lower = std::lower_bound(indices.begin(), indices.end(), left_point, compare);
-    auto right_lower = std::lower_bound(indices.begin(), indices.end(), right_point, compare);
+     * layed out in the lexicographically increasing order, the set intersects the range
+     * if and only if either bound coincides with an element or at least one element
+     * is between the lower bounds
+     */
+    if (tuple_size == 1)
+    {
+       left_lower = lower_for_field(left_point[0]);
+       right_lower = lower_for_field(right_point[0]);
+    }
+    else
+    {
+        left_lower = std::lower_bound(indices.begin(), indices.end(), left_point, compare);
+        right_lower = std::lower_bound(indices.begin(), indices.end(), right_point, compare);
+    }
 
     return
     {
