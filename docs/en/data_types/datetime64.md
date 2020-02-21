@@ -9,7 +9,7 @@ Syntax:
 DateTime64(precision, [timezone])
 ```
 
-Internally, stores data as number of 'ticks' since epoch start (1970/1/1 00:00:00 UTC) as UInt64
+Internally, stores data as number of 'ticks' since epoch start (1970/1/1 00:00:00 UTC) as Int64
 
 ## Examples
 

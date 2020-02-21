@@ -107,6 +107,5 @@ FROM dt
 - [Конфигурационный параметр сервера `timezone`](../operations/server_settings/settings.md#server_settings-timezone)
 - [Операторы для работы с датой и временем](../query_language/operators.md#operators-datetime)
 - [Тип данных `Date`](date.md)
-- [Тип данных `DateTime64`](datetime64.md)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/datetime/) <!--hide-->

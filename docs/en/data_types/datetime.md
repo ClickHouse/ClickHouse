@@ -113,6 +113,5 @@ FROM dt
 - [The `timezone` server configuration parameter](../operations/server_settings/settings.md#server_settings-timezone)
 - [Operators for working with dates and times](../query_language/operators.md#operators-datetime)
 - [The `Date` data type](date.md)
-- [The `DateTime64` data type](datetime64.md)
 
 [Original article](https://clickhouse.tech/docs/en/data_types/datetime/) <!--hide-->
