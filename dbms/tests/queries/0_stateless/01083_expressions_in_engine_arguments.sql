@@ -6,8 +6,8 @@ CREATE TABLE file (n Int8) ENGINE = File(upper('tsv') || 'WithNames' || 'AndType
 CREATE TABLE buffer (n Int8) ENGINE = Buffer(currentDatabase(), file, 16, 10, 200, 10000, 1000000, 10000000, 1000000000);
 CREATE TABLE merge (n Int8) ENGINE = Merge('', lower('DISTRIBUTED'));
 CREATE TABLE merge_tf as merge(currentDatabase(), '.*');
-CREATE TABLE distributed (n Int8) ENGINE = Distributed(test_cluster, currentDatabase(), 'fi' || 'le');
-CREATE TABLE distributed_tf as cluster('test' || '_' || 'cluster', '', 'fi' || 'le');
+CREATE TABLE distributed (n Int8) ENGINE = Distributed(test_shard_localhost, currentDatabase(), 'fi' || 'le');
+CREATE TABLE distributed_tf as cluster('test' || '_' || 'shard_localhost', '', 'fi' || 'le');
 
 INSERT INTO file VALUES (1);
 CREATE TABLE url (n UInt64, _path String) ENGINE=URL
@@ -31,7 +31,7 @@ CREATE TABLE rich_syntax as remote
     'localhos{x|y|t}',
     cluster
     (
-        'test' || '_' || 'cluster',
+        'test' || '_' || 'shard_localhost',
         remote
         (
             '127.0.0.{1..4}',
