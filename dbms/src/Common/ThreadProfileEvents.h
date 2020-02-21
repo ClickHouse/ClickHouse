@@ -5,7 +5,6 @@
 #include <ctime>
 #include <sys/resource.h>
 #include <pthread.h>
-#include <map>
 #include <common/logger_useful.h>
 
 #if defined(__linux__)
@@ -174,7 +173,6 @@ struct PerfEventsCounters
     static constexpr size_t NUMBER_OF_RAW_EVENTS = 18;
 
     static const PerfEventInfo perf_raw_events_info[];
-    static const std::map<int, int> event_config_to_info_index;
 
     int events_descriptors[NUMBER_OF_RAW_EVENTS];
     // temp array just to not create it each time event processing finishes
@@ -186,13 +184,15 @@ struct PerfEventsCounters
 
     static void finalizeProfileEvents(PerfEventsCounters & counters, ProfileEvents::Counters & profile_events);
 
+#if defined(__linux__)
 private:
     // used to write information about perf event availability only once for all threads
     static std::atomic<bool> events_availability_logged;
 
     static Logger * getLogger();
 
-    long long getRawValue(int event_config);
+    [[nodiscard]] long long getRawValue(int event_type, int event_config) const;
+#endif
 };
 
 #if defined(__linux__)
