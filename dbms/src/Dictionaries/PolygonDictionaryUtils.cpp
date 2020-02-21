@@ -47,19 +47,20 @@ std::unique_ptr<ICell> GridRoot::makeCell(Float64 current_min_x, Float64 current
     possible_ids.erase(std::remove_if(possible_ids.begin(), possible_ids.end(), [&](const auto & id) {
         return !bg::intersects(current_box, polygons[id]);
     }), possible_ids.end());
-    if (possible_ids.size() <= kMinIntersections || ++depth == kMaxDepth)
+    if (possible_ids.size() <= kMinIntersections || depth++ == kMaxDepth)
         return std::make_unique<FinalCell>(possible_ids);
     auto x_shift = (current_max_x - current_min_x) / kSplit;
     auto y_shift = (current_max_y - current_min_y) / kSplit;
     std::vector<std::unique_ptr<ICell>> children;
     children.reserve(kSplit * kSplit);
     auto copy = current_min_y;
-    for (size_t i = 0; i < kSplit; current_min_x += x_shift, current_min_y = copy, ++i)
+    for (size_t i = 0; i < kSplit; current_min_x += x_shift, ++i)
     {
         for (size_t j = 0; j < kSplit; current_min_y += y_shift, ++j)
         {
             children.push_back(makeCell(current_min_x, current_min_y, current_min_x + x_shift, current_min_y + y_shift, possible_ids, depth));
         }
+        current_min_y = copy;
     }
     return std::make_unique<DividedCell>(std::move(children));
 }

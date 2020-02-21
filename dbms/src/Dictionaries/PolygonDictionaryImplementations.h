@@ -7,9 +7,9 @@ namespace DB
 {
 
 /** Simple implementation of the polygon dictionary. Doesn't generate anything during its construction.
-*  Iterates over all stored polygons for each query, checking each of them in linear time.
-*  Retrieves the polygon with the smallest area containing the given point. If there is more than one any such polygon
-*  may be returned.
+*   Iterates over all stored polygons for each query, checking each of them in linear time.
+*   Retrieves the polygon with the smallest area containing the given point. If there is more than one any such polygon
+*   may be returned.
 */
 class SimplePolygonDictionary : public IPolygonDictionary
 {
@@ -29,6 +29,11 @@ private:
     bool find(const Point & point, size_t & id) const override;
 };
 
+/** A polygon dictionary which generates a recursive grid in order to efficiently cut the number of polygons to be
+ *  checked slowly for a given point. For more detail see the GridRoot class.
+ *  Retrieves the polygon with the smallest area containing the given point. If there is more than one any such polygon
+*   may be returned.
+ */
 class GridPolygonDictionary : public IPolygonDictionary
 {
 public:
@@ -47,6 +52,8 @@ private:
     bool find(const Point & point, size_t & id) const override;
 
     GridRoot grid;
+    static constexpr size_t kMinIntersections = 3;
+    static constexpr size_t kMaxDepth = 3;
 };
 
 }
