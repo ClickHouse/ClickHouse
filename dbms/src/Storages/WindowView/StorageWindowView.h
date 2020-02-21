@@ -19,6 +19,7 @@ using BlocksListPtrs = std::shared_ptr<std::list<BlocksListPtr>>;
 class StorageWindowView : public ext::shared_ptr_helper<StorageWindowView>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageWindowView>;
+    friend class WatermarkBlockInputStream;
     friend class WindowViewBlockInputStream;
 
 public:
@@ -65,7 +66,7 @@ private:
     mutable Block sample_block;
     UInt64 clean_interval;
     const DateLUTImpl & time_zone;
-    std::list<UInt32> fire_signal;
+    std::deque<UInt32> fire_signal;
     std::list<std::weak_ptr<WindowViewBlockInputStream>> watch_streams;
     std::condition_variable condition;
     BlocksListPtrs mergeable_blocks;
@@ -73,8 +74,7 @@ private:
     /// Mutex for the blocks and ready condition
     std::mutex mutex;
     std::mutex flush_table_mutex;
-    std::mutex fire_signal_mutex;
-    std::mutex proc_time_signal_mutex;
+    std::shared_mutex fire_signal_mutex;
 
     /// Active users
     std::shared_ptr<bool> active_ptr;

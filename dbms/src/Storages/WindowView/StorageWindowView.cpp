@@ -41,6 +41,7 @@
 
 #include <Storages/WindowView/BlocksListInputStream.h>
 #include <Storages/WindowView/StorageWindowView.h>
+#include <Storages/WindowView/WatermarkBlockInputStream.h>
 #include <Storages/WindowView/WindowViewBlockInputStream.h>
 #include <Storages/WindowView/WindowViewProxyStorage.h>
 
@@ -490,6 +491,7 @@ inline UInt32 StorageWindowView::getWatermark(UInt32 time_sec)
 
 inline void StorageWindowView::addFireSignal(UInt32 timestamp_)
 {
+    std::unique_lock lock(fire_signal_mutex);
     if (!target_table_id.empty())
         fire_signal.push_back(timestamp_);
     for (auto & watch_stream : watch_streams)
@@ -527,11 +529,13 @@ void StorageWindowView::threadFuncToTable()
         condition.wait_for(lock, std::chrono::seconds(5));
         try
         {
-            while (!fire_signal.empty())
+            while (true)
             {
                 UInt32 timestamp_;
                 {
                     std::unique_lock lock_(fire_signal_mutex);
+                    if (fire_signal.empty())
+                        break;
                     timestamp_ = fire_signal.front();
                     fire_signal.pop_front();
                 }
@@ -555,7 +559,6 @@ void StorageWindowView::threadFuncFire()
         UInt64 timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
         UInt64 w_end = static_cast<UInt64>(getWindowUpperBound(static_cast<UInt32>(timestamp_usec / 1000000))) * 1000000;
         std::this_thread::sleep_for(std::chrono::microseconds(w_end - timestamp_usec));
-        std::unique_lock lock(fire_signal_mutex);
         addFireSignal(static_cast<UInt32>(w_end / 1000000));
     }
     if (!shutdown_called)
@@ -773,86 +776,47 @@ ASTPtr StorageWindowView::innerQueryParser(ASTSelectQuery & query)
 
 void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, const Block & block, const Context & context)
 {
-    UInt32 timestamp_now = std::time(nullptr);
+    UInt32 timestamp_now;
     UInt32 watermark;
     auto block_stream = std::make_shared<OneBlockInputStream>(block);
     BlockInputStreamPtr source_stream;
+
+    std::shared_lock<std::shared_mutex> fire_signal_lock;
     if (window_view.is_proctime_tumble)
     {
+        fire_signal_lock = std::shared_lock<std::shared_mutex>(window_view.fire_signal_mutex);
+        timestamp_now = std::time(nullptr);
         source_stream = std::make_shared<AddingConstColumnBlockInputStream<UInt32>>(block_stream, std::make_shared<DataTypeDateTime>(), timestamp_now, "____timestamp");
         watermark = window_view.getWindowLowerBound(timestamp_now);
     }
     else
     {
         source_stream = block_stream;
+        timestamp_now = std::time(nullptr);
         watermark = window_view.getWatermark(timestamp_now);
     }
 
     InterpreterSelectQuery select_block(
         window_view.getFinalQuery(), context, source_stream, QueryProcessingStage::WithMergeableState);
-    source_stream = std::make_shared<MaterializingBlockInputStream>(select_block.execute().in);
-    source_stream = std::make_shared<AddingConstColumnBlockInputStream<UInt32>>(source_stream, std::make_shared<DataTypeDateTime>(), watermark, "____watermark");
+    source_stream = std::make_shared<AddingConstColumnBlockInputStream<UInt32>>(select_block.execute().in, std::make_shared<DataTypeDateTime>(), watermark, "____watermark");
+    source_stream = std::make_shared<MaterializingBlockInputStream>(source_stream);
 
-    BlockInputStreamPtr in_stream;
-    in_stream = std::make_shared<FilterBlockInputStream>(source_stream, window_view.writeExpressions, "____filter", true);
+    source_stream = std::make_shared<FilterBlockInputStream>(source_stream, window_view.writeExpressions, "____filter", true);
+    if (window_view.watermark_num_units != 0)
+        source_stream = std::make_shared<WatermarkBlockInputStream>(source_stream, window_view, timestamp_now);
 
     if (!window_view.inner_table_id.empty())
     {
-        auto stream = window_view.getInnerStorage()->write(window_view.getInnerQuery(), context);
-        if (window_view.is_proctime_tumble)
-        {
-            std::unique_lock lock(window_view.fire_signal_mutex);
-            copyData(*in_stream, *stream);
-        }
-        else if (window_view.watermark_num_units != 0)
-        {
-            while (Block block_ = in_stream->read())
-            {
-                auto column_wend = block_.getByName("____w_end").column;
-                stream->write(std::move(block_));
-                const ColumnUInt32::Container & wend_data
-                    = static_cast<const ColumnUInt32 &>(*column_wend).getData();
-                std::unique_lock lock(window_view.fire_signal_mutex);
-                for (size_t i = 0; i < wend_data.size(); ++i)
-                {
-                    if (wend_data[i] < timestamp_now)
-                        window_view.addFireSignal(wend_data[i]);
-                }
-            }
-        }
-        else
-            copyData(*in_stream, *stream);
+        auto & inner_storage = window_view.getInnerStorage();
+        auto lock_ = inner_storage->lockStructureForShare(true, context.getCurrentQueryId());
+        auto stream = inner_storage->write(window_view.getInnerQuery(), context);
+        copyData(*source_stream, *stream);
     }
     else
     {
         BlocksListPtr new_mergeable_blocks = std::make_shared<BlocksList>();
-        if (window_view.is_proctime_tumble)
-        {
-            std::unique_lock lock(window_view.fire_signal_mutex);
-            while (Block block_ = in_stream->read())
+        while (Block block_ = source_stream->read())
                 new_mergeable_blocks->push_back(std::move(block_));
-        }
-        if (window_view.watermark_num_units != 0)
-        {
-            while (Block block_ = in_stream->read())
-            {
-                auto column_wend = block_.getByName("____w_end").column;
-                new_mergeable_blocks->push_back(std::move(block_));
-                const ColumnUInt32::Container & wend_data
-                    = static_cast<const ColumnUInt32 &>(*column_wend).getData();
-                std::unique_lock lock(window_view.fire_signal_mutex);
-                for (size_t i = 0; i < wend_data.size(); ++i)
-                {
-                    if (wend_data[i] < timestamp_now)
-                        window_view.addFireSignal(wend_data[i]);
-                }
-            }
-        }
-        else
-        {
-            while (Block block_ = in_stream->read())
-                new_mergeable_blocks->push_back(std::move(block_));
-        }
 
         std::unique_lock lock(window_view.mutex);
         window_view.getMergeableBlocksList()->push_back(new_mergeable_blocks);
