@@ -85,11 +85,13 @@ protected:
                 return Block();
             }
 
-            while (!fire_signal.empty())
+            while (true)
             {
                 UInt32 timestamp_;
                 {
                     std::unique_lock lock_(fire_signal_mutex);
+                    if (fire_signal.empty())
+                        break;
                     timestamp_ = fire_signal.front();
                     fire_signal.pop_front();
                 }
