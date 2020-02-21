@@ -98,6 +98,8 @@ Block ConvertingBlockInputStream::readImpl()
         return src;
 
     Block res = header.cloneEmpty();
+    res.info = src.info;
+
     for (size_t res_pos = 0, size = conversion.size(); res_pos < size; ++res_pos)
     {
         const auto & src_elem = src.getByPosition(conversion[res_pos]);
