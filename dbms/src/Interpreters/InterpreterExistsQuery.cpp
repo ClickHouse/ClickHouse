@@ -7,7 +7,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterExistsQuery.h>
-#include <Access/AccessFlags.h>
 #include <Common/typeid_cast.h>
 
 
@@ -43,27 +42,14 @@ BlockInputStreamPtr InterpreterExistsQuery::executeImpl()
     if ((exists_query = query_ptr->as<ASTExistsTableQuery>()))
     {
         if (exists_query->temporary)
-        {
-            context.checkAccess(AccessType::EXISTS, "", exists_query->table);
             result = context.isExternalTableExist(exists_query->table);
-        }
         else
-        {
-            String database = exists_query->database;
-            if (database.empty())
-                database = context.getCurrentDatabase();
-            context.checkAccess(AccessType::EXISTS, database, exists_query->table);
-            result = context.isTableExist(database, exists_query->table);
-        }
+            result = context.isTableExist(exists_query->database, exists_query->table);
     }
     else if ((exists_query = query_ptr->as<ASTExistsDictionaryQuery>()))
     {
         if (exists_query->temporary)
             throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
-        String database = exists_query->database;
-        if (database.empty())
-            database = context.getCurrentDatabase();
-        context.checkAccess(AccessType::EXISTS, database, exists_query->table);
         result = context.isDictionaryExists(exists_query->database, exists_query->table);
     }
 

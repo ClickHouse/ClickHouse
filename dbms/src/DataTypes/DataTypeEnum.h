@@ -13,7 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -70,7 +70,7 @@ public:
     {
         const auto it = value_to_name_map.find(value);
         if (it == std::end(value_to_name_map))
-            throw Exception{"Unexpected value " + toString(value) + " for type " + getName(), ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{"Unexpected value " + toString(value) + " for type " + getName(), ErrorCodes::LOGICAL_ERROR};
 
         return it->second;
     }
@@ -79,7 +79,7 @@ public:
     {
         const auto it = name_to_value_map.find(field_name);
         if (!it)
-            throw Exception{"Unknown element '" + field_name.toString() + "' for type " + getName(), ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{"Unknown element '" + field_name.toString() + "' for type " + getName(), ErrorCodes::LOGICAL_ERROR};
 
         return it->getMapped();
     }

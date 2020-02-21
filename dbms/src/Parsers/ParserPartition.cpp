@@ -61,13 +61,11 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             fields_str = String(left_paren->end, right_paren->begin - left_paren->end);
         }
-        else if (value->as<ASTLiteral>())
+        else
         {
             fields_count = 1;
             fields_str = String(begin->begin, pos->begin - begin->begin);
         }
-        else
-            return false;
 
         partition->value = value;
         partition->children.push_back(value);

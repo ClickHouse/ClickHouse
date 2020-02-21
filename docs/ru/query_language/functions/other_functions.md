@@ -685,29 +685,21 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 └───────────────────────────────────────────────────────┘
 ```
 
-## indexHint {#indexhint}
+## indexHint
 
-Возвращает все данные из диапазона, в который попадают данные, соответствующие указанному выражению.
-Переданное выражение не будет вычислено. Выбор диапазона производится по индексу.
-Индекс в ClickHouse разреженный, при чтении диапазона в ответ попадают «лишние» соседние данные.
- 
-**Синтаксис** 
+Выводит данные, попавшие в диапазон, выбранный по индексу без фильтрации по указанному в качестве аргумента выражению.
 
-```sql
-SELECT * FROM table WHERE indexHint(<expression>)
-```
+Переданное в функцию выражение не вычисляется, но при этом ClickHouse применяет к этому выражению индекс таким же образом, как если бы выражение участвовало в запросе без `indexHint`.
+
 
 **Возвращаемое значение**
 
-Возвращает диапазон индекса, в котором выполняется заданное условие.
+- 1.
 
-Тип: [Uint8](https://clickhouse.yandex/docs/ru/data_types/int_uint/#diapazony-uint).
 
 **Пример**
 
-Рассмотрим пример с использованием тестовых данных таблицы [ontime](../../getting_started/example_datasets/ontime.md).
-
-Исходная таблица:
+Рассмотрим таблицу с тестовыми данными [ontime](../../getting_started/example_datasets/ontime.md).
 
 ```sql
 SELECT count() FROM ontime
@@ -719,19 +711,13 @@ SELECT count() FROM ontime
 └─────────┘
 ```
 
-В таблице есть индексы по полям `(FlightDate, (Year, FlightDate))`. 
+В таблице есть индексы по полям `(FlightDate, (Year, FlightDate))`.
 
-Выполним выборку по дате, где индекс не используется.
-
-Запрос:
+Выполним выборку по дате следующим образом:
 
 ```sql
 SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
 ```
-
-ClickHouse обработал всю таблицу (`Processed 4.28 million rows`). 
-
-Результат:
 
 ```text
 ┌──────────k─┬─count()─┐
@@ -744,17 +730,11 @@ ClickHouse обработал всю таблицу (`Processed 4.28 million row
 └────────────┴─────────┘
 ```
 
-Для подключения индекса выбираем конкретную дату.
-
-Запрос:
+В этой выборке индекс не используется и ClickHouse обработал всю таблицу (`Processed 4.28 million rows`). Для подключения индекса выберем конкретную дату и выполним следующий запрос:
 
 ```sql
 SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
 ```
-
-При использовании индекса ClickHouse обработал значительно меньшее количество строк (`Processed 32.74 thousand rows`).
-
-Результат:
 
 ```text
 ┌──────────k─┬─count()─┐
@@ -762,9 +742,10 @@ SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k OR
 └────────────┴─────────┘
 ```
 
-Передадим в функцию `indexHint` выражение `k = '2017-09-15'`.
+В последней строке выдачи видно, что благодаря использованию индекса, ClickHouse обработал значительно меньшее количество строк (`Processed 32.74 thousand rows`).
 
-Запрос:
+
+Теперь передадим выражение `k = '2017-09-15'` в функцию `indexHint`:
 
 ```sql
 SELECT
@@ -776,12 +757,6 @@ GROUP BY k
 ORDER BY k ASC
 ```
 
-ClickHouse применил индекс по аналогии с примером выше (`Processed 32.74 thousand rows`).
-Выражение `k = '2017-09-15'` не используется при формировании результата.
-Функция `indexHint` позволяет увидеть соседние данные.
-
-Результат:
-
 ```text
 ┌──────────k─┬─count()─┐
 │ 2017-09-14 │    7071 │
@@ -790,6 +765,10 @@ ClickHouse применил индекс по аналогии с примеро
 │ 2017-09-30 │    8167 │
 └────────────┴─────────┘
 ```
+
+В ответе на запрос видно, что ClickHouse применил индекс таким же образом, что и в предыдущий раз (`Processed 32.74 thousand rows`). Однако по результирующему набору строк видно, что выражение `k = '2017-09-15'` не использовалось при формировании результата.
+
+Поскольку индекс в ClickHouse разреженный, то при чтении диапазона в ответ попадают "лишние" данные, в данном случае соседние даты. Функция `indexHint` позволяет их увидеть.
 
 ## replicate {#other_functions-replicate}
 
@@ -828,11 +807,9 @@ SELECT replicate(1, ['a', 'b', 'c']);
 └───────────────────────────────┘
 ```
 
-## filesystemAvailable {#filesystemavailable}
+## filesystemAvailable {#function-filesystemavailable}
 
-Возвращает объём доступного для записи данных места на файловой системе. Он всегда меньше общего свободного места ([filesystemFree](#filesystemfree)), потому что некоторое пространство зарезервировано для нужд операционной системы.
-
-**Синтаксис**
+Возвращает объем оставшегося места в файловой системе, в которой расположены файлы баз данных. Смотрите описание конфигурационного параметра сервера  [path](../../operations/server_settings/settings.md#server_settings-path).
 
 ```sql
 filesystemAvailable()
@@ -840,89 +817,24 @@ filesystemAvailable()
 
 **Возвращаемое значение**
 
-- Объём доступного для записи данных места в байтах.
+- Объем свободного места.
 
-Тип: [UInt64](../../data_types/int_uint.md).
-
-**Пример**
-
-Запрос:
-
-```sql
-SELECT formatReadableSize(filesystemAvailable()) AS "Available space", toTypeName(filesystemAvailable()) AS "Type";
-```
-
-Ответ:
-
-```text
-┌─Available space─┬─Type───┐
-│ 30.75 GiB       │ UInt64 │
-└─────────────────┴────────┘
-```
-
-## filesystemFree {#filesystemfree}
-
-Возвращает объём свободного места на файловой системе. Смотрите также `filesystemAvailable`.
-
-**Синтаксис**
-
-```sql
-filesystemFree()
-```
-
-**Возвращаемое значение**
-
-- Объем свободного места в байтах.
-
-Тип: [UInt64](../../data_types/int_uint.md).
+Тип — [UInt64](../../data_types/int_uint.md).
 
 **Пример**
 
-Запрос:
-
 ```sql
-SELECT formatReadableSize(filesystemFree()) AS "Free space", toTypeName(filesystemFree()) AS "Type";
+SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) AS "Type"
 ```
-
-Ответ:
-
 ```text
-┌─Free space─┬─Type───┐
-│ 32.39 GiB  │ UInt64 │
-└────────────┴────────┘
+┌──Free space─┬─Type───┐
+│ 18152624128 │ UInt64 │
+└─────────────┴────────┘
 ```
 
-## filesystemCapacity {#filesystemcapacity}
+## filesystemCapacity
 
-Возвращает информацию о ёмкости файловой системы в байтах. Для оценки должен быть настроен [путь](../../operations/server_settings/settings.md#server_settings-path) к каталогу с данными.
-
-**Синтаксис**
-
-```sql
-filesystemCapacity()
-```
-
-**Возвращаемое значение**
-
-- Информация о ёмкости файловой системы в байтах.
-
-Тип: [UInt64](../../data_types/int_uint.md).
-
-**Пример**
-
-Запрос:
-
-```sql
-SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesystemCapacity()) AS "Type"
-```
-
-Ответ:
-
-```text
-┌─Capacity──┬─Type───┐
-│ 39.32 GiB │ UInt64 │
-└───────────┴────────┘
-```
+Возвращает данные о ёмкости диска.
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
@@ -932,68 +844,11 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesy
 
 Принимает на вход состояния агрегатной функции и возвращает столбец со значениями, которые представляют собой результат мёржа этих состояний для выборки строк из блока от первой до текущей строки. Например, принимает состояние агрегатной функции (например,  `runningAccumulate(uniqState(UserID))`), и для каждой строки блока возвращает результат агрегатной функции после мёржа состояний функции для всех предыдущих строк и текущей. Таким образом, результат зависит от разбиения данных по блокам и от порядка данных в блоке.
 
-## joinGet {#joinget}
+## joinGet('join_storage_table_name', 'get_column', join_key) {#other_functions-joinget}
 
-Функция позволяет извлекать данные из таблицы таким же образом как из [словаря](../../query_language/dicts/index.md).
+Получает данные из таблиц [Join](../../operations/table_engines/join.md) по ключу.
 
-Получает данные из таблиц [Join](../../operations/table_engines/join.md#creating-a-table) по ключу.
-
-Поддерживаются только таблицы, созданные с `ENGINE = Join(ANY, LEFT, <join_keys>)`.
-
-**Синтаксис**
-
-```sql
-joinGet(join_storage_table_name, `value_column`, join_keys)
-```
-
-**Параметры**
-
-- `join_storage_table_name` — [идентификатор](../syntax.md#syntax-identifiers), который указывает, откуда производится выборка данных. Поиск по идентификатору осуществляется в базе данных по умолчанию (см. конфигурацию `default_database`). Чтобы переопределить базу данных по умолчанию, используйте команду `USE db_name`, или укажите базу данных и таблицу через разделитель `db_name.db_table`, см. пример.
-- `value_column` — столбец, из которого нужно произвести выборку данных.
-- `join_keys` — список ключей, по которым производится выборка данных.
-
-**Возвращаемое значение**
-
-Возвращает значение по списку ключей.
-
-Если значения не существует в исходной таблице, вернется `0` или `null` в соответствии с настройками [join_use_nulls](../../operations/settings/settings.md#join_use_nulls).
-
-Подробнее о настройке `join_use_nulls` в [операциях Join](../../operations/table_engines/join.md).
-
-**Пример**
-
-Входная таблица:
-
-```sql
-CREATE DATABASE db_test
-CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id) SETTINGS join_use_nulls = 1
-INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
-```
-
-```text
-┌─id─┬─val─┐
-│  4 │  13 │
-│  2 │  12 │
-│  1 │  11 │
-└────┴─────┘
-```
-
-Запрос:
-
-```sql
-SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS join_use_nulls = 1
-```
-
-Результат:
-
-```text
-┌─joinGet(db_test.id_val, 'val', toUInt32(number))─┐
-│                                                0 │
-│                                               11 │
-│                                               12 │
-│                                                0 │
-└──────────────────────────────────────────────────┘
-```
+Поддержаны только таблицы, созданные запросом с `ENGINE = Join(ANY, LEFT, <join_keys>)`.
 
 ## modelEvaluate(model_name, ...) {#function-modelevaluate}
 
@@ -1015,31 +870,20 @@ SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
 Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 ```
 
-## identity {#identity}
+## identity()
 
-Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn't look inside `identity` functions.
-
-**Syntax**
-
-```sql
-identity(x)
-```
-
-**Example**
-
-Query:
+Возвращает то же значение, которое использовалось в качестве аргумента.
 
 ```sql
 SELECT identity(42)
 ```
-
-Result:
 
 ```text
 ┌─identity(42)─┐
 │           42 │
 └──────────────┘
 ```
+Используется для отладки и тестирования, позволяет "сломать" доступ по индексу, и получить результат и производительность запроса для полного сканирования.
 
 ## randomPrintableASCII {#randomascii}
 
@@ -1076,4 +920,4 @@ SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers 
 └────────┴────────────────────────────────┴──────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/other_functions/) <!--hide-->

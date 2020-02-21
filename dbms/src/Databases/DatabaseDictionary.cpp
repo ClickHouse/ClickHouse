@@ -52,7 +52,7 @@ Tables DatabaseDictionary::listTables(const Context & context, const FilterByNam
             auto dict_name = dict_ptr->getName();
             const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
             auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-            tables[dict_name] = StorageDictionary::create(StorageID(getDatabaseName(), dict_name), ColumnsDescription{columns}, context, true, dict_name);
+            tables[dict_name] = StorageDictionary::create(getDatabaseName(), dict_name, ColumnsDescription{columns}, context, true, dict_name);
         }
     }
     return tables;
@@ -74,7 +74,7 @@ StoragePtr DatabaseDictionary::tryGetTable(
     {
         const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
         auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-        return StorageDictionary::create(StorageID(getDatabaseName(), table_name), ColumnsDescription{columns}, context, true, table_name);
+        return StorageDictionary::create(getDatabaseName(), table_name, ColumnsDescription{columns}, context, true, table_name);
     }
 
     return {};
@@ -109,12 +109,11 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const Context & context,
         buffer << ") Engine = Dictionary(" << backQuoteIfNeed(table_name) << ")";
     }
 
-    auto settings = context.getSettingsRef();
     ParserCreateQuery parser;
     const char * pos = query.data();
     std::string error_message;
     auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message,
-            /* hilite = */ false, "", /* allow_multi_statements = */ false, 0, settings.max_parser_depth);
+            /* hilite = */ false, "", /* allow_multi_statements = */ false, 0);
 
     if (!ast && throw_on_error)
         throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
@@ -122,16 +121,15 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const Context & context,
     return ast;
 }
 
-ASTPtr DatabaseDictionary::getCreateDatabaseQuery(const Context & context) const
+ASTPtr DatabaseDictionary::getCreateDatabaseQuery() const
 {
     String query;
     {
         WriteBufferFromString buffer(query);
         buffer << "CREATE DATABASE " << backQuoteIfNeed(database_name) << " ENGINE = Dictionary";
     }
-    auto settings = context.getSettingsRef();
     ParserCreateQuery parser;
-    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
+    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0);
 }
 
 void DatabaseDictionary::shutdown()

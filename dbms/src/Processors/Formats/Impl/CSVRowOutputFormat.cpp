@@ -54,8 +54,6 @@ void CSVRowOutputFormat::writeFieldDelimiter()
 
 void CSVRowOutputFormat::writeRowEndDelimiter()
 {
-    if (format_settings.csv.crlf_end_of_line)
-        writeChar('\r', out);
     writeChar('\n', out);
 }
 

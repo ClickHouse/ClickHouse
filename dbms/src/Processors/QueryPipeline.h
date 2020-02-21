@@ -29,14 +29,11 @@ public:
     void init(Pipe pipe); /// Simple init for single pipe
     bool initialized() { return !processors.empty(); }
 
-    /// Type of logical data stream for simple transform.
-    /// Sometimes it's important to know which part of pipeline we are working for.
-    /// Example: ExpressionTransform need special logic for totals.
     enum class StreamType
     {
-        Main = 0, /// Stream for query data. There may be several streams of this type.
-        Totals,  /// Stream for totals. No more then one.
-        Extremes, /// Stream for extremes. No more then one.
+        Main = 0,
+        Totals,
+        Extremes,
     };
 
     using ProcessorGetter = std::function<ProcessorPtr(const Block & header)>;
@@ -64,7 +61,7 @@ public:
     /// Check if resize transform was used. (In that case another distinct transform will be added).
     bool hasMixedStreams() const { return has_resize || hasMoreThanOneStream(); }
 
-    void resize(size_t num_streams, bool force = false, bool strict = false);
+    void resize(size_t num_streams, bool force = false);
 
     void enableQuotaForCurrentStreams();
 
@@ -81,7 +78,7 @@ public:
 
     void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
     void addInterpreterContext(std::shared_ptr<Context> context) { interpreter_context.emplace_back(std::move(context)); }
-    void addStorageHolder(StoragePtr storage) { storage_holders.emplace_back(std::move(storage)); }
+    void addStorageHolder(StoragePtr storage) { storage_holder.emplace_back(std::move(storage)); }
 
     /// For compatibility with IBlockInputStream.
     void setProgressCallback(const ProgressCallback & callback);
@@ -92,9 +89,6 @@ public:
 
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
     size_t getMaxThreads() const { return max_threads; }
-
-    /// Convert query pipeline to single pipe.
-    Pipe getPipe() &&;
 
 private:
 
@@ -120,13 +114,11 @@ private:
     /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
     /// because QueryPipeline is alive until query is finished.
     std::vector<std::shared_ptr<Context>> interpreter_context;
-    std::vector<StoragePtr> storage_holders;
+    std::vector<StoragePtr> storage_holder;
 
     IOutputFormat * output_format = nullptr;
 
     size_t max_threads = 0;
-
-    QueryStatus * process_list_element = nullptr;
 
     void checkInitialized();
     void checkSource(const ProcessorPtr & source, bool can_have_totals);

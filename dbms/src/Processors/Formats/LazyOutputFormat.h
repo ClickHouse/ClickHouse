@@ -7,9 +7,6 @@
 namespace DB
 {
 
-/// LazyOutputFormat is used to retrieve ready data from executing pipeline.
-/// You can periodically call `getBlock` from separate thread.
-/// Used in TCPHandler.
 class LazyOutputFormat : public IOutputFormat
 {
 
@@ -23,18 +20,14 @@ public:
     Block getTotals();
     Block getExtremes();
 
-    bool isFinished() { return finished_processing && queue.size() == 0; }
+    bool isFinished() { return finished_processing; }
 
     BlockStreamProfileInfo & getProfileInfo() { return info; }
 
     void setRowsBeforeLimit(size_t rows_before_limit) override;
 
-    void finish()
-    {
-        finished_processing = true;
-        /// Clear queue in case if somebody is waiting lazy_format to push.
-        queue.clear();
-    }
+    void finish() { finished_processing = true; }
+    void clearQueue() { queue.clear(); }
 
 protected:
     void consume(Chunk chunk) override

@@ -591,9 +591,11 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
             }
         });
 
-        /// Wait in case of exception happened outside of pool.
+        /// Wait in case of exception. Delete pipeline to release memory.
         SCOPE_EXIT(
+                /// Clear queue in case if somebody is waiting lazy_format to push.
                 lazy_format->finish();
+                lazy_format->clearQueue();
 
                 try
                 {
@@ -602,58 +604,72 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
                 catch (...)
                 {
                     /// If exception was thrown during pipeline execution, skip it while processing other exception.
-                    tryLogCurrentException(log);
                 }
+
+                pipeline = QueryPipeline()
         );
 
-        while (!lazy_format->isFinished() && !exception)
+        while (true)
         {
-            if (isQueryCancelled())
+            Block block;
+
+            while (true)
             {
-                /// A packet was received requesting to stop execution of the request.
-                executor->cancel();
-                break;
+                if (isQueryCancelled())
+                {
+                    /// A packet was received requesting to stop execution of the request.
+                    executor->cancel();
+
+                    break;
+                }
+                else
+                {
+                    if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
+                    {
+                        /// Some time passed and there is a progress.
+                        after_send_progress.restart();
+                        sendProgress();
+                    }
+
+                    sendLogs();
+
+                    if ((block = lazy_format->getBlock(query_context->getSettingsRef().interactive_delay / 1000)))
+                        break;
+
+                    if (lazy_format->isFinished())
+                        break;
+
+                    if (exception)
+                    {
+                        pool.wait();
+                        break;
+                    }
+                }
             }
 
-            if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
+            /** If data has run out, we will send the profiling data and total values to
+              * the last zero block to be able to use
+              * this information in the suffix output of stream.
+              * If the request was interrupted, then `sendTotals` and other methods could not be called,
+              *  because we have not read all the data yet,
+              *  and there could be ongoing calculations in other threads at the same time.
+              */
+            if (!block && !isQueryCancelled())
             {
-                /// Some time passed and there is a progress.
-                after_send_progress.restart();
+                pool.wait();
+                pipeline.finalize();
+
+                sendTotals(lazy_format->getTotals());
+                sendExtremes(lazy_format->getExtremes());
+                sendProfileInfo(lazy_format->getProfileInfo());
                 sendProgress();
+                sendLogs();
             }
 
-            sendLogs();
-
-            if (auto block = lazy_format->getBlock(query_context->getSettingsRef().interactive_delay / 1000))
-            {
-                if (!state.io.null_format)
-                    sendData(block);
-            }
+            sendData(block);
+            if (!block)
+                break;
         }
-
-        /// Finish lazy_format before waiting. Otherwise some thread may write into it, and waiting will lock.
-        lazy_format->finish();
-        pool.wait();
-
-        /** If data has run out, we will send the profiling data and total values to
-          * the last zero block to be able to use
-          * this information in the suffix output of stream.
-          * If the request was interrupted, then `sendTotals` and other methods could not be called,
-          *  because we have not read all the data yet,
-          *  and there could be ongoing calculations in other threads at the same time.
-          */
-        if (!isQueryCancelled())
-        {
-            pipeline.finalize();
-
-            sendTotals(lazy_format->getTotals());
-            sendExtremes(lazy_format->getExtremes());
-            sendProfileInfo(lazy_format->getProfileInfo());
-            sendProgress();
-            sendLogs();
-        }
-
-        sendData({});
     }
 
     state.io.onFinish();
@@ -900,6 +916,10 @@ void TCPHandler::receiveQuery()
             client_info.initial_query_id = client_info.current_query_id;
             client_info.initial_address = client_info.current_address;
         }
+        else
+        {
+            query_context->switchRowPolicy();
+        }
     }
 
     /// Per query settings.
@@ -977,7 +997,7 @@ bool TCPHandler::receiveData(bool scalar)
                 if (!(storage = query_context->tryGetExternalTable(name)))
                 {
                     NamesAndTypesList columns = block.getNamesAndTypesList();
-                    storage = StorageMemory::create(StorageID("_external", name), ColumnsDescription{columns}, ConstraintsDescription{});
+                    storage = StorageMemory::create("_external", name, ColumnsDescription{columns}, ConstraintsDescription{});
                     storage->startup();
                     query_context->addExternalTable(name, storage);
                 }

@@ -1,7 +1,6 @@
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/StorageDistributed.h>
-#include <Disks/DiskSpaceMonitor.h>
 
 #include <Parsers/formatAST.h>
 #include <Parsers/queryToString.h>
@@ -91,7 +90,7 @@ void DistributedBlockOutputStream::write(const Block & block)
         if (ordinary_block.has(col.name))
         {
             ordinary_block.erase(col.name);
-            LOG_DEBUG(log, storage.getStorageID().getNameForLogs()
+            LOG_DEBUG(log, storage.getTableName()
                 << ": column " + col.name + " will be removed, "
                 << "because it is MATERIALIZED");
         }
@@ -516,7 +515,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
         else
         {
             if (shard_info.dir_name_for_internal_replication.empty())
-                throw Exception("Directory name for async inserts is empty, table " + storage.getStorageID().getNameForLogs(), ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Directory name for async inserts is empty, table " + storage.getTableName(), ErrorCodes::LOGICAL_ERROR);
 
             writeToShard(block, {shard_info.dir_name_for_internal_replication});
         }
@@ -564,12 +563,11 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     /// write first file, hardlink the others
     for (const auto & dir_name : dir_names)
     {
-        const auto & [disk, data_path] = storage.getPath();
-        const std::string path(disk + data_path + dir_name + '/');
+        const auto & path = storage.getPath() + dir_name + '/';
 
         /// ensure shard subdirectory creation and notify storage
         if (Poco::File(path).createDirectory())
-            storage.requireDirectoryMonitor(disk, dir_name);
+            storage.requireDirectoryMonitor(dir_name);
 
         const auto & file_name = toString(storage.file_names_increment.get()) + ".bin";
         const auto & block_file_path = path + file_name;

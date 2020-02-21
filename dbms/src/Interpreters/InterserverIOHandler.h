@@ -11,7 +11,6 @@
 #include <map>
 #include <atomic>
 #include <utility>
-#include <shared_mutex>
 #include <Poco/Net/HTMLForm.h>
 
 namespace Poco { namespace Net { class HTTPServerResponse; } }
@@ -25,6 +24,42 @@ namespace ErrorCodes
     extern const int NO_SUCH_INTERSERVER_IO_ENDPOINT;
 }
 
+/** Location of the service.
+  */
+struct InterserverIOEndpointLocation
+{
+public:
+    InterserverIOEndpointLocation(const std::string & name_, const std::string & host_, UInt16 port_)
+        : name(name_), host(host_), port(port_)
+    {
+    }
+
+    /// Creates a location based on its serialized representation.
+    InterserverIOEndpointLocation(const std::string & serialized_location)
+    {
+        ReadBufferFromString buf(serialized_location);
+        readBinary(name, buf);
+        readBinary(host, buf);
+        readBinary(port, buf);
+        assertEOF(buf);
+    }
+
+    /// Serializes the location.
+    std::string toString() const
+    {
+        WriteBufferFromOwnString buf;
+        writeBinary(name, buf);
+        writeBinary(host, buf);
+        writeBinary(port, buf);
+        return buf.str();
+    }
+
+public:
+    std::string name;
+    std::string host;
+    UInt16 port;
+};
+
 /** Query processor from other servers.
   */
 class InterserverIOEndpoint
@@ -36,7 +71,6 @@ public:
 
     /// You need to stop the data transfer if blocker is activated.
     ActionBlocker blocker;
-    std::shared_mutex rwlock;
 };
 
 using InterserverIOEndpointPtr = std::shared_ptr<InterserverIOEndpoint>;
@@ -56,10 +90,11 @@ public:
             throw Exception("Duplicate interserver IO endpoint: " + name, ErrorCodes::DUPLICATE_INTERSERVER_IO_ENDPOINT);
     }
 
-    bool removeEndpointIfExists(const String & name)
+    void removeEndpoint(const String & name)
     {
         std::lock_guard lock(mutex);
-        return endpoint_map.erase(name);
+        if (!endpoint_map.erase(name))
+            throw Exception("No interserver IO endpoint named " + name, ErrorCodes::NO_SUCH_INTERSERVER_IO_ENDPOINT);
     }
 
     InterserverIOEndpointPtr getEndpoint(const String & name)
@@ -79,5 +114,42 @@ private:
     EndpointMap endpoint_map;
     std::mutex mutex;
 };
+
+/// In the constructor calls `addEndpoint`, in the destructor - `removeEndpoint`.
+class InterserverIOEndpointHolder
+{
+public:
+    InterserverIOEndpointHolder(const String & name_, InterserverIOEndpointPtr endpoint_, InterserverIOHandler & handler_)
+        : name(name_), endpoint(std::move(endpoint_)), handler(handler_)
+    {
+        handler.addEndpoint(name, endpoint);
+    }
+
+    InterserverIOEndpointPtr getEndpoint()
+    {
+        return endpoint;
+    }
+
+    ~InterserverIOEndpointHolder()
+    try
+    {
+        handler.removeEndpoint(name);
+        /// After destroying the object, `endpoint` can still live, since its ownership is acquired during the processing of the request,
+        /// see InterserverIOHTTPHandler.cpp
+    }
+    catch (...)
+    {
+        tryLogCurrentException("~InterserverIOEndpointHolder");
+    }
+
+    ActionBlocker & getBlocker() { return endpoint->blocker; }
+
+private:
+    String name;
+    InterserverIOEndpointPtr endpoint;
+    InterserverIOHandler & handler;
+};
+
+using InterserverIOEndpointHolderPtr = std::shared_ptr<InterserverIOEndpointHolder>;
 
 }

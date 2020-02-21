@@ -16,40 +16,33 @@ Default value: 3600.
 ```
 
 
-## compression {#server-settings-compression}
+## compression
 
-Data compression settings for [MergeTree](../table_engines/mergetree.md)-engine tables.
+Data compression settings.
 
 !!! warning
     Don't use it if you have just started using ClickHouse.
 
-Configuration template:
+The configuration looks like this:
 
 ```xml
 <compression>
     <case>
-      <min_part_size>...</min_part_size>
-      <min_part_size_ratio>...</min_part_size_ratio>
-      <method>...</method>
+      <parameters/>
     </case>
     ...
 </compression>
 ```
 
-`<case>` fields:
+You can configure multiple sections `<case>`.
 
-- `min_part_size` – The minimum size of a data part.
-- `min_part_size_ratio` – The ratio of the data part size to the table size.
-- `method` – Compression method. Acceptable values: `lz4` or `zstd`.
+Block field `<case>`:
 
-You can configure multiple `<case>` sections.
+- ``min_part_size`` – The minimum size of a table part.
+- ``min_part_size_ratio`` – The ratio of the minimum size of a table part to the full size of the table.
+- ``method`` – Compression method. Acceptable values ​: ``lz4`` or ``zstd``(experimental).
 
-Actions when conditions are met:
-
-- If a data part matches a condition set, ClickHouse uses the specified compression method.
-- If a data part matches multiple condition sets, ClickHouse uses the first matched condition set.
-
-If no conditions met for a data part, ClickHouse uses the `lz4` compression.
+ClickHouse checks `min_part_size` and `min_part_size_ratio` and processes the `case` blocks that match these conditions. If none of the `<case>` matches, ClickHouse applies the `lz4` compression algorithm.
 
 **Example**
 
@@ -147,10 +140,10 @@ Settings:
 - interval – The interval for sending, in seconds.
 - timeout – The timeout for sending data, in seconds.
 - root_path – Prefix for keys.
-- metrics – Sending data from the [system.metrics](../system_tables.md#system_tables-metrics) table.
-- events – Sending deltas data accumulated for the time period from the [system.events](../system_tables.md#system_tables-events) table.
-- events_cumulative – Sending cumulative data from the [system.events](../system_tables.md#system_tables-events) table.
-- asynchronous_metrics – Sending data from the [system.asynchronous_metrics](../system_tables.md#system_tables-asynchronous_metrics) table.
+- metrics – Sending data from a [system.metrics](../system_tables.md#system_tables-metrics) table.
+- events – Sending deltas data accumulated for the time period from a [system.events](../system_tables.md#system_tables-events) table.
+- events_cumulative – Sending cumulative data from a [system.events](../system_tables.md#system_tables-events) table.
+- asynchronous_metrics – Sending data from a [system.asynchronous_metrics](../system_tables.md#system_tables-asynchronous_metrics) table.
 
 You can configure multiple `<graphite>` clauses. For instance, you can use this for sending different data at different intervals.
 
@@ -175,7 +168,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
 
 Settings for thinning data for Graphite.
 
-For more details, see [GraphiteMergeTree](../table_engines/graphitemergetree.md).
+For more details, see [GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md).
 
 **Example**
 
@@ -375,7 +368,7 @@ For more information, see the section "[Creating replicated tables](../../operat
 
 ## mark_cache_size {#server-mark-cache-size}
 
-Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../table_engines/mergetree.md) family.
+Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../../operations/table_engines/mergetree.md) family.
 
 The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
 
@@ -427,7 +420,7 @@ We recommend using this option in Mac OS X, since the `getrlimit()` function ret
 
 Restriction on deleting tables.
 
-If the size of a [MergeTree](../table_engines/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a DROP query.
+If the size of a [MergeTree](../../operations/table_engines/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a DROP query.
 
 If you still need to delete the table without restarting the ClickHouse server, create the `<clickhouse-path>/flags/force_drop_table` file and run the DROP query.
 
@@ -444,7 +437,7 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ## merge_tree {#server_settings-merge_tree}
 
-Fine tuning for tables in the [MergeTree](../table_engines/mergetree.md).
+Fine tuning for tables in the [MergeTree](../../operations/table_engines/mergetree.md).
 
 For more information, see the MergeTreeSettings.h header file.
 
@@ -519,7 +512,7 @@ Keys for server/client settings:
 
 ## part_log {#server_settings-part-log}
 
-Logging events that are associated with [MergeTree](../table_engines/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
+Logging events that are associated with [MergeTree](../../operations/table_engines/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
 Queries are logged in the [system.part_log](../system_tables.md#system_tables-part-log) table, not in a separate file. You can configure the name of this table in the `table` parameter (see below).
 
@@ -716,21 +709,7 @@ Positive integer.
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-## mysql_port {#server_settings-mysql_port}
-
-Port for communicating with clients over MySQL protocol.
-
-**Possible values**
-
-Positive integer.
-
-Example
-
-```xml
-<mysql_port>9004</mysql_port>
-```
-
-## tmp_path {#server-settings-tmp_path}
+## tmp_path
 
 Path to temporary data for processing large queries.
 
@@ -744,20 +723,9 @@ Path to temporary data for processing large queries.
 ```
 
 
-## tmp_policy {#server-settings-tmp_policy}
-
-Policy from [`storage_configuration`](../table_engines/mergetree.md#table_engine-mergetree-multiple-volumes) to store temporary files.
-If not set [`tmp_path`](#server-settings-tmp_path) is used, otherwise it is ignored.
-
-!!! note
-    - `move_factor` is ignored
-    - `keep_free_space_bytes` is ignored
-    - `max_data_part_size_bytes` is ignored
-    - you must have exactly one volume in that policy
-
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
-Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../table_engines/mergetree.md).
+Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../operations/table_engines/mergetree.md).
 
 There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use_uncompressed_cache](../settings/settings.md#setting-use_uncompressed_cache) is enabled.
 
@@ -889,4 +857,4 @@ The update is performed asynchronously, in a separate system thread.
 
 **Default value**: 15.
 
-[Original article](https://clickhouse.tech/docs/en/operations/server_settings/settings/) <!--hide-->
+[Original article](https://clickhouse.yandex/docs/en/operations/server_settings/settings/) <!--hide-->

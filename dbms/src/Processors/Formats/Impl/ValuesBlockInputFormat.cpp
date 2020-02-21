@@ -129,8 +129,7 @@ void ValuesBlockInputFormat::readRow(MutableColumns & columns, size_t row_num)
 bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx)
 {
     /// Try to parse expression using template if one was successfully deduced while parsing the first row
-    auto settings = context->getSettingsRef();
-    if (templates[column_idx]->parseExpression(buf, format_settings, settings))
+    if (templates[column_idx]->parseExpression(buf, format_settings))
     {
         ++rows_parsed_using_template[column_idx];
         return true;
@@ -188,7 +187,6 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 {
     const Block & header = getPort().getHeader();
     const IDataType & type = *header.getByPosition(column_idx).type;
-    auto settings = context->getSettingsRef();
 
     /// We need continuous memory containing the expression to use Lexer
     skipToNextRow(0, 1);
@@ -197,7 +195,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     Expected expected;
     Tokens tokens(buf.position(), buf.buffer().end());
-    IParser::Pos token_iterator(tokens, settings.max_parser_depth);
+    IParser::Pos token_iterator(tokens);
     ASTPtr ast;
 
     bool parsed = parser.parse(token_iterator, ast, expected);
@@ -267,7 +265,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 ++attempts_to_deduce_template[column_idx];
 
             buf.rollbackToCheckpoint();
-            if (templates[column_idx]->parseExpression(buf, format_settings, settings))
+            if (templates[column_idx]->parseExpression(buf, format_settings))
             {
                 ++rows_parsed_using_template[column_idx];
                 parser_type_for_column[column_idx] = ParserType::BatchTemplate;

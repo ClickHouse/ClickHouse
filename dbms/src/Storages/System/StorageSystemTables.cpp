@@ -6,7 +6,6 @@
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
-#include <Access/AccessRightsContext.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/queryToString.h>
@@ -15,8 +14,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Disks/DiskSpaceMonitor.h>
-#include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -30,7 +27,7 @@ namespace ErrorCodes
 
 
 StorageSystemTables::StorageSystemTables(const std::string & name_)
-    : IStorage({"system", name_})
+    : name(name_)
 {
     setColumns(ColumnsDescription(
     {
@@ -81,33 +78,32 @@ static bool needLockStructure(const DatabasePtr & database, const Block & header
     return false;
 }
 
-class TablesBlockSource : public SourceWithProgress
+class TablesBlockInputStream : public IBlockInputStream
 {
 public:
-    TablesBlockSource(
+    TablesBlockInputStream(
         std::vector<UInt8> columns_mask_,
-        Block header,
+        Block header_,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         const Context & context_)
-        : SourceWithProgress(std::move(header))
-        , columns_mask(std::move(columns_mask_))
+        : columns_mask(std::move(columns_mask_))
+        , header(std::move(header_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
         , context(context_) {}
 
     String getName() const override { return "Tables"; }
+    Block getHeader() const override { return header; }
 
 protected:
-    Chunk generate() override
+    Block readImpl() override
     {
         if (done)
             return {};
 
-        MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
-
-        const auto access_rights = context.getAccessRights();
-        const bool check_access_for_databases = !access_rights->isGranted(AccessType::SHOW);
+        Block res = header;
+        MutableColumns res_columns = header.cloneEmptyColumns();
 
         size_t rows_count = 0;
         while (rows_count < max_block_size)
@@ -120,7 +116,7 @@ protected:
                 database_name = databases->getDataAt(database_idx).toString();
                 database = context.tryGetDatabase(database_name);
 
-                if (!database)
+                if (!database || !context.hasDatabaseAccessRights(database_name))
                 {
                     /// Database was deleted just now or the user has no access.
                     ++database_idx;
@@ -192,25 +188,21 @@ protected:
                     }
                 }
 
-                UInt64 num_rows = res_columns.at(0)->size();
+                res.setColumns(std::move(res_columns));
                 done = true;
-                return Chunk(std::move(res_columns), num_rows);
+                return res;
             }
-
-            const bool check_access_for_tables = check_access_for_databases && !access_rights->isGranted(AccessType::SHOW, database_name);
 
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getTablesWithDictionaryTablesIterator(context);
 
-            const bool need_lock_structure = needLockStructure(database, getPort().getHeader());
+            const bool need_lock_structure = needLockStructure(database, header);
 
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
                 auto table_name = tables_it->name();
-                if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW, database_name, table_name))
-                    continue;
-
                 StoragePtr table = nullptr;
+
                 TableStructureReadLockHolder lock;
 
                 try
@@ -274,14 +266,14 @@ protected:
                     Array dependencies_database_name_array;
                     if (columns_mask[src_index] || columns_mask[src_index + 1])
                     {
-                        const auto dependencies = context.getDependencies(StorageID(database_name, table_name));
+                        const auto dependencies = context.getDependencies(database_name, table_name);
 
                         dependencies_table_name_array.reserve(dependencies.size());
                         dependencies_database_name_array.reserve(dependencies.size());
                         for (const auto & dependency : dependencies)
                         {
-                            dependencies_table_name_array.push_back(dependency.table_name);
-                            dependencies_database_name_array.push_back(dependency.database_name);
+                            dependencies_table_name_array.push_back(dependency.second);
+                            dependencies_database_name_array.push_back(dependency.first);
                         }
                     }
 
@@ -376,11 +368,12 @@ protected:
             }
         }
 
-        UInt64 num_rows = res_columns.at(0)->size();
-        return Chunk(std::move(res_columns), num_rows);
+        res.setColumns(std::move(res_columns));
+        return res;
     }
 private:
     std::vector<UInt8> columns_mask;
+    Block header;
     UInt64 max_block_size;
     ColumnPtr databases;
     size_t database_idx = 0;
@@ -392,7 +385,7 @@ private:
 };
 
 
-Pipes StorageSystemTables::readWithProcessors(
+BlockInputStreams StorageSystemTables::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -420,12 +413,8 @@ Pipes StorageSystemTables::readWithProcessors(
     }
 
     ColumnPtr filtered_databases_column = getFilteredDatabases(query_info.query, context);
-
-    Pipes pipes;
-    pipes.emplace_back(std::make_shared<TablesBlockSource>(
-        std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), context));
-
-    return pipes;
+    return {std::make_shared<TablesBlockInputStream>(
+        std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), context)};
 }
 
 }

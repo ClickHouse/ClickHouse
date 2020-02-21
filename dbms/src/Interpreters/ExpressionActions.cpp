@@ -6,11 +6,13 @@
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/AnalyzedJoin.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <set>
 #include <optional>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
@@ -31,20 +33,20 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int UNKNOWN_ACTION;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int TOO_MANY_TEMPORARY_COLUMNS;
     extern const int TOO_MANY_TEMPORARY_NON_CONST_COLUMNS;
+    extern const int TYPE_MISMATCH;
 }
 
 /// Read comment near usage
 static constexpr auto DUMMY_COLUMN_NAME = "_dummy";
 
-
 Names ExpressionAction::getNeededColumns() const
 {
     Names res = argument_names;
 
-    if (array_join)
-        res.insert(res.end(), array_join->columns.begin(), array_join->columns.end());
+    res.insert(res.end(), array_joined_columns.begin(), array_joined_columns.end());
 
     if (table_join)
         res.insert(res.end(), table_join->keyNamesLeft().begin(), table_join->keyNamesLeft().end());
@@ -141,9 +143,23 @@ ExpressionAction ExpressionAction::addAliases(const NamesWithAliases & aliased_c
 
 ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context)
 {
+    if (array_joined_columns.empty())
+        throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
     ExpressionAction a;
     a.type = ARRAY_JOIN;
-    a.array_join = std::make_shared<ArrayJoinAction>(array_joined_columns, array_join_is_left, context);
+    a.array_joined_columns = array_joined_columns;
+    a.array_join_is_left = array_join_is_left;
+    a.unaligned_array_join = context.getSettingsRef().enable_unaligned_array_join;
+
+    if (a.unaligned_array_join)
+    {
+        a.function_length = FunctionFactory::instance().get("length", context);
+        a.function_greatest = FunctionFactory::instance().get("greatest", context);
+        a.function_arrayResize = FunctionFactory::instance().get("arrayResize", context);
+    }
+    else if (array_join_is_left)
+        a.function_builder = FunctionFactory::instance().get("emptyArrayToSingle", context);
+
     return a;
 }
 
@@ -155,6 +171,7 @@ ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<AnalyzedJoin> ta
     a.join = join;
     return a;
 }
+
 
 void ExpressionAction::prepare(Block & sample_block, const Settings & settings, NameSet & names_not_for_constant_folding)
 {
@@ -239,7 +256,16 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
 
         case ARRAY_JOIN:
         {
-            array_join->prepare(sample_block);
+            for (const auto & name : array_joined_columns)
+            {
+                ColumnWithTypeAndName & current = sample_block.getByName(name);
+                const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*current.type);
+                if (!array_type)
+                    throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
+                current.type = array_type->getNestedType();
+                current.column = nullptr;
+            }
+
             break;
         }
 
@@ -320,7 +346,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
 }
 
 
-void ExpressionAction::execute(Block & block, bool dry_run, ExtraBlockPtr & not_processed) const
+void ExpressionAction::execute(Block & block, bool dry_run) const
 {
     size_t input_rows_count = block.rows();
 
@@ -357,13 +383,101 @@ void ExpressionAction::execute(Block & block, bool dry_run, ExtraBlockPtr & not_
 
         case ARRAY_JOIN:
         {
-            array_join->execute(block, dry_run);
+            if (array_joined_columns.empty())
+                throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
+
+            ColumnPtr any_array_ptr = block.getByName(*array_joined_columns.begin()).column->convertToFullColumnIfConst();
+            const ColumnArray * any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
+            if (!any_array)
+                throw Exception("ARRAY JOIN of not array: " + *array_joined_columns.begin(), ErrorCodes::TYPE_MISMATCH);
+
+            /// If LEFT ARRAY JOIN, then we create columns in which empty arrays are replaced by arrays with one element - the default value.
+            std::map<String, ColumnPtr> non_empty_array_columns;
+
+            if (unaligned_array_join)
+            {
+                /// Resize all array joined columns to the longest one, (at least 1 if LEFT ARRAY JOIN), padded with default values.
+                auto rows = block.rows();
+                auto uint64 = std::make_shared<DataTypeUInt64>();
+                ColumnWithTypeAndName column_of_max_length;
+                if (array_join_is_left)
+                    column_of_max_length = ColumnWithTypeAndName(uint64->createColumnConst(rows, 1u), uint64, {});
+                else
+                    column_of_max_length = ColumnWithTypeAndName(uint64->createColumnConst(rows, 0u), uint64, {});
+
+                for (const auto & name : array_joined_columns)
+                {
+                    auto & src_col = block.getByName(name);
+
+                    Block tmp_block{src_col, {{}, uint64, {}}};
+                    function_length->build({src_col})->execute(tmp_block, {0}, 1, rows);
+
+                    Block tmp_block2{
+                        column_of_max_length, tmp_block.safeGetByPosition(1), {{}, uint64, {}}};
+                    function_greatest->build({column_of_max_length, tmp_block.safeGetByPosition(1)})->execute(tmp_block2, {0, 1}, 2, rows);
+                    column_of_max_length = tmp_block2.safeGetByPosition(2);
+                }
+
+                for (const auto & name : array_joined_columns)
+                {
+                    auto & src_col = block.getByName(name);
+
+                    Block tmp_block{src_col, column_of_max_length, {{}, src_col.type, {}}};
+                    function_arrayResize->build({src_col, column_of_max_length})->execute(tmp_block, {0, 1}, 2, rows);
+                    src_col.column = tmp_block.safeGetByPosition(2).column;
+                    any_array_ptr = src_col.column->convertToFullColumnIfConst();
+                }
+
+                any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
+            }
+            else if (array_join_is_left)
+            {
+                for (const auto & name : array_joined_columns)
+                {
+                    auto src_col = block.getByName(name);
+
+                    Block tmp_block{src_col, {{}, src_col.type, {}}};
+
+                    function_builder->build({src_col})->execute(tmp_block, {0}, 1, src_col.column->size(), dry_run);
+                    non_empty_array_columns[name] = tmp_block.safeGetByPosition(1).column;
+                }
+
+                any_array_ptr = non_empty_array_columns.begin()->second->convertToFullColumnIfConst();
+                any_array = &typeid_cast<const ColumnArray &>(*any_array_ptr);
+            }
+
+            size_t columns = block.columns();
+            for (size_t i = 0; i < columns; ++i)
+            {
+                ColumnWithTypeAndName & current = block.safeGetByPosition(i);
+
+                if (array_joined_columns.count(current.name))
+                {
+                    if (!typeid_cast<const DataTypeArray *>(&*current.type))
+                        throw Exception("ARRAY JOIN of not array: " + current.name, ErrorCodes::TYPE_MISMATCH);
+
+                    ColumnPtr array_ptr = (array_join_is_left && !unaligned_array_join) ? non_empty_array_columns[current.name] : current.column;
+                    array_ptr = array_ptr->convertToFullColumnIfConst();
+
+                    const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
+                    if (!unaligned_array_join && !array.hasEqualOffsets(typeid_cast<const ColumnArray &>(*any_array_ptr)))
+                        throw Exception("Sizes of ARRAY-JOIN-ed arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+
+                    current.column = typeid_cast<const ColumnArray &>(*array_ptr).getDataPtr();
+                    current.type = typeid_cast<const DataTypeArray &>(*current.type).getNestedType();
+                }
+                else
+                {
+                    current.column = current.column->replicate(any_array->getOffsets());
+                }
+            }
+
             break;
         }
 
         case JOIN:
         {
-            join->joinBlock(block, not_processed);
+            join->joinBlock(block);
             break;
         }
 
@@ -425,6 +539,7 @@ void ExpressionAction::execute(Block & block, bool dry_run, ExtraBlockPtr & not_
     }
 }
 
+
 void ExpressionAction::executeOnTotals(Block & block) const
 {
     if (type != JOIN)
@@ -469,10 +584,10 @@ std::string ExpressionAction::toString() const
             break;
 
         case ARRAY_JOIN:
-            ss << (array_join->is_left ? "LEFT " : "") << "ARRAY JOIN ";
-            for (NameSet::const_iterator it = array_join->columns.begin(); it != array_join->columns.end(); ++it)
+            ss << (array_join_is_left ? "LEFT " : "") << "ARRAY JOIN ";
+            for (NameSet::const_iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
             {
-                if (it != array_join->columns.begin())
+                if (it != array_joined_columns.begin())
                     ss << ", ";
                 ss << *it;
             }
@@ -560,9 +675,7 @@ void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
 {
     if (action.result_name != "")
         new_names.push_back(action.result_name);
-
-    if (action.array_join)
-        new_names.insert(new_names.end(), action.array_join->columns.begin(), action.array_join->columns.end());
+    new_names.insert(new_names.end(), action.array_joined_columns.begin(), action.array_joined_columns.end());
 
     /// Compiled functions are custom functions and they don't need building
     if (action.type == ExpressionAction::APPLY_FUNCTION && !action.is_function_compiled)
@@ -600,7 +713,7 @@ void ExpressionActions::prependArrayJoin(const ExpressionAction & action, const 
     if (action.type != ExpressionAction::ARRAY_JOIN)
         throw Exception("ARRAY_JOIN action expected", ErrorCodes::LOGICAL_ERROR);
 
-    NameSet array_join_set(action.array_join->columns.begin(), action.array_join->columns.end());
+    NameSet array_join_set(action.array_joined_columns.begin(), action.array_joined_columns.end());
     for (auto & it : input_columns)
     {
         if (array_join_set.count(it.name))
@@ -625,12 +738,12 @@ bool ExpressionActions::popUnusedArrayJoin(const Names & required_columns, Expre
     if (actions.empty() || actions.back().type != ExpressionAction::ARRAY_JOIN)
         return false;
     NameSet required_set(required_columns.begin(), required_columns.end());
-    for (const std::string & name : actions.back().array_join->columns)
+    for (const std::string & name : actions.back().array_joined_columns)
     {
         if (required_set.count(name))
             return false;
     }
-    for (const std::string & name : actions.back().array_join->columns)
+    for (const std::string & name : actions.back().array_joined_columns)
     {
         DataTypePtr & type = sample_block.getByName(name).type;
         type = std::make_shared<DataTypeArray>(type);
@@ -646,21 +759,6 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
     {
         action.execute(block, dry_run);
         checkLimits(block);
-    }
-}
-
-/// @warning It's a tricky method that allows to continue ONLY ONE action in reason of one-to-many ALL JOIN logic.
-void ExpressionActions::execute(Block & block, ExtraBlockPtr & not_processed, size_t & start_action) const
-{
-    size_t i = start_action;
-    start_action = 0;
-    for (; i < actions.size(); ++i)
-    {
-        actions[i].execute(block, false, not_processed);
-        checkLimits(block);
-
-        if (not_processed)
-            start_action = i;
     }
 }
 
@@ -771,7 +869,29 @@ void ExpressionActions::finalize(const Names & output_columns)
         }
         else if (action.type == ExpressionAction::ARRAY_JOIN)
         {
-            action.array_join->finalize(needed_columns, unmodified_columns, final_columns);
+            /// Do not ARRAY JOIN columns that are not used anymore.
+            /// Usually, such columns are not used until ARRAY JOIN, and therefore are ejected further in this function.
+            /// We will not remove all the columns so as not to lose the number of rows.
+            for (auto it = action.array_joined_columns.begin(); it != action.array_joined_columns.end();)
+            {
+                bool need = needed_columns.count(*it);
+                if (!need && action.array_joined_columns.size() > 1)
+                {
+                    action.array_joined_columns.erase(it++);
+                }
+                else
+                {
+                    needed_columns.insert(*it);
+                    unmodified_columns.erase(*it);
+
+                    /// If no ARRAY JOIN results are used, forcibly leave an arbitrary column at the output,
+                    ///  so you do not lose the number of rows.
+                    if (!need)
+                        final_columns.insert(*it);
+
+                    ++it;
+                }
+            }
         }
         else
         {
@@ -1008,8 +1128,7 @@ void ExpressionActions::optimizeArrayJoin()
 
             if (actions[i].result_name != "")
                 array_joined_columns.insert(actions[i].result_name);
-            if (actions[i].array_join)
-                array_joined_columns.insert(actions[i].array_join->columns.begin(), actions[i].array_join->columns.end());
+            array_joined_columns.insert(actions[i].array_joined_columns.begin(), actions[i].array_joined_columns.end());
 
             array_join_dependencies.insert(needed.begin(), needed.end());
         }
@@ -1140,8 +1259,8 @@ UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action
                 hash.update(arg_name);
             break;
         case ARRAY_JOIN:
-            hash.update(action.array_join->is_left);
-            for (const auto & col : action.array_join->columns)
+            hash.update(action.array_join_is_left);
+            for (const auto & col : action.array_joined_columns)
                 hash.update(col);
             break;
         case JOIN:
@@ -1198,15 +1317,11 @@ bool ExpressionAction::operator==(const ExpressionAction & other) const
             return false;
     }
 
-    bool same_array_join = !array_join && !other.array_join;
-    if (array_join && other.array_join)
-        same_array_join = (array_join->columns == other.array_join->columns) &&
-            (array_join->is_left == other.array_join->is_left);
-
     return source_name == other.source_name
         && result_name == other.result_name
         && argument_names == other.argument_names
-        && same_array_join
+        && array_joined_columns == other.array_joined_columns
+        && array_join_is_left == other.array_join_is_left
         && AnalyzedJoin::sameJoin(table_join.get(), other.table_join.get())
         && projection == other.projection
         && is_function_compiled == other.is_function_compiled;

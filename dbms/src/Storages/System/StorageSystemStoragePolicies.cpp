@@ -2,7 +2,6 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemStoragePolicies.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -14,7 +13,7 @@ namespace ErrorCodes
 
 
 StorageSystemStoragePolicies::StorageSystemStoragePolicies(const std::string & name_)
-        : IStorage({"system", name_})
+        : name(name_)
 {
     setColumns(
         ColumnsDescription({
@@ -27,7 +26,7 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const std::string & n
     }));
 }
 
-Pipes StorageSystemStoragePolicies::readWithProcessors(
+BlockInputStreams StorageSystemStoragePolicies::read(
         const Names & column_names,
         const SelectQueryInfo & /*query_info*/,
         const Context & context,
@@ -64,21 +63,18 @@ Pipes StorageSystemStoragePolicies::readWithProcessors(
         }
     }
 
-    Columns res_columns;
-    res_columns.emplace_back(std::move(col_policy_name));
-    res_columns.emplace_back(std::move(col_volume_name));
-    res_columns.emplace_back(std::move(col_priority));
-    res_columns.emplace_back(std::move(col_disks));
-    res_columns.emplace_back(std::move(col_max_part_size));
-    res_columns.emplace_back(std::move(col_move_factor));
 
-    UInt64 num_rows = res_columns.at(0)->size();
-    Chunk chunk(std::move(res_columns), num_rows);
+    Block res = getSampleBlock().cloneEmpty();
 
-    Pipes pipes;
-    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(getSampleBlock(), std::move(chunk)));
+    size_t col_num = 0;
+    res.getByPosition(col_num++).column = std::move(col_policy_name);
+    res.getByPosition(col_num++).column = std::move(col_volume_name);
+    res.getByPosition(col_num++).column = std::move(col_priority);
+    res.getByPosition(col_num++).column = std::move(col_disks);
+    res.getByPosition(col_num++).column = std::move(col_max_part_size);
+    res.getByPosition(col_num++).column = std::move(col_move_factor);
 
-    return pipes;
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(res));
 }
 
 }

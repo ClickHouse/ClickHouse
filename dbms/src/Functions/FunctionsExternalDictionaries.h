@@ -18,8 +18,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 
-#include <Access/AccessFlags.h>
-
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 
@@ -50,6 +48,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
+    extern const int DICTIONARY_ACCESS_DENIED;
 }
 
 /** Functions that use plug-ins (external) dictionaries_loader.
@@ -127,7 +126,12 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-        context.checkAccess(AccessType::dictHas, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
+
+        if (!context.hasDictionaryAccessRights(dict_ptr->getFullName()))
+        {
+            throw Exception{"For function " + getName() + ", cannot access dictionary "
+                + dict->getFullName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
+        }
 
         if (!executeDispatchSimple<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchSimple<HashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -297,7 +301,12 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
+
+        if (!context.hasDictionaryAccessRights(dict_ptr->getFullName()))
+        {
+            throw Exception{"For function " + getName() + ", cannot access dictionary "
+                + dict->getFullName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
+        }
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -478,7 +487,12 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
+
+        if (!context.hasDictionaryAccessRights(dict_ptr->getFullName()))
+        {
+            throw Exception{"For function " + getName() + ", cannot access dictionary "
+                + dict->getFullName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
+        }
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -815,7 +829,12 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
+
+        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
+        {
+            throw Exception{"For function " + getName() + ", cannot access dictionary "
+                + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
+        }
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -1074,7 +1093,12 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
+
+        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
+        {
+            throw Exception{"For function " + getName() + ", cannot access dictionary "
+                + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
+        }
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -1646,7 +1670,12 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-        context.checkAccess(AccessType::dictGetHierarchy, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
+
+        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
+        {
+            throw Exception{"For function " + getName() + ", cannot access dictionary "
+                + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
+        }
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -1810,7 +1839,12 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-        context.checkAccess(AccessType::dictIsIn, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
+
+        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
+        {
+            throw Exception{"For function " + getName() + ", cannot access dictionary "
+                + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
+        }
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr)
             && !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr)

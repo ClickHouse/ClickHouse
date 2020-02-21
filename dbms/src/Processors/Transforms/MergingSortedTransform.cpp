@@ -74,8 +74,16 @@ IProcessor::Status MergingSortedTransform::prepare()
         return Status::Finished;
     }
 
-    /// Do not disable inputs, so it will work in the same way as with AsynchronousBlockInputStream, like before.
-    bool is_port_full = !output.canPush();
+    if (!output.isNeeded())
+    {
+        for (auto & in : inputs)
+            in.setNotNeeded();
+
+        return Status::PortFull;
+    }
+
+    if (output.hasData())
+        return Status::PortFull;
 
     /// Special case for single input.
     if (inputs.size() == 1)
@@ -88,20 +96,14 @@ IProcessor::Status MergingSortedTransform::prepare()
         }
 
         input.setNeeded();
-
         if (input.hasData())
-        {
-            if (!is_port_full)
-                output.push(input.pull());
-
-            return Status::PortFull;
-        }
+            output.push(input.pull());
 
         return Status::NeedData;
     }
 
     /// Push if has data.
-    if (merged_data.mergedRows() && !is_port_full)
+    if (merged_data.mergedRows())
         output.push(merged_data.pull());
 
     if (!is_initialized)
@@ -117,7 +119,7 @@ IProcessor::Status MergingSortedTransform::prepare()
 
             if (!cursors[i].empty())
             {
-                // input.setNotNeeded();
+                input.setNotNeeded();
                 continue;
             }
 
@@ -157,10 +159,6 @@ IProcessor::Status MergingSortedTransform::prepare()
     {
         if (is_finished)
         {
-
-            if (is_port_full)
-                return Status::PortFull;
-
             for (auto & input : inputs)
                 input.close();
 
@@ -193,9 +191,6 @@ IProcessor::Status MergingSortedTransform::prepare()
 
             need_data = false;
         }
-
-        if (is_port_full)
-            return Status::PortFull;
 
         return Status::Ready;
     }

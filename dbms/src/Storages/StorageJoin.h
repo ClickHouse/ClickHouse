@@ -62,7 +62,8 @@ private:
 protected:
     StorageJoin(
         const String & relative_path_,
-        const StorageID & table_id_,
+        const String & database_name_,
+        const String & table_name_,
         const Names & key_names_,
         bool use_nulls_,
         SizeLimits limits_,

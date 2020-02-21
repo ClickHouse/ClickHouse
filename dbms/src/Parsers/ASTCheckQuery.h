@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTPartition.h>
 #include <Common/quoteString.h>
 
 

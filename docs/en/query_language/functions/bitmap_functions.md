@@ -82,39 +82,27 @@ SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,
 └───────────────────┘
 ```
 
-## bitmapSubsetLimit {#bitmapsubsetlimit}
+## bitmapSubsetLimit {#bitmap_functions-bitmapsubsetlimit}
 
-Creates a subset of bitmap with n elements taken between `range_start` and `cardinality_limit`.
+Return subset of the smallest `limit` values in set which is no less than `range_start`.
 
-**Syntax**
-
-```sql
-bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
+```
+bitmapSubsetLimit(bitmap, range_start, limit)
 ```
 
 **Parameters**
 
 - `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
-- `range_start` – The subset starting point. Type: [UInt32](../../data_types/int_uint.md).
-- `cardinality_limit` – The subset cardinality upper limit. Type: [UInt32](../../data_types/int_uint.md).
-
-**Returned value**
-
-The subset.
-
-Type: `Bitmap object`.
+- `range_start` – range start point. Type: [UInt32](../../data_types/int_uint.md).
+- `limit` – subset cardinality upper limit. Type: [UInt32](../../data_types/int_uint.md).
 
 **Example**
-
-Query:
 
 ```sql
 SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
 ```
 
-Result:
-
-```text
+```
 ┌─res───────────────────────┐
 │ [30,31,32,33,100,200,500] │
 └───────────────────────────┘
@@ -507,4 +495,4 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 ```
 
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/bitmap_functions/) <!--hide-->
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/bitmap_functions/) <!--hide-->

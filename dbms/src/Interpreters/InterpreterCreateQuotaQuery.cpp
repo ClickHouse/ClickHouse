@@ -3,7 +3,6 @@
 #include <Parsers/ASTRoleList.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessControlManager.h>
-#include <Access/AccessFlags.h>
 #include <ext/range.h>
 #include <boost/range/algorithm/find_if.hpp>
 #include <boost/range/algorithm/upper_bound.hpp>
@@ -14,9 +13,9 @@ namespace DB
 {
 BlockIO InterpreterCreateQuotaQuery::execute()
 {
+    context.checkQuotaManagementIsAllowed();
     const auto & query = query_ptr->as<const ASTCreateQuotaQuery &>();
     auto & access_control = context.getAccessControlManager();
-    context.checkAccess(query.alter ? AccessType::ALTER_QUOTA : AccessType::CREATE_QUOTA);
 
     if (query.alter)
     {

@@ -15,9 +15,10 @@ class ExpressionActions;
   */
 class ExpressionBlockInputStream : public IBlockInputStream
 {
-public:
+private:
     using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+public:
     ExpressionBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_);
 
     String getName() const override;
@@ -25,29 +26,12 @@ public:
     Block getHeader() const override;
 
 protected:
-    bool initialized = false;
+    Block readImpl() override;
+
+private:
     ExpressionActionsPtr expression;
-
-    Block readImpl() override;
-
-private:
     Block cached_header;
-};
-
-/// ExpressionBlockInputStream that could generate many out blocks for single input block.
-class InflatingExpressionBlockInputStream : public ExpressionBlockInputStream
-{
-public:
-    InflatingExpressionBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_)
-    :   ExpressionBlockInputStream(input, expression_)
-    {}
-
-protected:
-    Block readImpl() override;
-
-private:
-    ExtraBlockPtr not_processed;
-    size_t action_number = 0;
+    bool initialized = false;
 };
 
 }

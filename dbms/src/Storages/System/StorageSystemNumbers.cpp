@@ -5,9 +5,6 @@
 #include <DataStreams/LimitBlockInputStream.h>
 #include <Storages/System/StorageSystemNumbers.h>
 
-#include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Pipe.h>
-#include <Processors/LimitTransform.h>
 
 namespace DB
 {
@@ -15,16 +12,21 @@ namespace DB
 namespace
 {
 
-class NumbersSource : public SourceWithProgress
+class NumbersBlockInputStream : public IBlockInputStream
 {
 public:
-    NumbersSource(UInt64 block_size_, UInt64 offset_, UInt64 step_)
-        : SourceWithProgress(createHeader()), block_size(block_size_), next(offset_), step(step_) {}
+    NumbersBlockInputStream(UInt64 block_size_, UInt64 offset_, UInt64 step_)
+        : block_size(block_size_), next(offset_), step(step_) {}
 
     String getName() const override { return "Numbers"; }
 
+    Block getHeader() const override
+    {
+        return { ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number") };
+    }
+
 protected:
-    Chunk generate() override
+    Block readImpl() override
     {
         auto column = ColumnUInt64::create(block_size);
         ColumnUInt64::Container & vec = column->getData();
@@ -36,21 +38,12 @@ protected:
             *pos++ = curr++;
 
         next += step;
-
-        progress({column->size(), column->byteSize()});
-
-        return { Columns {std::move(column)}, block_size };
+        return { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeUInt64>(), "number") };
     }
-
 private:
     UInt64 block_size;
     UInt64 next;
     UInt64 step;
-
-    static Block createHeader()
-    {
-        return { ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number") };
-    }
 };
 
 
@@ -62,19 +55,21 @@ struct NumbersMultiThreadedState
 
 using NumbersMultiThreadedStatePtr = std::shared_ptr<NumbersMultiThreadedState>;
 
-class NumbersMultiThreadedSource : public SourceWithProgress
+class NumbersMultiThreadedBlockInputStream : public IBlockInputStream
 {
 public:
-    NumbersMultiThreadedSource(NumbersMultiThreadedStatePtr state_, UInt64 block_size_, UInt64 max_counter_)
-        : SourceWithProgress(createHeader())
-        , state(std::move(state_))
-        , block_size(block_size_)
-        , max_counter(max_counter_) {}
+    NumbersMultiThreadedBlockInputStream(NumbersMultiThreadedStatePtr state_, UInt64 block_size_, UInt64 max_counter_)
+        : state(std::move(state_)), block_size(block_size_), max_counter(max_counter_) {}
 
     String getName() const override { return "NumbersMt"; }
 
+    Block getHeader() const override
+    {
+        return { ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number") };
+    }
+
 protected:
-    Chunk generate() override
+    Block readImpl() override
     {
         if (block_size == 0)
             return {};
@@ -95,9 +90,7 @@ protected:
         while (pos < end)
             *pos++ = curr++;
 
-        progress({column->size(), column->byteSize()});
-
-        return { Columns {std::move(column)}, block_size };
+        return { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeUInt64>(), "number") };
     }
 
 private:
@@ -105,23 +98,18 @@ private:
 
     UInt64 block_size;
     UInt64 max_counter;
-
-    Block createHeader() const
-    {
-        return { ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number") };
-    }
 };
 
 }
 
 
 StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multithreaded_, std::optional<UInt64> limit_, UInt64 offset_, bool even_distribution_)
-    : IStorage({"system", name_}), multithreaded(multithreaded_), even_distribution(even_distribution_), limit(limit_), offset(offset_)
+    : name(name_), multithreaded(multithreaded_), even_distribution(even_distribution_), limit(limit_), offset(offset_)
 {
     setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
 }
 
-Pipes StorageSystemNumbers::readWithProcessors(
+BlockInputStreams StorageSystemNumbers::read(
     const Names & column_names,
     const SelectQueryInfo &,
     const Context & /*context*/,
@@ -140,8 +128,7 @@ Pipes StorageSystemNumbers::readWithProcessors(
     if (!multithreaded)
         num_streams = 1;
 
-    Pipes res;
-    res.reserve(num_streams);
+    BlockInputStreams res(num_streams);
 
     if (num_streams > 1 && !even_distribution && *limit)
     {
@@ -149,26 +136,17 @@ Pipes StorageSystemNumbers::readWithProcessors(
         UInt64 max_counter = offset + *limit;
 
         for (size_t i = 0; i < num_streams; ++i)
-            res.emplace_back(std::make_shared<NumbersMultiThreadedSource>(state, max_block_size, max_counter));
+            res[i] = std::make_shared<NumbersMultiThreadedBlockInputStream>(state, max_block_size, max_counter);
 
         return res;
     }
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto source = std::make_shared<NumbersSource>(max_block_size, offset + i * max_block_size, num_streams * max_block_size);
+        res[i] = std::make_shared<NumbersBlockInputStream>(max_block_size, offset + i * max_block_size, num_streams * max_block_size);
 
-        if (limit && i == 0)
-            source->addTotalRowsApprox(*limit);
-
-        res.emplace_back(std::move(source));
-
-        if (limit)
-        {
-            /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
-            res.back().addSimpleTransform(std::make_shared<LimitTransform>(
-                    res.back().getHeader(), *limit * (i + 1) / num_streams - *limit * i / num_streams, 0, false));
-        }
+        if (limit)  /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
+            res[i] = std::make_shared<LimitBlockInputStream>(res[i], *limit * (i + 1) / num_streams - *limit * i / num_streams, 0, false, true);
     }
 
     return res;

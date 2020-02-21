@@ -32,8 +32,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 
-#include <Access/AccessRightsElement.h>
-
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -81,6 +79,9 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
+    if (!create.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context, {create.database});
+
     String database_name = create.database;
 
     auto guard = context.getDDLGuard(database_name, "");
@@ -322,7 +323,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
     {
         auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(default_expr_list, column_names_and_types);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
-        for (auto & action : actions->getActions())
+        for (auto action : actions->getActions())
             if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
                 throw Exception("Cannot CREATE table. Unsupported default value that requires ARRAY JOIN or JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
 
@@ -537,6 +538,15 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
+    if (!create.cluster.empty())
+    {
+        NameSet databases{create.database};
+        if (!create.to_table.empty())
+            databases.emplace(create.to_database);
+
+        return executeDDLQueryOnCluster(query_ptr, context, std::move(databases));
+    }
+
     /// Temporary tables are created out of databases.
     if (create.temporary && !create.database.empty() && !create.is_live_view)
         throw Exception("Temporary tables cannot be inside a database. You should not specify a database for a temporary table.",
@@ -630,10 +640,13 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
     {
         res = StorageFactory::instance().get(create,
             database ? database->getTableDataPath(create) : "",
+            table_name,
+            create.database,
             context,
             context.getGlobalContext(),
             properties.columns,
             properties.constraints,
+            create.attach,
             false);
     }
 
@@ -682,6 +695,9 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 
 BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 {
+    if (!create.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context, {create.database});
+
     String dictionary_name = create.table;
 
     if (create.database.empty())
@@ -719,11 +735,7 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 BlockIO InterpreterCreateQuery::execute()
 {
     auto & create = query_ptr->as<ASTCreateQuery &>();
-    if (!create.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccess());
-
-    context.checkAccess(getRequiredAccess());
-
+    checkAccess(create);
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 
     /// CREATE|ATTACH DATABASE
@@ -736,47 +748,43 @@ BlockIO InterpreterCreateQuery::execute()
 }
 
 
-AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
+void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
 {
     /// Internal queries (initiated by the server itself) always have access to everything.
     if (internal)
-        return {};
+        return;
 
-    AccessRightsElements required_access;
-    const auto & create = query_ptr->as<const ASTCreateQuery &>();
+    const Settings & settings = context.getSettingsRef();
+    auto readonly = settings.readonly;
+    auto allow_ddl = settings.allow_ddl;
 
-    if (create.table.empty())
+    if (!readonly && allow_ddl)
+        return;
+
+    /// CREATE|ATTACH DATABASE
+    if (!create.database.empty() && create.table.empty())
     {
-        required_access.emplace_back(AccessType::CREATE_DATABASE, create.database);
+        if (readonly)
+            throw Exception("Cannot create database in readonly mode", ErrorCodes::READONLY);
+
+        throw Exception("Cannot create database. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
     }
-    else if (create.is_dictionary)
+    String object = "table";
+
+    if (create.is_dictionary)
     {
-        required_access.emplace_back(AccessType::CREATE_DICTIONARY, create.database, create.table);
-    }
-    else if (create.is_view || create.is_materialized_view || create.is_live_view)
-    {
-        if (create.temporary)
-            required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
-        else
-        {
-            if (create.replace_view)
-                required_access.emplace_back(AccessType::DROP_VIEW | AccessType::CREATE_VIEW, create.database, create.table);
-            else
-                required_access.emplace_back(AccessType::CREATE_VIEW, create.database, create.table);
-        }
-    }
-    else
-    {
-        if (create.temporary)
-            required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
-        else
-            required_access.emplace_back(AccessType::CREATE_TABLE, create.database, create.table);
+        if (readonly)
+            throw Exception("Cannot create dictionary in readonly mode", ErrorCodes::READONLY);
+        object = "dictionary";
     }
 
-    if (!create.to_table.empty())
-        required_access.emplace_back(AccessType::INSERT, create.to_database, create.to_table);
+    if (create.temporary && readonly >= 2)
+        return;
 
-    return required_access;
+    if (readonly)
+        throw Exception("Cannot create table or dictionary in readonly mode", ErrorCodes::READONLY);
+
+    throw Exception("Cannot create " + object + ". DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 }
 
 }

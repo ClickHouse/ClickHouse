@@ -1,6 +1,5 @@
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Interpreters/ProcessList.h>
 #include <stack>
 
 namespace DB
@@ -153,12 +152,6 @@ void TreeExecutorBlockInputStream::execute()
             case IProcessor::Status::Ready:
             {
                 node->work();
-
-                /// This is handled inside PipelineExecutor now,
-                ///   and doesn't checked by processors as in IInputStream before.
-                if (process_list_element && process_list_element->isKilled())
-                    throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
-
                 break;
             }
             case IProcessor::Status::Async:
@@ -195,8 +188,6 @@ void TreeExecutorBlockInputStream::setProgressCallback(const ProgressCallback & 
 
 void TreeExecutorBlockInputStream::setProcessListElement(QueryStatus * elem)
 {
-    process_list_element = elem;
-
     for (auto & source : sources_with_progress)
         source->setProcessListElement(elem);
 }

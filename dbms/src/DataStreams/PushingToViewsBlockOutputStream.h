@@ -17,7 +17,8 @@ class ReplicatedMergeTreeBlockOutputStream;
 class PushingToViewsBlockOutputStream : public IBlockOutputStream
 {
 public:
-    PushingToViewsBlockOutputStream(const StoragePtr & storage_,
+    PushingToViewsBlockOutputStream(
+        const String & database, const String & table, const StoragePtr & storage_,
         const Context & context_, const ASTPtr & query_ptr_, bool no_destination = false);
 
     Block getHeader() const override;
@@ -38,7 +39,8 @@ private:
     struct ViewInfo
     {
         ASTPtr query;
-        StorageID table_id;
+        String database;
+        String table;
         BlockOutputStreamPtr out;
     };
 

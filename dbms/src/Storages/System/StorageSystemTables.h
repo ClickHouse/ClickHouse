@@ -17,14 +17,19 @@ class StorageSystemTables : public ext::shared_ptr_helper<StorageSystemTables>, 
     friend struct ext::shared_ptr_helper<StorageSystemTables>;
 public:
     std::string getName() const override { return "SystemTables"; }
+    std::string getTableName() const override { return name; }
+    std::string getDatabaseName() const override { return "system"; }
 
-    Pipes readWithProcessors(
+    BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
+
+private:
+    const std::string name;
 
 protected:
     StorageSystemTables(const std::string & name_);

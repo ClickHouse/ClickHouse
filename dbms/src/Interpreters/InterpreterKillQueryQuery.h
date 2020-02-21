@@ -9,7 +9,6 @@ namespace DB
 {
 
 class Context;
-class AccessRightsElements;
 
 
 class InterpreterKillQueryQuery : public IInterpreter
@@ -21,7 +20,6 @@ public:
     BlockIO execute() override;
 
 private:
-    AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     Block getSelectResult(const String & columns, const String & table);
 
     ASTPtr query_ptr;

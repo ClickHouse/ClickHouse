@@ -29,10 +29,11 @@ namespace ErrorCodes
 
 
 StorageView::StorageView(
-    const StorageID & table_id_,
+    const String & database_name_,
+    const String & table_name_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_)
-    : IStorage(table_id_)
+    : table_name(table_name_), database_name(database_name_)
 {
     setColumns(columns_);
 
@@ -122,7 +123,7 @@ void registerStorageView(StorageFactory & factory)
         if (args.query.storage)
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
-        return StorageView::create(args.table_id, args.query, args.columns);
+        return StorageView::create(args.database_name, args.table_name, args.query, args.columns);
     });
 }
 

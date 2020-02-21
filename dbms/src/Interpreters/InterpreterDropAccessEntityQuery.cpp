@@ -2,7 +2,6 @@
 #include <Parsers/ASTDropAccessEntityQuery.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessControlManager.h>
-#include <Access/AccessFlags.h>
 #include <Access/Quota.h>
 #include <Access/RowPolicy.h>
 #include <boost/range/algorithm/transform.hpp>
@@ -20,7 +19,7 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
     {
         case Kind::QUOTA:
         {
-            context.checkAccess(AccessType::DROP_QUOTA);
+            context.checkQuotaManagementIsAllowed();
             if (query.if_exists)
                 access_control.tryRemove(access_control.find<Quota>(query.names));
             else
@@ -29,7 +28,7 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
         }
         case Kind::ROW_POLICY:
         {
-            context.checkAccess(AccessType::DROP_POLICY);
+            context.checkRowPolicyManagementIsAllowed();
             Strings full_names;
             boost::range::transform(
                 query.row_policies_names, std::back_inserter(full_names),

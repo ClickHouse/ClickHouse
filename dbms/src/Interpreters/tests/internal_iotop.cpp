@@ -5,7 +5,6 @@
 #include <Common/TaskStatsInfoGetter.h>
 #include <Poco/File.h>
 #include <Common/Stopwatch.h>
-#include <common/getThreadId.h>
 #include <IO/WriteBufferFromString.h>
 #include <linux/taskstats.h>
 #include <sys/time.h>
@@ -48,7 +47,7 @@ using namespace DB;
 static void do_io(size_t id)
 {
     ::taskstats stat;
-    int tid = getThreadId();
+    int tid = TaskStatsInfoGetter::getCurrentTID();
     TaskStatsInfoGetter get_info;
 
     get_info.getStat(stat, tid);
@@ -104,7 +103,7 @@ static void test_perf()
 {
 
     ::taskstats stat;
-    int tid = getThreadId();
+    int tid = TaskStatsInfoGetter::getCurrentTID();
     TaskStatsInfoGetter get_info;
 
     rusage rusage;

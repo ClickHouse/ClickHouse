@@ -1,7 +1,6 @@
 #include <Access/IAccessEntity.h>
 #include <Access/Quota.h>
 #include <Access/RowPolicy.h>
-#include <Access/User.h>
 #include <common/demangle.h>
 
 
@@ -9,8 +8,6 @@ namespace DB
 {
 String IAccessEntity::getTypeName(std::type_index type)
 {
-    if (type == typeid(User))
-        return "User";
     if (type == typeid(Quota))
         return "Quota";
     if (type == typeid(RowPolicy))

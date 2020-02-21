@@ -5,7 +5,6 @@ from helpers.cluster import ClickHouseCluster
 from dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from external_sources import SourceMySQL, SourceClickHouse, SourceFile, SourceExecutableCache, SourceExecutableHashed
 from external_sources import SourceMongo, SourceHTTP, SourceHTTPS, SourceRedis
-import math
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 dict_configs_path = os.path.join(SCRIPT_DIR, 'configs/dictionaries')
@@ -161,10 +160,10 @@ def setup_module(module):
     for layout in LAYOUTS:
         for source in SOURCES:
             if source.compatible_with_layout(layout):
-                DICTIONARIES.append(get_dict(source, layout, FIELDS[layout.layout_type]))
+                DICTIONARIES.append(get_dict(source, layout, FIELDS[layout.layout_type]))               
             else:
                 print "Source", source.name, "incompatible with layout", layout.name
-
+    
     for layout in LAYOUTS:
         field_keys = list(filter(lambda x: x.is_key, FIELDS[layout.layout_type]))
         for source in SOURCES_KV:
@@ -199,23 +198,12 @@ def started_cluster():
         cluster.shutdown()
 
 
-def get_dictionaries(fold, total_folds, all_dicts):
-    chunk_len = int(math.ceil(len(all_dicts) / float(total_folds)))
-    if chunk_len * fold >= len(all_dicts):
-        return []
-    return all_dicts[fold * chunk_len : (fold + 1) * chunk_len]
-
-
-@pytest.mark.parametrize("fold", list(range(10)))
-def test_simple_dictionaries(started_cluster, fold):
+def test_simple_dictionaries(started_cluster):
     fields = FIELDS["simple"]
     values = VALUES["simple"]
     data = [Row(fields, vals) for vals in values]
 
-    all_simple_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "simple"]
-    simple_dicts = get_dictionaries(fold, 10, all_simple_dicts)
-
-    print "Length of dicts:", len(simple_dicts)
+    simple_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "simple"]
     for dct in simple_dicts:
         dct.load_data(data)
 
@@ -307,14 +295,12 @@ def test_ranged_dictionaries(started_cluster):
         assert node.query(query) == str(answer) + '\n'
 
 
-@pytest.mark.parametrize("fold", list(range(10)))
-def test_key_value_simple_dictionaries(started_cluster, fold):
+def test_key_value_simple_dictionaries(started_cluster):
     fields = FIELDS["simple"]
     values = VALUES["simple"]
     data = [Row(fields, vals) for vals in values]
 
-    all_simple_dicts = [d for d in DICTIONARIES_KV if d.structure.layout.layout_type == "simple"]
-    simple_dicts = get_dictionaries(fold, 10, all_simple_dicts)
+    simple_dicts = [d for d in DICTIONARIES_KV if d.structure.layout.layout_type == "simple"]
 
     for dct in simple_dicts:
         queries_with_answers = []
@@ -323,7 +309,7 @@ def test_key_value_simple_dictionaries(started_cluster, fold):
             local_fields = dct.get_fields()
             local_values = [row.get_value_by_name(field.name) for field in local_fields if row.has_field(field.name)]
             local_data.append(Row(local_fields, local_values))
-
+            
         dct.load_data(local_data)
 
         node.query("system reload dictionary {}".format(dct.name))
@@ -382,7 +368,7 @@ def test_key_value_complex_dictionaries(started_cluster):
             local_fields = dct.get_fields()
             local_values = [row.get_value_by_name(field.name) for field in local_fields if row.has_field(field.name)]
             local_data.append(Row(local_fields, local_values))
-
+            
         dct.load_data(local_data)
 
         node.query("system reload dictionary {}".format(dct.name))

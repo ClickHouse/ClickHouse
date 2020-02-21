@@ -23,8 +23,6 @@ namespace DB
 
 class Context;
 
-/** Create dictionary according to its layout.
-  */
 class DictionaryFactory : private boost::noncopyable
 {
 public:

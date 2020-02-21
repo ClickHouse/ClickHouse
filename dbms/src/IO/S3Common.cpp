@@ -93,10 +93,11 @@ namespace S3
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 
-        Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
+        auto cred_provider = std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(access_key_id,
+                secret_access_key);
 
         return std::make_shared<Aws::S3::S3Client>(
-                credentials, // Aws credentials.
+                std::move(cred_provider), // Credentials provider.
                 std::move(cfg), // Client configuration.
                 Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
                 endpoint.empty() // Use virtual addressing only if endpoint is not specified.
@@ -104,7 +105,7 @@ namespace S3
     }
 
 
-    URI::URI(const Poco::URI & uri_)
+    URI::URI(Poco::URI & uri_)
     {
         static const std::regex BUCKET_KEY_PATTERN("([^/]+)/(.*)");
 

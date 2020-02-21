@@ -18,6 +18,8 @@ class StorageFromMergeTreeDataPart : public ext::shared_ptr_helper<StorageFromMe
     friend struct ext::shared_ptr_helper<StorageFromMergeTreeDataPart>;
 public:
     String getName() const override { return "FromMergeTreeDataPart"; }
+    String getTableName() const override { return part->storage.getTableName() + " (part " + part->name + ")"; }
+    String getDatabaseName() const override { return part->storage.getDatabaseName(); }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -47,10 +49,15 @@ public:
         return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context);
     }
 
+    StorageInMemoryMetadata getInMemoryMetadata() const override
+    {
+        return part->storage.getInMemoryMetadata();
+    }
+
+
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
-        : IStorage(getIDFromPart(part_), part_->storage.getVirtuals())
-        , part(part_)
+        : IStorage(part_->storage.getVirtuals()), part(part_)
     {
         setColumns(part_->storage.getColumns());
         setIndices(part_->storage.getIndices());
@@ -58,12 +65,6 @@ protected:
 
 private:
     MergeTreeData::DataPartPtr part;
-
-    static StorageID getIDFromPart(const MergeTreeData::DataPartPtr & part_)
-    {
-        auto table_id = part_->storage.getStorageID();
-        return StorageID(table_id.database_name, table_id.table_name + " (part " + part_->name + ")");
-    }
 };
 
 }

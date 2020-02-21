@@ -33,7 +33,7 @@ public:
         const Context & context,
         const String & table_name) override;
 
-    ASTPtr getCreateDatabaseQuery(const Context & /*context*/) const override;
+    ASTPtr getCreateDatabaseQuery() const override;
 
     /// DatabaseMemory allows to create tables, which store data on disk.
     /// It's needed to create such tables in default database of clickhouse-local.

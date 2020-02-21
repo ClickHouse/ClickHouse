@@ -12,19 +12,21 @@ class StorageBlocks : public IStorage
  * Used by Live Views to complete stored query based on the mergeable blocks.
  */
 public:
-    StorageBlocks(const StorageID & table_id_,
+    StorageBlocks(const std::string & database_name_, const std::string & table_name_,
         const ColumnsDescription & columns_, BlockInputStreams streams_,
         QueryProcessingStage::Enum to_stage_)
-        : IStorage(table_id_), streams(streams_), to_stage(to_stage_)
+        : database_name(database_name_), table_name(table_name_), streams(streams_), to_stage(to_stage_)
     {
         setColumns(columns_);
     }
-    static StoragePtr createStorage(const StorageID & table_id,
+    static StoragePtr createStorage(const std::string & database_name, const std::string & table_name,
         const ColumnsDescription & columns, BlockInputStreams streams, QueryProcessingStage::Enum to_stage)
     {
-        return std::make_shared<StorageBlocks>(table_id, columns, streams, to_stage);
+        return std::make_shared<StorageBlocks>(database_name, table_name, columns, streams, to_stage);
     }
     std::string getName() const override { return "Blocks"; }
+    std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
     QueryProcessingStage::Enum getQueryProcessingStage(const Context & /*context*/) const override { return to_stage; }
 
     BlockInputStreams read(
@@ -39,6 +41,8 @@ public:
     }
 
 private:
+    std::string database_name;
+    std::string table_name;
     Block res_block;
     BlockInputStreams streams;
     QueryProcessingStage::Enum to_stage;

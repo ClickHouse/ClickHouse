@@ -37,7 +37,8 @@ static String backQuoteMySQL(const String & x)
 }
 
 StorageMySQL::StorageMySQL(
-    const StorageID & table_id_,
+    const std::string & database_name_,
+    const std::string & table_name_,
     mysqlxx::Pool && pool_,
     const std::string & remote_database_name_,
     const std::string & remote_table_name_,
@@ -46,7 +47,8 @@ StorageMySQL::StorageMySQL(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const Context & context_)
-    : IStorage(table_id_)
+    : table_name(table_name_)
+    , database_name(database_name_)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
     , replace_query{replace_query_}
@@ -233,7 +235,8 @@ void registerStorageMySQL(StorageFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS);
 
         return StorageMySQL::create(
-            args.table_id,
+            args.database_name,
+            args.table_name,
             std::move(pool),
             remote_database,
             remote_table,

@@ -32,8 +32,9 @@ public:
     std::pair<String, String> getDatabaseTable() const;
 
 private:
-    StoragePtr getTable(ASTInsertQuery & query);
+    StoragePtr getTable(const ASTInsertQuery & query);
     Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table);
+    void checkAccess(const ASTInsertQuery & query);
 
     ASTPtr query_ptr;
     const Context & context;

@@ -345,7 +345,7 @@ MergeTreeDataPart::~MergeTreeDataPart()
                 }
             }
 
-            remove();
+            dir.remove(true);
 
             if (state == State::DeleteOnDestroy)
             {
@@ -393,6 +393,7 @@ void MergeTreeDataPart::remove() const
     String from = full_path + relative_path;
     String to = full_path + "delete_tmp_" + name;
     // TODO directory delete_tmp_<name> is never removed if server crashes before returning from this function
+
 
     Poco::File from_dir{from};
     Poco::File to_dir{to};

@@ -34,8 +34,10 @@
       </div>
       <div class="md-flex__cell md-flex__cell--shrink">
         {% block search_box %}
-          <label class="md-icon md-icon--search md-header-nav__button" for="search"></label>
-          {% include "partials/search.html" %}
+          {% if "search" in config["plugins"] %}
+            <label class="md-icon md-icon--search md-header-nav__button" for="search"></label>
+            {% include "partials/search.html" %}
+          {% endif %}
         {% endblock %}
       </div>
       {% if page %}

@@ -77,31 +77,6 @@ namespace CurrentMetrics
     extern const Metric VersionInteger;
 }
 
-namespace
-{
-
-void setupTmpPath(Logger * log, const std::string & path)
-{
-    LOG_DEBUG(log, "Setting up " << path << " to store temporary data in it");
-
-    Poco::File(path).createDirectories();
-
-    /// Clearing old temporary files.
-    Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
-    {
-        if (it->isFile() && startsWith(it.name(), "tmp"))
-        {
-            LOG_DEBUG(log, "Removing old temporary file " << it->path());
-            it->remove();
-        }
-        else
-            LOG_DEBUG(log, "Skipped file in temporary path " << it->path());
-    }
-}
-
-}
-
 namespace DB
 {
 
@@ -356,14 +331,22 @@ int Server::main(const std::vector<std::string> & /*args*/)
     DateLUT::instance();
     LOG_TRACE(log, "Initialized DateLUT with time zone '" << DateLUT::instance().getTimeZone() << "'.");
 
-
-    /// Storage with temporary data for processing of heavy queries.
+    /// Directory with temporary data for processing of heavy queries.
     {
         std::string tmp_path = config().getString("tmp_path", path + "tmp/");
-        std::string tmp_policy = config().getString("tmp_policy", "");
-        const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy);
-        for (const DiskPtr & disk : volume->disks)
-            setupTmpPath(log, disk->getPath());
+        global_context->setTemporaryPath(tmp_path);
+        Poco::File(tmp_path).createDirectories();
+
+        /// Clearing old temporary files.
+        Poco::DirectoryIterator dir_end;
+        for (Poco::DirectoryIterator it(tmp_path); it != dir_end; ++it)
+        {
+            if (it->isFile() && startsWith(it.name(), "tmp"))
+            {
+                LOG_DEBUG(log, "Removing old temporary file " << it->path());
+                it->remove();
+            }
+        }
     }
 
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
@@ -881,11 +864,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         for (auto & server : servers)
             server->start();
 
-        {
-            String level_str = config().getString("text_log.level", "");
-            int level = level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(level_str);
-            setTextLog(global_context->getTextLog(), level);
-        }
+        setTextLog(global_context->getTextLog());
         buildLoggers(config(), logger());
 
         main_config_reloader->start();

@@ -47,8 +47,7 @@ std::ostream & operator<<(std::ostream & stream, const IDataType & what)
 
 std::ostream & operator<<(std::ostream & stream, const IStorage & what)
 {
-    auto table_id = what.getStorageID();
-    stream << "IStorage(name = " << what.getName() << ", tableName = " << table_id.table_name << ") {"
+    stream << "IStorage(name = " << what.getName() << ", tableName = " << what.getTableName() << ") {"
            << what.getColumns().getAllPhysical().toString() << "}";
     return stream;
 }

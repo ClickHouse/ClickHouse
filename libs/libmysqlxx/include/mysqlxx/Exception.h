@@ -1,46 +1,49 @@
 #pragma once
 
 #include <sstream>
-#include <Poco/Exception.h>
 #include <mysqlxx/Types.h>
+#include <Poco/Exception.h>
 
 
 namespace mysqlxx
 {
-/// Common exception class for MySQL library. Functions code() and errnum() return error numbers from MySQL, for details see mysqld_error.h
+
+/** Общий класс исключений, которые могут быть выкинуты функциями из библиотеки.
+  * Функции code() и errnum() возвращают номер ошибки MySQL. (см. mysqld_error.h)
+  */
 struct Exception : public Poco::Exception
 {
     Exception(const std::string & msg, int code = 0) : Poco::Exception(msg, code) {}
     int errnum() const { return code(); }
-    const char * name() const throw() override { return "mysqlxx::Exception"; }
-    const char * className() const throw() override { return "mysqlxx::Exception"; }
+    const char * name() const throw() { return "mysqlxx::Exception"; }
+    const char * className() const throw() { return "mysqlxx::Exception"; }
 };
 
 
-/// Cannot connect to MySQL server
+/// Не удалось соединиться с сервером.
 struct ConnectionFailed : public Exception
 {
     ConnectionFailed(const std::string & msg, int code = 0) : Exception(msg, code) {}
-    const char * name() const throw() override { return "mysqlxx::ConnectionFailed"; }
-    const char * className() const throw() override { return "mysqlxx::ConnectionFailed"; }
+    const char * name() const throw() { return "mysqlxx::ConnectionFailed"; }
+    const char * className() const throw() { return "mysqlxx::ConnectionFailed"; }
 };
 
 
-/// Erroneous query.
+/// Запрос содержит ошибку.
 struct BadQuery : public Exception
 {
     BadQuery(const std::string & msg, int code = 0) : Exception(msg, code) {}
-    const char * name() const throw() override { return "mysqlxx::BadQuery"; }
-    const char * className() const throw() override { return "mysqlxx::BadQuery"; }
+    const char * name() const throw() { return "mysqlxx::BadQuery"; }
+    const char * className() const throw() { return "mysqlxx::BadQuery"; }
 };
 
 
-/// Value parsing failure
+/// Невозможно распарсить значение.
 struct CannotParseValue : public Exception
 {
     CannotParseValue(const std::string & msg, int code = 0) : Exception(msg, code) {}
-    const char * name() const throw() override { return "mysqlxx::CannotParseValue"; }
-    const char * className() const throw() override { return "mysqlxx::CannotParseValue"; }
+    const char * name() const throw() { return "mysqlxx::CannotParseValue"; }
+    const char * className() const throw() { return "mysqlxx::CannotParseValue"; }
 };
 
 

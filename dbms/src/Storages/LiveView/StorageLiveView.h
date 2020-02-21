@@ -48,13 +48,11 @@ friend class LiveViewBlockOutputStream;
 public:
     ~StorageLiveView() override;
     String getName() const override { return "LiveView"; }
-    bool isView() const override { return true; }
-    StorageID getSelectTableID() const { return select_table_id; }
-    StorageID getBlocksStorageID() const
-    {
-        return StorageID("", getStorageID().table_name + "_blocks");
-    }
-    StoragePtr getParentStorage() const { return global_context.getTable(select_table_id); }
+    String getTableName() const override { return table_name; }
+    String getDatabaseName() const override { return database_name; }
+    String getSelectDatabaseName() const { return select_database_name; }
+    String getSelectTableName() const { return select_table_name; }
+    StoragePtr getParentStorage() const { return global_context.getTable(select_database_name, select_table_name); }
 
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
@@ -167,7 +165,10 @@ public:
         const Context & context);
 
 private:
-    StorageID select_table_id = StorageID::createEmpty();     /// Will be initialized in constructor
+    String select_database_name;
+    String select_table_name;
+    String table_name;
+    String database_name;
     ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
     ASTPtr inner_subquery; /// stored query's innermost subquery if any
     ASTPtr inner_blocks_query; /// query over the mergeable blocks to produce final result
@@ -203,7 +204,8 @@ private:
     UInt64 temporary_live_view_timeout;
 
     StorageLiveView(
-        const StorageID & table_id_,
+        const String & table_name_,
+        const String & database_name_,
         Context & local_context,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns

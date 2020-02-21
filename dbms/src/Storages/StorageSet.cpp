@@ -89,11 +89,12 @@ BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const
 
 StorageSetOrJoinBase::StorageSetOrJoinBase(
     const String & relative_path_,
-    const StorageID & table_id_,
+    const String & database_name_,
+    const String & table_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const Context & context_)
-    : IStorage(table_id_)
+    : table_name(table_name_), database_name(database_name_)
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -109,11 +110,12 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
 
 StorageSet::StorageSet(
     const String & relative_path_,
-    const StorageID & table_id_,
+    const String & database_name_,
+    const String & table_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const Context & context_)
-    : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_},
+    : StorageSetOrJoinBase{relative_path_, database_name_, table_name_, columns_, constraints_, context_},
     set(std::make_shared<Set>(SizeLimits(), false))
 {
     Block header = getSampleBlock();
@@ -207,7 +209,8 @@ void StorageSetOrJoinBase::rename(
     Poco::File(path).renameTo(new_path);
 
     path = new_path;
-    renameInMemory(new_database_name, new_table_name);
+    table_name = new_table_name;
+    database_name = new_database_name;
 }
 
 
@@ -220,7 +223,7 @@ void registerStorageSet(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageSet::create(args.relative_data_path, args.table_id, args.columns, args.constraints, args.context);
+        return StorageSet::create(args.relative_data_path, args.database_name, args.table_name, args.columns, args.constraints, args.context);
     });
 }
 

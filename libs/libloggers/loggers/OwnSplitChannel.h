@@ -20,7 +20,7 @@ public:
     /// Adds a child channel
     void addChannel(Poco::AutoPtr<Poco::Channel> channel);
 
-    void addTextLog(std::shared_ptr<DB::TextLog> log, int max_priority);
+    void addTextLog(std::shared_ptr<DB::TextLog> log);
 
 private:
     void logSplit(const Poco::Message & msg);
@@ -33,7 +33,6 @@ private:
     std::mutex text_log_mutex;
 
     std::weak_ptr<DB::TextLog> text_log;
-    int text_log_max_priority = -1;
 };
 
 }

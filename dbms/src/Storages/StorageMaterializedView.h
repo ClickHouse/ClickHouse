@@ -3,10 +3,7 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-
 #include <Storages/IStorage.h>
-#include <Storages/StorageInMemoryMetadata.h>
 
 
 namespace DB
@@ -17,15 +14,13 @@ class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterialize
     friend struct ext::shared_ptr_helper<StorageMaterializedView>;
 public:
     std::string getName() const override { return "MaterializedView"; }
-    bool isView() const override { return true; }
+    std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
 
-    ASTPtr getSelectQuery() const { return select->clone(); }
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
 
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
-
-    StorageInMemoryMetadata getInMemoryMetadata() const override;
 
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
@@ -43,10 +38,6 @@ public:
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
-
-    void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
-
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) override;
 
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
 
@@ -77,14 +68,13 @@ public:
     Strings getDataPaths() const override;
 
 private:
-    /// Can be empty if SELECT query doesn't contain table
-    StorageID select_table_id = StorageID::createEmpty();
-    /// Will be initialized in constructor
-    StorageID target_table_id = StorageID::createEmpty();
-
-    ASTPtr select;
+    String select_database_name;
+    String select_table_name;
+    String target_database_name;
+    String target_table_name;
+    String table_name;
+    String database_name;
     ASTPtr inner_query;
-
     Context & global_context;
     bool has_inner_table = false;
 
@@ -92,7 +82,8 @@ private:
 
 protected:
     StorageMaterializedView(
-        const StorageID & table_id_,
+        const String & table_name_,
+        const String & database_name_,
         Context & local_context,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,

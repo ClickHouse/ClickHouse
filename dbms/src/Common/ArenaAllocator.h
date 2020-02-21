@@ -35,12 +35,6 @@ public:
     {
         // Do nothing, trash in arena remains.
     }
-
-protected:
-    static constexpr size_t getStackThreshold()
-    {
-        return 0;
-    }
 };
 
 
@@ -71,12 +65,6 @@ public:
 
     static void free(void * /*buf*/, size_t /*size*/)
     {
-    }
-
-protected:
-    static constexpr size_t getStackThreshold()
-    {
-        return 0;
     }
 };
 
@@ -111,12 +99,6 @@ public:
     {
         if (size >= REAL_ALLOCATION_TRESHOLD)
             TRealAllocator::free(buf, size);
-    }
-
-protected:
-    static constexpr size_t getStackThreshold()
-    {
-        return 0;
     }
 };
 
@@ -154,12 +136,6 @@ public:
     }
 
     void free(void * /*buf*/, size_t /*size*/) {}
-
-protected:
-    static constexpr size_t getStackThreshold()
-    {
-        return N;
-    }
 };
 
 }

@@ -1,13 +1,12 @@
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <Poco/ConsoleChannel.h>
-#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <common/LineReader.h>
-#include <common/logger_useful.h>
-
+#include <Common/ZooKeeper/KeeperException.h>
 #include <iostream>
 #include <sstream>
+#include <Poco/ConsoleChannel.h>
+#include <common/logger_useful.h>
+#include <common/readline_use.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 
 
 void printStat(const Coordination::Stat & s)
@@ -70,13 +69,12 @@ int main(int argc, char ** argv)
         Logger::root().setLevel("trace");
 
         zkutil::ZooKeeper zk(argv[1]);
-        LineReader lr({}, '\\');
 
-        do
+        while (char * line_ = readline(":3 "))
         {
-            const auto & line = lr.readLine(":3 ", ":3 ");
-            if (line.empty())
-                break;
+            add_history(line_);
+            std::string line(line_);
+            free(line_);
 
             try
             {
@@ -213,7 +211,6 @@ int main(int argc, char ** argv)
                 std::cerr << "KeeperException: " << e.displayText() << std::endl;
             }
         }
-        while (true);
     }
     catch (const Coordination::Exception & e)
     {

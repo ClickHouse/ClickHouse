@@ -39,6 +39,8 @@ private:
     void readJSONObject(MutableColumns & columns);
     void readNestedData(const String & name, MutableColumns & columns);
 
+private:
+
     const FormatSettings format_settings;
 
     /// Buffer for the read from the stream field name. Used when you have to copy it.
@@ -67,19 +69,6 @@ private:
 
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
     std::vector<NameMap::LookupResult> prev_positions;
-
-    /// This flag is needed to know if data is in square brackets.
-    bool data_in_square_brackets = false;
-
-    /// This is needed to know the stage of parsing.
-    enum class ParsingStage
-    {
-        START,
-        PROCESS,
-        FINISH
-    };
-
-    ParsingStage parsing_stage = ParsingStage::START;
 };
 
 }

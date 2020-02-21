@@ -84,8 +84,6 @@ AggregateFunctionPtr createAggregateFunctionSumMap(const std::string & name, con
     if (!res)
         res.reset(createWithDecimalType<Function>(*keys_type, keys_type, values_types, arguments));
     if (!res)
-        res.reset(createWithStringType<Function>(*keys_type, keys_type, values_types, arguments));
-    if (!res)
         throw Exception("Illegal type of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return res;
@@ -108,8 +106,6 @@ AggregateFunctionPtr createAggregateFunctionSumMapFiltered(const std::string & n
     AggregateFunctionPtr res(createWithNumericBasedType<Function>(*keys_type, keys_type, values_types, keys_to_keep, arguments, params));
     if (!res)
         res.reset(createWithDecimalType<Function>(*keys_type, keys_type, values_types, keys_to_keep, arguments, params));
-    if (!res)
-        res.reset(createWithStringType<Function>(*keys_type, keys_type, values_types, keys_to_keep, arguments, params));
     if (!res)
         throw Exception("Illegal type of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

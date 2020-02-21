@@ -265,19 +265,7 @@ static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offs
         uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
         const void * physical_addr = reinterpret_cast<const void *>(uintptr_t(virtual_addr) - virtual_offset);
 
-        out << i << ". ";
-
-        if (object)
-        {
-            if (std::filesystem::exists(object->name))
-            {
-                auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
-
-                DB::Dwarf::LocationInfo location;
-                if (dwarf_it->second.findAddress(uintptr_t(physical_addr), location, DB::Dwarf::LocationInfoMode::FAST))
-                    out << location.file.toString() << ":" << location.line << ": ";
-            }
-        }
+        out << i << ". " << physical_addr << " ";
 
         auto symbol = symbol_index.findSymbol(virtual_addr);
         if (symbol)
@@ -288,8 +276,22 @@ static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offs
         else
             out << "?";
 
-        out << " @ " << physical_addr;
-        out << " in " << (object ? object->name : "?");
+        out << " ";
+
+        if (object)
+        {
+            if (std::filesystem::exists(object->name))
+            {
+                auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
+
+                DB::Dwarf::LocationInfo location;
+                if (dwarf_it->second.findAddress(uintptr_t(physical_addr), location, DB::Dwarf::LocationInfoMode::FAST))
+                    out << location.file.toString() << ":" << location.line;
+            }
+            out << " in " << object->name;
+        }
+        else
+            out << "?";
 
         callback(out.str());
         out.str({});

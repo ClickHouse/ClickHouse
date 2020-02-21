@@ -4,7 +4,6 @@
 
 #include <IO/S3Common.h>
 #include <Storages/StorageS3.h>
-#include <Access/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionS3.h>
@@ -62,8 +61,6 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & ast_function, const Conte
     else
         compression_method = "auto";
 
-    context.checkAccess(AccessType::s3);
-
     ColumnsDescription columns = parseColumnsListFromString(structure, context);
 
     /// Create table
@@ -88,7 +85,7 @@ StoragePtr TableFunctionS3::getStorage(
     S3::URI s3_uri (uri);
 
     UInt64 min_upload_part_size = global_context.getSettingsRef().s3_min_upload_part_size;
-    return StorageS3::create(s3_uri, access_key_id, secret_access_key, StorageID(getDatabaseName(), table_name), format, min_upload_part_size, columns, ConstraintsDescription{}, global_context, compression_method);
+    return StorageS3::create(s3_uri, access_key_id, secret_access_key, getDatabaseName(), table_name, format, min_upload_part_size, columns, ConstraintsDescription{}, global_context, compression_method);
 }
 
 void registerTableFunctionS3(TableFunctionFactory & factory)

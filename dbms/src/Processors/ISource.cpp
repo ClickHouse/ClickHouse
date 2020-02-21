@@ -11,7 +11,7 @@ ISource::ISource(Block header)
 
 ISource::Status ISource::prepare()
 {
-    if (finished || isCancelled())
+    if (finished)
     {
         output.finish();
         return Status::Finished;
@@ -46,7 +46,7 @@ void ISource::work()
     try
     {
         current_chunk.chunk = generate();
-        if (!current_chunk.chunk || isCancelled())
+        if (!current_chunk.chunk)
             finished = true;
         else
             has_input = true;

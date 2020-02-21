@@ -11,7 +11,6 @@ namespace DB
 {
 
 class Context;
-class AccessRightsElements;
 class ASTSystemQuery;
 
 class InterpreterSystemQuery : public IInterpreter
@@ -36,8 +35,6 @@ private:
     void restartReplicas(Context & system_context);
     void syncReplica(ASTSystemQuery & query);
     void flushDistributed(ASTSystemQuery & query);
-
-    AccessRightsElements getRequiredAccessForDDLOnCluster() const;
 };
 
 

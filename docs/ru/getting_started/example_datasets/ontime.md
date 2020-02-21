@@ -1,3 +1,4 @@
+
 # OnTime
 
 Этот датасет может быть получен двумя способами:
@@ -7,7 +8,7 @@
 
 ## Импорт из сырых данных
 
-Скачивание данных (из `https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh`):
+Скачивание данных:
 
 ```bash
 for s in `seq 1987 2018`
@@ -18,6 +19,8 @@ wget https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performa
 done
 done
 ```
+
+(из <https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh> )
 
 Создание таблицы:
 
@@ -399,4 +402,4 @@ LIMIT 10;
 -   <https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/>
 -   <http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html>
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/example_datasets/ontime/) <!--hide-->
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/getting_started/example_datasets/ontime/) <!--hide-->

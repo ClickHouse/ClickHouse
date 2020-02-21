@@ -299,24 +299,44 @@ std::vector<UUID> IAccessStorage::tryUpdate(const std::vector<UUID> & ids, const
 }
 
 
-ext::scope_guard IAccessStorage::subscribeForChanges(std::type_index type, const OnChangedHandler & handler) const
+IAccessStorage::SubscriptionPtr IAccessStorage::subscribeForChanges(std::type_index type, const OnChangedHandler & handler) const
 {
     return subscribeForChangesImpl(type, handler);
 }
 
 
-ext::scope_guard IAccessStorage::subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const
+IAccessStorage::SubscriptionPtr IAccessStorage::subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const
 {
     return subscribeForChangesImpl(id, handler);
 }
 
 
-ext::scope_guard IAccessStorage::subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const
+IAccessStorage::SubscriptionPtr IAccessStorage::subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const
 {
-    ext::scope_guard subscriptions;
+    if (ids.empty())
+        return nullptr;
+    if (ids.size() == 1)
+        return subscribeForChangesImpl(ids[0], handler);
+
+    std::vector<SubscriptionPtr> subscriptions;
+    subscriptions.reserve(ids.size());
     for (const auto & id : ids)
-        subscriptions.join(subscribeForChangesImpl(id, handler));
-    return subscriptions;
+    {
+        auto subscription = subscribeForChangesImpl(id, handler);
+        if (subscription)
+            subscriptions.push_back(std::move(subscription));
+    }
+
+    class SubscriptionImpl : public Subscription
+    {
+    public:
+        SubscriptionImpl(std::vector<SubscriptionPtr> subscriptions_)
+            : subscriptions(std::move(subscriptions_)) {}
+    private:
+        std::vector<SubscriptionPtr> subscriptions;
+    };
+
+    return std::make_unique<SubscriptionImpl>(std::move(subscriptions));
 }
 
 

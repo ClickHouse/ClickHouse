@@ -161,17 +161,12 @@ protected:
                 throw Exception("Cannot push block to port which already has data.", ErrorCodes::LOGICAL_ERROR);
         }
 
-        void ALWAYS_INLINE pull(DataPtr & data_, std::uintptr_t & flags, bool set_not_needed = false)
+        void ALWAYS_INLINE pull(DataPtr & data_, std::uintptr_t & flags)
         {
-            uintptr_t mask = HAS_DATA;
-
-            if (set_not_needed)
-                mask |= IS_NEEDED;
-
-            flags = data_.swap(data, 0, mask);
+            flags = data_.swap(data, 0, HAS_DATA);
 
             /// It's ok to check because this flag can be changed only by pulling thread.
-            if (unlikely((flags & IS_NEEDED) == 0) && !set_not_needed)
+            if (unlikely((flags & IS_NEEDED) == 0))
                 throw Exception("Cannot pull block from port which is not needed.", ErrorCodes::LOGICAL_ERROR);
 
             if (unlikely((flags & HAS_DATA) == 0))
@@ -271,15 +266,14 @@ private:
 public:
     using Port::Port;
 
-    Data ALWAYS_INLINE pullData(bool set_not_needed = false)
+    Data ALWAYS_INLINE pullData()
     {
-        if (!set_not_needed)
-            updateVersion();
+        updateVersion();
 
         assumeConnected();
 
         std::uintptr_t flags = 0;
-        state->pull(data, flags, set_not_needed);
+        state->pull(data, flags);
 
         is_finished = flags & State::IS_FINISHED;
 
@@ -299,9 +293,9 @@ public:
         return std::move(*data);
     }
 
-    Chunk ALWAYS_INLINE pull(bool set_not_needed = false)
+    Chunk ALWAYS_INLINE pull()
     {
-        auto data_ = pullData(set_not_needed);
+        auto data_ = pullData();
 
         if (data_.exception)
             std::rethrow_exception(data_.exception);

@@ -228,6 +228,7 @@ static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, c
         throw Exception("Incorrect element of set. Must be literal or constant expression.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 }
 
+
 void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & context)
 {
     /// Will form a block with values from the set.
@@ -480,7 +481,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types)
+BoolMask MergeTreeSetIndex::mayBeTrueInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types)
 {
     size_t tuple_size = indexes_mapping.size();
 

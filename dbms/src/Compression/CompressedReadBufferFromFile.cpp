@@ -55,7 +55,7 @@ void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t
     }
     else
     {
-        file_in.seek(offset_in_compressed_file, SEEK_SET);
+        file_in.seek(offset_in_compressed_file);
 
         bytes += offset();
         nextImpl();

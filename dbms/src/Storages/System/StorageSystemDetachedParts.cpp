@@ -7,7 +7,6 @@
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <Storages/System/StorageSystemPartsBase.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 
 namespace DB
 {
@@ -25,10 +24,11 @@ class StorageSystemDetachedParts :
     friend struct ext::shared_ptr_helper<StorageSystemDetachedParts>;
 public:
     std::string getName() const override { return "SystemDetachedParts"; }
+    std::string getTableName() const override { return "detached_parts"; }
+    std::string getDatabaseName() const override { return "system"; }
 
 protected:
     explicit StorageSystemDetachedParts()
-        : IStorage({"system", "detached_parts"})
     {
         setColumns(ColumnsDescription{{
             {"database", std::make_shared<DataTypeString>()},
@@ -43,7 +43,7 @@ protected:
         }});
     }
 
-    Pipes readWithProcessors(
+    BlockInputStreams read(
             const Names & /* column_names */,
             const SelectQueryInfo & query_info,
             const Context & context,
@@ -75,12 +75,8 @@ protected:
             }
         }
 
-        UInt64 num_rows = new_columns.at(0)->size();
-        Chunk chunk(std::move(new_columns), num_rows);
-
-        Pipes pipes;
-        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(std::move(block), std::move(chunk)));
-        return pipes;
+        return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(
+             block.cloneWithColumns(std::move(new_columns))));
     }
 };
 

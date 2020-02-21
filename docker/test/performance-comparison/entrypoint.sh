@@ -1,11 +1,7 @@
 #!/bin/bash
 set -ex
 
-chown nobody workspace output
-chgrp nogroup workspace output
-chmod 777 workspace output
-
-cd workspace
+cd /workspace
 
 # We will compare to the most recent testing tag in master branch, let's find it.
 rm -rf ch ||:
@@ -15,30 +11,9 @@ echo Reference tag is $ref_tag
 # We use annotated tags which have their own shas, so we have to further
 # dereference the tag to get the commit it points to, hence the '~0' thing.
 ref_sha=$(cd ch && git rev-parse $ref_tag~0)
+echo Reference SHA is $ref_sha
 
-# Show what we're testing
-(
-    echo Reference SHA is $ref_sha
-    (cd ch && git log -1 --decorate $ref_sha) ||:
-    echo
-) | tee left-commit.txt
-(
-    echo SHA to test is $SHA_TO_TEST
-    (cd ch && git log -1 --decorate $SHA_TO_TEST) ||:
-    echo
-) | tee right-commit.txt
+../compare.sh 0 $ref_sha $PR_TO_TEST $SHA_TO_TEST > compare.log 2>&1
 
-# Set python output encoding so that we can print queries with Russian letters.
-export PYTHONIOENCODING=utf-8
-
-# Even if we have some errors, try our best to save the logs.
-set +e
-# compare.sh kills its process group, so put it into a separate one.
-# It's probably at fault for using `kill 0` as an error handling mechanism,
-# but I can't be bothered to change this now.
-set -m
-time ../compare.sh 0 $ref_sha $PR_TO_TEST $SHA_TO_TEST 2>&1 | ts | tee compare.log
-set +m
-
-7z a /output/output.7z *.log *.tsv *.html *.txt
+7z a /output/output.7z *.log *.tsv
 cp compare.log /output

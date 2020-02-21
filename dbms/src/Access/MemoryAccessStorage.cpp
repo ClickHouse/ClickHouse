@@ -6,7 +6,7 @@
 namespace DB
 {
 MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_)
-    : IAccessStorage(storage_name_)
+    : IAccessStorage(storage_name_), shared_ptr_to_this{std::make_shared<const MemoryAccessStorage *>(this)}
 {
 }
 
@@ -256,38 +256,85 @@ void MemoryAccessStorage::prepareNotifications(const Entry & entry, bool remove,
 }
 
 
-ext::scope_guard MemoryAccessStorage::subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const
+IAccessStorage::SubscriptionPtr MemoryAccessStorage::subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const
 {
-    std::lock_guard lock{mutex};
-    auto handler_it = handlers_by_type.emplace(type, handler);
-
-    return [this, handler_it]
+    class SubscriptionImpl : public Subscription
     {
-        std::lock_guard lock2{mutex};
-        handlers_by_type.erase(handler_it);
+    public:
+        SubscriptionImpl(
+            const MemoryAccessStorage & storage_,
+            std::type_index type_,
+            const OnChangedHandler & handler_)
+            : storage_weak(storage_.shared_ptr_to_this)
+        {
+            std::lock_guard lock{storage_.mutex};
+            handler_it = storage_.handlers_by_type.emplace(type_, handler_);
+        }
+
+        ~SubscriptionImpl() override
+        {
+            auto storage = storage_weak.lock();
+            if (storage)
+            {
+                std::lock_guard lock{(*storage)->mutex};
+                (*storage)->handlers_by_type.erase(handler_it);
+            }
+        }
+
+    private:
+        std::weak_ptr<const MemoryAccessStorage *> storage_weak;
+        std::unordered_multimap<std::type_index, OnChangedHandler>::iterator handler_it;
     };
+
+    return std::make_unique<SubscriptionImpl>(*this, type, handler);
 }
 
 
-ext::scope_guard MemoryAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
+IAccessStorage::SubscriptionPtr MemoryAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
-    std::lock_guard lock{mutex};
-    auto it = entries.find(id);
-    if (it == entries.end())
-        return {};
-    const Entry & entry = it->second;
-    auto handler_it = entry.handlers_by_id.insert(entry.handlers_by_id.end(), handler);
-
-    return [this, id, handler_it]
+    class SubscriptionImpl : public Subscription
     {
-        std::lock_guard lock2{mutex};
-        auto it2 = entries.find(id);
-        if (it2 != entries.end())
+    public:
+        SubscriptionImpl(
+            const MemoryAccessStorage & storage_,
+            const UUID & id_,
+            const OnChangedHandler & handler_)
+            : storage_weak(storage_.shared_ptr_to_this),
+              id(id_)
         {
-            const Entry & entry2 = it2->second;
-            entry2.handlers_by_id.erase(handler_it);
+            std::lock_guard lock{storage_.mutex};
+            auto it = storage_.entries.find(id);
+            if (it == storage_.entries.end())
+            {
+                storage_weak.reset();
+                return;
+            }
+            const Entry & entry = it->second;
+            handler_it = entry.handlers_by_id.insert(entry.handlers_by_id.end(), handler_);
         }
+
+        ~SubscriptionImpl() override
+        {
+            auto storage = storage_weak.lock();
+            if (storage)
+            {
+                std::lock_guard lock{(*storage)->mutex};
+                auto it = (*storage)->entries.find(id);
+                if (it != (*storage)->entries.end())
+                {
+                    const Entry & entry = it->second;
+                    entry.handlers_by_id.erase(handler_it);
+                }
+            }
+        }
+
+    private:
+        std::weak_ptr<const MemoryAccessStorage *> storage_weak;
+        UUID id;
+        std::list<OnChangedHandler>::iterator handler_it;
     };
+
+    return std::make_unique<SubscriptionImpl>(*this, id, handler);
 }
 
 

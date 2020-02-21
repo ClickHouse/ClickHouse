@@ -2,7 +2,6 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOutput.h>
-#include <Core/UUID.h>
 
 
 namespace DB
@@ -16,7 +15,6 @@ class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 public:
     String database;
     String table;
-    UUID uuid;
     bool temporary{false};
 
 protected:

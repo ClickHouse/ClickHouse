@@ -14,6 +14,8 @@ class StorageValues : public ext::shared_ptr_helper<StorageValues>, public IStor
     friend struct ext::shared_ptr_helper<StorageValues>;
 public:
     std::string getName() const override { return "Values"; }
+    std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -24,10 +26,12 @@ public:
         unsigned num_streams) override;
 
 private:
+    std::string database_name;
+    std::string table_name;
     Block res_block;
 
 protected:
-    StorageValues(const StorageID & table_id_, const ColumnsDescription & columns_, const Block & res_block_);
+    StorageValues(const std::string & database_name_, const std::string & table_name_, const ColumnsDescription & columns_, const Block & res_block_);
 };
 
 }

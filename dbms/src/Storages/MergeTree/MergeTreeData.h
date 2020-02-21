@@ -330,7 +330,7 @@ public:
     ///
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
-    MergeTreeData(const StorageID & table_id_,
+    MergeTreeData(const String & database_, const String & table_,
                   const String & relative_data_path_,
                   const StorageInMemoryMetadata & metadata,
                   Context & context_,
@@ -395,6 +395,9 @@ public:
             || column_name == "_partition_id"
             || column_name == "_sample_factor";
     }
+
+    String getDatabaseName() const override { return database_name; }
+    String getTableName() const override { return table_name; }
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
@@ -626,7 +629,6 @@ public:
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM
     /// Tables structure should be locked.
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const;
-    MergeTreeData & checkStructureAndGetMergeTreeData(IStorage * source_table) const;
 
     MergeTreeData::MutableDataPartPtr cloneAndLoadDataPartOnSameDisk(
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix, const MergeTreePartInfo & dst_part_info);
@@ -793,6 +795,8 @@ protected:
 
     bool require_part_metadata;
 
+    String database_name;
+    String table_name;
     String relative_data_path;
 
 
@@ -906,8 +910,6 @@ protected:
 
     void setTTLExpressions(const ColumnsDescription::ColumnTTLs & new_column_ttls,
                            const ASTPtr & new_ttl_table_ast, bool only_check = false);
-
-    void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);
 
     /// Expression for column type conversion.
     /// If no conversions are needed, out_expression=nullptr.

@@ -67,11 +67,7 @@ class CommandRequest:
 
         #print " ".join(command)
 
-        # we suppress stderror on client becase sometimes thread sanitizer
-        # can print some debug information there
-        env = {}
-        env["TSAN_OPTIONS"] = "verbosity=0"
-        self.process = sp.Popen(command, stdin=stdin_file, stdout=self.stdout_file, stderr=self.stderr_file, env=env)
+        self.process = sp.Popen(command, stdin=stdin_file, stdout=self.stdout_file, stderr=self.stderr_file)
 
         self.timer = None
         self.process_finished_before_timeout = True

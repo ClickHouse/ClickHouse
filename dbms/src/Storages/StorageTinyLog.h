@@ -23,6 +23,8 @@ class StorageTinyLog : public ext::shared_ptr_helper<StorageTinyLog>, public ISt
 
 public:
     String getName() const override { return "TinyLog"; }
+    String getTableName() const override { return table_name; }
+    String getDatabaseName() const override { return database_name; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -46,13 +48,12 @@ public:
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void drop(TableStructureWriteLockHolder &) override;
-
 protected:
     StorageTinyLog(
         DiskPtr disk_,
         const String & relative_path_,
-        const StorageID & table_id_,
+        const String & database_name_,
+        const String & table_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         bool attach,
@@ -67,6 +68,8 @@ private:
 
     DiskPtr disk;
     String table_path;
+    String database_name;
+    String table_name;
 
     size_t max_compress_block_size;
 
@@ -77,6 +80,7 @@ private:
 
     Logger * log;
 
+    void addFile(const String & column_name, const IDataType & type, size_t level = 0);
     void addFiles(const String & column_name, const IDataType & type);
 };
 
