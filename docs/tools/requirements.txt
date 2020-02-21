@@ -20,7 +20,7 @@ MarkupSafe==1.1.1
 mkdocs==1.0.4
 Pygments==2.5.2
 python-slugify==1.2.6
-pytz==2017.3
+pytz==2019.3
 PyYAML==5.3
 recommonmark==0.4.0
 requests==2.23.0
