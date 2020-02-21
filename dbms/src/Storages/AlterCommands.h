@@ -4,7 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
-
+#include <Storages/ColumnsDescription.h>
 
 #include <Common/SettingsChanges.h>
 
@@ -117,6 +117,17 @@ class AlterCommands : public std::vector<AlterCommand>
 {
 private:
     bool prepared = false;
+private:
+
+    /// Validate that default expression and type are compatible, i.e. default
+    /// expression result can be casted to column_type
+    void validateDefaultExpressionForColumn(
+        const ASTPtr default_expression,
+        const String & column_name,
+        const DataTypePtr column_type,
+        const ColumnsDescription & all_columns,
+        const Context & context) const;
+
 public:
     /// Validate that commands can be applied to metadata.
     /// Checks that all columns exist and dependecies between them.
@@ -124,9 +135,9 @@ public:
     /// More accurate check have to be performed with storage->checkAlterIsPossible.
     void validate(const StorageInMemoryMetadata & metadata, const Context & context) const;
 
-    /// Prepare alter commands. Set ignore flag to some of them
-    /// and additional commands for dependent columns.
-    void prepare(const StorageInMemoryMetadata & metadata, const Context & context);
+    /// Prepare alter commands. Set ignore flag to some of them and set some
+    /// parts to commands from storage's metadata (for example, absent default)
+    void prepare(const StorageInMemoryMetadata & metadata);
 
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.

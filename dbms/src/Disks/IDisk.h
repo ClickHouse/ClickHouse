@@ -25,8 +25,8 @@ using DiskDirectoryIteratorPtr = std::unique_ptr<IDiskDirectoryIterator>;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 
-class SeekableReadBuffer;
-class WriteBuffer;
+class ReadBufferFromFileBase;
+class WriteBufferFromFileBase;
 
 /**
  * Mode of opening a file for write.
@@ -121,11 +121,21 @@ public:
     /// Copy the file from `from_path` to `to_path`.
     virtual void copyFile(const String & from_path, const String & to_path) = 0;
 
-    /// Open the file for read and return SeekableReadBuffer object.
-    virtual std::unique_ptr<SeekableReadBuffer> readFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const = 0;
+    /// Open the file for read and return ReadBufferFromFileBase object.
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
+        const String & path,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        size_t estimated_size = 0,
+        size_t aio_threshold = 0,
+        size_t mmap_threshold = 0) const = 0;
 
-    /// Open the file for write and return WriteBuffer object.
-    virtual std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, WriteMode mode = WriteMode::Rewrite) = 0;
+    /// Open the file for write and return WriteBufferFromFileBase object.
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & path,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        WriteMode mode = WriteMode::Rewrite,
+        size_t estimated_size = 0,
+        size_t aio_threshold = 0) = 0;
 
     /// Remove file or directory. Throws exception if file doesn't exists or if directory is not empty.
     virtual void remove(const String & path) = 0;
