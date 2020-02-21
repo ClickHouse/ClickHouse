@@ -14,6 +14,14 @@ left_sha=$2
 right_pr=$3
 right_sha=$4
 
+datasets=${CHPC_DATASETS:-"hits1 hits10 hits100 values"}
+
+declare -A dataset_paths
+dataset_paths["hits10"]="https://s3.mds.yandex.net/clickhouse-private-datasets/hits_10m_single/partitions/hits_10m_single.tar"
+dataset_paths["hits100"]="https://s3.mds.yandex.net/clickhouse-private-datasets/hits_100m_single/partitions/hits_100m_single.tar"
+dataset_paths["hits1"]="https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_v1.tar"
+dataset_paths["values"]="https://clickhouse-datasets.s3.yandex.net/values_with_expressions/partitions/test_values.tar"
+
 function download
 {
     rm -r left ||:
@@ -30,12 +38,15 @@ function download
         wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv && cp -a left right &
     fi
 
-    cd db0 && wget -nv -nd -c "https://s3.mds.yandex.net/clickhouse-private-datasets/hits_10m_single/partitions/hits_10m_single.tar" -O- | tar -xv &
-    cd db0 && wget -nv -nd -c "https://s3.mds.yandex.net/clickhouse-private-datasets/hits_100m_single/partitions/hits_100m_single.tar" -O- | tar -xv &
-    cd db0 && wget -nv -nd -c "https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_v1.tar" -O- | tar -xv &
-    cd db0 && wget -nv -nd -c "https://clickhouse-datasets.s3.yandex.net/values_with_expressions/partitions/test_values.tar" -O- | tar -xv &
+    for dataset_name in $datasets
+    do
+        dataset_path="${dataset_paths[$dataset_name]}"
+        [ "$dataset_path" != "" ]
+        cd db0 && wget -nv -nd -c "$dataset_path" -O- | tar -xv &
+    done
 
-    mkdir ~/fg ; cd ~/fg && wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl" && chmod +x ~/fg/flamegraph.pl &
+    mkdir ~/fg ||:
+    cd ~/fg && wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl" && chmod +x ~/fg/flamegraph.pl &
 
     wait
 }
@@ -59,6 +70,9 @@ function configure
         <metric_log remove="remove">
             <table remove="remove"/>
         </metric_log>
+        <use_uncompressed_cache>1</use_uncompressed_cache>
+        <!--64 GiB-->
+        <uncompressed_cache_size>68719476736</uncompressed_cache_size>
     </yandex>
 EOF
 
@@ -84,7 +98,7 @@ EOF
     rm right/config/config.d/text_log.xml ||:
 
     # Start a temporary server to rename the tables
-    while killall clickhouse ; do echo . ; sleep 1 ; done
+    while killall clickhouse; do echo . ; sleep 1 ; done
     echo all killed
 
     set -m # Spawn temporary in its own process groups
@@ -99,17 +113,18 @@ EOF
     left/clickhouse client --port 9001 --query "create database test" ||:
     left/clickhouse client --port 9001 --query "rename table datasets.hits_v1 to test.hits" ||:
 
-    while killall clickhouse ; do echo . ; sleep 1 ; done
+    while killall clickhouse; do echo . ; sleep 1 ; done
     echo all killed
 
     # Remove logs etc, because they will be updated, and sharing them between
     # servers with hardlink might cause unpredictable behavior.
     rm db0/data/system/* -rf ||:
+    rm db0/metadata/system/* -rf ||:
 }
 
 function restart
 {
-    while killall clickhouse ; do echo . ; sleep 1 ; done
+    while killall clickhouse; do echo . ; sleep 1 ; done
     echo all killed
 
     # Make copies of the original db for both servers. Use hardlinks instead
@@ -162,11 +177,11 @@ function run_tests
     test_files=$(ls right/performance/*)
 
     # FIXME a quick crutch to bring the run time down for the flappy tests --
-    # run only those that have changed. Only on my prs for now.
-    if grep Kuzmenkov right-commit.txt && [ "PR_TO_TEST" != "0" ]
+    # if some performance tests xmls were changed in a PR, run only these ones.
+    if [ "$PR_TO_TEST" != "0" ]
     then
-        test_files_override=$(cd right/performance && readlink -e $changed_files)
-        if [ "test_files_override" != "" ]
+        test_files_override=$(cd right/performance && readlink -e $changed_files ||:)
+        if [ "$test_files_override" != "" ]
         then
             test_files=$test_files_override
         fi
@@ -236,7 +251,7 @@ do
         | tr '\n' ', ' | sed 's/,$//' > "$x.columns"
 done
 
-rm *.rep test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
+rm *.rep *.svg test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
 
 right/clickhouse local --query "
 create table queries engine Memory as select
@@ -376,9 +391,13 @@ create table stacks engine File(TSV, 'stacks.rep') as
 "
 
 IFS=$'\n'
-for q in $(cut -d'	' -f1 stacks.rep | sort | uniq)
+for query in $(cut -d'	' -f1 stacks.rep | sort | uniq)
 do
-    grep -F "$q" stacks.rep | cut -d'	' -f 2- | tee "$q.stacks.rep" | ~/fg/flamegraph.pl > "$q.svg" &
+    query_file=$(echo $query | cut -c-120 | sed 's/[/]/_/g')
+    grep -F "$query" stacks.rep \
+        | cut -d'	' -f 2- \
+        | tee "$query_file.stacks.rep" \
+        | ~/fg/flamegraph.pl > "$query_file.svg" &
 done
 wait
 unset IFS
