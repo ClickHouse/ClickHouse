@@ -130,7 +130,8 @@ private:
     bool echo_queries = false;           /// Print queries before execution in batch mode.
     bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
-    bool stdin_is_not_tty = false;       /// stdin is not a terminal.
+    bool stdin_is_a_tty = false;         /// stdin is a terminal.
+    bool stdout_is_a_tty = false;        /// stdout is a terminal.
 
     uint16_t terminal_width = 0;         /// Terminal width is needed to render progress bar.
 
@@ -378,7 +379,7 @@ private:
         ///   The value of the option is used as the text of query (or of multiple queries).
         ///   If stdin is not a terminal, INSERT data for the first query is read from it.
         /// - stdin is not a terminal. In this case queries are read from it.
-        if (stdin_is_not_tty || config().has("query"))
+        if (!stdin_is_a_tty || config().has("query"))
             is_interactive = false;
 
         std::cout << std::fixed << std::setprecision(3);
@@ -910,7 +911,7 @@ private:
             ? query.substr(0, parsed_insert_query.data - query.data())
             : query;
 
-        if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
+        if (!parsed_insert_query.data && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
         connection->sendQuery(connection_parameters.timeouts, query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
@@ -1332,7 +1333,7 @@ private:
                 }
             }
 
-            logs_out_stream = std::make_shared<InternalTextLogsRowOutputStream>(*wb);
+            logs_out_stream = std::make_shared<InternalTextLogsRowOutputStream>(*wb, stdout_is_a_tty);
             logs_out_stream->writePrefix();
         }
     }
@@ -1643,9 +1644,10 @@ public:
             }
         }
 
-        stdin_is_not_tty = !isatty(STDIN_FILENO);
+        stdin_is_a_tty = isatty(STDIN_FILENO);
+        stdout_is_a_tty = isatty(STDOUT_FILENO);
 
-        if (!stdin_is_not_tty)
+        if (stdin_is_a_tty)
             terminal_width = getTerminalWidth();
 
         namespace po = boost::program_options;
