@@ -16,6 +16,7 @@ set (SRCS
     setTerminalEcho.cpp
     shift10.cpp
     sleep.cpp
+    terminalColors.cpp
 )
 
 if (ENABLE_REPLXX)
