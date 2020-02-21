@@ -78,14 +78,23 @@ protected:
             const String & description,
             bool unprioritized);
 
+    /*
+     * Checks that partition piece or some other entity is clean.
+     * The only requirement is that you have to pass is_dirty_flag_path and is_dirty_cleaned_path to the function.
+     * And is_dirty_flag_path is a parent of is_dirty_cleaned_path.
+     * */
+    bool checkPartitionPieceIsClean(
+            const zkutil::ZooKeeperPtr & zookeeper,
+            const CleanStateClock & clean_state_clock,
+            const String & task_status_path) const;
+
+    bool checkAllPiecesInPartitionAreDone(const TaskTable & task_table, const String & partition_name, const TasksShard & shards_with_partition);
+
     /** Checks that the whole partition of a table was copied. We should do it carefully due to dirty lock.
      * State of some task could change during the processing.
      * We have to ensure that all shards have the finished state and there is no dirty flag.
      * Moreover, we have to check status twice and check zxid, because state can change during the checking.
      */
-    bool checkPartitionIsDone(const TaskTable & task_table, const String & partition_name, const TasksShard & shards_with_partition);
-
-    bool checkAllPieceInPartitionDone(const TaskTable & task_table, const String & partition_name, const TasksShard & shards_with_partition);
 
     /* The same as function above
      * Assume that we don't know on which shards do we have partition certain piece.
@@ -128,7 +137,8 @@ protected:
     ASTPtr getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard);
 
     /// If it is implicitly asked to create split Distributed table for certain piece on current shard, we will do it.
-    void createShardInternalTables(const ConnectionTimeouts & timeouts, TaskShard & task_shard, bool create_split = true, const size_t piece_number = 0);
+    /// TODO: rewrite comment
+    void createShardInternalTables(const ConnectionTimeouts & timeouts, TaskShard & task_shard, bool create_split = true);
 
     std::set<String> getShardPartitions(const ConnectionTimeouts & timeouts, TaskShard & task_shard);
 

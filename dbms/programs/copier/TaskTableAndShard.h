@@ -24,30 +24,15 @@ struct TaskTable {
 
     String getCertainPartitionIsDirtyPath(const String & partition_name) const;
 
-    String getCertainPartitionPieceIsDirtyPath(const String & partition_name, const size_t piece_number) const
-    {
-        UNUSED(partition_name);
-        UNUSED(piece_number);
-        return "Not Implemented";
-    }
+    String getCertainPartitionPieceIsDirtyPath(const String & partition_name, const size_t piece_number) const;
 
     String getCertainPartitionIsCleanedPath(const String & partition_name) const;
 
-    String getCertainPartitionPieceIsCleanedPath(const String & partition_name, const size_t piece_number) const
-    {
-        UNUSED(partition_name);
-        UNUSED(piece_number);
-        return "Not implemented";
-    }
+    String getCertainPartitionPieceIsCleanedPath(const String & partition_name, const size_t piece_number) const;
 
     String getCertainPartitionTaskStatusPath(const String & partition_name) const;
 
-    String getCertainPartitionPieceTaskStatusPath(const String & partition_name, const size_t piece_number) const
-    {
-        UNUSED(partition_name);
-        UNUSED(piece_number);
-        return "Not implemented";
-    }
+    String getCertainPartitionPieceTaskStatusPath(const String & partition_name, const size_t piece_number) const;
 
     /// Partitions will be splitted into number-of-splits pieces.
     /// Each piece will be copied independently. (10 by default)
@@ -149,7 +134,10 @@ struct TaskTable {
 
 struct TaskShard
 {
-    TaskShard(TaskTable &parent, const ShardInfo &info_) : task_table(parent), info(info_) {}
+    TaskShard(TaskTable & parent, const ShardInfo & info_) : task_table(parent), info(info_)
+    {
+        list_of_split_tables_on_shard.assign(task_table.number_of_splits, DatabaseAndTableName());
+    }
 
     TaskTable & task_table;
 
@@ -182,9 +170,9 @@ struct TaskShard
     /// Internal distributed tables
     DatabaseAndTableName table_read_shard;
 
-    DatabaseAndTableName table_split_shard;
+    DatabaseAndTableName main_table_split_shard;
 
-    std::vector<DatabaseAndTableName> list_of_split_tables_on_shard;
+    ListOfDatabasesAndTableNames list_of_split_tables_on_shard;
 };
 
 
@@ -194,22 +182,40 @@ inline String TaskTable::getPartitionPath(const String &partition_name) const {
            + "/" + escapeForFileName(partition_name);   // 201701
 }
 
-inline String TaskTable::getPartitionPiecePath(const String & partition_name, size_t piece_number) const {
+inline String TaskTable::getPartitionPiecePath(const String & partition_name, size_t piece_number) const
+{
     assert(piece_number < number_of_splits);
-    return getPartitionPath(partition_name) + "/" +
-           std::to_string(piece_number);  // 1...number_of_splits
+    return getPartitionPath(partition_name) + "/piece_" + toString(piece_number);  // 1...number_of_splits
 }
 
-inline String TaskTable::getCertainPartitionIsDirtyPath(const String &partition_name) const {
+inline String TaskTable::getCertainPartitionIsDirtyPath(const String &partition_name) const
+{
     return getPartitionPath(partition_name) + "/is_dirty";
 }
 
-inline String TaskTable::getCertainPartitionIsCleanedPath(const String &partition_name) const {
+inline String TaskTable::getCertainPartitionPieceIsDirtyPath(const String & partition_name, const size_t piece_number) const
+{
+    return getPartitionPiecePath(partition_name, piece_number) + "/is_dirty";
+}
+
+inline String TaskTable::getCertainPartitionIsCleanedPath(const String &partition_name) const
+{
     return getCertainPartitionIsDirtyPath(partition_name) + "/cleaned";
 }
 
-inline String TaskTable::getCertainPartitionTaskStatusPath(const String &partition_name) const {
+inline String TaskTable::getCertainPartitionPieceIsCleanedPath(const String & partition_name, const size_t piece_number) const
+{
+    return getCertainPartitionPieceIsDirtyPath(partition_name, piece_number) + "/cleaned";
+}
+
+inline String TaskTable::getCertainPartitionTaskStatusPath(const String & partition_name) const
+{
     return getPartitionPath(partition_name) + "/shards";
+}
+
+inline String TaskTable::getCertainPartitionPieceTaskStatusPath(const String & partition_name, const size_t piece_number) const
+{
+    return getPartitionPiecePath(partition_name, piece_number) + "/shards";
 }
 
 inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConfiguration & config,

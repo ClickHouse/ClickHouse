@@ -38,7 +38,7 @@ struct ShardPartitionPiece {
 
 inline String ShardPartitionPiece::getPartitionPiecePath() const
 {
-    return shard_partition.getPartitionPath() + "/piece_" + std::to_string(current_piece_number);
+    return shard_partition.getPartitionPath() + "/piece_" + toString(current_piece_number);
 }
 
 inline String ShardPartitionPiece::getPartitionPieceCleanStartPath() const
@@ -53,7 +53,7 @@ inline String ShardPartitionPiece::getPartitionPieceIsDirtyPath() const
 
 inline String ShardPartitionPiece::getPartitionPieceIsCleanedPath() const
 {
-    return getPartitionPieceIsDirtyPath() + "/is_cleaned";
+    return getPartitionPieceIsDirtyPath() + "/cleaned";
 }
 
 inline String ShardPartitionPiece::getPartitionPieceActiveWorkersPath() const
