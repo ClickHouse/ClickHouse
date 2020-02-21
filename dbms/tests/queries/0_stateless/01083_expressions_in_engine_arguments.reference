@@ -4,7 +4,7 @@ CREATE TABLE test_01083.merge (`n` Int8) ENGINE = Merge(\'test_01083\', \'distri
 CREATE TABLE test_01083.merge_tf AS merge(\'test_01083\', \'.*\')
 CREATE TABLE test_01083.distributed (`n` Int8) ENGINE = Distributed(\'test_shard_localhost\', \'test_01083\', \'file\')
 CREATE TABLE test_01083.distributed_tf AS cluster(\'test_shard_localhost\', \'test_01083\', \'file\')
-CREATE TABLE test_01083.url (`n` UInt64, `_path` String) ENGINE = URL(\'http://localhost:8123/?query=select+n,+_path+from+test_01083.file+format+CSV\', \'CSV\')
+CREATE TABLE test_01083.url (`n` UInt64, `_path` String) ENGINE = URL(\'https://localhost:8443/?query=select+n,+_path+from+test_01083.file+format+CSV\', \'CSV\')
 CREATE TABLE test_01083.rich_syntax AS remote(\'localhos{x|y|t}\', cluster(\'test_shard_localhost\', remote(\'127.0.0.{1..4}\', \'test_01083\', \'url\')))
 1
 1
