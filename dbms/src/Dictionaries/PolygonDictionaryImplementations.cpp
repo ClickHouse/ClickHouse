@@ -66,7 +66,8 @@ GridPolygonDictionary::GridPolygonDictionary(
 {
     std::vector<size_t> order(polygons.size());
     std::iota(order.begin(), order.end(), 0);
-    std::sort(order.begin(), order.end(), [&](auto lhs, auto rhs) {
+    std::sort(order.begin(), order.end(), [&](auto lhs, auto rhs)
+    {
         return areas[lhs] < areas[rhs];
     });
     grid.init(order);
