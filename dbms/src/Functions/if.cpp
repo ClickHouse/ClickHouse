@@ -22,7 +22,7 @@
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/FunctionIfBase.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Interpreters/castColumn.h>
 
 

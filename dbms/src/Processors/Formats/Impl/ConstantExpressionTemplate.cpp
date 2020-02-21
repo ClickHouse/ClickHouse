@@ -4,7 +4,7 @@
 #include <DataTypes/FieldToDataType.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Functions/FunctionsConversion.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SyntaxAnalyzer.h>
@@ -18,7 +18,7 @@
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Interpreters/convertFieldToType.h>
-#include <boost/functional/hash.hpp>
+
 
 
 namespace DB

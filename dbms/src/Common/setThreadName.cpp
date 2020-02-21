@@ -7,7 +7,7 @@
     #include <sys/prctl.h>
 #endif
 
-#include <cstring>
+
 
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>

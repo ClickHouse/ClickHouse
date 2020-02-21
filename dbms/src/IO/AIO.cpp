@@ -1,6 +1,6 @@
 #if defined(__linux__)
 
-#include <boost/noncopyable.hpp>
+
 #include <Common/Exception.h>
 #include <sys/syscall.h>
 #include <unistd.h>

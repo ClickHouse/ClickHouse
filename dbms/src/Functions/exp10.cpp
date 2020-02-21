@@ -1,5 +1,5 @@
 #include <Functions/FunctionMathUnary.h>
-#include <Functions/FunctionFactory.h>
+
 #if !USE_VECTORCLASS
 #   include <common/preciseExp10.h>
 #endif

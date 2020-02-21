@@ -1,6 +1,6 @@
 #include "DictionaryFactory.h"
 
-#include <memory>
+
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "getDictionaryConfigurationFromAST.h"

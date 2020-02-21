@@ -1,4 +1,4 @@
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/FunctionBitTestMany.h>
 
 namespace DB

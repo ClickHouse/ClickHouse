@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
-#include <Storages/IStorage.h>
+
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>

@@ -1,7 +1,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/IDataType.h>
+
 #include <Processors/Formats/Impl/BinaryRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 

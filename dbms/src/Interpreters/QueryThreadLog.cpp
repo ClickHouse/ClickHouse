@@ -12,7 +12,7 @@
 #include <Interpreters/ProfileEventsExt.h>
 #include <Common/ClickHouseRevision.h>
 #include <Poco/Net/IPAddress.h>
-#include <array>
+
 
 
 namespace DB

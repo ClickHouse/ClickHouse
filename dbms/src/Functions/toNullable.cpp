@@ -1,6 +1,6 @@
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionFactory.h>
+
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/ColumnNumbers.h>

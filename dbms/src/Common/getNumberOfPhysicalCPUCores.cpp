@@ -1,5 +1,5 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <thread>
+
 
 #include <Common/config.h>
 #if USE_CPUID

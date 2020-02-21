@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
 #include <Common/ClickHouseRevision.h>
-#include <array>
+
 
 namespace DB
 {

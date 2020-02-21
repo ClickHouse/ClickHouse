@@ -1,8 +1,8 @@
 #include <Storages/MergeTree/SimpleMergeSelector.h>
 #include <Common/interpolate.h>
 
-#include <cmath>
-#include <iostream>
+
+
 
 
 namespace DB

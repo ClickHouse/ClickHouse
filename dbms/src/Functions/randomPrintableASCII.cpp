@@ -1,5 +1,5 @@
 #include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>

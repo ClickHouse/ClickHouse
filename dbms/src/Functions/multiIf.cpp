@@ -1,4 +1,4 @@
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/FunctionIfBase.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>

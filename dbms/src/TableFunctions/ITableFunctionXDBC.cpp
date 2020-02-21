@@ -1,4 +1,4 @@
-#include <type_traits>
+
 #include <ext/scope_guard.h>
 
 #include <Core/Defines.h>

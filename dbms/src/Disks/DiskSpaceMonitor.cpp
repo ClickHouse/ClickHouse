@@ -6,7 +6,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 
-#include <set>
+
 #include <Poco/File.h>
 
 

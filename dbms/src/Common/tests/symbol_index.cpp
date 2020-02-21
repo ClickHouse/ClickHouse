@@ -3,7 +3,7 @@
 #include <Common/Dwarf.h>
 #include <Core/Defines.h>
 #include <common/demangle.h>
-#include <iostream>
+
 #include <dlfcn.h>
 
 #pragma GCC diagnostic push

@@ -1,4 +1,4 @@
-#include <algorithm>
+
 #include <Common/config.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>

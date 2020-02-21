@@ -1,5 +1,5 @@
 #include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -8,9 +8,9 @@
 
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <iostream>
 
-#include <Common/PODArray.h>
+
+
 #include <Columns/ColumnArray.h>
 
 namespace DB

@@ -1,7 +1,7 @@
 #include <Access/RowPolicy.h>
 #include <Interpreters/Context.h>
 #include <Common/quoteString.h>
-#include <boost/range/algorithm/equal.hpp>
+
 
 
 namespace DB

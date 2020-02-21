@@ -53,14 +53,14 @@
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
-#include <Storages/IStorage.h>
+
 #include <Storages/StorageValues.h>
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
-#include <Functions/IFunction.h>
-#include <Core/Field.h>
+
+
 #include <Core/Types.h>
 #include <Columns/Collator.h>
 #include <Common/FieldVisitors.h>
@@ -69,7 +69,7 @@
 #include <Parsers/queryToString.h>
 #include <ext/map.h>
 #include <ext/scope_guard.h>
-#include <memory>
+
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromInputStream.h>

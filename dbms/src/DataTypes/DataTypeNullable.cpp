@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnNullable.h>
-#include <Core/Field.h>
+
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -215,7 +215,7 @@ void DataTypeNullable::serializeTextEscaped(const IColumn & column, size_t row_n
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
-        writeCString("\\N", ostr);
+        writeCHCString("\\N", ostr);
     else
         nested_data_type->serializeAsTextEscaped(col.getNestedColumn(), row_num, ostr, settings);
 }
@@ -290,7 +290,7 @@ void DataTypeNullable::serializeTextQuoted(const IColumn & column, size_t row_nu
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
-        writeCString("NULL", ostr);
+        writeCHCString("NULL", ostr);
     else
         nested_data_type->serializeAsTextQuoted(col.getNestedColumn(), row_num, ostr, settings);
 }
@@ -324,7 +324,7 @@ void DataTypeNullable::serializeTextCSV(const IColumn & column, size_t row_num, 
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
-        writeCString("\\N", ostr);
+        writeCHCString("\\N", ostr);
     else
         nested_data_type->serializeAsTextCSV(col.getNestedColumn(), row_num, ostr, settings);
 }
@@ -417,7 +417,7 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
     /// This assumes UTF-8 and proper font support. This is Ok, because Pretty formats are "presentational", not for data exchange.
 
     if (col.isNullAt(row_num))
-        writeCString("ᴺᵁᴸᴸ", ostr);
+        writeCHCString("ᴺᵁᴸᴸ", ostr);
     else
         nested_data_type->serializeAsText(col.getNestedColumn(), row_num, ostr, settings);
 }
@@ -427,7 +427,7 @@ void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num,
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
-        writeCString("null", ostr);
+        writeCHCString("null", ostr);
     else
         nested_data_type->serializeAsTextJSON(col.getNestedColumn(), row_num, ostr, settings);
 }
@@ -451,7 +451,7 @@ void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, 
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
-        writeCString("\\N", ostr);
+        writeCHCString("\\N", ostr);
     else
         nested_data_type->serializeAsTextXML(col.getNestedColumn(), row_num, ostr, settings);
 }

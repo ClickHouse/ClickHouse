@@ -47,7 +47,7 @@ template <typename T>     WriteBuffer & operator<< (WriteBuffer & buf, const T &
 template <> inline        WriteBuffer & operator<< (WriteBuffer & buf, const String & x)   { writeString(x, buf);   return buf; }
 template <> inline        WriteBuffer & operator<< (WriteBuffer & buf, const char & x)     { writeChar(x, buf);     return buf; }
 
-inline WriteBuffer & operator<< (WriteBuffer & buf, const char * x)     { writeCString(x, buf); return buf; }
+inline WriteBuffer & operator<< (WriteBuffer & buf, const char * x)     { writeCHCString(x, buf); return buf; }
 
 inline EscapeManipWriteBuffer      operator<< (WriteBuffer & buf, EscapeManip)      { return buf; }
 inline QuoteManipWriteBuffer       operator<< (WriteBuffer & buf, QuoteManip)       { return buf; }

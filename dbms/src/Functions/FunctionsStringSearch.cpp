@@ -1,12 +1,12 @@
 #include "FunctionsStringSearch.h"
 
-#include <algorithm>
-#include <memory>
-#include <string>
-#include <vector>
+
+
+
+
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/Regexps.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/UTF8String.h>

@@ -50,17 +50,17 @@ void ProgressValues::writeJSON(WriteBuffer & out) const
     /// Numbers are written in double quotes (as strings) to avoid loss of precision
     ///  of 64-bit integers after interpretation by JavaScript.
 
-    writeCString("{\"read_rows\":\"", out);
+    writeCHCString("{\"read_rows\":\"", out);
     writeText(this->read_rows, out);
-    writeCString("\",\"read_bytes\":\"", out);
+    writeCHCString("\",\"read_bytes\":\"", out);
     writeText(this->read_bytes, out);
-    writeCString("\",\"written_rows\":\"", out);
+    writeCHCString("\",\"written_rows\":\"", out);
     writeText(this->written_rows, out);
-    writeCString("\",\"written_bytes\":\"", out);
+    writeCHCString("\",\"written_bytes\":\"", out);
     writeText(this->written_bytes, out);
-    writeCString("\",\"total_rows_to_read\":\"", out);
+    writeCHCString("\",\"total_rows_to_read\":\"", out);
     writeText(this->total_rows_to_read, out);
-    writeCString("\"}", out);
+    writeCHCString("\"}", out);
 }
 
 void Progress::read(ReadBuffer & in, UInt64 server_revision)

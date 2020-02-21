@@ -20,7 +20,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
         for (auto it = parameters->children.begin(); it != parameters->children.end(); ++it)
         {
             if (it != parameters->children.begin())
-                writeCString(", ", ostr);
+                writeCHCString(", ", ostr);
             (*it)->appendColumnName(ostr);
         }
         writeChar(')', ostr);
@@ -30,7 +30,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     for (auto it = arguments->children.begin(); it != arguments->children.end(); ++it)
     {
         if (it != arguments->children.begin())
-            writeCString(", ", ostr);
+            writeCHCString(", ", ostr);
         (*it)->appendColumnName(ostr);
     }
     writeChar(')', ostr);

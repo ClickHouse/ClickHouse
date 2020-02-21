@@ -1023,9 +1023,9 @@ private:
         if (JSONParser::isBool(it))
         {
             if (JSONParser::getBool(it))
-                writeCString("true", buf);
+                writeCHCString("true", buf);
             else
-                writeCString("false", buf);
+                writeCHCString("false", buf);
             return;
         }
         if (JSONParser::isString(it))
@@ -1072,7 +1072,7 @@ private:
         }
         if (JSONParser::isNull(it))
         {
-            writeCString("null", buf);
+            writeCHCString("null", buf);
             return;
         }
     }

@@ -13,7 +13,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST.h>
 
-#include <type_traits>
+
 #include "DataTypesDecimal.h"
 
 

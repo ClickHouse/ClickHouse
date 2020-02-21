@@ -3,7 +3,7 @@
 
 #if USE_PROTOBUF
 
-#include <Core/Block.h>
+
 #include <Formats/FormatSchemaInfo.h>
 #include <Formats/ProtobufSchemas.h>
 #include <Interpreters/Context.h>

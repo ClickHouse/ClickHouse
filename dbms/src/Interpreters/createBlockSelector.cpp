@@ -3,7 +3,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
-#include <type_traits>
+
 
 #ifdef __SSE2__
     #define LIBDIVIDE_USE_SSE2 1

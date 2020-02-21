@@ -15,8 +15,8 @@
 
 #include <Formats/FormatSettings.h>
 
-#include <iostream>
-#include <chrono>
+
+
 #include <Processors/ISimpleTransform.h>
 
 using namespace DB;

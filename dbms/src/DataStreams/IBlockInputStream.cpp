@@ -1,6 +1,6 @@
 #include <DataStreams/IBlockInputStream.h>
 
-#include <Core/Field.h>
+
 #include <Interpreters/ProcessList.h>
 #include <Access/QuotaContext.h>
 #include <Common/CurrentThread.h>

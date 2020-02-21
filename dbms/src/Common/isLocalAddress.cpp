@@ -1,6 +1,6 @@
 #include <Common/isLocalAddress.h>
 
-#include <cstring>
+
 #include <Core/Types.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Net/NetworkInterface.h>

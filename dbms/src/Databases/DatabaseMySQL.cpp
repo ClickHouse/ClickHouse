@@ -2,7 +2,7 @@
 
 #if USE_MYSQL
 
-#include <string>
+
 #include <Databases/DatabaseMySQL.h>
 #include <Common/parseAddress.h>
 #include <IO/Operators.h>

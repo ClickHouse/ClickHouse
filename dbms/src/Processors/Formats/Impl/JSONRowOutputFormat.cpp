@@ -38,68 +38,68 @@ JSONRowOutputFormat::JSONRowOutputFormat(WriteBuffer & out_, const Block & heade
 
 void JSONRowOutputFormat::writePrefix()
 {
-    writeCString("{\n", *ostr);
-    writeCString("\t\"meta\":\n", *ostr);
-    writeCString("\t[\n", *ostr);
+    writeCHCString("{\n", *ostr);
+    writeCHCString("\t\"meta\":\n", *ostr);
+    writeCHCString("\t[\n", *ostr);
 
     for (size_t i = 0; i < fields.size(); ++i)
     {
-        writeCString("\t\t{\n", *ostr);
+        writeCHCString("\t\t{\n", *ostr);
 
-        writeCString("\t\t\t\"name\": ", *ostr);
+        writeCHCString("\t\t\t\"name\": ", *ostr);
         writeString(fields[i].name, *ostr);
-        writeCString(",\n", *ostr);
-        writeCString("\t\t\t\"type\": ", *ostr);
+        writeCHCString(",\n", *ostr);
+        writeCHCString("\t\t\t\"type\": ", *ostr);
         writeJSONString(fields[i].type->getName(), *ostr, settings);
         writeChar('\n', *ostr);
 
-        writeCString("\t\t}", *ostr);
+        writeCHCString("\t\t}", *ostr);
         if (i + 1 < fields.size())
             writeChar(',', *ostr);
         writeChar('\n', *ostr);
     }
 
-    writeCString("\t],\n", *ostr);
+    writeCHCString("\t],\n", *ostr);
     writeChar('\n', *ostr);
-    writeCString("\t\"data\":\n", *ostr);
-    writeCString("\t[\n", *ostr);
+    writeCHCString("\t\"data\":\n", *ostr);
+    writeCHCString("\t[\n", *ostr);
 }
 
 
 void JSONRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    writeCString("\t\t\t", *ostr);
+    writeCHCString("\t\t\t", *ostr);
     writeString(fields[field_number].name, *ostr);
-    writeCString(": ", *ostr);
+    writeCHCString(": ", *ostr);
     type.serializeAsTextJSON(column, row_num, *ostr, settings);
     ++field_number;
 }
 
 void JSONRowOutputFormat::writeTotalsField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    writeCString("\t\t", *ostr);
+    writeCHCString("\t\t", *ostr);
     writeString(fields[field_number].name, *ostr);
-    writeCString(": ", *ostr);
+    writeCHCString(": ", *ostr);
     type.serializeAsTextJSON(column, row_num, *ostr, settings);
     ++field_number;
 }
 
 void JSONRowOutputFormat::writeFieldDelimiter()
 {
-    writeCString(",\n", *ostr);
+    writeCHCString(",\n", *ostr);
 }
 
 
 void JSONRowOutputFormat::writeRowStartDelimiter()
 {
-    writeCString("\t\t{\n", *ostr);
+    writeCHCString("\t\t{\n", *ostr);
 }
 
 
 void JSONRowOutputFormat::writeRowEndDelimiter()
 {
     writeChar('\n', *ostr);
-    writeCString("\t\t}", *ostr);
+    writeCHCString("\t\t}", *ostr);
     field_number = 0;
     ++row_count;
 }
@@ -107,22 +107,22 @@ void JSONRowOutputFormat::writeRowEndDelimiter()
 
 void JSONRowOutputFormat::writeRowBetweenDelimiter()
 {
-    writeCString(",\n", *ostr);
+    writeCHCString(",\n", *ostr);
 }
 
 
 void JSONRowOutputFormat::writeSuffix()
 {
     writeChar('\n', *ostr);
-    writeCString("\t]", *ostr);
+    writeCHCString("\t]", *ostr);
 }
 
 void JSONRowOutputFormat::writeBeforeTotals()
 {
-    writeCString(",\n", *ostr);
+    writeCHCString(",\n", *ostr);
     writeChar('\n', *ostr);
-    writeCString("\t\"totals\":\n", *ostr);
-    writeCString("\t{\n", *ostr);
+    writeCHCString("\t\"totals\":\n", *ostr);
+    writeCHCString("\t{\n", *ostr);
 }
 
 void JSONRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
@@ -141,24 +141,24 @@ void JSONRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
 void JSONRowOutputFormat::writeAfterTotals()
 {
     writeChar('\n', *ostr);
-    writeCString("\t}", *ostr);
+    writeCHCString("\t}", *ostr);
     field_number = 0;
 }
 
 void JSONRowOutputFormat::writeBeforeExtremes()
 {
-    writeCString(",\n", *ostr);
+    writeCHCString(",\n", *ostr);
     writeChar('\n', *ostr);
-    writeCString("\t\"extremes\":\n", *ostr);
-    writeCString("\t{\n", *ostr);
+    writeCHCString("\t\"extremes\":\n", *ostr);
+    writeCHCString("\t{\n", *ostr);
 }
 
 void JSONRowOutputFormat::writeExtremesElement(const char * title, const Columns & columns, size_t row_num)
 {
-    writeCString("\t\t\"", *ostr);
-    writeCString(title, *ostr);
-    writeCString("\":\n", *ostr);
-    writeCString("\t\t{\n", *ostr);
+    writeCHCString("\t\t\"", *ostr);
+    writeCHCString(title, *ostr);
+    writeCHCString("\":\n", *ostr);
+    writeCHCString("\t\t{\n", *ostr);
 
     size_t extremes_columns = columns.size();
     for (size_t i = 0; i < extremes_columns; ++i)
@@ -170,7 +170,7 @@ void JSONRowOutputFormat::writeExtremesElement(const char * title, const Columns
     }
 
     writeChar('\n', *ostr);
-    writeCString("\t\t}", *ostr);
+    writeCHCString("\t\t}", *ostr);
     field_number = 0;
 }
 
@@ -187,13 +187,13 @@ void JSONRowOutputFormat::writeMaxExtreme(const Columns & columns, size_t row_nu
 void JSONRowOutputFormat::writeAfterExtremes()
 {
     writeChar('\n', *ostr);
-    writeCString("\t}", *ostr);
+    writeCHCString("\t}", *ostr);
 }
 
 void JSONRowOutputFormat::writeLastSuffix()
 {
-    writeCString(",\n\n", *ostr);
-    writeCString("\t\"rows\": ", *ostr);
+    writeCHCString(",\n\n", *ostr);
+    writeCHCString("\t\"rows\": ", *ostr);
     writeIntText(row_count, *ostr);
 
     writeRowsBeforeLimitAtLeast();
@@ -202,7 +202,7 @@ void JSONRowOutputFormat::writeLastSuffix()
         writeStatistics();
 
     writeChar('\n', *ostr);
-    writeCString("}\n", *ostr);
+    writeCHCString("}\n", *ostr);
     ostr->next();
 }
 
@@ -210,29 +210,29 @@ void JSONRowOutputFormat::writeRowsBeforeLimitAtLeast()
 {
     if (applied_limit)
     {
-        writeCString(",\n\n", *ostr);
-        writeCString("\t\"rows_before_limit_at_least\": ", *ostr);
+        writeCHCString(",\n\n", *ostr);
+        writeCHCString("\t\"rows_before_limit_at_least\": ", *ostr);
         writeIntText(rows_before_limit, *ostr);
     }
 }
 
 void JSONRowOutputFormat::writeStatistics()
 {
-    writeCString(",\n\n", *ostr);
-    writeCString("\t\"statistics\":\n", *ostr);
-    writeCString("\t{\n", *ostr);
+    writeCHCString(",\n\n", *ostr);
+    writeCHCString("\t\"statistics\":\n", *ostr);
+    writeCHCString("\t{\n", *ostr);
 
-    writeCString("\t\t\"elapsed\": ", *ostr);
+    writeCHCString("\t\t\"elapsed\": ", *ostr);
     writeText(watch.elapsedSeconds(), *ostr);
-    writeCString(",\n", *ostr);
-    writeCString("\t\t\"rows_read\": ", *ostr);
+    writeCHCString(",\n", *ostr);
+    writeCHCString("\t\t\"rows_read\": ", *ostr);
     writeText(progress.read_rows.load(), *ostr);
-    writeCString(",\n", *ostr);
-    writeCString("\t\t\"bytes_read\": ", *ostr);
+    writeCHCString(",\n", *ostr);
+    writeCHCString("\t\t\"bytes_read\": ", *ostr);
     writeText(progress.read_bytes.load(), *ostr);
     writeChar('\n', *ostr);
 
-    writeCString("\t}", *ostr);
+    writeCHCString("\t}", *ostr);
 }
 
 void JSONRowOutputFormat::onProgress(const Progress & value)

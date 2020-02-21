@@ -1,5 +1,5 @@
 #include "ClickHouseDictionarySource.h"
-#include <memory>
+
 #include <Client/ConnectionPool.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <IO/ConnectionTimeouts.h>

@@ -8,8 +8,8 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <ext/range.h>
-#include <boost/range/algorithm/copy.hpp>
-#include <boost/range/algorithm_ext/erase.hpp>
+
+
 
 
 namespace DB

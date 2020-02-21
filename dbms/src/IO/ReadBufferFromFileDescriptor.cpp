@@ -1,6 +1,6 @@
 #include <errno.h>
 #include <time.h>
-#include <optional>
+
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>

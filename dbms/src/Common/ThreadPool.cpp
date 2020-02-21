@@ -1,7 +1,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
 
-#include <type_traits>
+
 
 
 namespace DB

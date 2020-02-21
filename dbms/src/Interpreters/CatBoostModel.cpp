@@ -1,7 +1,7 @@
 #include "CatBoostModel.h"
 
 #include <Common/FieldVisitors.h>
-#include <mutex>
+
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
@@ -9,7 +9,7 @@
 #include <Common/typeid_cast.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Common/PODArray.h>
+
 #include <Common/SharedLibrary.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>

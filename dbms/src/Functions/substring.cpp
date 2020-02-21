@@ -2,7 +2,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/GatherUtils/GatherUtils.h>

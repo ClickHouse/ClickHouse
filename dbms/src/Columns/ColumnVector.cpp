@@ -1,7 +1,7 @@
 #include "ColumnVector.h"
 
-#include <cstring>
-#include <cmath>
+
+
 #include <common/unaligned.h>
 #include <Common/Exception.h>
 #include <Common/Arena.h>

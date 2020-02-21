@@ -1,4 +1,4 @@
-#include <Common/PODArray.h>
+
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 ///#include <DataStreams/SquashingBlockOutputStream.h>
@@ -22,38 +22,38 @@ void PrettyCompactBlockOutputFormat::writeHeader(
     const Widths & name_widths)
 {
     /// Names
-    writeCString("┌─", out);
+    writeCHCString("┌─", out);
     for (size_t i = 0; i < max_widths.size(); ++i)
     {
         if (i != 0)
-            writeCString("─┬─", out);
+            writeCHCString("─┬─", out);
 
         const ColumnWithTypeAndName & col = block.getByPosition(i);
 
         if (col.type->shouldAlignRightInPrettyFormats())
         {
             for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
-                writeCString("─", out);
+                writeCHCString("─", out);
 
             if (format_settings.pretty.color)
-                writeCString("\033[1m", out);
+                writeCHCString("\033[1m", out);
             writeString(col.name, out);
             if (format_settings.pretty.color)
-                writeCString("\033[0m", out);
+                writeCHCString("\033[0m", out);
         }
         else
         {
             if (format_settings.pretty.color)
-                writeCString("\033[1m", out);
+                writeCHCString("\033[1m", out);
             writeString(col.name, out);
             if (format_settings.pretty.color)
-                writeCString("\033[0m", out);
+                writeCHCString("\033[0m", out);
 
             for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
-                writeCString("─", out);
+                writeCHCString("─", out);
         }
     }
-    writeCString("─┐\n", out);
+    writeCHCString("─┐\n", out);
 }
 
 void PrettyCompactBlockOutputFormat::writeBottom(const Widths & max_widths)
@@ -84,19 +84,19 @@ void PrettyCompactBlockOutputFormat::writeRow(
 {
     size_t num_columns = max_widths.size();
 
-    writeCString("│ ", out);
+    writeCHCString("│ ", out);
 
     for (size_t j = 0; j < num_columns; ++j)
     {
         if (j != 0)
-            writeCString(" │ ", out);
+            writeCHCString(" │ ", out);
 
         auto & type = *header.getByPosition(j).type;
         auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][row_num];
         writeValueWithPadding(*columns[j], type, row_num, cur_widths, max_widths[j]);
     }
 
-    writeCString(" │\n", out);
+    writeCHCString(" │\n", out);
 }
 
 void PrettyCompactBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)

@@ -1,5 +1,5 @@
 #include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionFactory.h>
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>

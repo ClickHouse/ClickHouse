@@ -1,4 +1,4 @@
-#include <sstream>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <Dictionaries/IDictionarySource.h>

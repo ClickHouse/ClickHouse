@@ -258,7 +258,7 @@ inline void writeString(const StringRef & ref, WriteBuffer & buf)
 /** Writes a C-string without creating a temporary object. If the string is a literal, then `strlen` is executed at the compilation stage.
   * Use when the string is a literal.
   */
-#define writeCString(s, buf) \
+#define writeCHCString(s, buf) \
     (buf).write((s), strlen(s))
 
 /** Writes a string for use in the JSON format:
@@ -318,7 +318,7 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
                     UInt8 higher_half = c >> 4;
                     UInt8 lower_half = c & 0xF;
 
-                    writeCString("\\u00", buf);
+                    writeCHCString("\\u00", buf);
                     writeChar('0' + higher_half, buf);
 
                     if (lower_half <= 9)
@@ -332,9 +332,9 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
                     ///  and these code points are alternative line separators.
 
                     if (it[2] == '\xA8')
-                        writeCString("\\u2028", buf);
+                        writeCHCString("\\u2028", buf);
                     if (it[2] == '\xA9')
-                        writeCString("\\u2029", buf);
+                        writeCHCString("\\u2029", buf);
 
                     /// Byte sequence is 3 bytes long. We have additional two bytes to skip.
                     it += 2;
@@ -610,13 +610,13 @@ inline void writeXMLString(const char * begin, const char * end, WriteBuffer & b
         {
             buf.write(pos, next_pos - pos);
             ++next_pos;
-            writeCString("&lt;", buf);
+            writeCHCString("&lt;", buf);
         }
         else if (*next_pos == '&')
         {
             buf.write(pos, next_pos - pos);
             ++next_pos;
-            writeCString("&amp;", buf);
+            writeCHCString("&amp;", buf);
         }
 
         pos = next_pos;

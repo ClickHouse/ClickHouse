@@ -1,6 +1,6 @@
 #include <Functions/FunctionsExternalModels.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionFactory.h>
+
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalModelsLoader.h>
@@ -8,8 +8,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <ext/range.h>
-#include <string>
-#include <memory>
+
+
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>

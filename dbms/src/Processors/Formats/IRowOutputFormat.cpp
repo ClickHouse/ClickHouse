@@ -1,4 +1,4 @@
-#include <string>
+
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <IO/WriteHelpers.h>
 

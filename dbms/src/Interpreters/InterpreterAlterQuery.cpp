@@ -5,7 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
-#include <Storages/IStorage.h>
+
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
@@ -14,7 +14,7 @@
 #include <Access/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
 
-#include <algorithm>
+
 
 
 namespace DB

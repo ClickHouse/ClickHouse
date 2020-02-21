@@ -13,7 +13,7 @@
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 

@@ -11,7 +11,7 @@
 #include <Poco/Exception.h>
 #include <Poco/Net/NetException.h>
 
-#include <array>
+
 
 
 /// ZooKeeper has 1 MB node size and serialization limit by default,

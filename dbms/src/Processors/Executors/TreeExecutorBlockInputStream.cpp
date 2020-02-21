@@ -1,7 +1,7 @@
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Interpreters/ProcessList.h>
-#include <stack>
+
 
 namespace DB
 {

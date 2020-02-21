@@ -19,7 +19,7 @@
 /** This file was edited for ClickHouse.
   */
 
-#include <optional>
+
 
 #include <string.h>
 

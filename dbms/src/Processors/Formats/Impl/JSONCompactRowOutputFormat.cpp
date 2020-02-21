@@ -23,18 +23,18 @@ void JSONCompactRowOutputFormat::writeField(const IColumn & column, const IDataT
 
 void JSONCompactRowOutputFormat::writeFieldDelimiter()
 {
-    writeCString(", ", *ostr);
+    writeCHCString(", ", *ostr);
 }
 
 void JSONCompactRowOutputFormat::writeTotalsFieldDelimiter()
 {
-    writeCString(",", *ostr);
+    writeCHCString(",", *ostr);
 }
 
 
 void JSONCompactRowOutputFormat::writeRowStartDelimiter()
 {
-    writeCString("\t\t[", *ostr);
+    writeCHCString("\t\t[", *ostr);
 }
 
 
@@ -47,9 +47,9 @@ void JSONCompactRowOutputFormat::writeRowEndDelimiter()
 
 void JSONCompactRowOutputFormat::writeBeforeTotals()
 {
-    writeCString(",\n", *ostr);
+    writeCHCString(",\n", *ostr);
     writeChar('\n', *ostr);
-    writeCString("\t\"totals\": [", *ostr);
+    writeCHCString("\t\"totals\": [", *ostr);
 }
 
 void JSONCompactRowOutputFormat::writeAfterTotals()
@@ -59,9 +59,9 @@ void JSONCompactRowOutputFormat::writeAfterTotals()
 
 void JSONCompactRowOutputFormat::writeExtremesElement(const char * title, const Columns & columns, size_t row_num)
 {
-    writeCString("\t\t\"", *ostr);
-    writeCString(title, *ostr);
-    writeCString("\": [", *ostr);
+    writeCHCString("\t\t\"", *ostr);
+    writeCHCString(title, *ostr);
+    writeCHCString("\": [", *ostr);
 
     size_t extremes_columns = columns.size();
     for (size_t i = 0; i < extremes_columns; ++i)

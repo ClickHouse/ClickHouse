@@ -7,7 +7,7 @@
 
 #include <Common/typeid_cast.h>
 
-#include <deque>
+
 
 
 namespace DB

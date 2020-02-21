@@ -1,6 +1,6 @@
-#include <cmath>
-#include <sstream>
-#include <iomanip>
+
+
+
 
 #include <Common/formatReadable.h>
 #include <IO/DoubleConverter.h>
@@ -23,7 +23,7 @@ static void formatReadable(double size, DB::WriteBuffer & out, int precision, co
         throw DB::Exception("Cannot print float or double number", DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
 
     out.write(buffer, builder.position());
-    writeCString(units[i], out);
+    writeCHCString(units[i], out);
 }
 
 

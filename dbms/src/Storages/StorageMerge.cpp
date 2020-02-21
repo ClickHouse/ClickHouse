@@ -23,7 +23,7 @@
 #include <Common/checkStackSize.h>
 #include <Databases/IDatabase.h>
 #include <ext/range.h>
-#include <algorithm>
+
 #include <Parsers/queryToString.h>
 
 

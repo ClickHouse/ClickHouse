@@ -1,4 +1,4 @@
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
 #include <Common/intExp.h>

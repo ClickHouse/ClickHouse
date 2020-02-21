@@ -1,4 +1,4 @@
-#include <algorithm>
+
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
 #include "arrayEnumerateRanked.h"

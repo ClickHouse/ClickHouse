@@ -10,21 +10,21 @@ namespace DB
 
 void JSONEachRowWithProgressRowOutputFormat::writeRowStartDelimiter()
 {
-    writeCString("{\"row\":{", out);
+    writeCHCString("{\"row\":{", out);
 }
 
 void JSONEachRowWithProgressRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString("}}\n", out);
+    writeCHCString("}}\n", out);
     field_number = 0;
 }
 
 void JSONEachRowWithProgressRowOutputFormat::onProgress(const Progress & value)
 {
     progress.incrementPiecewiseAtomically(value);
-    writeCString("{\"progress\":", out);
+    writeCHCString("{\"progress\":", out);
     progress.writeJSON(out);
-    writeCString("}\n", out);
+    writeCHCString("}\n", out);
 }
 
 

@@ -57,53 +57,53 @@ XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_
 
 void XMLRowOutputFormat::writePrefix()
 {
-    writeCString("<?xml version='1.0' encoding='UTF-8' ?>\n", *ostr);
-    writeCString("<result>\n", *ostr);
-    writeCString("\t<meta>\n", *ostr);
-    writeCString("\t\t<columns>\n", *ostr);
+    writeCHCString("<?xml version='1.0' encoding='UTF-8' ?>\n", *ostr);
+    writeCHCString("<result>\n", *ostr);
+    writeCHCString("\t<meta>\n", *ostr);
+    writeCHCString("\t\t<columns>\n", *ostr);
 
     for (const auto & field : fields)
     {
-        writeCString("\t\t\t<column>\n", *ostr);
+        writeCHCString("\t\t\t<column>\n", *ostr);
 
-        writeCString("\t\t\t\t<name>", *ostr);
+        writeCHCString("\t\t\t\t<name>", *ostr);
         writeXMLString(field.name, *ostr);
-        writeCString("</name>\n", *ostr);
-        writeCString("\t\t\t\t<type>", *ostr);
+        writeCHCString("</name>\n", *ostr);
+        writeCHCString("\t\t\t\t<type>", *ostr);
         writeXMLString(field.type->getName(), *ostr);
-        writeCString("</type>\n", *ostr);
+        writeCHCString("</type>\n", *ostr);
 
-        writeCString("\t\t\t</column>\n", *ostr);
+        writeCHCString("\t\t\t</column>\n", *ostr);
     }
 
-    writeCString("\t\t</columns>\n", *ostr);
-    writeCString("\t</meta>\n", *ostr);
-    writeCString("\t<data>\n", *ostr);
+    writeCHCString("\t\t</columns>\n", *ostr);
+    writeCHCString("\t</meta>\n", *ostr);
+    writeCHCString("\t<data>\n", *ostr);
 }
 
 
 void XMLRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    writeCString("\t\t\t<", *ostr);
+    writeCHCString("\t\t\t<", *ostr);
     writeString(field_tag_names[field_number], *ostr);
-    writeCString(">", *ostr);
+    writeCHCString(">", *ostr);
     type.serializeAsTextXML(column, row_num, *ostr, format_settings);
-    writeCString("</", *ostr);
+    writeCHCString("</", *ostr);
     writeString(field_tag_names[field_number], *ostr);
-    writeCString(">\n", *ostr);
+    writeCHCString(">\n", *ostr);
     ++field_number;
 }
 
 
 void XMLRowOutputFormat::writeRowStartDelimiter()
 {
-    writeCString("\t\t<row>\n", *ostr);
+    writeCHCString("\t\t<row>\n", *ostr);
 }
 
 
 void XMLRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString("\t\t</row>\n", *ostr);
+    writeCHCString("\t\t</row>\n", *ostr);
     field_number = 0;
     ++row_count;
 }
@@ -111,14 +111,14 @@ void XMLRowOutputFormat::writeRowEndDelimiter()
 
 void XMLRowOutputFormat::writeSuffix()
 {
-    writeCString("\t</data>\n", *ostr);
+    writeCHCString("\t</data>\n", *ostr);
 
 }
 
 
 void XMLRowOutputFormat::writeBeforeTotals()
 {
-    writeCString("\t<totals>\n", *ostr);
+    writeCHCString("\t<totals>\n", *ostr);
 }
 
 void XMLRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
@@ -129,25 +129,25 @@ void XMLRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
     {
         const ColumnWithTypeAndName & column = header.safeGetByPosition(i);
 
-        writeCString("\t\t<", *ostr);
+        writeCHCString("\t\t<", *ostr);
         writeString(field_tag_names[i], *ostr);
-        writeCString(">", *ostr);
+        writeCHCString(">", *ostr);
         column.type->serializeAsTextXML(*columns[i], row_num, *ostr, format_settings);
-        writeCString("</", *ostr);
+        writeCHCString("</", *ostr);
         writeString(field_tag_names[i], *ostr);
-        writeCString(">\n", *ostr);
+        writeCHCString(">\n", *ostr);
     }
 }
 
 void XMLRowOutputFormat::writeAfterTotals()
 {
-    writeCString("\t</totals>\n", *ostr);
+    writeCHCString("\t</totals>\n", *ostr);
 }
 
 
 void XMLRowOutputFormat::writeBeforeExtremes()
 {
-    writeCString("\t<extremes>\n", *ostr);
+    writeCHCString("\t<extremes>\n", *ostr);
 }
 
 void XMLRowOutputFormat::writeMinExtreme(const Columns & columns, size_t row_num)
@@ -162,34 +162,34 @@ void XMLRowOutputFormat::writeMaxExtreme(const Columns & columns, size_t row_num
 
 void XMLRowOutputFormat::writeAfterExtremes()
 {
-    writeCString("\t</extremes>\n", *ostr);
+    writeCHCString("\t</extremes>\n", *ostr);
 }
 
 void XMLRowOutputFormat::writeExtremesElement(const char * title, const Columns & columns, size_t row_num)
 {
     auto & header = getPort(PortKind::Extremes).getHeader();
 
-    writeCString("\t\t<", *ostr);
-    writeCString(title, *ostr);
-    writeCString(">\n", *ostr);
+    writeCHCString("\t\t<", *ostr);
+    writeCHCString(title, *ostr);
+    writeCHCString(">\n", *ostr);
 
     size_t extremes_columns = columns.size();
     for (size_t i = 0; i < extremes_columns; ++i)
     {
         const ColumnWithTypeAndName & column = header.safeGetByPosition(i);
 
-        writeCString("\t\t\t<", *ostr);
+        writeCHCString("\t\t\t<", *ostr);
         writeString(field_tag_names[i], *ostr);
-        writeCString(">", *ostr);
+        writeCHCString(">", *ostr);
         column.type->serializeAsTextXML(*columns[i], row_num, *ostr, format_settings);
-        writeCString("</", *ostr);
+        writeCHCString("</", *ostr);
         writeString(field_tag_names[i], *ostr);
-        writeCString(">\n", *ostr);
+        writeCHCString(">\n", *ostr);
     }
 
-    writeCString("\t\t</", *ostr);
-    writeCString(title, *ostr);
-    writeCString(">\n", *ostr);
+    writeCHCString("\t\t</", *ostr);
+    writeCHCString(title, *ostr);
+    writeCHCString(">\n", *ostr);
 }
 
 
@@ -201,16 +201,16 @@ void XMLRowOutputFormat::onProgress(const Progress & value)
 void XMLRowOutputFormat::writeLastSuffix()
 {
 
-    writeCString("\t<rows>", *ostr);
+    writeCHCString("\t<rows>", *ostr);
     writeIntText(row_count, *ostr);
-    writeCString("</rows>\n", *ostr);
+    writeCHCString("</rows>\n", *ostr);
 
     writeRowsBeforeLimitAtLeast();
 
     if (format_settings.write_statistics)
         writeStatistics();
 
-    writeCString("</result>\n", *ostr);
+    writeCHCString("</result>\n", *ostr);
     ostr->next();
 }
 
@@ -218,25 +218,25 @@ void XMLRowOutputFormat::writeRowsBeforeLimitAtLeast()
 {
     if (applied_limit)
     {
-        writeCString("\t<rows_before_limit_at_least>", *ostr);
+        writeCHCString("\t<rows_before_limit_at_least>", *ostr);
         writeIntText(rows_before_limit, *ostr);
-        writeCString("</rows_before_limit_at_least>\n", *ostr);
+        writeCHCString("</rows_before_limit_at_least>\n", *ostr);
     }
 }
 
 void XMLRowOutputFormat::writeStatistics()
 {
-    writeCString("\t<statistics>\n", *ostr);
-    writeCString("\t\t<elapsed>", *ostr);
+    writeCHCString("\t<statistics>\n", *ostr);
+    writeCHCString("\t\t<elapsed>", *ostr);
     writeText(watch.elapsedSeconds(), *ostr);
-    writeCString("</elapsed>\n", *ostr);
-    writeCString("\t\t<rows_read>", *ostr);
+    writeCHCString("</elapsed>\n", *ostr);
+    writeCHCString("\t\t<rows_read>", *ostr);
     writeText(progress.read_rows.load(), *ostr);
-    writeCString("</rows_read>\n", *ostr);
-    writeCString("\t\t<bytes_read>", *ostr);
+    writeCHCString("</rows_read>\n", *ostr);
+    writeCHCString("\t\t<bytes_read>", *ostr);
     writeText(progress.read_bytes.load(), *ostr);
-    writeCString("</bytes_read>\n", *ostr);
-    writeCString("\t</statistics>\n", *ostr);
+    writeCHCString("</bytes_read>\n", *ostr);
+    writeCHCString("\t</statistics>\n", *ostr);
 }
 
 

@@ -1,6 +1,6 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/FunctionHelpers.h>
 #include <common/find_symbols.h>
 

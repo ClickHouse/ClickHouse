@@ -1,7 +1,7 @@
 #include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionFactory.h>
+
 #include <common/DateLUT.h>
-#include <Core/Field.h>
+
 #include <DataTypes/DataTypeString.h>
 
 

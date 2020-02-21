@@ -1,8 +1,8 @@
 #include <DataTypes/DataTypeString.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/FunctionStringOrArrayToT.h>
 
-#include <cstring>
+
 
 #ifdef __SSE4_1__
 #    include <emmintrin.h>

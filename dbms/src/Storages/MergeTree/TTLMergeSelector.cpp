@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/TTLMergeSelector.h>
 
-#include <cmath>
-#include <algorithm>
+
+
 
 
 namespace DB

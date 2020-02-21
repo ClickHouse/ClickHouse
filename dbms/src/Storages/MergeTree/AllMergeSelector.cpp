@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/AllMergeSelector.h>
 
-#include <cmath>
+
 
 
 namespace DB

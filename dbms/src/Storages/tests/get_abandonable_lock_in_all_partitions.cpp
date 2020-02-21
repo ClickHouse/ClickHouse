@@ -9,7 +9,7 @@
 #include <ext/scope_guard.h>
 #include <pcg_random.hpp>
 
-#include <iostream>
+
 
 
 using namespace DB;

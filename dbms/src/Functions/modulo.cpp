@@ -1,4 +1,4 @@
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/FunctionBinaryArithmetic.h>
 
 #ifdef __SSE2__

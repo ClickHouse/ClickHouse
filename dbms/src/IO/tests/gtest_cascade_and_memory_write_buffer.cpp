@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <stdexcept>
+
 #include <Poco/File.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>

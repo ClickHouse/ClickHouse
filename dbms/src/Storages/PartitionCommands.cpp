@@ -1,5 +1,5 @@
 #include <Storages/PartitionCommands.h>
-#include <Storages/IStorage.h>
+
 #include <Storages/MergeTree/PartDestinationType.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTIdentifier.h>

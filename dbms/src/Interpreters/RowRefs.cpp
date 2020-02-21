@@ -1,6 +1,6 @@
 #include <Interpreters/RowRefs.h>
 
-#include <Core/Block.h>
+
 #include <Core/Types.h>
 #include <Common/typeid_cast.h>
 #include <Common/ColumnsHashing.h>

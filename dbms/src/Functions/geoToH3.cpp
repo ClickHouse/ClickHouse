@@ -1,11 +1,11 @@
 #include "config_functions.h"
 #if USE_H3
-#include <array>
+
 #include <math.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/IFunctionImpl.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>

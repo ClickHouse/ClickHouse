@@ -1,5 +1,5 @@
 #include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -153,12 +153,12 @@ bool FunctionArrayDistinct::executeNumber(
     if (nullable_col)
         src_null_map = &nullable_col->getNullMapData();
 
-    using Set = ClearableHashSet<T,
+    using HashSet = ClearableHashSet<T,
         DefaultHash<T>,
         HashTableGrower<INITIAL_SIZE_DEGREE>,
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
 
-    Set set;
+    HashSet set;
 
     ColumnArray::Offset prev_src_offset = 0;
     ColumnArray::Offset res_offset = 0;
@@ -202,7 +202,7 @@ bool FunctionArrayDistinct::executeString(
 
     ColumnString & res_data_column_string = typeid_cast<ColumnString &>(res_data_col);
 
-    using Set = ClearableHashSet<StringRef,
+    using HashSet = ClearableHashSet<StringRef,
         StringRefHash,
         HashTableGrower<INITIAL_SIZE_DEGREE>,
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
@@ -212,7 +212,7 @@ bool FunctionArrayDistinct::executeString(
     if (nullable_col)
         src_null_map = &nullable_col->getNullMapData();
 
-    Set set;
+    HashSet set;
 
     ColumnArray::Offset prev_src_offset = 0;
     ColumnArray::Offset res_offset = 0;
@@ -251,7 +251,7 @@ void FunctionArrayDistinct::executeHashed(
     ColumnArray::Offsets & res_offsets,
     const ColumnNullable * nullable_col)
 {
-    using Set = ClearableHashSet<UInt128, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+    using HashSet = ClearableHashSet<UInt128, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
 
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
@@ -259,7 +259,7 @@ void FunctionArrayDistinct::executeHashed(
     if (nullable_col)
         src_null_map = &nullable_col->getNullMapData();
 
-    Set set;
+    HashSet set;
 
     ColumnArray::Offset prev_src_offset = 0;
     ColumnArray::Offset res_offset = 0;

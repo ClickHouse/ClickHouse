@@ -1,5 +1,5 @@
 #include <IO/HashingWriteBuffer.h>
-#include <iomanip>
+
 
 
 namespace DB

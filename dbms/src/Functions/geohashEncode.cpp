@@ -1,11 +1,11 @@
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/GeoUtils.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 
-#include <string>
+
 
 #define GEOHASH_MAX_TEXT_LENGTH 16
 

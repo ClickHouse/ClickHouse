@@ -5,7 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/PODArray.h>
+
 #include <Common/UTF8Helpers.h>
 
 namespace DB
@@ -137,16 +137,16 @@ void PrettyBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
     writeString(top_separator_s, out);
 
     /// Names
-    writeCString("┃ ", out);
+    writeCHCString("┃ ", out);
     for (size_t i = 0; i < num_columns; ++i)
     {
         if (i != 0)
-            writeCString(" ┃ ", out);
+            writeCHCString(" ┃ ", out);
 
         auto & col = header.getByPosition(i);
 
         if (format_settings.pretty.color)
-            writeCString("\033[1m", out);
+            writeCHCString("\033[1m", out);
 
         if (col.type->shouldAlignRightInPrettyFormats())
         {
@@ -164,9 +164,9 @@ void PrettyBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
         }
 
         if (format_settings.pretty.color)
-            writeCString("\033[0m", out);
+            writeCHCString("\033[0m", out);
     }
-    writeCString(" ┃\n", out);
+    writeCHCString(" ┃\n", out);
 
     writeString(middle_names_separator_s, out);
 
@@ -175,18 +175,18 @@ void PrettyBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
         if (i != 0)
             writeString(middle_values_separator_s, out);
 
-        writeCString("│ ", out);
+        writeCHCString("│ ", out);
 
         for (size_t j = 0; j < num_columns; ++j)
         {
             if (j != 0)
-                writeCString(" │ ", out);
+                writeCHCString(" │ ", out);
 
             auto & type = *header.getByPosition(j).type;
             writeValueWithPadding(*columns[j], type, i, widths[j].empty() ? max_widths[j] : widths[j][i], max_widths[j]);
         }
 
-        writeCString(" │\n", out);
+        writeCHCString(" │\n", out);
     }
 
     writeString(bottom_separator_s, out);
@@ -226,7 +226,7 @@ void PrettyBlockOutputFormat::consumeTotals(Chunk chunk)
 {
     total_rows = 0;
     writeSuffixIfNot();
-    writeCString("\nExtremes:\n", out);
+    writeCHCString("\nExtremes:\n", out);
     write(chunk, PortKind::Totals);
 }
 
@@ -234,7 +234,7 @@ void PrettyBlockOutputFormat::consumeExtremes(Chunk chunk)
 {
     total_rows = 0;
     writeSuffixIfNot();
-    writeCString("\nTotals:\n", out);
+    writeCHCString("\nTotals:\n", out);
     write(chunk, PortKind::Extremes);
 }
 
@@ -243,9 +243,9 @@ void PrettyBlockOutputFormat::writeSuffix()
 {
     if (total_rows >= format_settings.pretty.max_rows)
     {
-        writeCString("  Showed first ", out);
+        writeCHCString("  Showed first ", out);
         writeIntText(format_settings.pretty.max_rows, out);
-        writeCString(".\n", out);
+        writeCHCString(".\n", out);
     }
 }
 

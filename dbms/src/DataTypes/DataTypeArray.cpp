@@ -403,14 +403,14 @@ void DataTypeArray::serializeTextXML(const IColumn & column, size_t row_num, Wri
 
     const IColumn & nested_column = column_array.getData();
 
-    writeCString("<array>", ostr);
+    writeCHCString("<array>", ostr);
     for (size_t i = offset; i < next_offset; ++i)
     {
-        writeCString("<elem>", ostr);
+        writeCHCString("<elem>", ostr);
         nested->serializeAsTextXML(nested_column, i, ostr, settings);
-        writeCString("</elem>", ostr);
+        writeCHCString("</elem>", ostr);
     }
-    writeCString("</array>", ostr);
+    writeCHCString("</array>", ostr);
 }
 
 

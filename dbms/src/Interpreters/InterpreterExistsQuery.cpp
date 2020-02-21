@@ -1,4 +1,4 @@
-#include <Storages/IStorage.h>
+
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/BlockIO.h>

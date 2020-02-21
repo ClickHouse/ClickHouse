@@ -2,18 +2,18 @@
 #include "FunctionsStringSearch.h"
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/Regexps.h>
 #include <IO/WriteHelpers.h>
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 #include <Poco/UTF8String.h>
 #include <Common/Volnitsky.h>
-#include <algorithm>
-#include <memory>
-#include <optional>
-#include <string>
-#include <vector>
+
+
+
+
+
 
 #include "config_functions.h"
 #if USE_HYPERSCAN

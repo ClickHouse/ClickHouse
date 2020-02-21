@@ -29,7 +29,7 @@ void JSONCompactEachRowRowOutputFormat::writeField(const IColumn & column, const
 
 void JSONCompactEachRowRowOutputFormat::writeFieldDelimiter()
 {
-    writeCString(", ", out);
+    writeCHCString(", ", out);
 }
 
 
@@ -41,7 +41,7 @@ void JSONCompactEachRowRowOutputFormat::writeRowStartDelimiter()
 
 void JSONCompactEachRowRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString("]\n", out);
+    writeCHCString("]\n", out);
 }
 
 void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
@@ -56,7 +56,7 @@ void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, siz
 
         JSONCompactEachRowRowOutputFormat::writeField(*columns[i], *types[i], row_num);
     }
-    writeCString("]\n", out);
+    writeCHCString("]\n", out);
 }
 
 void JSONCompactEachRowRowOutputFormat::writePrefix()
@@ -70,16 +70,16 @@ void JSONCompactEachRowRowOutputFormat::writePrefix()
             writeString(fields[i].name, out);
             writeChar('\"', out);
             if (i != fields.size() - 1)
-                writeCString(", ", out);
+                writeCHCString(", ", out);
         }
-        writeCString("]\n[", out);
+        writeCHCString("]\n[", out);
         for (size_t i = 0; i < fields.size(); ++i)
         {
             writeJSONString(fields[i].type->getName(), out, settings);
             if (i != fields.size() - 1)
-                writeCString(", ", out);
+                writeCHCString(", ", out);
         }
-        writeCString("]\n", out);
+        writeCHCString("]\n", out);
     }
 }
 

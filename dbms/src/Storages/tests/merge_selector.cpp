@@ -1,4 +1,4 @@
-#include <iostream>
+
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/MergeTree/SimpleMergeSelector.h>

@@ -26,7 +26,7 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
         UInt64 low, high;
         hash.get128(low, high);
 
-        writeCString("__array_", ostr);
+        writeCHCString("__array_", ostr);
         writeText(low, ostr);
         ostr.write('_');
         writeText(high, ostr);

@@ -2,7 +2,7 @@
 #include <sys/types.h>
 #include <errno.h>
 
-#include <map>
+
 
 #include <Poco/Util/XMLConfiguration.h>
 

@@ -1,7 +1,7 @@
 #include "DictionarySourceFactory.h"
 
 #include <Columns/ColumnsNumber.h>
-#include <Core/Block.h>
+
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>

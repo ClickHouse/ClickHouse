@@ -1,5 +1,5 @@
 #include <Storages/AlterCommands.h>
-#include <Storages/IStorage.h>
+
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>

@@ -72,7 +72,7 @@ public:
         for (size_t i = 0; i < BITSET_SIZE; ++i)
         {
             if (i != 0)
-                writeCString(",", out);
+                writeCHCString(",", out);
             writeIntText(bitset[i], out);
         }
     }

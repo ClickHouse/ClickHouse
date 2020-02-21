@@ -8,7 +8,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Databases/IDatabase.h>
 
-#include <memory>
+
 
 
 namespace DB

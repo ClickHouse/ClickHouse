@@ -1,4 +1,4 @@
-#include <Core/Block.h>
+
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ODBCDriver2BlockOutputFormat.h>
 #include <IO/WriteBuffer.h>

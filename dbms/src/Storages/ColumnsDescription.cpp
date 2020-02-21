@@ -17,7 +17,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
-#include <Storages/IStorage.h>
+
 #include <Common/typeid_cast.h>
 #include <Compression/CompressionFactory.h>
 
@@ -389,9 +389,9 @@ String ColumnsDescription::toString() const
 {
     WriteBufferFromOwnString buf;
 
-    writeCString("columns format version: 1\n", buf);
+    writeCHCString("columns format version: 1\n", buf);
     DB::writeText(columns.size(), buf);
-    writeCString(" columns:\n", buf);
+    writeCHCString(" columns:\n", buf);
 
     for (const ColumnDescription & column : columns)
         column.writeText(buf);

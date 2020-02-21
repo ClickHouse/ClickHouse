@@ -2,8 +2,8 @@
 #include <sched.h>
 #endif
 
-#include <iostream>
-#include <iomanip>
+
+
 #include <Poco/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/Stopwatch.h>

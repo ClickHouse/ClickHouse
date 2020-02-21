@@ -32,9 +32,9 @@
 
 #include <Poco/DirectoryIterator.h>
 
-#include <future>
-#include <condition_variable>
-#include <mutex>
+
+
+
 
 
 

@@ -2,8 +2,8 @@
 
 #include <Functions/IFunctionImpl.h>
 #include <Core/DecimalFunctions.h>
-#include <Functions/FunctionFactory.h>
-#include <Core/Field.h>
+
+
 
 #include <time.h>
 

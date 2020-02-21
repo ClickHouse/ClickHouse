@@ -1,4 +1,4 @@
-#include <mutex>
+
 #include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -13,7 +13,7 @@
 #include <common/StringRef.h>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionFactory.h>
+
 #include <DataTypes/getLeastSupertype.h>
 
 

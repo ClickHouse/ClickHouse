@@ -1,6 +1,6 @@
 #include <zlib.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/FunctionStringOrArrayToT.h>
 
 

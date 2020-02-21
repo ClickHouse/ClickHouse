@@ -1,4 +1,4 @@
-#include <iostream>
+
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Poco/ConsoleChannel.h>

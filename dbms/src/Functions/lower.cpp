@@ -1,5 +1,5 @@
 #include <DataTypes/DataTypeString.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/FunctionStringToString.h>
 #include <Functions/LowerUpperImpl.h>
 

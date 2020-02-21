@@ -5,7 +5,7 @@
 #include <IO/S3Common.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <regex>
+
 #include <aws/s3/S3Client.h>
 #include <aws/core/auth/AWSCredentialsProvider.h>
 #include <aws/core/utils/logging/LogSystemInterface.h>

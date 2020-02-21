@@ -22,9 +22,9 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/Application.h>
 
-#include <tuple>
-#include <unordered_map>
-#include <sstream>
+
+
+
 
 
 namespace ProfileEvents

@@ -79,9 +79,9 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
         auto layer = loggers->getLayer();
         if (layer)
         {
-            writeCString("layer[", wb);
+            writeCHCString("layer[", wb);
             DB::writeIntText(*layer, wb);
-            writeCString("]: ", wb);
+            writeCHCString("]: ", wb);
         }
     }
 
@@ -96,34 +96,34 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
     DB::writeChar('0' + ((msg_ext.time_microseconds / 10) % 10), wb);
     DB::writeChar('0' + ((msg_ext.time_microseconds / 1) % 10), wb);
 
-    writeCString(" [ ", wb);
+    writeCHCString(" [ ", wb);
     if (color)
         writeString(setColor(intHash64(msg_ext.thread_id)), wb);
     DB::writeIntText(msg_ext.thread_id, wb);
     if (color)
-        writeCString(resetColor(), wb);
-    writeCString(" ] ", wb);
+        writeCHCString(resetColor(), wb);
+    writeCHCString(" ] ", wb);
 
     /// We write query_id even in case when it is empty (no query context)
     /// just to be convenient for various log parsers.
-    writeCString("{", wb);
+    writeCHCString("{", wb);
     if (color)
         writeString(setColor(std::hash<std::string>()(msg_ext.query_id)), wb);
     DB::writeString(msg_ext.query_id, wb);
     if (color)
-        writeCString(resetColor(), wb);
-    writeCString("} ", wb);
+        writeCHCString(resetColor(), wb);
+    writeCHCString("} ", wb);
 
-    writeCString("<", wb);
+    writeCHCString("<", wb);
     int priority = static_cast<int>(msg.getPriority());
     if (color)
-        writeCString(setColorForLogPriority(priority), wb);
+        writeCHCString(setColorForLogPriority(priority), wb);
     DB::writeString(getPriorityName(priority), wb);
     if (color)
-        writeCString(resetColor(), wb);
-    writeCString("> ", wb);
+        writeCHCString(resetColor(), wb);
+    writeCHCString("> ", wb);
     DB::writeString(msg.getSource(), wb);
-    writeCString(": ", wb);
+    writeCHCString(": ", wb);
     DB::writeString(msg.getText(), wb);
 }
 

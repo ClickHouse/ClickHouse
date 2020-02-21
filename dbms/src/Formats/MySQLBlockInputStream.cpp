@@ -1,7 +1,7 @@
 #include "config_core.h"
 #if USE_MYSQL
 
-#include <vector>
+
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>

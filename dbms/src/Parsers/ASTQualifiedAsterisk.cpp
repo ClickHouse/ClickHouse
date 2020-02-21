@@ -8,7 +8,7 @@ void ASTQualifiedAsterisk::appendColumnName(WriteBuffer & ostr) const
 {
     const auto & qualifier = children.at(0);
     qualifier->appendColumnName(ostr);
-    writeCString(".*", ostr);
+    writeCHCString(".*", ostr);
 }
 
 void ASTQualifiedAsterisk::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

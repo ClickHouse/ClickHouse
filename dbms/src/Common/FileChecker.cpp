@@ -93,7 +93,7 @@ void FileChecker::save() const
         std::unique_ptr<WriteBuffer> out = disk->writeFile(tmp_files_info_path);
 
         /// So complex JSON structure - for compatibility with the old format.
-        writeCString("{\"yandex\":{", *out);
+        writeCHCString("{\"yandex\":{", *out);
 
         auto settings = FormatSettings();
         for (auto it = map.begin(); it != map.end(); ++it)
@@ -108,7 +108,7 @@ void FileChecker::save() const
             writeString("\"}", *out);
         }
 
-        writeCString("}}", *out);
+        writeCHCString("}}", *out);
         out->next();
     }
 

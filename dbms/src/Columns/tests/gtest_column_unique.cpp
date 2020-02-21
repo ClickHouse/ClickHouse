@@ -9,8 +9,8 @@
 
 #include <gtest/gtest.h>
 
-#include <unordered_map>
-#include <vector>
+
+
 using namespace DB;
 
 TEST(column_unique, column_unique_unique_insert_range_Test)

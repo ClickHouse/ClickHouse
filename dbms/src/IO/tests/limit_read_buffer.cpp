@@ -1,4 +1,4 @@
-#include <string>
+
 
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/LimitReadBuffer.h>
@@ -22,19 +22,19 @@ int main(int argc, char ** argv)
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
 
-    writeCString("--- first ---\n", out);
+    writeCHCString("--- first ---\n", out);
     {
         LimitReadBuffer limit_in(in, limit, false);
         copyData(limit_in, out);
     }
 
-    writeCString("\n--- second ---\n", out);
+    writeCHCString("\n--- second ---\n", out);
     {
         LimitReadBuffer limit_in(in, limit, false);
         copyData(limit_in, out);
     }
 
-    writeCString("\n--- the rest ---\n", out);
+    writeCHCString("\n--- the rest ---\n", out);
     copyData(in, out);
 
     return 0;

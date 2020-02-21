@@ -1,6 +1,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnTuple.h>
-#include <Core/Field.h>
+
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -236,14 +236,14 @@ void DataTypeTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr, con
 
 void DataTypeTuple::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeCString("<tuple>", ostr);
+    writeCHCString("<tuple>", ostr);
     for (const auto i : ext::range(0, ext::size(elems)))
     {
-        writeCString("<elem>", ostr);
+        writeCHCString("<elem>", ostr);
         elems[i]->serializeAsTextXML(extractElementColumn(column, i), row_num, ostr, settings);
-        writeCString("</elem>", ostr);
+        writeCHCString("</elem>", ostr);
     }
-    writeCString("</tuple>", ostr);
+    writeCHCString("</tuple>", ostr);
 }
 
 void DataTypeTuple::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

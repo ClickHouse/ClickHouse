@@ -1,7 +1,7 @@
 #include "ProtobufRowInputFormat.h"
 
 #if USE_PROTOBUF
-#include <Core/Block.h>
+
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Formats/ProtobufSchemas.h>

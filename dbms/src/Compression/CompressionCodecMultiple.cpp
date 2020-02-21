@@ -1,6 +1,6 @@
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionInfo.h>
-#include <Common/PODArray.h>
+
 #include <common/unaligned.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadHelpers.h>
@@ -8,7 +8,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/hex.h>
-#include <sstream>
+
 
 
 namespace DB

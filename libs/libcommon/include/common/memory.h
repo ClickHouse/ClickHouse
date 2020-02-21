@@ -38,8 +38,8 @@
 
 namespace Memory
 {
-
-ALWAYS_INLINE void * newImpl(std::size_t size)
+# define FORCE_INLINE __attribute__((always_inline)) inline
+FORCE_INLINE void * newImpl(std::size_t size)
 {
     auto * ptr = malloc(size);
     if (likely(ptr != nullptr))
@@ -49,19 +49,19 @@ ALWAYS_INLINE void * newImpl(std::size_t size)
     throw std::bad_alloc{};
 }
 
-ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
+FORCE_INLINE void * newNoExept(std::size_t size) noexcept
 {
     return malloc(size);
 }
 
-ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
+FORCE_INLINE void deleteImpl(void * ptr) noexcept
 {
     free(ptr);
 }
 
 #if USE_JEMALLOC
 
-ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size) noexcept
+FORCE_INLINE void deleteSized(void * ptr, std::size_t size) noexcept
 {
     if (unlikely(ptr == nullptr))
         return;

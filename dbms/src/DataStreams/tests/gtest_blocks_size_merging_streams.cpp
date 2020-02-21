@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <Core/Block.h>
+
 #include <Columns/ColumnVector.h>
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <DataStreams/BlocksListBlockInputStream.h>

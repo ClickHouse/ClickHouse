@@ -6,7 +6,7 @@
 
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/DateTimeTransforms.h>
 
@@ -14,7 +14,7 @@
 
 #include <common/find_symbols.h>
 
-#include <type_traits>
+
 
 
 namespace DB

@@ -5,8 +5,8 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/misc.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
+
+
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/convertFieldToType.h>
@@ -16,7 +16,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
 
-#include <cassert>
+
 
 
 namespace DB

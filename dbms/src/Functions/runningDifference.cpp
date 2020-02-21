@@ -1,5 +1,5 @@
 #include <Functions/runningDifference.h>
-#include <Functions/FunctionFactory.h>
+
 
 
 namespace DB

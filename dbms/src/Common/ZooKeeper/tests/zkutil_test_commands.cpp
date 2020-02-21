@@ -1,7 +1,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/typeid_cast.h>
-#include <iostream>
+
 #include <port/unistd.h>
 
 

@@ -1,8 +1,8 @@
 #include "InternalTextLogsRowOutputStream.h"
-#include <Core/Block.h>
+
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/IDataType.h>
+
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <IO/WriteHelpers.h>
@@ -34,9 +34,9 @@ void InternalTextLogsRowOutputStream::write(const Block & block)
         auto host_name = column_host_name.getDataAt(row_num);
         if (host_name.size)
         {
-            writeCString("[", wb);
+            writeCHCString("[", wb);
             writeString(host_name, wb);
-            writeCString("] ", wb);
+            writeCHCString("] ", wb);
         }
 
         auto event_time = array_event_time[row_num];
@@ -54,23 +54,23 @@ void InternalTextLogsRowOutputStream::write(const Block & block)
         auto query_id = column_query_id.getDataAt(row_num);
         if (query_id.size)
         {
-            writeCString(" {", wb);
+            writeCHCString(" {", wb);
             writeString(query_id, wb);
-            writeCString("}", wb);
+            writeCHCString("}", wb);
         }
 
         UInt64 thread_id = array_thread_id[row_num];
-        writeCString(" [ ", wb);
+        writeCHCString(" [ ", wb);
         writeIntText(thread_id, wb);
-        writeCString(" ] <", wb);
+        writeCHCString(" ] <", wb);
 
         Int8 priority = array_priority[row_num];
         writeString(InternalTextLogsQueue::getPriorityName(priority), wb);
-        writeCString("> ", wb);
+        writeCHCString("> ", wb);
 
         auto source = column_source.getDataAt(row_num);
         writeString(source, wb);
-        writeCString(": ", wb);
+        writeCHCString(": ", wb);
 
         auto text = column_text.getDataAt(row_num);
         writeString(text, wb);

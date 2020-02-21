@@ -1,7 +1,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Poco/Event.h>
-#include <iostream>
+
 
 /// A tool for reproducing https://issues.apache.org/jira/browse/ZOOKEEPER-706
 /// Original libzookeeper can't reconnect the session if the length of SET_WATCHES message

@@ -5,7 +5,7 @@
 #include <Core/Settings.h>
 #include <Poco/Logger.h>
 #include <common/logger_useful.h>
-#include <boost/smart_ptr/make_shared_object.hpp>
+
 #include <assert.h>
 
 

@@ -3,7 +3,7 @@
 #include <common/logger_useful.h>
 
 #include <cppkafka/cppkafka.h>
-#include <boost/algorithm/string/join.hpp>
+
 
 namespace DB
 {

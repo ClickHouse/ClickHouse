@@ -2,7 +2,7 @@
 #include <IO/HashingReadBuffer.h>
 #include <IO/WriteBufferFromOStream.h>
 #include "hashing_buffer.h"
-#include <iostream>
+
 
 static void test(size_t data_size)
 {

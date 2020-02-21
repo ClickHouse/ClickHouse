@@ -1,9 +1,9 @@
 #include "config_core.h"
 #if USE_POCO_MONGODB
 
-#include <sstream>
-#include <string>
-#include <vector>
+
+
+
 
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>

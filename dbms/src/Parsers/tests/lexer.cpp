@@ -83,12 +83,12 @@ int main(int, char **)
 
         auto it = hilite.find(token.type);
         if (it != hilite.end())
-            writeCString(it->second, out);
+            writeCHCString(it->second, out);
 
         writeString(token.begin, token.size(), out);
 
         if (it != hilite.end())
-            writeCString("\033[0m", out);
+            writeCHCString("\033[0m", out);
 
         writeChar(' ', out);
 
@@ -105,12 +105,12 @@ int main(int, char **)
     {
         auto it = hilite.find(token->type);
         if (it != hilite.end())
-            writeCString(it->second, out);
+            writeCHCString(it->second, out);
 
         writeString(token->begin, token->size(), out);
 
         if (it != hilite.end())
-            writeCString("\033[0m", out);
+            writeCHCString("\033[0m", out);
 
         writeChar('\n', out);
         ++token;

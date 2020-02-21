@@ -1,10 +1,10 @@
 #include "AvroRowInputFormat.h"
 #if USE_AVRO
 
-#include <numeric>
+
 
 #include <Core/Defines.h>
-#include <Core/Field.h>
+
 
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
@@ -23,7 +23,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/IDataType.h>
+
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnArray.h>

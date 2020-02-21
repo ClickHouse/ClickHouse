@@ -7,7 +7,7 @@
 #include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/IStorage.h>
+
 
 
 namespace DB

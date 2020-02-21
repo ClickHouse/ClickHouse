@@ -1,7 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/IFunctionImpl.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>

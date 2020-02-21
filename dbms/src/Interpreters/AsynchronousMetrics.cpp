@@ -10,7 +10,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <IO/UncompressedCache.h>
 #include <Databases/IDatabase.h>
-#include <chrono>
+
 
 #if __has_include(<common/config_common.h>)
 #include <common/config_common.h>

@@ -16,7 +16,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 
-#include <boost/algorithm/string/join.hpp>
+
 
 namespace DB
 {

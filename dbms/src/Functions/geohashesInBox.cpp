@@ -1,5 +1,5 @@
 #include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GeoUtils.h>
 
@@ -8,8 +8,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 
-#include <memory>
-#include <string>
+
+
 
 namespace DB
 {

@@ -2,7 +2,7 @@
 
 #if USE_EMBEDDED_COMPILER
 
-#include <optional>
+
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>

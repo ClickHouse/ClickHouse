@@ -1,9 +1,9 @@
 #include "LZ4_decompress_faster.h"
 
 #include <string.h>
-#include <iostream>
-#include <random>
-#include <algorithm>
+
+
+
 #include <Core/Defines.h>
 #include <Common/Stopwatch.h>
 #include <common/likely.h>
@@ -101,9 +101,9 @@ inline void copyOverlap8(UInt8 * op, const UInt8 *& match, const size_t offset)
   * Example 1.
   * Compile this code without optimizations:
   *
-    #include <vector>
-    #include <unordered_set>
-    #include <iostream>
+
+
+
     #include <tmmintrin.h>
 
     int main(int, char **)
@@ -126,7 +126,7 @@ inline void copyOverlap8(UInt8 * op, const UInt8 *& match, const size_t offset)
   * Example 2.
 
     #include <math.h>
-    #include <iostream>
+
     #include <tmmintrin.h>
 
     int main(int, char **)

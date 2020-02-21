@@ -1,6 +1,6 @@
 #include "DictionarySourceHelpers.h"
 #include <Columns/ColumnsNumber.h>
-#include <Core/Block.h>
+
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataTypes/DataTypesNumber.h>

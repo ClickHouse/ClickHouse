@@ -15,7 +15,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Poco/Net/IPAddress.h>
-#include <array>
+
 
 
 namespace DB

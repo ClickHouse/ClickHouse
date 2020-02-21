@@ -1,7 +1,7 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitors.h>
 
-#include <Core/Block.h>
+
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -11,8 +11,8 @@
 
 #include <Columns/ColumnConst.h>
 
-#include <iterator>
-#include <memory>
+
+
 
 
 namespace DB

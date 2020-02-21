@@ -2,7 +2,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <iostream>
+
 #include <Poco/Net/StreamSocket.h>
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>

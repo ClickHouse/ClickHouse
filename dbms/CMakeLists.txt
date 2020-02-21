@@ -259,6 +259,10 @@ add_library (clickhouse_malloc OBJECT src/Common/malloc.cpp)
 set_source_files_properties(src/Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
 add_library (clickhouse_new_delete STATIC src/Common/new_delete.cpp)
+set_source_files_properties(
+        src/Common/new_delete.cpp
+        SKIP_PRECOMPILE_HEADERS 1
+)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
 
 if (OS_FREEBSD)
@@ -277,6 +281,7 @@ macro(add_object_library name common_path)
         add_headers_and_sources(${name} ${common_path})
         add_library(${name} SHARED ${${name}_sources} ${${name}_headers})
         target_link_libraries (${name} PRIVATE -Wl,--unresolved-symbols=ignore-all)
+        target_precompile_headers(${name} REUSE_FROM clickhouse_common_io)
     endif ()
 endmacro()
 
@@ -635,6 +640,7 @@ target_precompile_headers(clickhouse_common_io
                           <tuple>
                           <typeindex>
                           <typeinfo>
+                          <unordered_set>
                           <utility>
                           <variant>
                           <vector>
@@ -682,15 +688,24 @@ target_precompile_headers(clickhouse_common_io
                           <boost/range/adaptor/indexed.hpp>
                           <boost/range/adaptor/map.hpp>
                           <boost/range/adaptor/reversed.hpp>
+                          <boost/range/algorithm/copy.hpp>
+                          <boost/range/algorithm/fill.hpp>
                           <boost/range/algorithm/find.hpp>
+                          <boost/range/algorithm/find_if.hpp>
                           <boost/range/algorithm/find_first_of.hpp>
                           <boost/range/algorithm/for_each.hpp>
+                          <boost/range/algorithm/lower_bound.hpp>
+                          <boost/range/algorithm/sort.hpp>
+                          <boost/range/algorithm/stable_sort.hpp>
+                          <boost/range/algorithm/transform.hpp>
+                          <boost/range/algorithm/upper_bound.hpp>
                           <boost/range/algorithm_ext/erase.hpp>
                           <boost/range/irange.hpp>
                           <boost/range/iterator_range.hpp>
                           <boost/range/iterator_range_core.hpp>
                           <boost/range/join.hpp>
                           <boost/rational.hpp>
+                          <boost/smart_ptr/make_shared.hpp>
                           <boost/smart_ptr/intrusive_ptr.hpp>
                           <boost/smart_ptr/intrusive_ref_counter.hpp>
                           <boost/uuid/nil_generator.hpp>

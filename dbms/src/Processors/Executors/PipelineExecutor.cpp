@@ -1,6 +1,6 @@
 #include <Processors/Executors/PipelineExecutor.h>
-#include <unordered_map>
-#include <queue>
+
+
 #include <IO/WriteBufferFromString.h>
 #include <Processors/printPipeline.h>
 #include <Common/EventCounter.h>

@@ -1,6 +1,6 @@
 #include "TraceCollector.h"
 
-#include <Core/Field.h>
+
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>

@@ -2,7 +2,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <boost/range/join.hpp>
+
 #include <ext/range.h>
 #include "DictionaryStructure.h"
 #include "writeParenthesisedString.h"
@@ -251,7 +251,7 @@ ExternalQueryBuilder::composeLoadKeysQuery(const Columns & key_columns, const st
     writeString("SELECT ", out);
 
     auto first = true;
-    for (const auto & key_or_attribute : boost::join(*dict_struct.key, dict_struct.attributes))
+    for (const auto & key_or_attribute : boost::range::join(*dict_struct.key, dict_struct.attributes))
     {
         if (!first)
             writeString(", ", out);

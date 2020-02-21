@@ -1,7 +1,7 @@
 #include <string.h>
-#include <iostream>
+
 #include <Common/ThreadPool.h>
-#include <functional>
+
 #include <Common/MultiVersion.h>
 #include <Poco/Exception.h>
 

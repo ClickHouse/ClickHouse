@@ -5,8 +5,8 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Path.h>
 #include <Poco/File.h>
-#include <string>
-#include <iostream>
+
+
 #include <errno.h>
 
 

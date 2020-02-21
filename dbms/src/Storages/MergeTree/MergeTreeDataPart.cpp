@@ -1,6 +1,6 @@
 #include "MergeTreeDataPart.h"
 
-#include <optional>
+
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Compression/CompressedReadBuffer.h>

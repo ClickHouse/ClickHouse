@@ -1,7 +1,7 @@
 #include <Interpreters/IExternalLoadable.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <cmath>
+
 
 namespace DB
 {

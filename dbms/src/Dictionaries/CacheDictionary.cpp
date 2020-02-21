@@ -1,7 +1,7 @@
 #include "CacheDictionary.h"
 
-#include <functional>
-#include <memory>
+
+
 #include <Columns/ColumnString.h>
 #include <Common/BitHelpers.h>
 #include <Common/CurrentMetrics.h>

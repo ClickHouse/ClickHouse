@@ -1,5 +1,5 @@
 #include <Common/COW.h>
-#include <iostream>
+
 
 
 class IColumn : public COW<IColumn>

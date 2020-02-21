@@ -7,7 +7,7 @@
 #include <Common/quoteString.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MD5Engine.h>
-#include <cstring>
+
 
 
 namespace DB

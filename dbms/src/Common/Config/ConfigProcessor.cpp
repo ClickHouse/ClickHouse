@@ -1,12 +1,12 @@
 #include "ConfigProcessor.h"
 
 #include <sys/utsname.h>
-#include <cerrno>
-#include <cstdlib>
-#include <cstring>
-#include <algorithm>
-#include <iostream>
-#include <functional>
+
+
+
+
+
+
 #include <Poco/DOM/Text.h>
 #include <Poco/DOM/Attr.h>
 #include <Poco/DOM/Comment.h>

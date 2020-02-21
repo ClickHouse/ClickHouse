@@ -1,7 +1,7 @@
 #include "CapnProtoRowInputFormat.h"
 #if USE_CAPNP
 
-#include <Core/Field.h>
+
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
@@ -9,8 +9,8 @@
 #include <capnp/serialize.h>
 #include <capnp/dynamic.h>
 #include <capnp/common.h>
-#include <boost/algorithm/string.hpp>
-#include <boost/range/join.hpp>
+
+
 #include <common/logger_useful.h>
 
 

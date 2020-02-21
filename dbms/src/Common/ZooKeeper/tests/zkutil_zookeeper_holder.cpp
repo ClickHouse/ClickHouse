@@ -1,5 +1,5 @@
 #include <Common/ZooKeeper/ZooKeeperHolder.h>
-#include <iostream>
+
 
 #include <Poco/Util/Application.h>
 

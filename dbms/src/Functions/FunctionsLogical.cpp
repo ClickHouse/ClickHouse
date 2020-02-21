@@ -1,4 +1,4 @@
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/FunctionsLogical.h>
 
 #include <Columns/IColumn.h>
@@ -12,7 +12,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <algorithm>
+
 
 
 namespace DB

@@ -1,4 +1,4 @@
-#include <iostream>
+
 #include <Common/ZooKeeper/Lock.h>
 
 int main()

@@ -1,10 +1,10 @@
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/GeoUtils.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/point_xy.hpp>
-#include <boost/geometry/geometries/polygon.hpp>
+
+
+
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
@@ -19,8 +19,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 
-#include <string>
-#include <memory>
+
+
 
 
 namespace ProfileEvents

@@ -1,11 +1,11 @@
 #include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
-#include <Core/Field.h>
+
 
 
 namespace DB

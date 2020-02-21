@@ -1,4 +1,4 @@
-#include <Common/PODArray.h>
+
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Formats/FormatFactory.h>
@@ -33,7 +33,7 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
     for (size_t i = 0; i < num_columns; ++i)
     {
         if (i != 0)
-            writeCString("   ", out);
+            writeCHCString("   ", out);
 
         const ColumnWithTypeAndName & col = header.getByPosition(i);
 
@@ -43,31 +43,31 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
                 writeChar(' ', out);
 
             if (format_settings.pretty.color)
-                writeCString("\033[1m", out);
+                writeCHCString("\033[1m", out);
             writeString(col.name, out);
             if (format_settings.pretty.color)
-                writeCString("\033[0m", out);
+                writeCHCString("\033[0m", out);
         }
         else
         {
             if (format_settings.pretty.color)
-                writeCString("\033[1m", out);
+                writeCHCString("\033[1m", out);
             writeString(col.name, out);
             if (format_settings.pretty.color)
-                writeCString("\033[0m", out);
+                writeCHCString("\033[0m", out);
 
             for (ssize_t k = 0; k < std::max(static_cast<ssize_t>(0), static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
                 writeChar(' ', out);
         }
     }
-    writeCString("\n\n", out);
+    writeCHCString("\n\n", out);
 
     for (size_t row = 0; row < num_rows && total_rows + row < max_rows; ++row)
     {
         for (size_t column = 0; column < num_columns; ++column)
         {
             if (column != 0)
-                writeCString("   ", out);
+                writeCHCString("   ", out);
 
             auto & type = *header.getByPosition(column).type;
             auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
@@ -85,9 +85,9 @@ void PrettySpaceBlockOutputFormat::writeSuffix()
 {
     if (total_rows >= format_settings.pretty.max_rows)
     {
-        writeCString("\nShowed first ", out);
+        writeCHCString("\nShowed first ", out);
         writeIntText(format_settings.pretty.max_rows, out);
-        writeCString(".\n", out);
+        writeCHCString(".\n", out);
     }
 }
 

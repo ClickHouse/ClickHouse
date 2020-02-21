@@ -2,7 +2,7 @@
 #if USE_AVRO
 
 #include <Core/Defines.h>
-#include <Core/Field.h>
+
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>

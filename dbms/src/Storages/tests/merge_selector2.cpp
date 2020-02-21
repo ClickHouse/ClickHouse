@@ -1,5 +1,5 @@
-#include <list>
-#include <iostream>
+
+
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/Operators.h>
 #include <Storages/MergeTree/SimpleMergeSelector.h>

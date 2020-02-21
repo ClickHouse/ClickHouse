@@ -19,7 +19,7 @@ TSKVRowOutputFormat::TSKVRowOutputFormat(WriteBuffer & out_, const Block & heade
     {
         WriteBufferFromOwnString wb;
         writeAnyEscapedString<'='>(field.name.data(), field.name.data() + field.name.size(), wb);
-        writeCString("=", wb);
+        writeCHCString("=", wb);
         field.name = wb.str();
     }
 }

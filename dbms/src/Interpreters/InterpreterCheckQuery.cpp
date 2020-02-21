@@ -1,14 +1,14 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Access/AccessFlags.h>
-#include <Storages/IStorage.h>
+
 #include <Parsers/ASTCheckQuery.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
-#include <algorithm>
+
 
 
 namespace DB

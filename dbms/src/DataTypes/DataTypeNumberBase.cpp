@@ -1,4 +1,4 @@
-#include <type_traits>
+
 #include <DataTypes/DataTypeNumberBase.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
@@ -42,16 +42,16 @@ static inline void writeDenormalNumber(T x, WriteBuffer & ostr)
         if (std::signbit(x))
         {
             if (isNaN(x))
-                writeCString("-nan", ostr);
+                writeCHCString("-nan", ostr);
             else
-                writeCString("-inf", ostr);
+                writeCHCString("-inf", ostr);
         }
         else
         {
             if (isNaN(x))
-                writeCString("nan", ostr);
+                writeCHCString("nan", ostr);
             else
-                writeCString("inf", ostr);
+                writeCHCString("inf", ostr);
         }
     }
     else
@@ -77,7 +77,7 @@ void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row
     if (is_finite)
         writeText(x, ostr);
     else if (!settings.json.quote_denormals)
-        writeCString("null", ostr);
+        writeCHCString("null", ostr);
     else
         writeDenormalNumber(x, ostr);
 

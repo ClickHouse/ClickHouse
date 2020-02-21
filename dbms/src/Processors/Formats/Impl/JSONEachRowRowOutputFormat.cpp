@@ -46,7 +46,7 @@ void JSONEachRowRowOutputFormat::writeRowStartDelimiter()
 
 void JSONEachRowRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString("}\n", out);
+    writeCHCString("}\n", out);
     field_number = 0;
 }
 

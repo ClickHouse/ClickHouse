@@ -33,8 +33,8 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
+
+
 #include <Common/Increment.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/escapeForFileName.h>
@@ -47,16 +47,16 @@
 
 #include <Poco/DirectoryIterator.h>
 
-#include <boost/range/adaptor/filtered.hpp>
 
-#include <algorithm>
-#include <iomanip>
-#include <optional>
-#include <set>
-#include <thread>
-#include <typeinfo>
-#include <typeindex>
-#include <unordered_set>
+
+
+
+
+
+
+
+
+
 
 
 namespace ProfileEvents
@@ -3048,9 +3048,9 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
         {
             WriteBufferFromOwnString buf;
-            writeCString("Parsed partition value: ", buf);
+            writeCHCString("Parsed partition value: ", buf);
             partition.serializeText(*this, buf, format_settings);
-            writeCString(" doesn't match partition value for an existing part with the same partition ID: ", buf);
+            writeCHCString(" doesn't match partition value for an existing part with the same partition ID: ", buf);
             writeString(existing_part_in_partition->name, buf);
             throw Exception(buf.str(), ErrorCodes::INVALID_PARTITION_VALUE);
         }

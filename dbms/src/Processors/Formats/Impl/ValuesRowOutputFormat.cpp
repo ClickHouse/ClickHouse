@@ -3,7 +3,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/IDataType.h>
+
 
 
 namespace DB
@@ -37,7 +37,7 @@ void ValuesRowOutputFormat::writeRowEndDelimiter()
 
 void ValuesRowOutputFormat::writeRowBetweenDelimiter()
 {
-    writeCString(",", out);
+    writeCHCString(",", out);
 }
 
 

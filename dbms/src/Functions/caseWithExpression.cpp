@@ -1,4 +1,4 @@
-#include <Functions/FunctionFactory.h>
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <ext/map.h>

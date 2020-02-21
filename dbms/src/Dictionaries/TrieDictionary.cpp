@@ -1,5 +1,5 @@
 #include "TrieDictionary.h"
-#include <stack>
+
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>

@@ -1,12 +1,12 @@
 #include <DataTypes/DataTypeString.h>
-#include <Functions/FunctionFactory.h>
+
 #include <Functions/FunctionStringToString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteBufferValidUTF8.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/UTF8Encoding.h>
 
-#include <string_view>
+
 
 #ifdef __SSE2__
 #    include <emmintrin.h>

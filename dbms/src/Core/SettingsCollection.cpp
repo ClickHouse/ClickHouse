@@ -1,7 +1,7 @@
 #include <Core/SettingsCollection.h>
 #include <Core/SettingsCollectionImpl.h>
 
-#include <Core/Field.h>
+
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/FieldVisitors.h>
 #include <common/logger_useful.h>

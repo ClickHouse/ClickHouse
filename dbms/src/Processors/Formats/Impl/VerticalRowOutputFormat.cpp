@@ -1,4 +1,4 @@
-#include <cmath>
+
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -39,7 +39,7 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     {
         WriteBufferFromString buf(names_and_paddings[i]);
         writeString(sample.getByPosition(i).name, buf);
-        writeCString(": ", buf);
+        writeCHCString(": ", buf);
     }
 
     for (size_t i = 0; i < columns; ++i)
@@ -76,13 +76,13 @@ void VerticalRowOutputFormat::writeRowStartDelimiter()
     if (row_number > format_settings.pretty.max_rows)
         return;
 
-    writeCString("Row ", out);
+    writeCHCString("Row ", out);
     writeIntText(row_number, out);
-    writeCString(":\n", out);
+    writeCHCString(":\n", out);
 
     size_t width = log10(row_number + 1) + 1 + strlen("Row :");
     for (size_t i = 0; i < width; ++i)
-        writeCString("─", out);
+        writeCHCString("─", out);
     writeChar('\n', out);
 }
 
@@ -92,7 +92,7 @@ void VerticalRowOutputFormat::writeRowBetweenDelimiter()
     if (row_number > format_settings.pretty.max_rows)
         return;
 
-    writeCString("\n", out);
+    writeCHCString("\n", out);
     field_number = 0;
 }
 
@@ -101,24 +101,24 @@ void VerticalRowOutputFormat::writeSuffix()
 {
     if (row_number > format_settings.pretty.max_rows)
     {
-        writeCString("Showed first ", out);
+        writeCHCString("Showed first ", out);
         writeIntText(format_settings.pretty.max_rows, out);
-        writeCString(".\n", out);
+        writeCHCString(".\n", out);
     }
 }
 
 void VerticalRowOutputFormat::writeBeforeTotals()
 {
-    writeCString("\n", out);
-    writeCString("\n", out);
+    writeCHCString("\n", out);
+    writeCHCString("\n", out);
 }
 
 void VerticalRowOutputFormat::writeBeforeExtremes()
 {
     if (!was_totals_written)
-        writeCString("\n", out);
+        writeCHCString("\n", out);
 
-    writeCString("\n", out);
+    writeCHCString("\n", out);
 }
 
 void VerticalRowOutputFormat::writeMinExtreme(const Columns & columns, size_t row_num)
@@ -145,12 +145,12 @@ void VerticalRowOutputFormat::writeSpecialRow(const Columns & columns, size_t ro
     auto & header = getPort(port_kind).getHeader();
     size_t num_columns = columns.size();
 
-    writeCString(title, out);
-    writeCString(":\n", out);
+    writeCHCString(title, out);
+    writeCHCString(":\n", out);
 
     size_t width = strlen(title) + 1;
     for (size_t i = 0; i < width; ++i)
-        writeCString("─", out);
+        writeCHCString("─", out);
     writeChar('\n', out);
 
     for (size_t i = 0; i < num_columns; ++i)

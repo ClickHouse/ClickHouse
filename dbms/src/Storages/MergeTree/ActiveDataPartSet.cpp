@@ -1,5 +1,5 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
-#include <algorithm>
+
 
 
 namespace DB

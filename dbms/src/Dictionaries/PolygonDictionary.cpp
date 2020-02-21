@@ -7,7 +7,7 @@
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
 
-#include <numeric>
+
 
 namespace DB
 {

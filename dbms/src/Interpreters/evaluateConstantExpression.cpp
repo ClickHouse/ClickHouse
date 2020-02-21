@@ -2,7 +2,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/Block.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>

@@ -794,8 +794,8 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         return std::make_unique<HashedDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty, sparse);
     };
     using namespace std::placeholders;
-    factory.registerLayout("hashed", std::bind(create_layout, _1, _2, _3, _4, _5, /* sparse = */ false), false);
-    factory.registerLayout("sparse_hashed", std::bind(create_layout, _1, _2, _3, _4, _5, /* sparse = */ true), false);
+    factory.registerLayout("hashed", std::bind(create_layout, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, /* sparse = */ false), false);
+    factory.registerLayout("sparse_hashed", std::bind(create_layout, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, /* sparse = */ true), false);
 }
 
 }

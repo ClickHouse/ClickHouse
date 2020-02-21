@@ -1,5 +1,5 @@
 #include <Common/Exception.h>
-#include <Core/Block.h>
+
 #include <Formats/IRowOutputStream.h>
 
 

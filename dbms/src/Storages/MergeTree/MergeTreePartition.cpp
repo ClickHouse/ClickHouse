@@ -10,7 +10,7 @@
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/hex.h>
-#include <Core/Block.h>
+
 
 #include <Poco/File.h>
 
@@ -91,7 +91,7 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
 
     if (key_size == 0)
     {
-        writeCString("tuple()", out);
+        writeCHCString("tuple()", out);
     }
     else if (key_size == 1)
     {

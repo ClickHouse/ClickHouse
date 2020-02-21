@@ -1,8 +1,8 @@
 #include "config_core.h"
 #if USE_ICU
 
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
+
+
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypeString.h>
@@ -13,8 +13,8 @@
 #include <ext/range.h>
 
 #include <unicode/ucnv.h>
-#include <string>
-#include <memory>
+
+
 
 
 namespace DB

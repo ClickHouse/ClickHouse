@@ -8,7 +8,7 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <DataTypes/IDataType.h>
+
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/NestedUtils.h>
 

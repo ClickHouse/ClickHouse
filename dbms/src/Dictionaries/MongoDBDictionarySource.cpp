@@ -47,8 +47,8 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 
 // only after poco
 // naming conflict:
-// Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
-// dbms/src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
+// Poco/MongoDB/BSONWriter.h:54: void writeCHCString(const std::string & value);
+// dbms/src/IO/WriteHelpers.h:146 #define writeCHCString(s, buf)
 #    include <IO/WriteHelpers.h>
 #    include <Common/FieldVisitors.h>
 #    include <ext/enumerate.h>

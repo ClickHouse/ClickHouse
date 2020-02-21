@@ -3,7 +3,7 @@
 #include <Poco/Path.h>
 #include <Poco/File.h>
 #include <Poco/DirectoryIterator.h>
-#include <iostream>
+
 
 namespace DB
 {

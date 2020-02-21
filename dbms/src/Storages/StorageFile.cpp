@@ -31,7 +31,7 @@
 #include <Poco/File.h>
 
 #include <re2/re2.h>
-#include <filesystem>
+
 #include <Storages/Distributed/DirectoryMonitor.h>
 
 namespace fs = std::filesystem;

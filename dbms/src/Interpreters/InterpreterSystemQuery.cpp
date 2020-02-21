@@ -27,8 +27,8 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <csignal>
-#include <algorithm>
+
+
 #include "InterpreterSystemQuery.h"
 
 
