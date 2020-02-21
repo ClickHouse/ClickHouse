@@ -178,6 +178,17 @@
     M(OSReadChars, "Number of bytes read from filesystem, including page cache.") \
     M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
     \
+    M(PERF_COUNT_HW_CPU_CYCLES, "") \
+    M(PERF_COUNT_HW_INSTRUCTIONS, "") \
+    M(PERF_COUNT_HW_CACHE_REFERENCES, "") \
+    M(PERF_COUNT_HW_CACHE_MISSES, "") \
+    M(PERF_COUNT_HW_BRANCH_INSTRUCTIONS, "") \
+    M(PERF_COUNT_HW_BRANCH_MISSES, "") \
+    M(PERF_COUNT_HW_BUS_CYCLES, "") \
+    M(PERF_COUNT_HW_STALLED_CYCLES_FRONTEND, "") \
+    M(PERF_COUNT_HW_STALLED_CYCLES_BACKEND, "") \
+    M(PERF_COUNT_HW_REF_CPU_CYCLES, "") \
+    \
     M(PERF_COUNT_SW_TASK_CLOCK, "A clock count specific to the task that is running") \
     M(PERF_COUNT_SW_PAGE_FAULTS, "Number of page faults") \
     M(PERF_COUNT_SW_CONTEXT_SWITCHES, "Number of context switches") \
@@ -186,6 +197,9 @@
     M(PERF_COUNT_SW_PAGE_FAULTS_MAJ, "Number of major page faults. These required disk I/O to handle") \
     M(PERF_COUNT_SW_ALIGNMENT_FAULTS, "Number of alignment faults. These happen when unaligned memory accesses happen; the kernel can handle these but it reduces performance. This happens only on some architectures (never on x86).") \
     M(PERF_COUNT_SW_EMULATION_FAULTS, "Number of emulation faults. The kernel sometimes traps on unimplemented instructions and emulates them for user space. This can negatively impact performance.") \
+    \
+    M(PERF_CUSTOM_INSTRUCTIONS_PER_CPU_CYCLE_SCALED, "") \
+    M(PERF_CUSTOM_INSTRUCTIONS_PER_CPU_CYCLE, "") \
     \
     M(CreatedHTTPConnections, "Total amount of created HTTP connections (closed or opened).") \
     \
