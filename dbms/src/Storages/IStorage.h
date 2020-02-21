@@ -261,20 +261,8 @@ public:
       *  if the storage can return a different number of streams.
       *
       * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
-      *
-      * Default implementation calls `readWithProcessors` and wraps into TreeExecutor.
       */
-    virtual BlockInputStreams read(
-        const Names & /*column_names*/,
-        const SelectQueryInfo & /*query_info*/,
-        const Context & /*context*/,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        size_t /*max_block_size*/,
-        unsigned /*num_streams*/);
-
-    /** The same as read, but returns processors.
-     */
-    virtual Pipes readWithProcessors(
+    virtual Pipes read(
         const Names & /*column_names*/,
         const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
@@ -285,7 +273,15 @@ public:
         throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual bool supportProcessorsPipeline() const { return false; }
+    /** The same as read, but returns BlockInputStreams.
+     */
+    BlockInputStreams readStreams(
+            const Names & /*column_names*/,
+            const SelectQueryInfo & /*query_info*/,
+            const Context & /*context*/,
+            QueryProcessingStage::Enum /*processed_stage*/,
+            size_t /*max_block_size*/,
+            unsigned /*num_streams*/);
 
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.
