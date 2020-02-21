@@ -1,6 +1,8 @@
 #include <Parsers/ParserCreateRoleQuery.h>
 #include <Parsers/ASTCreateRoleQuery.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/parseUserName.h>
 
 
@@ -23,13 +25,21 @@ namespace
 
 bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    bool alter;
-    if (ParserKeyword{"CREATE ROLE"}.ignore(pos, expected))
-        alter = false;
-    else if (ParserKeyword{"ALTER ROLE"}.ignore(pos, expected))
-        alter = true;
+    bool attach = false;
+    bool alter = false;
+    if (attach_mode)
+    {
+        if (!ParserKeyword{"ATTACH ROLE"}.ignore(pos, expected))
+            return false;
+        attach = true;
+    }
     else
-        return false;
+    {
+        if (ParserKeyword{"ALTER ROLE"}.ignore(pos, expected))
+            alter = true;
+        else if (!ParserKeyword{"CREATE ROLE"}.ignore(pos, expected))
+            return false;
+    }
 
     bool if_exists = false;
     bool if_not_exists = false;
@@ -59,6 +69,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     node = query;
 
     query->alter = alter;
+    query->attach = attach;
     query->if_exists = if_exists;
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;
