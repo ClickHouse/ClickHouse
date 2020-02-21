@@ -327,7 +327,7 @@ public:
 
 private:
     friend class NonJoinedBlockInputStream;
-    friend class JoinBlockInputStream;
+    friend class JoinSource;
 
     std::shared_ptr<AnalyzedJoin> table_join;
     ASTTableJoin::Kind kind;

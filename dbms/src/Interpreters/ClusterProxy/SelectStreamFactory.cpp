@@ -12,7 +12,10 @@
 
 #include <common/logger_useful.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
-
+#include <Processors/Pipe.h>
+#include <Processors/Transforms/ConvertingTransform.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 namespace ProfileEvents
 {
@@ -67,12 +70,32 @@ SelectStreamFactory::SelectStreamFactory(
 namespace
 {
 
-BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Block & header, const Context & context, QueryProcessingStage::Enum processed_stage)
+Pipe createLocalStream(const ASTPtr & query_ast, const Block & header, const Context & context, QueryProcessingStage::Enum processed_stage, bool force_tree_shaped_pipeline)
 {
     checkStackSize();
 
     InterpreterSelectQuery interpreter{query_ast, context, SelectQueryOptions(processed_stage)};
-    BlockInputStreamPtr stream = interpreter.execute().in;
+
+    if (force_tree_shaped_pipeline)
+    {
+        /// This flag means that pipeline must be tree-shaped,
+        /// so we can't enable processors for InterpreterSelectQuery here.
+        auto stream = interpreter.execute().in;
+        Pipe pipe(std::make_shared<SourceFromInputStream>(std::move(stream)));
+
+        pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
+                pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name, context));
+
+        return pipe;
+    }
+
+    auto pipeline = interpreter.executeWithProcessors();
+
+    pipeline.addSimpleTransform([&](const Block & source_header)
+    {
+        return std::make_shared<ConvertingTransform>(
+                source_header, header, ConvertingTransform::MatchColumnsMode::Name, context);
+    });
 
     /** Materialization is needed, since from remote servers the constants come materialized.
       * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
@@ -84,7 +107,7 @@ BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Block & he
      */
     /// return std::make_shared<MaterializingBlockInputStream>(stream);
 
-    return std::make_shared<ConvertingBlockInputStream>(context, stream, header, ConvertingBlockInputStream::MatchColumnsMode::Name);
+    return std::move(pipeline).getPipe();
 }
 
 static String formattedAST(const ASTPtr & ast)
@@ -102,15 +125,19 @@ void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
     const String &, const ASTPtr & query_ast,
     const Context & context, const ThrottlerPtr & throttler,
-    BlockInputStreams & res)
+    const SelectQueryInfo & query_info,
+    Pipes & res)
 {
+    bool force_add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
+    bool add_totals_port = processed_stage == QueryProcessingStage::Complete;
+
     auto modified_query_ast = query_ast->clone();
     if (has_virtual_shard_num_column)
         VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_shard_num", shard_info.shard_num, "toUInt32");
 
     auto emplace_local_stream = [&]()
     {
-        res.emplace_back(createLocalStream(modified_query_ast, header, context, processed_stage));
+        res.emplace_back(createLocalStream(modified_query_ast, header, context, processed_stage, query_info.force_tree_shaped_pipeline));
     };
 
     String modified_query = formattedAST(modified_query_ast);
@@ -122,7 +149,13 @@ void SelectStreamFactory::createForShard(
         stream->setPoolMode(PoolMode::GET_MANY);
         if (!table_func_ptr)
             stream->setMainTable(main_table);
-        res.emplace_back(std::move(stream));
+
+        auto source = std::make_shared<SourceFromInputStream>(std::move(stream), force_add_agg_info);
+
+        if (add_totals_port)
+            source->addTotalsPort();
+
+        res.emplace_back(std::move(source));
     };
 
     const auto & settings = context.getSettingsRef();
@@ -250,7 +283,7 @@ void SelectStreamFactory::createForShard(
             }
 
             if (try_results.empty() || local_delay < max_remote_delay)
-                return createLocalStream(modified_query_ast, header, context, stage);
+                return std::make_shared<TreeExecutorBlockInputStream>(createLocalStream(modified_query_ast, header, context, stage, true));
             else
             {
                 std::vector<IConnectionPool::Entry> connections;
@@ -263,7 +296,13 @@ void SelectStreamFactory::createForShard(
             }
         };
 
-        res.emplace_back(std::make_shared<LazyBlockInputStream>("LazyShardWithLocalReplica", header, lazily_create_stream));
+        auto lazy_stream = std::make_shared<LazyBlockInputStream>("LazyShardWithLocalReplica", header, lazily_create_stream);
+        auto source = std::make_shared<SourceFromInputStream>(std::move(lazy_stream), force_add_agg_info);
+
+        if (add_totals_port)
+            source->addTotalsPort();
+
+        res.emplace_back(std::move(source));
     }
     else
         emplace_remote_stream();
