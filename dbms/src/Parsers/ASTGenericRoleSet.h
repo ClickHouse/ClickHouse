@@ -16,6 +16,7 @@ public:
     bool all = false;
     Strings except_names;
     bool except_current_user = false;
+    bool id_mode = false;  /// If true then `names` and `except_names` keeps UUIDs, not names.
 
     bool empty() const { return names.empty() && !current_user && !all; }
 
