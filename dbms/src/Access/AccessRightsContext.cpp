@@ -1,15 +1,20 @@
 #include <Access/AccessRightsContext.h>
 #include <Access/AccessControlManager.h>
+#include <Access/RoleContext.h>
 #include <Access/RowPolicyContext.h>
 #include <Access/QuotaContext.h>
 #include <Access/User.h>
+#include <Access/CurrentRolesInfo.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <IO/WriteHelpers.h>
 #include <Poco/Logger.h>
 #include <common/logger_useful.h>
+#include <boost/algorithm/string/join.hpp>
 #include <boost/smart_ptr/make_shared_object.hpp>
 #include <boost/range/algorithm/fill.hpp>
+#include <boost/range/algorithm/set_algorithm.hpp>
 #include <assert.h>
 
 
@@ -91,6 +96,9 @@ AccessRightsContext::AccessRightsContext()
     auto everything_granted = boost::make_shared<AccessRights>();
     everything_granted->grant(AccessType::ALL);
     boost::range::fill(result_access_cache, everything_granted);
+
+    enabled_roles_with_admin_option = boost::make_shared<boost::container::flat_set<UUID>>();
+
     row_policy_context = std::make_shared<RowPolicyContext>();
     quota_context = std::make_shared<QuotaContext>();
 }
@@ -121,6 +129,9 @@ void AccessRightsContext::setUser(const UserPtr & user_) const
         auto nothing_granted = boost::make_shared<AccessRights>();
         boost::range::fill(result_access_cache, nothing_granted);
         subscription_for_user_change = {};
+        subscription_for_roles_info_change = {};
+        role_context = nullptr;
+        enabled_roles_with_admin_option = boost::make_shared<boost::container::flat_set<UUID>>();
         row_policy_context = std::make_shared<RowPolicyContext>();
         quota_context = std::make_shared<QuotaContext>();
         return;
@@ -128,9 +139,50 @@ void AccessRightsContext::setUser(const UserPtr & user_) const
 
     user_name = user->getName();
     trace_log = &Poco::Logger::get("AccessRightsContext (" + user_name + ")");
+
+    std::vector<UUID> current_roles, current_roles_with_admin_option;
+    if (params.use_default_roles)
+    {
+        for (const UUID & id : user->granted_roles)
+        {
+            if (user->default_roles.match(id))
+                current_roles.push_back(id);
+        }
+        boost::range::set_intersection(current_roles, user->granted_roles_with_admin_option,
+                                       std::back_inserter(current_roles_with_admin_option));
+    }
+    else
+    {
+        current_roles.reserve(params.current_roles.size());
+        for (const auto & id : params.current_roles)
+        {
+            if (user->granted_roles.contains(id))
+                current_roles.push_back(id);
+            if (user->granted_roles_with_admin_option.contains(id))
+                current_roles_with_admin_option.push_back(id);
+        }
+    }
+
+    subscription_for_roles_info_change = {};
+    role_context = manager->getRoleContext(current_roles, current_roles_with_admin_option);
+    subscription_for_roles_info_change = role_context->subscribeForChanges([this](const CurrentRolesInfoPtr & roles_info_)
+    {
+        std::lock_guard lock{mutex};
+        setRolesInfo(roles_info_);
+    });
+
+    setRolesInfo(role_context->getInfo());
+}
+
+
+void AccessRightsContext::setRolesInfo(const CurrentRolesInfoPtr & roles_info_) const
+{
+    assert(roles_info_);
+    roles_info = roles_info_;
+    enabled_roles_with_admin_option.store(nullptr /* need to recalculate */);
     boost::range::fill(result_access_cache, nullptr /* need recalculate */);
-    row_policy_context = manager->getRowPolicyContext(*params.user_id);
-    quota_context = manager->getQuotaContext(*params.user_id, user_name, params.address, params.quota_key);
+    row_policy_context = manager->getRowPolicyContext(*params.user_id, roles_info->enabled_roles);
+    quota_context = manager->getQuotaContext(user_name, *params.user_id, roles_info->enabled_roles, params.address, params.quota_key);
 }
 
 
@@ -301,6 +353,36 @@ void AccessRightsContext::checkGrantOption(const AccessRightsElement & access) c
 void AccessRightsContext::checkGrantOption(const AccessRightsElements & access) const { checkAccessImpl<THROW_IF_ACCESS_DENIED, true>(nullptr, access); }
 
 
+void AccessRightsContext::checkAdminOption(const UUID & role_id) const
+{
+    boost::shared_ptr<const boost::container::flat_set<UUID>> enabled_roles = enabled_roles_with_admin_option.load();
+    if (!enabled_roles)
+    {
+        std::lock_guard lock{mutex};
+        enabled_roles = enabled_roles_with_admin_option.load();
+        if (!enabled_roles)
+        {
+            if (roles_info)
+                enabled_roles = boost::make_shared<boost::container::flat_set<UUID>>(roles_info->enabled_roles_with_admin_option.begin(), roles_info->enabled_roles_with_admin_option.end());
+            else
+                enabled_roles = boost::make_shared<boost::container::flat_set<UUID>>();
+            enabled_roles_with_admin_option.store(enabled_roles);
+        }
+    }
+
+    if (enabled_roles->contains(role_id))
+        return;
+
+    std::optional<String> role_name = manager->readName(role_id);
+    if (!role_name)
+        role_name = "ID {" + toString(role_id) + "}";
+    throw Exception(
+        getUserName() + ": Not enough privileges. To execute this query it's necessary to have the grant " + backQuoteIfNeed(*role_name)
+            + " WITH ADMIN OPTION ",
+        ErrorCodes::ACCESS_DENIED);
+}
+
+
 boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess(bool grant_option) const
 {
     return calculateResultAccess(grant_option, params.readonly, params.allow_ddl, params.allow_introspection);
@@ -326,7 +408,18 @@ boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess
     auto result_ptr = boost::make_shared<AccessRights>();
     auto & result = *result_ptr;
 
-    result = grant_option ? user->access_with_grant_option : user->access;
+    if (grant_option)
+    {
+        result = user->access_with_grant_option;
+        if (roles_info)
+            result.merge(roles_info->access_with_grant_option);
+    }
+    else
+    {
+        result = user->access;
+        if (roles_info)
+            result.merge(roles_info->access);
+    }
 
     static const AccessFlags table_ddl = AccessType::CREATE_DATABASE | AccessType::CREATE_TABLE | AccessType::CREATE_VIEW
         | AccessType::ALTER_TABLE | AccessType::ALTER_VIEW | AccessType::DROP_DATABASE | AccessType::DROP_TABLE | AccessType::DROP_VIEW
@@ -334,12 +427,16 @@ boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess
     static const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
     static const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
     static const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
+    static const AccessFlags all_dcl = AccessType::CREATE_USER | AccessType::CREATE_ROLE | AccessType::CREATE_POLICY
+        | AccessType::CREATE_QUOTA | AccessType::ALTER_USER | AccessType::ALTER_POLICY | AccessType::ALTER_QUOTA | AccessType::DROP_USER
+        | AccessType::DROP_ROLE | AccessType::DROP_POLICY | AccessType::DROP_QUOTA;
 
     /// Anyone has access to the "system" database.
-    result.grant(AccessType::SELECT, "system");
+    if (!result.isGranted(AccessType::SELECT, "system"))
+        result.grant(AccessType::SELECT, "system");
 
     if (readonly_)
-        result.fullRevoke(write_table_access | AccessType::SYSTEM);
+        result.fullRevoke(write_table_access | all_dcl | AccessType::SYSTEM | AccessType::KILL);
 
     if (readonly_ || !allow_ddl_)
         result.fullRevoke(table_and_dictionary_ddl);
@@ -360,7 +457,16 @@ boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess
     result_access_cache[cache_index].store(result_ptr);
 
     if (trace_log && (params.readonly == readonly_) && (params.allow_ddl == allow_ddl_) && (params.allow_introspection == allow_introspection_))
+    {
         LOG_TRACE(trace_log, "List of all grants: " << result_ptr->toString() << (grant_option ? " WITH GRANT OPTION" : ""));
+        if (roles_info && !roles_info->getCurrentRolesNames().empty())
+        {
+            LOG_TRACE(
+                trace_log,
+                "Current_roles: " << boost::algorithm::join(roles_info->getCurrentRolesNames(), ", ")
+                                  << ", enabled_roles: " << boost::algorithm::join(roles_info->getEnabledRolesNames(), ", "));
+        }
+    }
 
     return result_ptr;
 }
@@ -376,6 +482,36 @@ String AccessRightsContext::getUserName() const
 {
     std::lock_guard lock{mutex};
     return user_name;
+}
+
+CurrentRolesInfoPtr AccessRightsContext::getRolesInfo() const
+{
+    std::lock_guard lock{mutex};
+    return roles_info;
+}
+
+std::vector<UUID> AccessRightsContext::getCurrentRoles() const
+{
+    std::lock_guard lock{mutex};
+    return roles_info ? roles_info->current_roles : std::vector<UUID>{};
+}
+
+Strings AccessRightsContext::getCurrentRolesNames() const
+{
+    std::lock_guard lock{mutex};
+    return roles_info ? roles_info->getCurrentRolesNames() : Strings{};
+}
+
+std::vector<UUID> AccessRightsContext::getEnabledRoles() const
+{
+    std::lock_guard lock{mutex};
+    return roles_info ? roles_info->enabled_roles : std::vector<UUID>{};
+}
+
+Strings AccessRightsContext::getEnabledRolesNames() const
+{
+    std::lock_guard lock{mutex};
+    return roles_info ? roles_info->getEnabledRolesNames() : Strings{};
 }
 
 RowPolicyContextPtr AccessRightsContext::getRowPolicy() const
@@ -399,6 +535,8 @@ bool operator <(const AccessRightsContext::Params & lhs, const AccessRightsConte
     if (lhs.field > rhs.field) \
         return false
     ACCESS_RIGHTS_CONTEXT_PARAMS_COMPARE_HELPER(user_id);
+    ACCESS_RIGHTS_CONTEXT_PARAMS_COMPARE_HELPER(current_roles);
+    ACCESS_RIGHTS_CONTEXT_PARAMS_COMPARE_HELPER(use_default_roles);
     ACCESS_RIGHTS_CONTEXT_PARAMS_COMPARE_HELPER(address);
     ACCESS_RIGHTS_CONTEXT_PARAMS_COMPARE_HELPER(quota_key);
     ACCESS_RIGHTS_CONTEXT_PARAMS_COMPARE_HELPER(current_database);
@@ -418,6 +556,8 @@ bool operator ==(const AccessRightsContext::Params & lhs, const AccessRightsCont
     if (lhs.field != rhs.field) \
         return false
     ACCESS_RIGHTS_CONTEXT_PARAMS_COMPARE_HELPER(user_id);
+    ACCESS_RIGHTS_CONTEXT_PARAMS_COMPARE_HELPER(current_roles);
+    ACCESS_RIGHTS_CONTEXT_PARAMS_COMPARE_HELPER(use_default_roles);
     ACCESS_RIGHTS_CONTEXT_PARAMS_COMPARE_HELPER(address);
     ACCESS_RIGHTS_CONTEXT_PARAMS_COMPARE_HELPER(quota_key);
     ACCESS_RIGHTS_CONTEXT_PARAMS_COMPARE_HELPER(current_database);

@@ -17,7 +17,7 @@ public:
     RowPolicyContextFactory(const AccessControlManager & access_control_manager_);
     ~RowPolicyContextFactory();
 
-    RowPolicyContextPtr createContext(const UUID & user_id);
+    RowPolicyContextPtr createContext(const UUID & user_id, const std::vector<UUID> & enabled_roles);
 
 private:
     using ParsedConditions = RowPolicyContext::ParsedConditions;

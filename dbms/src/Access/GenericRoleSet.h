@@ -44,12 +44,16 @@ struct GenericRoleSet
 
     /// Checks if a specified ID matches this GenericRoleSet.
     bool match(const UUID & id) const;
+    bool match(const UUID & user_id, const std::vector<UUID> & enabled_roles) const;
+    bool match(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles) const;
 
     /// Returns a list of matching IDs. The function must not be called if `all` == `true`.
     std::vector<UUID> getMatchingIDs() const;
 
     /// Returns a list of matching users.
     std::vector<UUID> getMatchingUsers(const AccessControlManager & manager) const;
+    std::vector<UUID> getMatchingRoles(const AccessControlManager & manager) const;
+    std::vector<UUID> getMatchingUsersAndRoles(const AccessControlManager & manager) const;
 
     friend bool operator ==(const GenericRoleSet & lhs, const GenericRoleSet & rhs);
     friend bool operator !=(const GenericRoleSet & lhs, const GenericRoleSet & rhs) { return !(lhs == rhs); }

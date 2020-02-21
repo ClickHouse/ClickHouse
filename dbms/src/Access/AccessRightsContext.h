@@ -6,6 +6,7 @@
 #include <ext/scope_guard.h>
 #include <ext/shared_ptr_helper.h>
 #include <boost/smart_ptr/atomic_shared_ptr.hpp>
+#include <boost/container/flat_set.hpp>
 #include <mutex>
 
 
@@ -15,6 +16,10 @@ namespace DB
 {
 struct User;
 using UserPtr = std::shared_ptr<const User>;
+struct CurrentRolesInfo;
+using CurrentRolesInfoPtr = std::shared_ptr<const CurrentRolesInfo>;
+class RoleContext;
+using RoleContextPtr = std::shared_ptr<const RoleContext>;
 struct RowPolicyContext;
 using RowPolicyContextPtr = std::shared_ptr<const RowPolicyContext>;
 struct QuotaContext;
@@ -29,6 +34,8 @@ public:
     struct Params
     {
         std::optional<UUID> user_id;
+        std::vector<UUID> current_roles;
+        bool use_default_roles = false;
         UInt64 readonly = 0;
         bool allow_ddl = false;
         bool allow_introspection = false;
@@ -56,10 +63,16 @@ public:
     void checkPassword(const String & password) const;
     void checkHostIsAllowed() const;
 
+    CurrentRolesInfoPtr getRolesInfo() const;
+    std::vector<UUID> getCurrentRoles() const;
+    Strings getCurrentRolesNames() const;
+    std::vector<UUID> getEnabledRoles() const;
+    Strings getEnabledRolesNames() const;
+
     RowPolicyContextPtr getRowPolicy() const;
     QuotaContextPtr getQuota() const;
 
-    /// Checks if a specified access granted, and throws an exception if not.
+    /// Checks if a specified access is granted, and throws an exception if not.
     /// Empty database means the current database.
     void checkAccess(const AccessFlags & access) const;
     void checkAccess(const AccessFlags & access, const std::string_view & database) const;
@@ -70,7 +83,7 @@ public:
     void checkAccess(const AccessRightsElement & access) const;
     void checkAccess(const AccessRightsElements & access) const;
 
-    /// Checks if a specified access granted.
+    /// Checks if a specified access is granted.
     bool isGranted(const AccessFlags & access) const;
     bool isGranted(const AccessFlags & access, const std::string_view & database) const;
     bool isGranted(const AccessFlags & access, const std::string_view & database, const std::string_view & table) const;
@@ -80,7 +93,7 @@ public:
     bool isGranted(const AccessRightsElement & access) const;
     bool isGranted(const AccessRightsElements & access) const;
 
-    /// Checks if a specified access granted, and logs a warning if not.
+    /// Checks if a specified access is granted, and logs a warning if not.
     bool isGranted(Poco::Logger * log_, const AccessFlags & access) const;
     bool isGranted(Poco::Logger * log_, const AccessFlags & access, const std::string_view & database) const;
     bool isGranted(Poco::Logger * log_, const AccessFlags & access, const std::string_view & database, const std::string_view & table) const;
@@ -90,7 +103,7 @@ public:
     bool isGranted(Poco::Logger * log_, const AccessRightsElement & access) const;
     bool isGranted(Poco::Logger * log_, const AccessRightsElements & access) const;
 
-    /// Checks if a specified access granted with grant option, and throws an exception if not.
+    /// Checks if a specified access is granted with grant option, and throws an exception if not.
     void checkGrantOption(const AccessFlags & access) const;
     void checkGrantOption(const AccessFlags & access, const std::string_view & database) const;
     void checkGrantOption(const AccessFlags & access, const std::string_view & database, const std::string_view & table) const;
@@ -100,12 +113,16 @@ public:
     void checkGrantOption(const AccessRightsElement & access) const;
     void checkGrantOption(const AccessRightsElements & access) const;
 
+    /// Checks if a specified role is granted with admin option, and throws an exception if not.
+    void checkAdminOption(const UUID & role_id) const;
+
 private:
     friend class AccessRightsContextFactory;
     friend struct ext::shared_ptr_helper<AccessRightsContext>;
     AccessRightsContext(const AccessControlManager & manager_, const Params & params_); /// AccessRightsContext should be created by AccessRightsContextFactory.
 
     void setUser(const UserPtr & user_) const;
+    void setRolesInfo(const CurrentRolesInfoPtr & roles_info_) const;
 
     template <int mode, bool grant_option, typename... Args>
     bool checkAccessImpl(Poco::Logger * log_, const AccessFlags & access, const Args &... args) const;
@@ -125,6 +142,10 @@ private:
     mutable UserPtr user;
     mutable String user_name;
     mutable ext::scope_guard subscription_for_user_change;
+    mutable RoleContextPtr role_context;
+    mutable ext::scope_guard subscription_for_roles_info_change;
+    mutable CurrentRolesInfoPtr roles_info;
+    mutable boost::atomic_shared_ptr<const boost::container::flat_set<UUID>> enabled_roles_with_admin_option;
     mutable boost::atomic_shared_ptr<const AccessRights> result_access_cache[7];
     mutable RowPolicyContextPtr row_policy_context;
     mutable QuotaContextPtr quota_context;

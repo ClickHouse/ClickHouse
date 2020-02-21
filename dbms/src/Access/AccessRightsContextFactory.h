@@ -18,7 +18,7 @@ public:
 
     using Params = AccessRightsContext::Params;
     AccessRightsContextPtr createContext(const Params & params);
-    AccessRightsContextPtr createContext(const UUID & user_id, const Settings & settings, const String & current_database, const ClientInfo & client_info);
+    AccessRightsContextPtr createContext(const UUID & user_id, const std::vector<UUID> & current_roles, bool use_default_roles, const Settings & settings, const String & current_database, const ClientInfo & client_info);
 
 private:
     const AccessControlManager & manager;
