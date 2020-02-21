@@ -109,7 +109,7 @@ BlockIO InterpreterAlterQuery::execute()
         auto table_lock_holder = table->lockAlterIntention(context.getCurrentQueryId());
         StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
         alter_commands.validate(metadata, context);
-        alter_commands.prepare(metadata, context);
+        alter_commands.prepare(metadata);
         table->checkAlterIsPossible(alter_commands, context.getSettingsRef());
         table->alter(alter_commands, context, table_lock_holder);
     }

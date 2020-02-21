@@ -585,7 +585,7 @@ bool MergeJoin::saveRightBlock(Block && block)
     return true;
 }
 
-bool MergeJoin::addJoinedBlock(const Block & src_block)
+bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
 {
     Block block = materializeBlock(src_block);
     JoinCommon::removeLowCardinalityInplace(block);

@@ -5,6 +5,9 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 
+#include <Interpreters/evaluateConstantExpression.h>
+
+#include <IO/ReadBufferFromFileBase.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -18,6 +21,8 @@
 #include <Columns/ColumnArray.h>
 
 #include <Interpreters/Context.h>
+#include <Parsers/ASTLiteral.h>
+#include "StorageLogSettings.h"
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
 
@@ -92,7 +97,7 @@ private:
                 plain->seek(offset, SEEK_SET);
         }
 
-        std::unique_ptr<SeekableReadBuffer> plain;
+        std::unique_ptr<ReadBufferFromFileBase> plain;
         CompressedReadBuffer compressed;
     };
 
@@ -546,8 +551,9 @@ void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLo
 
 const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 {
-    const String & column_name = getColumns().begin()->name;
-    const IDataType & column_type = *getColumns().begin()->type;
+    /// There should be at least one physical column
+    const String column_name = getColumns().getAllPhysical().begin()->name;
+    const auto column_type = getColumns().getAllPhysical().begin()->type;
     String filename;
 
     /** We take marks from first column.
@@ -555,7 +561,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
       * (Example: for Array data type, first stream is array sizes; and number of array sizes is the number of arrays).
       */
     IDataType::SubstreamPath substream_root_path;
-    column_type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    column_type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
     {
         if (filename.empty())
             filename = IDataType::getFileNameForStream(column_name, substream_path);
@@ -629,6 +635,10 @@ CheckResults StorageLog::checkData(const ASTPtr & /* query */, const Context & /
 
 void registerStorageLog(StorageFactory & factory)
 {
+    StorageFactory::StorageFeatures features{
+        .supports_settings = true
+    };
+
     factory.registerStorage("Log", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
@@ -636,10 +646,13 @@ void registerStorageLog(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+        String disk_name = getDiskName(*args.storage_def);
+        DiskPtr disk = args.context.getDisk(disk_name);
+
         return StorageLog::create(
-            args.context.getDefaultDisk(), args.relative_data_path, args.table_id, args.columns, args.constraints,
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
             args.context.getSettings().max_compress_block_size);
-    });
+    }, features);
 }
 
 }

@@ -9,23 +9,12 @@
 #include <Compression/CompressionFactory.h>
 
 
-namespace ProfileEvents
-{
-    extern const Event ReadCompressedBytes;
-    extern const Event CompressedReadBufferBlocks;
-    extern const Event CompressedReadBufferBytes;
-}
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int CHECKSUM_DOESNT_MATCH;
-    extern const int TOO_LARGE_SIZE_COMPRESSED;
-    extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int CANNOT_DECOMPRESS;
-    extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int CORRUPTED_DATA;
 }
 
