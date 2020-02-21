@@ -11,4 +11,4 @@
 * Multiple storage type choices
 * Replicas in different availability zones
 * Encryption and isolation
-* Automated maintainance
+* Automated maintenance
