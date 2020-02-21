@@ -175,8 +175,11 @@ private:
     using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
+
+    //TODO maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
+
     Context * query_context = nullptr;
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
@@ -385,9 +388,6 @@ public:
 
     std::optional<UInt16> getTCPPortSecure() const;
 
-    /// Get query for the CREATE table.
-    ASTPtr getCreateExternalTableQuery(const String & table_name) const;
-
     std::shared_ptr<Context> acquireSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check) const;
     void releaseSession(const String & session_id, std::chrono::steady_clock::duration timeout);
 
@@ -594,8 +594,6 @@ private:
     void setProfile(const String & profile);
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
-
-    StoragePtr getTableImpl(const StorageID & table_id, std::optional<Exception> * exception) const;
 
     SessionKey getSessionKey(const String & session_id) const;
 

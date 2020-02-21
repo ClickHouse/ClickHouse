@@ -844,19 +844,6 @@ StoragePtr Context::getViewSource()
     return view_source;
 }
 
-ASTPtr Context::getCreateExternalTableQuery(const String & table_name) const
-{
-    StorageID external_id = StorageID::createEmpty();
-    {
-        auto lock = getLock();
-        auto it = external_tables_mapping.find(table_name);
-        if (external_tables_mapping.end() == it)
-            throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
-        external_id = it->second->getGlobalTableID();
-    }
-    return DatabaseCatalog::instance().getDatabaseForTemporaryTables()->getCreateTableQuery(*this, external_id.table_name);
-}
-
 Settings Context::getSettings() const
 {
     return settings;
