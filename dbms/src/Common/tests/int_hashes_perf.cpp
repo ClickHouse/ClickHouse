@@ -1,5 +1,5 @@
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
-#include <sched.h>
+#if defined (OS_LINUX)
+#   include <sched.h>
 #endif
 
 #include <iostream>
@@ -9,7 +9,6 @@
 #include <Common/Stopwatch.h>
 #include <Core/Defines.h>
 #include "AvalancheTest.h"  /// Taken from SMHasher.
-#include <port/clock.h>
 
 
 static void setAffinity()

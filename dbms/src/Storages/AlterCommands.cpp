@@ -7,14 +7,14 @@
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTConstraintDeclaration.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/typeid_cast.h>
@@ -30,8 +30,10 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_SETTING;
+    extern const int DUPLICATE_COLUMN;
 }
 
 
@@ -498,162 +500,39 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata) const
 }
 
 
-void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, const Context & context)
+void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 {
-    /// A temporary object that is used to keep track of the current state of columns after applying a subset of commands.
     auto columns = metadata.columns;
-
-    /// Default expressions will be added to this list for type deduction.
-    auto default_expr_list = std::make_shared<ASTExpressionList>();
-    /// We will save ALTER ADD/MODIFY command indices (only the last for each column) for possible modification
-    /// (we might need to add deduced types or modify default expressions).
-    /// Saving indices because we can add new commands later and thus cause vector resize.
-    std::unordered_map<String, size_t> column_to_command_idx;
 
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
-        if (command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::MODIFY_COLUMN)
+        bool has_column = columns.has(command.column_name) || columns.hasNested(command.column_name);
+        if (command.type == AlterCommand::MODIFY_COLUMN)
         {
-            const auto & column_name = command.column_name;
+            if (!has_column && command.if_exists)
+                command.ignore = true;
 
-            if (command.type == AlterCommand::ADD_COLUMN)
+            if (has_column && command.data_type)
             {
-                if (columns.has(column_name) || columns.hasNested(column_name))
+                auto column_from_table = columns.get(command.column_name);
+                if (!command.default_expression && column_from_table.default_desc.expression)
                 {
-                    if (command.if_not_exists)
-                        command.ignore = true;
-                }
-            }
-            else if (command.type == AlterCommand::MODIFY_COLUMN)
-            {
-                if (!columns.has(column_name))
-                    if (command.if_exists)
-                        command.ignore = true;
-
-                if (!command.ignore)
-                    columns.remove(column_name);
-            }
-
-            if (!command.ignore)
-            {
-                column_to_command_idx[column_name] = i;
-
-                /// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
-                columns.add(
-                    ColumnDescription(column_name, command.data_type ? command.data_type : std::make_shared<DataTypeUInt8>(), false));
-
-                if (command.default_expression)
-                {
-                    if (command.data_type)
-                    {
-                        const auto & final_column_name = column_name;
-                        const auto tmp_column_name = final_column_name + "_tmp";
-
-                        default_expr_list->children.emplace_back(setAlias(
-                            makeASTFunction("CAST", std::make_shared<ASTIdentifier>(tmp_column_name),
-                                std::make_shared<ASTLiteral>(command.data_type->getName())),
-                            final_column_name));
-
-                        default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
-                    }
-                    else
-                    {
-                        /// no type explicitly specified, will deduce later
-                        default_expr_list->children.emplace_back(
-                            setAlias(command.default_expression->clone(), column_name));
-                    }
+                    command.default_kind = column_from_table.default_desc.kind;
+                    command.default_expression = column_from_table.default_desc.expression;
                 }
             }
         }
-        else if (command.type == AlterCommand::DROP_COLUMN)
+        else if (command.type == AlterCommand::ADD_COLUMN)
         {
-            if (columns.has(command.column_name) || columns.hasNested(command.column_name))
-                columns.remove(command.column_name);
-            else if (command.if_exists)
+            if (has_column && command.if_not_exists)
                 command.ignore = true;
         }
-        else if (command.type == AlterCommand::COMMENT_COLUMN)
+        else if (command.type == AlterCommand::DROP_COLUMN
+                || command.type == AlterCommand::COMMENT_COLUMN)
         {
-            if (!columns.has(command.column_name) && command.if_exists)
+            if (!has_column && command.if_exists)
                 command.ignore = true;
-        }
-    }
-
-    /** Existing defaulted columns may require default expression extensions with a type conversion,
-        *  therefore we add them to default_expr_list to recalculate their types */
-    for (const auto & column : columns)
-    {
-        if (column.default_desc.expression)
-        {
-            const auto tmp_column_name = column.name + "_tmp";
-
-            default_expr_list->children.emplace_back(setAlias(
-                    makeASTFunction("CAST", std::make_shared<ASTIdentifier>(tmp_column_name),
-                        std::make_shared<ASTLiteral>(column.type->getName())),
-                    column.name));
-
-            default_expr_list->children.emplace_back(setAlias(column.default_desc.expression->clone(), tmp_column_name));
-        }
-    }
-
-    ASTPtr query = default_expr_list;
-    auto syntax_result = SyntaxAnalyzer(context).analyze(query, columns.getAll());
-    const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
-    const auto block = actions->getSampleBlock();
-
-    /// set deduced types, modify default expression if necessary
-    for (const auto & column : columns)
-    {
-        AlterCommand * command = nullptr;
-        auto command_it = column_to_command_idx.find(column.name);
-        if (command_it != column_to_command_idx.end())
-            command = &(*this)[command_it->second];
-
-        if (!(command && command->default_expression) && !column.default_desc.expression)
-            continue;
-
-        const DataTypePtr & explicit_type = command ? command->data_type : column.type;
-        if (explicit_type)
-        {
-            const auto & tmp_column = block.getByName(column.name + "_tmp");
-            const auto & deduced_type = tmp_column.type;
-            if (!explicit_type->equals(*deduced_type))
-            {
-                if (!command)
-                {
-#if !__clang__
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-#endif
-                    /// We completely sure, that we initialize all required fields
-                    AlterCommand aux_command{
-                        .type = AlterCommand::MODIFY_COLUMN,
-                        .column_name = column.name,
-                        .data_type = explicit_type,
-                        .default_kind = column.default_desc.kind,
-                        .default_expression = column.default_desc.expression
-                    };
-#if !__clang__
-#    pragma GCC diagnostic pop
-#endif
-
-                    /// column has no associated alter command, let's create it
-                    /// add a new alter command to modify existing column
-                    this->emplace_back(aux_command);
-
-                    command = &back();
-                }
-
-                command->default_expression = makeASTFunction("CAST",
-                    command->default_expression->clone(),
-                    std::make_shared<ASTLiteral>(explicit_type->getName()));
-            }
-        }
-        else
-        {
-            /// just set deduced type
-            command->data_type = block.getByName(column.name).type;
         }
     }
     prepared = true;
@@ -661,26 +540,58 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, const Cont
 
 void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Context & context) const
 {
+    auto all_columns = metadata.columns;
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
-        if (command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::MODIFY_COLUMN)
+
+        const auto & column_name = command.column_name;
+        if (command.type == AlterCommand::ADD_COLUMN)
         {
-            const auto & column_name = command.column_name;
-
-            if (command.type == AlterCommand::ADD_COLUMN)
+            if (metadata.columns.has(column_name) || metadata.columns.hasNested(column_name))
             {
-                if (metadata.columns.has(column_name) || metadata.columns.hasNested(column_name))
-                    if (!command.if_not_exists)
-                        throw Exception{"Cannot add column " + column_name + ": column with this name already exists", ErrorCodes::ILLEGAL_COLUMN};
-            }
-            else if (command.type == AlterCommand::MODIFY_COLUMN)
-            {
-                if (!metadata.columns.has(column_name))
-                    if (!command.if_exists)
-                        throw Exception{"Wrong column name. Cannot find column " + column_name + " to modify", ErrorCodes::ILLEGAL_COLUMN};
+                if (!command.if_not_exists)
+                    throw Exception{"Cannot add column " + backQuote(column_name) + ": column with this name already exists",
+                                    ErrorCodes::DUPLICATE_COLUMN};
+                else
+                    continue;
             }
 
+            if (!command.data_type)
+                throw Exception{"Data type have to be specified for column " + backQuote(column_name) + " to add",
+                                ErrorCodes::BAD_ARGUMENTS};
+
+            if (command.default_expression)
+                validateDefaultExpressionForColumn(command.default_expression, column_name, command.data_type, all_columns, context);
+
+            all_columns.add(ColumnDescription(column_name, command.data_type, false));
+        }
+        else if (command.type == AlterCommand::MODIFY_COLUMN)
+        {
+            if (!metadata.columns.has(column_name))
+            {
+                if (!command.if_exists)
+                    throw Exception{"Wrong column name. Cannot find column " + backQuote(column_name) + " to modify",
+                                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
+                else
+                    continue;
+            }
+
+            auto column_in_table = metadata.columns.get(column_name);
+            if (command.default_expression)
+            {
+                if (!command.data_type)
+                    validateDefaultExpressionForColumn(
+                        command.default_expression, column_name, column_in_table.type, all_columns, context);
+                else
+                    validateDefaultExpressionForColumn(
+                        command.default_expression, column_name, command.data_type, all_columns, context);
+            }
+            else if (column_in_table.default_desc.expression && command.data_type)
+            {
+                validateDefaultExpressionForColumn(
+                    column_in_table.default_desc.expression, column_name, command.data_type, all_columns, context);
+            }
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
@@ -689,32 +600,58 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                 for (const ColumnDescription & column : metadata.columns)
                 {
                     const auto & default_expression = column.default_desc.expression;
-                    if (!default_expression)
-                        continue;
+                    if (default_expression)
+                    {
+                        ASTPtr query = default_expression->clone();
+                        auto syntax_result = SyntaxAnalyzer(context).analyze(query, metadata.columns.getAll());
+                        const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
+                        const auto required_columns = actions->getRequiredColumns();
 
-                    ASTPtr query = default_expression->clone();
-                    auto syntax_result = SyntaxAnalyzer(context).analyze(query, metadata.columns.getAll());
-                    const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
-                    const auto required_columns = actions->getRequiredColumns();
-
-                    if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
-                        throw Exception(
-                            "Cannot drop column " + command.column_name + ", because column " + column.name +
-                            " depends on it", ErrorCodes::ILLEGAL_COLUMN);
+                        if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
+                            throw Exception(
+                                "Cannot drop column " + backQuote(command.column_name) + ", because column " + backQuote(column.name) + " depends on it",
+                                ErrorCodes::ILLEGAL_COLUMN);
+                    }
                 }
             }
             else if (!command.if_exists)
-                throw Exception("Wrong column name. Cannot find column " + command.column_name + " to drop",
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(
+                    "Wrong column name. Cannot find column " + backQuote(command.column_name) + " to drop",
+                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
         else if (command.type == AlterCommand::COMMENT_COLUMN)
         {
             if (!metadata.columns.has(command.column_name))
             {
                 if (!command.if_exists)
-                    throw Exception{"Wrong column name. Cannot find column " + command.column_name + " to comment", ErrorCodes::ILLEGAL_COLUMN};
+                    throw Exception{"Wrong column name. Cannot find column " + backQuote(command.column_name) + " to comment",
+                                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
             }
         }
+    }
+}
+
+void AlterCommands::validateDefaultExpressionForColumn(
+    const ASTPtr default_expression,
+    const String & column_name,
+    const DataTypePtr column_type,
+    const ColumnsDescription & all_columns,
+    const Context & context) const
+{
+
+    try
+    {
+        String tmp_column_name = "__tmp" + column_name;
+        auto copy_expression = default_expression->clone();
+        auto default_with_cast = makeASTFunction("CAST", copy_expression, std::make_shared<ASTLiteral>(column_type->getName()));
+        auto query_with_alias = setAlias(default_with_cast, tmp_column_name);
+        auto syntax_result = SyntaxAnalyzer(context).analyze(query_with_alias, all_columns.getAll());
+        ExpressionAnalyzer(query_with_alias, syntax_result, context).getActions(true);
+    }
+    catch (Exception & ex)
+    {
+        ex.addMessage("default expression and column type are incompatible. Cannot alter column " + backQuote(column_name));
+        throw;
     }
 }
 

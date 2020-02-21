@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/SettingsCollection.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/asof.h>
@@ -44,7 +45,7 @@ class AnalyzedJoin
     const size_t default_max_bytes;
     const bool join_use_nulls;
     const size_t max_joined_block_rows = 0;
-    const bool partial_merge_join = false;
+    JoinAlgorithm join_algorithm;
     const bool partial_merge_join_optimizations = false;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
 
@@ -76,6 +77,7 @@ public:
         : size_limits(limits)
         , default_max_bytes(0)
         , join_use_nulls(use_nulls)
+        , join_algorithm(JoinAlgorithm::HASH)
         , key_names_right(key_names_right_)
     {
         table_join.kind = kind;
@@ -87,6 +89,10 @@ public:
     bool sameStrictnessAndKind(ASTTableJoin::Strictness, ASTTableJoin::Kind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
     VolumePtr getTemporaryVolume() { return tmp_volume; }
+    bool allowMergeJoin() const;
+    bool preferMergeJoin() const { return join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE; }
+    bool forceMergeJoin() const { return join_algorithm == JoinAlgorithm::PARTIAL_MERGE; }
+    bool forceHashJoin() const { return join_algorithm == JoinAlgorithm::HASH; }
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
@@ -128,9 +134,6 @@ public:
     void setRightKeys(const Names & keys) { key_names_right = keys; }
 
     static bool sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y);
-    friend JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block);
 };
-
-bool isMergeJoin(const JoinPtr &);
 
 }

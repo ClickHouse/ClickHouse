@@ -41,6 +41,7 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 - [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 - [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
 - [system.events](#system_tables-events) — Contains a number of events that have occurred.
+- [system.metric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 
 ## system.clusters
 
@@ -193,6 +194,7 @@ SELECT * FROM system.events LIMIT 5
 
 - [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 - [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
+- [system.metric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 - [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## system.functions
@@ -273,10 +275,68 @@ SELECT * FROM system.metrics LIMIT 10
 │ DistributedSend            │     0 │ Number of connections to remote servers sending data that was INSERTed into Distributed tables. Both synchronous and asynchronous mode.                                                          │
 └────────────────────────────┴───────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
 **See Also**
 
 - [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 - [system.events](#system_tables-events) — Contains a number of events that occurred.
+- [system.metric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+- [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
+
+## system.metric_log {#system_tables-metric_log}
+
+Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
+To turn on metrics history collection on `system.metric_log`, create `/etc/clickhouse-server/config.d/metric_log.xml` with following content:
+```xml
+<yandex>
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+    </metric_log>
+</yandex>
+```
+
+**Example**
+
+```sql
+SELECT * FROM system.metric_log LIMIT 1 FORMAT Vertical;
+```
+
+
+```text
+Row 1:
+──────
+event_date:                                                 2020-02-18
+event_time:                                                 2020-02-18 07:15:33
+milliseconds:                                               554
+ProfileEvent_Query:                                         0
+ProfileEvent_SelectQuery:                                   0
+ProfileEvent_InsertQuery:                                   0
+ProfileEvent_FileOpen:                                      0
+ProfileEvent_Seek:                                          0
+ProfileEvent_ReadBufferFromFileDescriptorRead:              1
+ProfileEvent_ReadBufferFromFileDescriptorReadFailed:        0
+ProfileEvent_ReadBufferFromFileDescriptorReadBytes:         0
+ProfileEvent_WriteBufferFromFileDescriptorWrite:            1
+ProfileEvent_WriteBufferFromFileDescriptorWriteFailed:      0
+ProfileEvent_WriteBufferFromFileDescriptorWriteBytes:       56
+...
+CurrentMetric_Query:                                        0
+CurrentMetric_Merge:                                        0
+CurrentMetric_PartMutation:                                 0
+CurrentMetric_ReplicatedFetch:                              0
+CurrentMetric_ReplicatedSend:                               0
+CurrentMetric_ReplicatedChecks:                             0
+...    
+```
+
+**See also**
+
+- [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+- [system.events](#system_tables-events) — Contains a number of events that occurred.
+- [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
 - [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## system.numbers
@@ -634,76 +694,73 @@ FORMAT Vertical
 ```text
 Row 1:
 ──────
-database:           merge
-table:              visits
-engine:             ReplicatedCollapsingMergeTree
-is_leader:          1
-is_readonly:        0
-is_session_expired: 0
-future_parts:       1
-parts_to_check:     0
-zookeeper_path:     /clickhouse/tables/01-06/visits
-replica_name:       example01-06-1.yandex.ru
-replica_path:       /clickhouse/tables/01-06/visits/replicas/example01-06-1.yandex.ru
-columns_version:    9
-queue_size:         1
-inserts_in_queue:   0
-merges_in_queue:    1
-log_max_index:      596273
-log_pointer:        596274
-total_replicas:     2
-active_replicas:    2
+database:                   merge
+table:                      visits
+engine:                     ReplicatedCollapsingMergeTree
+is_leader:                  1
+can_become_leader:          1
+is_readonly:                0
+is_session_expired:         0
+future_parts:               1
+parts_to_check:             0
+zookeeper_path:             /clickhouse/tables/01-06/visits
+replica_name:               example01-06-1.yandex.ru
+replica_path:               /clickhouse/tables/01-06/visits/replicas/example01-06-1.yandex.ru
+columns_version:            9
+queue_size:                 1
+inserts_in_queue:           0
+merges_in_queue:            1
+part_mutations_in_queue:    0
+queue_oldest_time:          2020-02-20 08:34:30
+inserts_oldest_time:        0000-00-00 00:00:00
+merges_oldest_time:         2020-02-20 08:34:30
+part_mutations_oldest_time: 0000-00-00 00:00:00
+oldest_part_to_get:
+oldest_part_to_merge_to:    20200220_20284_20840_7
+oldest_part_to_mutate_to:
+log_max_index:              596273
+log_pointer:                596274
+last_queue_update:          2020-02-20 08:34:32
+absolute_delay:             0
+total_replicas:             2
+active_replicas:            2
 ```
 
 Columns:
 
-```text
-database:          Database name
-table:              Table name
-engine:            Table engine name
-
-is_leader:          Whether the replica is the leader.
-
-Only one replica at a time can be the leader. The leader is responsible for selecting background merges to perform.
+- `database` (`String`) - Database name
+- `table` (`String`) - Table name
+- `engine` (`String`) - Table engine name
+- `is_leader` (`UInt8`) - Whether the replica is the leader.  
+Only one replica at a time can be the leader. The leader is responsible for selecting background merges to perform.  
 Note that writes can be performed to any replica that is available and has a session in ZK, regardless of whether it is a leader.
-
-is_readonly:        Whether the replica is in read-only mode.
+- `can_become_leader` (`UInt8`) - Whether the replica can be elected as a leader.
+- `is_readonly` (`UInt8`) - Whether the replica is in read-only mode.  
 This mode is turned on if the config doesn't have sections with ZooKeeper, if an unknown error occurred when reinitializing sessions in ZooKeeper, and during session reinitialization in ZooKeeper.
-
-is_session_expired: Whether the session with ZooKeeper has expired.
-Basically the same as 'is_readonly'.
-
-future_parts:       The number of data parts that will appear as the result of INSERTs or merges that haven't been done yet.
-
-parts_to_check:    The number of data parts in the queue for verification.
-A part is put in the verification queue if there is suspicion that it might be damaged.
-
-zookeeper_path:     Path to table data in ZooKeeper.
-replica_name:       Replica name in ZooKeeper. Different replicas of the same table have different names.
-replica_path:      Path to replica data in ZooKeeper. The same as concatenating 'zookeeper_path/replicas/replica_path'.
-
-columns_version:    Version number of the table structure.
-Indicates how many times ALTER was performed. If replicas have different versions, it means some replicas haven't made all of the ALTERs yet.
-
-queue_size:         Size of the queue for operations waiting to be performed.
-Operations include inserting blocks of data, merges, and certain other actions.
-It usually coincides with 'future_parts'.
-
-inserts_in_queue:   Number of inserts of blocks of data that need to be made.
-Insertions are usually replicated fairly quickly. If this number is large, it means something is wrong.
-
-merges_in_queue:    The number of merges waiting to be made.
-Sometimes merges are lengthy, so this value may be greater than zero for a long time.
+- `is_session_expired` (`UInt8`) - the session with ZooKeeper has expired. Basically the same as `is_readonly`.
+- `future_parts` (`UInt32`) - The number of data parts that will appear as the result of INSERTs or merges that haven't been done yet.
+- `parts_to_check` (`UInt32`) - The number of data parts in the queue for verification. A part is put in the verification queue if there is suspicion that it might be damaged.
+- `zookeeper_path` (`String`) - Path to table data in ZooKeeper.
+- `replica_name` (`String`) - Replica name in ZooKeeper. Different replicas of the same table have different names.
+- `replica_path` (`String`) - Path to replica data in ZooKeeper. The same as concatenating 'zookeeper_path/replicas/replica_path'.
+- `columns_version` (`Int32`) - Version number of the table structure. Indicates how many times ALTER was performed. If replicas have different versions, it means some replicas haven't made all of the ALTERs yet.
+- `queue_size` (`UInt32`) - Size of the queue for operations waiting to be performed. Operations include inserting blocks of data, merges, and certain other actions. It usually coincides with `future_parts`.
+- `inserts_in_queue` (`UInt32`) - Number of inserts of blocks of data that need to be made. Insertions are usually replicated fairly quickly. If this number is large, it means something is wrong.
+- `merges_in_queue` (`UInt32`) - The number of merges waiting to be made. Sometimes merges are lengthy, so this value may be greater than zero for a long time.
+- `part_mutations_in_queue` (`UInt32`) - The number of mutations waiting to be made.
+- `queue_oldest_time` (`DateTime`) - If `queue_size` greater than 0, shows when the oldest operation was added to the queue.
+- `inserts_oldest_time` (`DateTime`) - See `queue_oldest_time`
+- `merges_oldest_time` (`DateTime`) - See `queue_oldest_time`
+- `part_mutations_oldest_time` (`DateTime`) - See `queue_oldest_time`
 
 The next 4 columns have a non-zero value only where there is an active session with ZK.
 
-log_max_index:      Maximum entry number in the log of general activity.
-log_pointer:        Maximum entry number in the log of general activity that the replica copied to its execution queue, plus one.
-If log_pointer is much smaller than log_max_index, something is wrong.
-
-total_replicas:     The total number of known replicas of this table.
-active_replicas:    The number of replicas of this table that have a session in ZooKeeper (i.e., the number of functioning replicas).
-```
+- `log_max_index` (`UInt64`) - Maximum entry number in the log of general activity.
+- `log_pointer` (`UInt64`) - Maximum entry number in the log of general activity that the replica copied to its execution queue, plus one. If `log_pointer` is much smaller than `log_max_index`, something is wrong.
+- `last_queue_update` (`DateTime`) - When the queue was updated last time.
+- `absolute_delay` (`UInt64`) - How big lag in seconds the current replica has.
+- `total_replicas` (`UInt8`) - The total number of known replicas of this table.
+- `active_replicas` (`UInt8`) - The number of replicas of this table that have a session in ZooKeeper (i.e., the number of functioning replicas).
 
 If you request all the columns, the table may work a bit slowly, since several reads from ZooKeeper are made for each row.
 If you don't request the last 4 columns (log_max_index, log_pointer, total_replicas, active_replicas), the table works quickly.

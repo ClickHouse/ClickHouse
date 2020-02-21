@@ -196,14 +196,15 @@ MergeTreeData::MergeTreeData(
     {
         Poco::File(path).createDirectories();
         Poco::File(path + "detached").createDirectory();
-        if (Poco::File{path + "format_version.txt"}.exists())
+        auto current_version_file_path = path + "format_version.txt";
+        if (Poco::File{current_version_file_path}.exists())
         {
             if (!version_file_path.empty())
             {
-                LOG_ERROR(log, "Duplication of version file " << version_file_path << " and " << path << "format_file.txt");
+                LOG_ERROR(log, "Duplication of version file " << version_file_path << " and " << current_version_file_path);
                 throw Exception("Multiple format_version.txt file", ErrorCodes::CORRUPTED_DATA);
             }
-            version_file_path = path + "format_version.txt";
+            version_file_path = current_version_file_path;
         }
     }
 
