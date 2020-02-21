@@ -9,8 +9,6 @@
 namespace DB
 {
 
-NameSet removeDuplicateColumns(NamesAndTypesList & columns);
-
 class ASTFunction;
 class AnalyzedJoin;
 class Context;

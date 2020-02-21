@@ -1,5 +1,7 @@
 #pragma once
 
+#include <queue>
+
 #include <Core/Row.h>
 #include <Core/ColumnNumbers.h>
 #include <Common/AlignedBuffer.h>
@@ -84,7 +86,7 @@ private:
         void init(const char * function_name, const DataTypes & argument_types)
         {
             function = AggregateFunctionFactory::instance().get(function_name, argument_types);
-            add_function = function->getAddressOfAddFunctions().add;
+            add_function = function->getAddressOfAddFunction();
             state.reset(function->sizeOfData(), function->alignOfData());
         }
 
@@ -140,7 +142,7 @@ private:
     /** We support two different cursors - with Collation and without.
      *  Templates are used instead of polymorphic SortCursor and calls to virtual functions.
      */
-    void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
+    void merge(MutableColumns & merged_columns, SortingHeap<SortCursor> & queue);
 
     /// Insert the summed row for the current group into the result and updates some of per-block flags if the row is not "zero".
     void insertCurrentRowIfNeeded(MutableColumns & merged_columns);

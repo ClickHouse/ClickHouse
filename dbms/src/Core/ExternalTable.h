@@ -57,7 +57,7 @@ public:
     virtual void initReadBuffer() {}
 
     /// Get the table data - a pair (a stream with the contents of the table, the name of the table)
-    ExternalTableData getData(const Context & context);
+    ExternalTableDataPtr getData(const Context & context);
 
 protected:
     /// Clear all accumulated information
@@ -99,7 +99,7 @@ class ExternalTablesHandler : public Poco::Net::PartHandler, BaseExternalTable
 public:
     ExternalTablesHandler(Context & context_, const Poco::Net::NameValueCollection & params_) : context(context_), params(params_) {}
 
-    void handlePart(const Poco::Net::MessageHeader & header, std::istream & stream);
+    void handlePart(const Poco::Net::MessageHeader & header, std::istream & stream) override;
 
 private:
     Context & context;

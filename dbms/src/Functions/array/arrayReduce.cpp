@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -55,7 +55,7 @@ public:
 
 private:
     /// lazy initialization in getReturnTypeImpl
-    /// TODO: init in FunctionBuilder
+    /// TODO: init in OverloadResolver
     mutable AggregateFunctionPtr aggregate_function;
 };
 
@@ -167,7 +167,8 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
         }
         catch (...)
         {
-            agg_func.destroy(places[i]);
+            for (size_t j = 0; j < i; ++j)
+                agg_func.destroy(places[j]);
             throw;
         }
     }
@@ -183,8 +184,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
         while (auto func = typeid_cast<AggregateFunctionState *>(that))
             that = func->getNestedFunction().get();
 
-        that->getAddressOfAddFunctions().add_batch(
-            that, input_rows_count, places.data(), 0, aggregate_arguments, offsets->data(), arena.get());
+        that->addBatchArray(input_rows_count, places.data(), 0, aggregate_arguments, offsets->data(), arena.get());
     }
 
     for (size_t i = 0; i < input_rows_count; ++i)

@@ -13,8 +13,8 @@
     <meta property="og:description"
           content="ClickHouse is an open source column-oriented database management system that allows generating analytical data reports in real time using SQL queries."/>
     <meta property="og:type" content="website"/>
-    <meta property="og:url" content="https://clickhouse.yandex"/>
-    <meta property="og:image" content="https://clickhouse.yandex/images/logo.png"/>
+    <meta property="og:url" content="https://clickhouse.tech"/>
+    <meta property="og:image" content="https://clickhouse.tech/images/logo.png"/>
 
     <meta property="twitter:title" content="ClickHouse DBMS"/>
 
@@ -23,7 +23,7 @@
     <meta name="keywords"
           content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics" />
 
-    <link href="index.css" media="all" rel="stylesheet" />
+    <link href="index.css?{{ rev_short }}" media="all" rel="stylesheet" />
 </head>
 <body>
 <div id="navbar">
@@ -32,7 +32,7 @@
             <a class="menu_item" href="#quick-start">Quick Start</a>
             <a class="menu_item" href="#performance">Performance</a>
             <a class="menu_item" href="docs/en/">Documentation</a>
-            <a class="menu_item" href="blog/en/">Blog</a>
+            <a class="menu_item" href="https://clickhouse.yandex/blog/en/">Blog</a>
             <a class="menu_item" href="#contacts">Contacts</a>
         </div>
 
@@ -47,7 +47,7 @@
                     <path class="orange" d="M8,3.25 h1 v1.5 h-1 z"></path>
                 </svg>
 
-                ClickHouse
+                <img id="logo-text" src="images/clickhouse-black.svg?{{ rev_short }}" alt="ClickHouse" />
             </h1>
         </a>
     </div>
@@ -398,7 +398,7 @@
 
     <p>System requirements: Linux, x86_64 with SSE 4.2.</p>
 
-    <p>Install packages for <span class="distributive_selected" id="repo_deb">Ubuntu/Debian</span> or <span class="distributive_not_selected" id="repo_rpm">CentOS/RedHat</span>:</p>
+    <p>Install packages for <span class="distributive_selected" id="repo_deb">Ubuntu/Debian</span>, <span class="distributive_not_selected" id="repo_rpm">CentOS/RedHat</span> or <span class="distributive_not_selected" id="repo_tgz">other Linux</span>:</p>
 
     <code id="packages-install">
 <pre id="instruction_deb">
@@ -422,18 +422,40 @@ sudo yum install clickhouse-server clickhouse-client
 sudo /etc/init.d/clickhouse-server start
 clickhouse-client
 </pre>
+
+<pre id="instruction_tgz" style="display: none;">
+export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
+curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
+curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-server-$LATEST_VERSION.tgz
+curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-client-$LATEST_VERSION.tgz
+
+tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
+sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
+
+tar -xzvf clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+sudo clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh
+
+tar -xzvf clickhouse-server-$LATEST_VERSION.tgz
+sudo clickhouse-server-$LATEST_VERSION/install/doinst.sh
+sudo /etc/init.d/clickhouse-server start
+
+tar -xzvf clickhouse-client-$LATEST_VERSION.tgz
+sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
+</pre>
+
     </code>
 
     <p>For other operating systems the easiest way to get started is using
         <a href="https://hub.docker.com/r/yandex/clickhouse-server/" rel="external nofollow"
            target="_blank">
-            official Docker images of ClickHouse</a>, this is not the only <a href="https://clickhouse.yandex/docs/en/getting_started/">option</a> though.
-        Alternatively, you can easily get a running ClickHouse instance or cluster at 
+            official Docker images of ClickHouse</a>, this is not the only <a href="https://clickhouse.tech/docs/en/getting_started/">option</a> though.
+        Alternatively, you can easily get a running ClickHouse instance or cluster at
         <a href="https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link1" rel="external nofollow" target="_blank">
             Yandex Managed Service for ClickHouse</a>.
     </p>
 
-    <p>After you got connected to your ClickHouse server, you can proceed to <strong><a href="tutorial.html">tutorial</a></strong> or <strong><a href="docs/en/">full
+    <p>After you got connected to your ClickHouse server, you can proceed to <strong><a href="/docs/en/getting_started/tutorial/">tutorial</a></strong> or <strong><a href="docs/en/">full
         documentation</a></strong>.</p>
 
     <h2 id="contacts">Contacts</h2>
@@ -466,9 +488,9 @@ clickhouse-client
     </p>
 
     <h2>Like ClickHouse?</h2>
-    <p>Help to spread the word about it via <a rel="external nofollow" target="_blank" href="https://www.facebook.com/sharer.php?u=https://clickhouse.yandex">Facebook</a>,
-        <a rel="external nofollow" target="_blank" href="https://twitter.com/intent/tweet?url=https://clickhouse.yandex">Twitter</a> and
-        <a rel="external nofollow" target="_blank" href="https://www.linkedin.com/shareArticle?url=https://clickhouse.yandex">LinkedIn</a>!</p>
+    <p>Help to spread the word about it via <a rel="external nofollow" target="_blank" href="https://www.facebook.com/sharer.php?u=https://clickhouse.tech">Facebook</a>,
+        <a rel="external nofollow" target="_blank" href="https://twitter.com/intent/tweet?url=https://clickhouse.tech">Twitter</a> and
+        <a rel="external nofollow" target="_blank" href="https://www.linkedin.com/shareArticle?url=https://clickhouse.tech">LinkedIn</a>!</p>
 
     <p>Also hosting ClickHouse Meetups is very appreciated, <a href="https://forms.yandex.com/surveys/meet-yandex-clickhouse-team/" target="_blank" rel="external nofollow">fill this form</a>
         if you are interested and we'll get in touch.
@@ -479,7 +501,7 @@ clickhouse-client
         ClickHouse source code is published under Apache 2.0 License.</a> Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
         KIND, either express or implied.</p>
 
-    <p id="footer">&copy; 2016–2019 <a href="https://yandex.com/company/" rel="external nofollow">YANDEX</a> LLC</p>
+    <p id="footer">&copy; 2016–2020 <a href="https://yandex.com/company/" rel="external nofollow">Yandex LLC</a></p>
 
 </div>
 
@@ -507,15 +529,15 @@ clickhouse-client
                     line = line.split('](');
                     var tail = line[1].split(') ');
                     result.push(
-                        '<a class="announcement-link" rel="external nofollow" target="_blank" href="' + 
-                        tail[0] + '">' + line[0].replace('* [', '').replace('ClickHouse Meetup in ', '') + 
+                        '<a class="announcement-link" rel="external nofollow" target="_blank" href="' +
+                        tail[0] + '">' + line[0].replace('* [', '').replace('ClickHouse Meetup in ', '') +
                         '</a> ' + tail[1].slice(0, -1)
                     );
                 }
             });
             if (result.length) {
                 if (result.length == 1) {
-                    result = 'Upcoming Meetup: ' + result[0]; 
+                    result = 'Upcoming Meetup: ' + result[0];
                 } else {
                     result = 'Upcoming Meetups: ' + result.join(', ');
                     var offset = result.lastIndexOf(', ');
@@ -524,7 +546,7 @@ clickhouse-client
                 $('#announcement>.page').html(result);
             }
         });
-        var name = $('#main-title').text().trim().toLowerCase();
+        var name = $('#logo-text').attr('alt').trim().toLowerCase();
         var feedback_address = name + '-feedback' + '@yandex-team.com';
         var feedback_email = $('#feedback_email');
         feedback_email.attr('href', 'mailto:' + feedback_address);
@@ -545,11 +567,11 @@ clickhouse-client
         });
 
         var hostParts = window.location.host.split('.');
-        if (hostParts.length > 2 && hostParts[0] != 'test') {
+        if (hostParts.length > 2 && hostParts[0] != 'test' && hostParts[1] != 'github') {
             window.location.host = hostParts[0] + '.' + hostParts[1];
         }
 
-        var available_distributives = ['deb', 'rpm'];
+        var available_distributives = ['deb', 'rpm', 'tgz'];
         var selected_distributive = 'deb';
 
         function refresh_distributives() {

@@ -2,6 +2,7 @@
 #include <Common/config.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <Common/getFQDNOrHostName.h>
+#include <Common/CurrentMetrics.h>
 #include <Core/MySQLProtocol.h>
 #include "IServer.h"
 
@@ -9,9 +10,13 @@
 #include <Poco/Net/SecureStreamSocket.h>
 #endif
 
+namespace CurrentMetrics
+{
+    extern const Metric MySQLConnection;
+}
+
 namespace DB
 {
-
 /// Handler for MySQL wire protocol connections. Allows to connect to ClickHouse using MySQL client.
 class MySQLHandler : public Poco::Net::TCPServerConnection
 {
@@ -21,6 +26,8 @@ public:
     void run() final;
 
 private:
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::MySQLConnection};
+
     /// Enables SSL, if client requested.
     void finishHandshake(MySQLProtocol::HandshakeResponse &);
 
@@ -59,6 +66,9 @@ protected:
     std::shared_ptr<WriteBuffer> out;
 
     bool secure_connection = false;
+
+private:
+    static const String show_table_status_replacement_query;
 };
 
 #if USE_SSL && USE_POCO_NETSSL

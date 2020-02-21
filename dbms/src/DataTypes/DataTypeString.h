@@ -14,6 +14,10 @@ public:
     using FieldType = String;
     static constexpr bool is_parametric = false;
 
+    DataTypeString(const String & type_name_ = "String") : type_name(type_name_) {}
+
+    String doGetName() const override { return type_name; }
+
     const char * getFamilyName() const override
     {
         return "String";
@@ -63,6 +67,9 @@ public:
     bool isCategorial() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
+
+private:
+    const String type_name;
 };
 
 }

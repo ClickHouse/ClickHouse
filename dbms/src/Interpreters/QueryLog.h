@@ -54,13 +54,13 @@ struct QueryLogElement
 
     String query;
 
+    Int32 exception_code{}; // because ErrorCodes are int
     String exception;
     String stack_trace;
 
     ClientInfo client_info;
 
-    std::vector<UInt32> thread_numbers;
-    std::vector<UInt32> os_thread_ids;
+    std::vector<UInt64> thread_ids;
     std::shared_ptr<ProfileEvents::Counters> profile_counters;
     std::shared_ptr<Settings> query_settings;
 

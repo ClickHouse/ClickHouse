@@ -106,7 +106,9 @@ bool DataTypeUUID::equals(const IDataType & rhs) const
 
 void registerDataTypeUUID(DataTypeFactory & factory)
 {
-    factory.registerSimpleDataType("UUID", [] { return DataTypePtr(std::make_shared<DataTypeUUID>()); });
+    const auto & creator = [&] (const String & /*type_name*/) { return std::make_shared<DataTypeUUID>(); };
+
+    factory.registerSimpleDataType("UUID", creator);
 }
 
 }

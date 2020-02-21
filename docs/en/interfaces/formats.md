@@ -28,7 +28,9 @@ The supported formats are:
 | [PrettyNoEscapes](#prettynoescapes) | ✗ | ✔ |
 | [PrettySpace](#prettyspace) | ✗ | ✔ |
 | [Protobuf](#protobuf) | ✔ | ✔ |
+| [Avro](#data-format-avro) | ✔ | ✔ |
 | [Parquet](#data-format-parquet) | ✔ | ✔ |
+| [ORC](#data-format-orc) | ✔ | ✗ |
 | [RowBinary](#rowbinary) | ✔ | ✔ |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes) | ✔ | ✔ |
 | [Native](#native) | ✔ | ✔ |
@@ -97,9 +99,34 @@ The minimum set of characters that you need to escape when passing data in TabSe
 
 Only a small set of symbols are escaped. You can easily stumble onto a string value that your terminal will ruin in output.
 
-Arrays are written as a list of comma-separated values in square brackets. Number items in the array are fomratted as normally, but dates, dates with times, and strings are written in single quotes with the same escaping rules as above.
+Arrays are written as a list of comma-separated values in square brackets. Number items in the array are formatted as normally. `Date` and `DateTime` types are written in single quotes. Strings are written in single quotes with the same escaping rules as above.
 
 [NULL](../query_language/syntax.md) is formatted as `\N`.
+
+Each element of [Nested](../data_types/nested_data_structures/nested.md) structures is represented as array.
+
+For example:
+
+```sql
+CREATE TABLE nestedt
+(
+    `id` UInt8, 
+    `aux` Nested(
+        a UInt8, 
+        b String
+    )
+)
+ENGINE = TinyLog
+```
+```sql
+INSERT INTO nestedt Values ( 1, [1], ['a'])
+```
+```sql
+SELECT * FROM nestedt FORMAT TSV
+```
+```text
+1	[1]	['a']
+```
 
 ## TabSeparatedRaw {#tabseparatedraw}
 
@@ -917,6 +944,71 @@ ClickHouse inputs and outputs protobuf messages in the `length-delimited` format
 It means before every message should be written its length as a [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
 See also [how to read/write length-delimited protobuf messages in popular languages](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
 
+## Avro {#data-format-avro}
+
+[Apache Avro](http://avro.apache.org/) is a row-oriented data serialization framework developed within Apache's Hadoop project.
+
+ClickHouse Avro format supports reading and writing [Avro data files](http://avro.apache.org/docs/current/spec.html#Object+Container+Files).
+
+### Data Types Matching
+
+The table below shows supported data types and how they match ClickHouse [data types](../data_types/index.md) in `INSERT` and `SELECT` queries.
+
+| Avro data type `INSERT` | ClickHouse data type | Avro data type `SELECT` |
+| -------------------- | -------------------- | ------------------ |
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8\|16\|32\)](../data_types/int_uint.md), [UInt(8\|16\|32)](../data_types/int_uint.md) | `int` |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](../data_types/int_uint.md), [UInt64](../data_types/int_uint.md) | `long` |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](../data_types/float.md) | `float` |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](../data_types/float.md) | `double` |
+| `bytes`, `string`, `fixed`, `enum` | [String](../data_types/string.md) | `bytes` |
+| `bytes`, `string`, `fixed` | [FixedString(N)](../data_types/fixedstring.md) | `fixed(N)` |
+| `enum` | [Enum(8\|16)](../data_types/enum.md) | `enum` |
+| `array(T)` | [Array(T)](../data_types/array.md) | `array(T)` |
+| `union(null, T)`, `union(T, null)` | [Nullable(T)](../data_types/date.md) | `union(null, T)`|
+| `null` | [Nullable(Nothing)](../data_types/special_data_types/nothing.md) | `null` |
+| `int (date)` *  | [Date](../data_types/date.md) | `int (date)` * |
+| `long (timestamp-millis)` * | [DateTime64(3)](../data_types/datetime.md) | `long (timestamp-millis)` * |
+| `long (timestamp-micros)` * | [DateTime64(6)](../data_types/datetime.md) | `long (timestamp-micros)` * |
+
+\* [Avro logical types](http://avro.apache.org/docs/current/spec.html#Logical+Types)
+
+
+
+Unsupported Avro data types: `record` (non-root), `map`
+
+Unsupported Avro logical data types: `uuid`, `time-millis`, `time-micros`, `duration`
+
+### Inserting Data
+
+To insert data from an Avro file into ClickHouse table:
+
+```bash
+$ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avro"
+```
+
+The root schema of input Avro file must be of `record` type.
+
+To find the correspondence between table columns and fields of Avro schema ClickHouse compares their names. This comparison is case-sensitive.  
+Unused fields are skipped.
+
+Data types of a ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to corresponding column type.
+
+### Selecting Data
+
+To select data from ClickHouse table into an Avro file:
+
+```bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
+```
+
+Column names must:
+
+- start with `[A-Za-z_]`
+- subsequently contain only `[A-Za-z0-9_]`
+
+Output Avro file compression and sync interval can be configured with [output_format_avro_codec](../operations/settings/settings.md#settings-output_format_avro_codec) and [output_format_avro_sync_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) respectively.
+
+
 ## Parquet {#data-format-parquet}
 
 [Apache Parquet](http://parquet.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
@@ -954,16 +1046,57 @@ Data types of a ClickHouse table columns can differ from the corresponding field
 You can insert Parquet data from a file into ClickHouse table by the following command:
 
 ```bash
-cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
+$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
 
 You can select data from a ClickHouse table and save them into some file in the Parquet format by the following command:
 
-```sql
-clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
+```bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-To exchange data with the Hadoop, you can use [HDFS table engine](../operations/table_engines/hdfs.md).
+To exchange data with Hadoop, you can use [HDFS table engine](../operations/table_engines/hdfs.md).
+
+## ORC {#data-format-orc}
+
+[Apache ORC](https://orc.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. You can only insert data in this format to ClickHouse.
+
+### Data Types Matching
+
+The table below shows supported data types and how they match ClickHouse [data types](../data_types/index.md) in `INSERT` queries.
+
+| ORC data type (`INSERT`) | ClickHouse data type |
+| -------------------- | ------------------ |
+| `UINT8`, `BOOL` | [UInt8](../data_types/int_uint.md) |
+| `INT8` | [Int8](../data_types/int_uint.md) |
+| `UINT16` | [UInt16](../data_types/int_uint.md) |
+| `INT16` | [Int16](../data_types/int_uint.md) |
+| `UINT32` | [UInt32](../data_types/int_uint.md) |
+| `INT32` | [Int32](../data_types/int_uint.md) |
+| `UINT64` | [UInt64](../data_types/int_uint.md) |
+| `INT64` | [Int64](../data_types/int_uint.md) |
+| `FLOAT`, `HALF_FLOAT` | [Float32](../data_types/float.md) |
+| `DOUBLE` | [Float64](../data_types/float.md) |
+| `DATE32` | [Date](../data_types/date.md) |
+| `DATE64`, `TIMESTAMP` | [DateTime](../data_types/datetime.md) |
+| `STRING`, `BINARY` | [String](../data_types/string.md) |
+| `DECIMAL` | [Decimal](../data_types/decimal.md) |
+
+ClickHouse supports configurable precision of the `Decimal` type. The `INSERT` query treats the ORC `DECIMAL` type as the ClickHouse `Decimal128` type.
+
+Unsupported ORC data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+
+The data types of ClickHouse table columns don't have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
+
+### Inserting Data
+
+You can insert ORC data from a file into ClickHouse table by the following command:
+
+```bash
+$ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
+```
+
+To exchange data with Hadoop, you can use [HDFS table engine](../operations/table_engines/hdfs.md).
 
 ## Format Schema {#formatschema}
 
@@ -982,7 +1115,7 @@ If you input or output data via the [HTTP interface](../interfaces/http.md) the 
 should be located in the directory specified in [format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path)
 in the server configuration.
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/formats/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->
 
 ## Skipping Errors {#skippingerrors}
 

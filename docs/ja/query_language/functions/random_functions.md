@@ -1,0 +1,1 @@
+../../../en/query_language/functions/random_functions.md

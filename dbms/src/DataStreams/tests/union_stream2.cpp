@@ -15,6 +15,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/loadMetadata.h>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 
 using namespace DB;
@@ -36,10 +37,12 @@ try
     StoragePtr table = context.getTable("default", "hits6");
 
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
-    BlockInputStreams streams = table->read(column_names, {}, context, stage, settings.max_block_size, settings.max_threads);
+    auto pipes = table->read(column_names, {}, context, stage, settings.max_block_size, settings.max_threads);
+
+    BlockInputStreams streams(pipes.size());
 
     for (size_t i = 0, size = streams.size(); i < size; ++i)
-        streams[i] = std::make_shared<AsynchronousBlockInputStream>(streams[i]);
+        streams[i] = std::make_shared<AsynchronousBlockInputStream>(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipes[i])));
 
     BlockInputStreamPtr stream = std::make_shared<UnionBlockInputStream>(streams, nullptr, settings.max_threads);
     stream = std::make_shared<LimitBlockInputStream>(stream, 10, 0);
@@ -57,6 +60,6 @@ catch (const Exception & e)
     std::cerr << e.what() << ", " << e.displayText() << std::endl
         << std::endl
         << "Stack trace:" << std::endl
-        << e.getStackTrace().toString();
+        << e.getStackTraceString();
     return 1;
 }

@@ -92,6 +92,11 @@ public:
         chars.resize_fill(chars.size() + n);
     }
 
+    virtual void insertManyDefaults(size_t length) override
+    {
+        chars.resize_fill(chars.size() + n * length);
+    }
+
     void popBack(size_t elems) override
     {
         chars.resize_assume_reserved(chars.size() - n * elems);

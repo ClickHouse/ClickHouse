@@ -49,6 +49,7 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
 
     int open_flags = (flags_ == -1) ? O_RDONLY : flags_;
     open_flags |= O_DIRECT;
+    open_flags |= O_CLOEXEC;
 
     fd = ::open(filename.c_str(), open_flags);
     if (fd == -1)
@@ -149,7 +150,7 @@ bool ReadBufferAIO::nextImpl()
     return true;
 }
 
-off_t ReadBufferAIO::doSeek(off_t off, int whence)
+off_t ReadBufferAIO::seek(off_t off, int whence)
 {
     off_t new_pos_in_file;
 
@@ -163,17 +164,17 @@ off_t ReadBufferAIO::doSeek(off_t off, int whence)
     {
         if (off >= 0)
         {
-            if (off > (std::numeric_limits<off_t>::max() - getPositionInFile()))
+            if (off > (std::numeric_limits<off_t>::max() - getPosition()))
                 throw Exception("SEEK_CUR overflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         }
-        else if (off < -getPositionInFile())
+        else if (off < -getPosition())
             throw Exception("SEEK_CUR underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-        new_pos_in_file = getPositionInFile() + off;
+        new_pos_in_file = getPosition() + off;
     }
     else
         throw Exception("ReadBufferAIO::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-    if (new_pos_in_file != getPositionInFile())
+    if (new_pos_in_file != getPosition())
     {
         off_t first_read_pos_in_file = first_unread_pos_in_file - static_cast<off_t>(working_buffer.size());
         if (hasPendingData() && (new_pos_in_file >= first_read_pos_in_file) && (new_pos_in_file <= first_unread_pos_in_file))

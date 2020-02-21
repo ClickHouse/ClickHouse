@@ -28,4 +28,7 @@ private:
     UInt8 delta_bytes_size;
 };
 
+class CompressionCodecFactory;
+void registerCodecDelta(CompressionCodecFactory & factory);
+
 }

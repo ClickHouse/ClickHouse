@@ -7,6 +7,8 @@
 #include <Common/PODArray.h>
 #include <Core/Types.h>
 #include <Interpreters/Context.h>
+#include <Access/AccessControlManager.h>
+#include <Access/User.h>
 #include <IO/copyData.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -127,6 +129,14 @@ enum ColumnType
     MYSQL_TYPE_VAR_STRING = 0xfd,
     MYSQL_TYPE_STRING = 0xfe,
     MYSQL_TYPE_GEOMETRY = 0xff
+};
+
+
+// https://dev.mysql.com/doc/dev/mysql-server/latest/group__group__cs__column__definition__flags.html
+enum ColumnDefinitionFlags
+{
+    UNSIGNED_FLAG = 32,
+    BINARY_FLAG = 128
 };
 
 
@@ -824,19 +834,40 @@ protected:
     }
 };
 
+
+ColumnDefinition getColumnDefinition(const String & column_name, const TypeIndex index);
+
+
+namespace ProtocolText
+{
+
 class ResultsetRow : public WritePacket
 {
-    std::vector<String> columns;
+    const Columns & columns;
+    int row_num;
     size_t payload_size = 0;
+    std::vector<String> serialized;
 public:
-    ResultsetRow() = default;
-
-    void appendColumn(String && value)
+    ResultsetRow(const DataTypes & data_types, const Columns & columns_, int row_num_)
+        : columns(columns_)
+        , row_num(row_num_)
     {
-        payload_size += getLengthEncodedStringSize(value);
-        columns.emplace_back(std::move(value));
+        for (size_t i = 0; i < columns.size(); i++)
+        {
+            if (columns[i]->isNullAt(row_num))
+            {
+                payload_size += 1;
+                serialized.emplace_back("\xfb");
+            }
+            else
+            {
+                WriteBufferFromOwnString ostr;
+                data_types[i]->serializeAsText(*columns[i], row_num, ostr, FormatSettings());
+                payload_size += getLengthEncodedStringSize(ostr.str());
+                serialized.push_back(std::move(ostr.str()));
+            }
+        }
     }
-
 protected:
     size_t getPayloadSize() const override
     {
@@ -845,10 +876,17 @@ protected:
 
     void writePayloadImpl(WriteBuffer & buffer) const override
     {
-        for (const String & column : columns)
-            writeLengthEncodedString(column, buffer);
+        for (size_t i = 0; i < columns.size(); i++)
+        {
+            if (columns[i]->isNullAt(row_num))
+                buffer.write(serialized[i].data(), 1);
+            else
+                writeLengthEncodedString(serialized[i], buffer);
+        }
     }
 };
+
+}
 
 namespace Authentication
 {
@@ -915,12 +953,9 @@ public:
             throw Exception("Wrong size of auth response. Expected: " + std::to_string(Poco::SHA1Engine::DIGEST_SIZE) + " bytes, received: " + std::to_string(auth_response->size()) + " bytes.",
                             ErrorCodes::UNKNOWN_EXCEPTION);
 
-        auto user = context.getUser(user_name);
+        auto user = context.getAccessControlManager().getUser(user_name);
 
-        if (user->authentication.getType() != DB::Authentication::DOUBLE_SHA1_PASSWORD)
-            throw Exception("Cannot use " + getName() + " auth plugin for user " + user_name + " since its password isn't specified using double SHA1.", ErrorCodes::UNKNOWN_EXCEPTION);
-
-        Poco::SHA1Engine::Digest double_sha1_value = user->authentication.getPasswordHashBinary();
+        Poco::SHA1Engine::Digest double_sha1_value = user->authentication.getPasswordDoubleSHA1();
         assert(double_sha1_value.size() == Poco::SHA1Engine::DIGEST_SIZE);
 
         Poco::SHA1Engine engine;
@@ -997,6 +1032,7 @@ public:
             LOG_TRACE(log, "Authentication method match.");
         }
 
+        bool sent_public_key = false;
         if (auth_response == "\1")
         {
             LOG_TRACE(log, "Client requests public key.");
@@ -1007,13 +1043,17 @@ public:
                 throw Exception("Failed to write public key to memory. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
             }
             char * pem_buf = nullptr;
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wold-style-cast"
             long pem_size = BIO_get_mem_data(mem, &pem_buf);
+#    pragma GCC diagnostic pop
             String pem(pem_buf, pem_size);
 
             LOG_TRACE(log, "Key: " << pem);
 
             AuthMoreData data(pem);
             packet_sender->sendPacket(data, true);
+            sent_public_key = true;
 
             AuthSwitchResponse response;
             packet_sender->receivePacket(response);
@@ -1033,13 +1073,15 @@ public:
          */
         if (!is_secure_connection && !auth_response->empty() && auth_response != String("\0", 1))
         {
-            LOG_TRACE(log, "Received nonempty password");
+            LOG_TRACE(log, "Received nonempty password.");
             auto ciphertext = reinterpret_cast<unsigned char *>(auth_response->data());
 
             unsigned char plaintext[RSA_size(&private_key)];
             int plaintext_size = RSA_private_decrypt(auth_response->size(), ciphertext, plaintext, &private_key, RSA_PKCS1_OAEP_PADDING);
             if (plaintext_size == -1)
             {
+                if (!sent_public_key)
+                    LOG_WARNING(log, "Client could have encrypted password with different public key since it didn't request it from server.");
                 throw Exception("Failed to decrypt auth data. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
             }
 

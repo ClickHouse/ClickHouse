@@ -146,6 +146,15 @@ public:
         throw Exception("AST subtree not found in children", ErrorCodes::LOGICAL_ERROR);
     }
 
+    template <typename T>
+    void setOrReplace(T * & field, const ASTPtr & child)
+    {
+        if (field)
+            replace(field, child);
+        else
+            set(field, child);
+    }
+
     /// Convert to a string.
 
     /// Format settings.

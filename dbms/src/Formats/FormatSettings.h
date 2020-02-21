@@ -29,6 +29,7 @@ struct FormatSettings
         bool allow_double_quotes = true;
         bool unquoted_null_literal_as_null = false;
         bool empty_as_default = false;
+        bool crlf_end_of_line = false;
     };
 
     CSV csv;
@@ -63,6 +64,7 @@ struct FormatSettings
     struct TSV
     {
         bool empty_as_default = false;
+        bool crlf_end_of_line = false;
     };
 
     TSV tsv;
@@ -88,6 +90,37 @@ struct FormatSettings
     {
         UInt64 row_group_size = 1000000;
     } parquet;
+
+    struct Schema
+    {
+        std::string format_schema;
+        std::string format_schema_path;
+        bool is_server = false;
+    };
+
+    Schema schema;
+
+    struct Custom
+    {
+        std::string result_before_delimiter;
+        std::string result_after_delimiter;
+        std::string row_before_delimiter;
+        std::string row_after_delimiter;
+        std::string row_between_delimiter;
+        std::string field_delimiter;
+        std::string escaping_rule;
+    };
+
+    Custom custom;
+
+    struct Avro
+    {
+        String schema_registry_url;
+        String output_codec;
+        UInt64 output_sync_interval = 16 * 1024;
+    };
+
+    Avro avro;
 
 };
 

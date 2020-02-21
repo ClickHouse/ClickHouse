@@ -391,4 +391,4 @@ SELECT OriginCityName, count() AS c FROM ontime GROUP BY OriginCityName ORDER BY
 
 </div>
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/getting_started/example_datasets/ontime/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/getting_started/example_datasets/ontime/) <!--hide-->

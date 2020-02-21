@@ -6,6 +6,7 @@
 #include <Processors/ISource.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 
+
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationMerge;
@@ -14,23 +15,36 @@ namespace ProfileEvents
 namespace DB
 {
 
-/// Convert block to chunk.
-/// Adds additional info about aggregation.
-static Chunk convertToChunk(const Block & block)
-{
-    auto info = std::make_shared<AggregatedChunkInfo>();
-    info->bucket_num = block.info.bucket_num;
-    info->is_overflows = block.info.is_overflows;
-
-    UInt64 num_rows = block.rows();
-    Chunk chunk(block.getColumns(), num_rows);
-    chunk.setChunkInfo(std::move(info));
-
-    return chunk;
-}
-
 namespace
 {
+    /// Convert block to chunk.
+    /// Adds additional info about aggregation.
+    Chunk convertToChunk(const Block & block)
+    {
+        auto info = std::make_shared<AggregatedChunkInfo>();
+        info->bucket_num = block.info.bucket_num;
+        info->is_overflows = block.info.is_overflows;
+
+        UInt64 num_rows = block.rows();
+        Chunk chunk(block.getColumns(), num_rows);
+        chunk.setChunkInfo(std::move(info));
+
+        return chunk;
+    }
+
+    const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
+    {
+        auto & info = chunk.getChunkInfo();
+        if (!info)
+            throw Exception("Chunk info was not set for chunk.", ErrorCodes::LOGICAL_ERROR);
+
+        auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+        if (!agg_info)
+            throw Exception("Chunk should have AggregatedChunkInfo.", ErrorCodes::LOGICAL_ERROR);
+
+        return agg_info;
+    }
+
     /// Reads chunks from file in native format. Provide chunks with aggregation info.
     class SourceFromNativeStream : public ISource
     {
@@ -72,15 +86,32 @@ namespace
 class ConvertingAggregatedToChunksSource : public ISource
 {
 public:
+    static constexpr UInt32 NUM_BUCKETS = 256;
+
+    struct SharedData
+    {
+        std::atomic<UInt32> next_bucket_to_merge = 0;
+        std::array<std::atomic<bool>, NUM_BUCKETS> is_bucket_processed;
+        std::atomic<bool> is_cancelled = false;
+
+        SharedData()
+        {
+            for (auto & flag : is_bucket_processed)
+                flag = false;
+        }
+    };
+
+    using SharedDataPtr = std::shared_ptr<SharedData>;
+
     ConvertingAggregatedToChunksSource(
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataVariantsPtr data_,
-        Arena * arena_,
-        std::shared_ptr<std::atomic<UInt32>> next_bucket_to_merge_)
+        SharedDataPtr shared_data_,
+        Arena * arena_)
         : ISource(params_->getHeader())
         , params(std::move(params_))
         , data(std::move(data_))
-        , next_bucket_to_merge(std::move(next_bucket_to_merge_))
+        , shared_data(std::move(shared_data_))
         , arena(arena_)
         {}
 
@@ -89,23 +120,24 @@ public:
 protected:
     Chunk generate() override
     {
-        UInt32 bucket_num = next_bucket_to_merge->fetch_add(1);
+        UInt32 bucket_num = shared_data->next_bucket_to_merge.fetch_add(1);
 
         if (bucket_num >= NUM_BUCKETS)
             return {};
 
-        Block block = params->aggregator.mergeAndConvertOneBucketToBlock(*data, arena, params->final, bucket_num);
+        Block block = params->aggregator.mergeAndConvertOneBucketToBlock(*data, arena, params->final, bucket_num, &shared_data->is_cancelled);
+        Chunk chunk = convertToChunk(block);
 
-        return convertToChunk(block);
+        shared_data->is_bucket_processed[bucket_num] = true;
+
+        return chunk;
     }
 
 private:
     AggregatingTransformParamsPtr params;
     ManyAggregatedDataVariantsPtr data;
-    std::shared_ptr<std::atomic<UInt32>> next_bucket_to_merge;
+    SharedDataPtr shared_data;
     Arena * arena;
-
-    static constexpr UInt32 NUM_BUCKETS = 256;
 };
 
 /// Generates chunks with aggregated data.
@@ -159,6 +191,7 @@ public:
             auto & out = source->getOutputs().front();
             inputs.emplace_back(out.getHeader(), this);
             connect(out, inputs.back());
+            inputs.back().setNeeded();
         }
 
         return std::move(processors);
@@ -176,7 +209,15 @@ public:
 
         /// Check can output.
         if (output.isFinished())
+        {
+            for (auto & input : inputs)
+                input.close();
+
+            if (shared_data)
+                shared_data->is_cancelled.store(true);
+
             return Status::Finished;
+        }
 
         if (!output.canPush())
             return Status::PortFull;
@@ -195,7 +236,7 @@ public:
             return Status::Ready;
 
         /// Two-level case.
-        return preparePullFromInputs();
+        return prepareTwoLevel();
     }
 
 private:
@@ -215,38 +256,44 @@ private:
     }
 
     /// Read all sources and try to push current bucket.
-    IProcessor::Status preparePullFromInputs()
+    IProcessor::Status prepareTwoLevel()
     {
-        bool all_inputs_are_finished = true;
+        auto & output = outputs.front();
 
         for (auto & input : inputs)
         {
-            if (input.isFinished())
-                continue;
-
-            all_inputs_are_finished = false;
-
-            input.setNeeded();
-
-            if (input.hasData())
-                ready_chunks.emplace_back(input.pull());
+            if (!input.isFinished() && input.hasData())
+            {
+                auto chunk = input.pull();
+                auto bucket = getInfoFromChunk(chunk)->bucket_num;
+                chunks[bucket] = std::move(chunk);
+            }
         }
 
-        moveReadyChunksToMap();
+        if (!shared_data->is_bucket_processed[current_bucket_num])
+            return Status::NeedData;
 
-        if (trySetCurrentChunkFromCurrentBucket())
-            return preparePushToOutput();
+        if (!chunks[current_bucket_num])
+            return Status::NeedData;
 
-        if (all_inputs_are_finished)
-            throw Exception("All sources have finished before getting enough data in "
-                            "ConvertingAggregatedToChunksTransform.", ErrorCodes::LOGICAL_ERROR);
+        output.push(std::move(chunks[current_bucket_num]));
 
-        return Status::NeedData;
+        ++current_bucket_num;
+        if (current_bucket_num == NUM_BUCKETS)
+        {
+            output.finish();
+            /// Do not close inputs, they must be finished.
+            return Status::Finished;
+        }
+
+        return Status::PortFull;
     }
 
 private:
     AggregatingTransformParamsPtr params;
     ManyAggregatedDataVariantsPtr data;
+    ConvertingAggregatedToChunksSource::SharedDataPtr shared_data;
+
     size_t num_threads;
 
     bool is_initialized = false;
@@ -254,48 +301,12 @@ private:
     bool finished = false;
 
     Chunk current_chunk;
-    Chunks ready_chunks;
 
     UInt32 current_bucket_num = 0;
     static constexpr Int32 NUM_BUCKETS = 256;
-    std::map<UInt32, Chunk> bucket_to_chunk;
+    std::array<Chunk, NUM_BUCKETS> chunks;
 
     Processors processors;
-
-    static Int32 getBucketFromChunk(const Chunk & chunk)
-    {
-        auto & info = chunk.getChunkInfo();
-        if (!info)
-            throw Exception("Chunk info was not set for chunk in "
-                            "ConvertingAggregatedToChunksTransform.", ErrorCodes::LOGICAL_ERROR);
-
-        auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
-        if (!agg_info)
-            throw Exception("Chunk should have AggregatedChunkInfo in "
-                            "ConvertingAggregatedToChunksTransform.", ErrorCodes::LOGICAL_ERROR);
-
-        return agg_info->bucket_num;
-    }
-
-    void moveReadyChunksToMap()
-    {
-        for (auto & chunk : ready_chunks)
-        {
-            auto bucket = getBucketFromChunk(chunk);
-
-            if (bucket < 0 || bucket >= NUM_BUCKETS)
-                throw Exception("Invalid bucket number " + toString(bucket) + " in "
-                                "ConvertingAggregatedToChunksTransform.", ErrorCodes::LOGICAL_ERROR);
-
-            if (bucket_to_chunk.count(bucket))
-                throw Exception("Found several chunks with the same bucket number in "
-                                "ConvertingAggregatedToChunksTransform.", ErrorCodes::LOGICAL_ERROR);
-
-            bucket_to_chunk[bucket] = std::move(chunk);
-        }
-
-        ready_chunks.clear();
-    }
 
     void setCurrentChunk(Chunk chunk)
     {
@@ -361,33 +372,16 @@ private:
     void createSources()
     {
         AggregatedDataVariantsPtr & first = data->at(0);
-        auto next_bucket_to_merge = std::make_shared<std::atomic<UInt32>>(0);
+        shared_data = std::make_shared<ConvertingAggregatedToChunksSource::SharedData>();
 
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
             Arena * arena = first->aggregates_pools.at(thread).get();
             auto source = std::make_shared<ConvertingAggregatedToChunksSource>(
-                    params, data, arena, next_bucket_to_merge);
+                    params, data, shared_data, arena);
 
             processors.emplace_back(std::move(source));
         }
-    }
-
-    bool trySetCurrentChunkFromCurrentBucket()
-    {
-        auto it = bucket_to_chunk.find(current_bucket_num);
-        if (it != bucket_to_chunk.end())
-        {
-            setCurrentChunk(std::move(it->second));
-            ++current_bucket_num;
-
-            if (current_bucket_num == NUM_BUCKETS)
-                finished = true;
-
-            return true;
-        }
-
-        return false;
     }
 };
 
@@ -458,11 +452,16 @@ IProcessor::Status AggregatingTransform::prepare()
         }
     }
 
-    input.setNeeded();
     if (!input.hasData())
+    {
+        input.setNeeded();
         return Status::NeedData;
+    }
 
-    current_chunk = input.pull();
+    if (is_consume_finished)
+        input.setNeeded();
+
+    current_chunk = input.pull(/*set_not_needed = */ !is_consume_finished);
     read_current_chunk = true;
 
     if (is_consume_finished)

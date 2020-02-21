@@ -22,7 +22,8 @@ using namespace DB;
 
 static bool registered = false;
 /// For debug
-std::string configurationToString(const DictionaryConfigurationPtr & config)
+#pragma GCC diagnostic ignored "-Wunused-function"
+static std::string configurationToString(const DictionaryConfigurationPtr & config)
 {
     const Poco::Util::XMLConfiguration * xml_config = dynamic_cast<const Poco::Util::XMLConfiguration *>(config.get());
     std::ostringstream oss;
@@ -56,15 +57,19 @@ TEST(ConvertDictionaryAST, SimpleDictConfiguration)
     DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create);
 
     /// name
-    EXPECT_EQ(config->getString("dictionary.name"), "test.dict1");
+    EXPECT_EQ(config->getString("dictionary.database"), "test");
+    EXPECT_EQ(config->getString("dictionary.name"), "dict1");
 
     /// lifetime
     EXPECT_EQ(config->getInt("dictionary.lifetime.min"), 1);
     EXPECT_EQ(config->getInt("dictionary.lifetime.max"), 10);
 
     /// range
-    EXPECT_EQ(config->getString("dictionary.structure.range_min"), "second_column");
-    EXPECT_EQ(config->getString("dictionary.structure.range_max"), "third_column");
+    EXPECT_EQ(config->getString("dictionary.structure.range_min.name"), "second_column");
+    EXPECT_EQ(config->getString("dictionary.structure.range_max.name"), "third_column");
+    EXPECT_EQ(config->getString("dictionary.structure.range_min.type"), "UInt8");
+    EXPECT_EQ(config->getString("dictionary.structure.range_max.type"), "UInt8");
+
 
     /// source
     EXPECT_EQ(config->getString("dictionary.source.clickhouse.host"), "localhost");

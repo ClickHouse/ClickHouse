@@ -1,12 +1,30 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <DataTypes/DataTypeNumberBase.h>
-
 
 class DateLUTImpl;
 
 namespace DB
 {
+
+/** Mixin-class that manages timezone info for timezone-aware DateTime implementations
+ *
+ * Must be used as a (second) base for class implementing IDateType-interface.
+ */
+class TimezoneMixin
+{
+public:
+    explicit TimezoneMixin(const String & time_zone_name = "");
+    TimezoneMixin(const TimezoneMixin &) = default;
+
+    const DateLUTImpl & getTimeZone() const { return time_zone; }
+
+protected:
+    bool has_explicit_time_zone;
+    const DateLUTImpl & time_zone;
+    const DateLUTImpl & utc_time_zone;
+};
 
 /** DateTime stores time as unix timestamp.
   * The value itself is independent of time zone.
@@ -15,7 +33,7 @@ namespace DB
   * In text format it is serialized to and parsed from YYYY-MM-DD hh:mm:ss format.
   * The text format is dependent of time zone.
   *
-  * To convert from/to text format, time zone may be specified explicitly or implicit time zone may be used.
+  * To cast from/to text format, time zone may be specified explicitly or implicit time zone may be used.
   *
   * Time zone may be specified explicitly as type parameter, example: DateTime('Europe/Moscow').
   * As it does not affect the internal representation of values,
@@ -28,13 +46,16 @@ namespace DB
   * Server time zone is the time zone specified in 'timezone' parameter in configuration file,
   *  or system time zone at the moment of server startup.
   */
-class DataTypeDateTime final : public DataTypeNumberBase<UInt32>
+class DataTypeDateTime final : public DataTypeNumberBase<UInt32>, public TimezoneMixin
 {
 public:
-    DataTypeDateTime(const std::string & time_zone_name = "");
+    explicit DataTypeDateTime(const String & time_zone_name = "", const String & type_name_ = "DateTime");
+    explicit DataTypeDateTime(const TimezoneMixin & time_zone);
 
-    const char * getFamilyName() const override { return "DateTime"; }
-    std::string doGetName() const override;
+    static constexpr auto family_name = "DateTime";
+
+    const char * getFamilyName() const override { return family_name; }
+    String doGetName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::DateTime; }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
@@ -54,13 +75,9 @@ public:
     bool canBeInsideNullable() const override { return true; }
 
     bool equals(const IDataType & rhs) const override;
-
-    const DateLUTImpl & getTimeZone() const { return time_zone; }
-
 private:
-    bool has_explicit_time_zone;
-    const DateLUTImpl & time_zone;
-    const DateLUTImpl & utc_time_zone;
+    const String type_name;
 };
 
 }
+

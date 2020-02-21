@@ -5,6 +5,7 @@
 #include <Common/TaskStatsInfoGetter.h>
 #include <Poco/File.h>
 #include <Common/Stopwatch.h>
+#include <common/getThreadId.h>
 #include <IO/WriteBufferFromString.h>
 #include <linux/taskstats.h>
 #include <sys/time.h>
@@ -15,7 +16,7 @@
 std::mutex mutex;
 
 
-std::ostream & operator << (std::ostream & stream, const ::taskstats & stat)
+static std::ostream & operator << (std::ostream & stream, const ::taskstats & stat)
 {
 #define PRINT(field) (stream << #field << " " << stat.field)
 
@@ -44,10 +45,10 @@ std::ostream & operator << (std::ostream & stream, const ::taskstats & stat)
 using namespace DB;
 
 
-void do_io(size_t id)
+static void do_io(size_t id)
 {
     ::taskstats stat;
-    int tid = TaskStatsInfoGetter::getCurrentTID();
+    int tid = getThreadId();
     TaskStatsInfoGetter get_info;
 
     get_info.getStat(stat, tid);
@@ -99,11 +100,11 @@ void do_io(size_t id)
     Poco::File(path_dst).remove(false);
 }
 
-void test_perf()
+static void test_perf()
 {
 
     ::taskstats stat;
-    int tid = TaskStatsInfoGetter::getCurrentTID();
+    int tid = getThreadId();
     TaskStatsInfoGetter get_info;
 
     rusage rusage;

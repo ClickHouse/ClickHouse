@@ -8,6 +8,11 @@ using namespace DB;
 
 TEST(Common, makeRegexpPatternFromGlobs)
 {
+    EXPECT_EQ(makeRegexpPatternFromGlobs("?"), "[^/]");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("*"), "[^/]*");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("/?"), "/[^/]");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("/*"), "/[^/]*");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("*_{{a,b,c,d}}/?.csv"), "[^/]*_\\{(a|b|c|d)\\}/[^/]\\.csv");
     EXPECT_EQ(makeRegexpPatternFromGlobs("f{01..09}"), "f(1|2|3|4|5|6|7|8|9)");
     EXPECT_EQ(makeRegexpPatternFromGlobs("f{01..9}"), "f(1|2|3|4|5|6|7|8|9)");
     EXPECT_EQ(makeRegexpPatternFromGlobs("f{0001..0000009}"), "f(1|2|3|4|5|6|7|8|9)");

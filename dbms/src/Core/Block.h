@@ -147,6 +147,14 @@ using BlocksList = std::list<Block>;
 using BlocksPtr = std::shared_ptr<Blocks>;
 using BlocksPtrs = std::shared_ptr<std::vector<BlocksPtr>>;
 
+/// Extends block with extra data in derived classes
+struct ExtraBlock
+{
+    Block block;
+};
+
+using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
+
 /// Compare number of columns, data types, column types, column names, and values of constant columns.
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
 

@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
@@ -113,7 +113,7 @@ private:
                 offsets_to[i] = buf_to.count();
             }
 
-            buf_to.finish();
+            buf_to.finalize();
             block.getByPosition(result).column = std::move(col_to);
         }
         else
@@ -192,7 +192,7 @@ private:
                 offsets_to[i] = buf_to.count();
             }
 
-            buf_to.finish();
+            buf_to.finalize();
             block.getByPosition(result).column = std::move(col_to);
             return true;
         }

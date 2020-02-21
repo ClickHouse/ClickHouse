@@ -24,15 +24,13 @@ class StorageDictionary : public ext::shared_ptr_helper<StorageDictionary>, publ
     friend struct ext::shared_ptr_helper<StorageDictionary>;
 public:
     std::string getName() const override { return "Dictionary"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
-    BlockInputStreams read(const Names & column_names,
+    Pipes read(const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1) override;
+        size_t max_block_size,
+        unsigned threads) override;
 
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
 
@@ -59,8 +57,6 @@ public:
 private:
     using Ptr = MultiVersion<IDictionaryBase>::Version;
 
-    String table_name;
-    String database_name;
     String dictionary_name;
     Poco::Logger * logger;
 
@@ -68,8 +64,7 @@ private:
 
 protected:
     StorageDictionary(
-        const String & database_name_,
-        const String & table_name_,
+        const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const Context & context,
         bool attach,

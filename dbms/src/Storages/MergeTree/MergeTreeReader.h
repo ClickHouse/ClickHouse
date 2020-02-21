@@ -2,7 +2,6 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
-#include <port/clock.h>
 
 
 namespace DB
@@ -28,6 +27,7 @@ public:
         const MergeTreeData & storage_,
         MarkRanges all_mark_ranges_,
         size_t aio_threshold_,
+        size_t mmap_threshold_,
         size_t max_read_buffer_size_,
         ValueSizeMap avg_value_size_hints_ = ValueSizeMap{},
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = ReadBufferFromFileBase::ProfileCallback{},
@@ -56,7 +56,7 @@ public:
 
     size_t getFirstMarkToRead() const
     {
-        return all_mark_ranges.back().begin;
+        return all_mark_ranges.front().begin;
     }
 private:
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
@@ -81,6 +81,7 @@ private:
     const MergeTreeData & storage;
     MarkRanges all_mark_ranges;
     size_t aio_threshold;
+    size_t mmap_threshold;
     size_t max_read_buffer_size;
 
     void addStreams(const String & name, const IDataType & type,
