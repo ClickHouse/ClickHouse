@@ -44,7 +44,8 @@ const FinalCell * GridRoot::find(Float64 x, Float64 y) const
 std::unique_ptr<ICell> GridRoot::makeCell(Float64 current_min_x, Float64 current_min_y, Float64 current_max_x, Float64 current_max_y, std::vector<size_t> possible_ids, size_t depth)
 {
     auto current_box = Box(Point(current_min_x, current_min_y), Point(current_max_x, current_max_y));
-    possible_ids.erase(std::remove_if(possible_ids.begin(), possible_ids.end(), [&](const auto & id) {
+    possible_ids.erase(std::remove_if(possible_ids.begin(), possible_ids.end(), [&](const auto & id)
+    {
         return !bg::intersects(current_box, polygons[id]);
     }), possible_ids.end());
     if (possible_ids.size() <= kMinIntersections || depth++ == kMaxDepth)
@@ -68,8 +69,10 @@ std::unique_ptr<ICell> GridRoot::makeCell(Float64 current_min_x, Float64 current
 void GridRoot::setBoundingBox()
 {
     bool first = true;
-    std::for_each(polygons.begin(), polygons.end(), [&](const auto & polygon) {
-        bg::for_each_point(polygon, [&](const Point & point) {
+    std::for_each(polygons.begin(), polygons.end(), [&](const auto & polygon)
+    {
+        bg::for_each_point(polygon, [&](const Point & point)
+        {
             auto x = point.get<0>();
             auto y = point.get<1>();
             if (first || x < min_x)
