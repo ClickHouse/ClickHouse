@@ -14,7 +14,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <syscall.h>
 #include <linux/genetlink.h>
 #include <linux/netlink.h>
 #include <linux/taskstats.h>
@@ -287,13 +286,6 @@ void TaskStatsInfoGetter::getStat(::taskstats & out_stats, pid_t tid)
 }
 
 
-pid_t TaskStatsInfoGetter::getCurrentTID()
-{
-    /// This call is always successful. - man gettid
-    return static_cast<pid_t>(syscall(SYS_gettid));
-}
-
-
 TaskStatsInfoGetter::~TaskStatsInfoGetter()
 {
     if (netlink_socket_fd >= 0)
@@ -326,11 +318,6 @@ TaskStatsInfoGetter::TaskStatsInfoGetter()
 
 void TaskStatsInfoGetter::getStat(::taskstats &, pid_t)
 {
-}
-
-pid_t TaskStatsInfoGetter::getCurrentTID()
-{
-    return 0;
 }
 
 TaskStatsInfoGetter::~TaskStatsInfoGetter()

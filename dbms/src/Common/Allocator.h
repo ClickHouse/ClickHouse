@@ -30,6 +30,8 @@
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 
+#include <Common/Allocator_fwd.h>
+
 
 /// Required for older Darwin builds, that lack definition of MAP_ANONYMOUS
 #ifndef MAP_ANONYMOUS
@@ -48,16 +50,21 @@
   *
   * P.S. This is also required, because tcmalloc can not allocate a chunk of
   * memory greater than 16 GB.
+  *
+  * P.P.S. Note that MMAP_THRESHOLD symbol is intentionally made weak. It allows
+  * to override it during linkage when using ClickHouse as a library in
+  * third-party applications which may already use own allocator doing mmaps
+  * in the implementation of alloc/realloc.
   */
 #ifdef NDEBUG
-    static constexpr size_t MMAP_THRESHOLD = 64 * (1ULL << 20);
+    __attribute__((__weak__)) extern const size_t MMAP_THRESHOLD = 64 * (1ULL << 20);
 #else
     /**
       * In debug build, use small mmap threshold to reproduce more memory
       * stomping bugs. Along with ASLR it will hopefully detect more issues than
       * ASan. The program may fail due to the limit on number of memory mappings.
       */
-    static constexpr size_t MMAP_THRESHOLD = 4096;
+    __attribute__((__weak__)) extern const size_t MMAP_THRESHOLD = 4096;
 #endif
 
 static constexpr size_t MMAP_MIN_ALIGNMENT = 4096;
@@ -84,7 +91,7 @@ namespace ErrorCodes
   * - random hint address for mmap
   * - mmap_threshold for using mmap less or more
   */
-template <bool clear_memory_, bool mmap_populate = false>
+template <bool clear_memory_, bool mmap_populate>
 class Allocator
 {
 public:
@@ -270,7 +277,7 @@ private:
 
 /** Allocator with optimization to place small memory ranges in automatic memory.
   */
-template <typename Base, size_t N = 64, size_t Alignment = 1>
+template <typename Base, size_t N, size_t Alignment>
 class AllocatorWithStackMemory : private Base
 {
 private:

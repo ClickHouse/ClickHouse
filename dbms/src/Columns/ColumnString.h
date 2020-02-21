@@ -4,6 +4,7 @@
 #include <cassert>
 
 #include <Columns/IColumn.h>
+#include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/memcpySmall.h>
@@ -202,6 +203,13 @@ public:
     {
         chars.push_back(0);
         offsets.push_back(offsets.back() + 1);
+    }
+
+    virtual void insertManyDefaults(size_t length) override
+    {
+        chars.resize_fill(chars.size() + length);
+        for (size_t i = 0; i < length; ++i)
+            offsets.push_back(offsets.back() + 1);
     }
 
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override

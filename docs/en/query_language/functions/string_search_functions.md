@@ -2,7 +2,7 @@
 
 The search is case-sensitive by default in all these functions. There are separate variants for case insensitive search.
 
-## position(haystack, needle), locate(haystack, needle)
+## position(haystack, needle), locate(haystack, needle) {#position}
 
 Search for the substring `needle` in the string `haystack`.
 Returns the position (in bytes) of the found substring, starting from 1, or returns 0 if the substring was not found.
@@ -15,13 +15,52 @@ The same as `position`, but the position is returned in Unicode code points. Wor
 
 For a case-insensitive search, use the function `positionCaseInsensitiveUTF8`.
 
-## multiSearchAllPositions(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
+## multiSearchAllPositions {#multiSearchAllPositions}
 
-The same as `position`, but returns `Array` of the `position`s for all needle<sub>i</sub>.
+The same as [position](string_search_functions.md#position) but returns `Array` of positions (in bytes) of the found corresponding substrings in the string. Positions are indexed starting from 1.
 
-For a case-insensitive search or/and in UTF-8 format use functions `multiSearchAllPositionsCaseInsensitive, multiSearchAllPositionsUTF8, multiSearchAllPositionsCaseInsensitiveUTF8`.
+The search is performed on sequences of bytes without respect to string encoding and collation.
 
-## multiSearchFirstPosition(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
+- For case-insensitive ASCII search, use the function `multiSearchAllPositionsCaseInsensitive`.
+- For search in UTF-8, use the function [multiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
+- For case-insensitive UTF-8 search, use the function multiSearchAllPositionsCaseInsensitiveUTF8.
+
+**Syntax** 
+
+```sql
+multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
+```
+
+**Parameters**
+
+- `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
+- `needle` —  substring to be searched. [String](../syntax.md#syntax-string-literal).
+
+**Returned values**
+
+- Array of starting positions in bytes (counting from 1), if the corresponding substring was found and 0 if not found.
+
+**Example**
+
+Query:
+
+```sql
+SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])
+```
+
+Result:
+
+```text
+┌─multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])─┐
+│ [0,13,0]                                                          │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+## multiSearchAllPositionsUTF8 {#multiSearchAllPositionsUTF8}
+
+See `multiSearchAllPositions`.
+
+## multiSearchFirstPosition(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>]) {#multiSearchFirstPosition}
 
 The same as `position` but returns the leftmost offset of the string `haystack` that is matched to some of the needles.
 
@@ -64,6 +103,10 @@ The same as `match`, but returns 0 if none of the regular expressions are matche
 
 The same as `multiMatchAny`, but returns any index that matches the haystack.
 
+## multiMatchAllIndices(haystack, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
+
+The same as `multiMatchAny`, but returns the array of all indicies that match the haystack in any order.
+
 ## multiFuzzyMatchAny(haystack, distance, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
 
 The same as `multiMatchAny`, but returns 1 if any pattern matches the haystack within a constant [edit distance](https://en.wikipedia.org/wiki/Edit_distance). This function is also in an experimental mode and can be extremely slow. For more information see [hyperscan documentation](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching).
@@ -71,6 +114,10 @@ The same as `multiMatchAny`, but returns 1 if any pattern matches the haystack w
 ## multiFuzzyMatchAnyIndex(haystack, distance, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
 
 The same as `multiFuzzyMatchAny`, but returns any index that matches the haystack within a constant edit distance.
+
+## multiFuzzyMatchAllIndices(haystack, distance, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
+
+The same as `multiFuzzyMatchAny`, but returns the array of all indices in any order that match the haystack within a constant edit distance.
 
 !!! note "Note"
     `multiFuzzyMatch*` functions do not support UTF-8 regular expressions, and such expressions are treated as bytes because of hyperscan restriction.
@@ -119,4 +166,4 @@ For case-insensitive search or/and in UTF-8 format use functions `ngramSearchCas
 !!! note "Note"
     For UTF-8 case we use 3-gram distance. All these are not perfectly fair n-gram distances. We use 2-byte hashes to hash n-grams and then calculate the (non-)symmetric difference between these hash tables -- collisions may occur. With UTF-8 case-insensitive format we do not use fair `tolower` function -- we zero the 5-th bit (starting from zero) of each codepoint byte and first bit of zeroth byte if bytes more than one -- this works for Latin and mostly for all Cyrillic letters.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_search_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/string_search_functions/) <!--hide-->

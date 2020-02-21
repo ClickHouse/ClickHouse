@@ -15,8 +15,8 @@ namespace DB
 {
 
 
-ReplicasStatusHandler::ReplicasStatusHandler(Context & context_)
-    : context(context_)
+ReplicasStatusHandler::ReplicasStatusHandler(IServer & server)
+    : context(server.context())
 {
 }
 
@@ -44,7 +44,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
             if (db.second->getEngineName() == "Lazy")
                 continue;
 
-            for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 auto & table = iterator->table();
                 StorageReplicatedMergeTree * table_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
@@ -76,6 +76,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         }
         else
         {
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
             response.send() << message.rdbuf();
         }
     }

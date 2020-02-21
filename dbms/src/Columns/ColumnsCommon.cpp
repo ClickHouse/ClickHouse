@@ -6,7 +6,7 @@
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/HashSet.h>
-#include <Common/HashTable/HashMap.h>
+#include "ColumnsCommon.h"
 
 
 namespace DB

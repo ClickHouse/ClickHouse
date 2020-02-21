@@ -117,7 +117,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     auto index = std::make_shared<ASTIndexDeclaration>();
     index->name = name->as<ASTIdentifier &>().name;
-    index->granularity = granularity->as<ASTLiteral &>().value.get<UInt64>();
+    index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
     index->set(index->expr, expr);
     index->set(index->type, type);
     node = index;
@@ -250,6 +250,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
+    ParserTTLExpressionList parser_ttl_list;
 
     ASTPtr engine;
     ASTPtr partition_by;
@@ -303,7 +304,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!ttl_table && s_ttl.ignore(pos, expected))
         {
-            if (expression_p.parse(pos, ttl_table, expected))
+            if (parser_ttl_list.parse(pos, ttl_table, expected))
                 continue;
             else
                 return false;
@@ -436,9 +437,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!s_as.ignore(pos, expected))
             return false;
 
-        if (!table_function_p.parse(pos, as_table_function, expected))
+        if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
         {
-            if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
+            if (!table_function_p.parse(pos, as_table_function, expected))
             {
                 /// AS [db.]table
                 if (!name_p.parse(pos, as_table, expected))
@@ -489,7 +490,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_create("CREATE");
-    ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_as("AS");
@@ -512,11 +512,11 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ASTPtr as_database;
     ASTPtr as_table;
     ASTPtr select;
+    ASTPtr live_view_timeout;
 
     String cluster_str;
     bool attach = false;
     bool if_not_exists = false;
-    bool is_temporary = false;
 
     if (!s_create.ignore(pos, expected))
     {
@@ -524,11 +524,6 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             attach = true;
         else
             return false;
-    }
-
-    if (s_temporary.ignore(pos, expected))
-    {
-        is_temporary = true;
     }
 
     if (!s_live.ignore(pos, expected))
@@ -548,6 +543,12 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         database = table;
         if (!name_p.parse(pos, table, expected))
             return false;
+    }
+
+    if (ParserKeyword{"WITH TIMEOUT"}.ignore(pos, expected))
+    {
+        if (!ParserNumber{}.parse(pos, live_view_timeout, expected))
+            live_view_timeout = std::make_shared<ASTLiteral>(static_cast<UInt64>(DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC));
     }
 
     if (ParserKeyword{"ON"}.ignore(pos, expected))
@@ -594,7 +595,6 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->attach = attach;
     query->if_not_exists = if_not_exists;
     query->is_live_view = true;
-    query->temporary = is_temporary;
 
     tryGetIdentifierNameInto(database, query->database);
     tryGetIdentifierNameInto(table, query->table);
@@ -608,6 +608,9 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
     query->set(query->select, select);
+
+    if (live_view_timeout)
+        query->live_view_timeout.emplace(live_view_timeout->as<ASTLiteral &>().value.safeGet<UInt64>());
 
     return true;
 }
@@ -671,7 +674,6 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_create("CREATE");
-    ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_as("AS");
@@ -686,7 +688,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
-    ParserFunction table_function_p;
     ParserNameList names_p;
 
     ASTPtr database;
@@ -823,8 +824,10 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_create("CREATE");
+    ParserKeyword s_attach("ATTACH");
     ParserKeyword s_dictionary("DICTIONARY");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
+    ParserKeyword s_on("ON");
     ParserIdentifier name_p;
     ParserToken s_left_paren(TokenType::OpeningRoundBracket);
     ParserToken s_right_paren(TokenType::ClosingRoundBracket);
@@ -839,15 +842,22 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ASTPtr name;
     ASTPtr attributes;
     ASTPtr dictionary;
+    String cluster_str;
 
+    bool attach = false;
     if (!s_create.ignore(pos, expected))
+    {
+        if (s_attach.ignore(pos, expected))
+            attach = true;
+        else
+            return false;
+    }
+
+    if (!s_dictionary.ignore(pos, expected))
         return false;
 
     if (s_if_not_exists.ignore(pos, expected))
         if_not_exists = true;
-
-    if (!s_dictionary.ignore(pos, expected))
-        return false;
 
     if (!name_p.parse(pos, name, expected))
         return false;
@@ -859,21 +869,31 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
             return false;
     }
 
-    if (!s_left_paren.ignore(pos, expected))
-        return false;
+    if (s_on.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+            return false;
+    }
 
-    if (!attributes_p.parse(pos, attributes, expected))
-        return false;
+    if (!attach)
+    {
+        if (!s_left_paren.ignore(pos, expected))
+            return false;
 
-    if (!s_right_paren.ignore(pos, expected))
-        return false;
+        if (!attributes_p.parse(pos, attributes, expected))
+            return false;
 
-    if (!dictionary_p.parse(pos, dictionary, expected))
-        return false;
+        if (!s_right_paren.ignore(pos, expected))
+            return false;
+
+        if (!dictionary_p.parse(pos, dictionary, expected))
+            return false;
+    }
 
     auto query = std::make_shared<ASTCreateQuery>();
     node = query;
     query->is_dictionary = true;
+    query->attach = attach;
 
     if (database)
         query->database = typeid_cast<const ASTIdentifier &>(*database).name;
@@ -883,6 +903,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->if_not_exists = if_not_exists;
     query->set(query->dictionary_attributes_list, attributes);
     query->set(query->dictionary, dictionary);
+    query->cluster = cluster_str;
 
     return true;
 }

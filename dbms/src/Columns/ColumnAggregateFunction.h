@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Columns/IColumn.h>
+#include <Common/PODArray.h>
 
 #include <Core/Field.h>
 

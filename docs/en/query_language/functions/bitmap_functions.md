@@ -46,7 +46,7 @@ bitmapToArray(bitmap)
 
 **Example**
 
-``` sql
+```sql
 SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 ```
 
@@ -82,27 +82,39 @@ SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,
 └───────────────────┘
 ```
 
-## bitmapSubsetLimit {#bitmap_functions-bitmapsubsetlimit}
+## bitmapSubsetLimit {#bitmapsubsetlimit}
 
-Return subset of the smallest `limit` values in set which is no less than `range_start`.
+Creates a subset of bitmap with n elements taken between `range_start` and `cardinality_limit`.
 
-```
-bitmapSubsetLimit(bitmap, range_start, limit)
+**Syntax**
+
+```sql
+bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 ```
 
 **Parameters**
 
 - `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
-- `range_start` – range start point. Type: [UInt32](../../data_types/int_uint.md).
-- `limit` – subset cardinality upper limit. Type: [UInt32](../../data_types/int_uint.md).
+- `range_start` – The subset starting point. Type: [UInt32](../../data_types/int_uint.md).
+- `cardinality_limit` – The subset cardinality upper limit. Type: [UInt32](../../data_types/int_uint.md).
+
+**Returned value**
+
+The subset.
+
+Type: `Bitmap object`.
 
 **Example**
 
-``` sql
+Query:
+
+```sql
 SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
 ```
 
-```
+Result:
+
+```text
 ┌─res───────────────────────┐
 │ [30,31,32,33,100,200,500] │
 └───────────────────────────┘
@@ -130,7 +142,7 @@ Type: `UInt8`.
 
 **Example**
 
-``` sql
+```sql
 SELECT bitmapContains(bitmapBuild([1,5,7,9]), toUInt32(9)) AS res
 ```
 ```text
@@ -196,6 +208,108 @@ SELECT bitmapHasAll(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 ```
 
 
+## bitmapCardinality
+
+Retrun bitmap cardinality of type UInt64.
+
+
+```sql
+bitmapCardinality(bitmap)
+```
+
+**Parameters**
+
+- `bitmap` – bitmap object.
+
+**Example**
+
+```sql
+SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
+```
+
+```text
+┌─res─┐
+│   5 │
+└─────┘
+```
+
+## bitmapMin
+
+Retrun the smallest value of type UInt64 in the set, UINT32_MAX if the set is empty.
+
+
+```
+bitmapMin(bitmap)
+```
+
+**Parameters**
+
+- `bitmap` – bitmap object.
+
+**Example**
+
+```sql
+SELECT bitmapMin(bitmapBuild([1, 2, 3, 4, 5])) AS res
+```
+
+```
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+## bitmapMax
+
+Retrun the greatest value of type UInt64 in the set, 0 if the set is empty.
+
+
+```
+bitmapMax(bitmap)
+```
+
+**Parameters**
+
+- `bitmap` – bitmap object.
+
+**Example**
+
+```sql
+SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res
+```
+
+```
+┌─res─┐
+│   5 │
+└─────┘
+```
+
+## bitmapTransform
+
+Transform an array of values in a bitmap to another array of values, the result is a new bitmap.
+
+
+```
+bitmapTransform(bitmap, from_array, to_array)
+```
+
+**Parameters**
+
+- `bitmap` – bitmap object.
+- `from_array` – UInt32 array. For idx in range [0, from_array.size()), if bitmap contains from_array[idx], then replace it with to_array[idx]. Note that the result depends on array ordering if there are common elements between from_array and to_array.
+- `to_array` – UInt32 array, its size shall be the same to from_array.
+
+**Example**
+
+```sql
+SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), cast([5,999,2] as Array(UInt32)), cast([2,888,20] as Array(UInt32)))) AS res
+```
+
+```
+┌─res───────────────────┐
+│ [1,3,4,6,7,8,9,10,20] │
+└───────────────────────┘
+```
+
 ## bitmapAnd
 
 Two bitmap and calculation, the result is a new bitmap.
@@ -210,7 +324,7 @@ bitmapAnd(bitmap,bitmap)
 
 **Example**
 
-``` sql
+```sql
 SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
 ```
 
@@ -291,81 +405,6 @@ SELECT bitmapToArray(bitmapAndnot(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS
 ┌─res───┐
 │ [1,2] │
 └───────┘
-```
-
-## bitmapCardinality
-
-Retrun bitmap cardinality of type UInt64.
-
-
-```sql
-bitmapCardinality(bitmap)
-```
-
-**Parameters**
-
-- `bitmap` – bitmap object.
-
-**Example**
-
-```sql
-SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
-```
-
-```text
-┌─res─┐
-│   5 │
-└─────┘
-```
-
-## bitmapMin
-
-Retrun the smallest value of type UInt64 in the set, UINT32_MAX if the set is empty.
-
-
-```
-bitmapMin(bitmap)
-```
-
-**Parameters**
-
-- `bitmap` – bitmap object.
-
-**Example**
-
-``` sql
-SELECT bitmapMin(bitmapBuild([1, 2, 3, 4, 5])) AS res
-```
-
-```
-┌─res─┐
-│   1 │
-└─────┘
-```
-
-## bitmapMax
-
-Retrun the greatest value of type UInt64 in the set, 0 if the set is empty.
-
-
-```
-bitmapMax(bitmap)
-```
-
-**Parameters**
-
-- `bitmap` – bitmap object.
-
-**Example**
-
-``` sql
-SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res
-```
-
-```
-┌─res─┐
-│   5 │
-└─────┘
 ```
 
 ## bitmapAndCardinality
@@ -468,4 +507,4 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 ```
 
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/bitmap_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/bitmap_functions/) <!--hide-->

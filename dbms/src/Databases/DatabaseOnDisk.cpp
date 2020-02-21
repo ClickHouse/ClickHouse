@@ -1,92 +1,120 @@
 #include <Databases/DatabaseOnDisk.h>
 
-#include <Common/escapeForFileName.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/InterpreterCreateQuery.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageFactory.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <Common/escapeForFileName.h>
 
 #include <common/logger_useful.h>
 #include <Poco/DirectoryIterator.h>
 
+
+
 namespace DB
 {
 
+static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
+
 namespace ErrorCodes
 {
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int FILE_DOESNT_EXIST;
     extern const int INCORRECT_FILE_NAME;
     extern const int SYNTAX_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNKNOWN_TABLE;
+    extern const int DICTIONARY_ALREADY_EXISTS;
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
 
-namespace detail
+std::pair<String, StoragePtr> createTableFromAST(
+    ASTCreateQuery ast_create_query,
+    const String & database_name,
+    const String & table_data_path_relative,
+    Context & context,
+    bool has_force_restore_data_flag)
 {
-    String getTableMetadataPath(const String & base_path, const String & table_name)
+    ast_create_query.attach = true;
+    ast_create_query.database = database_name;
+
+    if (ast_create_query.as_table_function)
     {
-        return base_path + (endsWith(base_path, "/") ? "" : "/") + escapeForFileName(table_name) + ".sql";
+        const auto & table_function = ast_create_query.as_table_function->as<ASTFunction &>();
+        const auto & factory = TableFunctionFactory::instance();
+        StoragePtr storage = factory.get(table_function.name, context)->execute(ast_create_query.as_table_function, context, ast_create_query.table);
+        return {ast_create_query.table, storage};
+    }
+    /// We do not directly use `InterpreterCreateQuery::execute`, because
+    /// - the database has not been loaded yet;
+    /// - the code is simpler, since the query is already brought to a suitable form.
+    if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
+        throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+
+    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context);
+    ConstraintsDescription constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
+
+    return
+    {
+        ast_create_query.table,
+        StorageFactory::instance().get(
+            ast_create_query,
+            table_data_path_relative,
+            context,
+            context.getGlobalContext(),
+            columns,
+            constraints,
+            has_force_restore_data_flag)
+    };
+}
+
+
+String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
+{
+    ASTPtr query_clone = query->clone();
+    auto * create = query_clone->as<ASTCreateQuery>();
+
+    if (!create)
+    {
+        std::ostringstream query_stream;
+        formatAST(*query, query_stream, true);
+        throw Exception("Query '" + query_stream.str() + "' is not CREATE query", ErrorCodes::LOGICAL_ERROR);
     }
 
-    String getDatabaseMetadataPath(const String & base_path)
-    {
-        return (endsWith(base_path, "/") ? base_path.substr(0, base_path.size() - 1) : base_path) + ".sql";
-    }
+    if (!create->is_dictionary)
+        create->attach = true;
 
-    ASTPtr getQueryFromMetadata(const String & metadata_path, bool throw_on_error)
-    {
-        String query;
+    /// We remove everything that is not needed for ATTACH from the query.
+    create->database.clear();
+    create->as_database.clear();
+    create->as_table.clear();
+    create->if_not_exists = false;
+    create->is_populate = false;
+    create->replace_view = false;
 
-        try
-        {
-            ReadBufferFromFile in(metadata_path, 4096);
-            readStringUntilEOF(query, in);
-        }
-        catch (const Exception & e)
-        {
-            if (!throw_on_error && e.code() == ErrorCodes::FILE_DOESNT_EXIST)
-                return nullptr;
-            else
-                throw;
-        }
+    /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
+    if (!create->is_view && !create->is_materialized_view && !create->is_live_view)
+        create->select = nullptr;
 
-        ParserCreateQuery parser;
-        const char * pos = query.data();
-        std::string error_message;
-        auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message, /* hilite = */ false,
-                                "in file " + metadata_path, /* allow_multi_statements = */ false, 0);
+    create->format = nullptr;
+    create->out_file = nullptr;
 
-        if (!ast && throw_on_error)
-            throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
-
-        return ast;
-    }
-
-    ASTPtr getCreateQueryFromMetadata(const String & metadata_path, const String & database, bool throw_on_error)
-    {
-        ASTPtr ast = getQueryFromMetadata(metadata_path, throw_on_error);
-
-        if (ast)
-        {
-            auto & ast_create_query = ast->as<ASTCreateQuery &>();
-            ast_create_query.attach = false;
-            ast_create_query.database = database;
-        }
-
-        return ast;
-    }
+    std::ostringstream statement_stream;
+    formatAST(*create, statement_stream, false);
+    statement_stream << '\n';
+    return statement_stream.str();
 }
 
 void DatabaseOnDisk::createTable(
-    IDatabase & database,
     const Context & context,
     const String & table_name,
     const StoragePtr & table,
@@ -106,15 +134,19 @@ void DatabaseOnDisk::createTable(
     /// A race condition would be possible if a table with the same name is simultaneously created using CREATE and using ATTACH.
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
 
-    if (database.isTableExist(context, table_name))
-        throw Exception("Table " + backQuote(database.getDatabaseName()) + "." + backQuote(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+    if (isDictionaryExist(context, table_name))
+        throw Exception("Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.",
+            ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
-    String table_metadata_path = database.getTableMetadataPath(table_name);
+    if (isTableExist(context, table_name))
+        throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+
+    String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement;
 
     {
-        statement = getTableDefinitionFromCreateQuery(query);
+        statement = getObjectDefinitionFromCreateQuery(query);
 
         /// Exclusive flags guarantees, that table is not created right now in another thread. Otherwise, exception will be thrown.
         WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
@@ -128,7 +160,7 @@ void DatabaseOnDisk::createTable(
     try
     {
         /// Add a table to the map of known tables.
-        database.attachTable(table_name, table);
+        attachTable(table_name, table);
 
         /// If it was ATTACH query and file with table metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
@@ -141,15 +173,11 @@ void DatabaseOnDisk::createTable(
     }
 }
 
-void DatabaseOnDisk::removeTable(
-    IDatabase & database,
-    const Context & /* context */,
-    const String & table_name,
-    Poco::Logger * log)
+void DatabaseOnDisk::removeTable(const Context & /* context */, const String & table_name)
 {
-    StoragePtr res = database.detachTable(table_name);
+    StoragePtr res = detachTable(table_name);
 
-    String table_metadata_path = database.getTableMetadataPath(table_name);
+    String table_metadata_path = getObjectMetadataPath(table_name);
 
     try
     {
@@ -166,92 +194,120 @@ void DatabaseOnDisk::removeTable(
         {
             LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
         }
-        database.attachTable(table_name, res);
+        attachTable(table_name, res);
         throw;
     }
 }
 
-ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const IDatabase & database, const Context & context,
-                                                 const String & table_name, bool throw_on_error)
+void DatabaseOnDisk::renameTable(
+        const Context & context,
+        const String & table_name,
+        IDatabase & to_database,
+        const String & to_table_name,
+        TableStructureWriteLockHolder & lock)
 {
-    ASTPtr ast;
+    if (typeid(*this) != typeid(to_database))
+        throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
-    auto table_metadata_path = detail::getTableMetadataPath(database.getMetadataPath(), table_name);
-    ast = detail::getCreateQueryFromMetadata(table_metadata_path, database.getDatabaseName(), throw_on_error);
-    if (!ast && throw_on_error)
+    StoragePtr table = tryGetTable(context, table_name);
+
+    if (!table)
+        throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+
+    ASTPtr ast = parseQueryFromMetadata(context, getObjectMetadataPath(table_name));
+    if (!ast)
+        throw Exception("There is no metadata file for table " + backQuote(table_name) + ".", ErrorCodes::FILE_DOESNT_EXIST);
+    auto & create = ast->as<ASTCreateQuery &>();
+    create.table = to_table_name;
+
+    /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
+    try
     {
-        /// Handle system.* tables for which there are no table.sql files.
-        bool has_table = database.tryGetTable(context, table_name) != nullptr;
-
-        auto msg = has_table
-                   ? "There is no CREATE TABLE query for table "
-                   : "There is no metadata file for table ";
-
-        throw Exception(msg + backQuote(table_name), ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
+        table->rename(to_database.getTableDataPath(create),
+                      to_database.getDatabaseName(),
+                      to_table_name, lock);
+    }
+    catch (const Exception &)
+    {
+        throw;
+    }
+    catch (const Poco::Exception & e)
+    {
+        /// Better diagnostics.
+        throw Exception{Exception::CreateFromPoco, e};
     }
 
+    /// NOTE Non-atomic.
+    to_database.createTable(context, to_table_name, table, ast);
+    removeTable(context, table_name);
+}
+
+ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const
+{
+    ASTPtr ast;
+    bool has_table = tryGetTable(context, table_name) != nullptr;
+    auto table_metadata_path = getObjectMetadataPath(table_name);
+    try
+    {
+        ast = getCreateQueryFromMetadata(context, table_metadata_path, throw_on_error);
+    }
+    catch (const Exception & e)
+    {
+        if (!has_table && e.code() == ErrorCodes::FILE_DOESNT_EXIST && throw_on_error)
+            throw Exception{"Table " + backQuote(table_name) + " doesn't exist",
+                            ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
+        else if (throw_on_error)
+            throw;
+    }
     return ast;
 }
 
-ASTPtr DatabaseOnDisk::getCreateTableQuery(const IDatabase & database, const Context & context, const String & table_name)
-{
-    return getCreateTableQueryImpl(database, context, table_name, true);
-}
-
-ASTPtr DatabaseOnDisk::tryGetCreateTableQuery(const IDatabase & database, const Context & context, const String & table_name)
-{
-    return getCreateTableQueryImpl(database, context, table_name, false);
-}
-
-ASTPtr DatabaseOnDisk::getCreateDatabaseQuery(const IDatabase & database, const Context & /*context*/)
+ASTPtr DatabaseOnDisk::getCreateDatabaseQuery(const Context & context) const
 {
     ASTPtr ast;
 
-    auto database_metadata_path = detail::getDatabaseMetadataPath(database.getMetadataPath());
-    ast = detail::getCreateQueryFromMetadata(database_metadata_path, database.getDatabaseName(), true);
+    auto settings = context.getSettingsRef();
+    auto metadata_dir_path = getMetadataPath();
+    auto database_metadata_path = metadata_dir_path.substr(0, metadata_dir_path.size() - 1) + ".sql";
+    ast = getCreateQueryFromMetadata(context, database_metadata_path, true);
     if (!ast)
     {
         /// Handle databases (such as default) for which there are no database.sql files.
-        String query = "CREATE DATABASE " + backQuoteIfNeed(database.getDatabaseName()) + " ENGINE = Lazy";
+        /// If database.sql doesn't exist, then engine is Ordinary
+        String query = "CREATE DATABASE " + backQuoteIfNeed(getDatabaseName()) + " ENGINE = Ordinary";
         ParserCreateQuery parser;
-        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0);
+        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
     }
 
     return ast;
 }
 
-void DatabaseOnDisk::drop(const IDatabase & database)
+void DatabaseOnDisk::drop(const Context & context)
 {
-    Poco::File(database.getDataPath()).remove(false);
-    Poco::File(database.getMetadataPath()).remove(false);
+    Poco::File(context.getPath() + getDataPath()).remove(false);
+    Poco::File(getMetadataPath()).remove(false);
 }
 
-String DatabaseOnDisk::getTableMetadataPath(const IDatabase & database, const String & table_name)
+String DatabaseOnDisk::getObjectMetadataPath(const String & table_name) const
 {
-    return detail::getTableMetadataPath(database.getMetadataPath(), table_name);
+    return getMetadataPath() + escapeForFileName(table_name) + ".sql";
 }
 
-time_t DatabaseOnDisk::getTableMetadataModificationTime(
-    const IDatabase & database,
-    const String & table_name)
+time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & table_name) const
 {
-    String table_metadata_path = getTableMetadataPath(database, table_name);
+    String table_metadata_path = getObjectMetadataPath(table_name);
     Poco::File meta_file(table_metadata_path);
 
     if (meta_file.exists())
-    {
         return meta_file.getLastModified().epochTime();
-    }
     else
-    {
         return static_cast<time_t>(0);
-    }
 }
 
-void DatabaseOnDisk::iterateTableFiles(const IDatabase & database, Poco::Logger * log, const IteratingFunction & iterating_function)
+void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const IteratingFunction & iterating_function) const
 {
     Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator dir_it(database.getMetadataPath()); dir_it != dir_end; ++dir_it)
+    for (Poco::DirectoryIterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
     {
         /// For '.svn', '.gitignore' directory and similar.
         if (dir_it.name().at(0) == '.')
@@ -265,11 +321,13 @@ void DatabaseOnDisk::iterateTableFiles(const IDatabase & database, Poco::Logger 
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         if (endsWith(dir_it.name(), tmp_drop_ext))
         {
-            const std::string table_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
-            if (Poco::File(database.getDataPath() + '/' + table_name).exists())
+            const std::string object_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
+            if (Poco::File(context.getPath() + getDataPath() + '/' + object_name).exists())
             {
-                Poco::File(dir_it->path()).renameTo(table_name + ".sql");
-                LOG_WARNING(log, "Table " << backQuote(table_name) << " was not dropped previously");
+                /// TODO maybe complete table drop and remove all table data (including data on other volumes and metadata in ZK)
+                Poco::File(dir_it->path()).renameTo(getMetadataPath() + object_name + ".sql");
+                LOG_WARNING(log, "Object " << backQuote(object_name) << " was not dropped previously and will be restored");
+                iterating_function(object_name + ".sql");
             }
             else
             {
@@ -293,9 +351,65 @@ void DatabaseOnDisk::iterateTableFiles(const IDatabase & database, Poco::Logger 
             iterating_function(dir_it.name());
         }
         else
-            throw Exception("Incorrect file extension: " + dir_it.name() + " in metadata directory " + database.getMetadataPath(),
+            throw Exception("Incorrect file extension: " + dir_it.name() + " in metadata directory " + getMetadataPath(),
                 ErrorCodes::INCORRECT_FILE_NAME);
     }
+}
+
+ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const Context & context, const String & metadata_file_path, bool throw_on_error /*= true*/, bool remove_empty /*= false*/) const
+{
+    String query;
+
+    try
+    {
+        ReadBufferFromFile in(metadata_file_path, METADATA_FILE_BUFFER_SIZE);
+        readStringUntilEOF(query, in);
+    }
+    catch (const Exception & e)
+    {
+        if (!throw_on_error && e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            return nullptr;
+        else
+            throw;
+    }
+
+    /** Empty files with metadata are generated after a rough restart of the server.
+      * Remove these files to slightly reduce the work of the admins on startup.
+      */
+    if (remove_empty && query.empty())
+    {
+        LOG_ERROR(log, "File " << metadata_file_path << " is empty. Removing.");
+        Poco::File(metadata_file_path).remove();
+        return nullptr;
+    }
+
+    auto settings = context.getSettingsRef();
+    ParserCreateQuery parser;
+    const char * pos = query.data();
+    std::string error_message;
+    auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message, /* hilite = */ false,
+                             "in file " + getMetadataPath(), /* allow_multi_statements = */ false, 0, settings.max_parser_depth);
+
+    if (!ast && throw_on_error)
+        throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
+    else if (!ast)
+        return nullptr;
+
+    return ast;
+}
+
+ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const Context & context, const String & database_metadata_path, bool throw_on_error) const
+{
+    ASTPtr ast = parseQueryFromMetadata(context, database_metadata_path, throw_on_error);
+
+    if (ast)
+    {
+        auto & ast_create_query = ast->as<ASTCreateQuery &>();
+        ast_create_query.attach = false;
+        ast_create_query.database = database_name;
+    }
+
+    return ast;
 }
 
 }

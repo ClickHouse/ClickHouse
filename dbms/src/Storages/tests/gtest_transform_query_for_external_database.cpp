@@ -9,6 +9,7 @@
 #include <Databases/DatabaseMemory.h>
 #include <Storages/StorageMemory.h>
 #include <Functions/registerFunctions.h>
+#include <Common/tests/gtest_global_context.h>
 
 
 using namespace DB;
@@ -17,7 +18,7 @@ using namespace DB;
 /// NOTE How to do better?
 struct State
 {
-    Context context{Context::createGlobal()};
+    Context context = getContext();
     NamesAndTypesList columns{
         {"column", std::make_shared<DataTypeUInt8>()},
         {"apply_id", std::make_shared<DataTypeUInt64>()},
@@ -30,21 +31,20 @@ struct State
     {
         registerFunctions();
         DatabasePtr database = std::make_shared<DatabaseMemory>("test");
-        database->attachTable("table", StorageMemory::create("test", "table", ColumnsDescription{columns}, ConstraintsDescription{}));
-        context.makeGlobalContext();
+        database->attachTable("table", StorageMemory::create(StorageID("test", "table"), ColumnsDescription{columns}, ConstraintsDescription{}));
         context.addDatabase("test", database);
         context.setCurrentDatabase("test");
     }
 };
 
-State & state()
+static State & state()
 {
     static State res;
     return res;
 }
 
 
-void check(const std::string & query, const std::string & expected, const Context & context, const NamesAndTypesList & columns)
+static void check(const std::string & query, const std::string & expected, const Context & context, const NamesAndTypesList & columns)
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000);
@@ -57,7 +57,7 @@ void check(const std::string & query, const std::string & expected, const Contex
 TEST(TransformQueryForExternalDatabase, InWithSingleElement)
 {
     check("SELECT column FROM test.table WHERE 1 IN (1)",
-          "SELECT \"column\" FROM \"test\".\"table\" WHERE 1 IN (1)",
+          "SELECT \"column\" FROM \"test\".\"table\" WHERE 1",
           state().context, state().columns);
     check("SELECT column FROM test.table WHERE column IN (1, 2)",
           "SELECT \"column\" FROM \"test\".\"table\" WHERE \"column\" IN (1, 2)",

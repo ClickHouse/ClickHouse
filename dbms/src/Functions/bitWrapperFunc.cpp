@@ -16,10 +16,11 @@ namespace DB
     struct BitWrapperFuncImpl
     {
         using ResultType = UInt8;
+        static constexpr const bool allow_fixed_string = false;
 
         static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
         {
-            if constexpr (!std::is_integral_v<A>)
+            if constexpr (!is_integral_v<A>)
                 throw DB::Exception("It's a bug! Only integer types are supported by __bitWrapperFunc.", ErrorCodes::BAD_CAST);
             return a == 0 ? static_cast<ResultType>(0b10) : static_cast<ResultType >(0b1);
         }

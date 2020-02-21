@@ -100,6 +100,17 @@ public:
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 
+    /// If ReturnType is bool, check for NULL and deserialize value into non-nullable column (and return true) or insert default value of nested type (and return false)
+    /// If ReturnType is void, deserialize Nullable(T)
+    template <typename ReturnType = bool>
+    static ReturnType deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
+    template <typename ReturnType = bool>
+    static ReturnType deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &, const DataTypePtr & nested);
+    template <typename ReturnType = bool>
+    static ReturnType deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
+    template <typename ReturnType = bool>
+    static ReturnType deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &, const DataTypePtr & nested);
+
 private:
     DataTypePtr nested_data_type;
 };

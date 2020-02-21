@@ -72,10 +72,12 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 ## Details of Implementation
 
 - Multiple `SELECT` queries can be performed concurrently, but `INSERT` queries will wait each other.
+- Supported creating new file by `INSERT` query.
+- If file exists, `INSERT` would append new values in it.
 - Not supported:
     - `ALTER`
     - `SELECT ... SAMPLE`
     - Indices
     - Replication
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/file/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/file/) <!--hide-->

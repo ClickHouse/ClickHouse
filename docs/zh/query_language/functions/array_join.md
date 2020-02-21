@@ -28,4 +28,4 @@ SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 ```
 
 
-[来源文章](https://clickhouse.yandex/docs/en/query_language/functions/array_join/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/array_join/) <!--hide-->

@@ -90,9 +90,8 @@ DataTypePtr FieldToDataType::operator() (const Array & x) const
 }
 
 
-DataTypePtr FieldToDataType::operator() (const Tuple & x) const
+DataTypePtr FieldToDataType::operator() (const Tuple & tuple) const
 {
-    auto & tuple = static_cast<const TupleBackend &>(x);
     if (tuple.empty())
         throw Exception("Cannot infer type of an empty tuple", ErrorCodes::EMPTY_DATA_PASSED);
 

@@ -3,7 +3,7 @@
 Ограничения на сложность запроса - часть настроек.
 Используются, чтобы обеспечить более безопасное исполнение запросов из пользовательского интерфейса.
 Почти все ограничения действуют только на SELECT-ы.
-При распределённой обработке запроса, ограничения действуют на каждом сервере по-отдельности.
+При распределённой обработке запроса, ограничения действуют на каждом сервере по отдельности.
 
 Ограничения проверяются на каждый блок обработанных данных, а не на каждую строку. В связи с этим, ограничения могут быть превышены на размер блока.
 
@@ -19,7 +19,7 @@
 
 ## max_memory_usage {#settings_max_memory_usage}
 
-Максимальный возможный объем оперативной памяти для выполнения запроса на одном сервере.
+Максимальный возможный объём оперативной памяти для выполнения запроса на одном сервере.
 
 В конфигурационном файле по умолчанию, ограничение равно 10 ГБ.
 
@@ -36,7 +36,7 @@
 
 ## max_memory_usage_for_user
 
-Максимальный возможный объем оперативной памяти для запросов пользователя на одном сервере.
+Максимальный возможный объём оперативной памяти для запросов пользователя на одном сервере.
 
 Значения по умолчанию определены в файле [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Core/Settings.h#L288). По умолчанию размер не ограничен (`max_memory_usage_for_user = 0`).
 
@@ -44,7 +44,7 @@
 
 ## max_memory_usage_for_all_queries
 
-Максимальный возможный объем оперативной памяти для всех запросов на одном сервере.
+Максимальный возможный объём оперативной памяти для всех запросов на одном сервере.
 
 Значения по умолчанию определены в файле [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Core/Settings.h#L289). По умолчанию размер не ограничен (`max_memory_usage_for_all_queries = 0`).
 
@@ -53,7 +53,7 @@
 ## max_rows_to_read
 
 Следующие ограничения могут проверяться на каждый блок (а не на каждую строку). То есть, ограничения могут быть немного нарушены.
-При выполнении запроса в несколько потоков, следующие ограничения действуют в каждом потоке по-отдельности.
+При выполнении запроса в несколько потоков, следующие ограничения действуют в каждом потоке по отдельности.
 
 Максимальное количество строчек, которое можно прочитать из таблицы при выполнении запроса.
 
@@ -80,7 +80,7 @@
 
 Возможные значения:
 
-- Максимальный объем RAM (в байтах), который может использовать отдельная операция [GROUP BY](../../query_language/select.md#select-group-by-clause).
+- Максимальный объём RAM (в байтах), который может использовать отдельная операция [GROUP BY](../../query_language/select.md#select-group-by-clause).
 - 0 — `GROUP BY` во внешней памяти отключен.
 
 Значение по умолчанию — 0.
@@ -257,7 +257,7 @@
 **Смотрите также**
 
 - [Секция JOIN](../../query_language/select.md#select-join)
-- [Движо таблиц Join](../table_engines/join.md)
+- [Движок таблиц Join](../table_engines/join.md)
 
 ## max_partitions_per_insert_block
 
@@ -274,4 +274,4 @@
 
 > "Too many partitions for single INSERT block (more than " + toString(max_parts) + "). The limit is controlled by 'max_partitions_per_insert_block' setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc)."
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/query_complexity/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/query_complexity/) <!--hide-->

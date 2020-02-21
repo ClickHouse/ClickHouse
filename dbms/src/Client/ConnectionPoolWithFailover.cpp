@@ -3,6 +3,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
 
+#include <Common/BitHelpers.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/ProfileEvents.h>

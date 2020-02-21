@@ -1,4 +1,4 @@
-# Функции для работы с Nullable-агрументами
+# Функции для работы с Nullable-аргументами
 
 ## isNull
 
@@ -284,4 +284,4 @@ SELECT toTypeName(toNullable(10))
 └────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/functions_for_nulls/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/functions_for_nulls/) <!--hide-->

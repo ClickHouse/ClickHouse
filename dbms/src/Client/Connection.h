@@ -30,16 +30,40 @@ namespace DB
 {
 
 class ClientInfo;
+class Pipe;
 
-/// The stream of blocks reading from the table and its name
-using ExternalTableData = std::pair<BlockInputStreamPtr, std::string>;
-/// Vector of pairs describing tables
-using ExternalTablesData = std::vector<ExternalTableData>;
+/// Struct which represents data we are going to send for external table.
+struct ExternalTableData
+{
+    /// Pipe of data form table;
+    std::unique_ptr<Pipe> pipe;
+    std::string table_name;
+    /// Flag if need to stop reading.
+    std::atomic_bool is_cancelled = false;
+};
+
+using ExternalTableDataPtr = std::unique_ptr<ExternalTableData>;
+using ExternalTablesData = std::vector<ExternalTableDataPtr>;
 
 class Connection;
 
 using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
+
+
+/// Packet that could be received from server.
+struct Packet
+{
+    UInt64 type;
+
+    Block block;
+    std::unique_ptr<Exception> exception;
+    std::vector<String> multistring_message;
+    Progress progress;
+    BlockStreamProfileInfo profile_info;
+
+    Packet() : type(Protocol::Server::Hello) {}
+};
 
 
 /** Connection with database server, to use by client.
@@ -87,20 +111,6 @@ public:
     }
 
 
-    /// Packet that could be received from server.
-    struct Packet
-    {
-        UInt64 type;
-
-        Block block;
-        std::unique_ptr<Exception> exception;
-        std::vector<String> multistring_message;
-        Progress progress;
-        BlockStreamProfileInfo profile_info;
-
-        Packet() : type(Protocol::Server::Hello) {}
-    };
-
     /// Change default database. Changes will take effect on next reconnect.
     void setDefaultDatabase(const String & database);
 
@@ -133,7 +143,9 @@ public:
 
     void sendCancel();
     /// Send block of data; if name is specified, server will write it to external (temporary) table of that name.
-    void sendData(const Block & block, const String & name = "");
+    void sendData(const Block & block, const String & name = "", bool scalar = false);
+    /// Send all scalars.
+    void sendScalarsData(Scalars & data);
     /// Send all contents of external (temporary) tables.
     void sendExternalTablesData(ExternalTablesData & data);
 

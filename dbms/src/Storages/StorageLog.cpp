@@ -3,9 +3,12 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/typeid_cast.h>
 
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromFile.h>
+#include <Interpreters/evaluateConstantExpression.h>
+
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -18,12 +21,11 @@
 
 #include <Columns/ColumnArray.h>
 
-#include <Common/typeid_cast.h>
-
 #include <Interpreters/Context.h>
-
-#include <Poco/Path.h>
-#include <Poco/DirectoryIterator.h>
+#include <Parsers/ASTLiteral.h>
+#include "StorageLogSettings.h"
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Pipe.h>
 
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -45,13 +47,25 @@ namespace ErrorCodes
 }
 
 
-class LogBlockInputStream final : public IBlockInputStream
+class LogSource final : public SourceWithProgress
 {
 public:
-    LogBlockInputStream(
+
+    static Block getHeader(const NamesAndTypesList & columns)
+    {
+        Block res;
+
+        for (const auto & name_type : columns)
+            res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
+
+        return Nested::flatten(res);
+    }
+
+    LogSource(
         size_t block_size_, const NamesAndTypesList & columns_, StorageLog & storage_,
         size_t mark_number_, size_t rows_limit_, size_t max_read_buffer_size_)
-        : block_size(block_size_),
+        : SourceWithProgress(getHeader(columns_)),
+        block_size(block_size_),
         columns(columns_),
         storage(storage_),
         mark_number(mark_number_),
@@ -62,21 +76,10 @@ public:
 
     String getName() const override { return "Log"; }
 
-    Block getHeader() const override
-    {
-        Block res;
-
-        for (const auto & name_type : columns)
-            res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
-
-        return Nested::flatten(res);
-    }
-
 protected:
-    Block readImpl() override;
+    Chunk generate() override;
 
 private:
-
     size_t block_size;
     NamesAndTypesList columns;
     StorageLog & storage;
@@ -87,19 +90,19 @@ private:
 
     struct Stream
     {
-        Stream(const std::string & data_path, size_t offset, size_t max_read_buffer_size_)
-            : plain(data_path, std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size_), Poco::File(data_path).getSize())),
-            compressed(plain)
+        Stream(const DiskPtr & disk, const String & data_path, size_t offset, size_t max_read_buffer_size_)
+            : plain(disk->readFile(data_path, std::min(max_read_buffer_size_, disk->getFileSize(data_path)))),
+            compressed(*plain)
         {
             if (offset)
-                plain.seek(offset);
+                plain->seek(offset, SEEK_SET);
         }
 
-        ReadBufferFromFile plain;
+        std::unique_ptr<ReadBufferFromFileBase> plain;
         CompressedReadBuffer compressed;
     };
 
-    using FileStreams = std::map<std::string, Stream>;
+    using FileStreams = std::map<String, Stream>;
     FileStreams streams;
 
     using DeserializeState = IDataType::DeserializeBinaryBulkStatePtr;
@@ -107,7 +110,6 @@ private:
     DeserializeStates deserialize_states;
 
     void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read);
-
 };
 
 
@@ -117,7 +119,7 @@ public:
     explicit LogBlockOutputStream(StorageLog & storage_)
         : storage(storage_),
         lock(storage.rwlock),
-        marks_stream(storage.marks_file.path(), 4096, O_APPEND | O_CREAT | O_WRONLY)
+        marks_stream(storage.disk->writeFile(storage.marks_file_path, 4096, WriteMode::Rewrite))
     {
     }
 
@@ -144,14 +146,14 @@ private:
 
     struct Stream
     {
-        Stream(const std::string & data_path, CompressionCodecPtr codec, size_t max_compress_block_size) :
-            plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-            compressed(plain, std::move(codec), max_compress_block_size)
+        Stream(const DiskPtr & disk, const String & data_path, CompressionCodecPtr codec, size_t max_compress_block_size) :
+            plain(disk->writeFile(data_path, max_compress_block_size, WriteMode::Append)),
+            compressed(*plain, std::move(codec), max_compress_block_size),
+            plain_offset(disk->getFileSize(data_path))
         {
-            plain_offset = Poco::File(data_path).getSize();
         }
 
-        WriteBufferFromFile plain;
+        std::unique_ptr<WriteBuffer> plain;
         CompressedWriteBuffer compressed;
 
         size_t plain_offset;    /// How many bytes were in the file at the time the LogBlockOutputStream was created.
@@ -159,19 +161,19 @@ private:
         void finalize()
         {
             compressed.next();
-            plain.next();
+            plain->next();
         }
     };
 
     using Mark = StorageLog::Mark;
     using MarksForColumns = std::vector<std::pair<size_t, Mark>>;
 
-    using FileStreams = std::map<std::string, Stream>;
+    using FileStreams = std::map<String, Stream>;
     FileStreams streams;
 
-    using WrittenStreams = std::set<std::string>;
+    using WrittenStreams = std::set<String>;
 
-    WriteBufferFromFile marks_stream; /// Declared below `lock` to make the file open when rwlock is captured.
+    std::unique_ptr<WriteBuffer> marks_stream; /// Declared below `lock` to make the file open when rwlock is captured.
 
     using SerializeState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializeStates = std::map<String, SerializeState>;
@@ -187,16 +189,15 @@ private:
 };
 
 
-Block LogBlockInputStream::readImpl()
+Chunk LogSource::generate()
 {
     Block res;
 
     if (rows_read == rows_limit)
-        return res;
+        return {};
 
-    /// If there are no files in the folder, the table is empty.
-    if (Poco::DirectoryIterator(storage.getFullPath()) == Poco::DirectoryIterator())
-        return res;
+    if (storage.disk->isDirectoryEmpty(storage.table_path))
+        return {};
 
     /// How many rows to read for the next block.
     size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
@@ -211,11 +212,11 @@ Block LogBlockInputStream::readImpl()
         }
         catch (Exception & e)
         {
-            e.addMessage("while reading column " + name_type.name + " at " + storage.path + escapeForFileName(storage.table_name));
+            e.addMessage("while reading column " + name_type.name + " at " + fullPath(storage.disk, storage.table_path));
             throw;
         }
 
-        if (column->size())
+        if (!column->empty())
             res.insert(ColumnWithTypeAndName(std::move(column), name_type.type, name_type.name));
     }
 
@@ -231,11 +232,13 @@ Block LogBlockInputStream::readImpl()
         streams.clear();
     }
 
-    return Nested::flatten(res);
+    res = Nested::flatten(res);
+    UInt64 num_rows = res.rows();
+    return Chunk(res.getColumns(), num_rows);
 }
 
 
-void LogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read)
+void LogSource::readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read)
 {
     IDataType::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
 
@@ -253,8 +256,8 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
             if (!stream_for_prefix && mark_number)
                 offset = file_it->second.marks[mark_number].offset;
 
-            auto & data_file_path = file_it->second.data_file.path();
-            auto it = streams.try_emplace(stream_name, data_file_path, offset, max_read_buffer_size).first;
+            auto & data_file_path = file_it->second.data_file_path;
+            auto it = streams.try_emplace(stream_name, storage.disk, data_file_path, offset, max_read_buffer_size).first;
             return &it->second.compressed;
         };
     };
@@ -309,15 +312,15 @@ void LogBlockOutputStream::writeSuffix()
     }
 
     /// Finish write.
-    marks_stream.next();
+    marks_stream->next();
 
     for (auto & name_stream : streams)
         name_stream.second.finalize();
 
-    std::vector<Poco::File> column_files;
+    Strings column_files;
     for (const auto & name_stream : streams)
-        column_files.push_back(storage.files[name_stream.first].data_file);
-    column_files.push_back(storage.marks_file);
+        column_files.push_back(storage.files[name_stream.first].data_file_path);
+    column_files.push_back(storage.marks_file_path);
 
     storage.file_checker.update(column_files.begin(), column_files.end());
 
@@ -344,8 +347,7 @@ IDataType::OutputStreamGetter LogBlockOutputStream::createStreamGetter(const Str
 
 
 void LogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column,
-    MarksForColumns & out_marks,
-    WrittenStreams & written_streams)
+    MarksForColumns & out_marks, WrittenStreams & written_streams)
 {
     IDataType::SerializeBinaryBulkSettings settings;
 
@@ -358,7 +360,8 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
         const auto & columns = storage.getColumns();
         streams.try_emplace(
             stream_name,
-            storage.files[stream_name].data_file.path(),
+            storage.disk,
+            storage.files[stream_name].data_file_path,
             columns.getCodecOrDefault(name),
             storage.max_compress_block_size);
     }, settings.path);
@@ -379,7 +382,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 
         Mark mark;
         mark.rows = (file.marks.empty() ? 0 : file.marks.back().rows) + column.size();
-        mark.offset = stream_it->second.plain_offset + stream_it->second.plain.count();
+        mark.offset = stream_it->second.plain_offset + stream_it->second.plain->count();
 
         out_marks.emplace_back(file.column_index, mark);
     }, settings.path);
@@ -409,8 +412,8 @@ void LogBlockOutputStream::writeMarks(MarksForColumns && marks)
 
     for (const auto & mark : marks)
     {
-        writeIntBinary(mark.second.rows, marks_stream);
-        writeIntBinary(mark.second.offset, marks_stream);
+        writeIntBinary(mark.second.rows, *marks_stream);
+        writeIntBinary(mark.second.offset, *marks_stream);
 
         size_t column_index = mark.first;
         storage.files[storage.column_names_by_idx[column_index]].marks.push_back(mark.second);
@@ -418,29 +421,31 @@ void LogBlockOutputStream::writeMarks(MarksForColumns && marks)
 }
 
 StorageLog::StorageLog(
-    const std::string & path_,
-    const std::string & database_name_,
-    const std::string & table_name_,
+    DiskPtr disk_,
+    const String & relative_path_,
+    const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     size_t max_compress_block_size_)
-    : path(path_), table_name(table_name_), database_name(database_name_),
-    max_compress_block_size(max_compress_block_size_),
-    file_checker(path + escapeForFileName(table_name) + '/' + "sizes.json")
+    : IStorage(table_id_)
+    , disk(std::move(disk_))
+    , table_path(relative_path_)
+    , max_compress_block_size(max_compress_block_size_)
+    , file_checker(disk, table_path + "sizes.json")
 {
     setColumns(columns_);
     setConstraints(constraints_);
 
-    if (path.empty())
+    if (relative_path_.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-     /// create files if they do not exist
-    Poco::File(path + escapeForFileName(table_name) + '/').createDirectories();
+    /// create directories if they do not exist
+    disk->createDirectories(table_path);
 
     for (const auto & column : getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
 
-    marks_file = Poco::File(path + escapeForFileName(table_name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
+    marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
 }
 
 
@@ -458,8 +463,7 @@ void StorageLog::addFiles(const String & column_name, const IDataType & type)
         {
             ColumnData & column_data = files[stream_name];
             column_data.column_index = file_count;
-            column_data.data_file = Poco::File{
-                path + escapeForFileName(table_name) + '/' + stream_name + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION};
+            column_data.data_file_path = table_path + stream_name + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION;
 
             column_names_by_idx.push_back(stream_name);
             ++file_count;
@@ -478,15 +482,15 @@ void StorageLog::loadMarks()
     if (loaded_marks)
         return;
 
-    using FilesByIndex = std::vector<Files_t::iterator>;
+    using FilesByIndex = std::vector<Files::iterator>;
 
     FilesByIndex files_by_index(file_count);
-    for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
+    for (Files::iterator it = files.begin(); it != files.end(); ++it)
         files_by_index[it->second.column_index] = it;
 
-    if (marks_file.exists())
+    if (disk->exists(marks_file_path))
     {
-        size_t file_size = marks_file.getSize();
+        size_t file_size = disk->getFileSize(marks_file_path);
         if (file_size % (file_count * sizeof(Mark)) != 0)
             throw Exception("Size of marks file is inconsistent", ErrorCodes::SIZES_OF_MARKS_FILES_ARE_INCONSISTENT);
 
@@ -495,14 +499,14 @@ void StorageLog::loadMarks()
         for (auto & file : files_by_index)
             file->second.marks.reserve(marks_count);
 
-        ReadBufferFromFile marks_rb(marks_file.path(), 32768);
-        while (!marks_rb.eof())
+        std::unique_ptr<ReadBuffer> marks_rb = disk->readFile(marks_file_path, 32768);
+        while (!marks_rb->eof())
         {
             for (size_t i = 0; i < files_by_index.size(); ++i)
             {
                 Mark mark;
-                readIntBinary(mark.rows, marks_rb);
-                readIntBinary(mark.offset, marks_rb);
+                readIntBinary(mark.rows, *marks_rb);
+                readIntBinary(mark.offset, *marks_rb);
                 files_by_index[i]->second.marks.push_back(mark);
             }
         }
@@ -512,52 +516,45 @@ void StorageLog::loadMarks()
 }
 
 
-void StorageLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+void StorageLog::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
-    /// Rename directory with data.
-    Poco::File(path + escapeForFileName(table_name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
+    disk->moveDirectory(table_path, new_path_to_table_data);
 
-    path = new_path_to_db;
-    table_name = new_table_name;
-    database_name = new_database_name;
-    file_checker.setPath(path + escapeForFileName(table_name) + '/' + "sizes.json");
+    table_path = new_path_to_table_data;
+    file_checker.setPath(table_path + "sizes.json");
 
     for (auto & file : files)
-        file.second.data_file = Poco::File(path + escapeForFileName(table_name) + '/' + Poco::Path(file.second.data_file.path()).getFileName());
+        file.second.data_file_path = table_path + fileName(file.second.data_file_path);
 
-    marks_file = Poco::File(path + escapeForFileName(table_name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
+    marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
+    renameInMemory(new_database_name, new_table_name);
 }
 
 void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
-    String table_dir = path + escapeForFileName(table_name);
-
     files.clear();
     file_count = 0;
     loaded_marks = false;
 
-    std::vector<Poco::File> data_files;
-    Poco::File(table_dir).list(data_files);
-
-    for (auto & file : data_files)
-        file.remove(false);
+    disk->clearDirectory(table_path);
 
     for (const auto & column : getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
 
-    file_checker = FileChecker{table_dir + "/" + "sizes.json"};
-    marks_file = Poco::File(table_dir + "/" + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
+    file_checker = FileChecker{disk, table_path + "sizes.json"};
+    marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
 }
 
 
 const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 {
-    const String & column_name = getColumns().begin()->name;
-    const IDataType & column_type = *getColumns().begin()->type;
+    /// There should be at least one physical column
+    const String column_name = getColumns().getAllPhysical().begin()->name;
+    const auto column_type = getColumns().getAllPhysical().begin()->type;
     String filename;
 
     /** We take marks from first column.
@@ -565,20 +562,20 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
       * (Example: for Array data type, first stream is array sizes; and number of array sizes is the number of arrays).
       */
     IDataType::SubstreamPath substream_root_path;
-    column_type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    column_type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
     {
         if (filename.empty())
             filename = IDataType::getFileNameForStream(column_name, substream_path);
     }, substream_root_path);
 
-    Files_t::const_iterator it = files.find(filename);
+    Files::const_iterator it = files.find(filename);
     if (files.end() == it)
         throw Exception("Cannot find file " + filename, ErrorCodes::LOGICAL_ERROR);
 
     return it->second.marks;
 }
 
-BlockInputStreams StorageLog::read(
+Pipes StorageLog::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
@@ -593,7 +590,7 @@ BlockInputStreams StorageLog::read(
 
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
-    BlockInputStreams res;
+    Pipes pipes;
 
     const Marks & marks = getMarksWithRealRowCount();
     size_t marks_size = marks.size();
@@ -611,7 +608,7 @@ BlockInputStreams StorageLog::read(
         size_t rows_begin = mark_begin ? marks[mark_begin - 1].rows : 0;
         size_t rows_end = mark_end ? marks[mark_end - 1].rows : 0;
 
-        res.emplace_back(std::make_shared<LogBlockInputStream>(
+        pipes.emplace_back(std::make_shared<LogSource>(
             max_block_size,
             all_columns,
             *this,
@@ -620,7 +617,7 @@ BlockInputStreams StorageLog::read(
             max_read_buffer_size));
     }
 
-    return res;
+    return pipes;
 }
 
 BlockOutputStreamPtr StorageLog::write(
@@ -639,6 +636,10 @@ CheckResults StorageLog::checkData(const ASTPtr & /* query */, const Context & /
 
 void registerStorageLog(StorageFactory & factory)
 {
+    StorageFactory::StorageFeatures features{
+        .supports_settings = true
+    };
+
     factory.registerStorage("Log", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
@@ -646,10 +647,13 @@ void registerStorageLog(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+        String disk_name = getDiskName(*args.storage_def);
+        DiskPtr disk = args.context.getDisk(disk_name);
+
         return StorageLog::create(
-            args.data_path, args.database_name, args.table_name, args.columns, args.constraints,
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
             args.context.getSettings().max_compress_block_size);
-    });
+    }, features);
 }
 
 }

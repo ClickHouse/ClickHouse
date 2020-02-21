@@ -22,7 +22,7 @@ namespace ErrorCodes
   * Unlike std::ostream, it provides access to the internal buffer,
   *  and also allows you to manually manage the position inside the buffer.
   *
-  * The successors must implement the nextImpl() method.
+  * Derived classes must implement the nextImpl() method.
   */
 class WriteBuffer : public BufferBase
 {
@@ -55,7 +55,7 @@ public:
         pos = working_buffer.begin();
     }
 
-    /** it is desirable in the successors to place the next() call in the destructor,
+    /** it is desirable in the derived classes to place the next() call in the destructor,
       * so that the last data is written
       */
     virtual ~WriteBuffer() {}
@@ -89,6 +89,9 @@ public:
         *pos = x;
         ++pos;
     }
+
+    virtual void sync() {}
+    virtual void finalize() {}
 
 private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).

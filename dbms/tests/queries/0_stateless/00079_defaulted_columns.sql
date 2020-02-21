@@ -20,7 +20,7 @@ create table defaulted (payload String, date materialized today(), key materiali
 desc table defaulted;
 insert into defaulted (payload) values ('hello clickhouse');
 select * from defaulted;
-alter table defaulted add column payload_length materialized length(payload);
+alter table defaulted add column payload_length UInt64 materialized length(payload);
 desc table defaulted;
 select *, payload_length from defaulted;
 insert into defaulted (payload) values ('some string');

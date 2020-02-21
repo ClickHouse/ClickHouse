@@ -321,12 +321,11 @@ ORDER BY Year;
 Q8. The most popular destinations by the number of directly connected cities for various year ranges
 
 ```sql
-SELECT DestCityName, uniqExact(OriginCityName) AS u F
-ROM ontime
-WHERE Year>=2000 and Year<=2010
+SELECT DestCityName, uniqExact(OriginCityName) AS u 
+FROM ontime
+WHERE Year >= 2000 and Year <= 2010
 GROUP BY DestCityName
-ORDER BY u DESC
-LIMIT 10;
+ORDER BY u DESC LIMIT 10;
 ```
 
 Q9.
@@ -403,4 +402,4 @@ This performance test was created by Vadim Tkachenko. See:
 - <http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html>
 
 
-[Original article](https://clickhouse.yandex/docs/en/getting_started/example_datasets/ontime/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets/ontime/) <!--hide-->

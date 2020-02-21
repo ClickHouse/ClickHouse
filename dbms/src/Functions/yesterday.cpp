@@ -4,22 +4,21 @@
 
 #include <DataTypes/DataTypeDate.h>
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 
 
 namespace DB
 {
 
-class PreparedFunctionYesterday : public PreparedFunctionImpl
+class ExecutableFunctionYesterday : public IExecutableFunctionImpl
 {
 public:
-    explicit PreparedFunctionYesterday(time_t time_) : day_value(time_) {}
+    explicit ExecutableFunctionYesterday(time_t time_) : day_value(time_) {}
 
     String getName() const override { return "yesterday"; }
 
-protected:
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    void execute(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         block.getByPosition(result).column = DataTypeDate().createColumnConst(input_rows_count, day_value);
     }
@@ -28,7 +27,7 @@ private:
     DayNum day_value;
 };
 
-class FunctionBaseYesterday : public IFunctionBase
+class FunctionBaseYesterday : public IFunctionBaseImpl
 {
 public:
     explicit FunctionBaseYesterday(DayNum day_value_) : day_value(day_value_), return_type(std::make_shared<DataTypeDate>()) {}
@@ -46,9 +45,9 @@ public:
         return return_type;
     }
 
-    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
-        return std::make_shared<PreparedFunctionYesterday>(day_value);
+        return std::make_unique<ExecutableFunctionYesterday>(day_value);
     }
 
     bool isDeterministic() const override { return false; }
@@ -59,7 +58,7 @@ private:
     DataTypePtr return_type;
 };
 
-class FunctionBuilderYesterday : public FunctionBuilderImpl
+class YesterdayOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = "yesterday";
@@ -70,21 +69,20 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    static FunctionBuilderPtr create(const Context &) { return std::make_shared<FunctionBuilderYesterday>(); }
+    static FunctionOverloadResolverImplPtr create(const Context &) { return std::make_unique<YesterdayOverloadResolver>(); }
 
-protected:
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeDate>(); }
+    DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeDate>(); }
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
         auto day_num = DateLUT::instance().toDayNum(time(nullptr)) - 1;
-        return std::make_shared<FunctionBaseYesterday>(static_cast<DayNum>(day_num));
+        return std::make_unique<FunctionBaseYesterday>(static_cast<DayNum>(day_num));
     }
 };
 
 void registerFunctionYesterday(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionBuilderYesterday>();
+    factory.registerFunction<YesterdayOverloadResolver>();
 }
 
 }

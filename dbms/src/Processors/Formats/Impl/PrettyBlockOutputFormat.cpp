@@ -1,12 +1,12 @@
 #include <sys/ioctl.h>
-#include <port/unistd.h>
+#include <unistd.h>
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/PODArray.h>
 #include <Common/UTF8Helpers.h>
-
 
 namespace DB
 {
@@ -260,7 +260,6 @@ void registerOutputFormatProcessorPretty(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Pretty", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {
@@ -270,7 +269,6 @@ void registerOutputFormatProcessorPretty(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettyNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {

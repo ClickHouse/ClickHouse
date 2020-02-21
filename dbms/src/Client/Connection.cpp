@@ -22,6 +22,9 @@
 #include <Common/config_version.h>
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
+#include <Processors/Pipe.h>
+#include <Processors/ISink.h>
+#include <Processors/Executors/PipelineExecutor.h>
 
 #include <Common/config.h>
 #if USE_POCO_NETSSL
@@ -30,6 +33,7 @@
 
 namespace CurrentMetrics
 {
+    extern const Metric SendScalars;
     extern const Metric SendExternalTables;
 }
 
@@ -73,7 +77,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
 
-        socket->connect(*current_resolved_address, timeouts.connection_timeout);
+        const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
+        socket->connect(*current_resolved_address, connection_timeout);
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
@@ -408,7 +413,11 @@ void Connection::sendQuery(
 
     /// Per query settings.
     if (settings)
-        settings->serialize(*out);
+    {
+        auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
+                                                                                                          : SettingsBinaryFormat::OLD;
+        settings->serialize(*out, settings_format);
+    }
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
 
@@ -434,6 +443,10 @@ void Connection::sendQuery(
 
 void Connection::sendCancel()
 {
+    /// If we already disconnected.
+    if (!out)
+        return;
+
     //LOG_TRACE(log_wrapper.get(), "Sending cancel");
 
     writeVarUInt(Protocol::Client::Cancel, *out);
@@ -441,7 +454,7 @@ void Connection::sendCancel()
 }
 
 
-void Connection::sendData(const Block & block, const String & name)
+void Connection::sendData(const Block & block, const String & name, bool scalar)
 {
     //LOG_TRACE(log_wrapper.get(), "Sending data");
 
@@ -455,7 +468,10 @@ void Connection::sendData(const Block & block, const String & name)
         block_out = std::make_shared<NativeBlockOutputStream>(*maybe_compressed_out, server_revision, block.cloneEmpty());
     }
 
-    writeVarUInt(Protocol::Client::Data, *out);
+    if (scalar)
+        writeVarUInt(Protocol::Client::Scalar, *out);
+    else
+        writeVarUInt(Protocol::Client::Data, *out);
     writeStringBinary(name, *out);
 
     size_t prev_bytes = out->count();
@@ -484,6 +500,83 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
 }
 
 
+void Connection::sendScalarsData(Scalars & data)
+{
+    if (data.empty())
+        return;
+
+    Stopwatch watch;
+    size_t out_bytes = out ? out->count() : 0;
+    size_t maybe_compressed_out_bytes = maybe_compressed_out ? maybe_compressed_out->count() : 0;
+    size_t rows = 0;
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::SendScalars};
+
+    for (auto & elem : data)
+    {
+        rows += elem.second.rows();
+        sendData(elem.second, elem.first, true /* scalar */);
+    }
+
+    out_bytes = out->count() - out_bytes;
+    maybe_compressed_out_bytes = maybe_compressed_out->count() - maybe_compressed_out_bytes;
+    double elapsed = watch.elapsedSeconds();
+
+    std::stringstream msg;
+    msg << std::fixed << std::setprecision(3);
+    msg << "Sent data for " << data.size() << " scalars, total " << rows << " rows in " << elapsed << " sec., "
+        << static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., "
+        << maybe_compressed_out_bytes / 1048576.0 << " MiB (" << maybe_compressed_out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
+
+    if (compression == Protocol::Compression::Enable)
+        msg << ", compressed " << static_cast<double>(maybe_compressed_out_bytes) / out_bytes << " times to "
+            << out_bytes / 1048576.0 << " MiB (" << out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
+    else
+        msg << ", no compression.";
+
+    LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
+}
+
+namespace
+{
+/// Sink which sends data for external table.
+class ExternalTableDataSink : public ISink
+{
+public:
+    using OnCancell = std::function<void()>;
+
+    ExternalTableDataSink(Block header, Connection & connection_, ExternalTableData & table_data_, OnCancell callback)
+            : ISink(std::move(header)), connection(connection_), table_data(table_data_),
+              on_cancell(std::move(callback))
+    {}
+
+    String getName() const override { return "ExternalTableSink"; }
+
+    size_t getNumReadRows() const { return num_rows; }
+
+protected:
+    void consume(Chunk chunk) override
+    {
+        if (table_data.is_cancelled)
+        {
+            on_cancell();
+            return;
+        }
+
+        num_rows += chunk.getNumRows();
+
+        auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+        connection.sendData(block, table_data.table_name);
+    }
+
+private:
+    Connection & connection;
+    ExternalTableData & table_data;
+    OnCancell on_cancell;
+    size_t num_rows = 0;
+};
+}
+
 void Connection::sendExternalTablesData(ExternalTablesData & data)
 {
     if (data.empty())
@@ -502,13 +595,24 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 
     for (auto & elem : data)
     {
-        elem.first->readPrefix();
-        while (Block block = elem.first->read())
-        {
-            rows += block.rows();
-            sendData(block, elem.second);
-        }
-        elem.first->readSuffix();
+        PipelineExecutorPtr executor;
+        auto on_cancel = [& executor]() { executor->cancel(); };
+
+        auto sink = std::make_shared<ExternalTableDataSink>(elem->pipe->getHeader(), *this, *elem, std::move(on_cancel));
+        DB::connect(elem->pipe->getPort(), sink->getPort());
+
+        auto processors = std::move(*elem->pipe).detachProcessors();
+        processors.push_back(sink);
+
+        executor = std::make_shared<PipelineExecutor>(processors);
+        executor->execute(/*num_threads = */ 1);
+
+        auto read_rows = sink->getNumReadRows();
+        rows += read_rows;
+
+        /// If table is empty, send empty block with name.
+        if (read_rows == 0)
+            sendData(sink->getPort().getHeader(), elem->table_name);
     }
 
     /// Send empty block, which means end of data transfer.
@@ -570,7 +674,7 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Connection::Packet Connection::receivePacket()
+Packet Connection::receivePacket()
 {
     try
     {
@@ -724,9 +828,7 @@ std::unique_ptr<Exception> Connection::receiveException()
 {
     //LOG_TRACE(log_wrapper.get(), "Receiving exception");
 
-    Exception e;
-    readException(e, *in, "Received from " + getDescription());
-    return std::unique_ptr<Exception>{ e.clone() };
+    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription()));
 }
 
 

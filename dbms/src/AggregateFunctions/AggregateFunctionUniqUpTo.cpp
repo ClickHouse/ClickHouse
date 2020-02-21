@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB

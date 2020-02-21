@@ -10,17 +10,17 @@ namespace ErrorCodes
 }
 
 
-ExternalModelsLoader::ExternalModelsLoader(
-    ExternalLoaderConfigRepositoryPtr config_repository, Context & context_)
+ExternalModelsLoader::ExternalModelsLoader(Context & context_)
     : ExternalLoader("external model", &Logger::get("ExternalModelsLoader"))
     , context(context_)
 {
-    addConfigRepository(std::move(config_repository), {"model", "name"});
+    setConfigSettings({"model", "name", {}});
     enablePeriodicUpdates(true);
 }
 
 std::shared_ptr<const IExternalLoadable> ExternalModelsLoader::create(
-        const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix) const
+    const std::string & name, const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix, const std::string & /* repository_name */) const
 {
     String type = config.getString(config_prefix + ".type");
     ExternalLoadableLifetime lifetime(config, config_prefix + ".lifetime");
@@ -39,5 +39,4 @@ std::shared_ptr<const IExternalLoadable> ExternalModelsLoader::create(
         throw Exception("Unknown model type: " + type, ErrorCodes::INVALID_CONFIG_PARAMETER);
     }
 }
-
 }

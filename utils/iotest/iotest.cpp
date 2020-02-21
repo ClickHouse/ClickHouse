@@ -1,21 +1,23 @@
-#include <fcntl.h>
-#include <port/unistd.h>
-#include <stdlib.h>
-#include <time.h>
-#include <iostream>
-#include <iomanip>
-#include <vector>
-#include <random>
-#include <pcg_random.hpp>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
+#include <pcg_random.hpp>
 #include <Poco/Exception.h>
 #include <Common/Exception.h>
-#include <Common/randomSeed.h>
-#include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
-#include <IO/BufferWithOwnMemory.h>
+#include <Common/ThreadPool.h>
+#include <Common/randomSeed.h>
+
 #include <cstdlib>
-#include <port/clock.h>
+#include <iomanip>
+#include <iostream>
+#include <random>
+#include <vector>
+
+#include <fcntl.h>
+#include <stdlib.h>
+#include <time.h>
+#include <unistd.h>
+
 
 namespace DB
 {
@@ -150,7 +152,7 @@ int mainImpl(int argc, char ** argv)
     Stopwatch watch;
 
     for (size_t i = 0; i < threads; ++i)
-        pool.schedule(std::bind(thread, fd, mode, min_offset, max_offset, block_size, count));
+        pool.scheduleOrThrowOnError(std::bind(thread, fd, mode, min_offset, max_offset, block_size, count));
     pool.wait();
 
     fsync(fd);

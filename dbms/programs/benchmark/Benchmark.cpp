@@ -1,4 +1,4 @@
-#include <port/unistd.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -101,7 +101,7 @@ public:
 
     }
 
-    void initialize(Poco::Util::Application & self [[maybe_unused]])
+    void initialize(Poco::Util::Application & self [[maybe_unused]]) override
     {
         std::string home_path;
         const char * home_path_cstr = getenv("HOME");
@@ -111,7 +111,7 @@ public:
         configReadClient(config(), home_path);
     }
 
-    int main(const std::vector<std::string> &)
+    int main(const std::vector<std::string> &) override
     {
         if (!json_path.empty() && Poco::File(json_path).exists()) /// Clear file with previous results
             Poco::File(json_path).remove();
@@ -254,7 +254,7 @@ private:
 
             if (interrupt_listener.check())
             {
-                std::cout << "Stopping launch of queries. SIGINT recieved.\n";
+                std::cout << "Stopping launch of queries. SIGINT received.\n";
                 return false;
             }
 
@@ -274,15 +274,24 @@ private:
         pcg64 generator(randomSeed());
         std::uniform_int_distribution<size_t> distribution(0, queries.size() - 1);
 
-        for (size_t i = 0; i < concurrency; ++i)
+        try
         {
-            EntryPtrs connection_entries;
-            connection_entries.reserve(connections.size());
+            for (size_t i = 0; i < concurrency; ++i)
+            {
+                EntryPtrs connection_entries;
+                connection_entries.reserve(connections.size());
 
-            for (const auto & connection : connections)
-                connection_entries.emplace_back(std::make_shared<Entry>(connection->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings))));
+                for (const auto & connection : connections)
+                    connection_entries.emplace_back(std::make_shared<Entry>(
+                            connection->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings))));
 
-            pool.schedule(std::bind(&Benchmark::thread, this, connection_entries));
+                pool.scheduleOrThrowOnError(std::bind(&Benchmark::thread, this, connection_entries));
+            }
+        }
+        catch (...)
+        {
+            pool.wait();
+            throw;
         }
 
         InterruptListener interrupt_listener;
@@ -356,7 +365,7 @@ private:
         Stopwatch watch;
         RemoteBlockInputStream stream(
             *(*connection_entries[connection_index]),
-            query, {}, global_context, &settings, nullptr, Tables(), query_processing_stage);
+            query, {}, global_context, &settings, nullptr, Scalars(), Tables(), query_processing_stage);
 
         Progress progress;
         stream.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
@@ -409,7 +418,7 @@ private:
             std::cerr << percent << "%\t\t";
             for (const auto & info : infos)
             {
-                std::cerr << info->sampler.quantileInterpolated(percent / 100.0) << " sec." << "\t";
+                std::cerr << info->sampler.quantileNearest(percent / 100.0) << " sec." << "\t";
             }
             std::cerr << "\n";
         };
@@ -444,7 +453,7 @@ private:
 
         auto print_percentile = [&json_out](Stats & info, auto percent, bool with_comma = true)
         {
-            json_out << "\"" << percent << "\"" << ": " << info.sampler.quantileInterpolated(percent / 100.0) << (with_comma ? ",\n" : "\n");
+            json_out << "\"" << percent << "\"" << ": " << info.sampler.quantileNearest(percent / 100.0) << (with_comma ? ",\n" : "\n");
         };
 
         json_out << "{\n";
@@ -483,7 +492,7 @@ private:
 
 public:
 
-    ~Benchmark()
+    ~Benchmark() override
     {
         shutdown = true;
     }
@@ -495,6 +504,7 @@ public:
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {

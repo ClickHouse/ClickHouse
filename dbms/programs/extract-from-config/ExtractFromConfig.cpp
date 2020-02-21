@@ -44,6 +44,9 @@ static std::string extractFromConfig(
     return configuration->getString(key);
 }
 
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
+
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
 {
     bool print_stacktrace = false;

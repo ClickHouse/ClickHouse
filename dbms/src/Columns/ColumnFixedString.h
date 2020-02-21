@@ -5,6 +5,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Columns/IColumn.h>
+#include <Columns/IColumnImpl.h>
 #include <Columns/ColumnVectorHelper.h>
 #include <Core/Field.h>
 
@@ -89,6 +90,11 @@ public:
     void insertDefault() override
     {
         chars.resize_fill(chars.size() + n);
+    }
+
+    virtual void insertManyDefaults(size_t length) override
+    {
+        chars.resize_fill(chars.size() + n * length);
     }
 
     void popBack(size_t elems) override

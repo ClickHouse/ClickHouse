@@ -9,8 +9,12 @@
 #include <IO/LimitReadBuffer.h>
 #include <Storages/StorageMemory.h>
 #include <Poco/Net/MessageHeader.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Pipe.h>
 
 #include <Core/ExternalTable.h>
+#include <Processors/Sources/SinkToOutputStream.h>
+#include <Processors/Executors/PipelineExecutor.h>
 
 
 namespace DB
@@ -22,12 +26,18 @@ namespace ErrorCodes
 }
 
 
-ExternalTableData BaseExternalTable::getData(const Context & context)
+ExternalTableDataPtr BaseExternalTable::getData(const Context & context)
 {
     initReadBuffer();
     initSampleBlock();
     auto input = context.getInputFormat(format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE);
-    return std::make_pair(std::make_shared<AsynchronousBlockInputStream>(input), name);
+    auto stream = std::make_shared<AsynchronousBlockInputStream>(input);
+
+    auto data = std::make_unique<ExternalTableData>();
+    data->table_name = name;
+    data->pipe = std::make_unique<Pipe>(std::make_shared<SourceFromInputStream>(std::move(stream)));
+
+    return data;
 }
 
 void BaseExternalTable::clean()
@@ -156,22 +166,24 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     else
         throw Exception("Neither structure nor types have not been provided for external table " + name + ". Use fields " + name + "_structure or " + name + "_types to do so.", ErrorCodes::BAD_ARGUMENTS);
 
-    ExternalTableData data = getData(context);
+    ExternalTableDataPtr data = getData(context);
 
     /// Create table
     NamesAndTypesList columns = sample_block.getNamesAndTypesList();
-    StoragePtr storage = StorageMemory::create("_external", data.second, ColumnsDescription{columns}, ConstraintsDescription{});
+    StoragePtr storage = StorageMemory::create(StorageID("_external", data->table_name), ColumnsDescription{columns}, ConstraintsDescription{});
     storage->startup();
-    context.addExternalTable(data.second, storage);
+    context.addExternalTable(data->table_name, storage);
     BlockOutputStreamPtr output = storage->write(ASTPtr(), context);
 
     /// Write data
-    data.first->readPrefix();
-    output->writePrefix();
-    while (Block block = data.first->read())
-        output->write(block);
-    data.first->readSuffix();
-    output->writeSuffix();
+    auto sink = std::make_shared<SinkToOutputStream>(std::move(output));
+    connect(data->pipe->getPort(), sink->getPort());
+
+    auto processors = std::move(*data->pipe).detachProcessors();
+    processors.push_back(std::move(sink));
+
+    auto executor = std::make_shared<PipelineExecutor>(processors);
+    executor->execute(/*num_threads = */ 1);
 
     /// We are ready to receive the next file, for this we clear all the information received
     clean();
