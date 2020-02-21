@@ -228,11 +228,12 @@ public:
         const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
         const Context & context_,
         const NameSet & required_result_columns_ = {},
-        size_t subquery_depth_ = 0,
-        bool do_global_ = false)
-    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, subquery_depth_, do_global_)
-    ,   required_result_columns(required_result_columns_)
-    {}
+        bool do_global_ = false,
+        const SelectQueryOptions & options_ = {})
+    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_)
+    ,   required_result_columns(required_result_columns_), query_options(options_)
+    {
+    }
 
     /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
     bool hasAggregation() const { return has_aggregation; }
@@ -258,6 +259,7 @@ public:
 private:
     /// If non-empty, ignore all expressions not from this list.
     NameSet required_result_columns;
+    SelectQueryOptions query_options;
 
     /**
       * Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.

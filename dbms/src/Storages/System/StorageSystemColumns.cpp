@@ -235,7 +235,7 @@ private:
 };
 
 
-Pipes StorageSystemColumns::readWithProcessors(
+Pipes StorageSystemColumns::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,

@@ -71,8 +71,11 @@ for se in subst_elems:
     parameter_value_arrays.append([v.text for v in se.findall('values/value')])
 parameter_combinations = [dict(zip(parameter_keys, parameter_combination)) for parameter_combination in itertools.product(*parameter_value_arrays)]
 
+# Take care to keep the order of queries -- sometimes we have DROP IF EXISTS
+# followed by CREATE in create queries section, so the order matters.
 def substitute_parameters(query_templates, parameter_combinations):
-    return list(set([template.format(**parameters) for template, parameters in itertools.product(query_templates, parameter_combinations)]))
+    return [template.format(**parameters) for template, parameters
+        in itertools.product(query_templates, parameter_combinations)]
 
 report_stage_end('substitute')
 
@@ -116,7 +119,7 @@ for q in test_queries:
     # Prewarm: run once on both servers. Helps to bring the data into memory,
     # precompile the queries, etc.
     for conn_index, c in enumerate(connections):
-        res = c.execute(q)
+        res = c.execute(q, query_id = 'prewarm {} {}'.format(0, q))
         print('prewarm\t' + tsv_escape(q) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
 
     # Now, perform measured runs.
