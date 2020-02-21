@@ -59,5 +59,5 @@ set +m
 
 dmesg > dmesg.log
 
-7z a /output/output.7z *.log *.tsv *.html *.txt *.rep
+7z a /output/output.7z *.log *.tsv *.html *.txt *.rep *.svg
 cp compare.log /output

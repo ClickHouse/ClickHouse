@@ -29,7 +29,9 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/AnalyzedJoin.h>
+#include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/Join.h>
+#include <Interpreters/MergeJoin.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -536,6 +538,17 @@ static ExpressionActionsPtr createJoinedBlockActions(const Context & context, co
     auto syntax_result = SyntaxAnalyzer(context).analyze(expression_list,
                                                          analyzed_join.columnsFromJoinedTable(), analyzed_join.requiredJoinedNames());
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
+}
+
+static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<AnalyzedJoin> analyzed_join, const Block & sample_block)
+{
+    bool allow_merge_join = analyzed_join->allowMergeJoin();
+
+    if (analyzed_join->forceHashJoin() || (analyzed_join->preferMergeJoin() && !allow_merge_join))
+        return std::make_shared<Join>(analyzed_join, sample_block);
+    else if (analyzed_join->forceMergeJoin() || (analyzed_join->preferMergeJoin() && allow_merge_join))
+        return std::make_shared<MergeJoin>(analyzed_join, sample_block);
+    return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
 }
 
 JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryElement & join_element)
