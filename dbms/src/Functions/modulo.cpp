@@ -20,6 +20,7 @@ template <typename A, typename B>
 struct ModuloImpl
 {
     using ResultType = typename NumberTraits::ResultOfModulo<A, B>::Type;
+    static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -38,6 +39,7 @@ struct ModuloByConstantImpl
     : BinaryOperationImplBase<A, B, ModuloImpl<A, B>>
 {
     using ResultType = typename ModuloImpl<A, B>::ResultType;
+    static const constexpr bool allow_fixed_string = false;
 
     static void vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
     {
@@ -61,8 +63,23 @@ struct ModuloByConstantImpl
 
         /// Here we failed to make the SSE variant from libdivide give an advantage.
         size_t size = a.size();
-        for (size_t i = 0; i < size; ++i)
-            c[i] = a[i] - (a[i] / divider) * b; /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
+
+        /// strict aliasing optimization for char like arrays
+        auto * __restrict src = a.data();
+        auto * __restrict dst = c.data();
+
+        if (b & (b - 1))
+        {
+            for (size_t i = 0; i < size; ++i)
+                dst[i] = src[i] - (src[i] / divider) * b; /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
+        }
+        else
+        {
+            // gcc libdivide doesn't work well for pow2 division
+            auto mask = b - 1;
+            for (size_t i = 0; i < size; ++i)
+                dst[i] = src[i] & mask;
+        }
     }
 };
 

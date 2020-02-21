@@ -1,5 +1,5 @@
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
-#include <sched.h>
+#if defined (OS_LINUX)
+#   include <sched.h>
 #endif
 
 #include <iostream>
@@ -9,10 +9,9 @@
 #include <Common/Stopwatch.h>
 #include <Core/Defines.h>
 #include "AvalancheTest.h"  /// Taken from SMHasher.
-#include <port/clock.h>
 
 
-void setAffinity()
+static void setAffinity()
 {
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
     cpu_set_t mask;
@@ -31,7 +30,7 @@ void setAffinity()
 
 static inline ALWAYS_INLINE UInt64 rdtsc()
 {
-#if __x86_64__
+#if defined(__x86_64__)
     UInt32 a, d;
     __asm__ volatile ("rdtsc" : "=a" (a), "=d" (d));
     return static_cast<UInt64>(a) | (static_cast<UInt64>(d) << 32);
@@ -109,7 +108,7 @@ static inline size_t murmurMix(UInt64 x)
 }
 
 
-#if __x86_64__
+#if defined(__x86_64__)
 static inline size_t crc32Hash(UInt64 x)
 {
     UInt64 crc = -1ULL;
@@ -200,7 +199,7 @@ const size_t BUF_SIZE = 1024;
 using Source = std::vector<UInt64>;
 
 
-void report(const char * name, size_t n, double elapsed, UInt64 tsc_diff, size_t res)
+static void report(const char * name, size_t n, double elapsed, UInt64 tsc_diff, size_t res)
 {
     std::cerr << name << std::endl
         << "Done in " << elapsed
@@ -309,7 +308,7 @@ int main(int argc, char ** argv)
     if (!method || method == 8) test<mulShift>  (n, data.data(), "7: mulShift");
     if (!method || method == 9) test<tabulation>(n, data.data(), "8: tabulation");
 
-#if __x86_64__
+#if defined(__x86_64__)
     if (!method || method == 10) test<crc32Hash> (n, data.data(), "9: crc32");
 #endif
 

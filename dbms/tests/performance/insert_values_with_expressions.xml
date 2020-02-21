@@ -2,7 +2,6 @@
     <type>loop</type>
 
     <settings>
-        <input_format_values_deduce_templates_of_expressions>1</input_format_values_deduce_templates_of_expressions>
         <input_format_values_accurate_types_of_literals>1</input_format_values_accurate_types_of_literals>
     </settings>
     <!--

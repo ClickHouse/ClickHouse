@@ -15,9 +15,9 @@
 #include <Common/Stopwatch.h>
 
 
-UInt64 rdtsc()
+static UInt64 rdtsc()
 {
-#if __x86_64__
+#if defined(__x86_64__)
     UInt64 val;
     __asm__ __volatile__("rdtsc" : "=A" (val) :);
     return val;

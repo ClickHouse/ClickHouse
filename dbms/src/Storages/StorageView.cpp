@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
+#include <Interpreters/getTableExpressions.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -15,6 +16,10 @@
 
 #include <Common/typeid_cast.h>
 
+#include <Processors/Pipe.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+
 
 namespace DB
 {
@@ -23,15 +28,15 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int ALIAS_REQUIRED;
 }
 
 
 StorageView::StorageView(
-    const String & database_name_,
-    const String & table_name_,
+    const StorageID & table_id_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_)
-    : table_name(table_name_), database_name(database_name_)
+    : IStorage(table_id_)
 {
     setColumns(columns_);
 
@@ -42,7 +47,7 @@ StorageView::StorageView(
 }
 
 
-BlockInputStreams StorageView::read(
+Pipes StorageView::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -50,7 +55,7 @@ BlockInputStreams StorageView::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    BlockInputStreams res;
+    Pipes pipes;
 
     ASTPtr current_inner_query = inner_query;
 
@@ -62,18 +67,44 @@ BlockInputStreams StorageView::read(
 
         replaceTableNameWithSubquery(new_outer_select, new_inner_query);
 
-        if (PredicateExpressionsOptimizer(new_outer_select, context.getSettings(), context).optimize())
-            current_inner_query = new_inner_query;
+        /// TODO: remove getTableExpressions and getTablesWithColumns
+        {
+            const auto & table_expressions = getTableExpressions(*new_outer_select);
+            const auto & tables_with_columns = getDatabaseAndTablesWithColumnNames(table_expressions, context);
+
+            auto & settings = context.getSettingsRef();
+            if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
+            {
+                for (auto & pr : tables_with_columns)
+                    if (pr.table.table.empty() && pr.table.alias.empty())
+                        throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
+                            ErrorCodes::ALIAS_REQUIRED);
+            }
+
+            if (PredicateExpressionsOptimizer(context, tables_with_columns, context.getSettings()).optimize(*new_outer_select))
+                current_inner_query = new_inner_query;
+        }
     }
 
-    res = InterpreterSelectWithUnionQuery(current_inner_query, context, {}, column_names).executeWithMultipleStreams();
+    QueryPipeline pipeline;
+    InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
+    /// FIXME res may implicitly use some objects owned be pipeline, but them will be destructed after return
+    if (query_info.force_tree_shaped_pipeline)
+    {
+        BlockInputStreams streams = interpreter.executeWithMultipleStreams(pipeline);
+        for (auto & stream : streams)
+            pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
+    }
+    else
+        /// TODO: support multiple streams here. Need more general interface than pipes.
+        pipes.emplace_back(interpreter.executeWithProcessors().getPipe());
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    for (auto & stream : res)
-        stream = std::make_shared<MaterializingBlockInputStream>(stream);
+    for (auto & pipe : pipes)
+        pipe.addSimpleTransform(std::make_shared<MaterializingTransform>(pipe.getHeader()));
 
-    return res;
+    return pipes;
 }
 
 void StorageView::replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery)
@@ -104,7 +135,7 @@ void registerStorageView(StorageFactory & factory)
         if (args.query.storage)
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
-        return StorageView::create(args.database_name, args.table_name, args.query, args.columns);
+        return StorageView::create(args.table_id, args.query, args.columns);
     });
 }
 

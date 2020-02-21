@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Arena.h>
+#include <Common/PODArray.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsCommon.h>
 

@@ -1,5 +1,6 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
@@ -21,10 +22,24 @@ ExpressionTransform::ExpressionTransform(const Block & header_, ExpressionAction
 
 void ExpressionTransform::transform(Chunk & chunk)
 {
+    if (!initialized)
+    {
+        initialized = true;
+
+        if (expression->resultIsAlwaysEmpty())
+        {
+            stopReading();
+            chunk = Chunk(getOutputPort().getHeader().getColumns(), 0);
+            return;
+        }
+    }
+
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     if (on_totals)
     {
+        /// Drop totals if both out stream and joined stream doesn't have ones.
+        /// See comment in ExpressionTransform.h
         if (default_totals && !expression->hasTotalsInJoin())
             return;
 

@@ -14,4 +14,4 @@
 N - индекс столбца начиная с 1. N должно быть константой. N должно быть целым строго положительным числом не большим размера кортежа.
 Выполнение функции ничего не стоит.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/in_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/in_functions/) <!--hide-->

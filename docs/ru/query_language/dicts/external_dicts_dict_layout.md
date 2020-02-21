@@ -6,7 +6,7 @@
 
 Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе "[cache](#cache)".
 
-Повысить производительнось словарей можно следующими способами:
+Повысить производительность словарей можно следующими способами:
 
 -   Вызывать функцию для работы со словарём после `GROUP BY`.
 -   Помечать извлекаемые атрибуты как инъективные. Атрибут называется инъективным, если разным ключам соответствуют разные значения атрибута. Тогда при использовании в `GROUP BY` функции, достающей значение атрибута по ключу, эта функция автоматически выносится из `GROUP BY`.
@@ -35,19 +35,29 @@
 ```
 
 
+Соответствущий [DDL-запрос](../create.md#create-dictionary-query):
+
+```sql
+CREATE DICTIONARY (...)
+...
+LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
+...
+```
+
 ## Способы размещения словарей в памяти
 
--   [flat](#flat)
--   [hashed](#hashed)
--   [cache](#cache)
--   [range_hashed](#range-hashed)
--   [complex_key_hashed](#complex-key-hashed)
--   [complex_key_cache](#complex-key-cache)
--   [ip_trie](#ip-trie)
+- [flat](#flat)
+- [hashed](#hashed)
+- [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
+- [cache](#cache)
+- [range_hashed](#range-hashed)
+- [complex_key_hashed](#complex-key-hashed)
+- [complex_key_cache](#complex-key-cache)
+- [ip_trie](#ip-trie)
 
 ### flat
 
-Словарь полностью хранится в оперативной памяти в виде плоских массивов. Объем памяти, занимаемой словарем? пропорционален размеру самого большого (по размеру) ключа.
+Словарь полностью хранится в оперативной памяти в виде плоских массивов. Объём памяти, занимаемой словарём пропорционален размеру самого большого по размеру ключа.
 
 Ключ словаря имеет тип `UInt64` и его величина ограничена 500 000. Если при создании словаря обнаружен ключ больше, то ClickHouse бросает исключение и не создает словарь.
 
@@ -61,6 +71,12 @@
 <layout>
   <flat />
 </layout>
+```
+
+или
+
+```sql
+LAYOUT(FLAT())
 ```
 
 ### hashed
@@ -77,6 +93,29 @@
 </layout>
 ```
 
+или
+
+```sql
+LAYOUT(HASHED())
+```
+
+### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
+
+Аналогичен `hashed`, но при этом занимает меньше места в памяти и генерирует более высокую загрузку CPU.
+
+Пример конфигурации:
+
+```xml
+<layout>
+  <sparse_hashed />
+</layout>
+```
+
+или
+
+```sql
+LAYOUT(SPARSE_HASHED())
+```
 
 ### complex_key_hashed 
 
@@ -88,6 +127,12 @@
 <layout>
   <complex_key_hashed />
 </layout>
+```
+
+или
+
+```sql
+LAYOUT(COMPLEX_KEY_HASHED())
 ```
 
 
@@ -129,6 +174,19 @@
         <type>Date</type>        
     </range_max>
     ...
+```
+
+или
+
+```sql
+CREATE DICTIONARY somedict (
+    id UInt64,
+    first Date,
+    last Date
+)
+PRIMARY KEY id
+LAYOUT(RANGE_HASHED())
+RANGE(MIN first MAX last)
 ```
 
 Для работы с такими словарями в функцию `dictGetT` необходимо передавать дополнительный аргумент, для которого подбирается диапазон:
@@ -178,6 +236,18 @@
 </yandex>
 ```
 
+или
+
+```sql
+CREATE DICTIONARY somedict(
+    Abcdef UInt64,
+    StartTimeStamp UInt64,
+    EndTimeStamp UInt64,
+    XXXType String DEFAULT ''
+)
+PRIMARY KEY Abcdef
+RANGE(MIN StartTimeStamp MAX EndTimeStamp)
+```
 
 ### cache
 
@@ -202,6 +272,12 @@
         <size_in_cells>1000000000</size_in_cells>
     </cache>
 </layout>
+```
+
+или
+
+```sql
+LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 ```
 
 Укажите достаточно большой размер кэша. Количество ячеек следует подобрать экспериментальным путём:
@@ -265,6 +341,17 @@
     ...
 ```
 
+или
+
+```sql
+CREATE DICTIONARY somedict (
+    prefix String,
+    asn UInt32,
+    cca2 String DEFAULT '??'
+)
+PRIMARY KEY prefix
+```
+
 Этот ключ должен иметь только один атрибут типа `String`, содержащий допустимый префикс IP. Другие типы еще не поддерживаются.
 
 Для запросов необходимо использовать те же функции (`dictGetT` с кортежем), что и для словарей с составными ключами:
@@ -281,6 +368,6 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 Никакие другие типы не поддерживаются. Функция возвращает атрибут для префикса, соответствующего данному IP-адресу. Если есть перекрывающиеся префиксы, возвращается наиболее специфический.
 
-Данные хранятся в побитовом дереве (`trie`), он должены полностью помещаться в оперативной памяти.
+Данные хранятся в побитовом дереве (`trie`), он должен полностью помещаться в оперативной памяти.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/dicts/external_dicts_dict_layout/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

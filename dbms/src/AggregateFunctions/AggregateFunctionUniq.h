@@ -219,7 +219,8 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    /// ALWAYS_INLINE is required to have better code layout for uniqHLL12 function
+    void ALWAYS_INLINE add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         detail::OneAdder<T, Data>::add(this->data(place), *columns[0], row_num);
     }
@@ -243,8 +244,6 @@ public:
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -299,8 +298,6 @@ public:
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }

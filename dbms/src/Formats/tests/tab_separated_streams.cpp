@@ -45,7 +45,7 @@ try
     BlockInputStreamPtr block_input = std::make_shared<InputStreamFromInputFormat>(std::move(input_format));
 
     BlockOutputStreamPtr block_output = std::make_shared<OutputStreamToOutputFormat>(
-        std::make_shared<TabSeparatedRowOutputFormat>(out_buf, sample, false, false, [] {}, format_settings));
+        std::make_shared<TabSeparatedRowOutputFormat>(out_buf, sample, false, false, [](const Columns & /* columns */, size_t /* row */){}, format_settings));
 
     copyData(*block_input, *block_output);
     return 0;

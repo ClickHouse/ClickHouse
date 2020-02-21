@@ -1,11 +1,13 @@
 #pragma once
 
-#include <Databases/DatabasesCommon.h>
+#include <Databases/DatabaseOnDisk.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
 
 
 namespace DB
 {
+
 
 class DatabaseLazyIterator;
 
@@ -13,14 +15,14 @@ class DatabaseLazyIterator;
   * Works like DatabaseOrdinary, but stores in memory only cache.
   * Can be used only with *Log engines.
   */
-class DatabaseLazy : public IDatabase
+class DatabaseLazy : public DatabaseOnDisk
 {
 public:
-    DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context);
+    DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context_);
 
     String getEngineName() const override { return "Lazy"; }
 
-    void loadTables(
+    void loadStoredObjects(
         Context & context,
         bool has_force_restore_data_flag) override;
 
@@ -44,31 +46,9 @@ public:
     void alterTable(
         const Context & context,
         const String & name,
-        const ColumnsDescription & columns,
-        const IndicesDescription & indices,
-        const ConstraintsDescription & constraints,
-        const ASTModifier & engine_modifier) override;
+        const StorageInMemoryMetadata & metadata) override;
 
-    time_t getTableMetadataModificationTime(
-        const Context & context,
-        const String & table_name) override;
-
-    ASTPtr getCreateTableQuery(
-        const Context & context,
-        const String & table_name) const override;
-
-    ASTPtr tryGetCreateTableQuery(
-        const Context & context,
-        const String & table_name) const override;
-
-    ASTPtr getCreateDatabaseQuery(const Context & context) const override;
-
-    String getDataPath() const override;
-    String getDatabaseName() const override;
-    String getMetadataPath() const override;
-    String getTableMetadataPath(const String & table_name) const override;
-
-    void drop() override;
+    time_t getObjectMetadataModificationTime(const String & table_name) const override;
 
     bool isTableExist(
         const Context & context,
@@ -80,7 +60,7 @@ public:
 
     bool empty(const Context & context) const override;
 
-    DatabaseIteratorPtr getIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
+    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
 
     void attachTable(const String & table_name, const StoragePtr & table) override;
 
@@ -117,18 +97,11 @@ private:
 
     using TablesCache = std::unordered_map<String, CachedTable>;
 
-
-    String name;
-    const String metadata_path;
-    const String data_path;
-
     const time_t expiration_time;
 
-    mutable std::mutex tables_mutex;
+    /// TODO use DatabaseWithOwnTablesBase::tables
     mutable TablesCache tables_cache;
     mutable CacheExpirationQueue cache_expiration_queue;
-
-    Poco::Logger * log;
 
     StoragePtr loadTable(const Context & context, const String & table_name) const;
 
@@ -138,10 +111,13 @@ private:
 };
 
 
-class DatabaseLazyIterator final : public IDatabaseIterator
+class DatabaseLazyIterator final : public IDatabaseTablesIterator
 {
 public:
-    DatabaseLazyIterator(DatabaseLazy & database_, const Context & context_, Strings && table_names_);
+    DatabaseLazyIterator(
+        DatabaseLazy & database_,
+        const Context & context_,
+        Strings && table_names_);
 
     void next() override;
     bool isValid() const override;
@@ -155,5 +131,4 @@ private:
     Strings::const_iterator iterator;
     mutable StoragePtr current_storage;
 };
-
 }

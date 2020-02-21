@@ -13,9 +13,10 @@
         - [clickhousedb_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
         - [infi.clickhouse_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (использует [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
         - [pg2ch](https://github.com/mkabilov/pg2ch)
+        - [clickhouse_fdw](https://github.com/adjust/clickhouse_fdw)
     - [MSSQL](https://en.wikipedia.org/wiki/Microsoft_SQL_Server)
         - [ClickHouseMightrator](https://github.com/zlzforever/ClickHouseMigrator)
-- Очереди ообщений
+- Очереди сообщений
     - [Kafka](https://kafka.apache.org)
         - [clickhouse_sinker](https://github.com/housepower/clickhouse_sinker) (использует [Go client](https://github.com/kshvakov/clickhouse/))
 - Хранилища объектов
@@ -31,7 +32,9 @@
 - Мониторинг
     - [Graphite](https://graphiteapp.org)
         - [graphouse](https://github.com/yandex/graphouse)
-        - [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse)
+        - [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
+        - [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
+        - [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - оптимизирует партиции таблиц [\*GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md#graphitemergetree) согласно правилам в [конфигурации rollup](../../operations/table_engines/graphitemergetree.md#rollup-configuration)
     - [Grafana](https://grafana.com/)
         - [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     - [Prometheus](https://prometheus.io/)
@@ -80,4 +83,4 @@
     - [Ecto](https://github.com/elixir-ecto/ecto)
         - [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/third-party/integrations/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/integrations/) <!--hide-->

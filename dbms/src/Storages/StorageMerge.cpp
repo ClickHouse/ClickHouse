@@ -7,29 +7,29 @@
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/FilterBlockInputStream.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/AlterCommands.h>
-#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTExpressionList.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Databases/IDatabase.h>
-#include <Core/SettingsCommon.h>
 #include <ext/range.h>
 #include <algorithm>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/ConcatProcessor.h>
+#include <Processors/Transforms/AddingConstColumnTransform.h>
+#include <Processors/Transforms/ConvertingTransform.h>
 
 
 namespace DB
@@ -38,7 +38,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_PREWHERE;
-    extern const int INCOMPATIBLE_SOURCE_TABLES;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
@@ -47,15 +46,12 @@ namespace ErrorCodes
 
 
 StorageMerge::StorageMerge(
-    const std::string & database_name_,
-    const std::string & table_name_,
+    const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const String & source_database_,
     const String & table_name_regexp_,
     const Context & context_)
-    : IStorage(ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
-    , table_name(table_name_)
-    , database_name(database_name_)
+    : IStorage(table_id_, ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
     , source_database(source_database_)
     , table_name_regexp(table_name_regexp_)
     , global_context(context_)
@@ -126,7 +122,7 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, cons
     size_t i = 0;
     for (const auto & table : selected_tables)
     {
-        if (table.first->mayBenefitFromIndexForIn(left_in_operand, query_context))
+        if (std::get<0>(table)->mayBenefitFromIndexForIn(left_in_operand, query_context))
             return true;
 
         ++i;
@@ -143,7 +139,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
 {
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
 
-    DatabaseIteratorPtr iterator = getDatabaseIterator(context);
+    DatabaseTablesIteratorPtr iterator = getDatabaseIterator(context);
 
     size_t selected_table_size = 0;
 
@@ -163,7 +159,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
 }
 
 
-BlockInputStreams StorageMerge::read(
+Pipes StorageMerge::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -171,7 +167,7 @@ BlockInputStreams StorageMerge::read(
     const size_t max_block_size,
     unsigned num_streams)
 {
-    BlockInputStreams res;
+    Pipes res;
 
     bool has_table_virtual_column = false;
     Names real_column_names;
@@ -198,137 +194,161 @@ BlockInputStreams StorageMerge::read(
       * This is necessary to correctly pass the recommended number of threads to each table.
       */
     StorageListWithLocks selected_tables = getSelectedTables(
-        query_info.query, has_table_virtual_column, true, context.getCurrentQueryId());
+        query_info.query, has_table_virtual_column, context.getCurrentQueryId());
 
     if (selected_tables.empty())
         /// FIXME: do we support sampling in this case?
-        return createSourceStreams(
-            query_info, processed_stage, max_block_size, header, {}, {}, real_column_names, modified_context, 0, has_table_virtual_column);
+        return createSources(
+            query_info, processed_stage, max_block_size, header, {}, real_column_names, modified_context, 0, has_table_virtual_column);
 
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier = std::min(unsigned(tables_count), std::max(1U, unsigned(context.getSettingsRef().max_streams_multiplier_for_merge_tables)));
     num_streams *= num_streams_multiplier;
     size_t remaining_streams = num_streams;
 
-    for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
+    InputSortingInfoPtr input_sorting_info;
+    if (query_info.order_by_optimizer)
+    {
+        for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
+        {
+            auto current_info = query_info.order_by_optimizer->getInputOrder(std::get<0>(*it));
+            if (it == selected_tables.begin())
+                input_sorting_info = current_info;
+            else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
+                input_sorting_info.reset();
+
+            if (!input_sorting_info)
+                break;
+        }
+
+        query_info.input_sorting_info = input_sorting_info;
+    }
+
+    for (const auto & table : selected_tables)
     {
         size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
         size_t current_streams = std::min(current_need_streams, remaining_streams);
         remaining_streams -= current_streams;
         current_streams = std::max(size_t(1), current_streams);
 
-        StoragePtr storage = it->first;
-        TableStructureReadLockHolder struct_lock = it->second;
+        auto & storage = std::get<0>(table);
 
         /// If sampling requested, then check that table supports it.
         if (query_info.query->as<ASTSelectQuery>()->sample_size() && !storage->supportsSampling())
             throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
-        BlockInputStreams source_streams;
+        auto source_pipes = createSources(
+                query_info, processed_stage, max_block_size, header, table, real_column_names, modified_context,
+                current_streams, has_table_virtual_column);
 
-        if (current_streams)
-        {
-            source_streams = createSourceStreams(
-                query_info, processed_stage, max_block_size, header, storage,
-                struct_lock, real_column_names, modified_context, current_streams, has_table_virtual_column);
-        }
-        else
-        {
-            source_streams.emplace_back(std::make_shared<LazyBlockInputStream>(
-                header, [=]() mutable -> BlockInputStreamPtr
-                {
-                    BlockInputStreams streams = createSourceStreams(query_info, processed_stage, max_block_size,
-                                                                    header, storage, struct_lock, real_column_names,
-                                                                    modified_context, current_streams, has_table_virtual_column, true);
-
-                    if (!streams.empty() && streams.size() != 1)
-                        throw Exception("LogicalError: the lazy stream size must to be one or empty.", ErrorCodes::LOGICAL_ERROR);
-
-                    return streams.empty() ? std::make_shared<NullBlockInputStream>(header) : streams[0];
-                }));
-        }
-
-        res.insert(res.end(), source_streams.begin(), source_streams.end());
+        for (auto & pipe : source_pipes)
+            res.emplace_back(std::move(pipe));
     }
 
     if (res.empty())
         return res;
 
-    res = narrowBlockInputStreams(res, num_streams);
-    return res;
+    return narrowPipes(std::move(res), num_streams);
 }
 
-BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
-                                                    const UInt64 max_block_size, const Block & header, const StoragePtr & storage,
-                                                    const TableStructureReadLockHolder & struct_lock, Names & real_column_names,
-                                                    Context & modified_context, size_t streams_num, bool has_table_virtual_column,
-                                                    bool concat_streams)
+Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
+    const UInt64 max_block_size, const Block & header, const StorageWithLockAndName & storage_with_lock,
+    Names & real_column_names,
+    Context & modified_context, size_t streams_num, bool has_table_virtual_column,
+    bool concat_streams)
 {
+    auto & [storage, struct_lock, table_name] = storage_with_lock;
     SelectQueryInfo modified_query_info = query_info;
     modified_query_info.query = query_info.query->clone();
 
-    VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", storage ? storage->getTableName() : "");
+    VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", table_name);
+
+    Pipes pipes;
 
     if (!storage)
-        return BlockInputStreams{
-            InterpreterSelectQuery(modified_query_info.query, modified_context, std::make_shared<OneBlockInputStream>(header),
-                                   SelectQueryOptions(processed_stage).analyze()).execute().in};
+    {
+        if (query_info.force_tree_shaped_pipeline)
+        {
+            /// This flag means that pipeline must be tree-shaped,
+            /// so we can't enable processors for InterpreterSelectQuery here.
+            auto stream = InterpreterSelectQuery(modified_query_info.query, modified_context, std::make_shared<OneBlockInputStream>(header),
+                                                 SelectQueryOptions(processed_stage).analyze()).execute().in;
 
-    BlockInputStreams source_streams;
+            pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
+            return pipes;
+        }
+
+        pipes.emplace_back(
+            InterpreterSelectQuery(modified_query_info.query, modified_context,
+                                   std::make_shared<OneBlockInputStream>(header),
+                                   SelectQueryOptions(processed_stage).analyze()).executeWithProcessors().getPipe());
+
+        return pipes;
+    }
 
     if (processed_stage <= storage->getQueryProcessingStage(modified_context))
     {
         /// If there are only virtual columns in query, you must request at least one other column.
-        if (real_column_names.size() ==0)
+        if (real_column_names.empty())
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage->getColumns().getAllPhysical()));
 
-        source_streams = storage->read(real_column_names, modified_query_info, modified_context, processed_stage, max_block_size,
-                                       UInt32(streams_num));
+        pipes = storage->read(real_column_names, modified_query_info, modified_context, processed_stage, max_block_size, UInt32(streams_num));
     }
     else if (processed_stage > storage->getQueryProcessingStage(modified_context))
     {
-        modified_query_info.query->as<ASTSelectQuery>()->replaceDatabaseAndTable(source_database, storage->getTableName());
+        modified_query_info.query->as<ASTSelectQuery>()->replaceDatabaseAndTable(source_database, table_name);
 
         /// Maximum permissible parallelism is streams_num
         modified_context.getSettingsRef().max_threads = UInt64(streams_num);
         modified_context.getSettingsRef().max_streams_to_max_threads_ratio = 1;
 
         InterpreterSelectQuery interpreter{modified_query_info.query, modified_context, SelectQueryOptions(processed_stage)};
-        BlockInputStreamPtr interpreter_stream = interpreter.execute().in;
+
+        if (query_info.force_tree_shaped_pipeline)
+        {
+            BlockInputStreamPtr stream = interpreter.execute().in;
+            Pipe pipe(std::make_shared<SourceFromInputStream>(std::move(stream)));
+            pipes.emplace_back(std::move(pipe));
+        }
+        else
+        {
+            Pipe pipe = interpreter.executeWithProcessors().getPipe();
+            pipes.emplace_back(std::move(pipe));
+        }
 
         /** Materialization is needed, since from distributed storage the constants come materialized.
           * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
           * And this is not allowed, since all code is based on the assumption that in the block stream all types are the same.
           */
-        source_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(interpreter_stream));
+        pipes.back().addSimpleTransform(std::make_shared<MaterializingTransform>(pipes.back().getHeader()));
     }
 
-    if (!source_streams.empty())
+    if (!pipes.empty())
     {
-        if (concat_streams)
+        if (concat_streams && pipes.size() > 1)
         {
-            BlockInputStreamPtr stream =
-                source_streams.size() > 1 ? std::make_shared<ConcatBlockInputStream>(source_streams) : source_streams[0];
+            auto concat = std::make_shared<ConcatProcessor>(pipes.at(0).getHeader(), pipes.size());
+            Pipe pipe(std::move(pipes), std::move(concat));
 
-            source_streams.resize(1);
-            source_streams[0] = stream;
+            pipes = Pipes();
+            pipes.emplace_back(std::move(pipe));
         }
 
-        for (BlockInputStreamPtr & source_stream : source_streams)
+        for (auto & pipe : pipes)
         {
             if (has_table_virtual_column)
-                source_stream = std::make_shared<AddingConstColumnBlockInputStream<String>>(
-                    source_stream, std::make_shared<DataTypeString>(), storage->getTableName(), "_table");
+                pipe.addSimpleTransform(std::make_shared<AddingConstColumnTransform<String>>(
+                    pipe.getHeader(), std::make_shared<DataTypeString>(), table_name, "_table"));
 
             /// Subordinary tables could have different but convertible types, like numeric types of different width.
             /// We must return streams with structure equals to structure of Merge table.
-            convertingSourceStream(header, modified_context, modified_query_info.query, source_stream, processed_stage);
+            convertingSourceStream(header, modified_context, modified_query_info.query, pipe, processed_stage);
 
-            source_stream->addTableLock(struct_lock);
+            pipe.addTableLock(struct_lock);
         }
     }
 
-    return source_streams;
+    return pipes;
 }
 
 
@@ -341,7 +361,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
     {
         auto & table = iterator->table();
         if (table.get() != this)
-            selected_tables.emplace_back(table, table->lockStructureForShare(false, query_id));
+            selected_tables.emplace_back(table, table->lockStructureForShare(false, query_id), iterator->name());
 
         iterator->next();
     }
@@ -350,10 +370,10 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
 }
 
 
-StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr & query, bool has_virtual_column, bool get_lock, const String & query_id) const
+StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr & query, bool has_virtual_column, const String & query_id) const
 {
     StorageListWithLocks selected_tables;
-    DatabaseIteratorPtr iterator = getDatabaseIterator(global_context);
+    DatabaseTablesIteratorPtr iterator = getDatabaseIterator(global_context);
 
     auto virtual_column = ColumnString::create();
 
@@ -366,8 +386,8 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 
         if (storage.get() != this)
         {
-            selected_tables.emplace_back(storage, get_lock ? storage->lockStructureForShare(false, query_id) : TableStructureReadLockHolder{});
-            virtual_column->insert(storage->getTableName());
+            selected_tables.emplace_back(storage, storage->lockStructureForShare(false, query_id), iterator->name());
+            virtual_column->insert(iterator->name());
         }
 
         iterator->next();
@@ -380,33 +400,44 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
         auto values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_table");
 
         /// Remove unused tables from the list
-        selected_tables.remove_if([&] (const auto & elem) { return values.find(elem.first->getTableName()) == values.end(); });
+        selected_tables.remove_if([&] (const auto & elem) { return values.find(std::get<2>(elem)) == values.end(); });
     }
 
     return selected_tables;
 }
 
 
-DatabaseIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) const
+DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) const
 {
     checkStackSize();
     auto database = context.getDatabase(source_database);
     auto table_name_match = [this](const String & table_name_) { return table_name_regexp.match(table_name_); };
-    return database->getIterator(global_context, table_name_match);
+    return database->getTablesIterator(global_context, table_name_match);
 }
 
+
+void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN)
+            throw Exception(
+                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
+    }
+}
 
 void StorageMerge::alter(
     const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+    auto table_id = getStorageID();
 
-    auto new_columns = getColumns();
-    auto new_indices = getIndices();
-    auto new_constraints = getConstraints();
-    params.applyForColumnsOnly(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
-    setColumns(new_columns);
+    StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();
+    params.apply(storage_metadata);
+    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, storage_metadata);
+    setColumns(storage_metadata.columns);
 }
 
 Block StorageMerge::getQueryHeader(
@@ -436,10 +467,10 @@ Block StorageMerge::getQueryHeader(
 }
 
 void StorageMerge::convertingSourceStream(const Block & header, const Context & context, ASTPtr & query,
-                                          BlockInputStreamPtr & source_stream, QueryProcessingStage::Enum processed_stage)
+                                          Pipe & pipe, QueryProcessingStage::Enum processed_stage)
 {
-    Block before_block_header = source_stream->getHeader();
-    source_stream = std::make_shared<ConvertingBlockInputStream>(context, source_stream, header, ConvertingBlockInputStream::MatchColumnsMode::Name);
+    Block before_block_header = pipe.getHeader();
+    pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(before_block_header, header, ConvertingTransform::MatchColumnsMode::Name, context));
 
     auto where_expression = query->as<ASTSelectQuery>()->where();
 
@@ -496,7 +527,7 @@ void registerStorageMerge(StorageFactory & factory)
         String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         return StorageMerge::create(
-            args.database_name, args.table_name, args.columns,
+            args.table_id, args.columns,
             source_database, table_name_regexp, args.context);
     });
 }

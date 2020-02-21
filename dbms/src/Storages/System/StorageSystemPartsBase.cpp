@@ -9,9 +9,11 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Access/AccessRightsContext.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -70,6 +72,9 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
     MutableColumnPtr engine_column_mut = ColumnString::create();
     MutableColumnPtr active_column_mut = ColumnUInt8::create();
 
+    const auto access_rights = context.getAccessRights();
+    const bool check_access_for_tables = !access_rights->isGranted(AccessType::SHOW);
+
     {
         Databases databases = context.getDatabases();
 
@@ -77,7 +82,9 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
         MutableColumnPtr database_column_mut = ColumnString::create();
         for (const auto & database : databases)
         {
-            if (context.hasDatabaseAccessRights(database.first))
+            /// Lazy database can not contain MergeTree tables
+            /// and it's unnecessary to load all tables of Lazy database just to filter all of them.
+            if (database.second->getEngineName() != "Lazy")
                 database_column_mut->insert(database.first);
         }
         block_to_filter.insert(ColumnWithTypeAndName(
@@ -101,18 +108,17 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
                 String database_name = (*database_column_)[i].get<String>();
                 const DatabasePtr database = databases.at(database_name);
 
-                /// Lazy database can not contain MergeTree tables
-                if (database->getEngineName() == "Lazy")
-                    continue;
-
                 offsets[i] = i ? offsets[i - 1] : 0;
-                for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
+                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     String table_name = iterator->name();
                     StoragePtr storage = iterator->table();
                     String engine_name = storage->getName();
 
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))
+                        continue;
+
+                    if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW, database_name, table_name))
                         continue;
 
                     storages[std::make_pair(database_name, iterator->name())] = storage;
@@ -212,7 +218,7 @@ StoragesInfo StoragesInfoStream::next()
     return {};
 }
 
-BlockInputStreams StorageSystemPartsBase::read(
+Pipes StorageSystemPartsBase::read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -235,11 +241,17 @@ BlockInputStreams StorageSystemPartsBase::read(
         processNextStorage(res_columns, info, has_state_column);
     }
 
-    Block block = getSampleBlock();
+    Block header = getSampleBlock();
     if (has_state_column)
-        block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
+        header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
 
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block.cloneWithColumns(std::move(res_columns))));
+    UInt64 num_rows = res_columns.at(0)->size();
+    Chunk chunk(std::move(res_columns), num_rows);
+
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+
+    return pipes;
 }
 
 NameAndTypePair StorageSystemPartsBase::getColumn(const String & column_name) const
@@ -259,7 +271,7 @@ bool StorageSystemPartsBase::hasColumn(const String & column_name) const
 }
 
 StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
-    : name(std::move(name_))
+    : IStorage({"system", name_})
 {
     ColumnsDescription tmp_columns(std::move(columns_));
 

@@ -234,14 +234,18 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
                 << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")
             << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
-            formatOnCluster(settings);
+        if (live_view_timeout)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH TIMEOUT " << (settings.hilite ? hilite_none : "")
+                          << *live_view_timeout;
+        formatOnCluster(settings);
     }
     else
     {
-        /// Always CREATE and always DICTIONARY
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "CREATE DICTIONARY " << (if_not_exists ? "IF NOT EXISTS " : "")
-                      << (settings.hilite ? hilite_none : "") << (!database.empty() ? backQuoteIfNeed(database) + "." : "")
-                      << backQuoteIfNeed(table);
+        /// Always DICTIONARY
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (attach ? "ATTACH " : "CREATE ") << "DICTIONARY "
+                      << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "")
+                      << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+        formatOnCluster(settings);
     }
 
     if (as_table_function)

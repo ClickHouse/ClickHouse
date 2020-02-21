@@ -40,7 +40,7 @@
 #include <Common/TerminalSize.h>
 
 
-static const char * documantation = R"(
+static const char * documentation = R"(
 Simple tool for table data obfuscation.
 
 It reads input table and produces output table, that retain some properties of input, but contains different data.
@@ -108,6 +108,9 @@ public:
     /// Call generate: pass source data column to obtain a column with anonymized data as a result.
     virtual ColumnPtr generate(const IColumn & column);
 
+    /// Deterministically change seed to some other value. This can be used to generate more values than were in source.
+    virtual void updateSeed();
+
     virtual ~IModel() {}
 };
 
@@ -123,14 +126,14 @@ UInt64 hash(Ts... xs)
 }
 
 
-UInt64 maskBits(UInt64 x, size_t num_bits)
+static UInt64 maskBits(UInt64 x, size_t num_bits)
 {
     return x & ((1ULL << num_bits) - 1);
 }
 
 
 /// Apply Feistel network round to least significant num_bits part of x.
-UInt64 feistelRound(UInt64 x, size_t num_bits, UInt64 seed, size_t round)
+static UInt64 feistelRound(UInt64 x, size_t num_bits, UInt64 seed, size_t round)
 {
     size_t num_bits_left_half = num_bits / 2;
     size_t num_bits_right_half = num_bits - num_bits_left_half;
@@ -146,7 +149,7 @@ UInt64 feistelRound(UInt64 x, size_t num_bits, UInt64 seed, size_t round)
 
 
 /// Apply Feistel network with num_rounds to least significant num_bits part of x.
-UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds = 4)
+static UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds = 4)
 {
     UInt64 bits = maskBits(x, num_bits);
     for (size_t i = 0; i < num_rounds; ++i)
@@ -156,7 +159,7 @@ UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds 
 
 
 /// Pseudorandom permutation within set of numbers with the same log2(x).
-UInt64 transform(UInt64 x, UInt64 seed)
+static UInt64 transform(UInt64 x, UInt64 seed)
 {
     /// Keep 0 and 1 as is.
     if (x == 0 || x == 1)
@@ -175,7 +178,7 @@ UInt64 transform(UInt64 x, UInt64 seed)
 class UnsignedIntegerModel : public IModel
 {
 private:
-    const UInt64 seed;
+    UInt64 seed;
 
 public:
     UnsignedIntegerModel(UInt64 seed_) : seed(seed_) {}
@@ -195,11 +198,16 @@ public:
 
         return res;
     }
+
+    void updateSeed() override
+    {
+        seed = hash(seed);
+    }
 };
 
 
 /// Keep sign and apply pseudorandom permutation after converting to unsigned as above.
-Int64 transformSigned(Int64 x, UInt64 seed)
+static Int64 transformSigned(Int64 x, UInt64 seed)
 {
     if (x >= 0)
         return transform(x, seed);
@@ -211,7 +219,7 @@ Int64 transformSigned(Int64 x, UInt64 seed)
 class SignedIntegerModel : public IModel
 {
 private:
-    const UInt64 seed;
+    UInt64 seed;
 
 public:
     SignedIntegerModel(UInt64 seed_) : seed(seed_) {}
@@ -230,6 +238,11 @@ public:
             res->insert(transformSigned(column.getInt(i), seed));
 
         return res;
+    }
+
+    void updateSeed() override
+    {
+        seed = hash(seed);
     }
 };
 
@@ -253,7 +266,7 @@ template <typename Float>
 class FloatModel : public IModel
 {
 private:
-    const UInt64 seed;
+    UInt64 seed;
     Float src_prev_value = 0;
     Float res_prev_value = 0;
 
@@ -280,6 +293,11 @@ public:
 
         return res_column;
     }
+
+    void updateSeed() override
+    {
+        seed = hash(seed);
+    }
 };
 
 
@@ -294,11 +312,15 @@ public:
     {
         return column.cloneResized(column.size());
     }
+
+    void updateSeed() override
+    {
+    }
 };
 
 
 /// Pseudorandom function, but keep word characters as word characters.
-void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 seed)
+static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 seed)
 {
     {
         SipHash hash;
@@ -347,7 +369,7 @@ void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 se
 class FixedStringModel : public IModel
 {
 private:
-    const UInt64 seed;
+    UInt64 seed;
 
 public:
     FixedStringModel(UInt64 seed_) : seed(seed_) {}
@@ -373,6 +395,11 @@ public:
 
         return res_column;
     }
+
+    void updateSeed() override
+    {
+        seed = hash(seed);
+    }
 };
 
 
@@ -380,7 +407,7 @@ public:
 class DateTimeModel : public IModel
 {
 private:
-    const UInt64 seed;
+    UInt64 seed;
     UInt32 src_prev_value = 0;
     UInt32 res_prev_value = 0;
 
@@ -417,6 +444,11 @@ public:
         }
 
         return res_column;
+    }
+
+    void updateSeed() override
+    {
+        seed = hash(seed);
     }
 };
 
@@ -579,7 +611,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.getSecond();
+                Histogram & histogram = elem.getMapped();
 
                 if (histogram.buckets.size() < params.num_buckets_cutoff)
                 {
@@ -593,7 +625,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.getSecond();
+                Histogram & histogram = elem.getMapped();
                 if (!histogram.total)
                     continue;
 
@@ -625,7 +657,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.getSecond();
+                Histogram & histogram = elem.getMapped();
                 if (!histogram.total)
                     continue;
 
@@ -641,7 +673,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.getSecond();
+                Histogram & histogram = elem.getMapped();
                 if (!histogram.total)
                     continue;
 
@@ -676,7 +708,7 @@ public:
             while (true)
             {
                 it = table.find(hashContext(code_points.data() + code_points.size() - context_size, code_points.data() + code_points.size()));
-                if (it && lookupResultGetMapped(it)->total + lookupResultGetMapped(it)->count_end != 0)
+                if (it && it->getMapped().total + it->getMapped().count_end != 0)
                     break;
 
                 if (context_size == 0)
@@ -710,7 +742,7 @@ public:
             if (num_bytes_after_desired_size > 0)
                 end_probability_multiplier = std::pow(1.25, num_bytes_after_desired_size);
 
-            CodePoint code = lookupResultGetMapped(it)->sample(determinator, end_probability_multiplier);
+            CodePoint code = it->getMapped().sample(determinator, end_probability_multiplier);
 
             if (code == END)
                 break;
@@ -790,6 +822,11 @@ public:
 
         return res_column;
     }
+
+    void updateSeed() override
+    {
+        seed = hash(seed);
+    }
 };
 
 
@@ -823,6 +860,11 @@ public:
 
         return ColumnArray::create((*std::move(new_nested_column)).mutate(), (*std::move(column_array.getOffsetsPtr())).mutate());
     }
+
+    void updateSeed() override
+    {
+        nested_model->updateSeed();
+    }
 };
 
 
@@ -855,6 +897,11 @@ public:
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
 
         return ColumnNullable::create((*std::move(new_nested_column)).mutate(), (*std::move(column_nullable.getNullMapColumnPtr())).mutate());
+    }
+
+    void updateSeed() override
+    {
+        nested_model->updateSeed();
     }
 };
 
@@ -939,10 +986,18 @@ public:
             res[i] = models[i]->generate(*columns[i]);
         return res;
     }
+
+    void updateSeed()
+    {
+        for (auto & model : models)
+            model->updateSeed();
+    }
 };
 
 }
 
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseObfuscator(int argc, char ** argv)
 try
@@ -977,7 +1032,7 @@ try
         || !options.count("input-format")
         || !options.count("output-format"))
     {
-        std::cout << documantation << "\n"
+        std::cout << documentation << "\n"
             << "\nUsage: " << argv[0] << " [options] < in > out\n"
             << "\nInput must be seekable file (it will be read twice).\n"
             << "\n" << description << "\n"
@@ -991,7 +1046,7 @@ try
     std::string input_format = options["input-format"].as<std::string>();
     std::string output_format = options["output-format"].as<std::string>();
 
-    std::optional<UInt64> limit;
+    UInt64 limit = 0;
     if (options.count("limit"))
         limit = options["limit"].as<UInt64>();
 
@@ -1043,40 +1098,44 @@ try
     UInt64 max_block_size = 8192;
 
     /// Train step
+    UInt64 source_rows = 0;
     {
         if (!silent)
             std::cerr << "Training models\n";
 
         BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
 
-        UInt64 processed_rows = 0;
         input->readPrefix();
         while (Block block = input->read())
         {
             obfuscator.train(block.getColumns());
-            processed_rows += block.rows();
+            source_rows += block.rows();
             if (!silent)
-                std::cerr << "Processed " << processed_rows << " rows\n";
+                std::cerr << "Processed " << source_rows << " rows\n";
         }
         input->readSuffix();
     }
 
     obfuscator.finalize();
 
+    if (!limit)
+        limit = source_rows;
+
     /// Generation step
+    UInt64 processed_rows = 0;
+    while (processed_rows < limit)
     {
         if (!silent)
             std::cerr << "Generating data\n";
 
-        file_in.seek(0);
+        file_in.seek(0, SEEK_SET);
 
         BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
         BlockOutputStreamPtr output = context.getOutputFormat(output_format, file_out, header);
 
-        if (limit)
-            input = std::make_shared<LimitBlockInputStream>(input, *limit, 0);
+        if (processed_rows + source_rows > limit)
+            input = std::make_shared<LimitBlockInputStream>(input, limit - processed_rows, 0);
 
-        UInt64 processed_rows = 0;
         input->readPrefix();
         output->writePrefix();
         while (Block block = input->read())
@@ -1089,6 +1148,8 @@ try
         }
         output->writeSuffix();
         input->readSuffix();
+
+        obfuscator.updateSeed();
     }
 
     return 0;

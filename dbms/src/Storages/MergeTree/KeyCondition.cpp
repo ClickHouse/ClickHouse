@@ -4,7 +4,7 @@
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitors.h>
@@ -15,6 +15,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
+
+#include <cassert>
 
 
 namespace DB
@@ -262,6 +264,78 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 };
 
 
+static const std::map<std::string, std::string> inverse_relations = {
+        {"equals", "notEquals"},
+        {"notEquals", "equals"},
+        {"less", "greaterOrEquals"},
+        {"greaterOrEquals", "less"},
+        {"greater", "lessOrEquals"},
+        {"lessOrEquals", "greater"},
+        {"in", "notIn"},
+        {"notIn", "in"},
+        {"like", "notLike"},
+        {"notLike", "like"},
+        {"empty", "notEmpty"},
+        {"notEmpty", "empty"},
+};
+
+
+bool isLogicalOperator(const String & func_name)
+{
+    return (func_name == "and" || func_name == "or" || func_name == "not" || func_name == "indexHint");
+}
+
+/// The node can be one of:
+///   - Logical operator (AND, OR, NOT and indexHint() - logical NOOP)
+///   - An "atom" (relational operator, constant, expression)
+///   - A logical constant expression
+///   - Any other function
+ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversion = false)
+{
+    const ASTFunction * func = node->as<ASTFunction>();
+
+    if (func && isLogicalOperator(func->name))
+    {
+        if (func->name == "not")
+        {
+            return cloneASTWithInversionPushDown(func->arguments->children.front(), !need_inversion);
+        }
+
+        const auto result_node = makeASTFunction(func->name);
+
+        /// indexHint() is a special case - logical NOOP function
+        if (result_node->name != "indexHint" && need_inversion)
+        {
+            result_node->name = (result_node->name == "and") ? "or" : "and";
+        }
+
+        if (func->arguments)
+        {
+            for (const auto & child : func->arguments->children)
+            {
+                result_node->arguments->children.push_back(cloneASTWithInversionPushDown(child, need_inversion));
+            }
+        }
+
+        return result_node;
+    }
+
+    const auto cloned_node = node->clone();
+
+    if (func && inverse_relations.find(func->name) != inverse_relations.cend())
+    {
+        if (need_inversion)
+        {
+            cloned_node->as<ASTFunction>()->name = inverse_relations.at(func->name);
+        }
+
+        return cloned_node;
+    }
+
+    return need_inversion ? makeASTFunction("not", cloned_node) : cloned_node;
+}
+
+
 inline bool Range::equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs); }
 inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
 
@@ -343,21 +417,23 @@ KeyCondition::KeyCondition(
       */
     Block block_with_constants = getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
 
-    /// Trasform WHERE section to Reverse Polish notation
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-    if (select.where())
+    const ASTSelectQuery & select = query_info.query->as<ASTSelectQuery &>();
+    if (select.where() || select.prewhere())
     {
-        traverseAST(select.where(), context, block_with_constants);
+        ASTPtr filter_query;
+        if (select.where() && select.prewhere())
+            filter_query = makeASTFunction("and", select.where(), select.prewhere());
+        else
+            filter_query = select.where() ? select.where() : select.prewhere();
 
-        if (select.prewhere())
-        {
-            traverseAST(select.prewhere(), context, block_with_constants);
-            rpn.emplace_back(RPNElement::FUNCTION_AND);
-        }
-    }
-    else if (select.prewhere())
-    {
-        traverseAST(select.prewhere(), context, block_with_constants);
+        /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
+          * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
+          * This is caused by rewriting in KeyCondition::tryParseAtomFromAST of relational operators to less strict
+          * when parsing the AST into internal RPN representation.
+          * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
+          * are pushed down and applied (when possible) to leaf nodes.
+          */
+        traverseAST(cloneASTWithInversionPushDown(filter_query), context, block_with_constants);
     }
     else
     {
@@ -430,9 +506,9 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
 {
     RPNElement element;
 
-    if (auto * func = node->as<ASTFunction>())
+    if (const auto * func = node->as<ASTFunction>())
     {
-        if (operatorFromAST(func, element))
+        if (tryParseLogicalOperatorFromAST(func, element))
         {
             auto & args = func->arguments->children;
             for (size_t i = 0, size = args.size(); i < size; ++i)
@@ -450,7 +526,7 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
         }
     }
 
-    if (!atomFromAST(node, context, block_with_constants, element))
+    if (!tryParseAtomFromAST(node, context, block_with_constants, element))
     {
         element.function = RPNElement::FUNCTION_UNKNOWN;
     }
@@ -678,7 +754,7 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
 }
 
 
-bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
+bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
 {
     /** Functions < > = != <= >= in `notIn`, where one argument is a constant, and the other is one of columns of key,
       *  or itself, wrapped in a chain of possibly-monotonic functions,
@@ -766,7 +842,9 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
                     func_name = "lessOrEquals";
                 else if (func_name == "lessOrEquals")
                     func_name = "greaterOrEquals";
-                else if (func_name == "in" || func_name == "notIn" || func_name == "like")
+                else if (func_name == "in" || func_name == "notIn" ||
+                         func_name == "like" || func_name == "notLike" ||
+                         func_name == "startsWith")
                 {
                     /// "const IN data_column" doesn't make sense (unlike "data_column IN const")
                     return false;
@@ -807,7 +885,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
     return false;
 }
 
-bool KeyCondition::operatorFromAST(const ASTFunction * func, RPNElement & out)
+bool KeyCondition::tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out)
 {
     /// Functions AND, OR, NOT.
     /** Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
@@ -886,7 +964,7 @@ String KeyCondition::toString() const
   */
 
 template <typename F>
-static bool forAnyParallelogram(
+static BoolMask forAnyParallelogram(
     size_t key_size,
     const Field * key_left,
     const Field * key_right,
@@ -894,6 +972,7 @@ static bool forAnyParallelogram(
     bool right_bounded,
     std::vector<Range> & parallelogram,
     size_t prefix_size,
+    BoolMask initial_mask,
     F && callback)
 {
     if (!left_bounded && !right_bounded)
@@ -942,16 +1021,25 @@ static bool forAnyParallelogram(
     for (size_t i = prefix_size + 1; i < key_size; ++i)
         parallelogram[i] = Range();
 
-    if (callback(parallelogram))
-        return true;
+
+    BoolMask result = initial_mask;
+    result = result | callback(parallelogram);
+
+    /// There are several early-exit conditions (like the one below) hereinafter.
+    /// They are important; in particular, if initial_mask == BoolMask::consider_only_can_be_true
+    /// (which happens when this routine is called from KeyCondition::mayBeTrueXXX),
+    /// they provide significant speedup, which may be observed on merge_tree_huge_pk performance test.
+    if (result.isComplete())
+        return result;
 
     /// [x1]       x [y1 .. +inf)
 
     if (left_bounded)
     {
         parallelogram[prefix_size] = Range(key_left[prefix_size]);
-        if (forAnyParallelogram(key_size, key_left, key_right, true, false, parallelogram, prefix_size + 1, callback))
-            return true;
+        result = result | forAnyParallelogram(key_size, key_left, key_right, true, false, parallelogram, prefix_size + 1, initial_mask, callback);
+        if (result.isComplete())
+            return result;
     }
 
     /// [x2]       x (-inf .. y2]
@@ -959,20 +1047,22 @@ static bool forAnyParallelogram(
     if (right_bounded)
     {
         parallelogram[prefix_size] = Range(key_right[prefix_size]);
-        if (forAnyParallelogram(key_size, key_left, key_right, false, true, parallelogram, prefix_size + 1, callback))
-            return true;
+        result = result | forAnyParallelogram(key_size, key_left, key_right, false, true, parallelogram, prefix_size + 1, initial_mask, callback);
+        if (result.isComplete())
+            return result;
     }
 
-    return false;
+    return result;
 }
 
 
-bool KeyCondition::mayBeTrueInRange(
+BoolMask KeyCondition::checkInRange(
     size_t used_key_size,
     const Field * left_key,
     const Field * right_key,
     const DataTypes & data_types,
-    bool right_bounded) const
+    bool right_bounded,
+    BoolMask initial_mask) const
 {
     std::vector<Range> key_ranges(used_key_size, Range());
 
@@ -990,10 +1080,10 @@ bool KeyCondition::mayBeTrueInRange(
     else
         std::cerr << "+inf)\n";*/
 
-    return forAnyParallelogram(used_key_size, left_key, right_key, true, right_bounded, key_ranges, 0,
+    return forAnyParallelogram(used_key_size, left_key, right_key, true, right_bounded, key_ranges, 0, initial_mask,
         [&] (const std::vector<Range> & key_ranges_parallelogram)
     {
-        auto res = mayBeTrueInParallelogram(key_ranges_parallelogram, data_types);
+        auto res = checkInParallelogram(key_ranges_parallelogram, data_types);
 
 /*      std::cerr << "Parallelogram: ";
         for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
@@ -1004,11 +1094,11 @@ bool KeyCondition::mayBeTrueInRange(
     });
 }
 
+
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
     MonotonicFunctionsChain & functions,
-    DataTypePtr current_type
-)
+    DataTypePtr current_type)
 {
     for (auto & func : functions)
     {
@@ -1041,7 +1131,9 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     return key_range;
 }
 
-bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const
+BoolMask KeyCondition::checkInParallelogram(
+    const std::vector<Range> & parallelogram,
+    const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;
     for (size_t i = 0; i < rpn.size(); ++i)
@@ -1089,16 +1181,20 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
             if (!element.set_index)
                 throw Exception("Set for IN is not created yet", ErrorCodes::LOGICAL_ERROR);
 
-            rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(parallelogram, data_types));
+            rpn_stack.emplace_back(element.set_index->checkInRange(parallelogram, data_types));
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
+            assert(!rpn_stack.empty());
+
             rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_AND)
         {
+            assert(!rpn_stack.empty());
+
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
             auto arg2 = rpn_stack.back();
@@ -1106,6 +1202,8 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
         }
         else if (element.function == RPNElement::FUNCTION_OR)
         {
+            assert(!rpn_stack.empty());
+
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
             auto arg2 = rpn_stack.back();
@@ -1124,22 +1222,49 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::mayBeTrueInRange", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected stack size in KeyCondition::checkInRange", ErrorCodes::LOGICAL_ERROR);
 
-    return rpn_stack[0].can_be_true;
+    return rpn_stack[0];
+}
+
+
+BoolMask KeyCondition::checkInRange(
+    size_t used_key_size,
+    const Field * left_key,
+    const Field * right_key,
+    const DataTypes & data_types,
+    BoolMask initial_mask) const
+{
+    return checkInRange(used_key_size, left_key, right_key, data_types, true, initial_mask);
 }
 
 
 bool KeyCondition::mayBeTrueInRange(
-    size_t used_key_size, const Field * left_key, const Field * right_key, const DataTypes & data_types) const
+    size_t used_key_size,
+    const Field * left_key,
+    const Field * right_key,
+    const DataTypes & data_types) const
 {
-    return mayBeTrueInRange(used_key_size, left_key, right_key, data_types, true);
+    return checkInRange(used_key_size, left_key, right_key, data_types, true, BoolMask::consider_only_can_be_true).can_be_true;
 }
 
-bool KeyCondition::mayBeTrueAfter(
-    size_t used_key_size, const Field * left_key, const DataTypes & data_types) const
+
+BoolMask KeyCondition::checkAfter(
+    size_t used_key_size,
+    const Field * left_key,
+    const DataTypes & data_types,
+    BoolMask initial_mask) const
 {
-    return mayBeTrueInRange(used_key_size, left_key, nullptr, data_types, false);
+    return checkInRange(used_key_size, left_key, nullptr, data_types, false, initial_mask);
+}
+
+
+bool KeyCondition::mayBeTrueAfter(
+    size_t used_key_size,
+    const Field * left_key,
+    const DataTypes & data_types) const
+{
+    return checkInRange(used_key_size, left_key, nullptr, data_types, false, BoolMask::consider_only_can_be_true).can_be_true;
 }
 
 
@@ -1223,6 +1348,8 @@ bool KeyCondition::alwaysUnknownOrTrue() const
         }
         else if (element.function == RPNElement::FUNCTION_AND)
         {
+            assert(!rpn_stack.empty());
+
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
             auto arg2 = rpn_stack.back();
@@ -1230,6 +1357,8 @@ bool KeyCondition::alwaysUnknownOrTrue() const
         }
         else if (element.function == RPNElement::FUNCTION_OR)
         {
+            assert(!rpn_stack.empty());
+
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
             auto arg2 = rpn_stack.back();
@@ -1238,6 +1367,9 @@ bool KeyCondition::alwaysUnknownOrTrue() const
         else
             throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
     }
+
+    if (rpn_stack.size() != 1)
+        throw Exception("Unexpected stack size in KeyCondition::alwaysUnknownOrTrue", ErrorCodes::LOGICAL_ERROR);
 
     return rpn_stack[0];
 }

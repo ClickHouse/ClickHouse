@@ -11,13 +11,13 @@ using MV = MultiVersion<T>;
 using Results = std::vector<T>;
 
 
-void thread1(MV & x, T & result)
+static void thread1(MV & x, T & result)
 {
     MV::Version v = x.get();
     result = *v;
 }
 
-void thread2(MV & x, const char * result)
+static void thread2(MV & x, const char * result)
 {
     x.set(std::make_unique<T>(result));
 }
@@ -37,8 +37,8 @@ int main(int, char **)
         ThreadPool tp(8);
         for (size_t i = 0; i < n; ++i)
         {
-            tp.schedule(std::bind(thread1, std::ref(x), std::ref(results[i])));
-            tp.schedule(std::bind(thread2, std::ref(x), (rand() % 2) ? s1 : s2));
+            tp.scheduleOrThrowOnError(std::bind(thread1, std::ref(x), std::ref(results[i])));
+            tp.scheduleOrThrowOnError(std::bind(thread2, std::ref(x), (rand() % 2) ? s1 : s2));
         }
         tp.wait();
 

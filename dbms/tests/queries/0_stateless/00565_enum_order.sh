@@ -42,7 +42,7 @@ QUERY='INSERT INTO `test_log`(`date`, `datetime`, `path`, `gtid`, `query_serial`
     `new_fields`.`is_null`, `record_source_type`, `record_source_timestamp`, `deleted`) FORMAT TabSeparated'
 QUERY="$(tr -d '\n' <<<"$QUERY")"
 echo $QUERY
-URL=$(python -c 'print "'${CLICKHOUSE_URL_PARAMS}'&query=" + __import__("urllib").quote("'"$QUERY"'")')
+URL=$(python -c 'print "'${CLICKHOUSE_URL}'&query=" + __import__("urllib").quote("'"$QUERY"'")')
 
 set +e
 for i in 1 2 3; do

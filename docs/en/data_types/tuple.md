@@ -42,4 +42,4 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 ```
 
 
-[Original article](https://clickhouse.yandex/docs/en/data_types/tuple/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data_types/tuple/) <!--hide-->

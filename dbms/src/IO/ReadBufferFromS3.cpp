@@ -1,65 +1,40 @@
-#include <IO/ReadBufferFromS3.h>
+#include <Common/config.h>
 
-#include <IO/ReadBufferFromIStream.h>
+#if USE_AWS_S3
 
-#include <common/logger_useful.h>
+#    include <IO/ReadBufferFromIStream.h>
+#    include <IO/ReadBufferFromS3.h>
 
+#    include <aws/s3/S3Client.h>
+#    include <aws/s3/model/GetObjectRequest.h>
+#    include <common/logger_useful.h>
+
+#    include <utility>
 
 namespace DB
 {
-
-const int DEFAULT_S3_MAX_FOLLOW_GET_REDIRECT = 2;
-
-ReadBufferFromS3::ReadBufferFromS3(Poco::URI uri_,
-    const ConnectionTimeouts & timeouts,
-    const Poco::Net::HTTPBasicCredentials & credentials,
-    size_t buffer_size_)
-    : ReadBuffer(nullptr, 0)
-    , uri {uri_}
-    , method {Poco::Net::HTTPRequest::HTTP_GET}
-    , session {makeHTTPSession(uri_, timeouts)}
+namespace ErrorCodes
 {
-    Poco::Net::HTTPResponse response;
-    std::unique_ptr<Poco::Net::HTTPRequest> request;
-
-    for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_GET_REDIRECT; ++i)
-    {
-        // With empty path poco will send "POST  HTTP/1.1" its bug.
-        if (uri.getPath().empty())
-            uri.setPath("/");
-
-        request = std::make_unique<Poco::Net::HTTPRequest>(method, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-        request->setHost(uri.getHost()); // use original, not resolved host name in header
-
-        if (!credentials.getUsername().empty())
-            credentials.authenticate(*request);
-
-        LOG_TRACE((&Logger::get("ReadBufferFromS3")), "Sending request to " << uri.toString());
-
-        session->sendRequest(*request);
-
-        istr = &session->receiveResponse(response);
-
-        // Handle 307 Temporary Redirect in order to allow request redirection
-        // See https://docs.aws.amazon.com/AmazonS3/latest/dev/Redirects.html
-        if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
-            break;
-
-        auto location_iterator = response.find("Location");
-        if (location_iterator == response.end())
-            break;
-
-        uri = location_iterator->second;
-        session = makeHTTPSession(uri, timeouts);
-    }
-
-    assertResponseIsOk(*request, response, *istr);
-    impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size_);
+    extern const int S3_ERROR;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
 
 
+ReadBufferFromS3::ReadBufferFromS3(
+    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_, size_t buffer_size_)
+    : SeekableReadBuffer(nullptr, 0), client_ptr(std::move(client_ptr_)), bucket(bucket_), key(key_), buffer_size(buffer_size_)
+{
+}
+
 bool ReadBufferFromS3::nextImpl()
 {
+    if (!initialized)
+    {
+        impl = initialize();
+        initialized = true;
+    }
+
     if (!impl->next())
         return false;
     internal_buffer = impl->buffer();
@@ -67,4 +42,49 @@ bool ReadBufferFromS3::nextImpl()
     return true;
 }
 
+off_t ReadBufferFromS3::seek(off_t offset_, int whence)
+{
+    if (initialized)
+        throw Exception("Seek is allowed only before first read attempt from the buffer.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+
+    if (whence != SEEK_SET)
+        throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+
+    if (offset_ < 0)
+        throw Exception("Seek position is out of bounds. Offset: " + std::to_string(offset_), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+
+    offset = offset_;
+
+    return offset;
 }
+
+
+off_t ReadBufferFromS3::getPosition()
+{
+    return offset + count();
+}
+
+std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
+{
+    LOG_TRACE(log, "Read S3 object. Bucket: " + bucket + ", Key: " + key + ", Offset: " + std::to_string(offset));
+
+    Aws::S3::Model::GetObjectRequest req;
+    req.SetBucket(bucket);
+    req.SetKey(key);
+    if (offset != 0)
+        req.SetRange("bytes=" + std::to_string(offset) + "-");
+
+    Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
+
+    if (outcome.IsSuccess())
+    {
+        read_result = outcome.GetResultWithOwnership();
+        return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
+    }
+    else
+        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+}
+
+}
+
+#endif

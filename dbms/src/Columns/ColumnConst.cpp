@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
+#include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 
 

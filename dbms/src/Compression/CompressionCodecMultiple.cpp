@@ -1,9 +1,12 @@
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionInfo.h>
+#include <Common/PODArray.h>
 #include <common/unaligned.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Common/hex.h>
 #include <sstream>
 
@@ -30,16 +33,15 @@ UInt8 CompressionCodecMultiple::getMethodByte() const
 
 String CompressionCodecMultiple::getCodecDesc() const
 {
-    std::ostringstream ss;
-    for (size_t idx = 0; idx < codecs.size(); idx++)
+    WriteBufferFromOwnString out;
+    for (size_t idx = 0; idx < codecs.size(); ++idx)
     {
         if (idx != 0)
-            ss << ',' << ' ';
+            out << ", ";
 
-        const auto codec = codecs[idx];
-        ss << codec->getCodecDesc();
+        out << codecs[idx]->getCodecDesc();
     }
-    return ss.str();
+    return out.str();
 }
 
 UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -54,7 +56,6 @@ UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_si
 
 UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
-
     PODArray<char> compressed_buf;
     PODArray<char> uncompressed_buf(source, source + source_size);
 

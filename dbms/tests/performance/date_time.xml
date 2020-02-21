@@ -54,6 +54,11 @@
                <value>toYYYYMM</value>
                <value>toYYYYMMDD</value>
                <value>toYYYYMMDDhhmmss</value>
+
+               <value>timeSlot</value>
+               <value>toRelativeQuarterNum</value>
+               <value>toStartOfTenMinutes</value>
+               <value>toUnixTimestamp</value>
            </values>
        </substitution>
        <substitution>
@@ -70,6 +75,7 @@
 
                <value>toDate</value>
                <value>toMonday</value>
+               <value>toStartOfDay</value>
                <value>toStartOfMonth</value>
                <value>toStartOfQuarter</value>
                <value>toStartOfYear</value>
@@ -83,18 +89,55 @@
                <value>toYYYYMM</value>
                <value>toYYYYMMDD</value>
                <value>toYYYYMMDDhhmmss</value>
+
+               <value>toRelativeQuarterNum</value>
+               <value>toUnixTimestamp</value>
            </values>
-       </substitution>
-       <substitution>
-           <name>time_zone</name>
-           <values>
+        </substitution>
+        <substitution>
+            <name>time_zone</name>
+            <values>
                <value>UTC</value>
                <value>Europe/Moscow</value>
                <value>Asia/Kolkata</value>
-           </values>
-       </substitution>
+            </values>
+        </substitution>
+        <substitution>
+            <name>binary_function</name>
+            <values>
+                <value>lessOrEquals</value>
+                <value>less</value>
+                <value>greater</value>
+                <value>greaterOrEquals</value>
+                <value>equals</value>
+                <value>notEquals</value>
+                <value>plus</value>
+                <value>minus</value>
+                <value>addDays</value>
+                <value>addHours</value>
+                <value>addMinutes</value>
+                <value>addMonths</value>
+                <value>addQuarters</value>
+                <value>addSeconds</value>
+                <value>addWeeks</value>
+                <value>addYears</value>
+                <value>subtractDays</value>
+                <value>subtractHours</value>
+                <value>subtractMinutes</value>
+                <value>subtractMonths</value>
+                <value>subtractQuarters</value>
+                <value>subtractSeconds</value>
+                <value>subtractWeeks</value>
+                <value>subtractYears</value>
+            </values>
+        </substitution>
     </substitutions>
 
     <query>SELECT count() FROM system.numbers WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, {datetime_transform}(t, '{time_zone}'))</query>
+
     <query>SELECT count() FROM system.numbers WHERE NOT ignore(toDate('2017-01-01') + number % 1000 + rand() % 10 AS t, {date_transform}(t))</query>
+
+    <query>SELECT count() FROM system.numbers WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, {binary_function}(t, 1))</query>
+
+    <query>SELECT count() FROM system.numbers WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, toStartOfInterval(t, INTERVAL 1 month))</query>
 </test>

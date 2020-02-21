@@ -3,6 +3,7 @@
 #include <Parsers/formatAST.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Core/Block.h>
+#include <Common/PODArray.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadPool.h>
 #include <atomic>
@@ -122,7 +123,7 @@ private:
     struct JobShard
     {
         std::list<JobReplica> replicas_jobs;
-        IColumn::Permutation shard_current_block_permuation;
+        IColumn::Permutation shard_current_block_permutation;
     };
 
     std::vector<JobShard> per_shard_jobs;

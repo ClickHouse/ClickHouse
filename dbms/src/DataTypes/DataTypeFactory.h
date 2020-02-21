@@ -16,16 +16,15 @@ namespace DB
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
-
 /** Creates a data type by name of data type family and parameters.
   */
-class DataTypeFactory final : private boost::noncopyable, public IFactoryWithAliases<std::function<DataTypePtr(const ASTPtr & parameters)>>
+class DataTypeFactory final : private boost::noncopyable, public IFactoryWithAliases<std::function<DataTypePtr(const String & type_name, const ASTPtr & parameters)>>
 {
 private:
-    using SimpleCreator = std::function<DataTypePtr()>;
+    using SimpleCreator = std::function<DataTypePtr(const String & type_name)>;
     using DataTypesDictionary = std::unordered_map<String, Creator>;
-    using CreatorWithCustom = std::function<std::pair<DataTypePtr,DataTypeCustomDescPtr>(const ASTPtr & parameters)>;
-    using SimpleCreatorWithCustom = std::function<std::pair<DataTypePtr,DataTypeCustomDescPtr>()>;
+    using CreatorWithCustom = std::function<std::pair<DataTypePtr, DataTypeCustomDescPtr>(const String & type_name, const ASTPtr & parameters)>;
+    using SimpleCreatorWithCustom = std::function<std::pair<DataTypePtr, DataTypeCustomDescPtr>(const String & type_name)>;
 
 public:
     static DataTypeFactory & instance();
@@ -64,5 +63,25 @@ private:
 
     String getFactoryName() const override { return "DataTypeFactory"; }
 };
+
+void registerDataTypeNumbers(DataTypeFactory & factory);
+void registerDataTypeDecimal(DataTypeFactory & factory);
+void registerDataTypeDate(DataTypeFactory & factory);
+void registerDataTypeDateTime(DataTypeFactory & factory);
+void registerDataTypeString(DataTypeFactory & factory);
+void registerDataTypeFixedString(DataTypeFactory & factory);
+void registerDataTypeEnum(DataTypeFactory & factory);
+void registerDataTypeArray(DataTypeFactory & factory);
+void registerDataTypeTuple(DataTypeFactory & factory);
+void registerDataTypeNullable(DataTypeFactory & factory);
+void registerDataTypeNothing(DataTypeFactory & factory);
+void registerDataTypeUUID(DataTypeFactory & factory);
+void registerDataTypeAggregateFunction(DataTypeFactory & factory);
+void registerDataTypeNested(DataTypeFactory & factory);
+void registerDataTypeInterval(DataTypeFactory & factory);
+void registerDataTypeLowCardinality(DataTypeFactory & factory);
+void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory);
+void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
+void registerDataTypeDateTime64(DataTypeFactory & factory);
 
 }

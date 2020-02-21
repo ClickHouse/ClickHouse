@@ -40,7 +40,7 @@ import requests
 import os
 
 def main():
-    url = os.environ['CLICKHOUSE_URL_PARAMS']
+    url = os.environ['CLICKHOUSE_URL']
 
     for q in gen_queries():
         resp = requests.post(url, data=q)

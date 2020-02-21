@@ -112,8 +112,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
         dest += sizeof(prev_value);
     }
 
-    WriteBuffer buffer(dest, dest_end - dest);
-    BitWriter writer(buffer);
+    BitWriter writer(dest, dest_end - dest);
 
     while (source < source_end)
     {
@@ -148,7 +147,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     writer.flush();
 
-    return sizeof(items_count) + sizeof(prev_value) + buffer.count();
+    return sizeof(items_count) + sizeof(prev_value) + writer.count() / 8;
 }
 
 template <typename T>
@@ -160,22 +159,25 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 
     const char * source_end = source + source_size;
 
+    if (source + sizeof(UInt32) > source_end)
+        return;
+
     const UInt32 items_count = unalignedLoad<UInt32>(source);
     source += sizeof(items_count);
 
     T prev_value{};
 
-    if (source < source_end)
-    {
-        prev_value = unalignedLoad<T>(source);
-        unalignedStore<T>(dest, prev_value);
+    // decoding first item
+    if (source + sizeof(T) > source_end || items_count < 1)
+        return;
 
-        source += sizeof(prev_value);
-        dest += sizeof(prev_value);
-    }
+    prev_value = unalignedLoad<T>(source);
+    unalignedStore<T>(dest, prev_value);
 
-    ReadBufferFromMemory buffer(source, source_size - sizeof(items_count) - sizeof(prev_value));
-    BitReader reader(buffer);
+    source += sizeof(prev_value);
+    dest += sizeof(prev_value);
+
+    BitReader reader(source, source_size - sizeof(items_count) - sizeof(prev_value));
 
     binary_value_info prev_xored_info{0, 0, 0};
 

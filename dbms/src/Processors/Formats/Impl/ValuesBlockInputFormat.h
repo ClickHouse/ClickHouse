@@ -18,7 +18,7 @@ class ReadBuffer;
 
 /** Stream to read data in VALUES format (as in INSERT query).
   */
-class ValuesBlockInputFormat : public IInputFormat
+class ValuesBlockInputFormat final : public IInputFormat
 {
 public:
     /** Data is parsed using fast, streaming parser.
@@ -29,9 +29,16 @@ public:
       * than interpreting expressions in each row separately, but it's still slower than streaming parsing)
       */
     ValuesBlockInputFormat(ReadBuffer & in_, const Block & header_, const RowInputFormatParams & params_,
-                           const Context & context_, const FormatSettings & format_settings_);
+                           const FormatSettings & format_settings_);
 
     String getName() const override { return "ValuesBlockInputFormat"; }
+
+    void resetParser() override;
+
+    /// TODO: remove context somehow.
+    void setContext(const Context & context_) { context = std::make_unique<Context>(context_); }
+
+    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
 private:
     enum class ParserType
@@ -45,11 +52,11 @@ private:
 
     Chunk generate() override;
 
-    void readRow(MutableColumns & columns);
+    void readRow(MutableColumns & columns, size_t row_num);
 
-    void tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx);
-    ALWAYS_INLINE inline void tryReadValue(IColumn & column, size_t column_idx);
-    void parseExpression(IColumn & column, size_t column_idx);
+    bool tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx);
+    ALWAYS_INLINE inline bool tryReadValue(IColumn & column, size_t column_idx);
+    bool parseExpression(IColumn & column, size_t column_idx);
 
     ALWAYS_INLINE inline void assertDelimiterAfterValue(size_t column_idx);
     ALWAYS_INLINE inline bool checkDelimiterAfterValue(size_t column_idx);
@@ -58,7 +65,7 @@ private:
 
     void readSuffix();
 
-    bool skipToNextRow(size_t min_chunk_size = 0, int balance = 0);
+    bool skipToNextRow(size_t min_chunk_bytes = 0, int balance = 0);
 
 private:
     PeekableReadBuffer buf;
@@ -81,6 +88,8 @@ private:
     ConstantExpressionTemplate::Cache templates_cache;
 
     DataTypes types;
+
+    BlockMissingValues block_missing_values;
 };
 
 }

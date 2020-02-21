@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumnDummy.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -27,6 +28,9 @@ public:
     MutableColumnPtr cloneDummy(size_t s_) const override { return ColumnSet::create(s_, data); }
 
     ConstSetPtr getData() const { return data; }
+
+    // Used only for debugging, making it DUMPABLE
+    Field operator[](size_t) const override { return {}; }
 
 private:
     ConstSetPtr data;

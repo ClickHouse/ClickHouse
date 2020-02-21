@@ -45,9 +45,15 @@ endif ()
 
 add_library(jemalloc STATIC ${SRCS})
 
-target_include_directories(jemalloc PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/include_linux_x86_64) # jemalloc.h
+target_include_directories(jemalloc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+if (ARCH_AMD64)
+    target_include_directories(jemalloc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include_linux_x86_64)
+elseif (ARCH_ARM)
+    target_include_directories(jemalloc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include_linux_aarch64)
+else ()
+    message (FATAL_ERROR "jemalloc can only be used on x86_64 or aarch64.")
+endif ()
 
 target_include_directories(jemalloc PRIVATE
     ${JEMALLOC_SOURCE_DIR}/include)

@@ -39,7 +39,7 @@ try
 
     DatabasePtr system = std::make_shared<DatabaseOrdinary>("system", "./metadata/system/", context);
     context.addDatabase("system", system);
-    system->loadTables(context, false);
+    system->loadStoredObjects(context, false);
     attachSystemTablesLocal(*context.getDatabase("system"));
     context.setCurrentDatabase("default");
 
@@ -55,6 +55,6 @@ catch (const Exception & e)
     std::cerr << e.what() << ", " << e.displayText() << std::endl
         << std::endl
         << "Stack trace:" << std::endl
-        << e.getStackTrace().toString();
+        << e.getStackTraceString();
     return 1;
 }

@@ -2,25 +2,13 @@
 
 #include <map>
 
-#include <Core/Names.h>
 #include <Parsers/IAST.h>
 #include <Interpreters/Aliases.h>
 
 namespace DB
 {
 
-inline bool functionIsInOperator(const String & name)
-{
-    return name == "in" || name == "notIn";
-}
-
-inline bool functionIsInOrGlobalInOperator(const String & name)
-{
-    return functionIsInOperator(name) || name == "globalIn" || name == "globalNotIn";
-}
-
 class ASTSelectQuery;
-class ASTFunction;
 class ASTIdentifier;
 struct ASTTablesInSelectQueryElement;
 class Context;
@@ -33,13 +21,11 @@ class QueryNormalizer
     {
         const UInt64 max_ast_depth;
         const UInt64 max_expanded_ast_elements;
-        const String count_distinct_implementation;
 
         template <typename T>
         ExtractedSettings(const T & settings)
         :   max_ast_depth(settings.max_ast_depth),
-            max_expanded_ast_elements(settings.max_expanded_ast_elements),
-            count_distinct_implementation(settings.count_distinct_implementation)
+            max_expanded_ast_elements(settings.max_expanded_ast_elements)
         {}
     };
 
@@ -80,7 +66,6 @@ private:
     static void visit(ASTPtr & query, Data & data);
 
     static void visit(ASTIdentifier &, ASTPtr &, Data &);
-    static void visit(ASTFunction &, const ASTPtr &, Data &);
     static void visit(ASTTablesInSelectQueryElement &, const ASTPtr &, Data &);
     static void visit(ASTSelectQuery &, const ASTPtr &, Data &);
 

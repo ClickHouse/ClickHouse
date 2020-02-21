@@ -147,8 +147,6 @@ public:
         column.getData().push_back(this->data(place).get());
     }
 
-    const char * getHeaderFilePath() const override { return __FILE__; }
-
 private:
     UInt32 scale;
 };

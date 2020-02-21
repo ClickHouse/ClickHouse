@@ -16,8 +16,9 @@ class TemplateRowInputFormat : public RowInputFormatWithDiagnosticInfo
     using ColumnFormat = ParsedTemplateFormatString::ColumnFormat;
 public:
     TemplateRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
-                           const FormatSettings & settings_, bool ignore_spaces_,
-                           ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_);
+                           FormatSettings settings_, bool ignore_spaces_,
+                           ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
+                           std::string row_between_delimiter);
 
     String getName() const override { return "TemplateRowInputFormat"; }
 
@@ -28,8 +29,10 @@ public:
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
 
+    void resetParser() override;
+
 private:
-    void deserializeField(const IDataType & type, IColumn & column, ColumnFormat col_format);
+    bool deserializeField(const DataTypePtr & type, IColumn & column, size_t file_column);
     void skipField(ColumnFormat col_format);
     inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(buf); }
 
@@ -50,13 +53,17 @@ private:
     PeekableReadBuffer buf;
     DataTypes data_types;
 
-    const FormatSettings settings;
+    FormatSettings settings;
     const bool ignore_spaces;
     ParsedTemplateFormatString format;
     ParsedTemplateFormatString row_format;
 
     size_t format_data_idx;
     bool end_of_stream = false;
+    std::vector<size_t> always_default_columns;
+    char default_csv_delimiter;
+
+    std::string row_between_delimiter;
 };
 
 }

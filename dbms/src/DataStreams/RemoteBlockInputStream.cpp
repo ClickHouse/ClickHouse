@@ -2,12 +2,17 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Common/NetException.h>
 #include <Common/CurrentThread.h>
+#include <Columns/ColumnConst.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Storages/IStorage.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/ConcatProcessor.h>
+#include <Processors/Pipe.h>
 
 #include <IO/ConnectionTimeouts.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -23,8 +28,8 @@ namespace ErrorCodes
 RemoteBlockInputStream::RemoteBlockInputStream(
         Connection & connection,
         const String & query_, const Block & header_, const Context & context_, const Settings * settings,
-        const ThrottlerPtr & throttler, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_), external_tables(external_tables_), stage(stage_)
+        const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
+    : header(header_), query(query_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
     if (settings)
         context.setSettings(*settings);
@@ -38,8 +43,8 @@ RemoteBlockInputStream::RemoteBlockInputStream(
 RemoteBlockInputStream::RemoteBlockInputStream(
         std::vector<IConnectionPool::Entry> && connections,
         const String & query_, const Block & header_, const Context & context_, const Settings * settings,
-        const ThrottlerPtr & throttler, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_), external_tables(external_tables_), stage(stage_)
+        const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
+    : header(header_), query(query_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
     if (settings)
         context.setSettings(*settings);
@@ -54,8 +59,8 @@ RemoteBlockInputStream::RemoteBlockInputStream(
 RemoteBlockInputStream::RemoteBlockInputStream(
         const ConnectionPoolWithFailoverPtr & pool,
         const String & query_, const Block & header_, const Context & context_, const Settings * settings,
-        const ThrottlerPtr & throttler, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_), external_tables(external_tables_), stage(stage_)
+        const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
+    : header(header_), query(query_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
     if (settings)
         context.setSettings(*settings);
@@ -111,13 +116,18 @@ void RemoteBlockInputStream::cancel(bool kill)
         /// Stop sending external data.
         for (auto & vec : external_tables_data)
             for (auto & elem : vec)
-                elem.first->cancel(kill);
+                elem->is_cancelled = true;
     }
 
     if (!isQueryPending() || hasThrownException())
         return;
 
     tryCancel("Cancelling query");
+}
+
+void RemoteBlockInputStream::sendScalars()
+{
+    multiplexed_connections->sendScalarsData(scalars);
 }
 
 void RemoteBlockInputStream::sendExternalTables()
@@ -136,12 +146,26 @@ void RemoteBlockInputStream::sendExternalTables()
             {
                 StoragePtr cur = table.second;
                 QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(context);
-                BlockInputStreams input = cur->read(cur->getColumns().getNamesOfPhysical(), {}, context,
-                    read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
-                if (input.size() == 0)
-                    res.push_back(std::make_pair(std::make_shared<OneBlockInputStream>(cur->getSampleBlock()), table.first));
+
+                Pipes pipes;
+
+                pipes = cur->read(cur->getColumns().getNamesOfPhysical(), {}, context,
+                        read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
+
+                auto data = std::make_unique<ExternalTableData>();
+                data->table_name = table.first;
+
+                if (pipes.empty())
+                    data->pipe = std::make_unique<Pipe>(std::make_shared<SourceFromSingleChunk>(cur->getSampleBlock(), Chunk()));
+                else if (pipes.size() == 1)
+                    data->pipe = std::make_unique<Pipe>(std::move(pipes.front()));
                 else
-                    res.push_back(std::make_pair(input[0], table.first));
+                {
+                    auto concat = std::make_shared<ConcatProcessor>(pipes.front().getHeader(), pipes.size());
+                    data->pipe = std::make_unique<Pipe>(std::move(pipes), std::move(concat));
+                }
+
+                res.emplace_back(std::move(data));
             }
             external_tables_data.push_back(std::move(res));
         }
@@ -168,9 +192,30 @@ static Block adaptBlockStructure(const Block & block, const Block & header, cons
         ColumnPtr column;
 
         if (elem.column && isColumnConst(*elem.column))
-            /// TODO: check that column from block contains the same value.
-            /// TODO: serialize const columns.
-            column = elem.column->cloneResized(block.rows());
+        {
+            /// We expect constant column in block.
+            /// If block is not empty, then get value for constant from it,
+            /// because it may be different for remote server for functions like version(), uptime(), ...
+            if (block.rows() > 0 && block.has(elem.name))
+            {
+                /// Const column is passed as materialized. Get first value from it.
+                ///
+                /// TODO: check that column contains the same value.
+                /// TODO: serialize const columns.
+                auto col = block.getByName(elem.name);
+                col.column = block.getByName(elem.name).column->cut(0, 1);
+
+                column = castColumn(col, elem.type, context);
+
+                if (!isColumnConst(*column))
+                    column = ColumnConst::create(column, block.rows());
+                else
+                    /// It is not possible now. Just in case we support const columns serialization.
+                    column = column->cloneResized(block.rows());
+            }
+            else
+                column = elem.column->cloneResized(block.rows());
+        }
         else
             column = castColumn(block.getByName(elem.name), elem.type, context);
 
@@ -195,7 +240,7 @@ Block RemoteBlockInputStream::readImpl()
         if (isCancelledOrThrowIfKilled())
             return Block();
 
-        Connection::Packet packet = multiplexed_connections->receivePacket();
+        Packet packet = multiplexed_connections->receivePacket();
 
         switch (packet.type)
         {
@@ -274,7 +319,7 @@ void RemoteBlockInputStream::readSuffixImpl()
     tryCancel("Cancelling query because enough data has been read");
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
-    Connection::Packet packet = multiplexed_connections->drain();
+    Packet packet = multiplexed_connections->drain();
     switch (packet.type)
     {
         case Protocol::Server::EndOfStream:
@@ -308,6 +353,8 @@ void RemoteBlockInputStream::sendQuery()
     established = false;
     sent_query = true;
 
+    if (settings.enable_scalar_subquery_optimization)
+        sendScalars();
     sendExternalTables();
 }
 

@@ -85,6 +85,42 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 └───────────────────────┘
 ```
 
+## repeat {#repeat}
+
+Repeats a string as many times as specified and concatenates the replicated values as a single string.
+
+**Syntax**
+
+```sql
+repeat(s, n)
+```
+
+**Parameters**
+
+- `s` — The string to repeat. [String](../../data_types/string.md).
+- `n` — The number of times to repeat the string. [UInt](../../data_types/int_uint.md).
+
+**Returned value**
+
+The single string, which contains the string  `s` repeated `n` times. If `n` < 1, the function returns empty string.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT repeat('abc', 10)
+```
+
+Result:
+
+```text
+┌─repeat('abc', 10)──────────────┐
+│ abcabcabcabcabcabcabcabcabcabc │
+└────────────────────────────────┘
+```
 
 ## reverse
 
@@ -115,13 +151,82 @@ SELECT format('{} {}', 'Hello', 'World')
 └───────────────────────────────────┘
 ```
 
-## concat(s1, s2, ...)
+## concat {#concat}
 
 Concatenates the strings listed in the arguments, without a separator.
 
-## concatAssumeInjective(s1, s2, ...)
+**Syntax** 
 
-Same as [concat](./string_functions.md#concat-s1-s2), the difference is that you need to ensure that concat(s1, s2, s3) -> s4 is injective, it will be used for optimization of GROUP BY
+```sql
+concat(s1, s2, ...)
+```
+
+**Parameters**
+
+Values of type String or FixedString.
+
+**Returned values**
+
+Returns the String that results from concatenating the arguments. 
+
+If any of argument values is `NULL`, `concat` returns `NULL`. 
+
+**Example**
+
+Query:
+
+```sql
+SELECT concat('Hello, ', 'World!')
+```
+
+Result:
+
+```text
+┌─concat('Hello, ', 'World!')─┐
+│ Hello, World!               │
+└─────────────────────────────┘
+```
+
+## concatAssumeInjective {#concatassumeinjective}
+
+Same as [concat](#concat), the difference is that you need to ensure that `concat(s1, s2, ...) → sn` is injective, it will be used for optimization of GROUP BY.
+
+The function is named "injective" if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
+
+**Example**
+
+Input table:
+
+```sql
+CREATE TABLE key_val(`key1` String, `key2` String, `value` UInt32) ENGINE = TinyLog;
+INSERT INTO key_val VALUES ('Hello, ','World',1), ('Hello, ','World',2), ('Hello, ','World!',3), ('Hello',', World!',2);
+SELECT * from key_val;
+```
+
+```text
+┌─key1────┬─key2─────┬─value─┐
+│ Hello,  │ World    │     1 │
+│ Hello,  │ World    │     2 │
+│ Hello,  │ World!   │     3 │
+│ Hello   │ , World! │     2 │
+└─────────┴──────────┴───────┘
+```
+
+Query:
+
+```sql
+SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2)
+```
+
+Result:
+
+```text
+┌─concat(key1, key2)─┬─sum(value)─┐
+│ Hello, World!      │          3 │
+│ Hello, World!      │          2 │
+│ Hello, World       │          3 │
+└────────────────────┴────────────┘
+```
 
 ## substring(s, offset, length), mid(s, offset, length), substr(s, offset, length)
 
@@ -181,21 +286,174 @@ Result:
 └───────────────────────────────────┘
 ```
 
-## trimLeft(s)
+## trim {#trim}
 
-Returns a string that removes the whitespace characters on left side.
+Removes all specified characters from the start or end of a string.
+By default removes all consecutive occurrences of common whitespace (ASCII character 32) from both ends of a string.
 
-## trimRight(s)
+**Syntax**
 
-Returns a string that removes the whitespace characters on right side.
+```sql
+trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
+```
 
-## trimBoth(s)
+**Parameters**
 
-Returns a string that removes the whitespace characters on either side.
+- `trim_character` — specified characters for trim. [String](../../data_types/string.md).
+- `input_string` — string for trim. [String](../../data_types/string.md).
+
+**Returned value**
+
+A string without leading and (or) trailing specified characters.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT trim(BOTH ' ()' FROM '(   Hello, world!   )')
+```
+
+Result:
+
+```text
+┌─trim(BOTH ' ()' FROM '(   Hello, world!   )')─┐
+│ Hello, world!                                 │
+└───────────────────────────────────────────────┘
+```
+
+## trimLeft {#trimleft}
+
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from the beginning of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
+
+**Syntax** 
+
+```sql
+trimLeft(input_string)
+```
+
+Alias: `ltrim(input_string)`.
+
+**Parameters** 
+
+- `input_string` — string to trim. [String](../../data_types/string.md).
+
+**Returned value**
+
+A string without leading common whitespaces.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT trimLeft('     Hello, world!     ')
+```
+
+Result:
+
+```text
+┌─trimLeft('     Hello, world!     ')─┐
+│ Hello, world!                       │
+└─────────────────────────────────────┘
+```
+
+## trimRight {#trimright}
+
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from the end of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
+
+**Syntax** 
+
+```sql
+trimRight(input_string)
+```
+
+Alias: `rtrim(input_string)`.
+
+**Parameters**
+
+- `input_string` — string to trim. [String](../../data_types/string.md).
+
+**Returned value**
+
+A string without trailing common whitespaces.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT trimRight('     Hello, world!     ')
+```
+
+Result:
+
+```text
+┌─trimRight('     Hello, world!     ')─┐
+│      Hello, world!                   │
+└──────────────────────────────────────┘
+```
+
+## trimBoth  {#trimboth}
+
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from both ends of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
+
+**Syntax** 
+
+```sql
+trimBoth(input_string)
+```
+
+Alias: `trim(input_string)`.
+
+**Parameters**
+
+- `input_string` — string to trim. [String](../../data_types/string.md).
+
+**Returned value**
+
+A string without leading and trailing common whitespaces.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT trimBoth('     Hello, world!     ')
+```
+
+Result:
+
+```text
+┌─trimBoth('     Hello, world!     ')─┐
+│ Hello, world!                       │
+└─────────────────────────────────────┘
+```
 
 ## CRC32(s)
 
-Returns the CRC32 checksum of a string
+Returns the CRC32 checksum of a string, using CRC-32-IEEE 802.3 polynomial and initial value `0xffffffff` (zlib implementation).
+
 The result type is UInt32.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_functions/) <!--hide-->
+## CRC32IEEE(s)
+
+Returns the CRC32 checksum of a string, using CRC-32-IEEE 802.3 polynomial.
+
+The result type is UInt32.
+
+## CRC64(s)
+
+Returns the CRC64 checksum of a string, using CRC-64-ECMA polynomial.
+
+The result type is UInt64.
+
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/string_functions/) <!--hide-->
