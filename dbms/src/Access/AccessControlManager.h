@@ -24,7 +24,7 @@ using AccessRightsContextPtr = std::shared_ptr<const AccessRightsContext>;
 class AccessRightsContextFactory;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
-struct RoleContext;
+class RoleContext;
 using RoleContextPtr = std::shared_ptr<const RoleContext>;
 class RoleContextFactory;
 class RowPolicyContext;
