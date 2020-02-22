@@ -226,13 +226,15 @@ else ()
     set(NOT_UNBUNDLED 1)
 endif ()
 
-# Using system libs can cause a lot of warnings in includes (on macro expansion).
 if (UNBUNDLED OR NOT (OS_LINUX OR OS_DARWIN) OR ARCH_32)
-    option (NO_WERROR "Disable -Werror compiler option" ON)
+    # Using system libs can cause a lot of warnings in includes (on macro expansion).
+    option (WERROR "Enable -Werror compiler option" OFF)
+else ()
+    option (WERROR "Enable -Werror compiler option" ON)
+endif ()
 
-    if (NOT NO_WERROR)
-        add_warning(error)
-    endif ()
+if (WERROR)
+    add_warning(error)
 endif ()
 
 # Make this extra-checks for correct library dependencies.
