@@ -18,6 +18,7 @@ The supported formats are:
 | [CustomSeparated](#format-customseparated) | ✔ | ✔ |
 | [Values](#data-format-values) | ✔ | ✔ |
 | [Vertical](#vertical) | ✗ | ✔ |
+| [VerticalRaw](#verticalraw) | ✗ | ✔ |
 | [JSON](#json) | ✗ | ✔ |
 | [JSONCompact](#jsoncompact) | ✗ | ✔ |
 | [JSONEachRow](#jsoneachrow) | ✔ | ✔ |
@@ -111,9 +112,9 @@ For example:
 ```sql
 CREATE TABLE nestedt
 (
-    `id` UInt8, 
+    `id` UInt8,
     `aux` Nested(
-        a UInt8, 
+        a UInt8,
         b String
     )
 )
@@ -161,26 +162,26 @@ Setting `format_template_row` specifies path to file, which contains format stri
 
  `delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
 
-  where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as `$$`), 
-  `column_i` is a name or index of a column whose values are to be selected or inserted (if empty, then column will be skipped), 
+  where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as `$$`),
+  `column_i` is a name or index of a column whose values are to be selected or inserted (if empty, then column will be skipped),
   `serializeAs_i` is an escaping rule for the column values. The following escaping rules are supported:
-  
+
   - `CSV`, `JSON`, `XML` (similarly to the formats of the same names)
   - `Escaped` (similarly to `TSV`)
   - `Quoted` (similarly to `Values`)
   - `Raw` (without escaping, similarly to `TSVRaw`)
   - `None` (no escaping rule, see further)
-  
+
   If escaping rule is omitted, then`None` will be used. `XML` and `Raw` are suitable only for output.
-  
+
   So, for the following format string:
-    
+
     `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
-    
+
   the values of `SearchPhrase`, `c` and `price` columns, which are escaped as `Quoted`, `Escaped` and `JSON` will be printed (for select) or will be expected (for insert) between `Search phrase: `, `, count: `, `, ad price: $` and `;` delimiters respectively. For example:
 
   `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
-  
+
  The `format_template_rows_between_delimiter` setting specifies delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
 
 Setting `format_template_resultset` specifies path to file, which contains format string for resultset. Format string for resultset has the same syntax as format string for row and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
@@ -194,14 +195,14 @@ Setting `format_template_resultset` specifies path to file, which contains forma
  - `time` is the request execution time in seconds
  - `rows_read` is the number of rows have been read
  - `bytes_read` is the number of bytes (uncompressed) have been read
- 
+
  The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified (or `None` must be specified explicitly). The remaining placeholders may have any escaping rule specified.
  If the `format_template_resultset` setting is an empty string, `${data}` is used as default value.
   For insert queries format allows to skip some columns or some fields if prefix or suffix (see example).
- 
+
  Select example:
 ```sql
-SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5 FORMAT Template SETTINGS 
+SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5 FORMAT Template SETTINGS
 format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format', format_template_rows_between_delimiter = '\n    '
 ```
 `/some/path/resultset.format`:
@@ -253,7 +254,7 @@ Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185
 Total rows: 2
 ```
 ```sql
-INSERT INTO UserActivity FORMAT Template SETTINGS 
+INSERT INTO UserActivity FORMAT Template SETTINGS
 format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format'
 ```
 `/some/path/resultset.format`:
@@ -266,11 +267,11 @@ Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Du
 ```
 `PageViews`, `UserID`, `Duration` and `Sign` inside placeholders are names of columns in the table. Values after `Useless field` in rows and after `\nTotal rows: ` in suffix will be ignored.
 All delimiters in the input data must be strictly equal to delimiters in specified format strings.
- 
+
 ## TemplateIgnoreSpaces {#templateignorespaces}
 
 This format is suitable only for input.
-Similar to `Template`,  but skips whitespace characters between delimiters and values in the input stream. However, if format strings contain whitespace characters, these characters will be expected in the input stream. Also allows to specify empty placeholders (`${}` or `${:None}`) to split some delimiter into separate parts to ignore spaces between them. Such placeholders are used only for skipping whitespace characters. 
+Similar to `Template`,  but skips whitespace characters between delimiters and values in the input stream. However, if format strings contain whitespace characters, these characters will be expected in the input stream. Also allows to specify empty placeholders (`${}` or `${:None}`) to split some delimiter into separate parts to ignore spaces between them. Such placeholders are used only for skipping whitespace characters.
 It's possible to read `JSON` using this format, if values of columns have the same order in all rows. For example, the following request can be used for inserting data from output example of format [JSON](#json):
 ```sql
 INSERT INTO table_name FORMAT TemplateIgnoreSpaces SETTINGS
@@ -989,7 +990,7 @@ $ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avr
 
 The root schema of input Avro file must be of `record` type.
 
-To find the correspondence between table columns and fields of Avro schema ClickHouse compares their names. This comparison is case-sensitive.  
+To find the correspondence between table columns and fields of Avro schema ClickHouse compares their names. This comparison is case-sensitive.
 Unused fields are skipped.
 
 Data types of a ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to corresponding column type.
@@ -1167,7 +1168,7 @@ in the server configuration.
 
 ## Skipping Errors {#skippingerrors}
 
-Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) and 
+Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) and
 [input_format_allow_errors_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) settings.
 Limitations:
  - In case of parsing error `JSONEachRow` skips all data until the new line (or EOF), so rows must be delimited by `\n` to count errors correctly.
