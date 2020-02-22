@@ -8,7 +8,7 @@ namespace DB
 {
 /** Implements WINDOW VIEW table WATCH input stream.
  *  Keeps stream alive by outputing blocks with no rows
- *  based on period specified by the heartbeat interval.
+ *  based on window interval.
  */
 class WindowViewBlockInputStream : public IBlockInputStream
 {
@@ -23,7 +23,7 @@ public:
         , has_limit(has_limit_)
         , limit(limit_) {}
 
-    String getName() const override { return "WindowViewBlockInputStream"; }
+    String getName() const override { return "WindowViewBlock"; }
 
     void cancel(bool kill) override
     {

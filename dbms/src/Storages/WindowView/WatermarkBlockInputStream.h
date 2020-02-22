@@ -8,8 +8,6 @@
 namespace DB
 {
 
-/** Adds a materialized const column to the block with a specified value.
-  */
 class WatermarkBlockInputStream : public IBlockInputStream
 {
 public:
@@ -48,7 +46,6 @@ protected:
 
     void readSuffix() override
     {
-        // while (!signal.empty())
         for (auto signal : signals)
             storage.addFireSignal(signal);
         signals.clear();
