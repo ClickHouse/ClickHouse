@@ -63,6 +63,10 @@ if (SUPPORTS_FLAG_no_ctad_maybe_unsupported)
     target_compile_options(cxx PUBLIC -Wno-ctad-maybe-unsupported)
 endif ()
 
+if (SUPPORTS_FLAG_no_macro-redefined)
+    target_compile_options(cxx PUBLIC -Wno-macro-redefined)
+endif ()
+
 target_link_libraries(cxx PUBLIC cxxabi)
 
 install(
