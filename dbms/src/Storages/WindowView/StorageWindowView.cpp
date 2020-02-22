@@ -1,30 +1,24 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataStreams/AddingConstColumnBlockInputStream.h>
-#include <DataStreams/BlocksBlockInputStream.h>
-#include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsWindow.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -35,11 +29,16 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/formatAST.h>
+#include <Processors/Sources/NullSource.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/AddingConstColumnTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <Storages/StorageFactory.h>
 #include <boost/lexical_cast.hpp>
 #include <Common/typeid_cast.h>
 
-#include <Storages/WindowView/BlocksListInputStream.h>
+#include <Storages/WindowView/BlocksListSource.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/WindowView/WatermarkBlockInputStream.h>
 #include <Storages/WindowView/WindowViewBlockInputStream.h>
@@ -319,6 +318,15 @@ bool StorageWindowView::optimize(const ASTPtr & query, const ASTPtr & partition,
     return getInnerStorage()->optimize(query, partition, final, deduplicate, context);
 }
 
+Pipes StorageWindowView::blocksToPipes(BlocksListPtrs & blocks, Block & sample_block)
+{
+    Pipes pipes;
+    for (auto & blocks_ : *blocks)
+        pipes.emplace_back(std::make_shared<BlocksListSource>(blocks_, sample_block));
+
+    return pipes;
+}
+
 inline void StorageWindowView::cleanCache()
 {
     //delete fired blocks
@@ -353,14 +361,13 @@ inline void StorageWindowView::cleanCache()
     }
 
     {
-        std::lock_guard lock(fire_signal_mutex);
+        std::unique_lock lock(fire_signal_mutex);
         watch_streams.remove_if([](std::weak_ptr<WindowViewBlockInputStream> & ptr) { return ptr.expired(); });
     }
 }
 
 inline void StorageWindowView::flushToTable(UInt32 timestamp_)
 {
-    //write into dependent table
     StoragePtr target_table = getTargetStorage();
     auto _blockInputStreamPtr = getNewBlocksInputStreamPtr(timestamp_);
     auto _lock = target_table->lockStructureForShare(true, global_context.getCurrentQueryId());
@@ -591,27 +598,13 @@ BlockInputStreams StorageWindowView::watch(
         limit);
 
     {
-        std::lock_guard lock(fire_signal_mutex);
+        std::unique_lock lock(fire_signal_mutex);
         watch_streams.push_back(reader);
     }
 
     processed_stage = QueryProcessingStage::Complete;
 
     return {reader};
-}
-
-Block StorageWindowView::getHeader() const
-{
-    if (!sample_block)
-    {
-        auto storage = global_context.getTable(select_table_id);
-        sample_block = InterpreterSelectQuery(getInnerQuery(), global_context, storage, SelectQueryOptions(QueryProcessingStage::Complete))
-                           .getSampleBlock();
-        for (size_t i = 0; i < sample_block.columns(); ++i)
-            sample_block.safeGetByPosition(i).column = sample_block.safeGetByPosition(i).column->convertToFullColumnIfConst();
-    }
-
-    return sample_block;
 }
 
 StorageWindowView::StorageWindowView(
@@ -629,7 +622,6 @@ StorageWindowView::StorageWindowView(
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
-    /// Default value, if only table name exist in the query
     if (query.select->list_of_selects->children.size() != 1)
         throw Exception("UNION is not supported for Window View", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
 
@@ -778,30 +770,32 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
 {
     UInt32 timestamp_now;
     UInt32 watermark;
-    auto block_stream = std::make_shared<OneBlockInputStream>(block);
-    BlockInputStreamPtr source_stream;
+
+    Pipe pipe(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), Chunk(block.getColumns(), block.rows())));
 
     std::shared_lock<std::shared_mutex> fire_signal_lock;
     if (window_view.is_proctime_tumble)
     {
         fire_signal_lock = std::shared_lock<std::shared_mutex>(window_view.fire_signal_mutex);
         timestamp_now = std::time(nullptr);
-        source_stream = std::make_shared<AddingConstColumnBlockInputStream<UInt32>>(block_stream, std::make_shared<DataTypeDateTime>(), timestamp_now, "____timestamp");
         watermark = window_view.getWindowLowerBound(timestamp_now);
+        pipe.addSimpleTransform(std::make_shared<AddingConstColumnTransform<UInt32>>(
+            pipe.getHeader(), std::make_shared<DataTypeDateTime>(), timestamp_now, "____timestamp"));
     }
     else
     {
-        source_stream = block_stream;
         timestamp_now = std::time(nullptr);
         watermark = window_view.getWatermark(timestamp_now);
     }
 
-    InterpreterSelectQuery select_block(
-        window_view.getFinalQuery(), context, source_stream, QueryProcessingStage::WithMergeableState);
-    source_stream = std::make_shared<AddingConstColumnBlockInputStream<UInt32>>(select_block.execute().in, std::make_shared<DataTypeDateTime>(), watermark, "____watermark");
-    source_stream = std::make_shared<MaterializingBlockInputStream>(source_stream);
+    InterpreterSelectQuery select_block(window_view.getFinalQuery(), context, {std::move(pipe)}, QueryProcessingStage::WithMergeableState);
+
+    BlockInputStreamPtr source_stream = std::make_shared<AddingConstColumnBlockInputStream<UInt32>>(select_block.execute().in, std::make_shared<DataTypeDateTime>(), watermark, "____watermark");
 
     source_stream = std::make_shared<FilterBlockInputStream>(source_stream, window_view.writeExpressions, "____filter", true);
+    source_stream = std::make_shared<SquashingBlockInputStream>(
+        source_stream, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+
     if (window_view.watermark_num_units != 0)
         source_stream = std::make_shared<WatermarkBlockInputStream>(source_stream, window_view, timestamp_now);
 
@@ -849,42 +843,54 @@ StorageWindowView::~StorageWindowView()
 
 BlockInputStreamPtr StorageWindowView::getNewBlocksInputStreamPtr(UInt32 timestamp_)
 {
-    BlockInputStreamPtr stream;
+    Pipes pipes;
 
     if (!inner_table_id.empty())
     {
         auto & storage = getInnerStorage();
         InterpreterSelectQuery fetch(fetch_column_query, global_context, storage, SelectQueryOptions(QueryProcessingStage::FetchColumns));
-
-        ColumnsWithTypeAndName columns_;
-        columns_.emplace_back(nullptr, std::make_shared<DataTypeDateTime>(), "____w_end");
-
-        ExpressionActionsPtr actions_ = std::make_shared<ExpressionActions>(columns_, global_context);
-        actions_->add(ExpressionAction::addColumn({std::make_shared<DataTypeDateTime>()->createColumnConst(1, toField(timestamp_)),
-                                                   std::make_shared<DataTypeDateTime>(),
-                                                   "____timestamp_now"}));
-        const auto & function_equals = FunctionFactory::instance().get("equals", global_context);
-        ExpressionActionsPtr apply_function_actions = std::make_shared<ExpressionActions>(columns_, global_context);
-        actions_->add(ExpressionAction::applyFunction(function_equals, Names{"____w_end", "____timestamp_now"}, "____filter"));
-        actions_->add(ExpressionAction::removeColumn("____w_end"));
-        actions_->add(ExpressionAction::removeColumn("____timestamp_now"));
-        stream = std::make_shared<FilterBlockInputStream>(fetch.execute().in, actions_, "____filter", true);
+        QueryPipeline pipeline;
+        BlockInputStreams streams = fetch.executeWithMultipleStreams(pipeline);
+        for (auto & stream : streams)
+            pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
     }
     else
     {
+        std::unique_lock lock(mutex);
         if (mergeable_blocks->empty())
             return std::make_shared<NullBlockInputStream>(getHeader());
-        auto sample_block_ = mergeable_blocks->front()->front().cloneEmpty();
-        stream = std::make_shared<BlocksListInputStream>(mergeable_blocks, sample_block_, timestamp_);
+        pipes = blocksToPipes(mergeable_blocks, getMergeableHeader());
     }
 
-    BlockInputStreams from;
-    from.push_back(std::move(stream));
+    ColumnsWithTypeAndName columns_;
+    columns_.emplace_back(nullptr, std::make_shared<DataTypeDateTime>(), "____w_end");
+
+    ExpressionActionsPtr actions_ = std::make_shared<ExpressionActions>(columns_, global_context);
+    actions_->add(ExpressionAction::addColumn({std::make_shared<DataTypeDateTime>()->createColumnConst(1, toField(timestamp_)),
+                                                std::make_shared<DataTypeDateTime>(),
+                                                "____timestamp_now"}));
+    const auto & function_equals = FunctionFactory::instance().get("equals", global_context);
+    ExpressionActionsPtr apply_function_actions = std::make_shared<ExpressionActions>(columns_, global_context);
+    actions_->add(ExpressionAction::applyFunction(function_equals, Names{"____w_end", "____timestamp_now"}, "____filter"));
+    actions_->add(ExpressionAction::removeColumn("____w_end"));
+    actions_->add(ExpressionAction::removeColumn("____timestamp_now"));
+
+    for (auto & pipe : pipes)
+        pipe.addSimpleTransform(std::make_shared<FilterTransform>(pipe.getHeader(), actions_,
+        "____filter", true));
+
     auto proxy_storage = std::make_shared<WindowViewProxyStorage>(
-        StorageID("", "WindowViewProxyStorage"), getParentStorage(), std::move(from), QueryProcessingStage::WithMergeableState);
+        StorageID("", "WindowViewProxyStorage"), getParentStorage()->getColumns(), std::move(pipes), QueryProcessingStage::WithMergeableState);
 
     InterpreterSelectQuery select(getFinalQuery(), global_context, proxy_storage, QueryProcessingStage::Complete);
     BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
+
+    /// Squashing is needed here because the view query can generate a lot of blocks
+    /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
+    /// and two-level aggregation is triggered).
+    data = std::make_shared<SquashingBlockInputStream>(
+        data, global_context.getSettingsRef().min_insert_block_size_rows,
+        global_context.getSettingsRef().min_insert_block_size_bytes);
     return data;
 }
 

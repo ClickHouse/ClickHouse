@@ -2,6 +2,7 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Poco/Logger.h>
 #include <ext/shared_ptr_helper.h>
@@ -49,6 +50,7 @@ public:
         unsigned num_streams) override;
 
     BlocksListPtrs getMergeableBlocksList() { return mergeable_blocks; }
+
     std::shared_ptr<bool> getActivePtr() { return active_ptr; }
 
     BlockInputStreamPtr getNewBlocksInputStreamPtr(UInt32 timestamp_);
@@ -64,6 +66,7 @@ private:
     bool is_proctime_tumble{false};
     std::atomic<bool> shutdown_called{false};
     mutable Block sample_block;
+    mutable Block mergeable_sample_block;
     UInt64 clean_interval;
     const DateLUTImpl & time_zone;
     std::deque<UInt32> fire_signal;
@@ -106,7 +109,6 @@ private:
     UInt32 getWindowUpperBound(UInt32 time_sec, int window_id_skew = 0);
     UInt32 getWatermark(UInt32 time_sec);
 
-    Block getHeader() const;
     void flushToTable(UInt32 timestamp_);
     void cleanCache();
     void threadFuncToTable();
@@ -114,10 +116,12 @@ private:
     void threadFuncFire();
     void addFireSignal(UInt32 timestamp_);
 
+    static Pipes blocksToPipes(BlocksListPtrs & blocks, Block & sample_block);
+
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
     ASTPtr getFinalQuery() const { return final_query->clone(); }
 
-    StoragePtr& getParentStorage()
+    StoragePtr getParentStorage()
     {
         if (parent_storage == nullptr)
             parent_storage = global_context.getTable(select_table_id);
@@ -136,6 +140,28 @@ private:
         if (target_storage == nullptr && !target_table_id.empty())
             target_storage = global_context.getTable(target_table_id);
         return target_storage;
+    }
+
+    Block & getHeader()
+    {
+        if (!sample_block)
+        {
+            sample_block = InterpreterSelectQuery(
+                               getInnerQuery(), global_context, getParentStorage(), SelectQueryOptions(QueryProcessingStage::Complete))
+                               .getSampleBlock();
+            for (size_t i = 0; i < sample_block.columns(); ++i)
+                sample_block.safeGetByPosition(i).column = sample_block.safeGetByPosition(i).column->convertToFullColumnIfConst();
+        }
+        return sample_block;
+    }
+
+    Block & getMergeableHeader()
+    {
+        if (!mergeable_sample_block)
+        {
+            mergeable_sample_block = mergeable_blocks->front()->front().cloneEmpty();
+        }
+        return mergeable_sample_block;
     }
 
     StorageWindowView(
