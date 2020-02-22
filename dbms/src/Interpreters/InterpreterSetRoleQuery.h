@@ -7,7 +7,7 @@
 namespace DB
 {
 class ASTSetRoleQuery;
-class GenericRoleSet;
+struct GenericRoleSet;
 struct User;
 
 
