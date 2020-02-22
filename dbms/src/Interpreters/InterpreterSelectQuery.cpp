@@ -866,7 +866,6 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             {
                 Block header_before_join;
                 JoinPtr join = expressions.before_join->getTableJoinAlgo();
-                bool inflating_join = join && !typeid_cast<Join *>(join.get());
 
                 if constexpr (pipeline_with_processors)
                 {
@@ -879,6 +878,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                         pipeline.addDefaultTotals();
                         default_totals = true;
                     }
+
+                    bool inflating_join = join && !typeid_cast<Join *>(join.get());
 
                     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType type)
                     {
