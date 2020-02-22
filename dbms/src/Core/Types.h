@@ -241,7 +241,4 @@ namespace std
                 ^ std::hash<DB::Int64>()(x.value & std::numeric_limits<DB::UInt64>::max());
         }
     };
-
-    template <>
-    struct hash<DB::UInt8> : public std::hash<uint8_t> {};
 }
