@@ -392,7 +392,7 @@ TTL date_time + INTERVAL 1 MONTH
 TTL date_time + INTERVAL 15 HOUR
 ```
 
-**Column TTL**
+### Column TTL {#mergetree-column-ttl}
 
 When the values in the column expire, ClickHouse replaces them with the default values for the column data type. If all the column values in the data part expire, ClickHouse deletes this column from the data part in a filesystem.
 
@@ -431,7 +431,7 @@ ALTER TABLE example_table
     c String TTL d + INTERVAL 1 MONTH;
 ```
 
-**Table TTL**
+### Table TTL {#mergetree-table-ttl}
 
 Table can have an expression for removal of expired rows, and multiple expressions for automatic move of parts between [disks or volumes](#table_engine-mergetree-multiple-volumes). When rows in the table expire, ClickHouse deletes all corresponding rows. For parts moving feature, all rows of a part must satisfy the movement expression criteria.
 
