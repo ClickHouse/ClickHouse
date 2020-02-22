@@ -68,7 +68,7 @@ ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/con
     ln -s /usr/share/clickhouse-test/config/server.key /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/server.crt /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/dhparam.pem /etc/clickhouse-server/; \
-    rm -f /etc/clickhouse-server/config.d/ssl.xml
+    rm -f /etc/clickhouse-server/config.d/ssl.xml; \
     ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml; \
     ln -s /usr/lib/llvm-8/bin/llvm-symbolizer /usr/bin/llvm-symbolizer
 
