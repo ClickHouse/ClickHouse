@@ -13,7 +13,7 @@ namespace DB
 {
 struct Role;
 using RolePtr = std::shared_ptr<const Role>;
-class CurrentRolesInfo;
+struct CurrentRolesInfo;
 using CurrentRolesInfoPtr = std::shared_ptr<const CurrentRolesInfo>;
 class AccessControlManager;
 
