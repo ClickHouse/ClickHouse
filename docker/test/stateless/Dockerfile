@@ -52,6 +52,7 @@ CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     ln -s /usr/share/clickhouse-test/config/server.key /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/server.crt /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/dhparam.pem /etc/clickhouse-server/; \
+    ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml; \
     ln -s /usr/lib/llvm-8/bin/llvm-symbolizer /usr/bin/llvm-symbolizer; \
     echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7'" >> /etc/environment; \
     echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment; \
