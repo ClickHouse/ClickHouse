@@ -55,7 +55,7 @@ endif ()
 target_compile_options(cxx PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>)
 
 # Third party library may have substandard code.
-target_compile_options(cxx PUBLIC -w)
+target_compile_options(cxx PRIVATE -w)
 
 target_link_libraries(cxx PUBLIC cxxabi)
 

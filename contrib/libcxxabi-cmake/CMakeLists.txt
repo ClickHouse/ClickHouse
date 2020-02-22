@@ -25,7 +25,7 @@ ${LIBCXXABI_SOURCE_DIR}/src/stdlib_new_delete.cpp
 add_library(cxxabi ${SRCS})
 
 # Third party library may have substandard code.
-target_compile_options(cxx PUBLIC -w)
+target_compile_options(cxx PRIVATE -w)
 
 target_include_directories(cxxabi SYSTEM BEFORE
     PUBLIC $<BUILD_INTERFACE:${LIBCXXABI_SOURCE_DIR}/include>
