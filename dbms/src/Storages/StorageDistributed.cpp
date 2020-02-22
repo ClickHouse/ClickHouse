@@ -340,7 +340,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
                                 : QueryProcessingStage::WithMergeableState;
 }
 
-BlockInputStreams StorageDistributed::read(
+Pipes StorageDistributed::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -413,7 +413,7 @@ BlockInputStreams StorageDistributed::read(
     }
 
     return ClusterProxy::executeQuery(
-        select_stream_factory, cluster, modified_query_ast, context, settings);
+        select_stream_factory, cluster, modified_query_ast, context, settings, query_info);
 }
 
 
