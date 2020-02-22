@@ -71,8 +71,8 @@ function configure
             <table remove="remove"/>
         </metric_log>
         <use_uncompressed_cache>1</use_uncompressed_cache>
-        <!--16 GB-->
-        <uncompressed_cache_size>16000000000</uncompressed_cache_size>
+        <!--1 GB-->
+        <uncompressed_cache_size>1000000000</uncompressed_cache_size>
     </yandex>
 EOF
 
