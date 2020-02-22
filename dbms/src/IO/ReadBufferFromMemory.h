@@ -14,7 +14,7 @@ class ReadBufferFromMemory : public SeekableReadBuffer
 public:
     template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
     ReadBufferFromMemory(const CharT * buf, size_t size)
-        : ReadBuffer(const_cast<char *>(reinterpret_cast<const char *>(buf)), size, 0) {}
+        : SeekableReadBuffer(const_cast<char *>(reinterpret_cast<const char *>(buf)), size, 0) {}
 
     off_t seek(off_t off, int whence) override;
 
