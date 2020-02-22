@@ -52,6 +52,7 @@ enum class TypeIndex
 };
 
 using UInt8 = char8_t;      /// This is needed for more strict aliasing. https://godbolt.org/z/xpJBSb https://stackoverflow.com/a/57453713
+
 using UInt16 = uint16_t;
 using UInt32 = uint32_t;
 using UInt64 = uint64_t;
@@ -240,4 +241,7 @@ namespace std
                 ^ std::hash<DB::Int64>()(x.value & std::numeric_limits<DB::UInt64>::max());
         }
     };
+
+    template <>
+    struct hash<DB::UInt8> : public std::hash<uint8_t> {};
 }
