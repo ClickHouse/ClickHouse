@@ -28,7 +28,7 @@ public:
 
     size_t getSize() const { return data.size(); }
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

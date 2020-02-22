@@ -121,7 +121,7 @@ StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multi
     setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
 }
 
-Pipes StorageSystemNumbers::readWithProcessors(
+Pipes StorageSystemNumbers::read(
     const Names & column_names,
     const SelectQueryInfo &,
     const Context & /*context*/,

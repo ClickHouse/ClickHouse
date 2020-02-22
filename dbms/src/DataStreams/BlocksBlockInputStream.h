@@ -19,33 +19,31 @@ namespace DB
 
 /** A stream of blocks from a shared vector of blocks
   */
-class BlocksBlockInputStream : public IBlockInputStream
+class BlocksSource : public SourceWithProgress
 {
 public:
     /// Acquires shared ownership of the blocks vector
-    BlocksBlockInputStream(const std::shared_ptr<BlocksPtr> & blocks_ptr_, Block header_)
-        : blocks(*blocks_ptr_), it((*blocks_ptr_)->begin()), end((*blocks_ptr_)->end()), header(std::move(header_)) {}
+    BlocksSource(const std::shared_ptr<BlocksPtr> & blocks_ptr_, Block header)
+        : SourceWithProgress(std::move(header))
+        , blocks(*blocks_ptr_), it((*blocks_ptr_)->begin()), end((*blocks_ptr_)->end()) {}
 
     String getName() const override { return "Blocks"; }
 
-    Block getHeader() const override { return header; }
-
 protected:
-    Block readImpl() override
+    Chunk generate() override
     {
         if (it == end)
-            return Block();
+            return {};
 
         Block res = *it;
         ++it;
-        return res;
+        return Chunk(res.getColumns(), res.rows());
     }
 
 private:
     BlocksPtr blocks;
     Blocks::iterator it;
     const Blocks::iterator end;
-    Block header;
 };
 
 }
