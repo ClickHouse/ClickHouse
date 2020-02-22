@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <Access/IAccessEntity.h>
+#include <Access/GenericRoleSet.h>
 #include <chrono>
 
 
@@ -63,9 +64,7 @@ struct Quota : public IAccessEntity
     KeyType key_type = KeyType::NONE;
 
     /// Which roles or users should use this quota.
-    Strings roles;
-    bool all_roles = false;
-    Strings except_roles;
+    GenericRoleSet roles;
 
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<Quota>(); }

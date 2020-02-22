@@ -46,7 +46,7 @@ public:
     struct AnyHostTag {};
 
     AllowedClientHosts() {}
-    explicit AllowedClientHosts(AnyHostTag) { addAnyHost(); }
+    AllowedClientHosts(AnyHostTag) { addAnyHost(); }
     ~AllowedClientHosts() {}
 
     AllowedClientHosts(const AllowedClientHosts & src) = default;

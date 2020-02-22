@@ -209,35 +209,38 @@ def test_introspection():
     assert instance.query("SELECT currentRowPolicies('mydb', 'filtered_table1')") == "['default']\n"
     assert instance.query("SELECT currentRowPolicies('mydb', 'filtered_table2')") == "['default']\n"
     assert instance.query("SELECT currentRowPolicies('mydb', 'filtered_table3')") == "['default']\n"
-    assert instance.query("SELECT arraySort(currentRowPolicies())") == "[('mydb','filtered_table1','default'),('mydb','filtered_table2','default'),('mydb','filtered_table3','default')]\n"
+    assert instance.query("SELECT arraySort(currentRowPolicies())") == "[('mydb','filtered_table1','default'),('mydb','filtered_table2','default'),('mydb','filtered_table3','default'),('mydb','local','default')]\n"
 
     policy1 = "mydb\tfiltered_table1\tdefault\tdefault ON mydb.filtered_table1\t9e8a8f62-4965-2b5e-8599-57c7b99b3549\tusers.xml\t0\ta = 1\t\t\t\t\n"
     policy2 = "mydb\tfiltered_table2\tdefault\tdefault ON mydb.filtered_table2\tcffae79d-b9bf-a2ef-b798-019c18470b25\tusers.xml\t0\ta + b < 1 or c - d > 5\t\t\t\t\n"
     policy3 = "mydb\tfiltered_table3\tdefault\tdefault ON mydb.filtered_table3\t12fc5cef-e3da-3940-ec79-d8be3911f42b\tusers.xml\t0\tc = 1\t\t\t\t\n"
-    policy4 = "mydb\tlocal\tanother\tanother ON mydb.local\t5b23c389-7e18-06bf-a6bc-dd1afbbc0a97\tusers.xml\t0\ta = 1\t\t\t\t\n"
+    policy4 = "mydb\tlocal\tdefault\tdefault ON mydb.local\tcdacaeb5-1d97-f99d-2bb0-4574f290629c\tusers.xml\t0\t1\t\t\t\t\n"
     assert instance.query("SELECT * from system.row_policies WHERE has(currentRowPolicyIDs('mydb', 'filtered_table1'), id) ORDER BY table, name") == policy1
     assert instance.query("SELECT * from system.row_policies WHERE has(currentRowPolicyIDs('mydb', 'filtered_table2'), id) ORDER BY table, name") == policy2
     assert instance.query("SELECT * from system.row_policies WHERE has(currentRowPolicyIDs('mydb', 'filtered_table3'), id) ORDER BY table, name") == policy3
-    assert instance.query("SELECT * from system.row_policies ORDER BY table, name") == policy1 + policy2 + policy3 + policy4
-    assert instance.query("SELECT * from system.row_policies WHERE has(currentRowPolicyIDs(), id) ORDER BY table, name") == policy1 + policy2 + policy3
+    assert instance.query("SELECT * from system.row_policies WHERE has(currentRowPolicyIDs('mydb', 'local'), id) ORDER BY table, name") == policy4
+    assert instance.query("SELECT * from system.row_policies WHERE has(currentRowPolicyIDs(), id) ORDER BY table, name") == policy1 + policy2 + policy3 + policy4
 
 
 def test_dcl_introspection():
-    assert instance.query("SHOW POLICIES ON mydb.filtered_table1") == "default\n"
+    assert instance.query("SHOW POLICIES ON mydb.filtered_table1") == "another\ndefault\n"
     assert instance.query("SHOW POLICIES CURRENT ON mydb.filtered_table2") == "default\n"
-    assert instance.query("SHOW POLICIES") == "another ON mydb.local\ndefault ON mydb.filtered_table1\ndefault ON mydb.filtered_table2\ndefault ON mydb.filtered_table3\n"
-    assert instance.query("SHOW POLICIES CURRENT") == "default ON mydb.filtered_table1\ndefault ON mydb.filtered_table2\ndefault ON mydb.filtered_table3\n"
+    assert instance.query("SHOW POLICIES") == "another ON mydb.filtered_table1\nanother ON mydb.filtered_table2\nanother ON mydb.filtered_table3\nanother ON mydb.local\ndefault ON mydb.filtered_table1\ndefault ON mydb.filtered_table2\ndefault ON mydb.filtered_table3\ndefault ON mydb.local\n"
+    assert instance.query("SHOW POLICIES CURRENT") == "default ON mydb.filtered_table1\ndefault ON mydb.filtered_table2\ndefault ON mydb.filtered_table3\ndefault ON mydb.local\n"
 
     assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table1") == "CREATE POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 TO default\n"
     assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table2") == "CREATE POLICY default ON mydb.filtered_table2 FOR SELECT USING ((a + b) < 1) OR ((c - d) > 5) TO default\n"
     assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table3") == "CREATE POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 TO default\n"
+    assert instance.query("SHOW CREATE POLICY default ON mydb.local") == "CREATE POLICY default ON mydb.local FOR SELECT USING 1 TO default\n"
 
     copy_policy_xml('all_rows.xml')
+    assert instance.query("SHOW POLICIES CURRENT") == "default ON mydb.filtered_table1\ndefault ON mydb.filtered_table2\ndefault ON mydb.filtered_table3\n"
     assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table1") == "CREATE POLICY default ON mydb.filtered_table1 FOR SELECT USING 1 TO default\n"
     assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table2") == "CREATE POLICY default ON mydb.filtered_table2 FOR SELECT USING 1 TO default\n"
     assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table3") == "CREATE POLICY default ON mydb.filtered_table3 FOR SELECT USING 1 TO default\n"
 
     copy_policy_xml('no_rows.xml')
+    assert instance.query("SHOW POLICIES CURRENT") == "default ON mydb.filtered_table1\ndefault ON mydb.filtered_table2\ndefault ON mydb.filtered_table3\n"
     assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table1") == "CREATE POLICY default ON mydb.filtered_table1 FOR SELECT USING NULL TO default\n"
     assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table2") == "CREATE POLICY default ON mydb.filtered_table2 FOR SELECT USING NULL TO default\n"
     assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table3") == "CREATE POLICY default ON mydb.filtered_table3 FOR SELECT USING NULL TO default\n"
@@ -251,7 +254,7 @@ def test_dcl_management():
     assert instance.query("SHOW POLICIES") == ""
 
     instance.query("CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b")
-    assert instance.query("SELECT * FROM mydb.filtered_table1") == "0\t0\n0\t1\n1\t0\n1\t1\n"
+    assert instance.query("SELECT * FROM mydb.filtered_table1") == ""
     assert instance.query("SHOW POLICIES CURRENT ON mydb.filtered_table1") == ""
     assert instance.query("SHOW POLICIES ON mydb.filtered_table1") == "pA\n"
 

@@ -20,6 +20,7 @@
 #include <Storages/ReadInOrderOptimizer.h>
 
 #include <Common/typeid_cast.h>
+#include <Processors/Sources/SourceFromInputStream.h>
 
 
 namespace DB
@@ -179,7 +180,7 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(cons
     return getTargetTable()->getQueryProcessingStage(context);
 }
 
-BlockInputStreams StorageMaterializedView::read(
+Pipes StorageMaterializedView::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -192,10 +193,12 @@ BlockInputStreams StorageMaterializedView::read(
     if (query_info.order_by_optimizer)
         query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(storage);
 
-    auto streams = storage->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
-    for (auto & stream : streams)
-        stream->addTableLock(lock);
-    return streams;
+    Pipes pipes = storage->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+
+    for (auto & pipe : pipes)
+        pipe.addTableLock(lock);
+
+    return pipes;
 }
 
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Context & context)

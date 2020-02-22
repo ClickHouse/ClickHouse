@@ -38,8 +38,8 @@ k	UInt64
 i32	Int32					
 n.ui8	Array(UInt8)					
 n.s	Array(String)					
-s	Int64					
-CREATE TABLE default.alter_00061 (`d` Date, `k` UInt64, `i32` Int32, `n.ui8` Array(UInt8), `n.s` Array(String), `s` Int64) ENGINE = MergeTree(d, k, 8192)
+s	Int64	DEFAULT	\'0\'			
+CREATE TABLE default.alter_00061 (`d` Date, `k` UInt64, `i32` Int32, `n.ui8` Array(UInt8), `n.s` Array(String), `s` Int64 DEFAULT \'0\') ENGINE = MergeTree(d, k, 8192)
 2015-01-01	6	38	[10,20,30]	['asd','qwe','qwe']	100500
 2015-01-01	7	39	[10,20,30]	['120','130','140']	0
 2015-01-01	8	40	[1,2,3]	['12','13','14']	0
@@ -49,9 +49,9 @@ k	UInt64
 i32	Int32					
 n.ui8	Array(UInt8)					
 n.s	Array(String)					
-s	UInt32					
+s	UInt32	DEFAULT	\'0\'			
 n.d	Array(Date)					
-CREATE TABLE default.alter_00061 (`d` Date, `k` UInt64, `i32` Int32, `n.ui8` Array(UInt8), `n.s` Array(String), `s` UInt32, `n.d` Array(Date)) ENGINE = MergeTree(d, k, 8192)
+CREATE TABLE default.alter_00061 (`d` Date, `k` UInt64, `i32` Int32, `n.ui8` Array(UInt8), `n.s` Array(String), `s` UInt32 DEFAULT \'0\', `n.d` Array(Date)) ENGINE = MergeTree(d, k, 8192)
 2015-01-01	6	38	[10,20,30]	['asd','qwe','qwe']	100500	['0000-00-00','0000-00-00','0000-00-00']
 2015-01-01	7	39	[10,20,30]	['120','130','140']	0	['0000-00-00','0000-00-00','0000-00-00']
 2015-01-01	8	40	[1,2,3]	['12','13','14']	0	['0000-00-00','0000-00-00','0000-00-00']
@@ -64,8 +64,8 @@ d	Date
 k	UInt64					
 i32	Int32					
 n.s	Array(String)					
-s	UInt32					
-CREATE TABLE default.alter_00061 (`d` Date, `k` UInt64, `i32` Int32, `n.s` Array(String), `s` UInt32) ENGINE = MergeTree(d, k, 8192)
+s	UInt32	DEFAULT	\'0\'			
+CREATE TABLE default.alter_00061 (`d` Date, `k` UInt64, `i32` Int32, `n.s` Array(String), `s` UInt32 DEFAULT \'0\') ENGINE = MergeTree(d, k, 8192)
 2015-01-01	6	38	['asd','qwe','qwe']	100500
 2015-01-01	7	39	['120','130','140']	0
 2015-01-01	8	40	['12','13','14']	0
@@ -73,8 +73,8 @@ CREATE TABLE default.alter_00061 (`d` Date, `k` UInt64, `i32` Int32, `n.s` Array
 d	Date					
 k	UInt64					
 i32	Int32					
-s	UInt32					
-CREATE TABLE default.alter_00061 (`d` Date, `k` UInt64, `i32` Int32, `s` UInt32) ENGINE = MergeTree(d, k, 8192)
+s	UInt32	DEFAULT	\'0\'			
+CREATE TABLE default.alter_00061 (`d` Date, `k` UInt64, `i32` Int32, `s` UInt32 DEFAULT \'0\') ENGINE = MergeTree(d, k, 8192)
 2015-01-01	6	38	100500
 2015-01-01	7	39	0
 2015-01-01	8	40	0
@@ -82,10 +82,10 @@ CREATE TABLE default.alter_00061 (`d` Date, `k` UInt64, `i32` Int32, `s` UInt32)
 d	Date					
 k	UInt64					
 i32	Int32					
-s	UInt32					
+s	UInt32	DEFAULT	\'0\'			
 n.s	Array(String)					
 n.d	Array(Date)					
-CREATE TABLE default.alter_00061 (`d` Date, `k` UInt64, `i32` Int32, `s` UInt32, `n.s` Array(String), `n.d` Array(Date)) ENGINE = MergeTree(d, k, 8192)
+CREATE TABLE default.alter_00061 (`d` Date, `k` UInt64, `i32` Int32, `s` UInt32 DEFAULT \'0\', `n.s` Array(String), `n.d` Array(Date)) ENGINE = MergeTree(d, k, 8192)
 2015-01-01	6	38	100500	[]	[]
 2015-01-01	7	39	0	[]	[]
 2015-01-01	8	40	0	[]	[]
@@ -93,8 +93,8 @@ CREATE TABLE default.alter_00061 (`d` Date, `k` UInt64, `i32` Int32, `s` UInt32,
 d	Date					
 k	UInt64					
 i32	Int32					
-s	UInt32					
-CREATE TABLE default.alter_00061 (`d` Date, `k` UInt64, `i32` Int32, `s` UInt32) ENGINE = MergeTree(d, k, 8192)
+s	UInt32	DEFAULT	\'0\'			
+CREATE TABLE default.alter_00061 (`d` Date, `k` UInt64, `i32` Int32, `s` UInt32 DEFAULT \'0\') ENGINE = MergeTree(d, k, 8192)
 2015-01-01	6	38	100500
 2015-01-01	7	39	0
 2015-01-01	8	40	0

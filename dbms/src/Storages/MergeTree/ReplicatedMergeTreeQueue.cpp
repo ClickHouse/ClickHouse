@@ -197,19 +197,21 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
     if (is_successful)
     {
+
+        if (!entry->actual_new_part_name.empty())
+        {
+            /// We don't add bigger fetched part to current_parts because we
+            /// have an invariant `virtual_parts` = `current_parts` + `queue`.
+            /// But we can remove it from mutations, because we actually have it.
+            removePartFromMutations(entry->actual_new_part_name);
+        }
+
         for (const String & virtual_part_name : entry->getVirtualPartNames())
         {
-            Strings replaced_parts;
-            /// In most cases we will replace only current parts, but sometimes
-            /// we can even replace virtual parts. For example when we failed to
-            /// GET source part and dowloaded merged/mutated part instead.
-            current_parts.add(virtual_part_name, &replaced_parts);
-            virtual_parts.add(virtual_part_name, &replaced_parts);
-
-            /// Each part from `replaced_parts` should become Obsolete as a result of executing the entry.
-            /// So it is one less part to mutate for each mutation with block number greater or equal than part_info.getDataVersion()
-            for (const String & replaced_part_name : replaced_parts)
-                removePartFromMutations(replaced_part_name);
+            current_parts.add(virtual_part_name);
+            /// Each processed part may be already mutated, so we try to remove
+            /// all current parts from mutations.
+            removePartFromMutations(virtual_part_name);
         }
 
         String drop_range_part_name;
