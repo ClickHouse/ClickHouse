@@ -8,6 +8,7 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <ext/range.h>
+#include <boost/smart_ptr/make_shared.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
 
@@ -110,13 +111,10 @@ namespace
         ASTPtr getResult() &&
         {
             /// Process permissive conditions.
-            if (!permissions.empty())
-                restrictions.push_back(applyFunctionOR(std::move(permissions)));
+            restrictions.push_back(applyFunctionOR(std::move(permissions)));
 
             /// Process restrictive conditions.
-            if (!restrictions.empty())
-                return applyFunctionAND(std::move(restrictions));
-            return nullptr;
+            return applyFunctionAND(std::move(restrictions));
         }
 
     private:
@@ -129,10 +127,7 @@ namespace
 void RowPolicyContextFactory::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
 {
     policy = policy_;
-
-    boost::range::copy(policy->roles, std::inserter(roles, roles.end()));
-    all_roles = policy->all_roles;
-    boost::range::copy(policy->except_roles, std::inserter(except_roles, except_roles.end()));
+    roles = &policy->roles;
 
     for (auto index : ext::range_with_static_cast<ConditionIndex>(0, MAX_CONDITION_INDEX))
     {
@@ -169,13 +164,7 @@ void RowPolicyContextFactory::PolicyInfo::setPolicy(const RowPolicyPtr & policy_
 
 bool RowPolicyContextFactory::PolicyInfo::canUseWithContext(const RowPolicyContext & context) const
 {
-    if (roles.count(context.user_name))
-        return true;
-
-    if (all_roles && !except_roles.count(context.user_name))
-        return true;
-
-    return false;
+    return roles->match(context.user_id, context.enabled_roles);
 }
 
 
@@ -187,11 +176,11 @@ RowPolicyContextFactory::RowPolicyContextFactory(const AccessControlManager & ac
 RowPolicyContextFactory::~RowPolicyContextFactory() = default;
 
 
-RowPolicyContextPtr RowPolicyContextFactory::createContext(const String & user_name)
+RowPolicyContextPtr RowPolicyContextFactory::createContext(const UUID & user_id, const std::vector<UUID> & enabled_roles)
 {
     std::lock_guard lock{mutex};
     ensureAllRowPoliciesRead();
-    auto context = ext::shared_ptr_helper<RowPolicyContext>::create(user_name);
+    auto context = ext::shared_ptr_helper<RowPolicyContext>::create(user_id, enabled_roles);
     contexts.push_back(context);
     mixConditionsForContext(*context);
     return context;
@@ -284,10 +273,10 @@ void RowPolicyContextFactory::mixConditionsForContext(RowPolicyContext & context
 
     for (const auto & [policy_id, info] : all_policies)
     {
+        const auto & policy = *info.policy;
+        auto & mixers = map_of_mixers[std::pair{policy.getDatabase(), policy.getTableName()}];
         if (info.canUseWithContext(context))
         {
-            const auto & policy = *info.policy;
-            auto & mixers = map_of_mixers[std::pair{policy.getDatabase(), policy.getTableName()}];
             mixers.policy_ids.push_back(policy_id);
             for (auto index : ext::range(0, MAX_CONDITION_INDEX))
                 if (info.parsed_conditions[index])
@@ -295,7 +284,7 @@ void RowPolicyContextFactory::mixConditionsForContext(RowPolicyContext & context
         }
     }
 
-    auto map_of_mixed_conditions = std::make_shared<MapOfMixedConditions>();
+    auto map_of_mixed_conditions = boost::make_shared<MapOfMixedConditions>();
     for (auto & [database_and_table_name, mixers] : map_of_mixers)
     {
         auto database_and_table_name_keeper = std::make_unique<DatabaseAndTableName>();
@@ -309,7 +298,7 @@ void RowPolicyContextFactory::mixConditionsForContext(RowPolicyContext & context
             mixed_conditions.mixed_conditions[index] = std::move(mixers.mixers[index]).getResult();
     }
 
-    std::atomic_store(&context.atomic_map_of_mixed_conditions, std::shared_ptr<const MapOfMixedConditions>{map_of_mixed_conditions});
+    context.map_of_mixed_conditions.store(map_of_mixed_conditions);
 }
 
 }
