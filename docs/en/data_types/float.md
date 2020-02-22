@@ -2,7 +2,7 @@
 
 [Floating point numbers](https://en.wikipedia.org/wiki/IEEE_754).
 
-Types are equivalent to types of C:
+Types are equivalent to types of [C language](https://en.wikipedia.org/wiki/C_(programming_language)):
 
 - `Float32` - `float`
 - `Float64` - `double`
