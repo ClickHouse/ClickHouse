@@ -25,12 +25,12 @@ class StorageDictionary : public ext::shared_ptr_helper<StorageDictionary>, publ
 public:
     std::string getName() const override { return "Dictionary"; }
 
-    BlockInputStreams read(const Names & column_names,
+    Pipes read(const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1) override;
+        size_t max_block_size,
+        unsigned threads) override;
 
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
 

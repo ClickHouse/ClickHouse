@@ -392,7 +392,7 @@ private:
 };
 
 
-Pipes StorageSystemTables::readWithProcessors(
+Pipes StorageSystemTables::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,

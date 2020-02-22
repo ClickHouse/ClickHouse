@@ -3047,7 +3047,7 @@ ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMerg
     return max_added_blocks;
 }
 
-Pipes StorageReplicatedMergeTree::readWithProcessors(
+Pipes StorageReplicatedMergeTree::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -3556,9 +3556,11 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                     case PartitionCommand::MoveDestinationType::DISK:
                         movePartitionToDisk(command.partition, command.move_destination_name, command.part, query_context);
                         break;
+
                     case PartitionCommand::MoveDestinationType::VOLUME:
                         movePartitionToVolume(command.partition, command.move_destination_name, command.part, query_context);
                         break;
+
                     case PartitionCommand::MoveDestinationType::TABLE:
                         checkPartitionCanBeDropped(command.partition);
                         String dest_database = command.to_database.empty() ? query_context.getCurrentDatabase() : command.to_database;
@@ -5123,7 +5125,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
     auto dest_table_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(dest_table);
     if (!dest_table_storage)
-        throw Exception("Table " + getStorageID().getNameForLogs() + " supports attachPartitionFrom only for ReplicatedMergeTree family of table engines."
+        throw Exception("Table " + getStorageID().getNameForLogs() + " supports movePartitionToTable only for ReplicatedMergeTree family of table engines."
                         " Got " + dest_table->getName(), ErrorCodes::NOT_IMPLEMENTED);
     if (dest_table_storage->getStoragePolicy() != this->getStoragePolicy())
         throw Exception("Destination table " + dest_table_storage->getStorageID().getNameForLogs() +
@@ -5145,8 +5147,10 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
     LOG_DEBUG(log, "Cloning " << src_all_parts.size() << " parts");
 
-    static const String TMP_PREFIX = "tmp_replace_from_";
+    static const String TMP_PREFIX = "tmp_move_from_";
     auto zookeeper = getZooKeeper();
+
+    /// A range for log entry to remove parts from the source table (myself).
 
     MergeTreePartInfo drop_range;
     drop_range.partition_id = partition_id;
@@ -5162,13 +5166,15 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         queue.disableMergesInBlockRange(drop_range_fake_part_name);
     }
 
+    /// Clone parts into destination table.
+
     for (size_t i = 0; i < src_all_parts.size(); ++i)
     {
         auto & src_part = src_all_parts[i];
 
         if (!dest_table_storage->canReplacePartition(src_part))
             throw Exception(
-                "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
+                "Cannot move partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
                 ErrorCodes::LOGICAL_ERROR);
 
         String hash_hex = src_part->checksums.getTotalChecksumHex();
