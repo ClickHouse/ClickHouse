@@ -62,8 +62,8 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     if (is_cluster_function)
     {
-        ASTPtr ast_name = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-        cluster_name = ast_name->as<ASTLiteral &>().value.safeGet<const String &>();
+        args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
+        cluster_name = args[arg_num]->as<ASTLiteral &>().value.safeGet<const String &>();
     }
     else
     {
@@ -71,8 +71,6 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             cluster_description = getStringLiteral(*args[arg_num], "Hosts pattern");
     }
     ++arg_num;
-
-    args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
 
     const auto * function = args[arg_num]->as<ASTFunction>();
 
@@ -83,6 +81,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     }
     else
     {
+        args[arg_num] = evaluateConstantExpressionForDatabaseName(args[arg_num], context);
         remote_database = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
 
         ++arg_num;
