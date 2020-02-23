@@ -7,8 +7,12 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Storages/IStorage.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/ConcatProcessor.h>
+#include <Processors/Pipe.h>
 
 #include <IO/ConnectionTimeouts.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -112,7 +116,7 @@ void RemoteBlockInputStream::cancel(bool kill)
         /// Stop sending external data.
         for (auto & vec : external_tables_data)
             for (auto & elem : vec)
-                elem.first->cancel(kill);
+                elem->is_cancelled = true;
     }
 
     if (!isQueryPending() || hasThrownException())
@@ -142,12 +146,26 @@ void RemoteBlockInputStream::sendExternalTables()
             {
                 StoragePtr cur = table.second;
                 QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(context);
-                BlockInputStreams input = cur->read(cur->getColumns().getNamesOfPhysical(), {}, context,
-                    read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
-                if (input.size() == 0)
-                    res.push_back(std::make_pair(std::make_shared<OneBlockInputStream>(cur->getSampleBlock()), table.first));
+
+                Pipes pipes;
+
+                pipes = cur->read(cur->getColumns().getNamesOfPhysical(), {}, context,
+                        read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
+
+                auto data = std::make_unique<ExternalTableData>();
+                data->table_name = table.first;
+
+                if (pipes.empty())
+                    data->pipe = std::make_unique<Pipe>(std::make_shared<SourceFromSingleChunk>(cur->getSampleBlock(), Chunk()));
+                else if (pipes.size() == 1)
+                    data->pipe = std::make_unique<Pipe>(std::move(pipes.front()));
                 else
-                    res.push_back(std::make_pair(input[0], table.first));
+                {
+                    auto concat = std::make_shared<ConcatProcessor>(pipes.front().getHeader(), pipes.size());
+                    data->pipe = std::make_unique<Pipe>(std::move(pipes), std::move(concat));
+                }
+
+                res.emplace_back(std::move(data));
             }
             external_tables_data.push_back(std::move(res));
         }

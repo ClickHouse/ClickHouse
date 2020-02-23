@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/IStorage_fwd.h>
+#include <Core/Names.h>
 
 #include <optional>
 #include <unordered_map>
@@ -52,6 +53,9 @@ public:
 
     void writeText(WriteBuffer & out) const;
     void readText(ReadBuffer & in);
+
+    /// Extra columns that we need to read except ones needed for expressions.
+    Names additional_columns;
 };
 
 }
