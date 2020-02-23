@@ -236,7 +236,7 @@
             single query without having to run a number of them.</p>
     </div>
 </div>
-<div class="row bg-light py-5 my-5">
+<div class="bg-light py-5 my-5">
     <div class="container text-center">
         <h2 id="success-stories">Success stories</h2>
         <div class="row">
@@ -307,35 +307,6 @@
 </div>
 <div>
     <div class="container">
-        <h2 class="mt-5">When to use ClickHouse</h2>
-
-        <p>For analytics over stream of clean, well structured and immutable events or logs.
-            It is recommended to put each such stream into a single wide fact table with pre-joined dimensions.
-        </p>
-        <p>Some examples of viable applications:
-
-            <ul>
-                <li>Web and App analytics</li>
-                <li>Advertising networks and RTB</li>
-                <li>Telecommunications</li>
-                <li>E-commerce and finance</li>
-                <li>Information security</li>
-                <li>Monitoring and telemetry</li>
-                <li>Time series</li>
-                <li>Business intelligence</li>
-                <li>Online games</li>
-                <li>Internet of Things</li>
-            </ul>
-        </p>
-
-        <h2 class="mt-5">When <span class="text-danger">NOT</span> to use ClickHouse</h2>
-
-        <ul>
-            <li>Transactional workloads (OLTP)</li>
-            <li>Key-value access with high request rate</li>
-            <li>Blob or document storage</li>
-            <li>Over-normalized data</li>
-        </ul>
 
         <h2 id="highly-reliable" class="mt-5">Highly Reliable</h2>
 
@@ -368,6 +339,56 @@
         <p>ClickHouse is simple and works out-of-the-box. As well as performing on hundreds of node clusters, this system
             can be easily installed on a single server or even a virtual machine. No development experience or code-writing
             skills are required to install ClickHouse.</p>
+    </div>
+</div>
+<div class="bg-light py-5 my-5">
+    <div class="container">
+        <div class="row">
+            <div class="col-lg">
+                <h2>When to use ClickHouse</h2>
+                <p>For analytics over stream of clean, well structured and immutable events or logs.
+            It is recommended to put each such stream into a single wide fact table with pre-joined dimensions.</p>
+            </div>
+            <div class="col-lg">
+                <ul class="lead list-unstyled">
+                    <li>✓ Web and App analytics</li>
+                    <li>✓ Advertising networks and RTB</li>
+                    <li>✓ Telecommunications</li>
+                    <li>✓ E-commerce and finance</li>
+                    <li>✓ Information security</li>
+                </ul>
+            </div>
+            <div class="col-lg">
+                <ul class="lead list-unstyled">
+
+                    <li>✓ Monitoring and telemetry</li>
+                    <li>✓ Time series</li>
+                    <li>✓ Business intelligence</li>
+                    <li>✓ Online games</li>
+                    <li>✓ Internet of Things</li>
+                </ul>
+            </div>
+        </div>
+        <div class="row text-red">
+            <div class="col-lg">
+                <h2>When NOT to use ClickHouse</h2>
+            </div>
+            <div class="col-lg">
+                <ul class="lead list-unstyled">
+                    <li>✕ Transactional workloads (OLTP)</li>
+                    <li>✕ Key-value access with high rps</li>
+                </ul>
+            </div>
+            <div class="col-lg">
+                <ul class="lead list-unstyled">
+                    <li>✕ Blob or document storage</li>
+                    <li>✕ Over-normalized data</li>
+                </ul>
+            </div>
+        </div>
+
+
+
     </div>
 </div>
 <div>

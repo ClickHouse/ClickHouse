@@ -60,6 +60,10 @@ a:hover, a:active {
     color: #999;
 }
 
+.text-red {
+    color: #ff3939;
+}
+
 .text-orange {
     color: #f14600;
 }

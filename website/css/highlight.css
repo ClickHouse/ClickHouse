@@ -8,7 +8,7 @@
 
 */
 .syntax .hll { background-color: #b9b6b0 }
-.syntax  { background: #f5f5f5; color: #2f1e2e }
+.syntax  { background: #f8f9fa; color: #2f1e2e }
 .syntax .c { color: #8d8687 } /* Comment */
 .syntax .err { color: #ef6155 } /* Error */
 .syntax .k { color: #815ba4 } /* Keyword */
