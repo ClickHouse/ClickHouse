@@ -2,7 +2,6 @@
 
 #include <Common/SimpleIncrement.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
@@ -34,6 +33,9 @@ namespace DB
 class MergeListEntry;
 class AlterCommands;
 class MergeTreePartsMover;
+
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 namespace ErrorCodes
 {

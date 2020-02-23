@@ -6,7 +6,10 @@
 namespace DB
 {
 /** Parses queries like
+  * DROP USER [IF EXISTS] name [,...]
+  * DROP ROLE [IF EXISTS] name [,...]
   * DROP QUOTA [IF EXISTS] name [,...]
+  * DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...]
   */
 class ParserDropAccessEntityQuery : public IParserBase
 {

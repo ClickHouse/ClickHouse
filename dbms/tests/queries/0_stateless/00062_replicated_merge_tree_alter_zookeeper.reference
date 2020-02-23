@@ -85,16 +85,16 @@ i32	Int32
 dt	DateTime					
 n.ui8	Array(UInt8)					
 n.s	Array(String)					
-s	Int64					
-CREATE TABLE test.replicated_alter1 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `n.ui8` Array(UInt8), `n.s` Array(String), `s` Int64) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r1\', d, k, 8192)
+s	Int64	DEFAULT	\'0\'			
+CREATE TABLE test.replicated_alter1 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `n.ui8` Array(UInt8), `n.s` Array(String), `s` Int64 DEFAULT \'0\') ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r1\', d, k, 8192)
 d	Date					
 k	UInt64					
 i32	Int32					
 dt	DateTime					
 n.ui8	Array(UInt8)					
 n.s	Array(String)					
-s	Int64					
-CREATE TABLE test.replicated_alter2 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `n.ui8` Array(UInt8), `n.s` Array(String), `s` Int64) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r2\', d, k, 8192)
+s	Int64	DEFAULT	\'0\'			
+CREATE TABLE test.replicated_alter2 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `n.ui8` Array(UInt8), `n.s` Array(String), `s` Int64 DEFAULT \'0\') ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r2\', d, k, 8192)
 2015-01-01	6	38	2014-07-15 13:26:50	[10,20,30]	['asd','qwe','qwe']	100500
 2015-01-01	7	39	2014-07-14 13:26:50	[10,20,30]	['120','130','140']	0
 2015-01-01	8	40	2012-12-12 12:12:12	[1,2,3]	['12','13','14']	0
@@ -106,18 +106,18 @@ i32	Int32
 dt	DateTime					
 n.ui8	Array(UInt8)					
 n.s	Array(String)					
-s	UInt32					
+s	UInt32	DEFAULT	\'0\'			
 n.d	Array(Date)					
-CREATE TABLE test.replicated_alter1 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `n.ui8` Array(UInt8), `n.s` Array(String), `s` UInt32, `n.d` Array(Date)) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r1\', d, k, 8192)
+CREATE TABLE test.replicated_alter1 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `n.ui8` Array(UInt8), `n.s` Array(String), `s` UInt32 DEFAULT \'0\', `n.d` Array(Date)) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r1\', d, k, 8192)
 d	Date					
 k	UInt64					
 i32	Int32					
 dt	DateTime					
 n.ui8	Array(UInt8)					
 n.s	Array(String)					
-s	UInt32					
+s	UInt32	DEFAULT	\'0\'			
 n.d	Array(Date)					
-CREATE TABLE test.replicated_alter2 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `n.ui8` Array(UInt8), `n.s` Array(String), `s` UInt32, `n.d` Array(Date)) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r2\', d, k, 8192)
+CREATE TABLE test.replicated_alter2 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `n.ui8` Array(UInt8), `n.s` Array(String), `s` UInt32 DEFAULT \'0\', `n.d` Array(Date)) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r2\', d, k, 8192)
 2015-01-01	6	38	2014-07-15 13:26:50	[10,20,30]	['asd','qwe','qwe']	100500	['0000-00-00','0000-00-00','0000-00-00']
 2015-01-01	7	39	2014-07-14 13:26:50	[10,20,30]	['120','130','140']	0	['0000-00-00','0000-00-00','0000-00-00']
 2015-01-01	8	40	2012-12-12 12:12:12	[1,2,3]	['12','13','14']	0	['0000-00-00','0000-00-00','0000-00-00']
@@ -128,15 +128,15 @@ k	UInt64
 i32	Int32					
 dt	DateTime					
 n.s	Array(String)					
-s	UInt32					
-CREATE TABLE test.replicated_alter1 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `n.s` Array(String), `s` UInt32) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r1\', d, k, 8192)
+s	UInt32	DEFAULT	\'0\'			
+CREATE TABLE test.replicated_alter1 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `n.s` Array(String), `s` UInt32 DEFAULT \'0\') ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r1\', d, k, 8192)
 d	Date					
 k	UInt64					
 i32	Int32					
 dt	DateTime					
 n.s	Array(String)					
-s	UInt32					
-CREATE TABLE test.replicated_alter2 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `n.s` Array(String), `s` UInt32) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r2\', d, k, 8192)
+s	UInt32	DEFAULT	\'0\'			
+CREATE TABLE test.replicated_alter2 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `n.s` Array(String), `s` UInt32 DEFAULT \'0\') ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r2\', d, k, 8192)
 2015-01-01	6	38	2014-07-15 13:26:50	['asd','qwe','qwe']	100500
 2015-01-01	7	39	2014-07-14 13:26:50	['120','130','140']	0
 2015-01-01	8	40	2012-12-12 12:12:12	['12','13','14']	0
@@ -146,14 +146,14 @@ d	Date
 k	UInt64					
 i32	Int32					
 dt	DateTime					
-s	UInt32					
-CREATE TABLE test.replicated_alter1 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `s` UInt32) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r1\', d, k, 8192)
+s	UInt32	DEFAULT	\'0\'			
+CREATE TABLE test.replicated_alter1 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `s` UInt32 DEFAULT \'0\') ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r1\', d, k, 8192)
 d	Date					
 k	UInt64					
 i32	Int32					
 dt	DateTime					
-s	UInt32					
-CREATE TABLE test.replicated_alter2 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `s` UInt32) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r2\', d, k, 8192)
+s	UInt32	DEFAULT	\'0\'			
+CREATE TABLE test.replicated_alter2 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `s` UInt32 DEFAULT \'0\') ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r2\', d, k, 8192)
 2015-01-01	6	38	2014-07-15 13:26:50	100500
 2015-01-01	7	39	2014-07-14 13:26:50	0
 2015-01-01	8	40	2012-12-12 12:12:12	0
@@ -163,18 +163,18 @@ d	Date
 k	UInt64					
 i32	Int32					
 dt	DateTime					
-s	UInt32					
+s	UInt32	DEFAULT	\'0\'			
 n.s	Array(String)					
 n.d	Array(Date)					
-CREATE TABLE test.replicated_alter1 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `s` UInt32, `n.s` Array(String), `n.d` Array(Date)) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r1\', d, k, 8192)
+CREATE TABLE test.replicated_alter1 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `s` UInt32 DEFAULT \'0\', `n.s` Array(String), `n.d` Array(Date)) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r1\', d, k, 8192)
 d	Date					
 k	UInt64					
 i32	Int32					
 dt	DateTime					
-s	UInt32					
+s	UInt32	DEFAULT	\'0\'			
 n.s	Array(String)					
 n.d	Array(Date)					
-CREATE TABLE test.replicated_alter2 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `s` UInt32, `n.s` Array(String), `n.d` Array(Date)) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r2\', d, k, 8192)
+CREATE TABLE test.replicated_alter2 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `s` UInt32 DEFAULT \'0\', `n.s` Array(String), `n.d` Array(Date)) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r2\', d, k, 8192)
 2015-01-01	6	38	2014-07-15 13:26:50	100500	[]	[]
 2015-01-01	7	39	2014-07-14 13:26:50	0	[]	[]
 2015-01-01	8	40	2012-12-12 12:12:12	0	[]	[]
@@ -184,14 +184,14 @@ d	Date
 k	UInt64					
 i32	Int32					
 dt	DateTime					
-s	UInt32					
-CREATE TABLE test.replicated_alter1 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `s` UInt32) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r1\', d, k, 8192)
+s	UInt32	DEFAULT	\'0\'			
+CREATE TABLE test.replicated_alter1 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `s` UInt32 DEFAULT \'0\') ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r1\', d, k, 8192)
 d	Date					
 k	UInt64					
 i32	Int32					
 dt	DateTime					
-s	UInt32					
-CREATE TABLE test.replicated_alter2 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `s` UInt32) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r2\', d, k, 8192)
+s	UInt32	DEFAULT	\'0\'			
+CREATE TABLE test.replicated_alter2 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime, `s` UInt32 DEFAULT \'0\') ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r2\', d, k, 8192)
 2015-01-01	6	38	2014-07-15 13:26:50	100500
 2015-01-01	7	39	2014-07-14 13:26:50	0
 2015-01-01	8	40	2012-12-12 12:12:12	0
@@ -201,14 +201,14 @@ d	Date
 k	UInt64					
 i32	Int32					
 dt	Date					
-s	DateTime					
-CREATE TABLE test.replicated_alter1 (`d` Date, `k` UInt64, `i32` Int32, `dt` Date, `s` DateTime) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r1\', d, k, 8192)
+s	DateTime	DEFAULT	\'0000-00-00 00:00:00\'			
+CREATE TABLE test.replicated_alter1 (`d` Date, `k` UInt64, `i32` Int32, `dt` Date, `s` DateTime DEFAULT \'0000-00-00 00:00:00\') ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r1\', d, k, 8192)
 d	Date					
 k	UInt64					
 i32	Int32					
 dt	Date					
-s	DateTime					
-CREATE TABLE test.replicated_alter2 (`d` Date, `k` UInt64, `i32` Int32, `dt` Date, `s` DateTime) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r2\', d, k, 8192)
+s	DateTime	DEFAULT	\'0000-00-00 00:00:00\'			
+CREATE TABLE test.replicated_alter2 (`d` Date, `k` UInt64, `i32` Int32, `dt` Date, `s` DateTime DEFAULT \'0000-00-00 00:00:00\') ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r2\', d, k, 8192)
 2015-01-01	6	38	2014-07-15	1970-01-02 06:55:00
 2015-01-01	7	39	2014-07-14	0000-00-00 00:00:00
 2015-01-01	8	40	2012-12-12	0000-00-00 00:00:00

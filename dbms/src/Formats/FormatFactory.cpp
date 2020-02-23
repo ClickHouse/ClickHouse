@@ -97,6 +97,7 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.template_settings.resultset_format = settings.format_template_resultset;
     format_settings.template_settings.row_format = settings.format_template_row;
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
+    format_settings.tsv.crlf_end_of_line = settings.output_format_tsv_crlf_end_of_line;
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
     format_settings.schema.format_schema = settings.format_schema;
@@ -144,9 +145,19 @@ BlockInputStreamPtr FormatFactory::getInput(
 
     // Doesn't make sense to use parallel parsing with less than four threads
     // (segmentator + two parsers + reader).
-    if (settings.input_format_parallel_parsing
-        && file_segmentation_engine
-        && settings.max_threads >= 4)
+    bool parallel_parsing = settings.input_format_parallel_parsing && file_segmentation_engine && settings.max_threads >= 4;
+
+    if (parallel_parsing && name == "JSONEachRow")
+    {
+        /// FIXME ParallelParsingBlockInputStream doesn't support formats with non-trivial readPrefix() and readSuffix()
+
+        /// For JSONEachRow we can safely skip whitespace characters
+        skipWhitespaceIfAny(buf);
+        if (buf.eof() || *buf.position() == '[')
+            parallel_parsing = false; /// Disable it for JSONEachRow if data is in square brackets (see JSONEachRowRowInputFormat)
+    }
+
+    if (parallel_parsing)
     {
         const auto & input_getter = getCreators(name).input_processor_creator;
         if (!input_getter)

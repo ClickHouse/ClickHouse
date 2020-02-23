@@ -1,9 +1,8 @@
-
 # Dictionary Key and Fields
 
 The `<structure>` clause describes the dictionary key and fields available for queries.
 
-Overall structure:
+XML description:
 
 ```xml
 <dictionary>
@@ -22,10 +21,15 @@ Overall structure:
 </dictionary>
 ```
 
-or
+Attributes are described in the elements:
+
+- `<id>` — [Key column](external_dicts_dict_structure.md#ext_dict_structure-key).
+- `<attribute>` — [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes). There can be a multiple number of attributes.
+
+DDL query:
 
 ```sql
-CREATE DICTIONARY (
+CREATE DICTIONARY dict_name (
     Id UInt64,
     -- attributes
 )
@@ -33,26 +37,26 @@ PRIMARY KEY Id
 ...
 ```
 
+Attributes are described in the query body:
 
-In xml-file attributes are described in the structure section:
-
-- `<id>` — [Key column](external_dicts_dict_structure.md#ext_dict_structure-key).
-- `<attribute>` — [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes). There can be a large number of attributes.
-
-In DDL-query attributes are described the body of `CREATE` query:
 - `PRIMARY KEY` — [Key column](external_dicts_dict_structure.md#ext_dict_structure-key)
-- `AttrName AttrType` —  [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes)
+- `AttrName AttrType` — [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes). There can be a multiple number of attributes.
+
 
 ## Key {#ext_dict_structure-key}
 
 ClickHouse supports the following types of keys:
 
-- Numeric key. UInt64. Defined in the `<id>` tag or using `PRIMARY KEY` keyword.
+- Numeric key. `UInt64`. Defined in the `<id>` tag or using `PRIMARY KEY` keyword.
 - Composite key. Set of values of different types. Defined in the tag `<key>` or `PRIMARY KEY` keyword.
 
-A xml-structure can contain either `<id>` or `<key>`. DDL-query must contain single `PRIMARY KEY`.
+An xml structure can contain either `<id>` or `<key>`. DDL-query must contain single `PRIMARY KEY`.
 
-### Numeric Key
+!!! warning "Warning"
+    You must not describe key as an attribute.
+
+
+### Numeric Key {#ext_dict-numeric-key}
 
 Type: `UInt64`.
 
@@ -149,6 +153,7 @@ CREATE DICTIONARY somename (
 )
 ```
 
+
 Configuration fields:
 
 Tag | Description | Required
@@ -157,8 +162,12 @@ Tag | Description | Required
 `type`| ClickHouse data type.<br/>ClickHouse tries to cast value from dictionary to the specified data type. For example, for MySQL, the field might be `TEXT`, `VARCHAR`, or `BLOB` in the MySQL source table, but it can be uploaded as `String` in ClickHouse.<br/>[Nullable](../../data_types/nullable.md) is not supported. | Yes
 `null_value` | Default value for a non-existing element.<br/>In the example, it is an empty string. You cannot use `NULL` in this field. | Yes
 `expression` | [Expression](../syntax.md#syntax-expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it to create an alias for the remote column.<br/><br/>Default value: no expression. | No
-`hierarchical` | Hierarchical support. Mirrored to the parent identifier.<br/><br/>Default value: `false`. | No
+<a name="hierarchical-dict-attr"></a> `hierarchical` | If `true`, the attribute contains the value of a parent key for the current key. See [Hierarchical Dictionaries](external_dicts_dict_hierarchical.md).<br/><br/>Default value: `false`. | No
 `injective` | Flag that shows whether the `id -> attribute` image is [injective](https://en.wikipedia.org/wiki/Injective_function).<br/>If `true`, ClickHouse can automatically place after the `GROUP BY` clause the requests to dictionaries with injection. Usually it significantly reduces the amount of such requests.<br/><br/>Default value: `false`. | No
 `is_object_id` | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`.<br/><br/>Default value: `false`. | No
+
+## See Also
+
+- [Functions for working with external dictionaries](../functions/ext_dict_functions.md).
 
 [Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

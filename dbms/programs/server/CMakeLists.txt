@@ -23,7 +23,6 @@ set(CLICKHOUSE_SERVER_LINK PRIVATE clickhouse_dictionaries clickhouse_common_io 
 if (USE_POCO_NETSSL)
     set(CLICKHOUSE_SERVER_LINK ${CLICKHOUSE_SERVER_LINK} PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
 endif ()
-set(CLICKHOUSE_SERVER_INCLUDE PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
 
 clickhouse_program_add(server)
 
