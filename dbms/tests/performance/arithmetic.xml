@@ -1,0 +1,113 @@
+<test>
+    <type>loop</type>
+    <stop_conditions>
+        <all_of>
+            <iterations>10</iterations>
+            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
+        </all_of>
+        <any_of>
+            <iterations>100</iterations>
+            <total_time_ms>60000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+    <substitutions>
+        <substitution>
+            <name>lhs</name>
+            <values>
+                <value>u8</value>
+                <value>u16</value>
+                <value>u32</value>
+                <value>u64</value>
+                <value>i8</value>
+                <value>i16</value>
+                <value>i32</value>
+                <value>i64</value>
+                <value>f32</value>
+                <value>f64</value>
+                <value>toUInt8(1)</value>
+                <value>toUInt16(1)</value>
+                <value>toUInt32(1)</value>
+                <value>toUInt64(1)</value>
+                <value>toInt8(1)</value>
+                <value>toInt16(1)</value>
+                <value>toInt32(1)</value>
+                <value>toInt64(1)</value>
+                <value>toFloat32(1)</value>
+                <value>toFloat64(1)</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>rhs</name>
+            <values>
+                <value>u8</value>
+                <value>u16</value>
+                <value>u32</value>
+                <value>u64</value>
+                <value>i8</value>
+                <value>i16</value>
+                <value>i32</value>
+                <value>i64</value>
+                <value>f32</value>
+                <value>f64</value>
+                <value>toUInt8(1)</value>
+                <value>toUInt16(1)</value>
+                <value>toUInt32(1)</value>
+                <value>toUInt64(1)</value>
+                <value>toInt8(1)</value>
+                <value>toInt16(1)</value>
+                <value>toInt32(1)</value>
+                <value>toInt64(1)</value>
+                <value>toFloat32(1)</value>
+                <value>toFloat64(1)</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>op</name>
+            <values>
+                <value>plus</value>
+                <value>minus</value>
+                <value>multiply</value>
+                <value>divide</value>
+                <value>modulo</value>
+                <value>intDiv</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+CREATE TABLE nums
+(
+    u8 UInt8
+    u16 UInt16
+    u32 UInt32
+    u64 UInt64
+    i8 Int8
+    i16 Int16
+    i32 Int32
+    i64 Int64
+    f32 Float32
+    f64 Float64
+) ENGINE = Memory;
+    </create_query>
+
+    <fill_query>
+INSERT INTO nums
+SELECT
+    toUInt8(number),
+    toUInt16(number),
+    toUInt32(number),
+    toUInt64(number),
+    toInt8(number),
+    toInt16(number),
+    toInt32(number),
+    toInt64(number),
+    toFloat32(number),
+    toFloat64(number)
+FROM numbers(10000000);
+    </fill_query>
+
+    <query>SELECT count() FROM nums WHERE NOT ignore({op}({lhs}, {rhs}))</query>
+
+    <drop_query>DROP TABLE nums</drop_query>
+</test>
