@@ -3,11 +3,11 @@
     <stop_conditions>
         <all_of>
             <iterations>10</iterations>
-            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
+            <min_time_not_changing_for_ms>100</min_time_not_changing_for_ms>
         </all_of>
         <any_of>
             <iterations>100</iterations>
-            <total_time_ms>60000</total_time_ms>
+            <total_time_ms>1000</total_time_ms>
         </any_of>
     </stop_conditions>
 
@@ -104,7 +104,7 @@ SELECT
     toInt64(x),
     toFloat32(x),
     toFloat64(x)
-FROM numbers(10000000);
+FROM numbers(2500000);
     </fill_query>
 
     <query>SELECT count() FROM nums WHERE NOT ignore({op}({lhs}, {rhs}))</query>
