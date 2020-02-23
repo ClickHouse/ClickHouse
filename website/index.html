@@ -64,7 +64,7 @@
                 </div>
                 <div class="col-lg pb-2">
                     <a href="#quick-start" class="btn btn-lg btn-outline-orange w-100 mb-3" role="button">Quick start</a>
-                    <a href="#quick-start" class="btn btn-lg btn-outline-orange w-100" role="button">Documentation</a>
+                    <a href="docs/en/" class="btn btn-lg btn-outline-orange w-100" role="button">Documentation</a>
                 </div>
             </div>
         </div>
@@ -174,8 +174,9 @@
 <div class="bg-dark text-light">
     <div class="container py-5">
         <div class="row">
-
-            <h2 id="key-features">Key features</h2>
+            <div class="col-lg">
+                <h2 id="key-features">Key features</h2>
+                </div>
         </div>
 
         <div class="row">
@@ -304,7 +305,7 @@
         </div>
     </div>
 </div>
-<div class="row">
+<div>
     <div class="container">
         <h2 class="mt-5">When to use ClickHouse</h2>
 
@@ -390,13 +391,13 @@
         </li>
     </ul>
     <div class="tab-content" id="install-tab-content">
-        <div class="tab-pane fade show active" id="deb" role="tabpanel" aria-labelledby="deb-tab">
+        <div class="tab-pane show active" id="deb" role="tabpanel" aria-labelledby="deb-tab">
             {% include "templates/install/deb.html" %}
         </div>
-        <div class="tab-pane fade" id="rpm" role="tabpanel" aria-labelledby="rpm-tab">
+        <div class="tab-pane" id="rpm" role="tabpanel" aria-labelledby="rpm-tab">
             {% include "templates/install/rpm.html" %}
         </div>
-        <div class="tab-pane fade" id="tgz" role="tabpanel" aria-labelledby="thz-tab">
+        <div class="tab-pane" id="tgz" role="tabpanel" aria-labelledby="thz-tab">
             {% include "templates/install/tgz.html" %}
         </div>
     </div>
@@ -410,7 +411,7 @@
             Yandex Managed Service for ClickHouse</a>.
     </p>
 
-    <p>After you got connected to your ClickHouse server, you can proceed to <strong><a href="/docs/en/getting_started/tutorial/">tutorial</a></strong> or <strong><a href="docs/en/">full
+    <p>After you got connected to your ClickHouse server, you can proceed to <strong><a href="docs/en/getting_started/tutorial/">tutorial</a></strong> or <strong><a href="docs/en/">full
         documentation</a></strong>.</p>
 
     <h2 id="contacts" class="mt-5">Contacts</h2>
