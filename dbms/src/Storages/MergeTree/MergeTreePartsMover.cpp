@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+
 #include <set>
 #include <boost/algorithm/string/join.hpp>
 
@@ -196,8 +197,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     moving_part.part->makeCloneOnDiskDetached(moving_part.reserved_space);
 
     MergeTreeData::MutableDataPartPtr cloned_part =
-        std::make_shared<MergeTreeData::DataPart>(*data, moving_part.reserved_space->getDisk(), moving_part.part->name);
-    cloned_part->relative_path = "detached/" + moving_part.part->name;
+        data->createPart(moving_part.part->name, moving_part.reserved_space->getDisk(), "detached/" + moving_part.part->name);
     LOG_TRACE(log, "Part " << moving_part.part->name << " was cloned to " << cloned_part->getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);

@@ -484,6 +484,7 @@ namespace ErrorCodes
     extern const int CACHE_DICTIONARY_UPDATE_FAIL = 510;
     extern const int UNKNOWN_ROLE = 511;
     extern const int SET_NON_GRANTED_ROLE = 512;
+    extern const int UNKNOWN_PART_TYPE = 513;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

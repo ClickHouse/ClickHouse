@@ -768,7 +768,7 @@ void registerStorageBuffer(StorageFactory & factory)
                 " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
+        engine_args[0] = evaluateConstantExpressionForDatabaseName(engine_args[0], args.local_context);
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
 
         String destination_database = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
