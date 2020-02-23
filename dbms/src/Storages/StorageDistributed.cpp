@@ -476,6 +476,9 @@ void StorageDistributed::alter(const AlterCommands & params, const Context & con
 
 void StorageDistributed::startup()
 {
+    if (remote_database.empty() && !remote_table_function_ptr)
+        LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
+
     if (!volume)
         return;
 
@@ -719,7 +722,7 @@ void registerStorageDistributed(StorageFactory & factory)
                 "policy to store data in (optional).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        String cluster_name = getClusterName(*engine_args[0]);
+        String cluster_name = getClusterNameAndMakeLiteral(engine_args[0]);
 
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
         engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
