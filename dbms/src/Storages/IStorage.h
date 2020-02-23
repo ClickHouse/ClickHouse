@@ -14,6 +14,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/ColumnDependency.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
@@ -127,6 +128,12 @@ public:
     /// So, it's impossible for one stream run out of data when there is data in other streams.
     /// Example is StorageSystemNumbers.
     virtual bool hasEvenlyDistributedRead() const { return false; }
+
+    /// Returns true if there is set table TTL, any column TTL or any move TTL.
+    virtual bool hasAnyTTL() const { return false; }
+
+    /// Returns true if there is set TTL for rows.
+    virtual bool hasRowsTTL() const { return false; }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -447,6 +454,10 @@ public:
 
     /// Returns names of primary key + secondary sorting columns
     virtual Names getSortingKeyColumns() const { return {}; }
+
+    /// Returns columns, which will be needed to calculate dependencies
+    /// (skip indices, TTL expressions) if we update @updated_columns set of columns.
+    virtual ColumnDependencies getColumnDependencies(const NameSet & /* updated_columns */) const { return {}; }
 
     /// Returns storage policy if storage supports it
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
