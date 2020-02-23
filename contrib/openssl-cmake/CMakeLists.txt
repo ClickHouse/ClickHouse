@@ -954,6 +954,7 @@ elseif (ARCH_AARCH64)
         ${OPENSSL_BINARY_DIR}/crypto/sha/keccak1600-armv8.S
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha1-armv8.S
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-armv8.S
+        ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-armv8.S
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-armv8.S)
 endif ()
 
