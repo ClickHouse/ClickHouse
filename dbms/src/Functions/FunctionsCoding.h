@@ -117,7 +117,7 @@ public:
 
             for (size_t offset = 0, i = 0; offset < vec_in.size(); offset += IPV6_BINARY_LENGTH, ++i)
             {
-                formatIPv6(&vec_in[offset], pos);
+                formatIPv6(reinterpret_cast<const unsigned char *>(&vec_in[offset]), pos);
                 offsets_res[i] = pos - begin;
             }
 
@@ -228,7 +228,7 @@ public:
             {
                 const auto address = &vec_in[offset];
                 UInt8 zeroed_tail_bytes_count = isIPv4Mapped(address) ? ipv4_zeroed_tail_bytes_count : ipv6_zeroed_tail_bytes_count;
-                cutAddress(address, pos, zeroed_tail_bytes_count);
+                cutAddress(reinterpret_cast<const unsigned char *>(address), pos, zeroed_tail_bytes_count);
                 offsets_res[i] = pos - begin;
             }
 
@@ -243,10 +243,10 @@ public:
     }
 
 private:
-    bool isIPv4Mapped(const unsigned char * address) const
+    bool isIPv4Mapped(const UInt8 * address) const
     {
-        return (*reinterpret_cast<const UInt64 *>(address) == 0) &&
-            ((*reinterpret_cast<const UInt64 *>(address + 8) & 0x00000000FFFFFFFFull) == 0x00000000FFFF0000ull);
+        return (unalignedLoad<UInt64>(address) == 0) &&
+            ((unalignedLoad<UInt64>(address + 8) & 0x00000000FFFFFFFFull) == 0x00000000FFFF0000ull);
     }
 
     void cutAddress(const unsigned char * address, char *& dst, UInt8 zeroed_tail_bytes_count)
@@ -296,8 +296,8 @@ public:
                  out_offset < vec_res.size();
                  out_offset += IPV6_BINARY_LENGTH, ++i)
             {
-                //TODO(nemkov): handle failure ?
-                parseIPv6(reinterpret_cast<const char *>(&vec_src[src_offset]), &vec_res[out_offset]);
+                /// In case of failure, the function fills vec_res with zero bytes.
+                parseIPv6(reinterpret_cast<const char *>(&vec_src[src_offset]), reinterpret_cast<unsigned char *>(&vec_res[out_offset]));
                 src_offset = offsets_src[i];
             }
 
@@ -486,10 +486,10 @@ public:
     }
 
 private:
-    void mapIPv4ToIPv6(UInt32 in, unsigned char * buf) const
+    void mapIPv4ToIPv6(UInt32 in, UInt8 * buf) const
     {
-        *reinterpret_cast<UInt64 *>(buf) = 0;
-        *reinterpret_cast<UInt64 *>(buf + 8) = 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32);
+        unalignedStore<UInt64>(buf, 0);
+        unalignedStore<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32));
     }
 };
 
@@ -557,7 +557,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    static void formatMAC(UInt64 mac, unsigned char * out)
+    static void formatMAC(UInt64 mac, UInt8 * out)
     {
         /// MAC address is represented in UInt64 in natural order (so, MAC addresses are compared in same order as UInt64).
         /// Higher two bytes in UInt64 are just ignored.
@@ -1354,7 +1354,7 @@ public:
         Columns columns_holder(arguments.size());
         for (size_t idx = 0; idx < arguments.size(); ++idx)
         {
-            //partial const column 
+            //partial const column
             columns_holder[idx] = block.getByPosition(arguments[idx]).column->convertToFullColumnIfConst();
             const IColumn * column = columns_holder[idx].get();
 

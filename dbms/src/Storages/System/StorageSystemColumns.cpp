@@ -63,7 +63,7 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         Storages storages_,
-        const std::shared_ptr<const AccessRightsContext> & access_rights_,
+        const AccessRightsContextPtr & access_rights_,
         String query_id_)
         : SourceWithProgress(header_)
         , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
@@ -231,7 +231,7 @@ private:
     String query_id;
     size_t db_table_num = 0;
     size_t total_tables;
-    std::shared_ptr<const AccessRightsContext> access_rights;
+    AccessRightsContextPtr access_rights;
 };
 
 

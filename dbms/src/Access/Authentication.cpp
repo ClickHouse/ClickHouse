@@ -87,4 +87,3 @@ void Authentication::checkPassword(const String & password_, const String & user
 }
 
 }
-

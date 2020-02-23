@@ -68,7 +68,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     , query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks}
     , sample_block{sample_block_}
     , context(context_)
-    , is_local{isLocalAddress({host, port}, context.getTCPPort())}
+    , is_local{isLocalAddress({host, port}, secure ? context.getTCPPortSecure().value_or(0) : context.getTCPPort())}
     , pool{is_local ? nullptr : createPool(host, port, secure, db, user, password)}
     , load_all_query{query_builder.composeLoadAllQuery()}
 {

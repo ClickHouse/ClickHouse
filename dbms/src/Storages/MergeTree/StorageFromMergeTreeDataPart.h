@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Core/Defines.h>
 
@@ -38,6 +38,14 @@ public:
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override
     {
         return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context);
+    }
+
+    bool hasAnyTTL() const override { return part->storage.hasAnyTTL(); }
+    bool hasRowsTTL() const override { return part->storage.hasRowsTTL(); }
+
+    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override
+    {
+        return part->storage.getColumnDependencies(updated_columns);
     }
 
     StorageInMemoryMetadata getInMemoryMetadata() const override
