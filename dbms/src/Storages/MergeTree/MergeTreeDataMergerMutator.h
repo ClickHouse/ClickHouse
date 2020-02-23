@@ -18,18 +18,27 @@ struct FutureMergedMutatedPart
 {
     String name;
     String path;
+    MergeTreeDataPartType type;
     MergeTreePartInfo part_info;
     MergeTreeData::DataPartsVector parts;
 
     const MergeTreePartition & getPartition() const { return parts.front()->partition; }
 
     FutureMergedMutatedPart() = default;
+
     explicit FutureMergedMutatedPart(MergeTreeData::DataPartsVector parts_)
     {
         assign(std::move(parts_));
     }
 
+    FutureMergedMutatedPart(MergeTreeData::DataPartsVector parts_, MergeTreeDataPartType future_part_type)
+    {
+        assign(std::move(parts_), future_part_type);
+    }
+
     void assign(MergeTreeData::DataPartsVector parts_);
+    void assign(MergeTreeData::DataPartsVector parts_, MergeTreeDataPartType future_part_type);
+
     void updatePath(const MergeTreeData & storage, const ReservationPtr & reservation);
 };
 
@@ -104,7 +113,7 @@ public:
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
-        const std::vector<MutationCommand> & commands,
+        const MutationCommands & commands,
         MergeListEntry & merge_entry, const Context & context,
         const ReservationPtr & disk_reservation,
         TableStructureReadLockHolder & table_lock_holder);

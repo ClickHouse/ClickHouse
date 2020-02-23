@@ -165,7 +165,7 @@ bool isStorageTouchedByMutations(
 
 MutationsInterpreter::MutationsInterpreter(
     StoragePtr storage_,
-    std::vector<MutationCommand> commands_,
+    MutationCommands commands_,
     const Context & context_,
     bool can_execute_)
     : storage(std::move(storage_))
@@ -437,6 +437,8 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
 
         if (i > 0)
             prepared_stages[i].output_columns = prepared_stages[i - 1].output_columns;
+        else if (!commands.additional_columns.empty())
+            prepared_stages[i].output_columns.insert(commands.additional_columns.begin(), commands.additional_columns.end());
 
         if (prepared_stages[i].output_columns.size() < all_columns.size())
         {
