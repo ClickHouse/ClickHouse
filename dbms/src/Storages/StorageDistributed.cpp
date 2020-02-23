@@ -425,6 +425,8 @@ void StorageDistributed::startup()
 {
     createDirectoryMonitors();
     initializeFileNamesIncrement(path, file_names_increment);
+    if (remote_database.empty() && !remote_table_function_ptr)
+        LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
 }
 
 
@@ -647,7 +649,7 @@ void registerStorageDistributed(StorageFactory & factory)
                 " - name of configuration section with list of remote servers, name of remote database, name of remote table,"
                 " sharding key expression (optional).", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        String cluster_name = getClusterName(*engine_args[0]);
+        String cluster_name = getClusterNameAndMakeLiteral(engine_args[0]);
 
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
         engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
