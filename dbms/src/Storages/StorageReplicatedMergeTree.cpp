@@ -1130,6 +1130,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
                     "6. Data corruption in memory due to hardware issue. "
                     "7. Manual modification of source data after server startup. "
                     "8. Manual modification of checksums stored in ZooKeeper. "
+                    "9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas. "
                     "We will download merged part from replica to force byte-identical result.");
 
                 write_part_log(ExecutionStatus::fromCurrentException());
@@ -3041,7 +3042,7 @@ ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMerg
     return max_added_blocks;
 }
 
-Pipes StorageReplicatedMergeTree::readWithProcessors(
+Pipes StorageReplicatedMergeTree::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -3222,6 +3223,7 @@ void StorageReplicatedMergeTree::alter(
     /// metadata alter.
     if (params.isSettingsAlter())
     {
+        lockStructureExclusively(table_lock_holder, query_context.getCurrentQueryId());
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
         LOG_DEBUG(log, "ALTER storage_settings_ptr only");
@@ -3271,9 +3273,7 @@ void StorageReplicatedMergeTree::alter(
     std::vector<ChangedNode> changed_nodes;
 
     {
-        /// Just to read current structure. Alter will be done in separate thread.
-        auto table_lock = lockStructureForShare(false, query_context.getCurrentQueryId());
-
+        /// We can safely read structure, because we guarded with alter_intention_lock
         if (is_readonly)
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
 
@@ -3305,10 +3305,13 @@ void StorageReplicatedMergeTree::alter(
 
         /// Perform settings update locally
 
-        auto old_metadata = getInMemoryMetadata();
-        old_metadata.settings_ast = metadata.settings_ast;
-        changeSettings(metadata.settings_ast, table_lock_holder);
-        global_context.getDatabase(table_id.database_name)->alterTable(query_context, table_id.table_name, old_metadata);
+        {
+            lockStructureExclusively(table_lock_holder, query_context.getCurrentQueryId());
+            auto old_metadata = getInMemoryMetadata();
+            old_metadata.settings_ast = metadata.settings_ast;
+            changeSettings(metadata.settings_ast, table_lock_holder);
+            global_context.getDatabase(table_id.database_name)->alterTable(query_context, table_id.table_name, old_metadata);
+        }
 
         /// Modify shared metadata nodes in ZooKeeper.
         Coordination::Requests ops;
@@ -3548,9 +3551,11 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                     case PartitionCommand::MoveDestinationType::DISK:
                         movePartitionToDisk(command.partition, command.move_destination_name, command.part, query_context);
                         break;
+
                     case PartitionCommand::MoveDestinationType::VOLUME:
                         movePartitionToVolume(command.partition, command.move_destination_name, command.part, query_context);
                         break;
+
                     case PartitionCommand::MoveDestinationType::TABLE:
                         checkPartitionCanBeDropped(command.partition);
                         String dest_database = command.to_database.empty() ? query_context.getCurrentDatabase() : command.to_database;
@@ -4083,37 +4088,42 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
     res.replica_path = replica_path;
     res.columns_version = columns_version;
 
-    if (res.is_session_expired || !with_zk_fields)
+    res.log_max_index = 0;
+    res.log_pointer = 0;
+    res.total_replicas = 0;
+    res.active_replicas = 0;
+
+    if (with_zk_fields && !res.is_session_expired)
     {
-        res.log_max_index = 0;
-        res.log_pointer = 0;
-        res.total_replicas = 0;
-        res.active_replicas = 0;
-    }
-    else
-    {
-        auto log_entries = zookeeper->getChildren(zookeeper_path + "/log");
-
-        if (log_entries.empty())
+        try
         {
-            res.log_max_index = 0;
+            auto log_entries = zookeeper->getChildren(zookeeper_path + "/log");
+
+            if (log_entries.empty())
+            {
+                res.log_max_index = 0;
+            }
+            else
+            {
+                const String & last_log_entry = *std::max_element(log_entries.begin(), log_entries.end());
+                res.log_max_index = parse<UInt64>(last_log_entry.substr(strlen("log-")));
+            }
+
+            String log_pointer_str = zookeeper->get(replica_path + "/log_pointer");
+            res.log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
+
+            auto all_replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+            res.total_replicas = all_replicas.size();
+
+            res.active_replicas = 0;
+            for (const String & replica : all_replicas)
+                if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+                    ++res.active_replicas;
         }
-        else
+        catch (const Coordination::Exception &)
         {
-            const String & last_log_entry = *std::max_element(log_entries.begin(), log_entries.end());
-            res.log_max_index = parse<UInt64>(last_log_entry.substr(strlen("log-")));
+            res.zookeeper_exception = getCurrentExceptionMessage(false);
         }
-
-        String log_pointer_str = zookeeper->get(replica_path + "/log_pointer");
-        res.log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
-
-        auto all_replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
-        res.total_replicas = all_replicas.size();
-
-        res.active_replicas = 0;
-        for (const String & replica : all_replicas)
-            if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
-                ++res.active_replicas;
     }
 }
 
@@ -5110,7 +5120,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
     auto dest_table_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(dest_table);
     if (!dest_table_storage)
-        throw Exception("Table " + getStorageID().getNameForLogs() + " supports attachPartitionFrom only for ReplicatedMergeTree family of table engines."
+        throw Exception("Table " + getStorageID().getNameForLogs() + " supports movePartitionToTable only for ReplicatedMergeTree family of table engines."
                         " Got " + dest_table->getName(), ErrorCodes::NOT_IMPLEMENTED);
     if (dest_table_storage->getStoragePolicy() != this->getStoragePolicy())
         throw Exception("Destination table " + dest_table_storage->getStorageID().getNameForLogs() +
@@ -5132,8 +5142,10 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
     LOG_DEBUG(log, "Cloning " << src_all_parts.size() << " parts");
 
-    static const String TMP_PREFIX = "tmp_replace_from_";
+    static const String TMP_PREFIX = "tmp_move_from_";
     auto zookeeper = getZooKeeper();
+
+    /// A range for log entry to remove parts from the source table (myself).
 
     MergeTreePartInfo drop_range;
     drop_range.partition_id = partition_id;
@@ -5149,13 +5161,15 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         queue.disableMergesInBlockRange(drop_range_fake_part_name);
     }
 
+    /// Clone parts into destination table.
+
     for (size_t i = 0; i < src_all_parts.size(); ++i)
     {
         auto & src_part = src_all_parts[i];
 
         if (!dest_table_storage->canReplacePartition(src_part))
             throw Exception(
-                "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
+                "Cannot move partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
                 ErrorCodes::LOGICAL_ERROR);
 
         String hash_hex = src_part->checksums.getTotalChecksumHex();

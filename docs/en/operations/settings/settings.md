@@ -797,6 +797,10 @@ For CSV input format enables or disables parsing of unquoted `NULL` as literal (
 
 Use DOS/Windows style line separator (CRLF) in CSV instead of Unix style (LF).
 
+## output_format_tsv_crlf_end_of_line {#settings-output_format_tsv_crlf_end_of_line}
+
+Use DOC/Windows style line separator (CRLF) in TSV instead of Unix style (LF).
+
 ## insert_quorum {#settings-insert_quorum}
 
 Enables quorum writes.
@@ -1067,7 +1071,7 @@ Default value: 0.
 
 ## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
 
-Sets the period for a real clock timer of the [query profiler](../performance/sampling_query_profiler.md). Real clock timer counts wall-clock time.
+Sets the period for a real clock timer of the [query profiler](../../operations/performance/sampling_query_profiler.md). Real clock timer counts wall-clock time.
 
 Possible values:
 
@@ -1090,7 +1094,7 @@ See also:
 
 ## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
-Sets the period for a CPU clock timer of the [query profiler](../performance/sampling_query_profiler.md). This timer counts only CPU time.
+Sets the period for a CPU clock timer of the [query profiler](../../operations/performance/sampling_query_profiler.md). This timer counts only CPU time.
 
 Possible values:
 
@@ -1164,5 +1168,14 @@ Type: unsigned int
 Possible values: 32 (32 bytes) - 1073741824 (1 GiB)
 
 Default value: 32768 (32 KiB)
+
+## format_avro_schema_registry_url {#settings-format_avro_schema_registry_url}
+
+Sets Confluent Schema Registry URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format
+
+Type: URL
+
+Default value: Empty
+
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

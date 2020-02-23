@@ -66,23 +66,11 @@ enum class AccessType
     CREATE_TEMPORARY_TABLE, /// allows to create and manipulate temporary tables and views.
     CREATE,                 /// allows to execute {CREATE|ATTACH} [TEMPORARY] {DATABASE|TABLE|VIEW|DICTIONARY}
 
-    ATTACH_DATABASE,        /// allows to execute {CREATE|ATTACH} DATABASE
-    ATTACH_TABLE,           /// allows to execute {CREATE|ATTACH} TABLE
-    ATTACH_VIEW,            /// allows to execute {CREATE|ATTACH} VIEW
-    ATTACH_DICTIONARY,      /// allows to execute {CREATE|ATTACH} DICTIONARY
-    ATTACH,                 /// allows to execute {CREATE|ATTACH} {DATABASE|TABLE|VIEW|DICTIONARY}
-
     DROP_DATABASE,
     DROP_TABLE,
     DROP_VIEW,
     DROP_DICTIONARY,
     DROP,               /// allows to execute DROP {DATABASE|TABLE|VIEW|DICTIONARY}
-
-    DETACH_DATABASE,
-    DETACH_TABLE,
-    DETACH_VIEW,
-    DETACH_DICTIONARY,
-    DETACH,             /// allows to execute DETACH {DATABASE|TABLE|VIEW|DICTIONARY}
 
     TRUNCATE_TABLE,
     TRUNCATE_VIEW,
@@ -94,7 +82,7 @@ enum class AccessType
     KILL_MUTATION,      /// allows to kill a mutation
     KILL,               /// allows to execute KILL {MUTATION|QUERY}
 
-    CREATE_USER,        /// allows to create, alter and drop users, roles, quotas, row policies.
+    CREATE_USER,
     ALTER_USER,
     DROP_USER,
     CREATE_ROLE,
@@ -105,6 +93,8 @@ enum class AccessType
     CREATE_QUOTA,
     ALTER_QUOTA,
     DROP_QUOTA,
+
+    ROLE_ADMIN,         /// allows to grant and revoke any roles.
 
     SHUTDOWN,
     DROP_CACHE,
@@ -235,23 +225,11 @@ namespace impl
             ACCESS_TYPE_TO_KEYWORD_CASE(CREATE_TEMPORARY_TABLE);
             ACCESS_TYPE_TO_KEYWORD_CASE(CREATE);
 
-            ACCESS_TYPE_TO_KEYWORD_CASE(ATTACH_DATABASE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(ATTACH_TABLE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(ATTACH_VIEW);
-            ACCESS_TYPE_TO_KEYWORD_CASE(ATTACH_DICTIONARY);
-            ACCESS_TYPE_TO_KEYWORD_CASE(ATTACH);
-
             ACCESS_TYPE_TO_KEYWORD_CASE(DROP_DATABASE);
             ACCESS_TYPE_TO_KEYWORD_CASE(DROP_TABLE);
             ACCESS_TYPE_TO_KEYWORD_CASE(DROP_VIEW);
             ACCESS_TYPE_TO_KEYWORD_CASE(DROP_DICTIONARY);
             ACCESS_TYPE_TO_KEYWORD_CASE(DROP);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(DETACH_DATABASE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DETACH_TABLE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DETACH_VIEW);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DETACH_DICTIONARY);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DETACH);
 
             ACCESS_TYPE_TO_KEYWORD_CASE(TRUNCATE_TABLE);
             ACCESS_TYPE_TO_KEYWORD_CASE(TRUNCATE_VIEW);
@@ -274,6 +252,7 @@ namespace impl
             ACCESS_TYPE_TO_KEYWORD_CASE(CREATE_QUOTA);
             ACCESS_TYPE_TO_KEYWORD_CASE(ALTER_QUOTA);
             ACCESS_TYPE_TO_KEYWORD_CASE(DROP_QUOTA);
+            ACCESS_TYPE_TO_KEYWORD_CASE(ROLE_ADMIN);
 
             ACCESS_TYPE_TO_KEYWORD_CASE(SHUTDOWN);
             ACCESS_TYPE_TO_KEYWORD_CASE(DROP_CACHE);

@@ -572,29 +572,29 @@ ClickHouse не поддерживает синтаксис с запятыми 
 
 Таблицы для `ASOF JOIN` должны иметь столбец с отсортированной последовательностью. Этот столбец не может быть единственным в таблице и должен быть одного из типов: `UInt32`, `UInt64`, `Float32`, `Float64`, `Date` и `DateTime`.
 
-Можно использовать следующие типы синтаксиса:
+Синтаксис `ASOF JOIN ... ON`:
 
-- `ASOF JOIN ... ON`
+```sql
+SELECT expressions_list
+FROM table_1
+ASOF LEFT JOIN table_2
+ON equi_cond AND closest_match_cond
+```
 
-    ```sql
-    SELECT expressions_list
-    FROM table_1
-    ASOF LEFT JOIN table_2
-    ON equi_cond AND closest_match_cond
-    ```
+Можно использовать произвольное количество условий равенства и одно условие на ближайшее совпадение. Например, `SELECT count() FROM table_1 ASOF LEFT JOIN table_2 ON table_1.a == table_2.b AND table_2.t <= table_1.t`. 
 
-    Можно использовать произвольное количество условий равенства и одно условие на ближайшее совпадение. Например, `SELECT count() FROM A ASOF LEFT JOIN B ON A.a == B.b AND B.t <= A.t`. Можно использовать только условия `table_2.some_col <= table_1.some_col` и `table_1.some_col >= table2.some_col`. Условия типа `>` или `!=` не поддерживаются.
+Условия, поддержанные для проверки на ближайшее совпадение: `>`, `>=`, `<`, `<=`.
 
-- `ASOF JOIN ... USING`
+Синтаксис `ASOF JOIN ... USING`:
 
-    ```sql
-    SELECT expressions_list
-    FROM table_1
-    ASOF JOIN table_2
-    USING (equi_column1, ... equi_columnN, asof_column)
-    ```
+```sql
+SELECT expressions_list
+FROM table_1
+ASOF JOIN table_2
+USING (equi_column1, ... equi_columnN, asof_column)
+```
 
-    Для слияния по равенству `ASOF JOIN` использует `equi_columnX`, а для слияния по ближайшему совпадению использует `asof_column` с условием `table_1.asof_column >= table2.asof_column`. Столбец `asof_column` должен быть последним в секции `USING`.
+Для слияния по равенству `ASOF JOIN` использует `equi_columnX`, а для слияния по ближайшему совпадению использует `asof_column` с условием `table_1.asof_column >= table_2.asof_column`. Столбец `asof_column` должен быть последним в секции `USING`.
 
 Например, рассмотрим следующие таблицы:
 
@@ -609,7 +609,7 @@ event_1_2 |  13:00  |  42         event_2_3 |  13:00  |   42
               ...                               ...
 ```
 
-`ASOF JOIN` принимает метку времени пользовательского события из `table_1` и находит такое событие в `table_2` метка времени которого наиболее близка (равна или меньше) к метке времени события из `table_1`. При этом столбец `user_id` используется для объединения по равенству, а столбец `ev_time` для объединения по ближайшему совпадению. В нашем примере `event_1_1` может быть объединено с `event_2_1`, `event_1_2` может быть объединено с `event_2_3`, а `event_2_2` не объединяется.
+`ASOF JOIN` принимает метку времени пользовательского события из `table_1` и находит такое событие в `table_2` метка времени которого наиболее близка к метке времени события из `table_1` в соответствии с условием на ближайшее совпадение. При этом столбец `user_id` используется для объединения по равенству, а столбец `ev_time` для объединения по ближайшему совпадению. В нашем примере `event_1_1` может быть объединено с `event_2_1`, `event_1_2` может быть объединено с `event_2_3`, а `event_2_2` не объединяется.
 
 !!! note "Примечание"
     `ASOF JOIN` не поддержан для движка таблиц [Join](../operations/table_engines/join.md).

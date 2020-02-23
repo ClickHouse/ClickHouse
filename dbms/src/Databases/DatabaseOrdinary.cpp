@@ -252,20 +252,23 @@ void DatabaseOrdinary::alterTable(
         ast->replace(ast_create_query.select, metadata.select);
     }
 
-    ASTStorage & storage_ast = *ast_create_query.storage;
-    /// ORDER BY may change, but cannot appear, it's required construction
-    if (metadata.order_by_ast && storage_ast.order_by)
-        storage_ast.set(storage_ast.order_by, metadata.order_by_ast);
+    /// MaterializedView is one type of CREATE query without storage.
+    if (ast_create_query.storage)
+    {
+        ASTStorage & storage_ast = *ast_create_query.storage;
+        /// ORDER BY may change, but cannot appear, it's required construction
+        if (metadata.order_by_ast && storage_ast.order_by)
+            storage_ast.set(storage_ast.order_by, metadata.order_by_ast);
 
-    if (metadata.primary_key_ast)
-        storage_ast.set(storage_ast.primary_key, metadata.primary_key_ast);
+        if (metadata.primary_key_ast)
+            storage_ast.set(storage_ast.primary_key, metadata.primary_key_ast);
 
-    if (metadata.ttl_for_table_ast)
-        storage_ast.set(storage_ast.ttl_table, metadata.ttl_for_table_ast);
+        if (metadata.ttl_for_table_ast)
+            storage_ast.set(storage_ast.ttl_table, metadata.ttl_for_table_ast);
 
-    if (metadata.settings_ast)
-        storage_ast.set(storage_ast.settings, metadata.settings_ast);
-
+        if (metadata.settings_ast)
+            storage_ast.set(storage_ast.settings, metadata.settings_ast);
+    }
 
     statement = getObjectDefinitionFromCreateQuery(ast);
     {

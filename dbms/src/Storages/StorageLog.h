@@ -17,14 +17,14 @@ namespace DB
   */
 class StorageLog : public ext::shared_ptr_helper<StorageLog>, public IStorage
 {
-    friend class LogBlockInputStream;
+    friend class LogSource;
     friend class LogBlockOutputStream;
     friend struct ext::shared_ptr_helper<StorageLog>;
 
 public:
     String getName() const override { return "Log"; }
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

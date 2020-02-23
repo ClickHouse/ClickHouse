@@ -5,10 +5,10 @@
 #include <stdint.h>
 #include <string.h>
 #include <Core/Types.h>
-#include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <common/StringRef.h>
 #include <common/unaligned.h>
 
@@ -157,15 +157,13 @@ namespace VolnitskyTraits
 
                     using Seq = UInt8[6];
 
-                    static const Poco::UTF8Encoding utf8;
-
                     if (UTF8::isContinuationOctet(chars.c1))
                     {
                         /// ngram is inside a sequence
                         auto seq_pos = pos;
                         UTF8::syncBackward(seq_pos, begin);
 
-                        const auto u32 = utf8.convert(seq_pos);
+                        const auto u32 = UTF8::convert(seq_pos);
                         const auto l_u32 = Poco::Unicode::toLower(u32);
                         const auto u_u32 = Poco::Unicode::toUpper(u32);
 
@@ -180,13 +178,13 @@ namespace VolnitskyTraits
                             Seq seq;
 
                             /// put ngram for lowercase
-                            utf8.convert(l_u32, seq, sizeof(seq));
+                            UTF8::convert(l_u32, seq, sizeof(seq));
                             chars.c0 = seq[seq_ngram_offset];
                             chars.c1 = seq[seq_ngram_offset + 1];
                             putNGramBase(n, offset);
 
                             /// put ngram for uppercase
-                            utf8.convert(u_u32, seq, sizeof(seq));
+                            UTF8::convert(u_u32, seq, sizeof(seq));
                             chars.c0 = seq[seq_ngram_offset]; //-V519
                             chars.c1 = seq[seq_ngram_offset + 1]; //-V519
                             putNGramBase(n, offset);
@@ -201,14 +199,14 @@ namespace VolnitskyTraits
                         /// where is the given ngram in respect to the start of first UTF-8 sequence?
                         const auto seq_ngram_offset = pos - first_seq_pos;
 
-                        const auto first_u32 = utf8.convert(first_seq_pos);
+                        const auto first_u32 = UTF8::convert(first_seq_pos);
                         const auto first_l_u32 = Poco::Unicode::toLower(first_u32);
                         const auto first_u_u32 = Poco::Unicode::toUpper(first_u32);
 
                         /// second sequence always start immediately after u_pos
                         auto second_seq_pos = pos + 1;
 
-                        const auto second_u32 = utf8.convert(second_seq_pos); /// TODO This assumes valid UTF-8 or zero byte after needle.
+                        const auto second_u32 = UTF8::convert(second_seq_pos); /// TODO This assumes valid UTF-8 or zero byte after needle.
                         const auto second_l_u32 = Poco::Unicode::toLower(second_u32);
                         const auto second_u_u32 = Poco::Unicode::toUpper(second_u32);
 
@@ -223,12 +221,12 @@ namespace VolnitskyTraits
                             Seq seq;
 
                             /// put ngram for lowercase
-                            utf8.convert(second_l_u32, seq, sizeof(seq));
+                            UTF8::convert(second_l_u32, seq, sizeof(seq));
                             chars.c1 = seq[0];
                             putNGramBase(n, offset);
 
                             /// put ngram from uppercase, if it is different
-                            utf8.convert(second_u_u32, seq, sizeof(seq));
+                            UTF8::convert(second_u_u32, seq, sizeof(seq));
                             if (chars.c1 != seq[0])
                             {
                                 chars.c1 = seq[0];
@@ -241,12 +239,12 @@ namespace VolnitskyTraits
                             Seq seq;
 
                             /// put ngram for lowercase
-                            utf8.convert(first_l_u32, seq, sizeof(seq));
+                            UTF8::convert(first_l_u32, seq, sizeof(seq));
                             chars.c0 = seq[seq_ngram_offset];
                             putNGramBase(n, offset);
 
                             /// put ngram for uppercase, if it is different
-                            utf8.convert(first_u_u32, seq, sizeof(seq));
+                            UTF8::convert(first_u_u32, seq, sizeof(seq));
                             if (chars.c0 != seq[seq_ngram_offset])
                             {
                                 chars.c0 = seq[seq_ngram_offset];
@@ -260,10 +258,10 @@ namespace VolnitskyTraits
                             Seq second_l_seq;
                             Seq second_u_seq;
 
-                            utf8.convert(first_l_u32, first_l_seq, sizeof(first_l_seq));
-                            utf8.convert(first_u_u32, first_u_seq, sizeof(first_u_seq));
-                            utf8.convert(second_l_u32, second_l_seq, sizeof(second_l_seq));
-                            utf8.convert(second_u_u32, second_u_seq, sizeof(second_u_seq));
+                            UTF8::convert(first_l_u32, first_l_seq, sizeof(first_l_seq));
+                            UTF8::convert(first_u_u32, first_u_seq, sizeof(first_u_seq));
+                            UTF8::convert(second_l_u32, second_l_seq, sizeof(second_l_seq));
+                            UTF8::convert(second_u_u32, second_u_seq, sizeof(second_u_seq));
 
                             auto c0l = first_l_seq[seq_ngram_offset];
                             auto c0u = first_u_seq[seq_ngram_offset];

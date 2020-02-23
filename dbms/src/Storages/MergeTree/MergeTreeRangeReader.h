@@ -1,7 +1,6 @@
 #pragma once
 #include <Core/Block.h>
 #include <common/logger_useful.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/MarkRange.h>
 
 namespace DB

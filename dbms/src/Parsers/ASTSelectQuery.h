@@ -15,7 +15,7 @@ struct ASTTablesInSelectQueryElement;
 class ASTSelectQuery : public IAST
 {
 public:
-    enum class Expression : UInt8
+    enum class Expression : uint8_t
     {
         WITH,
         SELECT,

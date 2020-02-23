@@ -6,6 +6,7 @@ nav:
   - 'ClickHouse功能可被视为缺点': 'introduction/features_considered_disadvantages.md'
   - '性能': 'introduction/performance.md'
   - '历史': 'introduction/history.md'
+  - '使用者': 'introduction/adopters.md'
 
 - '入门指南':
   - 'hidden': 'getting_started/index.md'
@@ -176,6 +177,7 @@ nav:
       - '字典的刷新策略': 'query_language/dicts/external_dicts_dict_lifetime.md'
       - '字典的外部数据源': 'query_language/dicts/external_dicts_dict_sources.md'
       - '字典的键和字段值': 'query_language/dicts/external_dicts_dict_structure.md'
+      - 'Hierarchical dictionaries': 'query_language/dicts/external_dicts_dict_hierarchical.md'
     - '内部字典': 'query_language/dicts/internal_dicts.md'
   - '操作符': 'query_language/operators.md'
   - '语法说明': 'query_language/syntax.md'
@@ -192,7 +194,9 @@ nav:
   - '配置文件': 'operations/configuration_files.md'
   - '配额': 'operations/quotas.md'
   - '系统表': 'operations/system_tables.md'
-  - 'Testing Hardware': 'operations/performance_test.md'
+  - '优化性能':
+    - '查询分析': 'operations/performance/sampling_query_profiler.md'
+  - '测试硬件': 'operations/performance_test.md'
   - 'Server参数配置':
     - '介绍': 'operations/server_settings/index.md'
     - 'Server参数说明': 'operations/server_settings/settings.md'

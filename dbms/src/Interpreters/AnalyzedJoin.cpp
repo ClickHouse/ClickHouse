@@ -1,6 +1,4 @@
 #include <Interpreters/AnalyzedJoin.h>
-#include <Interpreters/Join.h>
-#include <Interpreters/MergeJoin.h>
 
 #include <Parsers/ASTExpressionList.h>
 
@@ -24,11 +22,14 @@ AnalyzedJoin::AnalyzedJoin(const Settings & settings, VolumePtr tmp_volume_)
     , default_max_bytes(settings.default_max_bytes_in_join)
     , join_use_nulls(settings.join_use_nulls)
     , max_joined_block_rows(settings.max_joined_block_size_rows)
-    , partial_merge_join(settings.partial_merge_join)
+    , join_algorithm(settings.join_algorithm)
     , partial_merge_join_optimizations(settings.partial_merge_join_optimizations)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
     , tmp_volume(tmp_volume_)
-{}
+{
+    if (settings.partial_merge_join)
+        join_algorithm = JoinAlgorithm::PREFER_PARTIAL_MERGE;
+}
 
 void AnalyzedJoin::addUsingKey(const ASTPtr & ast)
 {
@@ -229,27 +230,14 @@ bool AnalyzedJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, A
     return false;
 }
 
-JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block)
+bool AnalyzedJoin::allowMergeJoin() const
 {
-    auto kind = table_join->kind();
-    auto strictness = table_join->strictness();
+    bool is_any = (strictness() == ASTTableJoin::Strictness::Any);
+    bool is_all = (strictness() == ASTTableJoin::Strictness::All);
+    bool is_semi = (strictness() == ASTTableJoin::Strictness::Semi);
 
-    bool is_any = (strictness == ASTTableJoin::Strictness::Any);
-    bool is_all = (strictness == ASTTableJoin::Strictness::All);
-    bool is_semi = (strictness == ASTTableJoin::Strictness::Semi);
-
-    bool allow_merge_join = (isLeft(kind) && (is_any || is_all || is_semi)) || (isInner(kind) && is_all);
-
-    if (table_join->partial_merge_join && allow_merge_join)
-        return std::make_shared<MergeJoin>(table_join, right_sample_block);
-    return std::make_shared<Join>(table_join, right_sample_block);
-}
-
-bool isMergeJoin(const JoinPtr & join)
-{
-    if (join)
-        return typeid_cast<const MergeJoin *>(join.get());
-    return false;
+    bool allow_merge_join = (isLeft(kind()) && (is_any || is_all || is_semi)) || (isInner(kind()) && is_all);
+    return allow_merge_join;
 }
 
 }

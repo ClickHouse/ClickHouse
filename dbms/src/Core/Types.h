@@ -14,6 +14,7 @@ namespace DB
 
 struct Null {};
 
+/// @note Except explicitly described you should not assume on TypeIndex numbers and/or their orders in this enum.
 enum class TypeIndex
 {
     Nothing = 0,
@@ -50,7 +51,8 @@ enum class TypeIndex
     LowCardinality,
 };
 
-using UInt8 = uint8_t;
+using UInt8 = char8_t;      /// This is needed for more strict aliasing. https://godbolt.org/z/xpJBSb https://stackoverflow.com/a/57453713
+
 using UInt16 = uint16_t;
 using UInt32 = uint32_t;
 using UInt64 = uint64_t;
