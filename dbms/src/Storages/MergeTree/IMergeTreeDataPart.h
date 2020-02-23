@@ -1,8 +1,12 @@
 #pragma once
 
+#include <DataStreams/IBlockInputStream.h>
+
+#include <Core/Row.h>
 #include <Core/Block.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
+#include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -10,13 +14,14 @@
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
+#include <Storages/MergeTree/AlterAnalysisResult.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Columns/IColumn.h>
 
 #include <Poco/Path.h>
 
 #include <shared_mutex>
-
 
 namespace DB
 {
@@ -27,41 +32,117 @@ struct FutureMergedMutatedPart;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 
+class IMergeTreeReader;
+class IMergeTreeDataPartWriter;
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMETED;
+}
 
 /// Description of the data part.
-struct MergeTreeDataPart
+class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
+public:
+
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
+    using ValueSizeMap = std::map<std::string, double>;
 
-    MergeTreeDataPart(const MergeTreeData & storage_, const DiskPtr & disk_, const String & name_, const MergeTreePartInfo & info_);
+    using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
+    using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 
-    MergeTreeDataPart(MergeTreeData & storage_, const DiskPtr & disk_, const String & name_);
+    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
+    using NameToPosition = std::unordered_map<std::string, size_t>;
 
-    /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
-    /// If no checksums are present returns the name of the first physically existing column.
-    String getColumnNameWithMinumumCompressedSize() const;
+    using Type = MergeTreeDataPartType;
+
+
+    IMergeTreeDataPart(
+        const MergeTreeData & storage_,
+        const String & name_,
+        const MergeTreePartInfo & info_,
+        const DiskPtr & disk,
+        const std::optional<String> & relative_path,
+        Type part_type_);
+
+    IMergeTreeDataPart(
+        MergeTreeData & storage_,
+        const String & name_,
+        const DiskPtr & disk,
+        const std::optional<String> & relative_path,
+        Type part_type_);
+
+    virtual MergeTreeReaderPtr getReader(
+        const NamesAndTypesList & columns_,
+        const MarkRanges & mark_ranges,
+        UncompressedCache * uncompressed_cache,
+        MarkCache * mark_cache,
+        const MergeTreeReaderSettings & reader_settings_,
+        const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{},
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = ReadBufferFromFileBase::ProfileCallback{}) const = 0;
+
+    virtual MergeTreeWriterPtr getWriter(
+        const NamesAndTypesList & columns_list,
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const CompressionCodecPtr & default_codec_,
+        const MergeTreeWriterSettings & writer_settings,
+        const MergeTreeIndexGranularity & computed_index_granularity = {}) const = 0;
+
+    virtual bool isStoredOnDisk() const = 0;
+
+    virtual bool supportsVerticalMerge() const { return false; }
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// NOTE: You must ensure that no ALTERs are in progress when calculating ColumnSizes.
     ///   (either by locking columns_lock, or by locking table structure).
-    ColumnSize getColumnSize(const String & name, const IDataType & type) const;
+    virtual ColumnSize getColumnSize(const String & /* name */, const IDataType & /* type */) const { return {}; }
 
-    ColumnSize getTotalColumnsSize() const;
+    virtual ColumnSize getTotalColumnsSize() const { return {}; }
 
-    size_t getFileSizeOrZero(const String & file_name) const;
+    virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
-    /// Returns full path to part dir
-    String getFullPath() const;
+    /// Returns rename map of column files for the alter converting expression onto new table files.
+    /// Files to be deleted are mapped to an empty string in rename map.
+    virtual NameToNameMap createRenameMapForAlter(
+        AlterAnalysisResult & /* analysis_result */,
+        const NamesAndTypesList & /* old_columns */) const { return {}; }
 
-    /// Returns part->name with prefixes like 'tmp_<name>'
-    String getNameWithPrefix() const;
+    virtual ~IMergeTreeDataPart();
+
+    using ColumnToSize = std::map<std::string, UInt64>;
+    virtual void accumulateColumnSizes(ColumnToSize & /* column_to_size */) const {}
+
+    Type getType() const { return part_type; }
+
+    String getTypeName() const { return getType().toString(); }
+
+    void setColumns(const NamesAndTypesList & new_columns);
+
+    const NamesAndTypesList & getColumns() const { return columns; }
+
+    void assertOnDisk() const;
+
+    void remove() const;
+
+    /// Initialize columns (from columns.txt if exists, or create from column files if not).
+    /// Load checksums from checksums.txt if exists. Load index if required.
+    void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
+
+    String getMarksFileExtension() const { return index_granularity_info.marks_file_extension; }
 
     /// Generate the new name for this part according to `new_part_info` and min/max dates from the old name.
     /// This is useful when you want to change e.g. block numbers or the mutation version of the part.
     String getNewName(const MergeTreePartInfo & new_part_info) const;
 
-    bool contains(const MergeTreeDataPart & other) const { return info.contains(other.info); }
+    /// Returns column position in part structure or std::nullopt if it's missing in part.
+    std::optional<size_t> getColumnPosition(const String & column_name) const;
+
+    /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
+    /// If no checksums are present returns the name of the first physically existing column.
+    String getColumnNameWithMinumumCompressedSize() const;
+
+    bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
     /// If the partition key includes date column (a common case), these functions will return min and max values for this column.
     DayNum getMinDate() const;
@@ -75,18 +156,20 @@ struct MergeTreeDataPart
 
     const MergeTreeData & storage;
 
-    DiskPtr disk;
     String name;
     MergeTreePartInfo info;
 
-    /// A directory path (relative to storage's path) where part data is actually stored
-    /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
+    DiskPtr disk;
+
     mutable String relative_path;
+    MergeTreeIndexGranularityInfo index_granularity_info;
 
     size_t rows_count = 0;
+
     std::atomic<UInt64> bytes_on_disk {0};  /// 0 - if not counted;
                                             /// Is used from several threads without locks (it is changed with ALTER).
                                             /// May not contain size of checksums.txt and columns.txt
+
     time_t modification_time = 0;
     /// When the part is removed from the working set. Changes once.
     mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
@@ -154,24 +237,6 @@ struct MergeTreeDataPart
     /// Throws an exception if state of the part is not in affordable_states
     void assertState(const std::initializer_list<State> & affordable_states) const;
 
-    /// In comparison with lambdas, it is move assignable and could has several overloaded operator()
-    struct StatesFilter
-    {
-        std::initializer_list<State> affordable_states;
-        StatesFilter(const std::initializer_list<State> & affordable_states_) : affordable_states(affordable_states_) {}
-
-        bool operator() (const std::shared_ptr<const MergeTreeDataPart> & part) const
-        {
-            return part->checkState(affordable_states);
-        }
-    };
-
-    /// Returns a lambda that returns true only for part with states from specified list
-    static inline StatesFilter getStatesFilter(const std::initializer_list<State> & affordable_states)
-    {
-        return StatesFilter(affordable_states);
-    }
-
     /// Primary key (correspond to primary.idx file).
     /// Always loaded in RAM. Contains each index_granularity-th value of primary key tuple.
     /// Note that marks (also correspond to primary key) is not always in RAM, but cached. See MarkCache.h.
@@ -216,60 +281,47 @@ struct MergeTreeDataPart
 
     Checksums checksums;
 
-    /// Columns description.
-    NamesAndTypesList columns;
-
     /// Columns with values, that all have been zeroed by expired ttl
-    NameSet empty_columns;
-
-    using ColumnToSize = std::map<std::string, UInt64>;
+    NameSet expired_columns;
 
     /** It is blocked for writing when changing columns, checksums or any part files.
         * Locked to read when reading columns, checksums or any part files.
         */
     mutable std::shared_mutex columns_lock;
 
-    MergeTreeIndexGranularityInfo index_granularity_info;
-
-    ~MergeTreeDataPart();
-
-    /// Calculate the total size of the entire directory with all the files
-    static UInt64 calculateTotalSizeOnDisk(const String & from);
-
-    void remove() const;
-
-    /// Makes checks and move part to new directory
-    /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
-    void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = true) const;
-
-    /// Generate unique path to detach part
-    String getRelativePathForDetachedPart(const String & prefix) const;
-
-    /// Moves a part to detached/ directory and adds prefix to its name
-    void renameToDetached(const String & prefix) const;
-
-    /// Makes clone of a part in detached/ directory via hard links
-    void makeCloneInDetached(const String & prefix) const;
-
-    /// Makes full clone of part in detached/ on another disk
-    void makeCloneOnDiskDetached(const ReservationPtr & reservation) const;
-
-    /// Populates columns_to_size map (compressed size).
-    void accumulateColumnSizes(ColumnToSize & column_to_size) const;
-
-    /// Initialize columns (from columns.txt if exists, or create from column files if not).
-    /// Load checksums from checksums.txt if exists. Load index if required.
-    void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
-
-    /// Checks that .bin and .mrk files exist
-    bool hasColumnFiles(const String & column, const IDataType & type) const;
-
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
     UInt64 getMarksCount() const;
 
+    size_t getFileSizeOrZero(const String & file_name) const;
+    String getFullPath() const;
+    void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = false) const;
+    void renameToDetached(const String & prefix) const;
+    void makeCloneInDetached(const String & prefix) const;
+
+    /// Makes full clone of part in detached/ on another disk
+    void makeCloneOnDiskDetached(const ReservationPtr & reservation) const;
+
+    /// Checks that .bin and .mrk files exist
+    virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const{ return false; }
+
+    static UInt64 calculateTotalSizeOnDisk(const String & from);
+
+protected:
+    /// Columns description.
+    NamesAndTypesList columns;
+    const Type part_type;
+
+    void removeIfNeeded();
+
+    virtual void checkConsistency(bool require_part_metadata) const = 0;
+    void checkConsistencyBase() const;
+
 private:
+    /// In compact parts order of columns is necessary
+    NameToPosition column_name_to_position;
+
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);
 
@@ -277,7 +329,7 @@ private:
     void loadChecksums(bool require);
 
     /// Loads marks index granularity into memory
-    void loadIndexGranularity();
+    virtual void loadIndexGranularity();
 
     /// Loads index file.
     void loadIndex();
@@ -291,12 +343,13 @@ private:
 
     void loadPartitionAndMinMaxIndex();
 
-    void checkConsistency(bool require_part_metadata);
-
-    ColumnSize getColumnSizeImpl(const String & name, const IDataType & type, std::unordered_set<String> * processed_substreams) const;
+    String getRelativePathForDetachedPart(const String & prefix) const;
 };
 
+using MergeTreeDataPartState = IMergeTreeDataPart::State;
+using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
-using MergeTreeDataPartState = MergeTreeDataPart::State;
+bool isCompactPart(const MergeTreeDataPartPtr & data_part);
+bool isWidePart(const MergeTreeDataPartPtr & data_part);
 
 }

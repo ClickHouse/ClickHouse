@@ -233,7 +233,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         readBinary(sum_files_size, in);
         if (server_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)
         {
-            MergeTreeDataPart::TTLInfos ttl_infos;
+            IMergeTreeDataPart::TTLInfos ttl_infos;
             String ttl_infos_string;
             readBinary(ttl_infos_string, in);
             ReadBufferFromString ttl_infos_buffer(ttl_infos_string);
@@ -279,11 +279,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
 
     part_file.createDirectory();
 
-    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data, reservation->getDisk(), part_name);
-    new_data_part->relative_path = relative_part_path;
-    new_data_part->is_temp = true;
-
-
     MergeTreeData::DataPart::Checksums checksums;
     for (size_t i = 0; i < files; ++i)
     {
@@ -327,6 +322,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
 
     assertEOF(in);
 
+    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, reservation->getDisk(), relative_part_path);
+    new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
     new_data_part->checksums.checkEqual(checksums, false);

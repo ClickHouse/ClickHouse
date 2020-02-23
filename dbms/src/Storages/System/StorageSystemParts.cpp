@@ -19,6 +19,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
     {
         {"partition",                                  std::make_shared<DataTypeString>()},
         {"name",                                       std::make_shared<DataTypeString>()},
+        {"part_type",                                      std::make_shared<DataTypeString>()},
         {"active",                                     std::make_shared<DataTypeUInt8>()},
         {"marks",                                      std::make_shared<DataTypeUInt64>()},
         {"rows",                                       std::make_shared<DataTypeUInt64>()},
@@ -58,7 +59,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
 
 void StorageSystemParts::processNextStorage(MutableColumns & columns_, const StoragesInfo & info, bool has_state_column)
 {
-    using State = MergeTreeDataPart::State;
+    using State =IMergeTreeDataPart::State;
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::DataPartsVector all_parts;
 
@@ -78,6 +79,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
             columns_[i++]->insert(out.str());
         }
         columns_[i++]->insert(part->name);
+        columns_[i++]->insert(part->getTypeName());
         columns_[i++]->insert(part_state == State::Committed);
         columns_[i++]->insert(part->getMarksCount());
         columns_[i++]->insert(part->rows_count);
@@ -117,7 +119,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
 
         MinimalisticDataPartChecksums helper;
         {
-            /// TODO: MergeTreeDataPart structure is too error-prone.
+            /// TODO:IMergeTreeDataPart structure is too error-prone.
             std::shared_lock<std::shared_mutex> lock(part->columns_lock);
             helper.computeTotalChecksums(part->checksums);
         }
