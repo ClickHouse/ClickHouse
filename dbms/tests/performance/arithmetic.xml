@@ -25,16 +25,6 @@
                 <value>i64</value>
                 <value>f32</value>
                 <value>f64</value>
-                <value>toUInt8(1)</value>
-                <value>toUInt16(1)</value>
-                <value>toUInt32(1)</value>
-                <value>toUInt64(1)</value>
-                <value>toInt8(1)</value>
-                <value>toInt16(1)</value>
-                <value>toInt32(1)</value>
-                <value>toInt64(1)</value>
-                <value>toFloat32(1)</value>
-                <value>toFloat64(1)</value>
             </values>
         </substitution>
         <substitution>
