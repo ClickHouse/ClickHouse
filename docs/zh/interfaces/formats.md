@@ -17,7 +17,7 @@ ClickHouse 可以接受多种数据格式，可以在 (`INSERT`) 以及 (`SELECT
 | [CustomSeparated](#format-customseparated) | ✔ | ✔ |
 | [Values](#data-format-values) | ✔ | ✔ |
 | [Vertical](#vertical) | ✗ | ✔ |
-| [VerticalRaw](#verticalraw) | ✗ | ✔ |
+| VerticalRaw | ✗ | ✔ |
 | [JSON](#json) | ✗ | ✔ |
 | [JSONCompact](#jsoncompact) | ✗ | ✔ |
 | [JSONEachRow](#jsoneachrow) | ✔ | ✔ |
@@ -29,7 +29,7 @@ ClickHouse 可以接受多种数据格式，可以在 (`INSERT`) 以及 (`SELECT
 | [PrettySpace](#prettyspace) | ✗ | ✔ |
 | [Protobuf](#protobuf) | ✔ | ✔ |
 | [Avro](#data-format-avro) | ✔ | ✔ |
-| [AvroConfluent](#data-format-avro-confluent) | ✔ | ✗ |
+| AvroConfluent | ✔ | ✗ |
 | [Parquet](#data-format-parquet) | ✔ | ✔ |
 | [ORC](#data-format-orc) | ✔ | ✗ |
 | [RowBinary](#rowbinary) | ✔ | ✔ |
@@ -655,7 +655,7 @@ y: ᴺᵁᴸᴸ
 
 该格式仅适用于输出查询结果，但不适用于解析输入（将数据插入到表中）。
 
-## VerticalRaw {#verticalraw}
+## VerticalRaw
 
 和 `Vertical` 格式不同点在于，行是不会被转义的。
 这种格式仅仅适用于输出，但不适用于解析输入（将数据插入到表中）。
@@ -914,7 +914,7 @@ Column names must:
 
 Output Avro file compression and sync interval can be configured with [output_format_avro_codec](../operations/settings/settings.md#settings-output_format_avro_codec) and [output_format_avro_sync_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) respectively.
 
-## AvroConfluent {#data-format-avro-confluent}
+## AvroConfluent
 
 AvroConfluent supports decoding single-object Avro messages commonly used with [Kafka](https://kafka.apache.org/) and [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html).
 
@@ -1060,9 +1060,9 @@ e.g. `schemafile.proto:MessageType`.
 If the file has the standard extension for the format (for example, `.proto` for `Protobuf`),
 it can be omitted and in this case the format schema looks like `schemafile:MessageType`.
 
-If you input or output data via the [client](../interfaces/cli.md) in the [interactive mode](../interfaces/cli.md#cli_usage), the file name specified in the format schema
+If you input or output data via the [client](../interfaces/cli.md) in the interactive mode, the file name specified in the format schema
 can contain an absolute path or a path relative to the current directory on the client.
-If you use the client in the [batch mode](../interfaces/cli.md#cli_usage), the path to the schema must be relative due to security reasons.
+If you use the client in the batch mode, the path to the schema must be relative due to security reasons.
 
 If you input or output data via the [HTTP interface](../interfaces/http.md) the file name specified in the format schema
 should be located in the directory specified in [format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path)
