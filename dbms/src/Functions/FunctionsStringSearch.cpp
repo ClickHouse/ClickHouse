@@ -146,6 +146,8 @@ struct PositionCaseInsensitiveUTF8
 template <typename Impl>
 struct PositionImpl
 {
+    static constexpr bool use_default_implementation_for_constants = false;
+
     using ResultType = UInt64;
 
     /// Find one substring in many strings.
@@ -459,6 +461,8 @@ struct HasTokenImpl
 {
     using ResultType = UInt8;
 
+    static constexpr bool use_default_implementation_for_constants = true;
+
     static void vector_constant(
         const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & pattern, PaddedPODArray<UInt8> & res)
     {
@@ -497,13 +501,6 @@ struct HasTokenImpl
         /// Tail, in which there can be no substring.
         if (i < res.size())
             memset(&res[i], negate_result, (res.size() - i) * sizeof(res[0]));
-    }
-
-    static void constant_constant(const std::string & data, const std::string & pattern, UInt8 & res)
-    {
-        TokenSearcher searcher(pattern.data(), pattern.size(), data.size());
-        const auto found = searcher.search(data.c_str(), data.size()) != data.end().base();
-        res = negate_result ^ found;
     }
 
     template <typename... Args>

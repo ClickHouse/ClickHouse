@@ -24,7 +24,7 @@ class StorageFile : public ext::shared_ptr_helper<StorageFile>, public IStorage
 public:
     std::string getName() const override { return "File"; }
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -53,7 +53,7 @@ public:
     };
 
 protected:
-    friend class StorageFileBlockInputStream;
+    friend class StorageFileSource;
     friend class StorageFileBlockOutputStream;
 
     /// From file descriptor

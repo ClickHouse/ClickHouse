@@ -130,6 +130,8 @@ private:
     template <typename... Args>
     AccessFlags getAccessImpl(const Args &... args) const;
 
+    void traceTree() const;
+
     struct Node;
     std::unique_ptr<Node> root;
 };

@@ -19,7 +19,7 @@ The following actions are supported:
 - [DROP COLUMN](#alter_drop-column) — Deletes the column.
 - [CLEAR COLUMN](#alter_clear-column) — Resets column values.
 - [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
-- [MODIFY COLUMN](#alter_modify-column) — Changes column's type and/or default expression.
+- [MODIFY COLUMN](#alter_modify-column) — Changes column's type, default expression and TTL.
 
 These actions are described in detail below.
 
@@ -96,10 +96,19 @@ ALTER TABLE visits COMMENT COLUMN browser 'The table shows the browser used for 
 #### MODIFY COLUMN {#alter_modify-column}
 
 ```sql
-MODIFY COLUMN [IF EXISTS] name [type] [default_expr]
+MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
 ```
 
-This query changes the `name` column's type to `type` and/or the default expression to `default_expr`. If the `IF EXISTS` clause is specified, the query won't return an error if the column doesn't exist.
+This query changes the `name` column properties:
+
+- Type
+- Default expression
+- TTL
+
+    For examples of columns TTL modifying, see [Column TTL](../operations/table_engines/mergetree.md#mergetree-column-ttl).
+
+
+If the `IF EXISTS` clause is specified, the query won't return an error if the column doesn't exist.
 
 When changing the type, values are converted as if the [toType](functions/type_conversion_functions.md) functions were applied to them. If only the default expression is changed, the query doesn't do anything complex, and is completed almost instantly.
 
@@ -192,7 +201,7 @@ The following operations with [partitions](../operations/table_engines/custom_pa
 - [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another.
 - [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
 - [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another and replaces.
-- [MOVE PARTITION](#alter_move-partition) - Move the data partition from one table to another.
+- [MOVE PARTITION TO TABLE] (#alter_move_to_table-partition) - Move the data partition from one table to another.
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Resets the value of a specified column in a partition.
 - [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Resets the specified secondary index in a partition.
 - [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
@@ -285,7 +294,7 @@ For the query to run successfully, the following conditions must be met:
 - Both tables must have the same structure.
 - Both tables must have the same partition key.
 
-#### MOVE PARTITION {#alter_move-partition}
+#### MOVE PARTITION TO TABLE {#alter_move_to_table-partition}
 
 ``` sql
 ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
@@ -432,6 +441,15 @@ OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ```
 
 The examples of `ALTER ... PARTITION` queries are demonstrated in the tests [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_local.sql) and [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
+
+
+### Manipulations with Table TTL
+
+You can change [table TTL](../operations/table_engines/mergetree.md#mergetree-table-ttl) with a request of the following form:
+
+```sql
+ALTER TABLE table-name MODIFY TTL ttl-expression
+```
 
 ### Synchronicity of ALTER Queries
 

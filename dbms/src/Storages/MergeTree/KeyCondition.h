@@ -4,7 +4,6 @@
 #include <optional>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Set.h>
 #include <Core/SortDescription.h>
 #include <Parsers/ASTExpressionList.h>
@@ -18,6 +17,9 @@ namespace DB
 
 class IFunction;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 /** Range with open or closed ends; possibly unbounded.
   */
@@ -367,8 +369,8 @@ private:
         BoolMask initial_mask) const;
 
     void traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants);
-    bool atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
-    bool operatorFromAST(const ASTFunction * func, RPNElement & out);
+    bool tryParseAtomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
+    bool tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out);
 
     /** Is node the key column
       *  or expression in which column of key is wrapped by chain of functions,

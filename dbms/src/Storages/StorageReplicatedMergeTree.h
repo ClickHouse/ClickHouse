@@ -88,15 +88,13 @@ public:
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
 
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-    bool supportProcessorsPipeline() const override { return true; }
 
     std::optional<UInt64> totalRows() const override;
 
@@ -150,6 +148,8 @@ public:
         UInt64 absolute_delay;
         UInt8 total_replicas;
         UInt8 active_replicas;
+        /// If the error has happened fetching the info from ZooKeeper, this field will be set.
+        String zookeeper_exception;
     };
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
@@ -438,11 +438,12 @@ private:
         zkutil::ZooKeeperPtr & zookeeper,
         const DataPartsVector & parts,
         const String & merged_name,
+        const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
         bool force_ttl,
         ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
 
-    bool createLogEntryToMutatePart(const MergeTreeDataPart & part, Int64 mutation_version);
+    bool createLogEntryToMutatePart(const IMergeTreeDataPart & part, Int64 mutation_version);
 
     /// Exchange parts.
 

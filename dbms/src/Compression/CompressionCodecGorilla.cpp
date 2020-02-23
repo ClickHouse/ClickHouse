@@ -159,19 +159,23 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 
     const char * source_end = source + source_size;
 
+    if (source + sizeof(UInt32) > source_end)
+        return;
+
     const UInt32 items_count = unalignedLoad<UInt32>(source);
     source += sizeof(items_count);
 
     T prev_value{};
 
-    if (source < source_end)
-    {
-        prev_value = unalignedLoad<T>(source);
-        unalignedStore<T>(dest, prev_value);
+    // decoding first item
+    if (source + sizeof(T) > source_end || items_count < 1)
+        return;
 
-        source += sizeof(prev_value);
-        dest += sizeof(prev_value);
-    }
+    prev_value = unalignedLoad<T>(source);
+    unalignedStore<T>(dest, prev_value);
+
+    source += sizeof(prev_value);
+    dest += sizeof(prev_value);
 
     BitReader reader(source, source_size - sizeof(items_count) - sizeof(prev_value));
 
@@ -238,9 +242,9 @@ CompressionCodecGorilla::CompressionCodecGorilla(UInt8 data_bytes_size_)
 {
 }
 
-UInt8 CompressionCodecGorilla::getMethodByte() const
+uint8_t CompressionCodecGorilla::getMethodByte() const
 {
-    return static_cast<UInt8>(CompressionMethodByte::Gorilla);
+    return static_cast<uint8_t>(CompressionMethodByte::Gorilla);
 }
 
 String CompressionCodecGorilla::getCodecDesc() const

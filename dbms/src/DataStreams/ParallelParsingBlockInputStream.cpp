@@ -34,7 +34,7 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
 
             unit.is_last = !have_more_data;
             unit.status = READY_TO_PARSE;
-            scheduleParserThreadForUnitWithNumber(current_unit_number);
+            scheduleParserThreadForUnitWithNumber(segmentator_ticket_number);
             ++segmentator_ticket_number;
 
             if (!have_more_data)
@@ -49,12 +49,13 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
     }
 }
 
-void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_unit_number)
+void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_ticket_number)
 {
     try
     {
         setThreadName("ChunkParser");
 
+        const auto current_unit_number = current_ticket_number % processing_units.size();
         auto & unit = processing_units[current_unit_number];
 
         /*
@@ -64,9 +65,9 @@ void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_unit_n
          * can use it from multiple threads simultaneously.
          */
         ReadBuffer read_buffer(unit.segment.data(), unit.segment.size(), 0);
-        auto parser = std::make_unique<InputStreamFromInputFormat>(
-                input_processor_creator(read_buffer, header,
-                row_input_format_params, format_settings));
+        auto format = input_processor_creator(read_buffer, header, row_input_format_params, format_settings);
+        format->setCurrentUnitNumber(current_ticket_number);
+        auto parser = std::make_unique<InputStreamFromInputFormat>(std::move(format));
 
         unit.block_ext.block.clear();
         unit.block_ext.block_missing_values.clear();

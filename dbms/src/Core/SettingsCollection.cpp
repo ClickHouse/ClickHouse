@@ -22,7 +22,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int UNKNOWN_DISTRIBUTED_PRODUCT_MODE;
     extern const int UNKNOWN_GLOBAL_SUBQUERIES_METHOD;
-    extern const int UNKNOWN_JOIN_STRICTNESS;
+    extern const int UNKNOWN_JOIN;
     extern const int UNKNOWN_LOG_LEVEL;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
@@ -421,14 +421,7 @@ void SettingURI::set(const Field & x)
 
 void SettingURI::set(const String & x)
 {
-    try {
-        Poco::URI uri(x);
-        set(uri);
-    }
-    catch (const Poco::Exception& e)
-    {
-        throw Exception{Exception::CreateFromPoco, e};
-    }
+    set(Poco::URI(x));
 }
 
 void SettingURI::serialize(WriteBuffer & buf, SettingsBinaryFormat) const
@@ -502,8 +495,14 @@ IMPLEMENT_SETTING_ENUM(LoadBalancing, LOAD_BALANCING_LIST_OF_NAMES, ErrorCodes::
     M(Unspecified, "") \
     M(ALL, "ALL") \
     M(ANY, "ANY")
-IMPLEMENT_SETTING_ENUM(JoinStrictness, JOIN_STRICTNESS_LIST_OF_NAMES, ErrorCodes::UNKNOWN_JOIN_STRICTNESS)
+IMPLEMENT_SETTING_ENUM(JoinStrictness, JOIN_STRICTNESS_LIST_OF_NAMES, ErrorCodes::UNKNOWN_JOIN)
 
+#define JOIN_ALGORITHM_NAMES(M) \
+    M(AUTO, "auto") \
+    M(HASH, "hash") \
+    M(PARTIAL_MERGE, "partial_merge") \
+    M(PREFER_PARTIAL_MERGE, "prefer_partial_merge")
+IMPLEMENT_SETTING_ENUM(JoinAlgorithm, JOIN_ALGORITHM_NAMES, ErrorCodes::UNKNOWN_JOIN)
 
 #define TOTALS_MODE_LIST_OF_NAMES(M) \
     M(BEFORE_HAVING, "before_having") \

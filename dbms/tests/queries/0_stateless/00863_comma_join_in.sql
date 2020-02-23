@@ -10,6 +10,8 @@ insert into test1_00863 (id, code) select number, toString(number) FROM numbers(
 insert into test3_00863 (id, code) select number, toString(number) FROM numbers(100000);
 insert into test2_00863 (id, code, test1_id, test3_id) select number, toString(number), number, number FROM numbers(100000);
 
+SET max_memory_usage = 50000000;
+
 select test2_00863.id
 from test1_00863, test2_00863, test3_00863
 where test1_00863.code in ('1', '2', '3')
