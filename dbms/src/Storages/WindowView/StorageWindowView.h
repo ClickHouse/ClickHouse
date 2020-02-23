@@ -51,8 +51,6 @@ public:
 
     BlocksListPtrs getMergeableBlocksList() { return mergeable_blocks; }
 
-    std::shared_ptr<bool> getActivePtr() { return active_ptr; }
-
     BlockInputStreamPtr getNewBlocksInputStreamPtr(UInt32 timestamp_);
 
     static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, const Context & context);
@@ -69,18 +67,17 @@ private:
     mutable Block mergeable_sample_block;
     UInt64 clean_interval;
     const DateLUTImpl & time_zone;
-    std::deque<UInt32> fire_signal;
+    UInt32 next_fire_signal;
+    std::deque<UInt32> late_fire_signal;
     std::list<std::weak_ptr<WindowViewBlockInputStream>> watch_streams;
-    std::condition_variable condition;
+    std::condition_variable_any late_signal_condition;
+    std::condition_variable fire_condition;
     BlocksListPtrs mergeable_blocks;
 
     /// Mutex for the blocks and ready condition
     std::mutex mutex;
     std::mutex flush_table_mutex;
     std::shared_mutex fire_signal_mutex;
-
-    /// Active users
-    std::shared_ptr<bool> active_ptr;
 
     IntervalKind::Kind window_kind;
     IntervalKind::Kind watermark_kind;
@@ -95,7 +92,6 @@ private:
     StoragePtr inner_storage;
     StoragePtr target_storage;
 
-    BackgroundSchedulePool::TaskHolder toTableTask;
     BackgroundSchedulePool::TaskHolder cleanCacheTask;
     BackgroundSchedulePool::TaskHolder fireTask;
 
@@ -109,12 +105,11 @@ private:
     UInt32 getWindowUpperBound(UInt32 time_sec, int window_id_skew = 0);
     UInt32 getWatermark(UInt32 time_sec);
 
-    void flushToTable(UInt32 timestamp_);
+    void fire(UInt32 timestamp_);
     void cleanCache();
-    void threadFuncToTable();
     void threadFuncCleanCache();
     void threadFuncFire();
-    void addFireSignal(UInt32 timestamp_);
+    void addLateFireSignal(UInt32 timestamp_);
 
     static Pipes blocksToPipes(BlocksListPtrs & blocks, Block & sample_block);
 
