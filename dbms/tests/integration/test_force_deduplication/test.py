@@ -36,7 +36,7 @@ def test_basic(start_cluster):
 
     node.query(
         '''
-        SET force_deduplicate_childrens=1;
+        SET deduplicate_blocks_in_dependent_materialized_views = 1;
         INSERT INTO test SELECT number FROM numbers(10);
         '''
     )
