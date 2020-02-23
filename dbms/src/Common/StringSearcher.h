@@ -5,7 +5,6 @@
 #include <Common/UTF8Helpers.h>
 #include <Core/Defines.h>
 #include <ext/range.h>
-#include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
 #include <stdint.h>
 #include <string.h>
@@ -56,16 +55,16 @@ template <>
 class StringSearcher<false, false> : private StringSearcherBase
 {
 private:
-    using UTF8SequenceBuffer = UInt8[6];
+    using UTF8SequenceBuffer = uint8_t[6];
 
     /// substring to be searched for
-    const UInt8 * const needle;
+    const uint8_t * const needle;
     const size_t needle_size;
-    const UInt8 * const needle_end = needle + needle_size;
+    const uint8_t * const needle_end = needle + needle_size;
     /// lower and uppercase variants of the first octet of the first character in `needle`
     bool first_needle_symbol_is_ascii{};
-    UInt8 l{};
-    UInt8 u{};
+    uint8_t l{};
+    uint8_t u{};
 
 #ifdef __SSE4_1__
     /// vectors filled with `l` and `u`, for determining leftmost position of the first symbol
@@ -78,13 +77,13 @@ private:
 #endif
 
 public:
-    StringSearcher(const char * const needle_, const size_t needle_size_)
-        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_size{needle_size_}
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    StringSearcher(const CharT * needle_, const size_t needle_size_)
+        : needle{reinterpret_cast<const uint8_t *>(needle_)}, needle_size{needle_size_}
     {
         if (0 == needle_size)
             return;
 
-        static const Poco::UTF8Encoding utf8;
         UTF8SequenceBuffer l_seq, u_seq;
 
         if (*needle < 0x80u)
@@ -95,14 +94,14 @@ public:
         }
         else
         {
-            const auto first_u32 = utf8.convert(needle);
+            const auto first_u32 = UTF8::convert(needle);
             const auto first_l_u32 = Poco::Unicode::toLower(first_u32);
             const auto first_u_u32 = Poco::Unicode::toUpper(first_u32);
 
             /// lower and uppercase variants of the first octet of the first character in `needle`
-            utf8.convert(first_l_u32, l_seq, sizeof(l_seq));
+            UTF8::convert(first_l_u32, l_seq, sizeof(l_seq));
             l = l_seq[0];
-            utf8.convert(first_u_u32, u_seq, sizeof(u_seq));
+            UTF8::convert(first_u_u32, u_seq, sizeof(u_seq));
             u = u_seq[0];
         }
 
@@ -126,13 +125,13 @@ public:
             }
 
             const auto src_len = UTF8::seqLength(*needle_pos);
-            const auto c_u32 = utf8.convert(needle_pos);
+            const auto c_u32 = UTF8::convert(needle_pos);
 
             const auto c_l_u32 = Poco::Unicode::toLower(c_u32);
             const auto c_u_u32 = Poco::Unicode::toUpper(c_u32);
 
-            const auto dst_l_len = static_cast<UInt8>(utf8.convert(c_l_u32, l_seq, sizeof(l_seq)));
-            const auto dst_u_len = static_cast<UInt8>(utf8.convert(c_u_u32, u_seq, sizeof(u_seq)));
+            const auto dst_l_len = static_cast<uint8_t>(UTF8::convert(c_l_u32, l_seq, sizeof(l_seq)));
+            const auto dst_u_len = static_cast<uint8_t>(UTF8::convert(c_u_u32, u_seq, sizeof(u_seq)));
 
             /// @note Unicode standard states it is a rare but possible occasion
             if (!(dst_l_len == dst_u_len && dst_u_len == src_len))
@@ -160,9 +159,9 @@ public:
 #endif
     }
 
-    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    ALWAYS_INLINE bool compare(const CharT * /*haystack*/, const CharT * /*haystack_end*/, const CharT * pos) const
     {
-        static const Poco::UTF8Encoding utf8;
 
 #ifdef __SSE4_1__
         if (pageSafe(pos))
@@ -181,8 +180,8 @@ public:
                     auto needle_pos = needle + cache_valid_len;
 
                     while (needle_pos < needle_end &&
-                           Poco::Unicode::toLower(utf8.convert(pos)) ==
-                           Poco::Unicode::toLower(utf8.convert(needle_pos)))
+                           Poco::Unicode::toLower(UTF8::convert(pos)) ==
+                           Poco::Unicode::toLower(UTF8::convert(needle_pos)))
                     {
                         /// @note assuming sequences for lowercase and uppercase have exact same length
                         const auto len = UTF8::seqLength(*pos);
@@ -207,8 +206,8 @@ public:
             auto needle_pos = needle + first_needle_symbol_is_ascii;
 
             while (needle_pos < needle_end &&
-                   Poco::Unicode::toLower(utf8.convert(pos)) ==
-                   Poco::Unicode::toLower(utf8.convert(needle_pos)))
+                   Poco::Unicode::toLower(UTF8::convert(pos)) ==
+                   Poco::Unicode::toLower(UTF8::convert(needle_pos)))
             {
                 const auto len = UTF8::seqLength(*pos);
                 pos += len;
@@ -224,12 +223,12 @@ public:
 
     /** Returns haystack_end if not found.
       */
-    const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
         if (0 == needle_size)
             return haystack;
 
-        static const Poco::UTF8Encoding utf8;
 
         while (haystack < haystack_end)
         {
@@ -269,8 +268,8 @@ public:
                             auto needle_pos = needle + cache_valid_len;
 
                             while (haystack_pos < haystack_end && needle_pos < needle_end &&
-                                   Poco::Unicode::toLower(utf8.convert(haystack_pos)) ==
-                                   Poco::Unicode::toLower(utf8.convert(needle_pos)))
+                                   Poco::Unicode::toLower(UTF8::convert(haystack_pos)) ==
+                                   Poco::Unicode::toLower(UTF8::convert(needle_pos)))
                             {
                                 /// @note assuming sequences for lowercase and uppercase have exact same length
                                 const auto len = UTF8::seqLength(*haystack_pos);
@@ -301,8 +300,8 @@ public:
                 auto needle_pos = needle + first_needle_symbol_is_ascii;
 
                 while (haystack_pos < haystack_end && needle_pos < needle_end &&
-                       Poco::Unicode::toLower(utf8.convert(haystack_pos)) ==
-                       Poco::Unicode::toLower(utf8.convert(needle_pos)))
+                       Poco::Unicode::toLower(UTF8::convert(haystack_pos)) ==
+                       Poco::Unicode::toLower(UTF8::convert(needle_pos)))
                 {
                     const auto len = UTF8::seqLength(*haystack_pos);
                     haystack_pos += len;
@@ -320,7 +319,8 @@ public:
         return haystack_end;
     }
 
-    const UInt8 * search(const UInt8 * haystack, const size_t haystack_size) const
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    const CharT * search(const CharT * haystack, const size_t haystack_size) const
     {
         return search(haystack, haystack + haystack_size);
     }
@@ -333,11 +333,11 @@ class StringSearcher<false, true> : private StringSearcherBase
 {
 private:
     /// string to be searched for
-    const UInt8 * const needle;
-    const UInt8 * const needle_end;
+    const uint8_t * const needle;
+    const uint8_t * const needle_end;
     /// lower and uppercase variants of the first character in `needle`
-    UInt8 l{};
-    UInt8 u{};
+    uint8_t l{};
+    uint8_t u{};
 
 #ifdef __SSE4_1__
     /// vectors filled with `l` and `u`, for determining leftmost position of the first symbol
@@ -348,14 +348,15 @@ private:
 #endif
 
 public:
-    StringSearcher(const char * const needle_, const size_t needle_size)
-        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_end{needle + needle_size}
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    StringSearcher(const CharT * needle_, const size_t needle_size)
+        : needle{reinterpret_cast<const uint8_t *>(needle_)}, needle_end{needle + needle_size}
     {
         if (0 == needle_size)
             return;
 
-        l = static_cast<UInt8>(std::tolower(*needle));
-        u = static_cast<UInt8>(std::toupper(*needle));
+        l = static_cast<uint8_t>(std::tolower(*needle));
+        u = static_cast<uint8_t>(std::toupper(*needle));
 
 #ifdef __SSE4_1__
         patl = _mm_set1_epi8(l);
@@ -379,7 +380,8 @@ public:
 #endif
     }
 
-    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    ALWAYS_INLINE bool compare(const CharT * /*haystack*/, const CharT * /*haystack_end*/, const CharT * pos) const
     {
 #ifdef __SSE4_1__
         if (pageSafe(pos))
@@ -432,7 +434,8 @@ public:
         return false;
     }
 
-    const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
         if (needle == needle_end)
             return haystack;
@@ -518,7 +521,8 @@ public:
         return haystack_end;
     }
 
-    const UInt8 * search(const UInt8 * haystack, const size_t haystack_size) const
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    const CharT * search(const CharT * haystack, const size_t haystack_size) const
     {
         return search(haystack, haystack + haystack_size);
     }
@@ -531,10 +535,10 @@ class StringSearcher<true, ASCII> : private StringSearcherBase
 {
 private:
     /// string to be searched for
-    const UInt8 * const needle;
-    const UInt8 * const needle_end;
+    const uint8_t * const needle;
+    const uint8_t * const needle_end;
     /// first character in `needle`
-    UInt8 first{};
+    uint8_t first{};
 
 #ifdef __SSE4_1__
     /// vector filled `first` for determining leftmost position of the first symbol
@@ -545,8 +549,9 @@ private:
 #endif
 
 public:
-    StringSearcher(const char * const needle_, const size_t needle_size)
-        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_end{needle + needle_size}
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    StringSearcher(const CharT * needle_, const size_t needle_size)
+        : needle{reinterpret_cast<const uint8_t *>(needle_)}, needle_end{needle + needle_size}
     {
         if (0 == needle_size)
             return;
@@ -572,7 +577,8 @@ public:
 #endif
     }
 
-    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    ALWAYS_INLINE bool compare(const CharT * /*haystack*/, const CharT * /*haystack_end*/, const CharT * pos) const
     {
 #ifdef __SSE4_1__
         if (pageSafe(pos))
@@ -617,7 +623,8 @@ public:
         return false;
     }
 
-    const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
         if (needle == needle_end)
             return haystack;
@@ -696,7 +703,8 @@ public:
         return haystack_end;
     }
 
-    const UInt8 * search(const UInt8 * haystack, const size_t haystack_size) const
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    const CharT * search(const CharT * haystack, const size_t haystack_size) const
     {
         return search(haystack, haystack + haystack_size);
     }
@@ -713,18 +721,20 @@ class TokenSearcher
     size_t needle_size;
 
 public:
-    TokenSearcher(const char * const needle_, const size_t needle_size_)
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    TokenSearcher(const CharT * needle_, const size_t needle_size_)
         : searcher{needle_, needle_size_},
           needle_size(needle_size_)
     {
-        if (std::any_of(reinterpret_cast<const UInt8 *>(needle_), reinterpret_cast<const UInt8 *>(needle_) + needle_size_, isTokenSeparator))
+        if (std::any_of(needle_, needle_ + needle_size_, isTokenSeparator))
         {
             throw Exception{"Needle must not contain whitespace or separator characters", ErrorCodes::BAD_ARGUMENTS};
         }
 
     }
 
-    ALWAYS_INLINE bool compare(const UInt8 * haystack, const UInt8 * haystack_end, const UInt8 * pos) const
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    ALWAYS_INLINE bool compare(const CharT * haystack, const CharT * haystack_end, const CharT * pos) const
     {
         // use searcher only if pos is in the beginning of token and pos + searcher.needle_size is end of token.
         if (isToken(haystack, haystack_end, pos))
@@ -733,12 +743,13 @@ public:
         return false;
     }
 
-    const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
         // use searcher.search(), then verify that returned value is a token
         // if it is not, skip it and re-run
 
-        const UInt8 * pos = haystack;
+        const auto * pos = haystack;
         while (pos < haystack_end)
         {
             pos = searcher.search(pos, haystack_end);
@@ -751,18 +762,20 @@ public:
         return haystack_end;
     }
 
-    const UInt8 * search(const UInt8 * haystack, const size_t haystack_size) const
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    const CharT * search(const CharT * haystack, const size_t haystack_size) const
     {
         return search(haystack, haystack + haystack_size);
     }
 
-    ALWAYS_INLINE bool isToken(const UInt8 * haystack, const UInt8 * const haystack_end, const UInt8* p) const
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    ALWAYS_INLINE bool isToken(const CharT * haystack, const CharT * const haystack_end, const CharT* p) const
     {
         return (p == haystack || isTokenSeparator(*(p - 1)))
              && (p + needle_size >= haystack_end || isTokenSeparator(*(p + needle_size)));
     }
 
-    ALWAYS_INLINE static bool isTokenSeparator(const UInt8 c)
+    ALWAYS_INLINE static bool isTokenSeparator(const uint8_t c)
     {
         if (isAlphaNumericASCII(c) || !isASCII(c))
             return false;
@@ -790,18 +803,21 @@ struct LibCASCIICaseSensitiveStringSearcher
 {
     const char * const needle;
 
-    LibCASCIICaseSensitiveStringSearcher(const char * const needle_, const size_t /* needle_size */)
-        : needle(needle_) {}
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    LibCASCIICaseSensitiveStringSearcher(const CharT * const needle_, const size_t /* needle_size */)
+        : needle(reinterpret_cast<const char *>(needle_)) {}
 
-    const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
         auto res = strstr(reinterpret_cast<const char *>(haystack), reinterpret_cast<const char *>(needle));
         if (!res)
             return haystack_end;
-        return reinterpret_cast<const UInt8 *>(res);
+        return reinterpret_cast<const CharT *>(res);
     }
 
-    const UInt8 * search(const UInt8 * haystack, const size_t haystack_size) const
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    const CharT * search(const CharT * haystack, const size_t haystack_size) const
     {
         return search(haystack, haystack + haystack_size);
     }
@@ -811,18 +827,21 @@ struct LibCASCIICaseInsensitiveStringSearcher
 {
     const char * const needle;
 
-    LibCASCIICaseInsensitiveStringSearcher(const char * const needle_, const size_t /* needle_size */)
-        : needle(needle_) {}
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    LibCASCIICaseInsensitiveStringSearcher(const CharT * const needle_, const size_t /* needle_size */)
+        : needle(reinterpret_cast<const char *>(needle_)) {}
 
-    const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
         auto res = strcasestr(reinterpret_cast<const char *>(haystack), reinterpret_cast<const char *>(needle));
         if (!res)
             return haystack_end;
-        return reinterpret_cast<const UInt8 *>(res);
+        return reinterpret_cast<const CharT *>(res);
     }
 
-    const UInt8 * search(const UInt8 * haystack, const size_t haystack_size) const
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    const CharT * search(const CharT * haystack, const size_t haystack_size) const
     {
         return search(haystack, haystack + haystack_size);
     }

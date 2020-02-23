@@ -136,13 +136,13 @@ struct LowerUpperUTF8Impl
 
             int src_sequence_length = UTF8::seqLength(*src);
 
-            int src_code_point = utf8.queryConvert(src, src_end - src);
+            int src_code_point = UTF8::queryConvert(src, src_end - src);
             if (src_code_point > 0)
             {
                 int dst_code_point = to_case(src_code_point);
                 if (dst_code_point > 0)
                 {
-                    int dst_sequence_length = utf8.convert(dst_code_point, dst, src_end - src);
+                    int dst_sequence_length = UTF8::convert(dst_code_point, dst, src_end - src);
 
                     /// We don't support cases when lowercase and uppercase characters occupy different number of bytes in UTF-8.
                     /// As an example, this happens for ß and ẞ.
