@@ -1238,8 +1238,9 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context, reserved_space, table_lock);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, entry.create_time, global_context, reserved_space, table_lock);
         renameTempPartAndReplace(new_part, nullptr, &transaction);
+        removeEmptyColumnsFromPart(new_part);
 
         try
         {
@@ -3138,7 +3139,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             return false;
         };
 
-        bool force_ttl = (final && (hasRowsTTL() || hasAnyColumnTTL()));
+        bool force_ttl = (final && hasAnyTTL());
         const auto storage_settings_ptr = getSettings();
 
         if (!partition && final)

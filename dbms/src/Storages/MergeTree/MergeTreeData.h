@@ -372,6 +372,8 @@ public:
     Names getColumnsRequiredForFinal() const override { return sorting_key_expr->getRequiredColumns(); }
     Names getSortingKeyColumns() const override { return sorting_key_columns; }
 
+    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override;
+
     StoragePolicyPtr getStoragePolicy() const override { return storage_policy; }
 
     bool supportsPrewhere() const override { return true; }
@@ -601,7 +603,8 @@ public:
 
     bool hasAnyColumnTTL() const { return !column_ttl_entries_by_name.empty(); }
     bool hasAnyMoveTTL() const { return !move_ttl_entries.empty(); }
-    bool hasRowsTTL() const { return !rows_ttl_entry.isEmpty(); }
+    bool hasRowsTTL() const override { return !rows_ttl_entry.isEmpty(); }
+    bool hasAnyTTL() const override { return hasRowsTTL() || hasAnyMoveTTL() || hasAnyColumnTTL(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path);
