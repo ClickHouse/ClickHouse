@@ -296,7 +296,7 @@ void StorageWindowView::drop(TableStructureWriteLockHolder &)
 
     std::lock_guard lock(mutex);
     is_dropped = true;
-    condition.notify_all();
+    fire_condition.notify_all();
 }
 
 void StorageWindowView::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
@@ -366,13 +366,40 @@ inline void StorageWindowView::cleanCache()
     }
 }
 
-inline void StorageWindowView::flushToTable(UInt32 timestamp_)
+inline void StorageWindowView::fire(UInt32 timestamp_)
 {
-    StoragePtr target_table = getTargetStorage();
-    auto _blockInputStreamPtr = getNewBlocksInputStreamPtr(timestamp_);
-    auto _lock = target_table->lockStructureForShare(true, global_context.getCurrentQueryId());
-    auto stream = target_table->write(getInnerQuery(), global_context);
-    copyData(*_blockInputStreamPtr, *stream);
+    if (target_table_id.empty() || watch_streams.empty())
+        return;
+
+    auto in_stream = getNewBlocksInputStreamPtr(timestamp_);
+    if (target_table_id.empty())
+    {
+        while (auto block_ = in_stream->read())
+        {
+            for (auto & watch_stream : watch_streams)
+            {
+                if (auto watch_stream_ = watch_stream.lock())
+                    watch_stream_->addBlock(block_);
+            }
+        }
+    }
+    else
+    {
+        StoragePtr target_table = getTargetStorage();
+        auto _lock = target_table->lockStructureForShare(true, global_context.getCurrentQueryId());
+        auto out_stream = target_table->write(getInnerQuery(), global_context);
+
+        while (auto block_ = in_stream->read())
+        {
+            for (auto & watch_stream : watch_streams)
+            {
+                if (auto watch_stream_ = watch_stream.lock())
+                    watch_stream_->addBlock(block_);
+            }
+            out_stream->write(std::move(block_));
+        }
+    }
+    fire_condition.notify_all();
 }
 
 std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery(const ASTCreateQuery & inner_create_query, const String & database_name, const String & table_name)
@@ -474,6 +501,28 @@ inline UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec, int window
     __builtin_unreachable();
 }
 
+static UInt32 addTime(UInt32 time_sec, IntervalKind::Kind window_kind, int window_num_units, const DateLUTImpl & time_zone)
+{
+    switch (window_kind)
+    {
+#define CASE_WINDOW_KIND(KIND) \
+    case IntervalKind::KIND: \
+    { \
+        return AddTime<IntervalKind::KIND>::execute(time_sec, window_num_units, time_zone); \
+    }
+        CASE_WINDOW_KIND(Second)
+        CASE_WINDOW_KIND(Minute)
+        CASE_WINDOW_KIND(Hour)
+        CASE_WINDOW_KIND(Day)
+        CASE_WINDOW_KIND(Week)
+        CASE_WINDOW_KIND(Month)
+        CASE_WINDOW_KIND(Quarter)
+        CASE_WINDOW_KIND(Year)
+#undef CASE_WINDOW_KIND
+    }
+    __builtin_unreachable();
+}
+
 inline UInt32 StorageWindowView::getWatermark(UInt32 time_sec)
 {
     switch (watermark_kind)
@@ -496,17 +545,11 @@ inline UInt32 StorageWindowView::getWatermark(UInt32 time_sec)
     __builtin_unreachable();
 }
 
-inline void StorageWindowView::addFireSignal(UInt32 timestamp_)
+inline void StorageWindowView::addLateFireSignal(UInt32 timestamp_)
 {
     std::unique_lock lock(fire_signal_mutex);
-    if (!target_table_id.empty())
-        fire_signal.push_back(timestamp_);
-    for (auto & watch_stream : watch_streams)
-    {
-        if (auto watch_stream_ = watch_stream.lock())
-            watch_stream_->addFireSignal(timestamp_);
-    }
-    condition.notify_all();
+    late_fire_signal.push_back(timestamp_);
+    late_signal_condition.notify_all();
 }
 
 void StorageWindowView::threadFuncCleanCache()
@@ -528,48 +571,37 @@ void StorageWindowView::threadFuncCleanCache()
         cleanCacheTask->scheduleAfter(RESCHEDULE_MS);
 }
 
-void StorageWindowView::threadFuncToTable()
-{
-    while (!shutdown_called && !target_table_id.empty())
-    {
-        std::unique_lock lock(flush_table_mutex);
-        condition.wait_for(lock, std::chrono::seconds(5));
-        try
-        {
-            while (true)
-            {
-                UInt32 timestamp_;
-                {
-                    std::unique_lock lock_(fire_signal_mutex);
-                    if (fire_signal.empty())
-                        break;
-                    timestamp_ = fire_signal.front();
-                    fire_signal.pop_front();
-                }
-                flushToTable(timestamp_);
-            }
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            break;
-        }
-    }
-    if (!shutdown_called)
-        toTableTask->scheduleAfter(RESCHEDULE_MS);
-}
-
 void StorageWindowView::threadFuncFire()
 {
+    std::unique_lock lock(fire_signal_mutex);
     while (!shutdown_called)
     {
+        UInt32 timestamp_now = std::time(nullptr);
+        while (next_fire_signal <= timestamp_now)
+        {
+            fire(next_fire_signal);
+            next_fire_signal = addTime(next_fire_signal, window_kind, window_num_units, time_zone);
+        }
+
+        next_fire_signal = (getWindowUpperBound(timestamp_now));
         UInt64 timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
-        UInt64 w_end = static_cast<UInt64>(getWindowUpperBound(static_cast<UInt32>(timestamp_usec / 1000000))) * 1000000;
-        std::this_thread::sleep_for(std::chrono::microseconds(w_end - timestamp_usec));
-        addFireSignal(static_cast<UInt32>(w_end / 1000000));
+        late_signal_condition.wait_for(lock, std::chrono::microseconds(static_cast<UInt64>(next_fire_signal) * 1000000 - timestamp_usec));
+
+        // fire late events
+        while (true)
+        {
+            UInt32 timestamp_;
+            {
+                if (late_fire_signal.empty())
+                    break;
+                timestamp_ = late_fire_signal.front();
+                late_fire_signal.pop_front();
+            }
+            fire(timestamp_);
+        }
     }
     if (!shutdown_called)
-        toTableTask->scheduleAfter(RESCHEDULE_MS);
+        fireTask->scheduleAfter(RESCHEDULE_MS);
 }
 
 BlockInputStreams StorageWindowView::watch(
@@ -593,7 +625,6 @@ BlockInputStreams StorageWindowView::watch(
 
     auto reader = std::make_shared<WindowViewBlockInputStream>(
         std::static_pointer_cast<StorageWindowView>(shared_from_this()),
-        active_ptr,
         has_limit,
         limit);
 
@@ -655,7 +686,7 @@ StorageWindowView::StorageWindowView(
 
     clean_interval = local_context.getSettingsRef().window_view_clean_interval.totalSeconds();
     mergeable_blocks = std::make_shared<std::list<BlocksListPtr>>();
-    active_ptr = std::make_shared<bool>(true);
+    next_fire_signal = getWindowUpperBound(std::time(nullptr));
 
     if (query.watermark_function)
     {
@@ -728,10 +759,8 @@ StorageWindowView::StorageWindowView(
         writeExpressions->add(ExpressionAction::removeColumn("____watermark"));
     }
 
-    toTableTask = global_context.getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncToTable(); });
     cleanCacheTask = global_context.getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanCache(); });
     fireTask = global_context.getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncFire(); });
-    toTableTask->deactivate();
     cleanCacheTask->deactivate();
     fireTask->deactivate();
 }
@@ -820,8 +849,6 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
 void StorageWindowView::startup()
 {
     // Start the working thread
-    if (!target_table_id.empty())
-        toTableTask->activateAndSchedule();
     cleanCacheTask->activateAndSchedule();
     fireTask->activateAndSchedule();
 }
@@ -831,7 +858,6 @@ void StorageWindowView::shutdown()
     bool expected = false;
     if (!shutdown_called.compare_exchange_strong(expected, true))
         return;
-    toTableTask->deactivate();
     cleanCacheTask->deactivate();
     fireTask->deactivate();
 }

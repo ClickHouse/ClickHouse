@@ -47,7 +47,7 @@ protected:
     void readSuffix() override
     {
         for (auto signal : signals)
-            storage.addFireSignal(signal);
+            storage.addLateFireSignal(signal);
         signals.clear();
     }
 
