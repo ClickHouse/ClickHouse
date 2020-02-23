@@ -59,7 +59,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
 
 void StorageSystemParts::processNextStorage(MutableColumns & columns_, const StoragesInfo & info, bool has_state_column)
 {
-    using State =IMergeTreeDataPart::State;
+    using State = IMergeTreeDataPart::State;
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::DataPartsVector all_parts;
 
