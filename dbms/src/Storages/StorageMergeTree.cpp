@@ -338,7 +338,7 @@ public:
             reserved_space = storage.tryReserveSpace(total_size, future_part_.parts[0]->disk);
         else
         {
-            MergeTreeDataPart::TTLInfos ttl_infos;
+            IMergeTreeDataPart::TTLInfos ttl_infos;
             size_t max_volume_index = 0;
             for (auto & part_ptr : future_part_.parts)
             {
@@ -663,7 +663,7 @@ bool StorageMergeTree::merge(
     {
         /// Force filter by TTL in 'OPTIMIZE ... FINAL' query to remove expired values from old parts
         ///  without TTL infos or with outdated TTL infos, e.g. after 'ALTER ... MODIFY TTL' query.
-        bool force_ttl = (final && (hasRowsTTL() || hasAnyColumnTTL()));
+        bool force_ttl = (final && hasAnyTTL());
 
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part, *merge_entry, table_lock_holder, time(nullptr),
@@ -756,6 +756,7 @@ bool StorageMergeTree::tryMutatePart()
             future_part.parts.push_back(part);
             future_part.part_info = new_part_info;
             future_part.name = part->getNewName(new_part_info);
+            future_part.type = part->getType();
 
             tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, true);
             break;
@@ -785,10 +786,12 @@ bool StorageMergeTree::tryMutatePart()
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, *merge_entry, global_context,
-            tagger->reserved_space, table_lock_holder);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, *merge_entry,
+            time(nullptr), global_context, tagger->reserved_space, table_lock_holder);
 
         renameTempPartAndReplace(new_part);
+        removeEmptyColumnsFromPart(new_part);
+
         tagger->is_successful = true;
         write_part_log({});
 
@@ -1333,7 +1336,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
         {
             try
             {
-                auto calculated_checksums = checkDataPart(part, false, primary_key_data_types, skip_indices);
+                auto calculated_checksums = checkDataPart(part, false);
                 calculated_checksums.checkEqual(part->checksums, true);
                 WriteBufferFromFile out(tmp_checksums_path, 4096);
                 part->checksums.write(out);
@@ -1354,7 +1357,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
         {
             try
             {
-                checkDataPart(part, true, primary_key_data_types, skip_indices);
+                checkDataPart(part, true);
                 results.emplace_back(part->name, true, "");
             }
             catch (const Exception & ex)

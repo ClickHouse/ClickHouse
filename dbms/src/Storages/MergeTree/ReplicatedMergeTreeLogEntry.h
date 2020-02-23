@@ -4,6 +4,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Core/Types.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
 
 #include <mutex>
 #include <condition_variable>
@@ -72,6 +73,7 @@ struct ReplicatedMergeTreeLogEntryData
     /// The name of resulting part for GET_PART and MERGE_PARTS
     /// Part range for DROP_RANGE and CLEAR_COLUMN
     String new_part_name;
+    MergeTreeDataPartType new_part_type;
     String block_id;                        /// For parts of level zero, the block identifier for deduplication (node name in /blocks/).
     mutable String actual_new_part_name;    /// GET_PART could actually fetch a part covering 'new_part_name'.
 

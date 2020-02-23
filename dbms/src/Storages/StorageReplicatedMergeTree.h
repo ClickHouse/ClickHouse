@@ -438,11 +438,12 @@ private:
         zkutil::ZooKeeperPtr & zookeeper,
         const DataPartsVector & parts,
         const String & merged_name,
+        const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
         bool force_ttl,
         ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
 
-    bool createLogEntryToMutatePart(const MergeTreeDataPart & part, Int64 mutation_version);
+    bool createLogEntryToMutatePart(const IMergeTreeDataPart & part, Int64 mutation_version);
 
     /// Exchange parts.
 
