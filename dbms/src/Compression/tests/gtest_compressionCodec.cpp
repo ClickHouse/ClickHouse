@@ -92,7 +92,7 @@ AsHexStringHelper<T> AsHexString(const T & container)
 template <typename T>
 std::string bin(const T & value, size_t bits = sizeof(T)*8)
 {
-    static const UInt8 MAX_BITS = sizeof(T)*8;
+    static const uint8_t MAX_BITS = sizeof(T)*8;
     assert(bits <= MAX_BITS);
 
     return std::bitset<sizeof(T) * 8>(static_cast<unsigned long long>(value))
@@ -270,7 +270,7 @@ template <typename T, typename ContainerLeft, typename ContainerRight>
 }
 
 template <typename ContainerLeft, typename ContainerRight>
-::testing::AssertionResult EqualByteContainers(UInt8 element_size, const ContainerLeft & left, const ContainerRight & right)
+::testing::AssertionResult EqualByteContainers(uint8_t element_size, const ContainerLeft & left, const ContainerRight & right)
 {
     switch (element_size)
     {

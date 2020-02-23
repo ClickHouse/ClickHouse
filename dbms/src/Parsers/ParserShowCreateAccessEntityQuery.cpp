@@ -68,6 +68,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
 
     query->name = std::move(name);
     query->current_quota = current_quota;
+    query->current_user = current_user;
     query->row_policy_name = std::move(row_policy_name);
 
     return true;

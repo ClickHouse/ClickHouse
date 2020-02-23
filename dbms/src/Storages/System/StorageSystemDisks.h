@@ -20,7 +20,7 @@ class StorageSystemDisks : public ext::shared_ptr_helper<StorageSystemDisks>, pu
 public:
     std::string getName() const override { return "SystemDisks"; }
 
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

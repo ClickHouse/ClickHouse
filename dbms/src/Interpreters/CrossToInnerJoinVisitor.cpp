@@ -124,11 +124,12 @@ public:
         {
             /// leave other comparisons as is
         }
-        else if (functionIsInOperator(node.name)) /// IN, NOT IN
+        else if (functionIsLikeOperator(node.name) || /// LIKE, NOT LIKE
+                 functionIsInOperator(node.name))  /// IN, NOT IN
         {
-            if (auto ident = node.arguments->children.at(0)->as<ASTIdentifier>())
-                if (size_t min_table = checkIdentifier(*ident))
-                    asts_to_join_on[min_table].push_back(ast);
+            /// leave as is. It's not possible to make push down here cause of unknown aliases and not implemented JOIN predicates.
+            ///     select a as b form t1, t2 where t1.x = t2.x and b in(42)
+            ///     select a as b form t1 inner join t2 on t1.x = t2.x and b in(42)
         }
         else
         {
@@ -196,16 +197,6 @@ private:
             if (joined_tables[table_pos].canAttachOnExpression())
                 return table_pos;
         }
-        return 0;
-    }
-
-    size_t checkIdentifier(const ASTIdentifier & identifier)
-    {
-        size_t best_table_pos = 0;
-        bool match = IdentifierSemantic::chooseTable(identifier, tables, best_table_pos);
-
-        if (match && joined_tables[best_table_pos].canAttachOnExpression())
-            return best_table_pos;
         return 0;
     }
 };
