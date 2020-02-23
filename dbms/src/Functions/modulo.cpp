@@ -41,7 +41,7 @@ struct ModuloByConstantImpl
     using ResultType = typename ModuloImpl<A, B>::ResultType;
     static const constexpr bool allow_fixed_string = false;
 
-    static void vector_constant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
+    static NO_INLINE void vector_constant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
         if (unlikely(b == 0))
             throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
