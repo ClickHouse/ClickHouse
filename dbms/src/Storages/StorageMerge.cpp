@@ -520,7 +520,7 @@ void registerStorageMerge(StorageFactory & factory)
                 " - name of source database and regexp for table names.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
+        engine_args[0] = evaluateConstantExpressionForDatabaseName(engine_args[0], args.local_context);
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.local_context);
 
         String source_database = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
