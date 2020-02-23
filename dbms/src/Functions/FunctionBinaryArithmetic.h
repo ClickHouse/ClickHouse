@@ -547,6 +547,13 @@ class FunctionBinaryArithmetic : public IFunction
 
     FunctionOverloadResolverPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
     {
+        bool first_is_date_or_datetime = isDateOrDateTime(type0);
+        bool second_is_date_or_datetime = isDateOrDateTime(type1);
+
+        /// Exactly one argument must be Date or DateTime
+        if (first_is_date_or_datetime == second_is_date_or_datetime)
+            return {};
+
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         /// We construct another function (example: addMonths) and call it.
 
@@ -556,32 +563,39 @@ class FunctionBinaryArithmetic : public IFunction
         if (!function_is_plus && !function_is_minus)
             return {};
 
-        int interval_arg = 1;
-        const DataTypeInterval * interval_data_type = checkAndGetDataType<DataTypeInterval>(type1.get());
-        if (!interval_data_type)
-        {
-            interval_arg = 0;
-            interval_data_type = checkAndGetDataType<DataTypeInterval>(type0.get());
-        }
-        if (!interval_data_type)
-            return {};
+        const DataTypePtr & type_time = first_is_date_or_datetime ? type0 : type1;
+        const DataTypePtr & type_interval = first_is_date_or_datetime ? type1 : type0;
 
-        if (interval_arg == 0 && function_is_minus)
+        bool interval_is_number = isNumber(type_interval);
+
+        const DataTypeInterval * interval_data_type = nullptr;
+        if (!interval_is_number)
+        {
+            interval_data_type = checkAndGetDataType<DataTypeInterval>(type_interval.get());
+
+            if (!interval_data_type)
+                return {};
+        }
+
+        if (second_is_date_or_datetime && function_is_minus)
             throw Exception("Wrong order of arguments for function " + getName() + ": argument of type Interval cannot be first.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        const DataTypeDate * date_data_type = checkAndGetDataType<DataTypeDate>(interval_arg == 0 ? type1.get() : type0.get());
-        const DataTypeDateTime * date_time_data_type = nullptr;
-        if (!date_data_type)
+        std::string interval_name;
+        if (interval_data_type)
         {
-            date_time_data_type = checkAndGetDataType<DataTypeDateTime>(interval_arg == 0 ? type1.get() : type0.get());
-            if (!date_time_data_type)
-                throw Exception("Wrong argument types for function " + getName() + ": if one argument is Interval, then another must be Date or DateTime.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            interval_name = interval_data_type->getKind().toString();
+        }
+        else
+        {
+            if (isDate(type_time))
+                interval_name = "Day";
+            else
+                interval_name = "Second";
         }
 
         std::stringstream function_name;
-        function_name << (function_is_plus ? "add" : "subtract") << interval_data_type->getKind().toString() << 's';
+        function_name << (function_is_plus ? "add" : "subtract") << interval_name << 's';
 
         return FunctionFactory::instance().get(function_name.str(), context);
     }
