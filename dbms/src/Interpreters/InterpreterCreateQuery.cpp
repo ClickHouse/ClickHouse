@@ -583,6 +583,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     ConstraintsDescription constraints;
     StoragePtr res;
 
+    /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
     {
         const auto & table_function = create.as_table_function->as<ASTFunction &>();
