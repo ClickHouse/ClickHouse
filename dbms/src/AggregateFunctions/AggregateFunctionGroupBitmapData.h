@@ -655,7 +655,7 @@ private:
         }
     }
 
-    UInt32 db_container_to_uint32_array(DB::WriteBuffer & dbBuf, const void * container, UInt8 typecode, UInt32 base) const
+    UInt32 db_container_to_uint32_array(DB::WriteBuffer & dbBuf, const void * container, uint8_t typecode, UInt32 base) const
     {
         container = container_unwrap_shared(container, &typecode);
         switch (typecode)

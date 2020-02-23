@@ -90,7 +90,7 @@ class PartitionManager:
         self.heal_all()
 
 
-class PartitionManagerDisbaler:
+class PartitionManagerDisabler:
     def __init__(self, manager):
         self.manager = manager
         self.rules = self.manager.pop_rules()

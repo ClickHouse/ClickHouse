@@ -38,7 +38,7 @@ $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 Displays a list of tables.
 
 ```sql
-SHOW [TEMPORARY] TABLES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE '<pattern>' | WHERE expr] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
 If the `FROM` clause is not specified, the query returns the list of tables from the current database.
@@ -81,7 +81,7 @@ SELECT name FROM system.dictionaries WHERE database = <db> [AND name LIKE <patte
 
 **Example**
 
-The following query selects the first two rows from the list of tables in the `system` database, whose names contain `co`.
+The following query selects the first two rows from the list of tables in the `system` database, whose names contain `reg`.
 
 ```sql
 SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
@@ -92,3 +92,5 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 │ region_names │
 └──────────────┘
 ```
+
+[Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->

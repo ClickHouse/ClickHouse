@@ -155,28 +155,8 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
     return QueryProcessingStage::FetchColumns;
 }
 
-static Pipes readAsPipes(
-    const StoragePtr & storage,
-    const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum processed_stage,
-    size_t max_block_size,
-    unsigned num_streams)
-{
-    if (storage->supportProcessorsPipeline())
-        return storage->readWithProcessors(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 
-    auto streams = storage->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
-
-    Pipes pipes;
-    for (auto & stream : streams)
-        pipes.emplace_back(std::make_shared<SourceFromInputStream>(stream));
-
-    return pipes;
-};
-
-Pipes StorageBuffer::readWithProcessors(
+Pipes StorageBuffer::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -207,7 +187,7 @@ Pipes StorageBuffer::readWithProcessors(
                 query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(destination);
 
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
-            pipes_from_dst = readAsPipes(destination, column_names, query_info, context, processed_stage, max_block_size, num_streams);
+            pipes_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
         }
         else
         {
@@ -242,7 +222,7 @@ Pipes StorageBuffer::readWithProcessors(
             }
             else
             {
-                pipes_from_dst = readAsPipes(destination, columns_intersection, query_info, context, processed_stage, max_block_size, num_streams);
+                pipes_from_dst = destination->read(columns_intersection, query_info, context, processed_stage, max_block_size, num_streams);
                 for (auto & pipe : pipes_from_dst)
                 {
                     pipe.addSimpleTransform(std::make_shared<AddingMissedTransform>(

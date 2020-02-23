@@ -14,6 +14,15 @@ ClickHouse периодически обновляет словари. Инте�
     ...
 </dictionary>
 ```
+или
+
+```sql
+CREATE DICTIONARY (...)
+...
+LIFETIME(300)
+...
+```
+
 
 Настройка `<lifetime>0</lifetime>` запрещает обновление словарей.
 
@@ -30,6 +39,12 @@ ClickHouse периодически обновляет словари. Инте�
     </lifetime>
     ...
 </dictionary>
+```
+
+или
+
+```sql
+LIFETIME(MIN 300 MAX 360)
 ```
 
 При обновлении словарей сервер ClickHouse применяет различную логику в зависимости от типа [источника](external_dicts_dict_sources.md):
@@ -54,6 +69,14 @@ ClickHouse периодически обновляет словари. Инте�
     </odbc>
     ...
 </dictionary>
+```
+
+или
+
+```sql
+...
+SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source where id = 1'))
+...
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_lifetime/) <!--hide-->
