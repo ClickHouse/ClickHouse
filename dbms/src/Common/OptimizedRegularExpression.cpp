@@ -410,7 +410,7 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
     {
         if (required_substring.empty())
         {
-            matches.emplace_back(0, 0);
+            matches.emplace_back(Match{0, 0});
             return 1;
         }
 
