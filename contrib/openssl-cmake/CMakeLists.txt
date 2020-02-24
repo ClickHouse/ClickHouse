@@ -955,7 +955,7 @@ elseif (ARCH_AARCH64)
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha1-armv8.S
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-armv8.S
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-armv8.S
-        ${OPENSSL_BINARY_DIR}/crypto/sha/aes-gcm-armv8_64.S)
+        ${OPENSSL_BINARY_DIR}/crypto/modes/asm/aes-gcm-armv8_64.S)
 endif ()
 
 set(SSL_SRCS
