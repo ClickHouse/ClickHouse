@@ -19,7 +19,7 @@ Markdown==2.6.11
 MarkupSafe==1.1.1
 mkdocs==1.0.4
 Pygments==2.5.2
-python-slugify==1.2.6
+python-slugify==4.0.0
 pytz==2019.3
 PyYAML==5.3
 recommonmark==0.4.0
