@@ -17,7 +17,7 @@ jsmin==2.2.2
 livereload==2.6.1
 Markdown==2.6.11
 MarkupSafe==1.1.1
-mkdocs==1.0.4
+mkdocs==1.1
 Pygments==2.5.2
 python-slugify==1.2.6
 pytz==2019.3
