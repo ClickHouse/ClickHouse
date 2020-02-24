@@ -37,11 +37,20 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.send("CREATE WINDOW VIEW test.wv TO test.dst ENGINE=MergeTree ORDER BY tuple() WATERMARK INTERVAL '1' SECOND AS SELECT count(a) AS count FROM test.mt GROUP BY HOP(timestamp, INTERVAL '1' SECOND, INTERVAL '2' SECOND) AS wid;")
     client1.expect(prompt)
     
-    client1.send('WATCH test.wv LIMIT 2')
+    client1.send('WATCH test.wv')
+    client1.expect('Progress: 0.00 rows.*\)')
     client2.send('INSERT INTO test.mt VALUES (1, now())')
     client1.expect('1' + end_of_block)
+    client1.expect('Progress: 1.00 rows.*\)')
     client1.expect('1' + end_of_block)
+    client1.expect('Progress: 1.00 rows.*\)')
 
+    # send Ctrl-C
+    client1.send('\x03', eol='')
+    match = client1.expect('(%s)|([#\$] )' % prompt)
+    if match.groups()[1]:
+        client1.send(client1.command)
+        client1.expect(prompt)
     client1.send('DROP TABLE test.wv')
     client1.expect(prompt)
     client1.send('DROP TABLE test.mt')
