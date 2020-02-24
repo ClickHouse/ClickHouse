@@ -38,9 +38,7 @@ bool DataTypeNothing::equals(const IDataType & rhs) const
 
 void registerDataTypeNothing(DataTypeFactory & factory)
 {
-    const auto & creator = [&](const String & /*type_name*/) { return DataTypePtr(std::make_shared<DataTypeNothing>()); };
-
-    factory.registerSimpleDataType("Nothing", creator);
+    factory.registerSimpleDataType("Nothing", [] { return DataTypePtr(std::make_shared<DataTypeNothing>()); });
 }
 
 }
