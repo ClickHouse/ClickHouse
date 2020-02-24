@@ -260,13 +260,6 @@ namespace DB
             throw Exception{"Error while reading " + format_name + " data: " + read_status.ToString(),
                             ErrorCodes::CANNOT_READ_ALL_DATA};
 
-        if (0 == table->num_rows())
-            throw Exception{"Empty table in input data", ErrorCodes::EMPTY_DATA_PASSED};
-
-        if (header.columns() > static_cast<size_t>(table->num_columns()))
-            // TODO: What if some columns were not presented? Insert NULLs? What if a column is not nullable?
-            throw Exception{"Number of columns is less than the table has", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH};
-
         ++row_group_current;
 
         NameToColumnPtr name_to_column_ptr;
