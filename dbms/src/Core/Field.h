@@ -741,10 +741,6 @@ template <> struct TypeName<Array> { static std::string get() { return "Array"; 
 template <> struct TypeName<Tuple> { static std::string get() { return "Tuple"; } };
 template <> struct TypeName<AggregateFunctionStateData> { static std::string get() { return "AggregateFunctionState"; } };
 
-template <> struct TypeId<Array> { static constexpr const TypeIndex value = TypeIndex::Array; };
-template <> struct TypeId<Tuple> { static constexpr const TypeIndex value = TypeIndex::Tuple; };
-template <> struct TypeId<AggregateFunctionStateData> { static constexpr const TypeIndex value = TypeIndex::AggregateFunction; };
-
 template <typename T>
 decltype(auto) castToNearestFieldType(T && x)
 {

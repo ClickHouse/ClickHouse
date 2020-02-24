@@ -421,10 +421,9 @@ void TrieDictionary::validateKeyTypes(const DataTypes & key_types) const
     if (key_types.size() != 1)
         throw Exception{"Expected a single IP address", ErrorCodes::TYPE_MISMATCH};
 
-    const auto & actual_type = key_types[0];
+    const auto & actual_type = key_types[0]->getName();
 
-    if (const auto &fixed_string_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
-        actual_type->getTypeId() != TypeIndex::UInt32 && (!fixed_string_type || fixed_string_type->getN() != 16))
+    if (actual_type != "UInt32" && actual_type != "FixedString(16)")
         throw Exception{"Key does not match, expected either UInt32 or FixedString(16)", ErrorCodes::TYPE_MISMATCH};
 }
 

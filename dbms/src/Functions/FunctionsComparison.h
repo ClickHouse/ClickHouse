@@ -1138,7 +1138,7 @@ public:
             || (left.isUUID() && right.isUUID())
             || (left.isUUID() && right.isString())
             || (left.isString() && right.isUUID())
-            || (left.isEnum() && arguments[0]->equals(*arguments[1]))
+            || (left.isEnum() && right.isEnum() && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
             || (left.isEnum() && right.isString())
             || (left.isString() && right.isEnum())
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())

@@ -318,13 +318,17 @@ namespace DB
                         ErrorCodes::CANNOT_CONVERT_TYPE};
             }
 
-            const DataTypePtr internal_type = target_column_is_nullable ? makeNullable(internal_nested_type) : internal_nested_type;
+            const DataTypePtr internal_type = target_column_is_nullable ? makeNullable(internal_nested_type)
+                                                                        : internal_nested_type;
+            const std::string internal_nested_type_name = internal_nested_type->getName();
 
             const DataTypePtr column_nested_type = header_column.type->isNullable()
                                                    ? static_cast<const DataTypeNullable *>(header_column.type.get())->getNestedType()
                                                    : header_column.type;
 
             const DataTypePtr column_type = header_column.type;
+
+            const std::string column_nested_type_name = column_nested_type->getName();
 
             ColumnWithTypeAndName column;
             column.name = header_column.name;

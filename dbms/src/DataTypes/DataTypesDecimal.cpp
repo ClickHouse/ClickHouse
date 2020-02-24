@@ -148,14 +148,6 @@ DataTypeDecimal<T>::DataTypeDecimal(UInt32 precision_, UInt32 scale_, const Stri
 {
 }
 
-template<typename T>
-String DataTypeDecimal<T>::getCanonicalName() const
-{
-    std::stringstream ss;
-    ss << "Decimal(" << this->precision << ", " << this->scale << ")";
-    return ss.str();
-}
-
 
 static DataTypePtr create(const String & type_name, const ASTPtr & arguments)
 {

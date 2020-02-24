@@ -1406,7 +1406,7 @@ namespace
 /// The function works for Arrays and Nullables of the same structure.
 bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 {
-    if (from->equals(*to))
+    if (from->getName() == to->getName())
         return true;
 
     static const std::unordered_multimap<std::type_index, const std::type_info &> ALLOWED_CONVERSIONS =

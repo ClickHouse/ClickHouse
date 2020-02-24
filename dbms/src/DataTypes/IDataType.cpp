@@ -11,7 +11,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/NestedUtils.h>
-#include "IDataType.h"
 
 
 namespace DB

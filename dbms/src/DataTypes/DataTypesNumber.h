@@ -30,9 +30,6 @@ public:
     DataTypeNumber(const String & type_name_ = TypeName<T>::get()) : type_name(type_name_) {}
 
     String doGetName() const override { return type_name; }
-
-    String getCanonicalName() const override { return TypeName<T>::get(); }
-
 private:
     const String type_name;
 };

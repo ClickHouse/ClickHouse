@@ -43,7 +43,6 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "is_in_primary_key",   std::make_shared<DataTypeUInt8>() },
         { "is_in_sampling_key",  std::make_shared<DataTypeUInt8>() },
         { "compression_codec",   std::make_shared<DataTypeString>() },
-        { "canonical_type",      std::make_shared<DataTypeString>() },
     }));
 }
 
@@ -215,9 +214,6 @@ protected:
                     else
                         res_columns[res_index++]->insertDefault();
                 }
-
-                if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(column.type->getCanonicalName());
 
                 ++rows_count;
             }

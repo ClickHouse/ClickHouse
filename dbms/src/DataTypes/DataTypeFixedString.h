@@ -31,9 +31,6 @@ public:
     }
 
     std::string doGetName() const override;
-
-    String getCanonicalName() const override;
-
     TypeIndex getTypeId() const override { return TypeIndex::FixedString; }
 
     const char * getFamilyName() const override { return "FixedString"; }
