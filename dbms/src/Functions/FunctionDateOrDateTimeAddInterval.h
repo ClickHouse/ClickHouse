@@ -40,7 +40,7 @@ struct AddOnDateTime64DefaultImpl
     {
         const auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
 
-        const auto whole = static_cast<const T*>(this)->execute(static_cast<UInt32>(components.whole), delta, time_zone);
+        const auto whole = static_cast<const T *>(this)->execute(static_cast<UInt32>(components.whole), delta, time_zone);
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<DateTime64::NativeType>(whole), components.fractional, scale_multiplier);
     }
 
@@ -248,7 +248,7 @@ struct Adder
     {}
 
     template <typename FromVectorType, typename ToVectorType>
-    void vector_vector(const FromVectorType & vec_from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone) const
+    void NO_INLINE vector_vector(const FromVectorType & vec_from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone) const
     {
         size_t size = vec_from.size();
         vec_to.resize(size);
@@ -258,7 +258,7 @@ struct Adder
     }
 
     template <typename FromVectorType, typename ToVectorType>
-    void vector_constant(const FromVectorType & vec_from, ToVectorType & vec_to, Int64 delta, const DateLUTImpl & time_zone) const
+    void NO_INLINE vector_constant(const FromVectorType & vec_from, ToVectorType & vec_to, Int64 delta, const DateLUTImpl & time_zone) const
     {
         size_t size = vec_from.size();
         vec_to.resize(size);
@@ -268,7 +268,7 @@ struct Adder
     }
 
     template <typename FromType, typename ToVectorType>
-    void constant_vector(const FromType & from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone) const
+    void NO_INLINE constant_vector(const FromType & from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone) const
     {
         size_t size = delta.size();
         vec_to.resize(size);
