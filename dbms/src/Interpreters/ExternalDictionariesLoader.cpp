@@ -19,40 +19,6 @@ ExternalDictionariesLoader::ExternalDictionariesLoader(Context & context_)
 }
 
 
-void ExternalDictionariesLoader::reload(const String & name, bool load_never_loading)
-{
-    #if USE_MYSQL
-        mysqlxx::PoolFactory::instance().reset();
-    #endif
-    ExternalLoader::reload(name, load_never_loading);
-}
-
-void ExternalDictionariesLoader::reload(bool load_never_loading)
-{
-    #if USE_MYSQL
-        mysqlxx::PoolFactory::instance().reset();
-    #endif
-    ExternalLoader::reload(load_never_loading);
-}
-
-void ExternalDictionariesLoader::addConfigRepository(
-    const std::string & repository_name, std::unique_ptr<IExternalLoaderConfigRepository> config_repository)
-{
-    ExternalLoader::addConfigRepository(repository_name, std::move(config_repository), {"dictionary", "name"});
-}
-
-
-void ExternalDictionariesLoader::addDictionaryWithConfig(
-    const String & dictionary_name, const String & repo_name, const ASTCreateQuery & query, bool load_never_loading) const
-{
-    ExternalLoader::addObjectAndLoad(
-        dictionary_name, /// names are equal
-        dictionary_name,
-        repo_name,
-        getDictionaryConfigurationFromAST(query),
-        "dictionary", load_never_loading);
-}
-
 ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
         const std::string & name, const Poco::Util::AbstractConfiguration & config,
         const std::string & key_in_config, const std::string & repository_name) const
