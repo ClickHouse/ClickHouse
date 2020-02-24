@@ -87,9 +87,9 @@ static std::shared_ptr<arrow::io::RandomAccessFile>  as_arrow_file(ReadBuffer & 
     if (auto fd_in = dynamic_cast<ReadBufferFromFileDescriptor*>(&in))
     {
         struct stat stat;
-        ::fstat(fd_in->getFD(), &stat);
+        auto res = ::fstat(fd_in->getFD(), &stat);
         // if fd is a regular file i.e. not stdin
-        if (S_ISREG(stat.st_mode))
+        if (res == 0 && S_ISREG(stat.st_mode))
         {
             return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*fd_in, stat.st_size);
         }
@@ -109,11 +109,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-#define THROW_ARROW_NOT_OK(status)                                          \
-  do {                                                                      \
-    ::arrow::Status __s = (status);                                         \
-    if(!__s.ok())                                                           \
-        throw Exception(__s.ToString(), ErrorCodes::BAD_ARGUMENTS);\
+#define THROW_ARROW_NOT_OK(status)                                  \
+  do                                                                \
+  {                                                                 \
+    if (::arrow::Status _s = (status); !_s.ok())                    \
+        throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS);  \
   } while (false)
 
 ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_)
