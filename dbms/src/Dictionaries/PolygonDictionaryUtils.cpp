@@ -1,6 +1,7 @@
 #include "PolygonDictionaryUtils.h"
 
 #include <algorithm>
+#include <thread>
 
 namespace DB
 {
@@ -53,16 +54,23 @@ std::unique_ptr<ICell> GridRoot::makeCell(Float64 current_min_x, Float64 current
     auto x_shift = (current_max_x - current_min_x) / kSplit;
     auto y_shift = (current_max_y - current_min_y) / kSplit;
     std::vector<std::unique_ptr<ICell>> children;
-    children.reserve(kSplit * kSplit);
-    auto copy = current_min_y;
+    children.resize(kSplit * kSplit);
+    std::vector<std::thread> threads;
     for (size_t i = 0; i < kSplit; current_min_x += x_shift, ++i)
     {
-        for (size_t j = 0; j < kSplit; current_min_y += y_shift, ++j)
+        auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, &depth, i](Float64 x, Float64 y)
         {
-            children.push_back(makeCell(current_min_x, current_min_y, current_min_x + x_shift, current_min_y + y_shift, possible_ids, depth));
-        }
-        current_min_y = copy;
+            for (size_t j = 0; j < kSplit; y += y_shift, ++j) {
+                children[i * kSplit + j] = makeCell(x, y, x + x_shift, y + y_shift, possible_ids, depth);
+            }
+        };
+        if (depth == 1)
+            threads.emplace_back(handle_row, current_min_x, current_min_y);
+        else
+            handle_row(current_min_x, current_min_y);
     }
+    for (auto & thread : threads)
+        thread.join();
     return std::make_unique<DividedCell>(std::move(children));
 }
 
