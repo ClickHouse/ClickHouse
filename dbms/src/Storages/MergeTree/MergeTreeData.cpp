@@ -204,7 +204,7 @@ MergeTreeData::MergeTreeData(
         if (fs::exists(current_version_file_path))
         {
             if (version_file_path)
-                throw Exception("Duplicate version files " << version_file_path.value().string() << " and " << current_version_file_path,
+                throw Exception("Duplicate version files " + version_file_path.value().string() + " and " + current_version_file_path.string(),
                     ErrorCodes::CORRUPTED_DATA);
 
             version_file_path = std::make_optional(current_version_file_path);
