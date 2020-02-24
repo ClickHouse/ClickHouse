@@ -1,5 +1,5 @@
 #include <Parsers/ASTGrantQuery.h>
-#include <Parsers/ASTRoleList.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <Common/quoteString.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/sort.hpp>
@@ -9,6 +9,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
     using KeywordToColumnsMap = std::map<std::string_view /* keyword */, std::vector<std::string_view> /* columns */>;
@@ -71,6 +76,34 @@ namespace
         }
         settings.ostr << ")";
     }
+
+
+    void formatAccessRightsElements(const AccessRightsElements & elements, const IAST::FormatSettings & settings)
+    {
+        bool need_comma = false;
+        for (const auto & [database_and_table, keyword_to_columns] : prepareTableToAccessMap(elements))
+        {
+            for (const auto & [keyword, columns] : keyword_to_columns)
+            {
+                if (std::exchange(need_comma, true))
+                    settings.ostr << ", ";
+
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << keyword << (settings.hilite ? IAST::hilite_none : "");
+                formatColumnNames(columns, settings);
+            }
+
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " ON " << (settings.hilite ? IAST::hilite_none : "") << database_and_table;
+        }
+    }
+
+
+    void formatToRoles(const ASTGenericRoleSet & to_roles, ASTGrantQuery::Kind kind, const IAST::FormatSettings & settings)
+    {
+        using Kind = ASTGrantQuery::Kind;
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << ((kind == Kind::GRANT) ? " TO " : " FROM ")
+                      << (settings.hilite ? IAST::hilite_none : "");
+        to_roles.format(settings);
+    }
 }
 
 
@@ -88,31 +121,33 @@ ASTPtr ASTGrantQuery::clone() const
 
 void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << ((kind == Kind::GRANT) ? "GRANT" : "REVOKE")
-                  << (settings.hilite ? hilite_none : "") << " ";
+    settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << ((kind == Kind::GRANT) ? "GRANT" : "REVOKE")
+                  << (settings.hilite ? IAST::hilite_none : "") << " ";
 
-    if (grant_option && (kind == Kind::REVOKE))
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "GRANT OPTION FOR " << (settings.hilite ? hilite_none : "");
-
-    bool need_comma = false;
-    for (const auto & [database_and_table, keyword_to_columns] : prepareTableToAccessMap(access_rights_elements))
+    if (kind == Kind::REVOKE)
     {
-        for (const auto & [keyword, columns] : keyword_to_columns)
-        {
-            if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << keyword << (settings.hilite ? hilite_none : "");
-            formatColumnNames(columns, settings);
-        }
-
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "") << database_and_table;
+        if (grant_option)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << "GRANT OPTION FOR " << (settings.hilite ? hilite_none : "");
+        else if (admin_option)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADMIN OPTION FOR " << (settings.hilite ? hilite_none : "");
     }
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << ((kind == Kind::GRANT) ? " TO " : " FROM ") << (settings.hilite ? hilite_none : "");
-    to_roles->format(settings);
+    if ((!!roles + !access_rights_elements.empty()) != 1)
+        throw Exception("Either roles or access rights elements should be set", ErrorCodes::LOGICAL_ERROR);
 
-    if (grant_option && (kind == Kind::GRANT))
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH GRANT OPTION" << (settings.hilite ? hilite_none : "");
+    if (roles)
+        roles->format(settings);
+    else
+        formatAccessRightsElements(access_rights_elements, settings);
+
+    formatToRoles(*to_roles, kind, settings);
+
+    if (kind == Kind::GRANT)
+    {
+        if (grant_option)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH GRANT OPTION" << (settings.hilite ? hilite_none : "");
+        else if (admin_option)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH ADMIN OPTION" << (settings.hilite ? hilite_none : "");
+    }
 }
 }

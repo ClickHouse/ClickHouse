@@ -136,7 +136,6 @@ void WriteBufferFromS3::writePart(const String & data)
     {
         auto etag = outcome.GetResult().GetETag();
         part_tags.push_back(etag);
-        total_size += data.size();
         LOG_DEBUG(
             log,
             "Writing part finished. "

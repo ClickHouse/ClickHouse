@@ -26,7 +26,7 @@ public:
         setColumns(ColumnsDescription(Self::getNamesAndTypes()));
     }
 
-    Pipes readWithProcessors(const Names & column_names,
+    Pipes read(const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum /*processed_stage*/,

@@ -15,6 +15,8 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <mysqlxx/Transaction.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -59,7 +61,7 @@ StorageMySQL::StorageMySQL(
 }
 
 
-BlockInputStreams StorageMySQL::read(
+Pipes StorageMySQL::read(
     const Names & column_names_,
     const SelectQueryInfo & query_info_,
     const Context & context_,
@@ -78,7 +80,12 @@ BlockInputStreams StorageMySQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return { std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size_) };
+    Pipes pipes;
+    /// TODO: rewrite MySQLBlockInputStream
+    pipes.emplace_back(std::make_shared<SourceFromInputStream>(
+            std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size_)));
+
+    return pipes;
 }
 
 

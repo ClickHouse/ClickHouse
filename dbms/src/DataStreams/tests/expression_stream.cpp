@@ -20,6 +20,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 
 int main(int argc, char ** argv)
@@ -54,7 +55,7 @@ try
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
     BlockInputStreamPtr in;
-    in = table->read(column_names, {}, context, stage, 8192, 1)[0];
+    in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, context, stage, 8192, 1)[0]));
     in = std::make_shared<ExpressionBlockInputStream>(in, expression);
     in = std::make_shared<LimitBlockInputStream>(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
 

@@ -1,0 +1,14 @@
+<!-- Config set into /etc/clickhouse-client/. It's used if no other configs are found. -->
+<config>
+    <openSSL>
+        <client>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>  <!-- For tests only-->
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</config>
