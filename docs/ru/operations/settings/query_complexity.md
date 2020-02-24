@@ -108,7 +108,24 @@
 ## result_overflow_mode
 
 Что делать, если объём результата превысил одно из ограничений: throw или break. По умолчанию: throw.
-Использование break по смыслу похоже на LIMIT.
+
+Использование break по смыслу похоже на LIMIT. Break прерывает выполнение только на уровне блока. Т.е. число строк которые вернет запрос будет кратно [max_block_size](settings.md#max_block_size) и зависит от [max_threads](settings.md#settings-max_threads).
+
+Пример:
+```sql
+SET max_threads = 3, max_block_size = 3333; 
+SET max_result_rows = 3334, result_overflow_mode = 'break';
+
+SELECT *
+FROM numbers_mt(100000)
+FORMAT Null;
+```
+
+Результат:
+
+```text
+6666 rows in set. ...
+```
 
 ## max_execution_time
 
