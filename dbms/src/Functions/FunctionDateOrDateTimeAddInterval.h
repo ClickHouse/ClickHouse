@@ -361,7 +361,7 @@ public:
         if (arguments.size() == 2)
         {
             if (!isDateOrDateTime(arguments[0].type))
-                throw Exception{"Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
+                throw Exception{"Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() +
                     ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
         else
@@ -452,7 +452,7 @@ public:
             DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(Transform{datetime64_type->getScale()}, block, arguments, result);
         }
         else
-            throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+            throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
