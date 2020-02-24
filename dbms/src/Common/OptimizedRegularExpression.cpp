@@ -409,7 +409,10 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
     if (is_trivial)
     {
         if (required_substring.empty())
+        {
+            matches.emplace_back(Match{0, 0});
             return 1;
+        }
 
         const UInt8 * pos;
         if (is_case_insensitive)
