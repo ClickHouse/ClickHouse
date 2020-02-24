@@ -29,7 +29,9 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/AnalyzedJoin.h>
+#include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/Join.h>
+#include <Interpreters/MergeJoin.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -294,7 +296,7 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
         return;
     }
 
-    auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {});
+    auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, {}, query_options);
     BlockIO res = interpreter_subquery->execute();
 
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true);
@@ -538,6 +540,17 @@ static ExpressionActionsPtr createJoinedBlockActions(const Context & context, co
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
 }
 
+static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<AnalyzedJoin> analyzed_join, const Block & sample_block)
+{
+    bool allow_merge_join = analyzed_join->allowMergeJoin();
+
+    if (analyzed_join->forceHashJoin() || (analyzed_join->preferMergeJoin() && !allow_merge_join))
+        return std::make_shared<Join>(analyzed_join, sample_block);
+    else if (analyzed_join->forceMergeJoin() || (analyzed_join->preferMergeJoin() && allow_merge_join))
+        return std::make_shared<MergeJoin>(analyzed_join, sample_block);
+    return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
+}
+
 JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryElement & join_element)
 {
     /// Two JOINs are not supported with the same subquery, but different USINGs.
@@ -583,7 +596,7 @@ void SelectQueryExpressionAnalyzer::makeSubqueryForJoin(const ASTTablesInSelectQ
     for (auto & pr : required_columns_with_aliases)
         original_columns.push_back(pr.first);
 
-    auto interpreter = interpretSubquery(join_element.table_expression, context, subquery_depth, original_columns);
+    auto interpreter = interpretSubquery(join_element.table_expression, context, original_columns, query_options);
 
     subquery_for_set.makeSource(interpreter, std::move(required_columns_with_aliases));
 }

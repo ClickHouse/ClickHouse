@@ -120,13 +120,13 @@ public:
 
             if constexpr (std::is_same_v<Func, Base64Encode>)
             {
-                outlen = _tb64e(source, srclen, dst_pos);
+                outlen = _tb64e(reinterpret_cast<const uint8_t *>(source), srclen, reinterpret_cast<uint8_t *>(dst_pos));
             }
             else if constexpr (std::is_same_v<Func, Base64Decode>)
             {
                 if (srclen > 0)
                 {
-                    outlen = _tb64d(source, srclen, dst_pos);
+                    outlen = _tb64d(reinterpret_cast<const uint8_t *>(source), srclen, reinterpret_cast<uint8_t *>(dst_pos));
                     if (!outlen)
                         throw Exception("Failed to " + getName() + " input '" + String(reinterpret_cast<const char *>(source), srclen) + "'", ErrorCodes::INCORRECT_DATA);
                 }
@@ -138,7 +138,7 @@ public:
                     // during decoding character array can be partially polluted
                     // if fail, revert back and clean
                     auto savepoint = dst_pos;
-                    outlen = _tb64d(source, srclen, dst_pos);
+                    outlen = _tb64d(reinterpret_cast<const uint8_t *>(source), srclen, reinterpret_cast<uint8_t *>(dst_pos));
                     if (!outlen)
                     {
                         outlen = 0;

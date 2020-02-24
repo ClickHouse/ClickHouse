@@ -5,7 +5,8 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTRoleList.h>
+#include <Parsers/ASTGenericRoleSet.h>
+#include <Parsers/ParserGenericRoleSet.h>
 #include <ext/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -24,9 +25,6 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!new_name.empty())
-                return false;
-
             if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected))
                 return false;
 
@@ -35,14 +33,20 @@ namespace
     }
 
 
-    bool parsePassword(IParserBase::Pos & pos, Expected & expected, String & password)
+    bool parseByPassword(IParserBase::Pos & pos, Expected & expected, String & password)
     {
-        ASTPtr ast;
-        if (!ParserStringLiteral{}.parse(pos, ast, expected))
-            return false;
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{"BY"}.ignore(pos, expected))
+                return false;
 
-        password = ast->as<const ASTLiteral &>().value.safeGet<String>();
-        return true;
+            ASTPtr ast;
+            if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                return false;
+
+            password = ast->as<const ASTLiteral &>().value.safeGet<String>();
+            return true;
+        });
     }
 
 
@@ -50,70 +54,79 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (authentication)
-                return false;
-
             if (!ParserKeyword{"IDENTIFIED"}.ignore(pos, expected))
                 return false;
 
-            if (ParserKeyword{"WITH"}.ignore(pos, expected))
-            {
-                if (ParserKeyword{"NO_PASSWORD"}.ignore(pos, expected))
-                {
-                    authentication = Authentication{Authentication::NO_PASSWORD};
-                }
-                else if (ParserKeyword{"PLAINTEXT_PASSWORD"}.ignore(pos, expected))
-                {
-                    String password;
-                    if (!ParserKeyword{"BY"}.ignore(pos, expected) || !parsePassword(pos, expected, password))
-                        return false;
-                    authentication = Authentication{Authentication::PLAINTEXT_PASSWORD};
-                    authentication->setPassword(password);
-                }
-                else if (ParserKeyword{"SHA256_PASSWORD"}.ignore(pos, expected))
-                {
-                    String password;
-                    if (!ParserKeyword{"BY"}.ignore(pos, expected) || !parsePassword(pos, expected, password))
-                        return false;
-                    authentication = Authentication{Authentication::SHA256_PASSWORD};
-                    authentication->setPassword(password);
-                }
-                else if (ParserKeyword{"SHA256_HASH"}.ignore(pos, expected))
-                {
-                    String hash;
-                    if (!ParserKeyword{"BY"}.ignore(pos, expected) || !parsePassword(pos, expected, hash))
-                        return false;
-                    authentication = Authentication{Authentication::SHA256_PASSWORD};
-                    authentication->setPasswordHashHex(hash);
-                }
-                else if (ParserKeyword{"DOUBLE_SHA1_PASSWORD"}.ignore(pos, expected))
-                {
-                    String password;
-                    if (!ParserKeyword{"BY"}.ignore(pos, expected) || !parsePassword(pos, expected, password))
-                        return false;
-                    authentication = Authentication{Authentication::DOUBLE_SHA1_PASSWORD};
-                    authentication->setPassword(password);
-                }
-                else if (ParserKeyword{"DOUBLE_SHA1_HASH"}.ignore(pos, expected))
-                {
-                    String hash;
-                    if (!ParserKeyword{"BY"}.ignore(pos, expected) || !parsePassword(pos, expected, hash))
-                        return false;
-                    authentication = Authentication{Authentication::DOUBLE_SHA1_PASSWORD};
-                    authentication->setPasswordHashHex(hash);
-                }
-                else
-                    return false;
-            }
-            else
+            if (!ParserKeyword{"WITH"}.ignore(pos, expected))
             {
                 String password;
-                if (!ParserKeyword{"BY"}.ignore(pos, expected) || !parsePassword(pos, expected, password))
+                if (!parseByPassword(pos, expected, password))
                     return false;
+
                 authentication = Authentication{Authentication::SHA256_PASSWORD};
                 authentication->setPassword(password);
+                return true;
             }
 
+            if (ParserKeyword{"PLAINTEXT_PASSWORD"}.ignore(pos, expected))
+            {
+                String password;
+                if (!parseByPassword(pos, expected, password))
+                    return false;
+
+                authentication = Authentication{Authentication::PLAINTEXT_PASSWORD};
+                authentication->setPassword(password);
+                return true;
+            }
+
+            if (ParserKeyword{"SHA256_PASSWORD"}.ignore(pos, expected))
+            {
+                String password;
+                if (!parseByPassword(pos, expected, password))
+                    return false;
+
+                authentication = Authentication{Authentication::SHA256_PASSWORD};
+                authentication->setPassword(password);
+                return true;
+            }
+
+            if (ParserKeyword{"SHA256_HASH"}.ignore(pos, expected))
+            {
+                String hash;
+                if (!parseByPassword(pos, expected, hash))
+                    return false;
+
+                authentication = Authentication{Authentication::SHA256_PASSWORD};
+                authentication->setPasswordHashHex(hash);
+                return true;
+            }
+
+            if (ParserKeyword{"DOUBLE_SHA1_PASSWORD"}.ignore(pos, expected))
+            {
+                String password;
+                if (!parseByPassword(pos, expected, password))
+                    return false;
+
+                authentication = Authentication{Authentication::DOUBLE_SHA1_PASSWORD};
+                authentication->setPassword(password);
+                return true;
+            }
+
+            if (ParserKeyword{"DOUBLE_SHA1_HASH"}.ignore(pos, expected))
+            {
+                String hash;
+                if (!parseByPassword(pos, expected, hash))
+                    return false;
+
+                authentication = Authentication{Authentication::DOUBLE_SHA1_PASSWORD};
+                authentication->setPasswordHashHex(hash);
+                return true;
+            }
+
+            if (!ParserKeyword{"NO_PASSWORD"}.ignore(pos, expected))
+                return false;
+
+            authentication = Authentication{Authentication::NO_PASSWORD};
             return true;
         });
     }
@@ -144,13 +157,12 @@ namespace
                 return true;
             }
 
+            AllowedClientHosts new_hosts;
             do
             {
                 if (ParserKeyword{"LOCAL"}.ignore(pos, expected))
                 {
-                    if (!hosts)
-                        hosts.emplace();
-                    hosts->addLocalHost();
+                    new_hosts.addLocalHost();
                 }
                 else if (ParserKeyword{"NAME REGEXP"}.ignore(pos, expected))
                 {
@@ -158,9 +170,7 @@ namespace
                     if (!ParserStringLiteral{}.parse(pos, ast, expected))
                         return false;
 
-                    if (!hosts)
-                        hosts.emplace();
-                    hosts->addNameRegexp(ast->as<const ASTLiteral &>().value.safeGet<String>());
+                    new_hosts.addNameRegexp(ast->as<const ASTLiteral &>().value.safeGet<String>());
                 }
                 else if (ParserKeyword{"NAME"}.ignore(pos, expected))
                 {
@@ -168,9 +178,7 @@ namespace
                     if (!ParserStringLiteral{}.parse(pos, ast, expected))
                         return false;
 
-                    if (!hosts)
-                        hosts.emplace();
-                    hosts->addName(ast->as<const ASTLiteral &>().value.safeGet<String>());
+                    new_hosts.addName(ast->as<const ASTLiteral &>().value.safeGet<String>());
                 }
                 else if (ParserKeyword{"IP"}.ignore(pos, expected))
                 {
@@ -178,9 +186,7 @@ namespace
                     if (!ParserStringLiteral{}.parse(pos, ast, expected))
                         return false;
 
-                    if (!hosts)
-                        hosts.emplace();
-                    hosts->addSubnet(ast->as<const ASTLiteral &>().value.safeGet<String>());
+                    new_hosts.addSubnet(ast->as<const ASTLiteral &>().value.safeGet<String>());
                 }
                 else if (ParserKeyword{"LIKE"}.ignore(pos, expected))
                 {
@@ -188,14 +194,33 @@ namespace
                     if (!ParserStringLiteral{}.parse(pos, ast, expected))
                         return false;
 
-                    if (!hosts)
-                        hosts.emplace();
-                    hosts->addLikePattern(ast->as<const ASTLiteral &>().value.safeGet<String>());
+                    new_hosts.addLikePattern(ast->as<const ASTLiteral &>().value.safeGet<String>());
                 }
                 else
                     return false;
             }
             while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+
+            if (!hosts)
+                hosts.emplace();
+            hosts->add(new_hosts);
+            return true;
+        });
+    }
+
+
+    bool parseDefaultRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTGenericRoleSet> & default_roles)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{"DEFAULT ROLE"}.ignore(pos, expected))
+                return false;
+
+            ASTPtr ast;
+            if (!ParserGenericRoleSet{}.allowCurrentUser(false).parse(pos, ast, expected))
+                return false;
+
+            default_roles = typeid_cast<std::shared_ptr<ASTGenericRoleSet>>(ast);
             return true;
         });
     }
@@ -205,9 +230,6 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (profile)
-                return false;
-
             if (!ParserKeyword{"PROFILE"}.ignore(pos, expected))
                 return false;
 
@@ -259,15 +281,34 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
+    std::shared_ptr<ASTGenericRoleSet> default_roles;
     std::optional<String> profile;
 
-    while (parseAuthentication(pos, expected, authentication)
-           || parseHosts(pos, expected, nullptr, hosts)
-           || parseProfileName(pos, expected, profile)
-           || (alter && parseRenameTo(pos, expected, new_name, new_host_pattern))
-           || (alter && parseHosts(pos, expected, "ADD", add_hosts))
-           || (alter && parseHosts(pos, expected, "REMOVE", remove_hosts)))
-        ;
+    while (true)
+    {
+        if (!authentication && parseAuthentication(pos, expected, authentication))
+            continue;
+
+        if (parseHosts(pos, expected, nullptr, hosts))
+            continue;
+
+        if (!profile && parseProfileName(pos, expected, profile))
+            continue;
+
+        if (!default_roles && parseDefaultRoles(pos, expected, default_roles))
+            continue;
+
+        if (alter)
+        {
+            if (new_name.empty() && parseRenameTo(pos, expected, new_name, new_host_pattern))
+                continue;
+
+            if (parseHosts(pos, expected, "ADD", add_hosts) || parseHosts(pos, expected, "REMOVE", remove_hosts))
+                continue;
+        }
+
+        break;
+    }
 
     if (!hosts)
     {

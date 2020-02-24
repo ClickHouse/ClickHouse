@@ -124,6 +124,28 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands)
     return select;
 }
 
+ColumnDependencies getAllColumnDependencies(const StoragePtr & storage, const NameSet & updated_columns)
+{
+    NameSet new_updated_columns = updated_columns;
+    ColumnDependencies dependencies;
+    while (!new_updated_columns.empty())
+    {
+        auto new_dependencies = storage->getColumnDependencies(new_updated_columns);
+        new_updated_columns.clear();
+        for (const auto & dependency : new_dependencies)
+        {
+            if (!dependencies.count(dependency))
+            {
+                dependencies.insert(dependency);
+                if (!dependency.isReadOnly())
+                    new_updated_columns.insert(dependency.column_name);
+            }
+        }
+    }
+
+    return dependencies;
+}
+
 };
 
 bool isStorageTouchedByMutations(
@@ -165,7 +187,7 @@ bool isStorageTouchedByMutations(
 
 MutationsInterpreter::MutationsInterpreter(
     StoragePtr storage_,
-    std::vector<MutationCommand> commands_,
+    MutationCommands commands_,
     const Context & context_,
     bool can_execute_)
     : storage(std::move(storage_))
@@ -274,7 +296,6 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     /// We need to know which columns affect which MATERIALIZED columns and data skipping indices
     /// to recalculate them if dependencies are updated.
     std::unordered_map<String, Names> column_to_affected_materialized;
-    NameSet affected_indices_columns;
     if (!updated_columns.empty())
     {
         for (const auto & column : columns_desc)
@@ -290,24 +311,12 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 }
             }
         }
-        for (const auto & index : indices_desc.indices)
-        {
-            auto query = index->expr->clone();
-            auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
-            const auto required_columns = syntax_result->requiredSourceColumns();
-
-            for (const String & dependency : required_columns)
-            {
-                if (updated_columns.count(dependency))
-                {
-                    affected_indices_columns.insert(std::cbegin(required_columns), std::cend(required_columns));
-                    break;
-                }
-            }
-        }
 
         validateUpdateColumns(storage, updated_columns, column_to_affected_materialized);
     }
+
+    /// Columns, that we need to read for calculation of skip indices or TTL expressions.
+    auto dependencies = getAllColumnDependencies(storage, updated_columns);
 
     /// First, break a sequence of commands into stages.
     for (const auto & command : commands)
@@ -380,40 +389,110 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             auto query = (*it)->expr->clone();
             auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
             const auto required_columns = syntax_result->requiredSourceColumns();
-            affected_indices_columns.insert(std::cbegin(required_columns), std::cend(required_columns));
+            for (const auto & column : required_columns)
+                dependencies.emplace(column, ColumnDependency::SKIP_INDEX);
+        }
+        else if (command.type == MutationCommand::MATERIALIZE_TTL)
+        {
+            if (storage->hasRowsTTL())
+            {
+                for (const auto & column : all_columns)
+                    dependencies.emplace(column.name, ColumnDependency::TTL_TARGET);
+            }
+            else
+            {
+                NameSet new_updated_columns;
+                auto column_ttls = storage->getColumns().getColumnTTLs();
+                for (const auto & elem : column_ttls)
+                {
+                    dependencies.emplace(elem.first, ColumnDependency::TTL_TARGET);
+                    new_updated_columns.insert(elem.first);
+                }
+
+                auto all_columns_vec = all_columns.getNames();
+                auto all_dependencies = getAllColumnDependencies(storage, NameSet(all_columns_vec.begin(), all_columns_vec.end()));
+
+                for (const auto & dependency : all_dependencies)
+                {
+                    if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
+                        dependencies.insert(dependency);
+                }
+
+                /// Recalc only skip indices of columns, that could be updated by TTL.
+                auto new_dependencies = storage->getColumnDependencies(new_updated_columns);
+                for (const auto & dependency : new_dependencies)
+                {
+                    if (dependency.kind == ColumnDependency::SKIP_INDEX)
+                        dependencies.insert(dependency);
+                }
+
+                if (dependencies.empty())
+                {
+                    /// Very rare case. It can happen if we have only one MOVE TTL with constant expression.
+                    /// But we still have to read at least one column.
+                    dependencies.emplace(all_columns.front().name, ColumnDependency::TTL_EXPRESSION);
+                }
+            }
         }
         else
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
     }
 
     /// We cares about affected indices because we also need to rewrite them
-    /// when one of index columns updated or filtered with delete
-    if (!affected_indices_columns.empty())
+    /// when one of index columns updated or filtered with delete.
+    /// The same about colums, that are needed for calculation of TTL expressions.
+    if (!dependencies.empty())
     {
-        if (!stages.empty())
+        NameSet changed_columns;
+        NameSet unchanged_columns;
+        for (const auto & dependency : dependencies)
         {
-            std::vector<Stage> stages_copy;
-            /// Copy all filled stages except index calculation stage.
-            for (const auto & stage : stages)
+            if (dependency.isReadOnly())
+                unchanged_columns.insert(dependency.column_name);
+            else
+                changed_columns.insert(dependency.column_name);
+        }
+
+        if (!changed_columns.empty())
+        {
+            if (stages.empty() || !stages.back().column_to_updated.empty())
+                stages.emplace_back(context);
+            if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
+                stages.emplace_back(context);
+
+            for (const auto & column : changed_columns)
+                stages.back().column_to_updated.emplace(
+                    column, std::make_shared<ASTIdentifier>(column));
+        }
+
+        if (!unchanged_columns.empty())
+        {
+            if (!stages.empty())
             {
-                stages_copy.emplace_back(context);
-                stages_copy.back().column_to_updated = stage.column_to_updated;
-                stages_copy.back().output_columns = stage.output_columns;
-                stages_copy.back().filters = stage.filters;
+                std::vector<Stage> stages_copy;
+                /// Copy all filled stages except index calculation stage.
+                for (const auto & stage : stages)
+                {
+                    stages_copy.emplace_back(context);
+                    stages_copy.back().column_to_updated = stage.column_to_updated;
+                    stages_copy.back().output_columns = stage.output_columns;
+                    stages_copy.back().filters = stage.filters;
+                }
+
+                const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
+                InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
+
+                auto first_stage_header = interpreter.getSampleBlock();
+                auto in = std::make_shared<NullBlockInputStream>(first_stage_header);
+                updated_header = std::make_unique<Block>(addStreamsForLaterStages(stages_copy, in)->getHeader());
             }
 
-            const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
-            InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
-
-            auto first_stage_header = interpreter.getSampleBlock();
-            auto in = std::make_shared<NullBlockInputStream>(first_stage_header);
-            updated_header = std::make_unique<Block>(addStreamsForLaterStages(stages_copy, in)->getHeader());
-        }
-        /// Special step to recalculate affected indices.
-        stages.emplace_back(context);
-        for (const auto & column : affected_indices_columns)
-            stages.back().column_to_updated.emplace(
+            /// Special step to recalculate affected indices and TTL expressions.
+            stages.emplace_back(context);
+            for (const auto & column : unchanged_columns)
+                stages.back().column_to_updated.emplace(
                     column, std::make_shared<ASTIdentifier>(column));
+        }
     }
 
     is_prepared = true;
@@ -437,6 +516,8 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
 
         if (i > 0)
             prepared_stages[i].output_columns = prepared_stages[i - 1].output_columns;
+        else if (!commands.additional_columns.empty())
+            prepared_stages[i].output_columns.insert(commands.additional_columns.begin(), commands.additional_columns.end());
 
         if (prepared_stages[i].output_columns.size() < all_columns.size())
         {

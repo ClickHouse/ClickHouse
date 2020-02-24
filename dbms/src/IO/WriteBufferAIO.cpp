@@ -139,7 +139,7 @@ void WriteBufferAIO::nextImpl()
     is_pending_write = true;
 }
 
-off_t WriteBufferAIO::doSeek(off_t off, int whence)
+off_t WriteBufferAIO::seek(off_t off, int whence)
 {
     flush();
 
@@ -169,7 +169,7 @@ off_t WriteBufferAIO::doSeek(off_t off, int whence)
     return pos_in_file;
 }
 
-void WriteBufferAIO::doTruncate(off_t length)
+void WriteBufferAIO::truncate(off_t length)
 {
     flush();
 
