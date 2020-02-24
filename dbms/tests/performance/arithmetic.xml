@@ -1,0 +1,78 @@
+<test>
+    <type>loop</type>
+    <stop_conditions>
+        <all_of>
+            <iterations>10</iterations>
+            <min_time_not_changing_for_ms>100</min_time_not_changing_for_ms>
+        </all_of>
+        <any_of>
+            <iterations>100</iterations>
+            <total_time_ms>1000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+    <substitutions>
+        <substitution>
+            <name>arg</name>
+            <values>
+                <value>u8</value>
+                <value>u16</value>
+                <value>u32</value>
+                <value>u64</value>
+                <value>i8</value>
+                <value>i16</value>
+                <value>i32</value>
+                <value>i64</value>
+                <value>f32</value>
+                <value>f64</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>op</name>
+            <values>
+                <value>plus</value>
+                <value>minus</value>
+                <value>multiply</value>
+                <value>divide</value>
+                <value>intDivOrZero</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+CREATE TABLE nums
+(
+    u8 UInt8,
+    u16 UInt16,
+    u32 UInt32,
+    u64 UInt64,
+    i8 Int8,
+    i16 Int16,
+    i32 Int32,
+    i64 Int64,
+    f32 Float32,
+    f64 Float64
+) ENGINE = Memory;
+    </create_query>
+
+    <fill_query>
+INSERT INTO nums
+WITH cityHash64(number) AS x
+SELECT
+    toUInt8(x),
+    toUInt16(x),
+    toUInt32(x),
+    toUInt64(x),
+    toInt8(x),
+    toInt16(x),
+    toInt32(x),
+    toInt64(x),
+    toFloat32(x),
+    toFloat64(x)
+FROM numbers(100000000);
+    </fill_query>
+
+    <query>SELECT count() FROM nums WHERE NOT ignore({op}({arg}, {arg}))</query>
+
+    <drop_query>DROP TABLE nums</drop_query>
+</test>
