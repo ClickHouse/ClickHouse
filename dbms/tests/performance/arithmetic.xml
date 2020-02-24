@@ -13,7 +13,7 @@
 
     <substitutions>
         <substitution>
-            <name>lhs</name>
+            <name>arg</name>
             <values>
                 <value>u8</value>
                 <value>u16</value>
@@ -25,31 +25,6 @@
                 <value>i64</value>
                 <value>f32</value>
                 <value>f64</value>
-            </values>
-        </substitution>
-        <substitution>
-            <name>rhs</name>
-            <values>
-                <value>u8</value>
-                <value>u16</value>
-                <value>u32</value>
-                <value>u64</value>
-                <value>i8</value>
-                <value>i16</value>
-                <value>i32</value>
-                <value>i64</value>
-                <value>f32</value>
-                <value>f64</value>
-                <value>toUInt8(1)</value>
-                <value>toUInt16(1)</value>
-                <value>toUInt32(1)</value>
-                <value>toUInt64(1)</value>
-                <value>toInt8(1)</value>
-                <value>toInt16(1)</value>
-                <value>toInt32(1)</value>
-                <value>toInt64(1)</value>
-                <value>toFloat32(1)</value>
-                <value>toFloat64(1)</value>
             </values>
         </substitution>
         <substitution>
@@ -94,10 +69,10 @@ SELECT
     toInt64(x),
     toFloat32(x),
     toFloat64(x)
-FROM numbers(10000000);
+FROM numbers(100000000);
     </fill_query>
 
-    <query>SELECT count() FROM nums WHERE NOT ignore({op}({lhs}, {rhs}))</query>
+    <query>SELECT count() FROM nums WHERE NOT ignore({op}({arg}, {arg}))</query>
 
     <drop_query>DROP TABLE nums</drop_query>
 </test>
