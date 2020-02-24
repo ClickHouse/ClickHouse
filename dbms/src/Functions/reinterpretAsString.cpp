@@ -21,7 +21,7 @@ class FunctionReinterpretAsString : public IFunction
 public:
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretAsString>(); }
 
-    static constexpr auto name = "reinterpretAsFixedString";
+    static constexpr auto name = "reinterpretAsString";
 
     String getName() const override
     {
