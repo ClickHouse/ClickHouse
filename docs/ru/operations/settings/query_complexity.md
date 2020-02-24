@@ -109,7 +109,7 @@
 
 Что делать, если объём результата превысил одно из ограничений: throw или break. По умолчанию: throw.
 
-Использование break по смыслу похоже на LIMIT. Break прерывает выполнение только на уровне блока. Т.е. число строк которые вернет запрос будет кратно [max_block_size](settings.md#max_block_size) и зависит от [max_threads](settings.md#settings-max_threads).
+Использование break по смыслу похоже на LIMIT. Break прерывает выполнение только на уровне блока. Т.е. число строк которые вернет запрос будет больше чем ограничение [max_result_rows](#max_result_rows), кратно [max_block_size](settings.md#max_block_size) и зависит от [max_threads](settings.md#settings-max_threads).
 
 Пример:
 ```sql
