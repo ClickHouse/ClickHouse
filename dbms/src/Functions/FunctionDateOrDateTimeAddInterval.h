@@ -31,7 +31,7 @@ namespace ErrorCodes
 template <typename T>
 struct AddOnDateTime64DefaultImpl
 {
-    /*explicit*/ AddOnDateTime64DefaultImpl(UInt32 scale_ = 0)
+    AddOnDateTime64DefaultImpl(UInt32 scale_ = 0)
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale_))
     {}
 
