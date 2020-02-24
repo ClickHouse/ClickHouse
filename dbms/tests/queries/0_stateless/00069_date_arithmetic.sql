@@ -10,7 +10,6 @@ SELECT toTypeName(today()) = 'Date';
 SELECT today() = toDate(now());
 
 SELECT toTypeName(yesterday()) = 'Date';
-SELECT yesterday() = toDate(now() - 24*60*60);
 
 SELECT toTypeName(today() - today()) = 'Int32';
 SELECT toTypeName(today() + 1) = 'Date';
