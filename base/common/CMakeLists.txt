@@ -26,6 +26,11 @@ if (ENABLE_REPLXX)
     )
 endif ()
 
+if (USE_DEBUG_HELPERS)
+    set (INCLUDE_DEBUG_HELPERS "-include ${ClickHouse_SOURCE_DIR}/base/common/iostream_debug_helpers.h")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
+endif ()
+
 add_library (common ${SRCS})
 
 target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
