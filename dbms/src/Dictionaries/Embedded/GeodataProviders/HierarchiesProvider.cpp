@@ -37,7 +37,7 @@ void RegionsHierarchiesDataProvider::discoverFilesWithCustomHierarchies()
         std::string candidate_basename = dir_it.path().getBaseName();
 
         if (candidate_basename.starts_with(basename)
-            && (candidate_basename.size() > basename.size() + 1))
+            && (candidate_basename.size() > basename.size() + 1)
             && (candidate_basename[basename.size()] == '_'))
         {
             const std::string suffix = candidate_basename.substr(basename.size() + 1);
