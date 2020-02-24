@@ -36,7 +36,7 @@ public:
     /// Verify that the data structure is suitable for implementing this type of JOIN.
     void assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_) const;
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -62,8 +62,7 @@ private:
 protected:
     StorageJoin(
         const String & relative_path_,
-        const String & database_name_,
-        const String & table_name_,
+        const StorageID & table_id_,
         const Names & key_names_,
         bool use_nulls_,
         SizeLimits limits_,

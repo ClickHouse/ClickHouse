@@ -10,6 +10,8 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -25,9 +27,15 @@
 
 #include <Interpreters/Context.h>
 
-#include <Storages/StorageTinyLog.h>
-#include <Storages/StorageFactory.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/CheckResults.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageTinyLog.h>
+#include "StorageLogSettings.h"
+
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Pipe.h>
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 
@@ -47,17 +55,11 @@ namespace ErrorCodes
 }
 
 
-class TinyLogBlockInputStream final : public IBlockInputStream
+class TinyLogSource final : public SourceWithProgress
 {
 public:
-    TinyLogBlockInputStream(size_t block_size_, const NamesAndTypesList & columns_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
-        : block_size(block_size_), columns(columns_),
-        storage(storage_), lock(storage_.rwlock),
-        max_read_buffer_size(max_read_buffer_size_) {}
 
-    String getName() const override { return "TinyLog"; }
-
-    Block getHeader() const override
+    static Block getHeader(const NamesAndTypesList & columns)
     {
         Block res;
 
@@ -67,14 +69,22 @@ public:
         return Nested::flatten(res);
     }
 
+    TinyLogSource(size_t block_size_, const NamesAndTypesList & columns_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
+        : SourceWithProgress(getHeader(columns_))
+        , block_size(block_size_), columns(columns_), storage(storage_), lock(storage_.rwlock)
+        , max_read_buffer_size(max_read_buffer_size_) {}
+
+    String getName() const override { return "TinyLog"; }
+
 protected:
-    Block readImpl() override;
+    Chunk generate() override;
+
 private:
     size_t block_size;
     NamesAndTypesList columns;
     StorageTinyLog & storage;
     std::shared_lock<std::shared_mutex> lock;
-    bool finished = false;
+    bool is_finished = false;
     size_t max_read_buffer_size;
 
     struct Stream
@@ -162,24 +172,24 @@ private:
 };
 
 
-Block TinyLogBlockInputStream::readImpl()
+Chunk TinyLogSource::generate()
 {
     Block res;
 
-    if (finished || (!streams.empty() && streams.begin()->second->compressed.eof()))
+    if (is_finished || (!streams.empty() && streams.begin()->second->compressed.eof()))
     {
         /** Close the files (before destroying the object).
           * When many sources are created, but simultaneously reading only a few of them,
           * buffers don't waste memory.
           */
-        finished = true;
+        is_finished = true;
         streams.clear();
-        return res;
+        return {};
     }
 
     /// if there are no files in the folder, it means that the table is empty
     if (storage.disk->isDirectoryEmpty(storage.table_path))
-        return res;
+        return {};
 
     for (const auto & name_type : columns)
     {
@@ -195,21 +205,22 @@ Block TinyLogBlockInputStream::readImpl()
             throw;
         }
 
-        if (column->size())
+        if (!column->empty())
             res.insert(ColumnWithTypeAndName(std::move(column), name_type.type, name_type.name));
     }
 
     if (!res || streams.begin()->second->compressed.eof())
     {
-        finished = true;
+        is_finished = true;
         streams.clear();
     }
 
-    return Nested::flatten(res);
+    auto flatten = Nested::flatten(res);
+    return Chunk(flatten.getColumns(), flatten.rows());
 }
 
 
-void TinyLogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, UInt64 limit)
+void TinyLogSource::readData(const String & name, const IDataType & type, IColumn & column, UInt64 limit)
 {
     IDataType::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
     settings.getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
@@ -317,16 +328,17 @@ void TinyLogBlockOutputStream::write(const Block & block)
 StorageTinyLog::StorageTinyLog(
     DiskPtr disk_,
     const String & relative_path_,
-    const String & database_name_,
-    const String & table_name_,
+    const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     bool attach,
     size_t max_compress_block_size_)
-    : disk(std::move(disk_)), table_path(relative_path_), database_name(database_name_), table_name(table_name_),
-    max_compress_block_size(max_compress_block_size_),
-    file_checker(disk, table_path + "sizes.json"),
-    log(&Logger::get("StorageTinyLog"))
+    : IStorage(table_id_)
+    , disk(std::move(disk_))
+    , table_path(relative_path_)
+    , max_compress_block_size(max_compress_block_size_)
+    , file_checker(disk, table_path + "sizes.json")
+    , log(&Logger::get("StorageTinyLog"))
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -374,16 +386,15 @@ void StorageTinyLog::rename(const String & new_path_to_table_data, const String 
     disk->moveDirectory(table_path, new_path_to_table_data);
 
     table_path = new_path_to_table_data;
-    database_name = new_database_name;
-    table_name = new_table_name;
     file_checker.setPath(table_path + "sizes.json");
 
     for (auto & file : files)
         file.second.data_file_path = table_path + fileName(file.second.data_file_path);
+    renameInMemory(new_database_name, new_table_name);
 }
 
 
-BlockInputStreams StorageTinyLog::read(
+Pipes StorageTinyLog::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
@@ -392,10 +403,15 @@ BlockInputStreams StorageTinyLog::read(
     const unsigned /*num_streams*/)
 {
     check(column_names);
+
+    Pipes pipes;
+
 	// When reading, we lock the entire storage, because we only have one file
 	// per column and can't modify it concurrently.
-    return BlockInputStreams(1, std::make_shared<TinyLogBlockInputStream>(
+    pipes.emplace_back(std::make_shared<TinyLogSource>(
         max_block_size, Nested::collect(getColumns().getAllPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
+
+    return pipes;
 }
 
 
@@ -414,9 +430,6 @@ CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, const Context
 
 void StorageTinyLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
-    if (table_name.empty())
-        throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);
-
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
     disk->clearDirectory(table_path);
@@ -428,9 +441,19 @@ void StorageTinyLog::truncate(const ASTPtr &, const Context &, TableStructureWri
         addFiles(column.name, *column.type);
 }
 
+void StorageTinyLog::drop(TableStructureWriteLockHolder &)
+{
+    std::unique_lock<std::shared_mutex> lock(rwlock);
+    disk->removeRecursive(table_path);
+    files.clear();
+}
 
 void registerStorageTinyLog(StorageFactory & factory)
 {
+    StorageFactory::StorageFeatures features{
+        .supports_settings = true
+    };
+
     factory.registerStorage("TinyLog", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
@@ -438,10 +461,13 @@ void registerStorageTinyLog(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+        String disk_name = getDiskName(*args.storage_def);
+        DiskPtr disk = args.context.getDisk(disk_name);
+
         return StorageTinyLog::create(
-            args.context.getDefaultDisk(), args.relative_data_path, args.database_name, args.table_name, args.columns, args.constraints,
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
             args.attach, args.context.getSettings().max_compress_block_size);
-    });
+    }, features);
 }
 
 }

@@ -241,12 +241,13 @@ IProcessor::Status SortingTransform::prepareConsume()
         if (input.isFinished())
             return Status::Finished;
 
-        input.setNeeded();
-
         if (!input.hasData())
+        {
+            input.setNeeded();
             return Status::NeedData;
+        }
 
-        current_chunk = input.pull();
+        current_chunk = input.pull(true);
     }
 
     /// Now consume.

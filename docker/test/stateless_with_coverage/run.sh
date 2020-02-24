@@ -63,6 +63,12 @@ ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/con
     ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/; \
+    ln -s /usr/share/clickhouse-test/config/disks.xml /etc/clickhouse-server/config.d/; \
+    ln -s /usr/share/clickhouse-test/config/secure_ports.xml /etc/clickhouse-server/config.d/; \
+    ln -s /usr/share/clickhouse-test/config/server.key /etc/clickhouse-server/; \
+    ln -s /usr/share/clickhouse-test/config/server.crt /etc/clickhouse-server/; \
+    ln -s /usr/share/clickhouse-test/config/dhparam.pem /etc/clickhouse-server/; \
+    ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml; \
     ln -s /usr/lib/llvm-8/bin/llvm-symbolizer /usr/bin/llvm-symbolizer
 
 service zookeeper start

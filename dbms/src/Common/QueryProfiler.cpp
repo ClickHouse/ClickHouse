@@ -1,92 +1,38 @@
 #include "QueryProfiler.h"
 
-#include <random>
-#include <common/phdr_cache.h>
-#include <common/config_common.h>
-#include <common/StringRef.h>
-#include <common/logger_useful.h>
-#include <Common/PipeFDs.h>
-#include <Common/StackTrace.h>
-#include <Common/CurrentThread.h>
-#include <Common/Exception.h>
-#include <Common/thread_local_rng.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
+#include <Common/Exception.h>
+#include <Common/StackTrace.h>
+#include <Common/TraceCollector.h>
+#include <Common/thread_local_rng.h>
+#include <common/StringRef.h>
+#include <common/config_common.h>
+#include <common/logger_useful.h>
+#include <common/phdr_cache.h>
+#include <ext/singleton.h>
 
+#include <random>
 
-namespace ProfileEvents
-{
-    extern const Event QueryProfilerSignalOverruns;
-}
 
 namespace DB
 {
 
-extern LazyPipeFDs trace_pipe;
-
 namespace
 {
-    /// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
-    /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
-    constexpr size_t QUERY_ID_MAX_LEN = 1024;
-
-#if defined(OS_LINUX)
-    thread_local size_t write_trace_iteration = 0;
-#endif
-
-    void writeTraceInfo(TimerType timer_type, int /* sig */, siginfo_t * info, void * context)
+    void writeTraceInfo(TraceType trace_type, int /* sig */, siginfo_t * info, void * context)
     {
+        int overrun_count = 0;
 #if defined(OS_LINUX)
-        /// Quickly drop if signal handler is called too frequently.
-        /// Otherwise we may end up infinitelly processing signals instead of doing any useful work.
-        ++write_trace_iteration;
-        if (info && info->si_overrun > 0)
-        {
-            /// But pass with some frequency to avoid drop of all traces.
-            if (write_trace_iteration % info->si_overrun == 0)
-            {
-                ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, info->si_overrun);
-            }
-            else
-            {
-                ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, info->si_overrun + 1);
-                return;
-            }
-        }
+        if (info)
+            overrun_count = info->si_overrun;
 #else
         UNUSED(info);
 #endif
 
-        constexpr size_t buf_size = sizeof(char) + // TraceCollector stop flag
-                                    8 * sizeof(char) + // maximum VarUInt length for string size
-                                    QUERY_ID_MAX_LEN * sizeof(char) + // maximum query_id length
-                                    sizeof(UInt8) + // number of stack frames
-                                    sizeof(StackTrace::Frames) + // collected stack trace, maximum capacity
-                                    sizeof(TimerType) + // timer type
-                                    sizeof(UInt32); // thread_number
-        char buffer[buf_size];
-        WriteBufferFromFileDescriptorDiscardOnFailure out(trace_pipe.fds_rw[1], buf_size, buffer);
-
-        StringRef query_id = CurrentThread::getQueryId();
-        query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
-
-        UInt32 thread_number = CurrentThread::get().thread_number;
-
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         const StackTrace stack_trace(signal_context);
 
-        writeChar(false, out);
-        writeStringBinary(query_id, out);
-
-        size_t stack_trace_size = stack_trace.getSize();
-        size_t stack_trace_offset = stack_trace.getOffset();
-        writeIntBinary(UInt8(stack_trace_size - stack_trace_offset), out);
-        for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-            writePODBinary(stack_trace.getFrames()[i], out);
-
-        writePODBinary(timer_type, out);
-        writePODBinary(thread_number, out);
-        out.next();
+        ext::Singleton<TraceCollector>()->collect(trace_type, stack_trace, overrun_count);
     }
 
     [[maybe_unused]] const UInt32 TIMER_PRECISION = 1e9;
@@ -103,7 +49,7 @@ namespace ErrorCodes
 }
 
 template <typename ProfilerImpl>
-QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const int clock_type, UInt32 period, const int pause_signal_)
+QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const int clock_type, UInt32 period, const int pause_signal_)
     : log(&Logger::get("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
@@ -135,13 +81,21 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const 
         sev.sigev_notify = SIGEV_THREAD_ID;
         sev.sigev_signo = pause_signal;
 
-#if defined(__FreeBSD__)
+#   if defined(__FreeBSD__)
         sev._sigev_un._threadid = thread_id;
-#else
+#   else
         sev._sigev_un._tid = thread_id;
-#endif
+#   endif
         if (timer_create(clock_type, &sev, &timer_id))
+        {
+            /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.
+            /// https://mybranch.dev/posts/clickhouse-on-cloud-run/
+            if (errno == 0)
+                throw Exception("Failed to create thread timer. The function 'timer_create' returned non-zero but didn't set errno. This is bug in your OS.",
+                    ErrorCodes::CANNOT_CREATE_TIMER);
+
             throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
+        }
 
         /// Randomize offset as uniform random value from 0 to period - 1.
         /// It will allow to sample short queries even if timer period is large.
@@ -192,22 +146,22 @@ void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 template class QueryProfilerBase<QueryProfilerReal>;
 template class QueryProfilerBase<QueryProfilerCpu>;
 
-QueryProfilerReal::QueryProfilerReal(const Int32 thread_id, const UInt32 period)
+QueryProfilerReal::QueryProfilerReal(const UInt64 thread_id, const UInt32 period)
     : QueryProfilerBase(thread_id, CLOCK_REALTIME, period, SIGUSR1)
 {}
 
 void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
 {
-    writeTraceInfo(TimerType::Real, sig, info, context);
+    writeTraceInfo(TraceType::REAL_TIME, sig, info, context);
 }
 
-QueryProfilerCpu::QueryProfilerCpu(const Int32 thread_id, const UInt32 period)
+QueryProfilerCpu::QueryProfilerCpu(const UInt64 thread_id, const UInt32 period)
     : QueryProfilerBase(thread_id, CLOCK_THREAD_CPUTIME_ID, period, SIGUSR2)
 {}
 
 void QueryProfilerCpu::signalHandler(int sig, siginfo_t * info, void * context)
 {
-    writeTraceInfo(TimerType::Cpu, sig, info, context);
+    writeTraceInfo(TraceType::CPU_TIME, sig, info, context);
 }
 
 }

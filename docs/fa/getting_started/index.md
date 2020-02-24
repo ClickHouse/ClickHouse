@@ -7,5 +7,5 @@
 * [ﺪﯿﻨﮐ ﯽﻃ ﺍﺭ ﻞﺼﻔﻣ ﺵﺯﻮﻣﺁ](tutorial.md)
 * [ﺪﯿﻨﮐ ﺶﯾﺎﻣﺯﺁ ﻪﻧﻮﻤﻧ ﯼﺎﻫ ﻩﺩﺍﺩ ﺎﺑ](example_datasets/ontime.md)
 
-[ﯽﻠﺻﺍ ﻪﻟﺎﻘﻣ](https://clickhouse.yandex/docs/fa/getting_started/) <!--hide-->
+[ﯽﻠﺻﺍ ﻪﻟﺎﻘﻣ](https://clickhouse.tech/docs/fa/getting_started/) <!--hide-->
 </div>

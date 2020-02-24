@@ -6,6 +6,7 @@ nav:
   - 'ClickHouse功能可被视为缺点': 'introduction/features_considered_disadvantages.md'
   - '性能': 'introduction/performance.md'
   - '历史': 'introduction/history.md'
+  - '使用者': 'introduction/adopters.md'
 
 - '入门指南':
   - 'hidden': 'getting_started/index.md'
@@ -59,7 +60,7 @@ nav:
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
     - 'Nothing': 'data_types/special_data_types/nothing.md'
-    - 'Interval': 'data_types/special_data_types/interval.md'    
+    - 'Interval': 'data_types/special_data_types/interval.md'
   - 'Domain类型':
     - '介绍': 'data_types/domains/overview.md'
     - 'IPv4': 'data_types/domains/ipv4.md'
@@ -176,6 +177,7 @@ nav:
       - '字典的刷新策略': 'query_language/dicts/external_dicts_dict_lifetime.md'
       - '字典的外部数据源': 'query_language/dicts/external_dicts_dict_sources.md'
       - '字典的键和字段值': 'query_language/dicts/external_dicts_dict_structure.md'
+      - 'Hierarchical dictionaries': 'query_language/dicts/external_dicts_dict_hierarchical.md'
     - '内部字典': 'query_language/dicts/internal_dicts.md'
   - '操作符': 'query_language/operators.md'
   - '语法说明': 'query_language/syntax.md'
@@ -192,7 +194,9 @@ nav:
   - '配置文件': 'operations/configuration_files.md'
   - '配额': 'operations/quotas.md'
   - '系统表': 'operations/system_tables.md'
-  - 'Testing Hardware': 'operations/performance_test.md'
+  - '优化性能':
+    - '查询分析': 'operations/performance/sampling_query_profiler.md'
+  - '测试硬件': 'operations/performance_test.md'
   - 'Server参数配置':
     - '介绍': 'operations/server_settings/index.md'
     - 'Server参数说明': 'operations/server_settings/settings.md'
@@ -209,19 +213,20 @@ nav:
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
     - 'clickhouse-benchmark': 'operations/utils/clickhouse-benchmark.md'
-    
+
 - '常见问题':
   - '一般的问题': 'faq/general.md'
 
 - '开发者指南':
   - 'hidden': 'development/index.md'
+  - '开发者指南': 'development/developer_instruction.md'
   - 'ClickHouse架构概述': 'development/architecture.md'
+  - 'ClickHouse Code Browser': 'development/browse_code.md'
   - '如何在Linux中编译ClickHouse': 'development/build.md'
   - '如何在Mac OS X中编译ClickHouse': 'development/build_osx.md'
   - '如何在Linux中编译Mac OS X ClickHouse': 'development/build_cross_osx.md'
   - '如何编写C++代码': 'development/style.md'
   - '如何运行ClickHouse测试': 'development/tests.md'
-  - '开发者指南': 'development/developer_instruction.md'
   - '使用的第三方库': 'development/contrib.md'
 
 - '新功能特性':

@@ -5,9 +5,13 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
 
+#include <IO/createReadBufferFromFileBase.h>
+#include <IO/createWriteBufferFromFileBase.h>
+
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
@@ -15,7 +19,59 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
-std::mutex DiskLocal::mutex;
+std::mutex DiskLocal::reservation_mutex;
+
+
+using DiskLocalPtr = std::shared_ptr<DiskLocal>;
+
+class DiskLocalReservation : public IReservation
+{
+public:
+    DiskLocalReservation(const DiskLocalPtr & disk_, UInt64 size_)
+        : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
+    {
+    }
+
+    UInt64 getSize() const override { return size; }
+
+    DiskPtr getDisk() const override { return disk; }
+
+    void update(UInt64 new_size) override;
+
+    ~DiskLocalReservation() override;
+
+private:
+    DiskLocalPtr disk;
+    UInt64 size;
+    CurrentMetrics::Increment metric_increment;
+};
+
+
+class DiskLocalDirectoryIterator : public IDiskDirectoryIterator
+{
+public:
+    explicit DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_)
+        : dir_path(dir_path_), iter(disk_path_ + dir_path_)
+    {
+    }
+
+    void next() override { ++iter; }
+
+    bool isValid() const override { return iter != Poco::DirectoryIterator(); }
+
+    String path() const override
+    {
+        if (iter->isDirectory())
+            return dir_path + iter.name() + '/';
+        else
+            return dir_path + iter.name();
+    }
+
+private:
+    String dir_path;
+    Poco::DirectoryIterator iter;
+};
+
 
 ReservationPtr DiskLocal::reserve(UInt64 bytes)
 {
@@ -26,7 +82,7 @@ ReservationPtr DiskLocal::reserve(UInt64 bytes)
 
 bool DiskLocal::tryReserve(UInt64 bytes)
 {
-    std::lock_guard lock(mutex);
+    std::lock_guard lock(DiskLocal::reservation_mutex);
     if (bytes == 0)
     {
         LOG_DEBUG(&Logger::get("DiskLocal"), "Reserving 0 bytes on disk " << backQuote(name));
@@ -51,7 +107,11 @@ bool DiskLocal::tryReserve(UInt64 bytes)
 
 UInt64 DiskLocal::getTotalSpace() const
 {
-    auto fs = getStatVFS(disk_path);
+    struct statvfs fs;
+    if (name == "default") /// for default disk we get space from path/data/
+        fs = getStatVFS(disk_path + "data/");
+    else
+        fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_blocks * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
@@ -62,7 +122,11 @@ UInt64 DiskLocal::getAvailableSpace() const
 {
     /// we use f_bavail, because part of b_free space is
     /// available for superuser only and for system purposes
-    auto fs = getStatVFS(disk_path);
+    struct statvfs fs;
+    if (name == "default") /// for default disk we get space from path/data/
+        fs = getStatVFS(disk_path + "data/");
+    else
+        fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_bavail * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
@@ -71,7 +135,7 @@ UInt64 DiskLocal::getAvailableSpace() const
 
 UInt64 DiskLocal::getUnreservedSpace() const
 {
-    std::lock_guard lock(mutex);
+    std::lock_guard lock(DiskLocal::reservation_mutex);
     auto available_space = getAvailableSpace();
     available_space -= std::min(available_space, reserved_bytes);
     return available_space;
@@ -150,31 +214,44 @@ void DiskLocal::copyFile(const String & from_path, const String & to_path)
     Poco::File(disk_path + from_path).copyTo(disk_path + to_path);
 }
 
-std::unique_ptr<ReadBuffer> DiskLocal::readFile(const String & path, size_t buf_size) const
+std::unique_ptr<ReadBufferFromFileBase>
+DiskLocal::readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const
 {
-    return std::make_unique<ReadBufferFromFile>(disk_path + path, buf_size);
+    return createReadBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, mmap_threshold, buf_size);
 }
 
-std::unique_ptr<WriteBuffer> DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
+std::unique_ptr<WriteBufferFromFileBase>
+DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t aio_threshold)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
-    return std::make_unique<WriteBufferFromFile>(disk_path + path, buf_size, flags);
+    return createWriteBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, buf_size, flags);
+}
+
+void DiskLocal::remove(const String & path)
+{
+    Poco::File(disk_path + path).remove(false);
+}
+
+void DiskLocal::removeRecursive(const String & path)
+{
+    Poco::File(disk_path + path).remove(true);
 }
 
 
 void DiskLocalReservation::update(UInt64 new_size)
 {
-    std::lock_guard lock(DiskLocal::mutex);
+    std::lock_guard lock(DiskLocal::reservation_mutex);
     disk->reserved_bytes -= size;
     size = new_size;
     disk->reserved_bytes += size;
 }
 
+
 DiskLocalReservation::~DiskLocalReservation()
 {
     try
     {
-        std::lock_guard lock(DiskLocal::mutex);
+        std::lock_guard lock(DiskLocal::reservation_mutex);
         if (disk->reserved_bytes < size)
         {
             disk->reserved_bytes = 0;

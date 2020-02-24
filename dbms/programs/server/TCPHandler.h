@@ -111,7 +111,7 @@ public:
         server_display_name = server.config().getString("display_name", getFQDNOrHostName());
     }
 
-    void run();
+    void run() override;
 
     /// This method is called right before the query execution.
     virtual void customizeContext(DB::Context & /*context*/) {}

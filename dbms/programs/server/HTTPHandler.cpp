@@ -17,6 +17,7 @@
 #include <Common/setThreadName.h>
 #include <Common/config.h>
 #include <Common/SettingsChanges.h>
+#include <Disks/DiskSpaceMonitor.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
@@ -351,7 +352,8 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            std::string tmp_path_template = context.getTemporaryPath() + "http_buffers/";
+            const std::string tmp_path(context.getTemporaryVolume()->getNextDisk()->getPath());
+            const std::string tmp_path_template(tmp_path + "http_buffers/");
 
             auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
             {
@@ -573,6 +575,7 @@ void HTTPHandler::processQuery(
             try
             {
                 char b;
+                //FIXME looks like MSG_DONTWAIT is useless because of POCO_BROKEN_TIMEOUTS
                 int status = socket.receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK);
                 if (status == 0)
                     context.killCurrentQuery();
@@ -590,7 +593,11 @@ void HTTPHandler::processQuery(
     customizeContext(context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response] (const String & content_type) { response.setContentType(content_type); },
+        [&response] (const String & content_type, const String & format)
+        {
+            response.setContentType(content_type);
+            response.add("X-ClickHouse-Format", format);
+        },
         [&response] (const String & current_query_id) { response.add("X-ClickHouse-Query-Id", current_query_id); });
 
     if (used_output.hasDelayed())
@@ -610,6 +617,8 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 {
     try
     {
+        response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
+
         /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
         /// to avoid reading part of the current request body in the next request.
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST

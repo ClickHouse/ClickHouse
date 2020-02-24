@@ -83,21 +83,18 @@ public:
     ~StorageReplicatedMergeTree() override;
 
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
+    bool supportsParallelInsert() const override { return true; }
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
 
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-    bool supportProcessorsPipeline() const override { return true; }
 
     std::optional<UInt64> totalRows() const override;
 
@@ -151,6 +148,8 @@ public:
         UInt64 absolute_delay;
         UInt8 total_replicas;
         UInt8 active_replicas;
+        /// If the error has happened fetching the info from ZooKeeper, this field will be set.
+        String zookeeper_exception;
     };
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
@@ -233,7 +232,7 @@ private:
     std::atomic<bool> is_leader {false};
     zkutil::LeaderElectionPtr leader_election;
 
-    InterserverIOEndpointHolderPtr data_parts_exchange_endpoint_holder;
+    InterserverIOEndpointPtr data_parts_exchange_endpoint;
 
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
@@ -439,11 +438,12 @@ private:
         zkutil::ZooKeeperPtr & zookeeper,
         const DataPartsVector & parts,
         const String & merged_name,
+        const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
         bool force_ttl,
         ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
 
-    bool createLogEntryToMutatePart(const MergeTreeDataPart & part, Int64 mutation_version);
+    bool createLogEntryToMutatePart(const IMergeTreeDataPart & part, Int64 mutation_version);
 
     /// Exchange parts.
 
@@ -544,7 +544,7 @@ protected:
         const String & zookeeper_path_,
         const String & replica_name_,
         bool attach,
-        const String & database_name_, const String & name_,
+        const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata,
         Context & context_,

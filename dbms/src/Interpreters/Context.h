@@ -4,9 +4,9 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/Types.h>
+#include <Core/UUID.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
-#include <Interpreters/Users.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
@@ -43,8 +43,17 @@ namespace DB
 
 struct ContextShared;
 class Context;
-class QuotaContext;
+class AccessRightsContext;
+using AccessRightsContextPtr = std::shared_ptr<const AccessRightsContext>;
+struct User;
+using UserPtr = std::shared_ptr<const User>;
 class RowPolicyContext;
+using RowPolicyContextPtr = std::shared_ptr<const RowPolicyContext>;
+class QuotaContext;
+using QuotaContextPtr = std::shared_ptr<const QuotaContext>;
+class AccessFlags;
+struct AccessRightsElement;
+class AccessRightsElements;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
@@ -80,6 +89,7 @@ class ICompressionCodec;
 class AccessControlManager;
 class SettingsConstraints;
 class RemoteHostFilter;
+struct StorageID;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;
@@ -90,18 +100,18 @@ class StoragePolicySelector;
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
+class Volume;
+using VolumePtr = std::shared_ptr<Volume>;
+
 #if USE_EMBEDDED_COMPILER
 
 class CompiledExpressionCache;
 
 #endif
 
-/// (database name, table name)
-using DatabaseAndTableName = std::pair<String, String>;
-
 /// Table -> set of table-views that make SELECT from it.
-using ViewDependencies = std::map<DatabaseAndTableName, std::set<DatabaseAndTableName>>;
-using Dependencies = std::vector<DatabaseAndTableName>;
+using ViewDependencies = std::map<StorageID, std::set<StorageID>>;
+using Dependencies = std::vector<StorageID>;
 
 using TableAndCreateAST = std::pair<StoragePtr, ASTPtr>;
 using TableAndCreateASTs = std::map<String, TableAndCreateAST>;
@@ -144,10 +154,11 @@ private:
     InputInitializer input_initializer_callback;
     InputBlocksReader input_blocks_reader;
 
-    std::shared_ptr<QuotaContext> quota;           /// Current quota. By default - empty quota, that have no limits.
-    bool is_quota_management_allowed = false;      /// Whether the current user is allowed to manage quotas via SQL commands.
-    std::shared_ptr<RowPolicyContext> row_policy;
-    bool is_row_policy_management_allowed = false; /// Whether the current user is allowed to manage row policies via SQL commands.
+    std::optional<UUID> user_id;
+    std::vector<UUID> current_roles;
+    bool use_default_roles = false;
+    AccessRightsContextPtr access_rights;
+    RowPolicyContextPtr initial_row_policy;
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     std::shared_ptr<const SettingsConstraints> settings_constraints;
@@ -197,16 +208,18 @@ public:
     ~Context();
 
     String getPath() const;
-    String getTemporaryPath() const;
     String getFlagsPath() const;
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
 
+    VolumePtr getTemporaryVolume() const;
+
     void setPath(const String & path);
-    void setTemporaryPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
+
+    VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -216,10 +229,6 @@ public:
 
     AccessControlManager & getAccessControlManager();
     const AccessControlManager & getAccessControlManager() const;
-    std::shared_ptr<QuotaContext> getQuota() const { return quota; }
-    void checkQuotaManagementIsAllowed();
-    std::shared_ptr<RowPolicyContext> getRowPolicy() const { return row_policy; }
-    void checkRowPolicyManagementIsAllowed();
 
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
@@ -228,14 +237,43 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
+    /// Sets the current user, checks the password and that the specified host is allowed.
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
 
-    /// Used by MySQL Secure Password Authentication plugin.
-    std::shared_ptr<const User> getUser(const String & user_name);
+    UserPtr getUser() const;
+    String getUserName() const;
+    UUID getUserID() const;
 
-    /// Compute and set actual user settings, client_info.current_user should be set
-    void calculateUserSettings();
+    void setCurrentRoles(const std::vector<UUID> & current_roles_);
+    void setCurrentRolesDefault();
+    std::vector<UUID> getCurrentRoles() const;
+    Strings getCurrentRolesNames() const;
+    std::vector<UUID> getEnabledRoles() const;
+    Strings getEnabledRolesNames() const;
+
+    /// Checks access rights.
+    /// Empty database means the current database.
+    void checkAccess(const AccessFlags & access) const;
+    void checkAccess(const AccessFlags & access, const std::string_view & database) const;
+    void checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table) const;
+    void checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
+    void checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
+    void checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
+    void checkAccess(const AccessRightsElement & access) const;
+    void checkAccess(const AccessRightsElements & access) const;
+
+    AccessRightsContextPtr getAccessRights() const;
+
+    RowPolicyContextPtr getRowPolicy() const;
+
+    /// Sets an extra row policy based on `client_info.initial_user`, if it exists.
+    /// TODO: we need a better solution here. It seems we should pass the initial row policy
+    /// because a shard is allowed to don't have the initial user or it may be another user with the same name.
+    void setInitialRowPolicy();
+    RowPolicyContextPtr getInitialRowPolicy() const;
+
+    QuotaContextPtr getQuota() const;
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
@@ -256,39 +294,31 @@ public:
     ClientInfo & getClientInfo() { return client_info; }
     const ClientInfo & getClientInfo() const { return client_info; }
 
-    void addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
-    void removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
-    Dependencies getDependencies(const String & database_name, const String & table_name) const;
+    void addDependency(const StorageID & from, const StorageID & where);
+    void removeDependency(const StorageID & from, const StorageID & where);
+    Dependencies getDependencies(const StorageID & from) const;
 
     /// Functions where we can lock the context manually
-    void addDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
-    void removeDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
+    void addDependencyUnsafe(const StorageID & from, const StorageID & where);
+    void removeDependencyUnsafe(const StorageID & from, const StorageID & where);
 
     /// Checking the existence of the table/database. Database can be empty - in this case the current database is used.
     bool isTableExist(const String & database_name, const String & table_name) const;
     bool isDatabaseExist(const String & database_name) const;
     bool isDictionaryExists(const String & database_name, const String & dictionary_name) const;
     bool isExternalTableExist(const String & table_name) const;
-    bool hasDatabaseAccessRights(const String & database_name) const;
-
-    bool hasDictionaryAccessRights(const String & dictionary_name) const;
-
-    /** The parameter check_database_access_rights exists to not check the permissions of the database again,
-      * when assertTableDoesntExist or assertDatabaseExists is called inside another function that already
-      * made this check.
-      */
-    void assertTableDoesntExist(const String & database_name, const String & table_name, bool check_database_acccess_rights = true) const;
-    void assertDatabaseExists(const String & database_name, bool check_database_acccess_rights = true) const;
-
+    void assertTableDoesntExist(const String & database_name, const String & table_name) const;
+    void assertDatabaseExists(const String & database_name) const;
     void assertDatabaseDoesntExist(const String & database_name) const;
-    void checkDatabaseAccessRights(const std::string & database_name) const;
 
     const Scalars & getScalars() const;
     const Block & getScalar(const String & name) const;
     Tables getExternalTables() const;
     StoragePtr tryGetExternalTable(const String & table_name) const;
     StoragePtr getTable(const String & database_name, const String & table_name) const;
+    StoragePtr getTable(const StorageID & table_id) const;
     StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
+    StoragePtr tryGetTable(const StorageID & table_id) const;
     void addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast = {});
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
@@ -584,17 +614,18 @@ public:
 
     MySQLWireContext mysql;
 private:
-    /** Check if the current client has access to the specified database.
-      * If access is denied, throw an exception.
-      * NOTE: This method should always be called when the `shared->mutex` mutex is acquired.
-      */
-    void checkDatabaseAccessRightsImpl(const std::string & database_name) const;
+    /// Compute and set actual user settings, client_info.current_user should be set
+    void calculateUserSettings();
+    void calculateAccessRights();
+
+    template <typename... Args>
+    void checkAccessImpl(const Args &... args) const;
 
     void setProfile(const String & profile);
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 
-    StoragePtr getTableImpl(const String & database_name, const String & table_name, std::optional<Exception> * exception) const;
+    StoragePtr getTableImpl(const StorageID & table_id, std::optional<Exception> * exception) const;
 
     SessionKey getSessionKey(const String & session_id) const;
 

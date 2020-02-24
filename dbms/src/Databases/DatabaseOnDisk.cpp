@@ -69,9 +69,12 @@ std::pair<String, StoragePtr> createTableFromAST(
         ast_create_query.table,
         StorageFactory::instance().get(
             ast_create_query,
-            table_data_path_relative, ast_create_query.table, database_name, context, context.getGlobalContext(),
-            columns, constraints,
-            true, has_force_restore_data_flag)
+            table_data_path_relative,
+            context,
+            context.getGlobalContext(),
+            columns,
+            constraints,
+            has_force_restore_data_flag)
     };
 }
 
@@ -243,21 +246,20 @@ void DatabaseOnDisk::renameTable(
 ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const
 {
     ASTPtr ast;
-
+    bool has_table = tryGetTable(context, table_name) != nullptr;
     auto table_metadata_path = getObjectMetadataPath(table_name);
-    ast = getCreateQueryFromMetadata(context, table_metadata_path, throw_on_error);
-    if (!ast && throw_on_error)
+    try
     {
-        /// Handle system.* tables for which there are no table.sql files.
-        bool has_table = tryGetTable(context, table_name) != nullptr;
-
-        auto msg = has_table
-                   ? "There is no CREATE TABLE query for table "
-                   : "There is no metadata file for table ";
-
-        throw Exception(msg + backQuote(table_name), ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
+        ast = getCreateQueryFromMetadata(context, table_metadata_path, throw_on_error);
     }
-
+    catch (const Exception & e)
+    {
+        if (!has_table && e.code() == ErrorCodes::FILE_DOESNT_EXIST && throw_on_error)
+            throw Exception{"Table " + backQuote(table_name) + " doesn't exist",
+                            ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
+        else if (throw_on_error)
+            throw;
+    }
     return ast;
 }
 

@@ -121,6 +121,11 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
     }
 };
 
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsuggest-override"
+#endif
+
 template <typename Base>
 struct ConstSource : public Base
 {
@@ -198,6 +203,10 @@ struct ConstSource : public Base
         return true;
     }
 };
+
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
 
 struct StringSource
 {

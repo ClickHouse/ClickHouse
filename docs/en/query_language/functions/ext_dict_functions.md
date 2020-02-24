@@ -20,7 +20,7 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 **Returned value**
 
-- If ClickHouse parses the attribute successfully in the [attribute's data type](../dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
+- If ClickHouse parses the attribute successfully in the [attribute's data type](../../query_language/dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
 - If there is no the key, corresponding to `id_expr`, in the dictionary, then:
 
     - `dictGet` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
@@ -111,24 +111,27 @@ dictHas('dict_name', id_expr)
 
 Type: `UInt8`.
 
-## dictGetHierarchy
+## dictGetHierarchy {#dictgethierarchy}
 
-For the hierarchical dictionary, returns an array of dictionary keys starting from the passed `id_expr` and continuing along the chain of parent elements.
+Creates an array, containing all the parents of a key in the [hierarchical dictionary](../dicts/external_dicts_dict_hierarchical.md).
+
+**Syntax**
 
 ```sql
-dictGetHierarchy('dict_name', id_expr)
+dictGetHierarchy('dict_name', key)
 ```
 
 **Parameters**
 
 - `dict_name` — Name of the dictionary. [String literal](../syntax.md#syntax-string-literal).
-- `id_expr` — Key value. [Expression](../syntax.md#syntax-expressions) returning a [UInt64](../../data_types/int_uint.md)-type value.
+- `key` — Key value. [Expression](../syntax.md#syntax-expressions) returning a [UInt64](../../data_types/int_uint.md)-type value.
 
 **Returned value**
 
-Hierarchy of dictionary keys.
+- Parents for the key.
 
-Type: Array(UInt64).
+Type: [Array(UInt64)](../../data_types/array.md).
+
 
 ## dictIsIn
 
@@ -183,7 +186,7 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 **Returned value**
 
-- If ClickHouse parses the attribute successfully in the [attribute's data type](../dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
+- If ClickHouse parses the attribute successfully in the [attribute's data type](../../query_language/dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
 - If there is no requested `id_expr` in the dictionary then:
 
     - `dictGet[Type]` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
@@ -191,4 +194,4 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value doesn't match the attribute data type.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/ext_dict_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/ext_dict_functions/) <!--hide-->
