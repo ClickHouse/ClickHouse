@@ -4,10 +4,11 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 
-#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/castTypeToEither.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
 #include <IO/WriteHelpers.h>
@@ -248,16 +249,6 @@ struct Adder
     {}
 
     template <typename FromVectorType, typename ToVectorType>
-    void NO_INLINE vector_vector(const FromVectorType & vec_from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone) const
-    {
-        size_t size = vec_from.size();
-        vec_to.resize(size);
-
-        for (size_t i = 0; i < size; ++i)
-            vec_to[i] = transform.execute(vec_from[i], delta.getInt(i), time_zone);
-    }
-
-    template <typename FromVectorType, typename ToVectorType>
     void NO_INLINE vector_constant(const FromVectorType & vec_from, ToVectorType & vec_to, Int64 delta, const DateLUTImpl & time_zone) const
     {
         size_t size = vec_from.size();
@@ -267,14 +258,45 @@ struct Adder
             vec_to[i] = transform.execute(vec_from[i], delta, time_zone);
     }
 
+    template <typename FromVectorType, typename ToVectorType>
+    void vector_vector(const FromVectorType & vec_from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone) const
+    {
+        size_t size = vec_from.size();
+        vec_to.resize(size);
+
+        castTypeToEither<
+            ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
+            ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
+            ColumnFloat32, ColumnFloat64>(
+            &delta, [&](const auto & column){ vector_vector(vec_from, vec_to, column, time_zone, size); return true; });
+    }
+
     template <typename FromType, typename ToVectorType>
-    void NO_INLINE constant_vector(const FromType & from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone) const
+    void constant_vector(const FromType & from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone) const
     {
         size_t size = delta.size();
         vec_to.resize(size);
 
+        castTypeToEither<
+            ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
+            ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
+            ColumnFloat32, ColumnFloat64>(
+            &delta, [&](const auto & column){ constant_vector(from, vec_to, column, time_zone, size); return true; });
+    }
+
+private:
+    template <typename FromVectorType, typename ToVectorType, typename DeltaColumnType>
+    void NO_INLINE vector_vector(const FromVectorType & vec_from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
+    {
         for (size_t i = 0; i < size; ++i)
-            vec_to[i] = transform.execute(from, delta.getInt(i), time_zone);
+            vec_to[i] = transform.execute(vec_from[i], delta.getData()[i], time_zone);
+    }
+
+    template <typename FromType, typename ToVectorType, typename DeltaColumnType>
+    void NO_INLINE constant_vector(const FromType & from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
+    {
+        for (size_t i = 0; i < size; ++i)
+            vec_to[i] = transform.execute(from, delta.getData()[i], time_zone);
     }
 };
 
