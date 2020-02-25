@@ -3,7 +3,6 @@
 #include <optional>
 #include <Core/Types.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
-#include <DataStreams/MarkInCompressedFile.h>
 
 namespace DB
 {
