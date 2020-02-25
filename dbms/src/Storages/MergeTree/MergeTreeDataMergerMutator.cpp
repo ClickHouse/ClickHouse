@@ -1054,6 +1054,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     };
 
     bool need_remove_expired_values = false;
+
+    if (in && should_execute_ttl(in->getHeader().getNamesAndTypesList().getNames()))
+        need_remove_expired_values = true;
+
     /// All columns from part are changed and may be some more that were missing before in part
     if (source_part->getColumns().isSubsetOf(updated_header.getNamesAndTypesList()))
     {
@@ -1062,11 +1066,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             in = std::make_shared<MaterializingBlockInputStream>(
                 std::make_shared<ExpressionBlockInputStream>(in, data.primary_key_and_skip_indices_expr));
 
-        if (should_execute_ttl(in->getHeader().getNamesAndTypesList().getNames()))
-        {
-            need_remove_expired_values = true;
+        if (need_remove_expired_values)
             in = std::make_shared<TTLBlockInputStream>(in, data, new_data_part, time_of_mutation, true);
-        }
 
         IMergeTreeDataPart::MinMaxIndex minmax_idx;
 
@@ -1342,7 +1343,8 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
     {
         if (command.type == MutationCommand::Type::DELETE
             || command.type == MutationCommand::Type::UPDATE
-            || command.type == MutationCommand::Type::MATERIALIZE_INDEX)
+            || command.type == MutationCommand::Type::MATERIALIZE_INDEX
+            || command.type == MutationCommand::Type::MATERIALIZE_TTL)
         {
             for_interpreter.push_back(command);
         }
