@@ -9,6 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 class AggregateFunctionCombinatorForEach final : public IAggregateFunctionCombinator
