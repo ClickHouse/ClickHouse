@@ -76,7 +76,7 @@ LimitTransform::Status LimitTransform::prepare()
     if (!input.hasData())
         return Status::NeedData;
 
-    current_chunk = input.pull(true);
+    current_chunk = input.pull();
     has_block = true;
 
     auto rows = current_chunk.getNumRows();
