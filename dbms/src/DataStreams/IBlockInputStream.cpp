@@ -17,6 +17,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int OUTPUT_IS_NOT_SORTED;
     extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_BYTES;
     extern const int TOO_MANY_ROWS_OR_BYTES;

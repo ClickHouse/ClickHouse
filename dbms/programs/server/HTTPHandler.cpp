@@ -42,6 +42,7 @@ namespace DB
 namespace ErrorCodes
 {
 
+    extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_PARSE_QUOTED_STRING;

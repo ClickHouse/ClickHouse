@@ -46,6 +46,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;

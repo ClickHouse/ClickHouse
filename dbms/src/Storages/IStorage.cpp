@@ -18,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
     extern const int DUPLICATE_COLUMN;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;

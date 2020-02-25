@@ -47,6 +47,7 @@ using Ports = std::vector<UInt16>;
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_BLOCK_SIGNAL;
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
 }
