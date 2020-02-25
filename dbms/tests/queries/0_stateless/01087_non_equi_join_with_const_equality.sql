@@ -9,7 +9,7 @@ select '-';
 
 select * from (select number as n from numbers(4)) t1
 join (select number as n from numbers(4)) as t2
-on t2.n = toUInt64(0)
+on t2.n = toUInt64(1)
 order by t1.n, t2.n;
 
 select '-';
@@ -18,14 +18,14 @@ set join_algorithm = 'partial_merge';
 
 select * from (select number as n from numbers(4)) t1
 join (select number as n from numbers(4)) as t2
-on t1.n = toUInt64(0)
+on t1.n = toUInt64(2)
 order by t1.n, t2.n;
 
 select '-';
 
 select * from (select number as n from numbers(4)) t1
 join (select number as n from numbers(4)) as t2
-on t2.n = toUInt64(0)
+on t2.n = toUInt64(3)
 order by t1.n, t2.n;
 
 select '-';
@@ -36,14 +36,14 @@ set join_algorithm = 'hash';
 
 select * from (select number as n from numbers(4)) t1
 join (select number as n from numbers(4)) as t2
-on t1.n = toUInt64(0)
+on t1.n = toUInt64(3)
 order by t1.n, t2.n;
 
 select '-';
 
 select * from (select number as n from numbers(4)) t1
 join (select number as n from numbers(4)) as t2
-on t2.n = toUInt64(0)
+on t2.n = toUInt64(2)
 order by t1.n, t2.n;
 
 select '-';
@@ -52,7 +52,7 @@ set join_algorithm = 'partial_merge';
 
 select * from (select number as n from numbers(4)) t1
 join (select number as n from numbers(4)) as t2
-on t1.n = toUInt64(0)
+on t1.n = toUInt64(1)
 order by t1.n, t2.n;
 
 select '-';
