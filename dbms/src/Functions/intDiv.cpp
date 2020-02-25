@@ -33,7 +33,7 @@ struct DivideIntegralByConstantImpl
         {
             size_t size = a.size();
             for (size_t i = 0; i < size; ++i)
-                c[i] = -c[i];
+                c[i] = -a[i];
             return;
         }
 
