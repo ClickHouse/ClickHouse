@@ -32,7 +32,7 @@ struct DivideIntegralByConstantImpl
         if (unlikely(is_signed_v<B> && b == -1))
         {
             for (size_t i = 0; i < size; ++i)
-                c_pos[i] = -c_pos[i];
+                c_pos[i] = -a_pos[i];
             return;
         }
 
