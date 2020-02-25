@@ -8,6 +8,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+}
 
 
 /** Write UInt64 in variable length format (base128) NOTE Only up to 2^63 - 1 are supported. */

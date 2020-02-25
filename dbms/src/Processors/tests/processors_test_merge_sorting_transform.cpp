@@ -27,6 +27,10 @@
 
 using namespace DB;
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class NumbersSource : public ISource
 {

@@ -3,6 +3,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+}
 
 SquashingTransform::SquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_, bool reserve_memory_)
     : min_block_size_rows(min_block_size_rows_)
