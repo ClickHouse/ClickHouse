@@ -5,6 +5,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -87,6 +88,9 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
     }
 
     out << '\n';
+
+    if (new_part_type != MergeTreeDataPartType::WIDE && new_part_type != MergeTreeDataPartType::UNKNOWN)
+        out << "part_type: " << new_part_type.toString() << "\n";
 
     if (quorum)
         out << "quorum: " << quorum << '\n';
@@ -190,6 +194,15 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     }
 
     in >> "\n";
+    if (checkString("part_type: ", in))
+    {
+        String part_type_str;
+        in >> type_str;
+        new_part_type.fromString(type_str);
+        in >> "\n";
+    }
+    else
+        new_part_type = MergeTreeDataPartType::WIDE;
 
     /// Optional field.
     if (!in.eof())

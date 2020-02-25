@@ -16,6 +16,7 @@ set (SRCS
     setTerminalEcho.cpp
     shift10.cpp
     sleep.cpp
+    terminalColors.cpp
 )
 
 if (ENABLE_REPLXX)
@@ -23,6 +24,11 @@ if (ENABLE_REPLXX)
         ReplxxLineReader.cpp
         ReplxxLineReader.h
     )
+endif ()
+
+if (USE_DEBUG_HELPERS)
+    set (INCLUDE_DEBUG_HELPERS "-include ${ClickHouse_SOURCE_DIR}/base/common/iostream_debug_helpers.h")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
 endif ()
 
 add_library (common ${SRCS})

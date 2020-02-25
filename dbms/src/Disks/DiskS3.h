@@ -21,8 +21,13 @@ class DiskS3 : public IDisk
 public:
     friend class DiskS3Reservation;
 
-    DiskS3(String name_, std::shared_ptr<Aws::S3::S3Client> client_, String bucket_, String s3_root_path_,
-           String metadata_path_, size_t min_upload_part_size_);
+    DiskS3(
+        String name_,
+        std::shared_ptr<Aws::S3::S3Client> client_,
+        String bucket_,
+        String s3_root_path_,
+        String metadata_path_,
+        size_t min_upload_part_size_);
 
     const String & getName() const override { return name; }
 
@@ -62,9 +67,19 @@ public:
 
     void copyFile(const String & from_path, const String & to_path) override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & path, size_t buf_size) const override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
+        const String & path,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        size_t estimated_size = 0,
+        size_t aio_threshold = 0,
+        size_t mmap_threshold = 0) const override;
 
-    std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & path,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        WriteMode mode = WriteMode::Rewrite,
+        size_t estimated_size = 0,
+        size_t aio_threshold = 0) override;
 
     void remove(const String & path) override;
 

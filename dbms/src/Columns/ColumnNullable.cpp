@@ -115,7 +115,7 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
 
 const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
 {
-    UInt8 val = *reinterpret_cast<const UInt8 *>(pos);
+    UInt8 val = unalignedLoad<UInt8>(pos);
     pos += sizeof(val);
 
     getNullMapData().push_back(val);

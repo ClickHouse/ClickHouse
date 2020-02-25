@@ -390,7 +390,7 @@ namespace ErrorCodes
     extern const int ALL_REPLICAS_LOST = 415;
     extern const int REPLICA_STATUS_CHANGED = 416;
     extern const int EXPECTED_ALL_OR_ANY = 417;
-    extern const int UNKNOWN_JOIN_STRICTNESS = 418;
+    extern const int UNKNOWN_JOIN = 418;
     extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN = 419;
     extern const int CANNOT_UPDATE_COLUMN = 420;
     extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES = 421;
@@ -482,7 +482,10 @@ namespace ErrorCodes
     extern const int UNKNOWN_ACCESS_TYPE = 508;
     extern const int INVALID_GRANT = 509;
     extern const int CACHE_DICTIONARY_UPDATE_FAIL = 510;
-    extern const int CANNOT_ASSIGN_ALTER = 512;
+    extern const int UNKNOWN_ROLE = 511;
+    extern const int SET_NON_GRANTED_ROLE = 512;
+    extern const int UNKNOWN_PART_TYPE = 513;
+    extern const int CANNOT_ASSIGN_ALTER = 514;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

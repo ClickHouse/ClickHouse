@@ -56,7 +56,7 @@ sudo rpm --import https://repo.yandex.ru/clickhouse/CLICKHOUSE-KEY.GPG
 sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/x86_64
 ```
 
-If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments).
+If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments). The `prestable` tag is sometimes available too.
 
 Then run these commands to actually install packages:
 

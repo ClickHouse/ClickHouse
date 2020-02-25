@@ -8,6 +8,7 @@
 namespace DB
 {
 
+
 NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData::DataPartPtr & part, Names & columns)
 {
     NameSet required_columns{std::begin(columns), std::end(columns)};
@@ -246,8 +247,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(const MergeTreeData & storage, const
     }
     else
     {
-        result.pre_columns = data_part->columns.addTypes(pre_column_names);
-        result.columns = data_part->columns.addTypes(column_names);
+        result.pre_columns = data_part->getColumns().addTypes(pre_column_names);
+        result.columns = data_part->getColumns().addTypes(column_names);
     }
 
     result.should_reorder = should_reorder;
