@@ -5253,11 +5253,6 @@ void StorageReplicatedMergeTree::getCommitPartOps(
     }
 
     /// Information about the part, in the replica
-
-    //ops.emplace_back(zkutil::makeCheckRequest(
-    //    zookeeper_path + "/columns",
-    //    columns_version));
-
     if (storage_settings_ptr->use_minimalistic_part_header_in_zookeeper)
     {
         ops.emplace_back(zkutil::makeCreateRequest(
