@@ -700,7 +700,7 @@ class ClickHouseInstance:
 
     def contains_in_log(self, substring):
         result = self.exec_in_container(
-            ["bash", "-c", "grep '{}' /var/log/clickhouse-server/clickhouse-server.log || true".format(substring)])
+            ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log || true'.format(substring)])
         return len(result) > 0
 
     def copy_file_to_container(self, local_path, dest_path):

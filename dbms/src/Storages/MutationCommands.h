@@ -3,6 +3,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <DataTypes/IDataType.h>
+#include <Core/Names.h>
 
 #include <optional>
 #include <unordered_map>
@@ -30,6 +31,7 @@ struct MutationCommand
         READ_COLUMN,
         DROP_COLUMN,
         DROP_INDEX,
+        MATERIALIZE_TTL
     };
 
     Type type = EMPTY;
@@ -60,6 +62,9 @@ public:
 
     void writeText(WriteBuffer & out) const;
     void readText(ReadBuffer & in);
+
+    /// Extra columns that we need to read except ones needed for expressions.
+    Names additional_columns;
 };
 
 }

@@ -87,7 +87,7 @@ BlockIO InterpreterDropQuery::executeToTable(
         auto table_id = table->getStorageID();
         if (kind == ASTDropQuery::Kind::Detach)
         {
-            context.checkAccess(table->isView() ? AccessType::DETACH_VIEW : AccessType::DETACH_TABLE,
+            context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE,
                                 database_name, table_name);
             table->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
@@ -187,7 +187,7 @@ BlockIO InterpreterDropQuery::executeToDictionary(
     if (kind == ASTDropQuery::Kind::Detach)
     {
         /// Drop dictionary from memory, don't touch data and metadata
-        context.checkAccess(AccessType::DETACH_DICTIONARY, database_name, dictionary_name);
+        context.checkAccess(AccessType::DROP_DICTIONARY, database_name, dictionary_name);
         database->detachDictionary(dictionary_name, context);
     }
     else if (kind == ASTDropQuery::Kind::Truncate)
@@ -247,7 +247,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
         }
         else if (kind == ASTDropQuery::Kind::Detach)
         {
-            context.checkAccess(AccessType::DETACH_DATABASE, database_name);
+            context.checkAccess(AccessType::DROP_DATABASE, database_name);
             context.detachDatabase(database_name);
             database->shutdown();
         }
@@ -324,14 +324,14 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
     if (drop.table.empty())
     {
         if (drop.kind == ASTDropQuery::Kind::Detach)
-            required_access.emplace_back(AccessType::DETACH_DATABASE, drop.database);
+            required_access.emplace_back(AccessType::DROP_DATABASE, drop.database);
         else if (drop.kind == ASTDropQuery::Kind::Drop)
             required_access.emplace_back(AccessType::DROP_DATABASE, drop.database);
     }
     else if (drop.is_dictionary)
     {
         if (drop.kind == ASTDropQuery::Kind::Detach)
-            required_access.emplace_back(AccessType::DETACH_DICTIONARY, drop.database, drop.table);
+            required_access.emplace_back(AccessType::DROP_DICTIONARY, drop.database, drop.table);
         else if (drop.kind == ASTDropQuery::Kind::Drop)
             required_access.emplace_back(AccessType::DROP_DICTIONARY, drop.database, drop.table);
     }
@@ -343,7 +343,7 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
         else if (drop.kind == ASTDropQuery::Kind::Truncate)
             required_access.emplace_back(AccessType::TRUNCATE_TABLE | AccessType::TRUNCATE_VIEW, drop.database, drop.table);
         else if (drop.kind == ASTDropQuery::Kind::Detach)
-            required_access.emplace_back(AccessType::DETACH_TABLE | AccessType::DETACH_VIEW, drop.database, drop.table);
+            required_access.emplace_back(AccessType::DROP_TABLE | AccessType::DROP_VIEW, drop.database, drop.table);
     }
 
     return required_access;

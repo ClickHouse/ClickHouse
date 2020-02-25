@@ -11,6 +11,11 @@ SourceFromInputStream::SourceFromInputStream(BlockInputStreamPtr stream_, bool f
     , force_add_aggregating_info(force_add_aggregating_info_)
     , stream(std::move(stream_))
 {
+    init();
+}
+
+void SourceFromInputStream::init()
+{
     auto & sample = getPort().getHeader();
     for (auto & type : sample.getDataTypes())
         if (typeid_cast<const DataTypeAggregateFunction *>(type.get()))

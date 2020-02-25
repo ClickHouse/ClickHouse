@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeReader.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
 
@@ -17,14 +17,12 @@ MergeTreeThreadSelectBlockInputProcessor::MergeTreeThreadSelectBlockInputProcess
     const MergeTreeData & storage_,
     const bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
-    const Settings & settings,
+    const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_)
     :
-    MergeTreeBaseSelectProcessor{
-        pool_->getHeader(), storage_, prewhere_info_, max_block_size_rows_,
+    MergeTreeBaseSelectProcessor{pool_->getHeader(), storage_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
-        settings.min_bytes_to_use_direct_io, settings.min_bytes_to_use_mmap_io, settings.max_read_buffer_size,
-        use_uncompressed_cache_, true, virt_column_names_},
+        reader_settings_, use_uncompressed_cache_, virt_column_names_},
     thread{thread_},
     pool{pool_}
 {
@@ -72,15 +70,14 @@ bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
             owned_uncompressed_cache = storage.global_context.getUncompressedCache();
         owned_mark_cache = storage.global_context.getMarkCache();
 
-        reader = std::make_unique<MergeTreeReader>(
-            path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,
-            storage, rest_mark_ranges, min_bytes_to_use_direct_io, min_bytes_to_use_mmap_io, max_read_buffer_size, MergeTreeReader::ValueSizeMap{}, profile_callback);
+        reader = task->data_part->getReader(task->columns, rest_mark_ranges,
+            owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
+            IMergeTreeReader::ValueSizeMap{}, profile_callback);
 
         if (prewhere_info)
-            pre_reader = std::make_unique<MergeTreeReader>(
-                path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,
-                storage, rest_mark_ranges, min_bytes_to_use_direct_io, min_bytes_to_use_mmap_io,
-                max_read_buffer_size, MergeTreeReader::ValueSizeMap{}, profile_callback);
+            pre_reader = task->data_part->getReader(task->pre_columns, rest_mark_ranges,
+                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
+                IMergeTreeReader::ValueSizeMap{}, profile_callback);
     }
     else
     {
@@ -89,18 +86,17 @@ bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
         {
             auto rest_mark_ranges = pool->getRestMarks(*task->data_part, task->mark_ranges[0]);
             /// retain avg_value_size_hints
-            reader = std::make_unique<MergeTreeReader>(
-                path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,
-                storage, rest_mark_ranges, min_bytes_to_use_direct_io, min_bytes_to_use_mmap_io, max_read_buffer_size,
+            reader = task->data_part->getReader(task->columns, rest_mark_ranges,
+                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
                 reader->getAvgValueSizeHints(), profile_callback);
 
             if (prewhere_info)
-                pre_reader = std::make_unique<MergeTreeReader>(
-                    path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,
-                    storage, rest_mark_ranges, min_bytes_to_use_direct_io, min_bytes_to_use_mmap_io,
-                    max_read_buffer_size, pre_reader->getAvgValueSizeHints(), profile_callback);
+                pre_reader = task->data_part->getReader(task->pre_columns, rest_mark_ranges,
+                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
+                reader->getAvgValueSizeHints(), profile_callback);
         }
     }
+
     last_readed_part_path = path;
 
     return true;

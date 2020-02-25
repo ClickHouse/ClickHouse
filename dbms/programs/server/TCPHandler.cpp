@@ -902,7 +902,7 @@ void TCPHandler::receiveQuery()
         }
         else
         {
-            query_context->switchRowPolicy();
+            query_context->setInitialRowPolicy();
         }
     }
 
