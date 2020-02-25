@@ -53,12 +53,12 @@ function download
 
 function configure
 {
-    sed -i 's/<tcp_port>9000/<tcp_port>9001/g' left/config/config.xml
-    sed -i 's/<tcp_port>9000/<tcp_port>9002/g' right/config/config.xml
+    # Use the new config for both servers, so that we can change it in a PR.
 
     mkdir right/config/users.d ||:
-    mkdir left/config/users.d ||:
+    mkdir right/config/config.d ||:
 
+    # FIXME delete these two configs when the performance.tgz with configs rolls out.
     cat > right/config/config.d/zz-perf-test-tweaks-config.xml <<EOF
     <yandex>
         <logger>
@@ -67,9 +67,6 @@ function configure
         <text_log remove="remove">
             <table remove="remove"/>
         </text_log>
-        <metric_log remove="remove">
-            <table remove="remove"/>
-        </metric_log>
         <use_uncompressed_cache>0</use_uncompressed_cache>
         <!--1 GB-->
         <uncompressed_cache_size>1000000000</uncompressed_cache_size>
@@ -89,13 +86,12 @@ EOF
     </yandex>
 EOF
 
-    cp right/config/config.d/zz-perf-test-tweaks-config.xml left/config/config.d/zz-perf-test-tweaks-config.xml
-    cp right/config/users.d/zz-perf-test-tweaks-users.xml left/config/users.d/zz-perf-test-tweaks-users.xml
-
-    rm left/config/config.d/metric_log.xml ||:
-    rm left/config/config.d/text_log.xml ||:
-    rm right/config/config.d/metric_log.xml ||:
     rm right/config/config.d/text_log.xml ||:
+
+    cp -rv right/config left ||:
+
+    sed -i 's/<tcp_port>9000/<tcp_port>9001/g' left/config/config.xml
+    sed -i 's/<tcp_port>9000/<tcp_port>9002/g' right/config/config.xml
 
     # Start a temporary server to rename the tables
     while killall clickhouse; do echo . ; sleep 1 ; done
@@ -120,12 +116,6 @@ EOF
     # servers with hardlink might cause unpredictable behavior.
     rm db0/data/system/* -rf ||:
     rm db0/metadata/system/* -rf ||:
-}
-
-function restart
-{
-    while killall clickhouse; do echo . ; sleep 1 ; done
-    echo all killed
 
     # Make copies of the original db for both servers. Use hardlinks instead
     # of copying.
@@ -133,15 +123,21 @@ function restart
     rm -r right/db ||:
     cp -al db0/ left/db/
     cp -al db0/ right/db/
+}
+
+function restart
+{
+    while killall clickhouse; do echo . ; sleep 1 ; done
+    echo all killed
 
     set -m # Spawn servers in their own process groups
 
-    left/clickhouse server --config-file=left/config/config.xml -- --path left/db &> left-server-log.log &
+    left/clickhouse server --config-file=left/config/config.xml -- --path left/db &>> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
 
-    right/clickhouse server --config-file=right/config/config.xml -- --path right/db &> right-server-log.log &
+    right/clickhouse server --config-file=right/config/config.xml -- --path right/db &>> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
@@ -180,7 +176,7 @@ function run_tests
     # if some performance tests xmls were changed in a PR, run only these ones.
     if [ "$PR_TO_TEST" != "0" ]
     then
-        test_files_override=$(cd right/performance && readlink -e $changed_files ||:)
+        test_files_override=$(sed 's/dbms\/tests/right/' changed-tests.txt)
         if [ "$test_files_override" != "" ]
         then
             test_files=$test_files_override
@@ -193,9 +189,16 @@ function run_tests
         test_files=$(ls right/performance/${CHPC_TEST_GLOB}.xml)
     fi
 
-    # Run the tests
+    # Run the tests.
+    test_name="<none>"
     for test in $test_files
     do
+        # Check that both servers are alive, to fail faster if they die.
+        left/clickhouse client --port 9001 --query "select 1 format Null" \
+            || { echo $test_name >> left-server-died.log ; restart ; continue ; }
+        right/clickhouse client --port 9002 --query "select 1 format Null" \
+            || { echo $test_name >> right-server-died.log ; restart ; continue ; }
+
         test_name=$(basename $test ".xml")
         echo test $test_name
 
@@ -208,9 +211,6 @@ function run_tests
         # this may be slow, run it in background
         right/clickhouse local --file "$test_name-queries.tsv" --structure 'query text, run int, version UInt32, time float' --query "$(cat $script_dir/eqmed.sql)" > "$test_name-report.tsv" &
 
-        # Check that both servers are alive, to fail faster if they die.
-        left/clickhouse client --port 9001 --query "select 1 format Null"
-        right/clickhouse client --port 9002 --query "select 1 format Null"
     done
 
     unset TIMEFORMAT
@@ -229,10 +229,12 @@ function get_profiles
     left/clickhouse client --port 9001 --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
     left/clickhouse client --port 9001 --query "select * from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
     left/clickhouse client --port 9001 --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > left-addresses.tsv ||: &
+    left/clickhouse client --port 9001 --query "select * from system.metric_log format TSVWithNamesAndTypes" > left-metric-log.tsv ||: &
 
     right/clickhouse client --port 9002 --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
     right/clickhouse client --port 9002 --query "select * from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
     right/clickhouse client --port 9002 --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > right-addresses.tsv ||: &
+    right/clickhouse client --port 9002 --query "select * from system.metric_log format TSVWithNamesAndTypes" > right-metric-log.tsv ||: &
 
     wait
 }
@@ -241,7 +243,7 @@ function get_profiles
 function report
 {
 
-for x in {right,left}-{addresses,{query,trace}-log}.tsv
+for x in {right,left}-{addresses,{query,trace,metric}-log}.tsv
 do
     # FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
     # absolutely atrocious way. This should be done by the file() function itself.
@@ -422,7 +424,10 @@ case "$stage" in
     time restart
     ;&
 "run_tests")
-    time run_tests
+    # If the tests fail with OOM or something, still try to restart the servers
+    # to collect the logs.
+    time run_tests ||:
+    time restart
     ;&
 "get_profiles")
     time get_profiles

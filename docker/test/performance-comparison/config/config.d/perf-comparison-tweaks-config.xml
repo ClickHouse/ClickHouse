@@ -2,12 +2,18 @@
     <logger>
         <console>true</console>
     </logger>
+
     <text_log remove="remove">
         <table remove="remove"/>
     </text_log>
-    <metric_log remove="remove">
-        <table remove="remove"/>
+
+    <metric_log replace="replace">
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
     </metric_log>
+
     <use_uncompressed_cache>0</use_uncompressed_cache>
     <!--64 GiB-->
     <uncompressed_cache_size>1000000000</uncompressed_cache_size>
