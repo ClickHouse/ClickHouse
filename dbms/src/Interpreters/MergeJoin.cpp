@@ -461,7 +461,17 @@ MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & ri
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
 {
     if (!isLeft(table_join->kind()) && !isInner(table_join->kind()))
-        throw Exception("Partial merge supported for LEFT and INNER JOINs only", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Not supported. PartialMergeJoin supports LEFT and INNER JOINs kinds.", ErrorCodes::NOT_IMPLEMENTED);
+
+    switch (table_join->strictness())
+    {
+        case ASTTableJoin::Strictness::Any:
+        case ASTTableJoin::Strictness::All:
+        case ASTTableJoin::Strictness::Semi:
+            break;
+        default:
+            throw Exception("Not supported. PartialMergeJoin supports ALL, ANY and SEMI JOINs variants.", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     if (!max_rows_in_right_block)
         throw Exception("partial_merge_join_rows_in_right_blocks cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
@@ -585,7 +595,7 @@ bool MergeJoin::saveRightBlock(Block && block)
     return true;
 }
 
-bool MergeJoin::addJoinedBlock(const Block & src_block)
+bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
 {
     Block block = materializeBlock(src_block);
     JoinCommon::removeLowCardinalityInplace(block);

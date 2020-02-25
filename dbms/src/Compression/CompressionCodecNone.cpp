@@ -6,9 +6,9 @@
 namespace DB
 {
 
-UInt8 CompressionCodecNone::getMethodByte() const
+uint8_t CompressionCodecNone::getMethodByte() const
 {
-    return static_cast<UInt8>(CompressionMethodByte::NONE);
+    return static_cast<uint8_t>(CompressionMethodByte::NONE);
 }
 
 String CompressionCodecNone::getCodecDesc() const

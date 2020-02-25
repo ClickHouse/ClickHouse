@@ -6,6 +6,7 @@ nav:
   - 'ClickHouse Features that Can Be Considered Disadvantages': 'introduction/features_considered_disadvantages.md'
   - 'Performance': 'introduction/performance.md'
   - 'History': 'introduction/history.md'
+  - 'Adopters': 'introduction/adopters.md'
 
 - 'Getting Started':
   - 'hidden': 'getting_started/index.md'
@@ -220,7 +221,7 @@ nav:
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
     - 'clickhouse-benchmark': 'operations/utils/clickhouse-benchmark.md'
   - 'Usage Recommendations': 'operations/tips.md'
-  
+
 - 'Development':
   - 'hidden': 'development/index.md'
   - 'The Beginner ClickHouse Developer Instruction': 'development/developer_instruction.md'
@@ -233,6 +234,9 @@ nav:
   - 'How to Write C++ Code': 'development/style.md'
   - 'How to Run ClickHouse Tests': 'development/tests.md'
   - 'Third-Party Libraries Used': 'development/contrib.md'
+
+- 'Commercial':
+  - 'Cloud Service Providers': 'commercial/cloud.md'
 
 - 'What''s New':
   - 'Roadmap': 'roadmap.md'

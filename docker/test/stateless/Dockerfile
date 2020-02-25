@@ -1,6 +1,8 @@
 # docker build -t yandex/clickhouse-stateless-test .
 FROM yandex/clickhouse-deb-builder
 
+ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.3.20200115/clickhouse-odbc-1.1.3-Linux.tar.gz"
+
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-install-recommends \
@@ -27,8 +29,16 @@ RUN apt-get update -y \
             gdb \
             lsof \
             llvm-8 \
-            vim
+            vim \
+            unixodbc \
+            wget
 
+RUN mkdir -p /tmp/clickhouse-odbc-tmp \
+   && wget --quiet -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
+   && cp /tmp/clickhouse-odbc-tmp/lib64/*.so /usr/local/lib/ \
+   && odbcinst -i -d -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbcinst.ini.sample \
+   && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
+   && rm -rf /tmp/clickhouse-odbc-tmp
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -56,5 +66,11 @@ CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/; \
+    ln -s /usr/share/clickhouse-test/config/disks.xml /etc/clickhouse-server/config.d/; \
+    ln -s /usr/share/clickhouse-test/config/secure_ports.xml /etc/clickhouse-server/config.d/; \
+    ln -s /usr/share/clickhouse-test/config/server.key /etc/clickhouse-server/; \
+    ln -s /usr/share/clickhouse-test/config/server.crt /etc/clickhouse-server/; \
+    ln -s /usr/share/clickhouse-test/config/dhparam.pem /etc/clickhouse-server/; \
+    ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml; \
     service zookeeper start; sleep 5; \
     service clickhouse-server start && sleep 5 && clickhouse-test --testname --shard --zookeeper $ADDITIONAL_OPTIONS $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt

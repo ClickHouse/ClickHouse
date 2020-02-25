@@ -104,6 +104,22 @@
 - Рефакторинги.
 - Поиск и навигация.
 
+### Yandex DataLens {#yandex-datalens}
+
+[Yandex DataLens](https://cloud.yandex.ru/services/datalens) — cервис визуализации и анализа данных.
+
+Основные возможности:
+
+- Широкий выбор инструментов визуализации, от простых столбчатых диаграмм до сложных дашбордов.
+- Возможность опубликовать дашборды на широкую аудиторию.
+- Поддержка множества источников данных, включая ClickHouse.
+- Хранение материализованных данных в кластере ClickHouse DataLens.
+
+Для небольших проектов DataLens [доступен бесплатно](https://cloud.yandex.ru/docs/datalens/pricing), в том числе и для коммерческого использования.
+
+- [Документация DataLens](https://cloud.yandex.ru/docs/datalens/).
+- [Пособие по визуализации данных из ClickHouse](https://cloud.yandex.ru/docs/solutions/datalens/data-from-ch-visualization).
+
 ### Holistics Software
 
 [Holistics](https://www.holistics.io/) — full-stack платформа для обработки данных и бизнес-аналитики.
@@ -117,3 +133,19 @@
 - Моделирование данных с помощью SQL для их реляционного отображения.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/gui/) <!--hide-->
+
+### Looker
+[Looker](https://looker.com) — платформа для обработки данных и бизнес-аналитики. Поддерживает более 50 диалектов баз данных, включая ClickHouse.  Looker можно установить самостоятельно или воспользоваться готовой платформой SaaS. 
+
+Просмотр данных, построение отображений и дашбордов, планирование отчётов и обмен данными с коллегами доступны с помощью браузера. Также, Looker предоставляет ряд инструментов, позволяющих встраивать сервис в другие приложения и API для обмена данными.
+
+Основные возможности:
+
+- Язык LookML, поддерживающий [моделирование данных](https://looker.com/platform/data-modeling).
+- Интеграция с различными системами с помощью [Data Actions](https://looker.com/platform/actions).
+- Инструменты для встраивания сервиса в приложения.
+- API.
+
+[Как сконфигурировать ClickHouse в Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
+
+[Original article](https://clickhouse.tech/docs/ru/interfaces/third-party/gui/) <!--hide-->
