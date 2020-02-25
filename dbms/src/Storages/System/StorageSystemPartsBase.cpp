@@ -218,7 +218,7 @@ StoragesInfo StoragesInfoStream::next()
     return {};
 }
 
-Pipes StorageSystemPartsBase::readWithProcessors(
+Pipes StorageSystemPartsBase::read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

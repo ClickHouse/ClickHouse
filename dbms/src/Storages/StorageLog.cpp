@@ -24,6 +24,9 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTLiteral.h>
 #include "StorageLogSettings.h"
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Pipe.h>
+
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 #define DBMS_STORAGE_LOG_MARKS_FILE_NAME "__marks.mrk"
@@ -44,13 +47,25 @@ namespace ErrorCodes
 }
 
 
-class LogBlockInputStream final : public IBlockInputStream
+class LogSource final : public SourceWithProgress
 {
 public:
-    LogBlockInputStream(
+
+    static Block getHeader(const NamesAndTypesList & columns)
+    {
+        Block res;
+
+        for (const auto & name_type : columns)
+            res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
+
+        return Nested::flatten(res);
+    }
+
+    LogSource(
         size_t block_size_, const NamesAndTypesList & columns_, StorageLog & storage_,
         size_t mark_number_, size_t rows_limit_, size_t max_read_buffer_size_)
-        : block_size(block_size_),
+        : SourceWithProgress(getHeader(columns_)),
+        block_size(block_size_),
         columns(columns_),
         storage(storage_),
         mark_number(mark_number_),
@@ -61,18 +76,8 @@ public:
 
     String getName() const override { return "Log"; }
 
-    Block getHeader() const override
-    {
-        Block res;
-
-        for (const auto & name_type : columns)
-            res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
-
-        return Nested::flatten(res);
-    }
-
 protected:
-    Block readImpl() override;
+    Chunk generate() override;
 
 private:
     size_t block_size;
@@ -184,15 +189,15 @@ private:
 };
 
 
-Block LogBlockInputStream::readImpl()
+Chunk LogSource::generate()
 {
     Block res;
 
     if (rows_read == rows_limit)
-        return res;
+        return {};
 
     if (storage.disk->isDirectoryEmpty(storage.table_path))
-        return res;
+        return {};
 
     /// How many rows to read for the next block.
     size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
@@ -211,7 +216,7 @@ Block LogBlockInputStream::readImpl()
             throw;
         }
 
-        if (column->size())
+        if (!column->empty())
             res.insert(ColumnWithTypeAndName(std::move(column), name_type.type, name_type.name));
     }
 
@@ -227,11 +232,13 @@ Block LogBlockInputStream::readImpl()
         streams.clear();
     }
 
-    return Nested::flatten(res);
+    res = Nested::flatten(res);
+    UInt64 num_rows = res.rows();
+    return Chunk(res.getColumns(), num_rows);
 }
 
 
-void LogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read)
+void LogSource::readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read)
 {
     IDataType::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
 
@@ -568,7 +575,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
     return it->second.marks;
 }
 
-BlockInputStreams StorageLog::read(
+Pipes StorageLog::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
@@ -583,7 +590,7 @@ BlockInputStreams StorageLog::read(
 
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
-    BlockInputStreams res;
+    Pipes pipes;
 
     const Marks & marks = getMarksWithRealRowCount();
     size_t marks_size = marks.size();
@@ -601,7 +608,7 @@ BlockInputStreams StorageLog::read(
         size_t rows_begin = mark_begin ? marks[mark_begin - 1].rows : 0;
         size_t rows_end = mark_end ? marks[mark_end - 1].rows : 0;
 
-        res.emplace_back(std::make_shared<LogBlockInputStream>(
+        pipes.emplace_back(std::make_shared<LogSource>(
             max_block_size,
             all_columns,
             *this,
@@ -610,7 +617,7 @@ BlockInputStreams StorageLog::read(
             max_read_buffer_size));
     }
 
-    return res;
+    return pipes;
 }
 
 BlockOutputStreamPtr StorageLog::write(

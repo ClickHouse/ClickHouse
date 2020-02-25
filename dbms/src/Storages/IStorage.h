@@ -14,6 +14,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/ColumnDependency.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
@@ -127,6 +128,12 @@ public:
     /// So, it's impossible for one stream run out of data when there is data in other streams.
     /// Example is StorageSystemNumbers.
     virtual bool hasEvenlyDistributedRead() const { return false; }
+
+    /// Returns true if there is set table TTL, any column TTL or any move TTL.
+    virtual bool hasAnyTTL() const { return false; }
+
+    /// Returns true if there is set TTL for rows.
+    virtual bool hasRowsTTL() const { return false; }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -261,20 +268,8 @@ public:
       *  if the storage can return a different number of streams.
       *
       * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
-      *
-      * Default implementation calls `readWithProcessors` and wraps into TreeExecutor.
       */
-    virtual BlockInputStreams read(
-        const Names & /*column_names*/,
-        const SelectQueryInfo & /*query_info*/,
-        const Context & /*context*/,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        size_t /*max_block_size*/,
-        unsigned /*num_streams*/);
-
-    /** The same as read, but returns processors.
-     */
-    virtual Pipes readWithProcessors(
+    virtual Pipes read(
         const Names & /*column_names*/,
         const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
@@ -285,7 +280,15 @@ public:
         throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual bool supportProcessorsPipeline() const { return false; }
+    /** The same as read, but returns BlockInputStreams.
+     */
+    BlockInputStreams readStreams(
+            const Names & /*column_names*/,
+            const SelectQueryInfo & /*query_info*/,
+            const Context & /*context*/,
+            QueryProcessingStage::Enum /*processed_stage*/,
+            size_t /*max_block_size*/,
+            unsigned /*num_streams*/);
 
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.
@@ -448,6 +451,10 @@ public:
 
     /// Returns names of primary key + secondary sorting columns
     virtual Names getSortingKeyColumns() const { return {}; }
+
+    /// Returns columns, which will be needed to calculate dependencies
+    /// (skip indices, TTL expressions) if we update @updated_columns set of columns.
+    virtual ColumnDependencies getColumnDependencies(const NameSet & /* updated_columns */) const { return {}; }
 
     /// Returns storage policy if storage supports it
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }

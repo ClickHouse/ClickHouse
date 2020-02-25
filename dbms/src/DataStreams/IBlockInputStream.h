@@ -24,6 +24,7 @@ namespace ErrorCodes
 
 class ProcessListElement;
 class QuotaContext;
+using QuotaContextPtr = std::shared_ptr<const QuotaContext>;
 class QueryStatus;
 struct SortColumnDescription;
 using SortDescription = std::vector<SortColumnDescription>;
@@ -220,7 +221,7 @@ public:
     /** Set the quota. If you set a quota on the amount of raw data,
       * then you should also set mode = LIMITS_TOTAL to LocalLimits with setLimits.
       */
-    virtual void setQuota(const std::shared_ptr<QuotaContext> & quota_)
+    virtual void setQuota(const QuotaContextPtr & quota_)
     {
         quota = quota_;
     }
@@ -278,7 +279,7 @@ private:
 
     LocalLimits limits;
 
-    std::shared_ptr<QuotaContext> quota;    /// If nullptr - the quota is not used.
+    QuotaContextPtr quota;    /// If nullptr - the quota is not used.
     UInt64 prev_elapsed = 0;
 
     /// The approximate total number of rows to read. For progress bar.

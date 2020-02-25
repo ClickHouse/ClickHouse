@@ -1,4 +1,5 @@
 #include <Parsers/ASTCreateUserQuery.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <Common/quoteString.h>
 
 
@@ -134,6 +135,13 @@ namespace
     }
 
 
+    void formatDefaultRoles(const ASTGenericRoleSet & default_roles, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " DEFAULT ROLE " << (settings.hilite ? IAST::hilite_none : "");
+        default_roles.format(settings);
+    }
+
+
     void formatProfile(const String & profile_name, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " PROFILE " << (settings.hilite ? IAST::hilite_none : "")
@@ -180,6 +188,9 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & settings, FormatState
         formatHosts("ADD", *add_hosts, settings);
     if (remove_hosts)
         formatHosts("REMOVE", *remove_hosts, settings);
+
+    if (default_roles)
+        formatDefaultRoles(*default_roles, settings);
 
     if (profile)
         formatProfile(*profile, settings);

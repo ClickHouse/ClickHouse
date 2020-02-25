@@ -62,7 +62,7 @@ protected:
             {
                 num_rows = limit_rows;
                 for (auto & column : columns)
-                    column = (*column->cut(0, num_rows)->convertToFullColumnIfConst()).mutate();
+                    column = (*column->cut(0, num_rows)).mutate();
             }
 
             total_merged_rows += num_rows;
