@@ -901,7 +901,7 @@ PartitionTaskStatus ClusterCopier::tryProcessPartitionTask(const ConnectionTimeo
         tryLogCurrentException(log, "An error occurred while updating the config");
     }
 
-    return PartitionTaskStatus::Finished;
+    return res;
 }
 
 PartitionTaskStatus ClusterCopier::iterateThroughAllPiecesInPartition(const ConnectionTimeouts & timeouts, ShardPartition & task_partition,
@@ -909,12 +909,17 @@ PartitionTaskStatus ClusterCopier::iterateThroughAllPiecesInPartition(const Conn
 {
     const size_t total_number_of_pieces = task_partition.task_shard.task_table.number_of_splits;
 
-    /// ThreadPool maybe ??
+    PartitionTaskStatus res;
+    PartitionTaskStatus answer = PartitionTaskStatus::Finished;
+
     for (size_t piece_number = 0; piece_number < total_number_of_pieces; piece_number++)
-        processPartitionPieceTaskImpl(timeouts, task_partition, piece_number, is_unprioritized_task);
+    {
+        res = processPartitionPieceTaskImpl(timeouts, task_partition, piece_number, is_unprioritized_task);
+        if (res == PartitionTaskStatus::Error)
+            answer = res;
+    }
 
-    return PartitionTaskStatus::Finished;
-
+    return answer;
 }
 
 
