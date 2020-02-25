@@ -55,3 +55,8 @@ void ReplxxLineReader::addToHistory(const String & line)
 {
     rx.history_add(line);
 }
+
+void ReplxxLineReader::enableBracketedPaste()
+{
+    rx.enable_bracketed_paste();
+};
