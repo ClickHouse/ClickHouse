@@ -11,28 +11,7 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_DIVISION;
-}
-
-template <typename A, typename B>
-struct ModuloImpl
-{
-    using ResultType = typename NumberTraits::ResultOfModulo<A, B>::Type;
-    static const constexpr bool allow_fixed_string = false;
-
-    template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
-    {
-        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
-        return typename NumberTraits::ToInteger<A>::Type(a) % typename NumberTraits::ToInteger<B>::Type(b);
-    }
-
-#if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
-#endif
-};
+/// Optimizations for integer modulo by a constant.
 
 template <typename A, typename B>
 struct ModuloByConstantImpl
