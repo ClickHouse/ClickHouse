@@ -64,7 +64,6 @@ namespace ErrorCodes
 {
     extern const int STORAGE_REQUIRES_PARAMETER;
     extern const int BAD_ARGUMENTS;
-    extern const int READONLY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INFINITE_LOOP;

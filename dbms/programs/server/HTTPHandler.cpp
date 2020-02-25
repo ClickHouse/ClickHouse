@@ -41,8 +41,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int READONLY;
-    extern const int UNKNOWN_COMPRESSION_METHOD;
 
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;

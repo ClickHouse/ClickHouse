@@ -12,7 +12,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
 }
 
 class ColumnLowCardinality final : public COWHelper<IColumn, ColumnLowCardinality>

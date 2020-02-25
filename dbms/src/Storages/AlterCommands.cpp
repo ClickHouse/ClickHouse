@@ -32,7 +32,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_SETTING;
     extern const int DUPLICATE_COLUMN;
 }
 

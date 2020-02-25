@@ -86,13 +86,11 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int MEMORY_LIMIT_EXCEEDED;
-    extern const int SYNTAX_ERROR;
     extern const int INVALID_PARTITION_VALUE;
     extern const int METADATA_MISMATCH;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int TOO_MANY_PARTS;
     extern const int INCOMPATIBLE_COLUMNS;
-    extern const int CANNOT_UPDATE_COLUMN;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;

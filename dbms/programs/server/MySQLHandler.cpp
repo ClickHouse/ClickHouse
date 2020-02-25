@@ -37,7 +37,6 @@ using Poco::Net::SSLManager;
 namespace ErrorCodes
 {
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
-    extern const int OPENSSL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
 

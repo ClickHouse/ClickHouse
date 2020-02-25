@@ -43,7 +43,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int DATABASE_ACCESS_DENIED;
@@ -51,7 +50,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
-    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
 namespace

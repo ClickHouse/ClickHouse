@@ -78,25 +78,18 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int DATABASE_ACCESS_DENIED;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
-    extern const int TABLE_WAS_NOT_DROPPED;
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int THERE_IS_NO_SESSION;
     extern const int THERE_IS_NO_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int DDL_GUARD_IS_ACTIVE;
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
-    extern const int PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
-    extern const int SCALAR_ALREADY_EXISTS;
     extern const int UNKNOWN_SCALAR;
-    extern const int ACCESS_DENIED;
 }
 
 
