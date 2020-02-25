@@ -70,7 +70,7 @@ function configure
         <metric_log remove="remove">
             <table remove="remove"/>
         </metric_log>
-        <use_uncompressed_cache>1</use_uncompressed_cache>
+        <use_uncompressed_cache>0</use_uncompressed_cache>
         <!--1 GB-->
         <uncompressed_cache_size>1000000000</uncompressed_cache_size>
     </yandex>
