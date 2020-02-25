@@ -19,7 +19,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/MarkInCompressedFile.h>
 #include <Formats/FormatFactory.h>
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>

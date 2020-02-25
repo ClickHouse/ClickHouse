@@ -86,9 +86,9 @@ struct NumComparisonImpl
           */
 
         size_t size = a.size();
-        const A * a_pos = a.data();
-        const B * b_pos = b.data();
-        UInt8 * c_pos = c.data();
+        const A * __restrict a_pos = a.data();
+        const B * __restrict b_pos = b.data();
+        UInt8 * __restrict c_pos = c.data();
         const A * a_end = a_pos + size;
 
         while (a_pos < a_end)
@@ -103,8 +103,8 @@ struct NumComparisonImpl
     static void NO_INLINE vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<UInt8> & c)
     {
         size_t size = a.size();
-        const A * a_pos = a.data();
-        UInt8 * c_pos = c.data();
+        const A * __restrict a_pos = a.data();
+        UInt8 * __restrict c_pos = c.data();
         const A * a_end = a_pos + size;
 
         while (a_pos < a_end)
