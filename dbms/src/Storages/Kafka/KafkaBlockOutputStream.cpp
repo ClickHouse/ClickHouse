@@ -8,7 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern int CANNOT_CREATE_IO_BUFFER;
+    extern const int CANNOT_CREATE_IO_BUFFER;
 }
 
 KafkaBlockOutputStream::KafkaBlockOutputStream(StorageKafka & storage_, const Context & context_) : storage(storage_), context(context_)
