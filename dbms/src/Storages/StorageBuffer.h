@@ -56,15 +56,13 @@ public:
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
 
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-    bool supportProcessorsPipeline() const override { return true; }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 

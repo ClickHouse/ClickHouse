@@ -2,10 +2,12 @@
 #include <Core/Block.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Common/typeid_cast.h>
+#include <Common/HashTable/Hash.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <IO/WriteHelpers.h>
+#include <common/terminalColors.h>
 
 
 namespace DB
@@ -35,7 +37,11 @@ void InternalTextLogsRowOutputStream::write(const Block & block)
         if (host_name.size)
         {
             writeCString("[", wb);
+            if (color)
+                writeString(setColor(StringRefHash()(host_name)), wb);
             writeString(host_name, wb);
+            if (color)
+                writeCString(resetColor(), wb);
             writeCString("] ", wb);
         }
 
@@ -51,21 +57,34 @@ void InternalTextLogsRowOutputStream::write(const Block & block)
         writeChar('0' + ((microseconds / 10) % 10), wb);
         writeChar('0' + ((microseconds / 1) % 10), wb);
 
+        UInt64 thread_id = array_thread_id[row_num];
+        writeCString(" [ ", wb);
+        if (color)
+            writeString(setColor(intHash64(thread_id)), wb);
+        writeIntText(thread_id, wb);
+        if (color)
+            writeCString(resetColor(), wb);
+        writeCString(" ]", wb);
+
         auto query_id = column_query_id.getDataAt(row_num);
         if (query_id.size)
         {
             writeCString(" {", wb);
+            if (color)
+                writeString(setColor(StringRefHash()(query_id)), wb);
             writeString(query_id, wb);
+            if (color)
+                writeCString(resetColor(), wb);
             writeCString("}", wb);
         }
 
-        UInt64 thread_id = array_thread_id[row_num];
-        writeCString(" [ ", wb);
-        writeIntText(thread_id, wb);
-        writeCString(" ] <", wb);
-
         Int8 priority = array_priority[row_num];
+        writeCString(" <", wb);
+        if (color)
+            writeCString(setColorForLogPriority(priority), wb);
         writeString(InternalTextLogsQueue::getPriorityName(priority), wb);
+        if (color)
+            writeCString(resetColor(), wb);
         writeCString("> ", wb);
 
         auto source = column_source.getDataAt(row_num);

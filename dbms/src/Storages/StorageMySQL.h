@@ -34,7 +34,7 @@ public:
 
     std::string getName() const override { return "MySQL"; }
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

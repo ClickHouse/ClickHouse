@@ -234,6 +234,9 @@ nav:
   - 'How to Run ClickHouse Tests': 'development/tests.md'
   - 'Third-Party Libraries Used': 'development/contrib.md'
 
+- 'Commercial':
+  - 'Cloud Service Providers': 'commercial/cloud.md'
+
 - 'What''s New':
   - 'Roadmap': 'roadmap.md'
   - 'Changelog': 'changelog.md'
