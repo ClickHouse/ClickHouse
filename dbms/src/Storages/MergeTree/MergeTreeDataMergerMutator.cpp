@@ -975,16 +975,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             commands_for_part.emplace_back(command);
     }
 
-    if (isCompactPart(source_part))
-        commands_for_part.additional_columns = source_part->getColumns().getNames();
-
     if (!isStorageTouchedByMutations(storage_from_source_part, commands_for_part, context_for_reading))
     {
         LOG_TRACE(log, "Part " << source_part->name << " doesn't change up to mutation version " << future_part.part_info.mutation);
         return data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part.part_info);
     }
     else
+    {
         LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
+    }
 
     BlockInputStreamPtr in = nullptr;
     Block updated_header;
@@ -999,7 +998,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     MergeStageProgress stage_progress(1.0);
 
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
-    auto new_columns = all_columns;
 
     if (!for_interpreter.empty())
     {
@@ -1009,6 +1007,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
     }
 
+
     auto new_data_part = data.createPart(
         future_part.name, future_part.type, future_part.part_info, space_reservation->getDisk(), "tmp_mut_" + future_part.name);
 
@@ -1017,9 +1016,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     /// It shouldn't be changed by mutation.
     new_data_part->index_granularity_info = source_part->index_granularity_info;
+    new_data_part->setColumns(getColumnsForNewDataPart(source_part, updated_header, all_columns));
 
     String new_part_tmp_path = new_data_part->getFullPath();
-
 
     /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
     /// (which is locked in data.getTotalActiveSizeInBytes()) is locked after part->columns_lock
@@ -1036,26 +1035,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     auto mrk_extension = source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(new_data_part->getType())
                                                                          : getNonAdaptiveMrkExtension();
 
-    auto should_execute_ttl = [&](const auto & in_columns)
-    {
-        if (!data.hasAnyTTL())
-            return false;
-
-        for (const auto & command : commands_for_part)
-            if (command.type == MutationCommand::MATERIALIZE_TTL)
-                return true;
-
-        auto dependencies = data.getColumnDependencies(NameSet(in_columns.begin(), in_columns.end()));
-        for (const auto & dependency : dependencies)
-            if (dependency.kind == ColumnDependency::TTL_EXPRESSION || dependency.kind == ColumnDependency::TTL_TARGET)
-                return true;
-
-        return false;
-    };
-
     bool need_remove_expired_values = false;
 
-    if (in && should_execute_ttl(in->getHeader().getNamesAndTypesList().getNames()))
+    if (in && shouldExecuteTTL(in->getHeader().getNamesAndTypesList().getNames(), commands_for_part))
         need_remove_expired_values = true;
 
     /// All columns from part are changed and may be some more that were missing before in part
@@ -1222,7 +1204,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             new_data_part->getColumns().writeText(out_columns);
         } /// close
 
-        new_data_part->setColumns(getColumnsForNewDataPart(source_part, updated_header, all_columns));
         new_data_part->rows_count = source_part->rows_count;
         new_data_part->index_granularity = source_part->index_granularity;
         new_data_part->index = source_part->index;
@@ -1339,6 +1320,9 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames) const
 {
+    NameSet removed_columns_from_compact_part;
+    NameSet already_changed_columns;
+    bool is_compact_part = isCompactPart(part);
     for (const auto & command : commands)
     {
         if (command.type == MutationCommand::Type::DELETE
@@ -1347,19 +1331,48 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
             || command.type == MutationCommand::Type::MATERIALIZE_TTL)
         {
             for_interpreter.push_back(command);
+            for (const auto & [column_name, expr] : command.column_to_update_expression)
+                already_changed_columns.emplace(column_name);
         }
         else if (command.type == MutationCommand::Type::READ_COLUMN)
         {
             /// If we don't have this column in source part, than we don't
             /// need to materialize it
             if (part->getColumns().contains(command.column_name))
+            {
                 for_interpreter.push_back(command);
+                if (!command.column_name.empty())
+                    already_changed_columns.emplace(command.column_name);
+            }
             else
                 for_file_renames.push_back(command);
+
+        }
+        else if (is_compact_part && command.type == MutationCommand::Type::DROP_COLUMN)
+        {
+            removed_columns_from_compact_part.emplace(command.column_name);
         }
         else
         {
             for_file_renames.push_back(command);
+        }
+    }
+
+    if (is_compact_part)
+    {
+        /// If it's compact part than we don't need to actually remove files from disk
+        /// we just don't read dropped columns
+        for (const auto & column : part->getColumns())
+        {
+            if (!removed_columns_from_compact_part.count(column.name) && !already_changed_columns.count(column.name))
+            {
+                for_interpreter.emplace_back(MutationCommand
+                {
+                    .type = MutationCommand::Type::READ_COLUMN,
+                    .column_name = column.name,
+                    .data_type = column.type
+                });
+            }
         }
     }
 }
@@ -1390,7 +1403,8 @@ NameSet MergeTreeDataMergerMutator::collectFilesToRemove(
             remove_files.emplace("skp_idx_" + command.column_name + ".idx");
             remove_files.emplace("skp_idx_" + command.column_name + mrk_extension);
         }
-        else if (command.type == MutationCommand::Type::DROP_COLUMN)
+        /// We don't remove column files for compact parts because they stored in single file
+        else if (command.type == MutationCommand::Type::DROP_COLUMN && isCompactPart(source_part))
         {
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
             {
@@ -1464,4 +1478,21 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
     return all_columns;
 }
 
+
+bool MergeTreeDataMergerMutator::shouldExecuteTTL(const Names & columns, const MutationCommands & commands) const
+{
+    if (!data.hasAnyTTL())
+        return false;
+
+    for (const auto & command : commands)
+        if (command.type == MutationCommand::MATERIALIZE_TTL)
+            return true;
+
+    auto dependencies = data.getColumnDependencies(NameSet(columns.begin(), columns.end()));
+    for (const auto & dependency : dependencies)
+        if (dependency.kind == ColumnDependency::TTL_EXPRESSION || dependency.kind == ColumnDependency::TTL_TARGET)
+            return true;
+
+    return false;
+}
 }
