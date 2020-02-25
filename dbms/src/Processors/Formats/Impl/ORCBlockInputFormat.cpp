@@ -12,6 +12,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int CANNOT_READ_ALL_DATA;
+}
     ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer &in_, Block header_) : IInputFormat(std::move(header_), in_)
     {
     }
@@ -90,6 +94,10 @@ namespace DB
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int CANNOT_READ_ALL_DATA;
+}
     class FormatFactory;
     void registerInputFormatProcessorORC(FormatFactory &)
     {

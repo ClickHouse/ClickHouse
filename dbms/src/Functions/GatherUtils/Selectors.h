@@ -8,6 +8,10 @@
 
 namespace DB::GatherUtils
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 /// Base classes which selects template function implementation with concrete ArraySource or ArraySink
 /// Derived classes should implement selectImpl for ArraySourceSelector and ArraySinkSelector,
 ///  selectSourceSink for ArraySinkSourceSelector and selectSourcePair for ArraySourcePairSelector

@@ -12,6 +12,14 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_ENOUGH_SPACE;
+    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_POLICY;
+    extern const int UNKNOWN_DISK;
+    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+}
 DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context)
 {
     Poco::Util::AbstractConfiguration::Keys keys;

@@ -4,6 +4,10 @@
 
 namespace DB::GatherUtils
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 struct ArrayConcat : public ArraySinkSourceSelector<ArrayConcat>
 {
