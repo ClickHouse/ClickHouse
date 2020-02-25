@@ -62,9 +62,6 @@ public:
 
     void writeText(WriteBuffer & out) const;
     void readText(ReadBuffer & in);
-
-    /// Extra columns that we need to read except ones needed for expressions.
-    Names additional_columns;
 };
 
 }
