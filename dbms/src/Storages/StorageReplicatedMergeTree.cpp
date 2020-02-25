@@ -84,7 +84,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int REPLICA_IS_ALREADY_EXIST;
-    extern const int NO_SUCH_REPLICA;
     extern const int NO_REPLICA_HAS_PART;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
@@ -99,16 +98,11 @@ namespace ErrorCodes
     extern const int TOO_MANY_RETRIES_TO_FETCH_PARTS;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int PARTITION_DOESNT_EXIST;
-    extern const int CHECKSUM_DOESNT_MATCH;
-    extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
-    extern const int UNEXPECTED_FILE_IN_DATA_PART;
-    extern const int NO_FILE_IN_DATA_PART;
     extern const int UNFINISHED;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int TOO_MANY_FETCHES;
     extern const int BAD_DATA_PART_NAME;
     extern const int PART_IS_TEMPORARILY_LOCKED;
-    extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int KEEPER_EXCEPTION;
     extern const int ALL_REPLICAS_LOST;

@@ -29,7 +29,6 @@ namespace ErrorCodes
 {
     extern const int DUPLICATE_COLUMN;
     extern const int UNKNOWN_IDENTIFIER;
-    extern const int UNKNOWN_ACTION;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int TOO_MANY_TEMPORARY_COLUMNS;
     extern const int TOO_MANY_TEMPORARY_NON_CONST_COLUMNS;

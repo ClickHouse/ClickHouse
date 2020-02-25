@@ -18,14 +18,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int NOT_ENOUGH_SPACE;
-    extern const int NOT_IMPLEMENTED;
-    extern const int SYSTEM_ERROR;
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int UNKNOWN_POLICY;
-    extern const int UNKNOWN_DISK;
 }
 
 /// Parse .xml configuration and store information about disks

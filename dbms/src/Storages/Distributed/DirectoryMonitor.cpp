@@ -35,14 +35,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ABORTED;
     extern const int UNKNOWN_CODEC;
     extern const int CANNOT_DECOMPRESS;
-    extern const int INCORRECT_FILE_NAME;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int TOO_LARGE_SIZE_COMPRESSED;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int CORRUPTED_DATA;
 }
 
 

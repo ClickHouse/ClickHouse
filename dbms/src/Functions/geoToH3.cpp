@@ -17,7 +17,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
 }
 
 /// Implements the function geoToH3 which takes 3 arguments (latitude, longitude and h3 resolution)

@@ -555,6 +555,5 @@ protected:
 };
 
 
-extern const int MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER;
 
 }

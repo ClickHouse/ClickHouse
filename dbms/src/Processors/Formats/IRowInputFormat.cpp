@@ -17,7 +17,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_UUID;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 

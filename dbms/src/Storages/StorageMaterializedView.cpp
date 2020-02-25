@@ -31,7 +31,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
-    extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW;
 }
 
 static inline String generateInnerTableName(const String & table_name)

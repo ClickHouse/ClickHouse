@@ -15,10 +15,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNKNOWN_TABLE;
-    extern const int LOGICAL_ERROR;
     extern const int DICTIONARY_ALREADY_EXISTS;
 }
 

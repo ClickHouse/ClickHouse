@@ -15,7 +15,6 @@ namespace ErrorCodes
     extern const int BAD_CAST;
     extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
-    extern const int ACCESS_ENTITY_FOUND_DUPLICATES;
     extern const int ACCESS_ENTITY_STORAGE_READONLY;
     extern const int UNKNOWN_USER;
     extern const int UNKNOWN_ROLE;

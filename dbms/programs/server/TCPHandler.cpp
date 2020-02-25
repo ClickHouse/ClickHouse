@@ -44,7 +44,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
     extern const int POCO_EXCEPTION;
-    extern const int STD_EXCEPTION;
     extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 }

@@ -25,8 +25,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int TYPE_MISMATCH;
-    extern const int SETTINGS_ARE_NOT_SUPPORTED;
-    extern const int UNKNOWN_SETTING;
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
 }

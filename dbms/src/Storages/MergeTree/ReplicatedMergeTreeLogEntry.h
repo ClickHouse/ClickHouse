@@ -20,8 +20,6 @@ class ReplicatedMergeTreeQueue;
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_FORMAT_VERSION;
-    extern const int CANNOT_PARSE_TEXT;
 }
 
 
