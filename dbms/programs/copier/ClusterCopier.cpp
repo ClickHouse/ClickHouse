@@ -6,6 +6,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 
 namespace DB
+{
 
 namespace ErrorCodes
 {
@@ -14,7 +15,7 @@ namespace ErrorCodes
     extern const int UNFINISHED;
     extern const int BAD_ARGUMENTS;
 }
-{
+
 
 void ClusterCopier::init()
 {
