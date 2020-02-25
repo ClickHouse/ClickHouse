@@ -2,12 +2,17 @@
 #include "Selectors.h"
 #include "Algorithms.h"
 
-namespace DB::GatherUtils
+namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+
+namespace GatherUtils
+{
 
 struct ArrayConcat : public ArraySinkSourceSelector<ArrayConcat>
 {
