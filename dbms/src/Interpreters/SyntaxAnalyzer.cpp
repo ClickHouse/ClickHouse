@@ -111,7 +111,7 @@ std::vector<TableWithColumnNames> getTablesWithColumns(const std::vector<const A
     {
         for (auto & pr : tables_with_columns)
             if (pr.table.table.empty() && pr.table.alias.empty())
-                throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
+                throw Exception("No alias for subquery or table function in JOIN (set joined_subquery_requires_alias=0 to disable restriction).",
                                 ErrorCodes::ALIAS_REQUIRED);
     }
 
