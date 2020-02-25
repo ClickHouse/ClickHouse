@@ -309,6 +309,9 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
 
     if (is_trivial)
     {
+        if (required_substring.empty())
+            return true;
+
         if (is_case_insensitive)
             return haystack_end != case_insensitive_substring_searcher->search(haystack, subject_size);
         else
@@ -343,6 +346,9 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
 
     if (is_trivial)
     {
+        if (required_substring.empty())
+            return true;
+
         const UInt8 * pos;
         if (is_case_insensitive)
             pos = case_insensitive_substring_searcher->search(haystack, subject_size);
@@ -402,6 +408,12 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
 
     if (is_trivial)
     {
+        if (required_substring.empty())
+        {
+            matches.emplace_back(Match{0, 0});
+            return 1;
+        }
+
         const UInt8 * pos;
         if (is_case_insensitive)
             pos = case_insensitive_substring_searcher->search(haystack, subject_size);

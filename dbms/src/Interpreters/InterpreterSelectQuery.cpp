@@ -325,7 +325,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
                 query_ptr, syntax_analyzer_result, *context,
                 NameSet(required_result_column_names.begin(), required_result_column_names.end()),
-                options.subquery_depth, !options.only_analyze);
+                !options.only_analyze, options);
 
         if (!options.only_analyze)
         {
@@ -373,6 +373,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
             /// Fix source_header for filter actions.
             auto row_policy_filter = context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
+            row_policy_filter = RowPolicyContext::combineConditionsUsingAnd(row_policy_filter, context->getInitialRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER));
             if (row_policy_filter)
             {
                 filter_info = std::make_shared<FilterInfo>();
@@ -516,7 +517,8 @@ Block InterpreterSelectQuery::getSampleBlockImpl(bool try_move_to_prewhere)
 
         /// PREWHERE optimization.
         /// Turn off, if the table filter (row-level security) is applied.
-        if (!context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER))
+        if (!context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER)
+            && !context->getInitialRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER))
         {
             auto optimize_prewhere = [&](auto & merge_tree)
             {
@@ -864,7 +866,6 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             {
                 Block header_before_join;
                 JoinPtr join = expressions.before_join->getTableJoinAlgo();
-                bool inflating_join = join && !typeid_cast<Join *>(join.get());
 
                 if constexpr (pipeline_with_processors)
                 {
@@ -877,6 +878,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                         pipeline.addDefaultTotals();
                         default_totals = true;
                     }
+
+                    bool inflating_join = join && !typeid_cast<Join *>(join.get());
 
                     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType type)
                     {
@@ -1406,16 +1409,12 @@ void InterpreterSelectQuery::executeFetchColumns(
         BlockInputStreams streams;
         Pipes pipes;
 
-        /// Will work with pipes directly if storage support processors.
-        /// Code is temporarily copy-pasted while moving to new pipeline.
-        bool use_pipes = pipeline_with_processors && storage->supportProcessorsPipeline();
-
-        if (use_pipes)
-            pipes = storage->readWithProcessors(required_columns, query_info, *context, processing_stage, max_block_size, max_streams);
+        if (pipeline_with_processors)
+            pipes = storage->read(required_columns, query_info, *context, processing_stage, max_block_size, max_streams);
         else
-            streams = storage->read(required_columns, query_info, *context, processing_stage, max_block_size, max_streams);
+            streams = storage->readStreams(required_columns, query_info, *context, processing_stage, max_block_size, max_streams);
 
-        if (streams.empty() && !use_pipes)
+        if (streams.empty() && !pipeline_with_processors)
         {
             streams = {std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns))};
 
@@ -1446,7 +1445,8 @@ void InterpreterSelectQuery::executeFetchColumns(
         }
 
         /// Copy-paste from prev if.
-        if (pipes.empty() && use_pipes)
+        /// Code is temporarily copy-pasted while moving to new pipeline.
+        if (pipes.empty() && pipeline_with_processors)
         {
             Pipe pipe(std::make_shared<NullSource>(storage->getSampleBlockForColumns(required_columns)));
 
@@ -1475,8 +1475,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         if constexpr (pipeline_with_processors)
         {
             /// Table lock is stored inside pipeline here.
-            if (use_pipes)
-                pipeline.addTableLock(table_lock);
+            pipeline.addTableLock(table_lock);
         }
 
         /// Set the limits and quota for reading data, the speed and time of the query.

@@ -12,8 +12,7 @@ namespace DB
 class InternalTextLogsRowOutputStream : public IBlockOutputStream
 {
 public:
-
-    InternalTextLogsRowOutputStream(WriteBuffer & buf_out) : wb(buf_out) {}
+    InternalTextLogsRowOutputStream(WriteBuffer & buf_out, bool color_) : wb(buf_out), color(color_) {}
 
     Block getHeader() const override;
 
@@ -25,8 +24,8 @@ public:
     }
 
 private:
-
     WriteBuffer & wb;
+    bool color;
 };
 
 }

@@ -5,46 +5,13 @@
 #include <unordered_map>
 #include <utility>
 #include <Disks/IDisk.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
 class DiskMemory;
-class ReadBuffer;
-class WriteBuffer;
+class ReadBufferFromFileBase;
+class WriteBufferFromFileBase;
 
-/// Adapter with actual behaviour as ReadBufferFromString.
-class ReadIndirectBuffer : public ReadBufferFromFileBase
-{
-public:
-    ReadIndirectBuffer(String path_, const String & data_);
-
-    std::string getFileName() const override { return path; }
-    off_t seek(off_t off, int whence) override;
-    off_t getPosition() override;
-
-private:
-    ReadBufferFromString buf;
-    String path;
-};
-
-/// This class is responsible to update files metadata after buffer is finalized.
-class WriteIndirectBuffer : public WriteBufferFromOwnString
-{
-public:
-    WriteIndirectBuffer(DiskMemory * disk_, String path_, WriteMode mode_) : disk(disk_), path(std::move(path_)), mode(mode_) {}
-
-    ~WriteIndirectBuffer() override;
-
-    void finalize() override;
-
-private:
-    DiskMemory * disk;
-    String path;
-    WriteMode mode;
-};
 
 /** Implementation of Disk intended only for testing purposes.
   * All filesystem objects are stored in memory and lost on server restart.
@@ -93,10 +60,19 @@ public:
 
     void copyFile(const String & from_path, const String & to_path) override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
+        const String & path,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        size_t estimated_size = 0,
+        size_t aio_threshold = 0,
+        size_t mmap_threshold = 0) const override;
 
-    std::unique_ptr<WriteBuffer>
-    writeFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, WriteMode mode = WriteMode::Rewrite) override;
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & path,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        WriteMode mode = WriteMode::Rewrite,
+        size_t estimated_size = 0,
+        size_t aio_threshold = 0) override;
 
     void remove(const String & path) override;
 

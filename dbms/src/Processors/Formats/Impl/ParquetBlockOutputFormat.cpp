@@ -66,7 +66,13 @@ static void fillArrowArrayWithNumericColumnData(
         arrow_null_bytemap_raw_ptr = arrow_null_bytemap.data();
     }
 
-    status = builder.AppendValues(internal_data.data(), internal_data.size(), arrow_null_bytemap_raw_ptr);
+    if constexpr (std::is_same_v<NumericType, UInt8>)
+        status = builder.AppendValues(
+            reinterpret_cast<const uint8_t *>(internal_data.data()),
+            internal_data.size(),
+            reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
+    else
+        status = builder.AppendValues(internal_data.data(), internal_data.size(), reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
     checkStatus(status, write_column->getName());
 
     status = builder.Finish(&arrow_array);
@@ -188,7 +194,13 @@ static void fillArrowArrayWithDecimalColumnData(
         arrow_null_bytemap_raw_ptr = arrow_null_bytemap.data();
     }
 
-    status = builder.AppendValues(reinterpret_cast<const uint8_t*>(internal_data.data()), internal_data.size(), arrow_null_bytemap_raw_ptr);
+    if constexpr (std::is_same_v<NumericType, UInt8>)
+        status = builder.AppendValues(
+            reinterpret_cast<const uint8_t *>(internal_data.data()),
+            internal_data.size(),
+            reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
+    else
+        status = builder.AppendValues(internal_data.data(), internal_data.size(), reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
     checkStatus(status, write_column->getName());
 
     status = builder.Finish(&arrow_array);
