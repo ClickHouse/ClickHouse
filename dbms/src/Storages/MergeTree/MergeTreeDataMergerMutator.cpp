@@ -967,7 +967,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     context_for_reading.getSettingsRef().max_streams_to_max_threads_ratio = 1;
     context_for_reading.getSettingsRef().max_threads = 1;
 
-    std::vector<MutationCommand> commands_for_part;
+    MutationCommands commands_for_part;
     for (const auto & command : commands)
     {
         if (command.partition == nullptr || future_part.parts[0]->info.partition_id == data.getPartitionIDFromQuery(
@@ -986,56 +986,21 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     else
         LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
 
-    MutationsInterpreter mutations_interpreter(storage_from_source_part, commands_for_part, context_for_reading, true);
-    auto in = mutations_interpreter.execute(table_lock_holder);
-    const auto & updated_header = mutations_interpreter.getUpdatedHeader();
-
-    NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
-
-    const auto & source_column_names = source_part->getColumns().getNames();
-    const auto & updated_column_names = updated_header.getNames();
-
-    NameSet new_columns_set(source_column_names.begin(), source_column_names.end());
-    new_columns_set.insert(updated_column_names.begin(), updated_column_names.end());
-    auto new_columns = all_columns.filter(new_columns_set);
-
-    auto new_data_part = data.createPart(
-        future_part.name,
-        future_part.type,
-        future_part.part_info,
-        space_reservation->getDisk(),
-        "tmp_mut_" + future_part.name);
-
-    new_data_part->is_temp = true;
-    new_data_part->ttl_infos = source_part->ttl_infos;
-
-    /// It shouldn't be changed by mutation.
-    new_data_part->index_granularity_info = source_part->index_granularity_info;
-    new_data_part->setColumns(new_columns);
-
-    String new_part_tmp_path = new_data_part->getFullPath();
-
-    /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
-    /// (which is locked in data.getTotalActiveSizeInBytes()) is locked after part->columns_lock
-    /// (which is locked in shared mode when input streams are created) and when inserting new data
-    /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
-    /// deadlock is impossible.
-    auto compression_codec = context.chooseCompressionCodec(
-        source_part->bytes_on_disk,
-        static_cast<double>(source_part->bytes_on_disk) / data.getTotalActiveSizeInBytes());
-
-    Poco::File(new_part_tmp_path).createDirectories();
     BlockInputStreamPtr in = nullptr;
     Block updated_header;
     std::optional<MutationsInterpreter> interpreter;
 
     const auto data_settings = data.getSettings();
-    std::vector<MutationCommand> for_interpreter, for_file_renames;
+    MutationCommands for_interpreter, for_file_renames;
 
     splitMutationCommands(source_part, commands_for_part, for_interpreter, for_file_renames);
 
     UInt64 watch_prev_elapsed = 0;
     MergeStageProgress stage_progress(1.0);
+
+    NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
+    auto new_columns = all_columns;
+
     if (!for_interpreter.empty())
     {
         interpreter.emplace(storage_from_source_part, for_interpreter, context_for_reading, true);
@@ -1044,11 +1009,32 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
     }
 
-    NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
-    const auto data_settings = data.getSettings();
-    /// Don't change granularity type while mutating subset of columns
-    String mrk_extension = source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension() : getNonAdaptiveMrkExtension();
+    auto new_data_part = data.createPart(
+        future_part.name, future_part.type, future_part.part_info, space_reservation->getDisk(), "tmp_mut_" + future_part.name);
 
+    new_data_part->is_temp = true;
+    new_data_part->ttl_infos = source_part->ttl_infos;
+
+    /// It shouldn't be changed by mutation.
+    new_data_part->index_granularity_info = source_part->index_granularity_info;
+
+    String new_part_tmp_path = new_data_part->getFullPath();
+
+
+    /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
+    /// (which is locked in data.getTotalActiveSizeInBytes()) is locked after part->columns_lock
+    /// (which is locked in shared mode when input streams are created) and when inserting new data
+    /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
+    /// deadlock is impossible.
+    auto compression_codec = context.chooseCompressionCodec(
+        source_part->bytes_on_disk, static_cast<double>(source_part->bytes_on_disk) / data.getTotalActiveSizeInBytes());
+
+
+    Poco::File(new_part_tmp_path).createDirectories();
+
+    /// Don't change granularity type while mutating subset of columns
+    auto mrk_extension = source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(new_data_part->getType())
+                                                                         : getNonAdaptiveMrkExtension();
 
     auto should_execute_ttl = [&](const auto & in_columns)
     {
@@ -1067,8 +1053,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         return false;
     };
 
-    bool need_remove_expired_values = should_execute_ttl(in_header.getNamesAndTypesList().getNames());
-
+    bool need_remove_expired_values = false;
     /// All columns from part are changed and may be some more that were missing before in part
     if (source_part->getColumns().isSubsetOf(updated_header.getNamesAndTypesList()))
     {
@@ -1077,8 +1062,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             in = std::make_shared<MaterializingBlockInputStream>(
                 std::make_shared<ExpressionBlockInputStream>(in, data.primary_key_and_skip_indices_expr));
 
-        if (need_remove_expired_values)
+        if (should_execute_ttl(in->getHeader().getNamesAndTypesList().getNames()))
+        {
+            need_remove_expired_values = true;
             in = std::make_shared<TTLBlockInputStream>(in, data, new_data_part, time_of_mutation, true);
+        }
 
         IMergeTreeDataPart::MinMaxIndex minmax_idx;
 
@@ -1177,14 +1165,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
             IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
             MergedColumnOnlyOutputStream out(
-                data,
+                new_data_part,
                 updated_header,
-                new_part_tmp_path,
                 /* sync = */ false,
                 compression_codec,
                 /* skip_offsets = */ false,
                 std::vector<MergeTreeIndexPtr>(indices_to_recalc.begin(), indices_to_recalc.end()),
-                unused_written_offsets,
+                nullptr,
                 source_part->index_granularity,
                 &source_part->index_granularity_info
             );
@@ -1228,13 +1215,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         } /// close fd
 
 
-        new_data_part->columns = getColumnsForNewDataPart(source_part, updated_header, all_columns);
         {
             /// Write a file with a description of columns.
             WriteBufferFromFile out_columns(new_part_tmp_path + "columns.txt", 4096);
-            new_data_part->columns.writeText(out_columns);
+            new_data_part->getColumns().writeText(out_columns);
         } /// close
 
+        new_data_part->setColumns(getColumnsForNewDataPart(source_part, updated_header, all_columns));
         new_data_part->rows_count = source_part->rows_count;
         new_data_part->index_granularity = source_part->index_granularity;
         new_data_part->index = source_part->index;
@@ -1347,9 +1334,9 @@ size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::
 
 void MergeTreeDataMergerMutator::splitMutationCommands(
     MergeTreeData::DataPartPtr part,
-    const std::vector<MutationCommand> & commands,
-    std::vector<MutationCommand> & for_interpreter,
-    std::vector<MutationCommand> & for_file_renames) const
+    const MutationCommands & commands,
+    MutationCommands & for_interpreter,
+    MutationCommands & for_file_renames) const
 {
     for (const auto & command : commands)
     {
@@ -1363,7 +1350,7 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
         {
             /// If we don't have this column in source part, than we don't
             /// need to materialize it
-            if (part->columns.contains(command.column_name))
+            if (part->getColumns().contains(command.column_name))
                 for_interpreter.push_back(command);
             else
                 for_file_renames.push_back(command);
@@ -1377,11 +1364,11 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
 
 
 NameSet MergeTreeDataMergerMutator::collectFilesToRemove(
-    MergeTreeData::DataPartPtr source_part, const std::vector<MutationCommand> & commands_for_removes, const String & mrk_extension) const
+    MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension) const
 {
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
-    for (const NameAndTypePair & column : source_part->columns)
+    for (const NameAndTypePair & column : source_part->getColumns())
     {
         column.type->enumerateStreams(
             [&](const IDataType::SubstreamPath & substream_path)
@@ -1415,7 +1402,7 @@ NameSet MergeTreeDataMergerMutator::collectFilesToRemove(
             };
 
             IDataType::SubstreamPath stream_path;
-            auto column = source_part->columns.tryGetByName(command.column_name);
+            auto column = source_part->getColumns().tryGetByName(command.column_name);
             if (column)
                 column->type->enumerateStreams(callback, stream_path);
         }
@@ -1454,7 +1441,7 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
 NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
     MergeTreeData::DataPartPtr source_part, const Block & updated_header, NamesAndTypesList all_columns) const
 {
-    Names source_column_names = source_part->columns.getNames();
+    Names source_column_names = source_part->getColumns().getNames();
     NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
     for (auto it = all_columns.begin(); it != all_columns.end();)
     {

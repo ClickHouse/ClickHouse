@@ -140,14 +140,14 @@ private:
       */
     void splitMutationCommands(
         MergeTreeData::DataPartPtr part,
-        const std::vector<MutationCommand> & commands,
-        std::vector<MutationCommand> & for_interpreter,
-        std::vector<MutationCommand> & for_file_renames) const;
+        const MutationCommands & commands,
+        MutationCommands & for_interpreter,
+        MutationCommands & for_file_renames) const;
 
 
     /// Apply commands to source_part i.e. remove some columns in source_part
     /// and return set of files, that have to be removed from filesystem and checksums
-    NameSet collectFilesToRemove(MergeTreeData::DataPartPtr source_part, const std::vector<MutationCommand> & commands_for_removes, const String & mrk_extension) const;
+    NameSet collectFilesToRemove(MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension) const;
 
     /// Files, that we don't need to remove and don't need to hardlink, for example columns.txt and checksums.txt.
     /// Because we will generate new versions of them after we perform mutation.
