@@ -7,6 +7,7 @@ nav:
   - 'Производительность': 'introduction/performance.md'
   - 'История': 'introduction/history.md'
   - 'Информационная поддержка': 'introduction/info.md'
+  - 'Пользователи': 'introduction/adopters.md'
 
 - 'Начало работы':
   - 'hidden': 'getting_started/index.md'

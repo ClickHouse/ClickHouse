@@ -19,8 +19,9 @@ struct DivideIntegralByConstantImpl
     : BinaryOperationImplBase<A, B, DivideIntegralImpl<A, B>>
 {
     using ResultType = typename DivideIntegralImpl<A, B>::ResultType;
+    static const constexpr bool allow_fixed_string = false;
 
-    static void vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
+    static NO_INLINE void vector_constant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
     {
         if (unlikely(b == 0))
             throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
@@ -30,9 +31,8 @@ struct DivideIntegralByConstantImpl
 
         if (unlikely(is_signed_v<B> && b == -1))
         {
-            size_t size = a.size();
             for (size_t i = 0; i < size; ++i)
-                c[i] = -c[i];
+                c_pos[i] = -a_pos[i];
             return;
         }
 
@@ -40,10 +40,7 @@ struct DivideIntegralByConstantImpl
 
         libdivide::divider<A> divider(b);
 
-        size_t size = a.size();
-        const A * a_pos = a.data();
         const A * a_end = a_pos + size;
-        ResultType * c_pos = c.data();
 
 #ifdef __SSE2__
         static constexpr size_t values_per_sse_register = 16 / sizeof(A);

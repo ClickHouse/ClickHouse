@@ -1,11 +1,11 @@
 # This strings autochanged from release_lib.sh:
-set(VERSION_REVISION 54432)
+set(VERSION_REVISION 54433)
 set(VERSION_MAJOR 20)
-set(VERSION_MINOR 2)
+set(VERSION_MINOR 3)
 set(VERSION_PATCH 1)
-set(VERSION_GITHASH 4b9acaaa9099e71c36e5c818031149c5cba2bbdb)
-set(VERSION_DESCRIBE v20.2.1.1-prestable)
-set(VERSION_STRING 20.2.1.1)
+set(VERSION_GITHASH d93e7e5ccf8fcca724e917581b00bf569947fff9)
+set(VERSION_DESCRIBE v20.3.1.1-prestable)
+set(VERSION_STRING 20.3.1.1)
 # end of autochange
 
 set(VERSION_EXTRA "" CACHE STRING "")

@@ -1,9 +1,3 @@
-{% if config.extra.social %}
-  <div class="md-footer-social">
-    {% set path = "ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" %}
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/{{ path }}">
-    {% for social in config.extra.social %}
-      <a href="{{ social.link }}" class="md-footer-social__link fa fa-{{ social.type }}"></a>
-    {% endfor %}
-  </div>
-{% endif %}
+<div class="md-footer-social">
+  <span class="md-footer-copyright__highlight">Built from <a href="{{ config.extra.rev_url }}" rel="external nofollow">{{ config.extra.rev_short }}</a></span>
+</div>

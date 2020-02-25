@@ -7,7 +7,23 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
-        p7zip-full bash curl git moreutils ncdu wget psmisc python3 python3-pip tzdata tree python3-dev g++ \
+            bash \
+            curl \
+            g++ \
+            git \
+            libc6-dbg \
+            moreutils \
+            ncdu \
+            p7zip-full \
+            psmisc \
+            python3 \
+            python3-dev \
+            python3-pip \
+            rsync \
+            tree \
+            tzdata \
+            vim \
+            wget \
     && pip3 --no-cache-dir install clickhouse_driver \
     && apt-get purge --yes python3-dev g++ \
     && apt-get autoremove --yes \

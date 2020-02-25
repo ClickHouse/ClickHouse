@@ -101,6 +101,22 @@ Features:
 - Refactorings.
 - Search and Navigation.
 
+### Yandex DataLens {#yandex-datalens}
+
+[Yandex DataLens](https://cloud.yandex.ru/services/datalens) is a service of data visualization and analytics.
+
+Features:
+
+- Wide range of available visualizations, from simple bar charts to complex dashboards.
+- Dashboards could be made publicly available.
+- Support for multiple data sources including ClickHouse.
+- Storage for materialized data based on ClickHouse.
+
+DataLens is [available for free](https://cloud.yandex.com/docs/datalens/pricing) for low-load projects, even for commercial use.
+
+- [DataLens documentation](https://cloud.yandex.com/docs/datalens/).
+- [Tutorial](https://cloud.yandex.com/docs/datalens/solutions/data-from-db-visualization) on visualizing data from a ClickHouse database.
+
 ### Holistics Software
 
 [Holistics](https://www.holistics.io/) is a full-stack data platform and business intelligence tool. 
@@ -114,16 +130,16 @@ Features:
 - SQL data modeling support for relational mapping of data.
 
 ### Looker
-[Looker](https://looker.com) is a data platform and business intelligence tool with support for 50+ database dialects including ClickHouse. Looker is available as a SaaS platform and self-hosted. Users
-can use Looker via the browser to explore data, build visualizations and dashboards, schedule reports, and share their
-insights with colleagues. Looker provides a rich set of tools to embed these features in other applications, and an API
+[Looker](https://looker.com) is a data platform and business intelligence tool with support for 50+ database dialects including ClickHouse. Looker is available as a SaaS platform and self-hosted. Users can use Looker via the browser to explore data, build visualizations and dashboards, schedule reports, and share their insights with colleagues. Looker provides a rich set of tools to embed these features in other applications, and an API
 to integrate data with other applications.
 
 Features:
 
-- Designed around ease of use and self-service for end users.
 - Easy and agile development using LookML, a language which supports currated 
 [Data Modeling](https://looker.com/platform/data-modeling) to support report writers and end users.
 - Powerful workflow integration via Looker's [Data Actions](https://looker.com/platform/actions).
+
+
+[How to configure ClickHouse in Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 
 [Original article](https://clickhouse.tech/docs/en/interfaces/third-party/gui/) <!--hide-->

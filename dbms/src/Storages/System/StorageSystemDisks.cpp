@@ -23,7 +23,7 @@ StorageSystemDisks::StorageSystemDisks(const std::string & name_)
     }));
 }
 
-Pipes StorageSystemDisks::readWithProcessors(
+Pipes StorageSystemDisks::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,

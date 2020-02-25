@@ -274,4 +274,28 @@ SELECT a, b, c FROM (SELECT ...)
 
 Отсутствует отдельный запрос для удаления представлений. Чтобы удалить представление, следует использовать `DROP TABLE`.
 
+## CREATE DICTIONARY {#create-dictionary-query}
+
+```sql
+CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name
+(
+    key1 type1  [DEFAULT|EXPRESSION expr1] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],
+    key2 type2  [DEFAULT|EXPRESSION expr2] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],
+    attr1 type2 [DEFAULT|EXPRESSION expr3],
+    attr2 type2 [DEFAULT|EXPRESSION expr4]
+)
+PRIMARY KEY key1, key2
+SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
+LAYOUT(LAYOUT_NAME([param_name param_value]))
+LIFETIME([MIN val1] MAX val2)
+```
+
+Создаёт [внешний словарь](dicts/external_dicts.md) с заданной [структурой](dicts/external_dicts_dict_structure.md), [источником](dicts/external_dicts_dict_sources.md), [способом размещения в памяти](dicts/external_dicts_dict_layout.md) и [периодом обновления](dicts/external_dicts_dict_lifetime.md).
+
+Структура внешнего словаря состоит из атрибутов. Атрибуты словаря задаются как столбцы таблицы. Единственным обязательным свойством атрибута является его тип, все остальные свойства могут иметь значения по умолчанию.
+
+В зависимости от [способа размещения словаря в памяти](dicts/external_dicts_dict_layout.md), ключами словаря могут быть один и более атрибутов.
+
+Смотрите [Внешние словари](dicts/external_dicts.md).
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/create/) <!--hide-->

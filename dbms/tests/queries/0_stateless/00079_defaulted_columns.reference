@@ -28,13 +28,13 @@ some string	11
 payload	String					
 date	Date	MATERIALIZED	today()			
 key	UInt64	MATERIALIZED	0 * rand()			
-payload_length	UInt16	DEFAULT	length(payload) % 65535			
+payload_length	UInt64	DEFAULT	length(payload) % 65535			
 hello clickhouse	16
 some string	11
 payload	String					
 date	Date	MATERIALIZED	today()			
 key	UInt64	MATERIALIZED	0 * rand()			
-payload_length	UInt16	DEFAULT	CAST(length(payload), \'UInt16\')			
+payload_length	UInt16	DEFAULT	length(payload)			
 payload	String					
 date	Date	MATERIALIZED	today()			
 key	UInt64	MATERIALIZED	0 * rand()			
