@@ -35,6 +35,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int UNKNOWN_CODEC;
     extern const int CANNOT_DECOMPRESS;
     extern const int CHECKSUM_DOESNT_MATCH;

@@ -41,6 +41,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int CACHE_DICTIONARY_UPDATE_FAIL;
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
