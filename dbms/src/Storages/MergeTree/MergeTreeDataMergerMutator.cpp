@@ -1404,7 +1404,7 @@ NameSet MergeTreeDataMergerMutator::collectFilesToRemove(
             remove_files.emplace("skp_idx_" + command.column_name + mrk_extension);
         }
         /// We don't remove column files for compact parts because they stored in single file
-        else if (command.type == MutationCommand::Type::DROP_COLUMN && isCompactPart(source_part))
+        else if (command.type == MutationCommand::Type::DROP_COLUMN && !isCompactPart(source_part))
         {
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
             {
