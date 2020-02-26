@@ -25,7 +25,8 @@
 #include <Poco/AutoPtr.h>
 
 
-using namespace DB;
+namespace DB
+{
 
 namespace ErrorCodes
 {
@@ -114,6 +115,11 @@ struct measure
         return duration.count();
     }
 };
+
+}
+
+
+using namespace DB;
 
 int main(int, char **)
 try
