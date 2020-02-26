@@ -2,6 +2,14 @@
 
 #include <Common/HashTable/HashTable.h>
 
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int NO_AVAILABLE_DATA;
+    }
+}
+
 template <typename Key, typename TState = HashTableNoState>
 struct FixedHashTableCell
 {

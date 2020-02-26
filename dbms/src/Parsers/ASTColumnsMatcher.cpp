@@ -7,6 +7,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int CANNOT_COMPILE_REGEXP;
+}
 
 ASTPtr ASTColumnsMatcher::clone() const
 {

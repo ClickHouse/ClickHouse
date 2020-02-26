@@ -9,7 +9,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
 }

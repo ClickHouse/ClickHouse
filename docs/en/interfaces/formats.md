@@ -783,6 +783,10 @@ test: string with 'quotes' and 	 with some special
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
+## VerticalRaw {#verticalraw}
+
+Similar to [Vertical](#vertical), but with escaping disabled. This format is only suitable for outputting query results, not for parsing (receiving data and inserting it in the table).
+
 ## XML {#xml}
 
 XML format is suitable only for output, not for parsing. Example:

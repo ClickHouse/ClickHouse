@@ -2,6 +2,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeDataPartPtr & data_part, const Block & header_, bool sync_,

@@ -33,4 +33,3 @@ tornado==5.1
 typing==3.7.4.1
 Unidecode==1.1.1
 urllib3==1.25.8
-gitpython==2.1.14

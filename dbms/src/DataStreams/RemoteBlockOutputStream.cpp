@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
-    extern const int LOGICAL_ERROR;
 }
 
 

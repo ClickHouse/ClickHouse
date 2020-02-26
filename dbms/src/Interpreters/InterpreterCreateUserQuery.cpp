@@ -13,7 +13,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int SET_NON_GRANTED_ROLE;
 }
 
 
