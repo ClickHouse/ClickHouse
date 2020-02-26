@@ -801,15 +801,21 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, const NamesA
 }
 
 
-SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
+SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     ASTPtr & query,
-    const NamesAndTypesList & source_columns_,
-    const Names & required_result_columns,
+    const NamesAndTypesList & source_columns,
     StoragePtr storage,
-    const NamesAndTypesList & additional_source_columns) const
+    const SelectQueryOptions & select_options,
+    const Names & required_result_columns) const
 {
     auto * select_query = query->as<ASTSelectQuery>();
-    if (!storage && select_query)
+    if (!select_query)
+        throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
+
+    size_t subquery_depth = select_options.subquery_depth;
+    bool remove_duplicates = select_options.remove_duplicates;
+
+    if (!storage)
     {
         if (auto db_and_table = getDatabaseAndTable(*select_query, 0))
             storage = context.tryGetTable(db_and_table->database, db_and_table->table);
@@ -819,15 +825,14 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
     SyntaxAnalyzerResult result;
     result.storage = storage;
-    result.source_columns = source_columns_;
-    result.analyzed_join = std::make_shared<AnalyzedJoin>(settings, context.getTemporaryVolume()); /// TODO: move to select_query logic
+    result.source_columns = source_columns;
+    result.analyzed_join = std::make_shared<AnalyzedJoin>(settings, context.getTemporaryVolume());
 
     if (storage)
-        collectSourceColumns(storage->getColumns(), result.source_columns, (select_query != nullptr));
+        collectSourceColumns(storage->getColumns(), result.source_columns, true);
     NameSet source_columns_set = removeDuplicateColumns(result.source_columns);
     std::vector<TableWithColumnNames> tables_with_columns;
 
-    if (select_query)
     {
         if (remove_duplicates)
             renameDuplicatedColumns(select_query);
@@ -879,47 +884,17 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
     }
 
-    {
-        CustomizeFunctionsVisitor::Data data{settings.count_distinct_implementation};
-        CustomizeFunctionsVisitor(data).visit(query);
-    }
-
-    /// Creates a dictionary `aliases`: alias -> ASTPtr
-    {
-        LogAST log;
-        QueryAliasesVisitor::Data query_aliases_data{result.aliases};
-        QueryAliasesVisitor(query_aliases_data, log.stream()).visit(query);
-    }
-
-    /// Mark table ASTIdentifiers with not a column marker
-    {
-        MarkTableIdentifiersVisitor::Data data{result.aliases};
-        MarkTableIdentifiersVisitor(data).visit(query);
-    }
-
-    /// Common subexpression elimination. Rewrite rules.
-    {
-        QueryNormalizer::Data normalizer_data(result.aliases, context.getSettingsRef());
-        QueryNormalizer(normalizer_data).visit(query);
-    }
+    rewriteAst(query, settings, result.aliases);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
     /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)
     ///  and before 'executeScalarSubqueries', 'analyzeAggregation', etc. to avoid excessive calculations.
-    if (select_query)
-        removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
+    removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, context, subquery_depth, result.scalars);
 
-    /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
-    OptimizeIfWithConstantConditionVisitor(result.aliases).visit(query);
-
-    if (settings.optimize_if_chain_to_miltiif)
-        OptimizeIfChainsVisitor().visit(query);
-
-    if (select_query)
     {
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
@@ -945,8 +920,54 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     }
 
     result.aggregates = getAggregates(query);
-    result.collectUsedColumns(query, additional_source_columns);
+    result.collectUsedColumns(query, {});
     return std::make_shared<const SyntaxAnalyzerResult>(result);
+}
+
+SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, StoragePtr storage) const
+{
+    if (auto * select_query = query->as<ASTSelectQuery>())
+        throw Exception("Not select analyze for select asts.", ErrorCodes::LOGICAL_ERROR);
+
+    const auto & settings = context.getSettingsRef();
+
+    SyntaxAnalyzerResult result;
+    result.storage = storage;
+    result.source_columns = source_columns;
+
+    if (storage)
+        collectSourceColumns(storage->getColumns(), result.source_columns, false);
+    removeDuplicateColumns(result.source_columns);
+
+    rewriteAst(query, settings, result.aliases);
+
+    result.aggregates = getAggregates(query);
+    result.collectUsedColumns(query, {});
+    return std::make_shared<const SyntaxAnalyzerResult>(result);
+}
+
+void SyntaxAnalyzer::rewriteAst(ASTPtr & query, const Settings & settings, Aliases & aliases) const
+{
+    CustomizeFunctionsVisitor::Data data{settings.count_distinct_implementation};
+    CustomizeFunctionsVisitor(data).visit(query);
+
+    /// Creates a dictionary `aliases`: alias -> ASTPtr
+    QueryAliasesVisitor::Data query_aliases_data{aliases};
+    QueryAliasesVisitor(query_aliases_data).visit(query);
+
+    /// Mark table ASTIdentifiers with not a column marker
+    MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
+    MarkTableIdentifiersVisitor(identifiers_data).visit(query);
+
+    /// Common subexpression elimination. Rewrite rules.
+    QueryNormalizer::Data normalizer_data(aliases, settings);
+    QueryNormalizer(normalizer_data).visit(query);
+
+    /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
+    OptimizeIfWithConstantConditionVisitor(aliases).visit(query);
+
+    if (settings.optimize_if_chain_to_miltiif)
+        OptimizeIfChainsVisitor().visit(query);
 }
 
 }
