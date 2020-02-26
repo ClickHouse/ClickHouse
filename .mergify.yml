@@ -10,7 +10,7 @@ pull_request_rules:
 pull_request_rules:
   - name: Automatic merge for Dependabot pull requests
     conditions:
-      - "author~=^dependabot(|-preview)\[bot\]$"
+      - "author~=^dependabot(|-preview).*$"
       - "#status-failure=1" # Description check
       - "base=master"
     actions:
@@ -19,7 +19,7 @@ pull_request_rules:
 pull_request_rules:
   - name: Automatic close for Dependabot pull requests
     conditions:
-      - "author~=^dependabot(|-preview)\[bot\]$"
+      - "author~=^dependabot(|-preview).*$"
       - "#status-failure>1"
       - "base=master"
     actions:
