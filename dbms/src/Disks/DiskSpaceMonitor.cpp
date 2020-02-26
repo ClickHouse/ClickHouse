@@ -12,6 +12,16 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+    extern const int UNKNOWN_DISK;
+    extern const int UNKNOWN_POLICY;
+    extern const int LOGICAL_ERROR;
+}
+
+
 DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -253,10 +263,10 @@ DiskPtr StoragePolicy::getAnyDisk() const
     /// StoragePolicy must contain at least one Volume
     /// Volume must contain at least one Disk
     if (volumes.empty())
-        throw Exception("StoragePolicy has no volumes. It's a bug.", ErrorCodes::NOT_ENOUGH_SPACE);
+        throw Exception("StoragePolicy has no volumes. It's a bug.", ErrorCodes::LOGICAL_ERROR);
 
     if (volumes[0]->disks.empty())
-        throw Exception("Volume '" + volumes[0]->getName() + "' has no disks. It's a bug.", ErrorCodes::NOT_ENOUGH_SPACE);
+        throw Exception("Volume '" + volumes[0]->getName() + "' has no disks. It's a bug.", ErrorCodes::LOGICAL_ERROR);
 
     return volumes[0]->disks[0];
 }
