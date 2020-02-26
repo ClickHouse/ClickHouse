@@ -26,7 +26,7 @@ pull_request_rules:
       merge:
         method: close
 pull_request_rules:
-  - name:Aautomatic merge for ImgBot pull requests
+  - name: Automatic merge for ImgBot pull requests
     conditions:
       - "author=imgbot[bot]"
       - "#status-failure=1" # Description check
@@ -34,3 +34,11 @@ pull_request_rules:
     actions:
       merge:
         method: merge
+        
+pull_request_rules:
+  - name: Automatic add pr-documentation label
+    conditions:
+      - "body~=Documentation"
+    actions:
+      label:
+        add: ["pr-documentation"]
