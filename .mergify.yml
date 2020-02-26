@@ -34,11 +34,52 @@ pull_request_rules:
     actions:
       merge:
         method: merge
-        
 pull_request_rules:
-  - name: Automatic add pr-documentation label
+  - name: Automatic add pr-documentation label via description
     conditions:
       - "body~=Documentation"
     actions:
       label:
         add: ["pr-documentation"]
+pull_request_rules:
+  - name: Automatic add pr-feature label
+    conditions:
+      - "body~=New Feature"
+    actions:
+      label:
+        add: ["pr-feature", "doc-alert"]
+pull_request_rules:
+  - name: Automatic add pr-bugfix label
+    conditions:
+      - "body~=Bug Fix"
+    actions:
+      label:
+        add: ["pr-bugfix", "no-docs-needed"]
+pull_request_rules:
+  - name: Automatic add pr-improvement label
+    conditions:
+      - "body~=- Improvement"
+    actions:
+      label:
+        add: ["pr-improvement"]
+pull_request_rules:
+  - name: Automatic add pr-performance label
+    conditions:
+      - "body~=Performance Improvement"
+    actions:
+      label:
+        add: ["pr-performance", "no-docs-needed"]
+pull_request_rules:
+  - name: Automatic add pr-build label
+    conditions:
+      - "body~=Build.*Improvement"
+    actions:
+      label:
+        add: ["pr-performance", "no-docs-needed"]
+pull_request_rules:
+  - name: Automatic add pr-non-significant label
+    conditions:
+      - "body~=Non-significant"
+    actions:
+      label:
+        add: ["pr-non-significant", "no-docs-needed"]
