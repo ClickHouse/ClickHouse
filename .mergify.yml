@@ -1,13 +1,4 @@
 pull_request_rules:
-  - name: Automatic merge on approval
-    conditions:
-      - "#approved-reviews-by>=1"
-      - "#status-failure=0"
-      - "base=master"
-    actions:
-      merge:
-        method: merge
-pull_request_rules:
   - name: Automatic merge for Dependabot pull requests
     conditions:
       - "author~=^dependabot(|-preview).*$"
@@ -34,13 +25,6 @@ pull_request_rules:
     actions:
       merge:
         method: merge
-pull_request_rules:
-  - name: Automatic add pr-documentation label via description
-    conditions:
-      - "body~=Documentation"
-    actions:
-      label:
-        add: ["pr-documentation"]
 pull_request_rules:
   - name: Automatic add pr-feature label
     conditions:
@@ -76,10 +60,3 @@ pull_request_rules:
     actions:
       label:
         add: ["pr-build", "no-docs-needed"]
-pull_request_rules:
-  - name: Automatic add pr-non-significant label
-    conditions:
-      - "body~=Non-significant"
-    actions:
-      label:
-        add: ["pr-non-significant", "no-docs-needed"]
