@@ -36,12 +36,8 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
-    extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
-    extern const int INCOMPATIBLE_COLUMNS;
-    extern const int PART_IS_TEMPORARILY_LOCKED;
-    extern const int UNKNOWN_SETTING;
-    extern const int TOO_BIG_AST;
+    extern const int NOT_ENOUGH_SPACE;
 }
 
 namespace ActionLocks
