@@ -40,8 +40,9 @@ private:
 class FinalCell : public ICell
 {
 public:
-    explicit FinalCell(std::vector<size_t> polygon_ids_);
+    explicit FinalCell(std::vector<size_t> polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_);
     std::vector<size_t> polygon_ids;
+    std::vector<uint8_t> is_covered_by;
 
 private:
     [[nodiscard]] const FinalCell * find(Float64 x, Float64 y) const override;

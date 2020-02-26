@@ -6,7 +6,14 @@
 namespace DB
 {
 
-FinalCell::FinalCell(std::vector<size_t> polygon_ids_): polygon_ids(std::move(polygon_ids_)) {}
+FinalCell::FinalCell(std::vector<size_t> polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_):
+polygon_ids(std::move(polygon_ids_))
+{
+    std::transform(polygon_ids.begin(), polygon_ids.end(), std::back_inserter(is_covered_by), [&](const auto id)
+    {
+        return bg::covered_by(box_, polygons_[id]);
+    });
+}
 
 const FinalCell * FinalCell::find(Float64, Float64) const
 {
@@ -45,7 +52,7 @@ const FinalCell * GridRoot::find(Float64 x, Float64 y) const
 std::unique_ptr<ICell> GridRoot::makeCell(Float64 current_min_x, Float64 current_min_y, Float64 current_max_x, Float64 current_max_y, std::vector<size_t> possible_ids, size_t depth)
 {
     auto current_box = Box(Point(current_min_x, current_min_y), Point(current_max_x, current_max_y));
-    possible_ids.erase(std::remove_if(possible_ids.begin(), possible_ids.end(), [&](const auto & id)
+    possible_ids.erase(std::remove_if(possible_ids.begin(), possible_ids.end(), [&](const auto id)
     {
         return !bg::intersects(current_box, polygons[id]);
     }), possible_ids.end());
