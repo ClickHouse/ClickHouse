@@ -44,7 +44,7 @@ RUN mkdir -p /tmp/odbc-driver-build/cmake \
    && mkdir build \
    && cd build \
    && /tmp/odbc-driver-build/cmake/bin/cmake --version \
-   && /tmp/odbc-driver-build/cmake/bin/cmake .. -DCMAKE_C_COMPILER=`which gcc-9` -DCMAKE_CXX_COMPILER=`which g++-9` -DCH_ODBC_ENABLE_TESTING=OFF \
+   && /tmp/odbc-driver-build/cmake/bin/cmake .. -DCMAKE_C_COMPILER=`which gcc-9` -DCMAKE_CXX_COMPILER=`which g++-9` -DCH_ODBC_ENABLE_TESTING=OFF -DCH_ODBC_RUNTIME_LINK_STATIC=ON \
    && /tmp/odbc-driver-build/cmake/bin/cmake --build . --parallel --target install \
    && odbcinst -i -d -f /usr/local/share/doc/clickhouse-odbc/config/odbcinst.ini.sample \
    && odbcinst -i -s -l -f /usr/local/share/doc/clickhouse-odbc/config/odbc.ini.sample \
