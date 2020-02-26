@@ -7,3 +7,30 @@ pull_request_rules:
     actions:
       merge:
         method: merge
+pull_request_rules:
+  - name: Automatic merge for Dependabot pull requests
+    conditions:
+      - "author~=^dependabot(|-preview)\[bot\]$"
+      - "#status-failure=1" # Description check
+      - "base=master"
+    actions:
+      merge:
+        method: merge
+pull_request_rules:
+  - name: Automatic close for Dependabot pull requests
+    conditions:
+      - "author~=^dependabot(|-preview)\[bot\]$"
+      - "#status-failure>1"
+      - "base=master"
+    actions:
+      merge:
+        method: close
+pull_request_rules:
+  - name:Aautomatic merge for ImgBot pull requests
+    conditions:
+      - a"uthor=imgbot[bot]"
+      - "#status-failure=1" # Description check
+      - "base=master"
+    actions:
+      merge:
+        method: merge
