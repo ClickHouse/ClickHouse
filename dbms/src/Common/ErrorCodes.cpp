@@ -486,6 +486,7 @@ namespace ErrorCodes
     extern const int SET_NON_GRANTED_ROLE = 512;
     extern const int UNKNOWN_PART_TYPE = 513;
     extern const int ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND = 514;
+    extern const int INCORRECT_ACCESS_ENTITY_DEFINITION = 515;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
