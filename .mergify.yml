@@ -1,0 +1,9 @@
+pull_request_rules:
+  - name: Automatic merge on approval
+    conditions:
+      - "#approved-reviews-by>=1"
+      - "status-success~=.*"
+      - "base=master"
+    actions:
+      merge:
+        method: merge
