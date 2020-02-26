@@ -22,7 +22,6 @@ class Context;
 class FunctionFactory : private boost::noncopyable, public IFactoryWithAliases<std::function<FunctionOverloadResolverImplPtr(const Context &)>>
 {
 public:
-
     static FunctionFactory & instance();
 
     template <typename Function>
