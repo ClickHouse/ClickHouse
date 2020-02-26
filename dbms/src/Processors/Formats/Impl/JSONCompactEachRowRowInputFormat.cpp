@@ -12,7 +12,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -217,7 +216,6 @@ void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
     factory.registerInputFormatProcessor("JSONCompactEachRow", [](
             ReadBuffer & buf,
             const Block & sample,
-            const Context &,
             IRowInputFormat::Params params,
             const FormatSettings & settings)
     {
@@ -227,7 +225,6 @@ void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
     factory.registerInputFormatProcessor("JSONCompactEachRowWithNamesAndTypes", [](
             ReadBuffer & buf,
             const Block & sample,
-            const Context &,
             IRowInputFormat::Params params,
             const FormatSettings & settings)
     {

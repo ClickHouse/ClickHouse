@@ -9,6 +9,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int READONLY;
     extern const int QUERY_IS_PROHIBITED;
     extern const int NO_ELEMENTS_IN_CONFIG;
@@ -217,9 +218,18 @@ const SettingsConstraints::Constraint * SettingsConstraints::tryGetConstraint(si
 
 void SettingsConstraints::setProfile(const String & profile_name, const Poco::Util::AbstractConfiguration & config)
 {
-    String parent_profile = "profiles." + profile_name + ".profile";
-    if (config.has(parent_profile))
-        setProfile(parent_profile, config); // Inheritance of one profile from another.
+    String elem = "profiles." + profile_name;
+
+    Poco::Util::AbstractConfiguration::Keys config_keys;
+    config.keys(elem, config_keys);
+
+    for (const std::string & key : config_keys)
+    {
+        if (key == "profile" || key.starts_with("profile["))   /// Inheritance of profiles from the current one.
+            setProfile(config.getString(elem + "." + key), config);
+        else
+            continue;
+    }
 
     String path_to_constraints = "profiles." + profile_name + ".constraints";
     if (config.has(path_to_constraints))

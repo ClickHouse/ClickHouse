@@ -88,7 +88,7 @@ uint8_t vectors[64][8] =
 };
 
 
-int test_vectors()
+static int test_vectors()
 {
 #define MAXLEN 64
     char in[MAXLEN];

@@ -18,7 +18,10 @@ void FunctionComparison<EqualsOp, NameEquals>::executeTupleImpl(Block & block, s
                                                                 const ColumnsWithTypeAndName & y, size_t tuple_size,
                                                                 size_t input_rows_count)
 {
-    return executeTupleEqualityImpl<FunctionEquals, FunctionAnd>(block, result, x, y, tuple_size, input_rows_count);
+    return executeTupleEqualityImpl(
+        FunctionFactory::instance().get("equals", context),
+        FunctionFactory::instance().get("and", context),
+        block, result, x, y, tuple_size, input_rows_count);
 }
 
 }

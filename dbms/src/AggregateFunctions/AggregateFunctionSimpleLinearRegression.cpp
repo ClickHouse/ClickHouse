@@ -4,9 +4,14 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 
 #include <Core/TypeListNumber.h>
+#include "registerAggregateFunctions.h"
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 namespace
 {

@@ -94,7 +94,6 @@ void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
     factory.registerOutputFormatProcessor("JSONCompactEachRow", [](
             WriteBuffer & buf,
             const Block & sample,
-            const Context &,
             FormatFactory::WriteCallback callback,
             const FormatSettings & format_settings)
     {
@@ -104,7 +103,6 @@ void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
     factory.registerOutputFormatProcessor("JSONCompactEachRowWithNamesAndTypes", [](
             WriteBuffer &buf,
             const Block &sample,
-            const Context &,
             FormatFactory::WriteCallback callback,
             const FormatSettings &format_settings)
     {

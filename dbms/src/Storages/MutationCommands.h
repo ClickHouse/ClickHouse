@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/IStorage_fwd.h>
+#include <Core/Names.h>
 
 #include <optional>
 #include <unordered_map>
@@ -14,6 +15,8 @@ class Context;
 class WriteBuffer;
 class ReadBuffer;
 
+/// Represents set of actions which should be applied
+/// to values from set of columns which statisfy predicate.
 struct MutationCommand
 {
     ASTPtr ast; /// The AST of the whole command
@@ -23,13 +26,16 @@ struct MutationCommand
         EMPTY,     /// Not used.
         DELETE,
         UPDATE,
-        MATERIALIZE_INDEX
+        MATERIALIZE_INDEX,
+        MATERIALIZE_TTL
     };
 
     Type type = EMPTY;
 
+    /// WHERE part of mutation
     ASTPtr predicate;
 
+    /// Columns with corresponding actions
     std::unordered_map<String, ASTPtr> column_to_update_expression;
 
     /// For MATERIALIZE INDEX
@@ -39,6 +45,7 @@ struct MutationCommand
     static std::optional<MutationCommand> parse(ASTAlterCommand * command);
 };
 
+/// Multiple mutation commands, possible from different ALTER queries
 class MutationCommands : public std::vector<MutationCommand>
 {
 public:
@@ -46,6 +53,9 @@ public:
 
     void writeText(WriteBuffer & out) const;
     void readText(ReadBuffer & in);
+
+    /// Extra columns that we need to read except ones needed for expressions.
+    Names additional_columns;
 };
 
 }

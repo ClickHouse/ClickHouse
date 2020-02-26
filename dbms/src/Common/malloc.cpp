@@ -4,6 +4,9 @@
 /// Interposing these symbols explicitly. The idea works like this: malloc.cpp compiles to a
 /// dedicated object (namely clickhouse_malloc.o), and it will show earlier in the link command
 /// than malloc libs like libjemalloc.a. As a result, these symbols get picked in time right after.
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wredundant-decls"
 extern "C"
 {
     void *malloc(size_t size);
@@ -16,6 +19,7 @@ extern "C"
     void *memalign(size_t alignment, size_t size);
     void *pvalloc(size_t size);
 }
+#pragma GCC diagnostic pop
 
 template<typename T>
 inline void ignore(T x __attribute__((unused)))

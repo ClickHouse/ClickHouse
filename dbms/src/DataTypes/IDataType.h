@@ -534,6 +534,7 @@ struct WhichDataType
 
 inline bool isDate(const DataTypePtr & data_type) { return WhichDataType(data_type).isDate(); }
 inline bool isDateOrDateTime(const DataTypePtr & data_type) { return WhichDataType(data_type).isDateOrDateTime(); }
+inline bool isDateTime(const DataTypePtr & data_type) { return WhichDataType(data_type).isDateTime(); }
 inline bool isDateTime64(const DataTypePtr & data_type) { return WhichDataType(data_type).isDateTime64(); }
 inline bool isEnum(const DataTypePtr & data_type) { return WhichDataType(data_type).isEnum(); }
 inline bool isDecimal(const DataTypePtr & data_type) { return WhichDataType(data_type).isDecimal(); }
@@ -620,6 +621,12 @@ inline bool isStringOrFixedString(const T & data_type)
     return WhichDataType(data_type).isStringOrFixedString();
 }
 
+template <typename T>
+inline bool isNotCreatable(const T & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isNothing() || which.isFunction() || which.isSet();
+}
 
 inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
 {
@@ -649,7 +656,7 @@ class DataTypeDateTime;
 class DataTypeDateTime64;
 
 template <typename T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
-template <> constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
+template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
 
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;
 

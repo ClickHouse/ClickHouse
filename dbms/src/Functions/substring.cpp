@@ -4,7 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/GatherUtils/Sinks.h>
@@ -22,7 +22,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }

@@ -6,6 +6,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int LOGICAL_ERROR;
+}
 
 void TableStatus::write(WriteBuffer & out) const
 {

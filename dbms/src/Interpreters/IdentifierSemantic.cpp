@@ -7,6 +7,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int AMBIGUOUS_COLUMN_NAME;
 }
 
@@ -20,7 +21,7 @@ const DatabaseAndTableWithAlias & extractTable(const DatabaseAndTableWithAlias &
 
 const DatabaseAndTableWithAlias & extractTable(const TableWithColumnNames & table)
 {
-    return table.first;
+    return table.table;
 }
 
 template <typename T>
@@ -90,6 +91,22 @@ std::optional<String> IdentifierSemantic::getTableName(const ASTPtr & ast)
             if (id->semantic->special)
                 return id->name;
     return {};
+}
+
+std::optional<ASTIdentifier> IdentifierSemantic::uncover(const ASTIdentifier & identifier)
+{
+    if (identifier.semantic->covered)
+    {
+        std::vector<String> name_parts = identifier.name_parts;
+        return ASTIdentifier(std::move(name_parts));
+    }
+    return {};
+}
+
+void IdentifierSemantic::coverName(ASTIdentifier & identifier, const String & alias)
+{
+    identifier.setShortName(alias);
+    identifier.semantic->covered = true;
 }
 
 bool IdentifierSemantic::canBeAlias(const ASTIdentifier & identifier)

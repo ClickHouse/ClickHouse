@@ -19,7 +19,7 @@ if(NOT (MAKE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
     set(CLICKHOUSE_ONE_SHARED 1)
 endif()
 
-configure_file (config_tools.h.in ${CMAKE_CURRENT_BINARY_DIR}/config_tools.h)
+configure_file (config_tools.h.in ${ConfigIncludePath}/config_tools.h)
 
 
 macro(clickhouse_target_link_split_lib target name)
@@ -112,7 +112,6 @@ if (CLICKHOUSE_SPLIT_BINARY)
 else ()
     add_executable (clickhouse main.cpp)
     target_link_libraries (clickhouse PRIVATE clickhouse_common_io string_utils)
-    target_include_directories (clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
     target_include_directories (clickhouse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
     if (ENABLE_CLICKHOUSE_SERVER)

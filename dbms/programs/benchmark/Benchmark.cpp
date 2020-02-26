@@ -1,4 +1,4 @@
-#include <port/unistd.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -47,6 +47,7 @@ using Ports = std::vector<UInt16>;
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_BLOCK_SIGNAL;
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
 }
@@ -101,7 +102,7 @@ public:
 
     }
 
-    void initialize(Poco::Util::Application & self [[maybe_unused]])
+    void initialize(Poco::Util::Application & self [[maybe_unused]]) override
     {
         std::string home_path;
         const char * home_path_cstr = getenv("HOME");
@@ -111,7 +112,7 @@ public:
         configReadClient(config(), home_path);
     }
 
-    int main(const std::vector<std::string> &)
+    int main(const std::vector<std::string> &) override
     {
         if (!json_path.empty() && Poco::File(json_path).exists()) /// Clear file with previous results
             Poco::File(json_path).remove();
@@ -254,7 +255,7 @@ private:
 
             if (interrupt_listener.check())
             {
-                std::cout << "Stopping launch of queries. SIGINT recieved.\n";
+                std::cout << "Stopping launch of queries. SIGINT received.\n";
                 return false;
             }
 
@@ -418,7 +419,7 @@ private:
             std::cerr << percent << "%\t\t";
             for (const auto & info : infos)
             {
-                std::cerr << info->sampler.quantileInterpolated(percent / 100.0) << " sec." << "\t";
+                std::cerr << info->sampler.quantileNearest(percent / 100.0) << " sec." << "\t";
             }
             std::cerr << "\n";
         };
@@ -453,7 +454,7 @@ private:
 
         auto print_percentile = [&json_out](Stats & info, auto percent, bool with_comma = true)
         {
-            json_out << "\"" << percent << "\"" << ": " << info.sampler.quantileInterpolated(percent / 100.0) << (with_comma ? ",\n" : "\n");
+            json_out << "\"" << percent << "\"" << ": " << info.sampler.quantileNearest(percent / 100.0) << (with_comma ? ",\n" : "\n");
         };
 
         json_out << "{\n";
@@ -492,7 +493,7 @@ private:
 
 public:
 
-    ~Benchmark()
+    ~Benchmark() override
     {
         shutdown = true;
     }
@@ -504,6 +505,7 @@ public:
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {

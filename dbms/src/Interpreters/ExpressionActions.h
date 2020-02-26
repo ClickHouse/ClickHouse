@@ -6,10 +6,12 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Common/SipHash.h>
+#include <Common/UInt128.h>
 #include "config_core.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Interpreters/ArrayJoinAction.h>
 
 
 namespace DB
@@ -24,14 +26,14 @@ class AnalyzedJoin;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
-class IPreparedFunction;
-using PreparedFunctionPtr = std::shared_ptr<IPreparedFunction>;
+class IExecutableFunction;
+using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;
 
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
-class IFunctionBuilder;
-using FunctionBuilderPtr = std::shared_ptr<IFunctionBuilder>;
+class IFunctionOverloadResolver;
+using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
@@ -80,26 +82,19 @@ public:
     /// For ADD_COLUMN.
     ColumnPtr added_column;
 
-    /// For APPLY_FUNCTION and LEFT ARRAY JOIN.
-    /// FunctionBuilder is used before action was added to ExpressionActions (when we don't know types of arguments).
-    FunctionBuilderPtr function_builder;
-
-    /// For unaligned [LEFT] ARRAY JOIN
-    FunctionBuilderPtr function_length;
-    FunctionBuilderPtr function_greatest;
-    FunctionBuilderPtr function_arrayResize;
+    /// For APPLY_FUNCTION.
+    /// OverloadResolver is used before action was added to ExpressionActions (when we don't know types of arguments).
+    FunctionOverloadResolverPtr function_builder;
 
     /// Can be used after action was added to ExpressionActions if we want to get function signature or properties like monotonicity.
     FunctionBasePtr function_base;
     /// Prepared function which is used in function execution.
-    PreparedFunctionPtr function;
+    ExecutableFunctionPtr function;
     Names argument_names;
     bool is_function_compiled = false;
 
-    /// For ARRAY_JOIN
-    NameSet array_joined_columns;
-    bool array_join_is_left = false;
-    bool unaligned_array_join = false;
+    /// For ARRAY JOIN
+    std::shared_ptr<ArrayJoinAction> array_join;
 
     /// For JOIN
     std::shared_ptr<const AnalyzedJoin> table_join;
@@ -110,7 +105,7 @@ public:
 
     /// If result_name_ == "", as name "function_name(arguments separated by commas) is used".
     static ExpressionAction applyFunction(
-        const FunctionBuilderPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
+            const FunctionOverloadResolverPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
 
     static ExpressionAction addColumn(const ColumnWithTypeAndName & added_column_);
     static ExpressionAction removeColumn(const std::string & removed_name);
@@ -137,8 +132,16 @@ private:
     friend class ExpressionActions;
 
     void prepare(Block & sample_block, const Settings & settings, NameSet & names_not_for_constant_folding);
-    void execute(Block & block, bool dry_run) const;
     void executeOnTotals(Block & block) const;
+
+    /// Executes action on block (modify it). Block could be splitted in case of JOIN. Then not_processed block is created.
+    void execute(Block & block, bool dry_run, ExtraBlockPtr & not_processed) const;
+
+    void execute(Block & block, bool dry_run) const
+    {
+        ExtraBlockPtr extra;
+        execute(block, dry_run, extra);
+    }
 };
 
 
@@ -219,6 +222,9 @@ public:
 
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block, bool dry_run = false) const;
+
+    /// Execute the expression on the block with continuation.
+    void execute(Block & block, ExtraBlockPtr & not_processed, size_t & start_action) const;
 
     /// Check if joined subquery has totals.
     bool hasTotalsInJoin() const;

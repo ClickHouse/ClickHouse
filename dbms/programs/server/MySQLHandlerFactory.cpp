@@ -19,7 +19,6 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int OPENSSL_ERROR;
-    extern const int SYSTEM_ERROR;
 }
 
 MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
@@ -34,7 +33,7 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
     }
     catch (...)
     {
-        LOG_INFO(log, "Failed to create SSL context. SSL will be disabled. Error: " << getCurrentExceptionMessage(false));
+        LOG_TRACE(log, "Failed to create SSL context. SSL will be disabled. Error: " << getCurrentExceptionMessage(false));
         ssl_enabled = false;
     }
 #endif
@@ -47,7 +46,7 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
     }
     catch (...)
     {
-        LOG_WARNING(log, "Failed to read RSA keys. Error: " << getCurrentExceptionMessage(false));
+        LOG_TRACE(log, "Failed to read RSA key pair from server certificate. Error: " << getCurrentExceptionMessage(false));
         generateRSAKeys();
     }
 #endif
@@ -104,7 +103,7 @@ void MySQLHandlerFactory::readRSAKeys()
 
 void MySQLHandlerFactory::generateRSAKeys()
 {
-    LOG_INFO(log, "Generating new RSA key.");
+    LOG_TRACE(log, "Generating new RSA key pair.");
     public_key.reset(RSA_new());
     if (!public_key)
         throw Exception("Failed to allocate RSA key. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);

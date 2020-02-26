@@ -22,18 +22,18 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionCodecSelector.h>
+#include <Disks/DiskLocal.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Core/Settings.h>
 #include <Access/AccessControlManager.h>
+#include <Access/AccessRightsContext.h>
+#include <Access/RowPolicyContext.h>
+#include <Access/User.h>
 #include <Access/SettingsConstraints.h>
-#include <Access/QuotaContext.h>
 #include <Interpreters/ExpressionJIT.h>
-#include <Interpreters/UsersManager.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
-#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
-#include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExpressionActions.h>
@@ -56,6 +56,7 @@
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
+#include <ext/singleton.h>
 
 namespace ProfileEvents
 {
@@ -67,6 +68,8 @@ namespace CurrentMetrics
 {
     extern const Metric ContextLockWait;
     extern const Metric MemoryTrackingForMerges;
+    extern const Metric BackgroundMovePoolTask;
+    extern const Metric MemoryTrackingInBackgroundMoveProcessingPool;
 }
 
 
@@ -75,25 +78,20 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int DATABASE_ACCESS_DENIED;
+    extern const int BAD_ARGUMENTS;
+    extern const int BAD_GET;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
-    extern const int TABLE_WAS_NOT_DROPPED;
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int THERE_IS_NO_SESSION;
     extern const int THERE_IS_NO_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int DDL_GUARD_IS_ACTIVE;
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
-    extern const int PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
-    extern const int SCALAR_ALREADY_EXISTS;
     extern const int UNKNOWN_SCALAR;
-    extern const int NOT_ENOUGH_PRIVILEGES;
 }
 
 
@@ -110,7 +108,7 @@ struct ContextShared
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
     mutable std::mutex external_models_mutex;
-    /// Separate mutex for re-initialization of zookeer session. This operation could take a long time and must not interfere with another operations.
+    /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex zookeeper_mutex;
 
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
@@ -122,10 +120,13 @@ struct ContextShared
     String interserver_scheme;                              /// http or https
 
     String path;                                            /// Path to the data directory, with a slash at the end.
-    String tmp_path;                                        /// The path to the temporary files that occur when processing the request.
     String flags_path;                                      /// Path to the directory with some control flags for server maintenance.
     String user_files_path;                                 /// Path to the directory with user provided files, usable by 'file' table function.
+    String dictionaries_lib_path;                           /// Path to the directory with user provided binaries and libraries for external dictionaries.
     ConfigurationPtr config;                                /// Global configuration settings.
+
+    String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
+    mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
 
     Databases databases;                                    /// List of databases and tables in them.
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
@@ -134,7 +135,6 @@ struct ContextShared
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
     AccessControlManager access_control_manager;
-    std::unique_ptr<UsersManager> users_manager;            /// Known users.
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     ProcessList process_list;                               /// Executing queries at the moment.
@@ -149,10 +149,10 @@ struct ContextShared
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
-    /// Storage disk chooser
-    mutable std::unique_ptr<DiskSpace::DiskSelector> merge_tree_disk_selector;
-    /// Storage policy chooser
-    mutable std::unique_ptr<DiskSpace::StoragePolicySelector> merge_tree_storage_policy_selector;
+    /// Storage disk chooser for MergeTree engines
+    mutable std::unique_ptr<DiskSelector> merge_tree_disk_selector;
+    /// Storage policy chooser for MergeTree engines
+    mutable std::unique_ptr<StoragePolicySelector> merge_tree_storage_policy_selector;
 
     std::optional<MergeTreeSettings> merge_tree_settings;   /// Settings of MergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
@@ -163,7 +163,6 @@ struct ContextShared
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
-    std::unique_ptr<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
     class SessionKeyHash
@@ -189,7 +188,7 @@ struct ContextShared
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     std::unique_ptr<Clusters> clusters;
-    ConfigurationPtr clusters_config;                        /// Soteres updated configs
+    ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
 
 #if USE_EMBEDDED_COMPILER
@@ -228,8 +227,6 @@ struct ContextShared
             std::cerr.flush();
             std::terminate();
         }
-
-        initialize();
     }
 
 
@@ -296,13 +293,7 @@ struct ContextShared
         schedule_pool.reset();
         ddl_worker.reset();
 
-        /// Stop trace collector if any
-        trace_collector.reset();
-    }
-
-    bool hasTraceCollector()
-    {
-        return trace_collector != nullptr;
+        ext::Singleton<TraceCollector>::reset();
     }
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
@@ -310,13 +301,7 @@ struct ContextShared
         if (trace_log == nullptr)
             return;
 
-        trace_collector = std::make_unique<TraceCollector>(trace_log);
-    }
-
-private:
-    void initialize()
-    {
-        users_manager = std::make_unique<UsersManager>();
+        ext::Singleton<TraceCollector>()->setTraceLog(trace_log);
     }
 };
 
@@ -329,7 +314,8 @@ Context & Context::operator=(const Context &) = default;
 Context Context::createGlobal()
 {
     Context res;
-    res.quota = std::make_shared<QuotaContext>();
+    res.access_rights = std::make_shared<AccessRightsContext>();
+    res.initial_row_policy = std::make_shared<RowPolicyContext>();
     res.shared = std::make_shared<ContextShared>();
     return res;
 }
@@ -524,12 +510,6 @@ String Context::getPath() const
     return shared->path;
 }
 
-String Context::getTemporaryPath() const
-{
-    auto lock = getLock();
-    return shared->tmp_path;
-}
-
 String Context::getFlagsPath() const
 {
     auto lock = getLock();
@@ -542,13 +522,25 @@ String Context::getUserFilesPath() const
     return shared->user_files_path;
 }
 
+String Context::getDictionariesLibPath() const
+{
+    auto lock = getLock();
+    return shared->dictionaries_lib_path;
+}
+
+VolumePtr Context::getTemporaryVolume() const
+{
+    auto lock = getLock();
+    return shared->tmp_volume;
+}
+
 void Context::setPath(const String & path)
 {
     auto lock = getLock();
 
     shared->path = path;
 
-    if (shared->tmp_path.empty())
+    if (shared->tmp_path.empty() && !shared->tmp_volume)
         shared->tmp_path = shared->path + "tmp/";
 
     if (shared->flags_path.empty())
@@ -556,12 +548,36 @@ void Context::setPath(const String & path)
 
     if (shared->user_files_path.empty())
         shared->user_files_path = shared->path + "user_files/";
+
+    if (shared->dictionaries_lib_path.empty())
+        shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
 }
 
-void Context::setTemporaryPath(const String & path)
+VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name)
 {
     auto lock = getLock();
-    shared->tmp_path = path;
+
+    if (policy_name.empty())
+    {
+        shared->tmp_path = path;
+        if (!shared->tmp_path.ends_with('/'))
+            shared->tmp_path += '/';
+
+        auto disk = std::make_shared<DiskLocal>("_tmp_default", shared->tmp_path, 0);
+        shared->tmp_volume = std::make_shared<Volume>("_tmp_default", std::vector<DiskPtr>{disk}, 0);
+    }
+    else
+    {
+        StoragePolicyPtr tmp_policy = getStoragePolicySelector()[policy_name];
+        if (tmp_policy->getVolumes().size() != 1)
+             throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        shared->tmp_volume = tmp_policy->getVolume(0);
+    }
+
+    if (!shared->tmp_volume->disks.size())
+         throw Exception("No disks volume for temporary files", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+    return shared->tmp_volume;
 }
 
 void Context::setFlagsPath(const String & path)
@@ -576,6 +592,12 @@ void Context::setUserFilesPath(const String & path)
     shared->user_files_path = path;
 }
 
+void Context::setDictionariesLibPath(const String & path)
+{
+    auto lock = getLock();
+    shared->dictionaries_lib_path = path;
+}
+
 void Context::setConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
@@ -588,31 +610,23 @@ const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
     return shared->config ? *shared->config : Poco::Util::Application::instance().config();
 }
 
+
 AccessControlManager & Context::getAccessControlManager()
 {
-    auto lock = getLock();
     return shared->access_control_manager;
 }
 
 const AccessControlManager & Context::getAccessControlManager() const
 {
-    auto lock = getLock();
     return shared->access_control_manager;
 }
 
-void Context::checkQuotaManagementIsAllowed()
-{
-    if (!is_quota_management_allowed)
-        throw Exception(
-            "User " + client_info.current_user + " doesn't have enough privileges to manage quotas", ErrorCodes::NOT_ENOUGH_PRIVILEGES);
-}
 
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->users_config = config;
     shared->access_control_manager.loadFromConfig(*shared->users_config);
-    shared->users_manager->loadFromConfig(*shared->users_config);
 }
 
 ConfigurationPtr Context::getUsersConfig()
@@ -621,40 +635,155 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-bool Context::hasUserProperty(const String & database, const String & table, const String & name) const
+
+void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
 {
     auto lock = getLock();
 
-    // No user - no properties.
-    if (client_info.current_user.empty())
-        return false;
+    client_info.current_user = name;
+    client_info.current_password = password;
+    client_info.current_address = address;
+    if (!quota_key.empty())
+        client_info.quota_key = quota_key;
 
-    const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
+    auto new_user_id = getAccessControlManager().getID<User>(name);
+    auto new_access_rights = getAccessControlManager().getAccessRightsContext(new_user_id, {}, true, settings, current_database, client_info);
+    new_access_rights->checkHostIsAllowed();
+    new_access_rights->checkPassword(password);
 
-    auto db = props.find(database);
-    if (db == props.end())
-        return false;
+    user_id = new_user_id;
+    access_rights = std::move(new_access_rights);
+    current_roles.clear();
+    use_default_roles = true;
 
-    auto table_props = db->second.find(table);
-    if (table_props == db->second.end())
-        return false;
-
-    return !!table_props->second.count(name);
+    calculateUserSettings();
 }
 
-const String & Context::getUserProperty(const String & database, const String & table, const String & name) const
+std::shared_ptr<const User> Context::getUser() const
 {
     auto lock = getLock();
-    const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
-    return props.at(database).at(table).at(name);
+    return access_rights->getUser();
 }
+
+String Context::getUserName() const
+{
+    auto lock = getLock();
+    return access_rights->getUserName();
+}
+
+UUID Context::getUserID() const
+{
+    auto lock = getLock();
+    if (!user_id)
+        throw Exception("No current user", ErrorCodes::LOGICAL_ERROR);
+    return *user_id;
+}
+
+
+void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
+{
+    auto lock = getLock();
+    if (current_roles == current_roles_ && !use_default_roles)
+        return;
+    current_roles = current_roles_;
+    use_default_roles = false;
+    calculateAccessRights();
+}
+
+void Context::setCurrentRolesDefault()
+{
+    auto lock = getLock();
+    if (use_default_roles)
+        return;
+    current_roles.clear();
+    use_default_roles = true;
+    calculateAccessRights();
+}
+
+std::vector<UUID> Context::getCurrentRoles() const
+{
+    return getAccessRights()->getCurrentRoles();
+}
+
+Strings Context::getCurrentRolesNames() const
+{
+    return getAccessRights()->getCurrentRolesNames();
+}
+
+std::vector<UUID> Context::getEnabledRoles() const
+{
+    return getAccessRights()->getEnabledRoles();
+}
+
+Strings Context::getEnabledRolesNames() const
+{
+    return getAccessRights()->getEnabledRolesNames();
+}
+
+
+void Context::calculateAccessRights()
+{
+    auto lock = getLock();
+    if (user_id)
+        access_rights = getAccessControlManager().getAccessRightsContext(*user_id, current_roles, use_default_roles, settings, current_database, client_info);
+}
+
+
+template <typename... Args>
+void Context::checkAccessImpl(const Args &... args) const
+{
+    getAccessRights()->checkAccess(args...);
+}
+
+void Context::checkAccess(const AccessFlags & access) const { return checkAccessImpl(access); }
+void Context::checkAccess(const AccessFlags & access, const std::string_view & database) const { return checkAccessImpl(access, database); }
+void Context::checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table) const { return checkAccessImpl(access, database, table); }
+void Context::checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column) const { return checkAccessImpl(access, database, table, column); }
+void Context::checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const { return checkAccessImpl(access, database, table, columns); }
+void Context::checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns) const { return checkAccessImpl(access, database, table, columns); }
+void Context::checkAccess(const AccessRightsElement & access) const { return checkAccessImpl(access); }
+void Context::checkAccess(const AccessRightsElements & access) const { return checkAccessImpl(access); }
+
+AccessRightsContextPtr Context::getAccessRights() const
+{
+    auto lock = getLock();
+    return access_rights;
+}
+
+RowPolicyContextPtr Context::getRowPolicy() const
+{
+    return getAccessRights()->getRowPolicy();
+}
+
+void Context::setInitialRowPolicy()
+{
+    auto lock = getLock();
+    auto initial_user_id = getAccessControlManager().find<User>(client_info.initial_user);
+    if (initial_user_id)
+        initial_row_policy = getAccessControlManager().getRowPolicyContext(*initial_user_id, {});
+}
+
+RowPolicyContextPtr Context::getInitialRowPolicy() const
+{
+    auto lock = getLock();
+    return initial_row_policy;
+}
+
+
+QuotaContextPtr Context::getQuota() const
+{
+    return getAccessRights()->getQuota();
+}
+
 
 void Context::calculateUserSettings()
 {
     auto lock = getLock();
+    String profile = getUser()->profile;
 
-    auto user = getUser(client_info.current_user);
-    String profile = user->profile;
+    bool old_readonly = settings.readonly;
+    bool old_allow_ddl = settings.allow_ddl;
+    bool old_allow_introspection_functions = settings.allow_introspection_functions;
 
     /// 1) Set default settings (hardcoded values)
     /// NOTE: we ignore global_context settings (from which it is usually copied)
@@ -670,11 +799,10 @@ void Context::calculateUserSettings()
     /// 3) Apply settings from current user
     setProfile(profile);
 
-    quota = getAccessControlManager().createQuotaContext(
-        client_info.current_user, client_info.current_address.host(), client_info.quota_key);
-    is_quota_management_allowed = user->is_quota_management_allowed;
+    /// 4) Recalculate access rights if it's necessary.
+    if ((settings.readonly != old_readonly) || (settings.allow_ddl != old_allow_ddl) || (settings.allow_introspection_functions != old_allow_introspection_functions))
+        calculateAccessRights();
 }
-
 
 void Context::setProfile(const String & profile)
 {
@@ -686,112 +814,45 @@ void Context::setProfile(const String & profile)
     settings_constraints = std::move(new_constraints);
 }
 
-std::shared_ptr<const User> Context::getUser(const String & user_name)
+
+void Context::addDependencyUnsafe(const StorageID & from, const StorageID & where)
 {
-    return shared->users_manager->getUser(user_name);
-}
-
-void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
-{
-    auto lock = getLock();
-
-    auto user_props = shared->users_manager->authorizeAndGetUser(name, password, address.host());
-
-    client_info.current_user = name;
-    client_info.current_address = address;
-    client_info.current_password = password;
-
-    if (!quota_key.empty())
-        client_info.quota_key = quota_key;
-
-    calculateUserSettings();
-}
-
-
-void Context::checkDatabaseAccessRights(const std::string & database_name) const
-{
-    auto lock = getLock();
-    checkDatabaseAccessRightsImpl(database_name);
-}
-
-bool Context::hasDatabaseAccessRights(const String & database_name) const
-{
-    auto lock = getLock();
-    return client_info.current_user.empty() || (database_name == "system") ||
-        shared->users_manager->hasAccessToDatabase(client_info.current_user, database_name);
-}
-
-bool Context::hasDictionaryAccessRights(const String & dictionary_name) const
-{
-    auto lock = getLock();
-    return client_info.current_user.empty() ||
-        shared->users_manager->hasAccessToDictionary(client_info.current_user, dictionary_name);
-}
-
-void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) const
-{
-    if (client_info.current_user.empty() || (database_name == "system"))
-    {
-         /// An unnamed user, i.e. server, has access to all databases.
-         /// All users have access to the database system.
-        return;
-    }
-    if (!shared->users_manager->hasAccessToDatabase(client_info.current_user, database_name))
-        throw Exception("Access denied to database " + database_name + " for user " + client_info.current_user , ErrorCodes::DATABASE_ACCESS_DENIED);
-}
-
-void Context::addDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
-{
-    checkDatabaseAccessRightsImpl(from.first);
-    checkDatabaseAccessRightsImpl(where.first);
     shared->view_dependencies[from].insert(where);
 
     // Notify table of dependencies change
-    auto table = tryGetTable(from.first, from.second);
+    auto table = tryGetTable(from);
     if (table != nullptr)
         table->updateDependencies();
 }
 
-void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+void Context::addDependency(const StorageID & from, const StorageID & where)
 {
     auto lock = getLock();
     addDependencyUnsafe(from, where);
 }
 
-void Context::removeDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+void Context::removeDependencyUnsafe(const StorageID & from, const StorageID & where)
 {
-    checkDatabaseAccessRightsImpl(from.first);
-    checkDatabaseAccessRightsImpl(where.first);
     shared->view_dependencies[from].erase(where);
 
     // Notify table of dependencies change
-    auto table = tryGetTable(from.first, from.second);
+    auto table = tryGetTable(from);
     if (table != nullptr)
         table->updateDependencies();
 }
 
-void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+void Context::removeDependency(const StorageID & from, const StorageID & where)
 {
     auto lock = getLock();
     removeDependencyUnsafe(from, where);
 }
 
-Dependencies Context::getDependencies(const String & database_name, const String & table_name) const
+Dependencies Context::getDependencies(const StorageID & from) const
 {
     auto lock = getLock();
 
-    String db = resolveDatabase(database_name, current_database);
-
-    if (database_name.empty() && tryGetExternalTable(table_name))
-    {
-        /// Table is temporary. Access granted.
-    }
-    else
-    {
-        checkDatabaseAccessRightsImpl(db);
-    }
-
-    ViewDependencies::const_iterator iter = shared->view_dependencies.find(DatabaseAndTableName(db, table_name));
+    String db = resolveDatabase(from.database_name, current_database);
+    ViewDependencies::const_iterator iter = shared->view_dependencies.find(StorageID(db, from.table_name, from.uuid));
     if (iter == shared->view_dependencies.end())
         return {};
 
@@ -801,10 +862,7 @@ Dependencies Context::getDependencies(const String & database_name, const String
 bool Context::isTableExist(const String & database_name, const String & table_name) const
 {
     auto lock = getLock();
-
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRightsImpl(db);
-
     Databases::const_iterator it = shared->databases.find(db);
     return shared->databases.end() != it
         && it->second->isTableExist(*this, table_name);
@@ -813,10 +871,7 @@ bool Context::isTableExist(const String & database_name, const String & table_na
 bool Context::isDictionaryExists(const String & database_name, const String & dictionary_name) const
 {
     auto lock = getLock();
-
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRightsImpl(db);
-
     Databases::const_iterator it = shared->databases.find(db);
     return shared->databases.end() != it && it->second->isDictionaryExist(*this, dictionary_name);
 }
@@ -825,7 +880,6 @@ bool Context::isDatabaseExist(const String & database_name) const
 {
     auto lock = getLock();
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRightsImpl(db);
     return shared->databases.end() != shared->databases.find(db);
 }
 
@@ -835,28 +889,20 @@ bool Context::isExternalTableExist(const String & table_name) const
 }
 
 
-void Context::assertTableDoesntExist(const String & database_name, const String & table_name, bool check_database_access_rights) const
+void Context::assertTableDoesntExist(const String & database_name, const String & table_name) const
 {
     auto lock = getLock();
-
     String db = resolveDatabase(database_name, current_database);
-    if (check_database_access_rights)
-        checkDatabaseAccessRightsImpl(db);
-
     Databases::const_iterator it = shared->databases.find(db);
     if (shared->databases.end() != it && it->second->isTableExist(*this, table_name))
         throw Exception("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
 
-void Context::assertDatabaseExists(const String & database_name, bool check_database_access_rights) const
+void Context::assertDatabaseExists(const String & database_name) const
 {
     auto lock = getLock();
-
     String db = resolveDatabase(database_name, current_database);
-    if (check_database_access_rights)
-        checkDatabaseAccessRightsImpl(db);
-
     if (shared->databases.end() == shared->databases.find(db))
         throw Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 }
@@ -865,10 +911,7 @@ void Context::assertDatabaseExists(const String & database_name, bool check_data
 void Context::assertDatabaseDoesntExist(const String & database_name) const
 {
     auto lock = getLock();
-
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRightsImpl(db);
-
     if (shared->databases.end() != shared->databases.find(db))
         throw Exception("Database " + backQuoteIfNeed(db) + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
 }
@@ -920,24 +963,32 @@ StoragePtr Context::tryGetExternalTable(const String & table_name) const
     return jt->second.first;
 }
 
-
 StoragePtr Context::getTable(const String & database_name, const String & table_name) const
 {
-    Exception exc;
-    auto res = getTableImpl(database_name, table_name, &exc);
+    return getTable(StorageID(database_name, table_name));
+}
+
+StoragePtr Context::getTable(const StorageID & table_id) const
+{
+    std::optional<Exception> exc;
+    auto res = getTableImpl(table_id, &exc);
     if (!res)
-        throw exc;
+        throw *exc;
     return res;
 }
 
-
 StoragePtr Context::tryGetTable(const String & database_name, const String & table_name) const
 {
-    return getTableImpl(database_name, table_name, nullptr);
+    return getTableImpl(StorageID(database_name, table_name), {});
+}
+
+StoragePtr Context::tryGetTable(const StorageID & table_id) const
+{
+    return getTableImpl(table_id, {});
 }
 
 
-StoragePtr Context::getTableImpl(const String & database_name, const String & table_name, Exception * exception) const
+StoragePtr Context::getTableImpl(const StorageID & table_id, std::optional<Exception> * exception) const
 {
     String db;
     DatabasePtr database;
@@ -945,32 +996,31 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
     {
         auto lock = getLock();
 
-        if (database_name.empty())
+        if (table_id.database_name.empty())
         {
-            StoragePtr res = tryGetExternalTable(table_name);
+            StoragePtr res = tryGetExternalTable(table_id.table_name);
             if (res)
                 return res;
         }
 
-        db = resolveDatabase(database_name, current_database);
-        checkDatabaseAccessRightsImpl(db);
+        db = resolveDatabase(table_id.database_name, current_database);
 
         Databases::const_iterator it = shared->databases.find(db);
         if (shared->databases.end() == it)
         {
             if (exception)
-                *exception = Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+                exception->emplace("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             return {};
         }
 
         database = it->second;
     }
 
-    auto table = database->tryGetTable(*this, table_name);
+    auto table = database->tryGetTable(*this, table_id.table_name);
     if (!table)
     {
         if (exception)
-            *exception = Exception("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            exception->emplace("Table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         return {};
     }
 
@@ -1087,33 +1137,11 @@ DatabasePtr Context::detachDatabase(const String & database_name)
 {
     auto lock = getLock();
     auto res = getDatabase(database_name);
-    getExternalDictionariesLoader().removeConfigRepository(database_name);
     shared->databases.erase(database_name);
 
     return res;
 }
 
-
-ASTPtr Context::getCreateTableQuery(const String & database_name, const String & table_name) const
-{
-    auto lock = getLock();
-
-    String db = resolveDatabase(database_name, current_database);
-    assertDatabaseExists(db);
-
-    return shared->databases[db]->getCreateTableQuery(*this, table_name);
-}
-
-
-ASTPtr Context::getCreateDictionaryQuery(const String & database_name, const String & dictionary_name) const
-{
-    auto lock = getLock();
-
-    String db = resolveDatabase(database_name, current_database);
-    assertDatabaseExists(db);
-
-    return shared->databases[db]->getCreateDictionaryQuery(*this, dictionary_name);
-}
 
 ASTPtr Context::getCreateExternalTableQuery(const String & table_name) const
 {
@@ -1124,16 +1152,6 @@ ASTPtr Context::getCreateExternalTableQuery(const String & table_name) const
     return jt->second.second;
 }
 
-ASTPtr Context::getCreateDatabaseQuery(const String & database_name) const
-{
-    auto lock = getLock();
-
-    String db = resolveDatabase(database_name, current_database);
-    assertDatabaseExists(db);
-
-    return shared->databases[db]->getCreateDatabaseQuery(*this);
-}
-
 Settings Context::getSettings() const
 {
     return settings;
@@ -1142,7 +1160,15 @@ Settings Context::getSettings() const
 
 void Context::setSettings(const Settings & settings_)
 {
+    auto lock = getLock();
+    bool old_readonly = settings.readonly;
+    bool old_allow_ddl = settings.allow_ddl;
+    bool old_allow_introspection_functions = settings.allow_introspection_functions;
+
     settings = settings_;
+
+    if ((settings.readonly != old_readonly) || (settings.allow_ddl != old_allow_ddl) || (settings.allow_introspection_functions != old_allow_introspection_functions))
+        calculateAccessRights();
 }
 
 
@@ -1155,6 +1181,9 @@ void Context::setSetting(const String & name, const String & value)
         return;
     }
     settings.set(name, value);
+
+    if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
+        calculateAccessRights();
 }
 
 
@@ -1167,6 +1196,9 @@ void Context::setSetting(const String & name, const Field & value)
         return;
     }
     settings.set(name, value);
+
+    if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
+        calculateAccessRights();
 }
 
 
@@ -1221,6 +1253,7 @@ void Context::setCurrentDatabase(const String & name)
     auto lock = getLock();
     assertDatabaseExists(name);
     current_database = name;
+    calculateAccessRights();
 }
 
 
@@ -1466,7 +1499,7 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
     if (shared->mark_cache)
         throw Exception("Mark cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes, std::chrono::seconds(settings.mark_cache_min_lifetime));
+    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
 }
 
 
@@ -1518,6 +1551,8 @@ BackgroundProcessingPool & Context::getBackgroundMovePool()
         pool_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_max", 600);
         pool_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
         pool_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
+        pool_settings.tasks_metric = CurrentMetrics::BackgroundMovePoolTask;
+        pool_settings.memory_metric = CurrentMetrics::MemoryTrackingInBackgroundMoveProcessingPool;
         shared->background_move_pool.emplace(settings.background_move_pool_size, pool_settings, "BackgroundMovePool", "BgMoveProcPool");
     }
     return *shared->background_move_pool;
@@ -1586,9 +1621,9 @@ std::pair<String, UInt16> Context::getInterserverIOAddress() const
     return { shared->interserver_io_host, shared->interserver_io_port };
 }
 
-void Context::setInterserverCredentials(const String & user, const String & password)
+void Context::setInterserverCredentials(const String & user_, const String & password)
 {
-    shared->interserver_io_user = user;
+    shared->interserver_io_user = user_;
     shared->interserver_io_password = password;
 }
 
@@ -1723,11 +1758,6 @@ void Context::initializeSystemLogs()
     shared->system_logs.emplace(*global_context, getConfigRef());
 }
 
-bool Context::hasTraceCollector()
-{
-    return shared->hasTraceCollector();
-}
-
 void Context::initializeTraceCollector()
 {
     shared->initializeTraceCollector(getTraceLog());
@@ -1826,7 +1856,7 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
 }
 
 
-const DiskSpace::DiskPtr & Context::getDisk(const String & name) const
+const DiskPtr & Context::getDisk(const String & name) const
 {
     auto lock = getLock();
 
@@ -1836,7 +1866,7 @@ const DiskSpace::DiskPtr & Context::getDisk(const String & name) const
 }
 
 
-DiskSpace::DiskSelector & Context::getDiskSelector() const
+DiskSelector & Context::getDiskSelector() const
 {
     auto lock = getLock();
 
@@ -1845,13 +1875,13 @@ DiskSpace::DiskSelector & Context::getDiskSelector() const
         constexpr auto config_name = "storage_configuration.disks";
         auto & config = getConfigRef();
 
-        shared->merge_tree_disk_selector = std::make_unique<DiskSpace::DiskSelector>(config, config_name, getPath());
+        shared->merge_tree_disk_selector = std::make_unique<DiskSelector>(config, config_name, *this);
     }
     return *shared->merge_tree_disk_selector;
 }
 
 
-const DiskSpace::StoragePolicyPtr & Context::getStoragePolicy(const String & name) const
+const StoragePolicyPtr & Context::getStoragePolicy(const String & name) const
 {
     auto lock = getLock();
 
@@ -1861,7 +1891,7 @@ const DiskSpace::StoragePolicyPtr & Context::getStoragePolicy(const String & nam
 }
 
 
-DiskSpace::StoragePolicySelector & Context::getStoragePolicySelector() const
+StoragePolicySelector & Context::getStoragePolicySelector() const
 {
     auto lock = getLock();
 
@@ -1870,7 +1900,7 @@ DiskSpace::StoragePolicySelector & Context::getStoragePolicySelector() const
         constexpr auto config_name = "storage_configuration.policies";
         auto & config = getConfigRef();
 
-        shared->merge_tree_storage_policy_selector = std::make_unique<DiskSpace::StoragePolicySelector>(config, config_name, getDiskSelector());
+        shared->merge_tree_storage_policy_selector = std::make_unique<StoragePolicySelector>(config, config_name, getDiskSelector());
     }
     return *shared->merge_tree_storage_policy_selector;
 }

@@ -13,8 +13,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -421,7 +421,6 @@ void registerInputFormatProcessorCSV(FormatFactory & factory)
         factory.registerInputFormatProcessor(with_names ? "CSVWithNames" : "CSV", [=](
             ReadBuffer & buf,
             const Block & sample,
-            const Context &,
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
@@ -430,7 +429,7 @@ void registerInputFormatProcessorCSV(FormatFactory & factory)
     }
 }
 
-bool fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+static bool fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     char * pos = in.position();
     bool quotes = false;

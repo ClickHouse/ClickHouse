@@ -13,8 +13,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
     extern const int BAD_CAST;
 }
 
@@ -393,8 +393,6 @@ public:
     {
         this->data(place).returnWeights(to);
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 
 private:
     UInt64 param_num;

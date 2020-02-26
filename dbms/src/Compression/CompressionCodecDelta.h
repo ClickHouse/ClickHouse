@@ -10,7 +10,7 @@ class CompressionCodecDelta : public ICompressionCodec
 public:
     CompressionCodecDelta(UInt8 delta_bytes_size_);
 
-    UInt8 getMethodByte() const override;
+    uint8_t getMethodByte() const override;
 
     String getCodecDesc() const override;
 
@@ -27,5 +27,8 @@ protected:
 private:
     UInt8 delta_bytes_size;
 };
+
+class CompressionCodecFactory;
+void registerCodecDelta(CompressionCodecFactory & factory);
 
 }

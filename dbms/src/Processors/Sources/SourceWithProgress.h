@@ -21,7 +21,7 @@ public:
 
     /// Set the quota. If you set a quota on the amount of raw data,
     /// then you should also set mode = LIMITS_TOTAL to LocalLimits with setLimits.
-    virtual void setQuota(const std::shared_ptr<QuotaContext> & quota_) = 0;
+    virtual void setQuota(const QuotaContextPtr & quota_) = 0;
 
     /// Set the pointer to the process list item.
     /// General information about the resources spent on the request will be written into it.
@@ -49,7 +49,7 @@ public:
     using LimitsMode = IBlockInputStream::LimitsMode;
 
     void setLimits(const LocalLimits & limits_) final { limits = limits_; }
-    void setQuota(const std::shared_ptr<QuotaContext> & quota_) final { quota = quota_; }
+    void setQuota(const QuotaContextPtr & quota_) final { quota = quota_; }
     void setProcessListElement(QueryStatus * elem) final { process_list_elem = elem; }
     void setProgressCallback(const ProgressCallback & callback) final { progress_callback = callback; }
     void addTotalRowsApprox(size_t value) final { total_rows_approx += value; }
@@ -58,9 +58,11 @@ protected:
     /// Call this method to provide information about progress.
     void progress(const Progress & value);
 
+    void work() override;
+
 private:
     LocalLimits limits;
-    std::shared_ptr<QuotaContext> quota;
+    QuotaContextPtr quota;
     ProgressCallback progress_callback;
     QueryStatus * process_list_elem = nullptr;
 
@@ -70,6 +72,10 @@ private:
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};    /// Time with waiting time.
     /// According to total_stopwatch in microseconds.
     UInt64 last_profile_events_update_time = 0;
+
+    /// This flag checks if progress() was manually called at generate() call.
+    /// If not, it will be called for chunk after generate() was finished.
+    bool was_progress_called = false;
 };
 
 }

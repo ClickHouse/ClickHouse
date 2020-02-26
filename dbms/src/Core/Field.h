@@ -157,6 +157,7 @@ private:
 template <> struct NearestFieldTypeImpl<char> { using Type = std::conditional_t<is_signed_v<char>, Int64, UInt64>; };
 template <> struct NearestFieldTypeImpl<signed char> { using Type = Int64; };
 template <> struct NearestFieldTypeImpl<unsigned char> { using Type = UInt64; };
+template <> struct NearestFieldTypeImpl<char8_t> { using Type = UInt64; };
 
 template <> struct NearestFieldTypeImpl<UInt16> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<UInt32> { using Type = UInt64; };
@@ -293,24 +294,15 @@ public:
     Field(T && rhs, std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, void *> = nullptr);
 
     /// Create a string inplace.
-    Field(const char * data, size_t size)
-    {
-        create(data, size);
-    }
-
-    Field(const unsigned char * data, size_t size)
+    template <typename CharT>
+    Field(const CharT * data, size_t size)
     {
         create(data, size);
     }
 
     /// NOTE In case when field already has string type, more direct assign is possible.
-    void assignString(const char * data, size_t size)
-    {
-        destroy();
-        create(data, size);
-    }
-
-    void assignString(const unsigned char * data, size_t size)
+    template <typename CharT>
+    void assignString(const CharT * data, size_t size)
     {
         destroy();
         create(data, size);
@@ -525,6 +517,11 @@ public:
         switch (field.which)
         {
             case Types::Null:    return f(field.template get<Null>());
+// gcc 8.2.1
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
             case Types::UInt64:  return f(field.template get<UInt64>());
             case Types::UInt128: return f(field.template get<UInt128>());
             case Types::Int64:   return f(field.template get<Int64>());
@@ -532,6 +529,9 @@ public:
             case Types::String:  return f(field.template get<String>());
             case Types::Array:   return f(field.template get<Array>());
             case Types::Tuple:   return f(field.template get<Tuple>());
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
             case Types::Decimal32:  return f(field.template get<DecimalField<Decimal32>>());
             case Types::Decimal64:  return f(field.template get<DecimalField<Decimal64>>());
             case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
@@ -609,16 +609,11 @@ private:
         dispatch([this] (auto & value) { assignConcrete(std::move(value)); }, x);
     }
 
-
-    void create(const char * data, size_t size)
+    template <typename CharT>
+    std::enable_if_t<sizeof(CharT) == 1> create(const CharT * data, size_t size)
     {
-        new (&storage) String(data, size);
+        new (&storage) String(reinterpret_cast<const char *>(data), size);
         which = Types::String;
-    }
-
-    void create(const unsigned char * data, size_t size)
-    {
-        create(reinterpret_cast<const char *>(data), size);
     }
 
     ALWAYS_INLINE void destroy()
@@ -686,11 +681,25 @@ template <> struct Field::EnumToType<Field::Types::Decimal64> { using Type = Dec
 template <> struct Field::EnumToType<Field::Types::Decimal128> { using Type = DecimalField<Decimal128>; };
 template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = DecimalField<AggregateFunctionStateData>; };
 
+inline constexpr bool isInt64FieldType(Field::Types::Which t)
+{
+    return t == Field::Types::Int64
+        || t == Field::Types::UInt64;
+}
+
+// Field value getter with type checking in debug builds.
 template <typename T>
 T & Field::get()
 {
     using ValueType = std::decay_t<T>;
-    //assert(TypeToEnum<NearestFieldType<ValueType>>::value == which);
+
+#ifndef NDEBUG
+    // Disregard signedness when converting between int64 types.
+    constexpr Field::Types::Which target = TypeToEnum<NearestFieldType<ValueType>>::value;
+    assert(target == which
+           || (isInt64FieldType(target) && isInt64FieldType(which)));
+#endif
+
     ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(&storage);
     return *ptr;
 }

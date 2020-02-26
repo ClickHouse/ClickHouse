@@ -22,6 +22,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -263,7 +264,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
         return getNullValueIndex();
 
     if (size_of_value_if_fixed)
-        return uniqueInsertData(&x.get<char>(), size_of_value_if_fixed);
+        return uniqueInsertData(&x.reinterpret<char>(), size_of_value_if_fixed);
 
     auto & val = x.get<String>();
     return uniqueInsertData(val.data(), val.size());
@@ -325,7 +326,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char 
 {
     if (is_nullable)
     {
-        UInt8 val = *reinterpret_cast<const UInt8 *>(pos);
+        UInt8 val = unalignedLoad<UInt8>(pos);
         pos += sizeof(val);
 
         if (val)

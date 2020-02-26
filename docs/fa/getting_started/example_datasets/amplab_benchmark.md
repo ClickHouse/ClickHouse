@@ -135,4 +135,4 @@ ORDER BY totalRevenue DESC
 LIMIT 1
 ```
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/getting_started/example_datasets/amplab_benchmark/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/getting_started/example_datasets/amplab_benchmark/) <!--hide-->

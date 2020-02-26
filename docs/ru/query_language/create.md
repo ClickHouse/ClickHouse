@@ -125,7 +125,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Определяет время хранения значений. Может быть указано только для таблиц семейства MergeTree. Подробнее смотрите в [TTL для столбцов и таблиц](../operations/table_engines/mergetree.md#table_engine-mergetree-ttl).
 
-### Кодеки сжатия столбцов
+### Кодеки сжатия столбцов {#codecs}
 
 По умолчанию, ClickHouse применяет к столбцу метод сжатия, определённый в [конфигурации сервера](../operations/server_settings/settings.md#compression). Кроме этого, можно задать метод сжатия для каждого отдельного столбца в запросе `CREATE TABLE`.
 
@@ -258,7 +258,9 @@ SELECT a, b, c FROM (SELECT ...)
 
 Материализованные (MATERIALIZED) представления хранят данные, преобразованные соответствующим запросом SELECT.
 
-При создании материализованного представления, нужно обязательно указать ENGINE - движок таблицы для хранения данных.
+При создании материализованного представления без использования `TO [db].[table]`, нужно обязательно указать ENGINE - движок таблицы для хранения данных.
+
+При создании материализованного представления с испольованием `TO [db].[table]`, нельзя указывать `POPULATE`
 
 Материализованное представление устроено следующим образом: при вставке данных в таблицу, указанную в SELECT-е, кусок вставляемых данных преобразуется этим запросом SELECT, и полученный результат вставляется в представление.
 
@@ -272,4 +274,28 @@ SELECT a, b, c FROM (SELECT ...)
 
 Отсутствует отдельный запрос для удаления представлений. Чтобы удалить представление, следует использовать `DROP TABLE`.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/create/) <!--hide-->
+## CREATE DICTIONARY {#create-dictionary-query}
+
+```sql
+CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name
+(
+    key1 type1  [DEFAULT|EXPRESSION expr1] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],
+    key2 type2  [DEFAULT|EXPRESSION expr2] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],
+    attr1 type2 [DEFAULT|EXPRESSION expr3],
+    attr2 type2 [DEFAULT|EXPRESSION expr4]
+)
+PRIMARY KEY key1, key2
+SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
+LAYOUT(LAYOUT_NAME([param_name param_value]))
+LIFETIME([MIN val1] MAX val2)
+```
+
+Создаёт [внешний словарь](dicts/external_dicts.md) с заданной [структурой](dicts/external_dicts_dict_structure.md), [источником](dicts/external_dicts_dict_sources.md), [способом размещения в памяти](dicts/external_dicts_dict_layout.md) и [периодом обновления](dicts/external_dicts_dict_lifetime.md).
+
+Структура внешнего словаря состоит из атрибутов. Атрибуты словаря задаются как столбцы таблицы. Единственным обязательным свойством атрибута является его тип, все остальные свойства могут иметь значения по умолчанию.
+
+В зависимости от [способа размещения словаря в памяти](dicts/external_dicts_dict_layout.md), ключами словаря могут быть один и более атрибутов.
+
+Смотрите [Внешние словари](dicts/external_dicts.md).
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/create/) <!--hide-->

@@ -23,7 +23,7 @@ class MutationsInterpreter
 public:
     /// Storage to mutate, array of mutations commands and context. If you really want to execute mutation
     /// use can_execute = true, in other cases (validation, amount of commands) it can be false
-    MutationsInterpreter(StoragePtr storage_, std::vector<MutationCommand> commands_, const Context & context_, bool can_execute_);
+    MutationsInterpreter(StoragePtr storage_, MutationCommands commands_, const Context & context_, bool can_execute_);
 
     void validate(TableStructureReadLockHolder & table_lock_holder);
 
@@ -44,7 +44,7 @@ private:
     BlockInputStreamPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const;
 
     StoragePtr storage;
-    std::vector<MutationCommand> commands;
+    MutationCommands commands;
     const Context & context;
     bool can_execute;
 
@@ -65,8 +65,9 @@ private:
     /// Each stage has output_columns that contain columns that are changed at the end of that stage
     /// plus columns needed for the next mutations.
     ///
-    /// First stage is special: it can contain only DELETEs and is executed using InterpreterSelectQuery
-    /// to take advantage of table indexes (if there are any).
+    /// First stage is special: it can contain only filters and is executed using InterpreterSelectQuery
+    /// to take advantage of table indexes (if there are any). It's necessary because all mutations have
+    /// `WHERE clause` part.
 
     struct Stage
     {
@@ -83,7 +84,7 @@ private:
 
         /// A chain of actions needed to execute this stage.
         /// First steps calculate filter columns for DELETEs (in the same order as in `filter_column_names`),
-        /// then there is (possibly) an UPDATE stage, and finally a projection stage.
+        /// then there is (possibly) an UPDATE step, and finally a projection step.
         ExpressionActionsChain expressions_chain;
         Names filter_column_names;
     };

@@ -65,7 +65,6 @@ void registerFunctionDateDiff(FunctionFactory &);
 void registerFunctionToTimeZone(FunctionFactory &);
 void registerFunctionFormatDateTime(FunctionFactory &);
 
-
 void registerFunctionsDateTime(FunctionFactory & factory)
 {
     registerFunctionToYear(factory);

@@ -20,3 +20,5 @@ DETACH TABLE test;
 ATTACH TABLE test;
 
 SELECT COUNT() FROM test;
+
+DROP TABLE test;

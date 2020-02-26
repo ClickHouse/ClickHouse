@@ -101,7 +101,13 @@ inline bool readDigits(ReadBuffer & buf, T & x, unsigned int & digits, int & exp
             {
                 ++buf.position();
                 Int32 addition_exp = 0;
-                readIntText(addition_exp, buf);
+                if (!tryReadIntText(addition_exp, buf))
+                {
+                    if constexpr (_throw_on_error)
+                        throw Exception("Cannot parse exponent while reading decimal", ErrorCodes::CANNOT_PARSE_NUMBER);
+                    else
+                        return false;
+                }
                 exponent += addition_exp;
                 stop = true;
                 continue;

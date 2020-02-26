@@ -4,7 +4,7 @@ endif()
 
 if (ENABLE_PARQUET)
 
-if (NOT OS_FREEBSD AND NOT OS_DARWIN) # Freebsd: ../contrib/arrow/cpp/src/arrow/util/bit-util.h:27:10: fatal error: endian.h: No such file or directory
+if (NOT OS_FREEBSD) # Freebsd: ../contrib/arrow/cpp/src/arrow/util/bit-util.h:27:10: fatal error: endian.h: No such file or directory
     option(USE_INTERNAL_PARQUET_LIBRARY "Set to FALSE to use system parquet library instead of bundled" ${NOT_UNBUNDLED})
 endif()
 
@@ -54,10 +54,12 @@ elseif(NOT MISSING_INTERNAL_PARQUET_LIBRARY AND NOT OS_FREEBSD)
     endif()
 
     if(${USE_STATIC_LIBRARIES})
+        set(FLATBUFFERS_LIBRARY flatbuffers)
         set(ARROW_LIBRARY arrow_static)
         set(PARQUET_LIBRARY parquet_static)
         set(THRIFT_LIBRARY thrift_static)
     else()
+        set(FLATBUFFERS_LIBRARY flatbuffers_shared)
         set(ARROW_LIBRARY arrow_shared)
         set(PARQUET_LIBRARY parquet_shared)
         if(USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
@@ -74,7 +76,7 @@ endif()
 endif()
 
 if(USE_PARQUET)
-    message(STATUS "Using Parquet: ${ARROW_LIBRARY}:${ARROW_INCLUDE_DIR} ; ${PARQUET_LIBRARY}:${PARQUET_INCLUDE_DIR} ; ${THRIFT_LIBRARY}")
+    message(STATUS "Using Parquet: ${ARROW_LIBRARY}:${ARROW_INCLUDE_DIR} ; ${PARQUET_LIBRARY}:${PARQUET_INCLUDE_DIR} ; ${THRIFT_LIBRARY} ; ${FLATBUFFERS_LIBRARY}")
 else()
     message(STATUS "Building without Parquet support")
 endif()

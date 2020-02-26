@@ -233,7 +233,7 @@ getArgument(const ASTPtr & arguments, size_t argument_index, const char * argume
     return argument->value.get<NearestResultType>();
 }
 
-static DataTypePtr create64(const ASTPtr & arguments)
+static DataTypePtr create64(const String & /*type_name*/, const ASTPtr & arguments)
 {
     if (!arguments || arguments->size() == 0)
         return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale);

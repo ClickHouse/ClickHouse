@@ -24,8 +24,7 @@
 
 #include <Interpreters/castColumn.h>
 
-#include <Functions/FunctionsLogical.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Core/AccurateComparison.h>
@@ -36,6 +35,15 @@
 
 #include <limits>
 #include <type_traits>
+
+#if USE_EMBEDDED_COMPILER
+#include <DataTypes/Native.h>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#include <llvm/IR/IRBuilder.h>
+#pragma GCC diagnostic pop
+#endif
 
 
 namespace DB
@@ -78,9 +86,9 @@ struct NumComparisonImpl
           */
 
         size_t size = a.size();
-        const A * a_pos = a.data();
-        const B * b_pos = b.data();
-        UInt8 * c_pos = c.data();
+        const A * __restrict a_pos = a.data();
+        const B * __restrict b_pos = b.data();
+        UInt8 * __restrict c_pos = c.data();
         const A * a_end = a_pos + size;
 
         while (a_pos < a_end)
@@ -95,8 +103,8 @@ struct NumComparisonImpl
     static void NO_INLINE vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<UInt8> & c)
     {
         size_t size = a.size();
-        const A * a_pos = a.data();
-        UInt8 * c_pos = c.data();
+        const A * __restrict a_pos = a.data();
+        UInt8 * __restrict c_pos = c.data();
         const A * a_end = a_pos + size;
 
         while (a_pos < a_end)
@@ -957,12 +965,18 @@ private:
                               const ColumnsWithTypeAndName & y, size_t tuple_size,
                               size_t input_rows_count);
 
-    template <typename ComparisonFunction, typename ConvolutionFunction>
-    void executeTupleEqualityImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y,
-                                      size_t tuple_size, size_t input_rows_count)
+    void executeTupleEqualityImpl(
+        std::shared_ptr<IFunctionOverloadResolver> func_compare,
+        std::shared_ptr<IFunctionOverloadResolver> func_convolution,
+        Block & block,
+        size_t result,
+        const ColumnsWithTypeAndName & x,
+        const ColumnsWithTypeAndName & y,
+        size_t tuple_size,
+        size_t input_rows_count)
     {
-        ComparisonFunction func_compare(context);
-        ConvolutionFunction func_convolution;
+        if (0 == tuple_size)
+            throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 
         Block tmp_block;
         for (size_t i = 0; i < tuple_size; ++i)
@@ -970,9 +984,18 @@ private:
             tmp_block.insert(x[i]);
             tmp_block.insert(y[i]);
 
+            auto impl = func_compare->build({x[i], y[i]});
+
             /// Comparison of the elements.
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_compare.execute(tmp_block, {i * 3, i * 3 + 1}, i * 3 + 2, input_rows_count);
+            impl->execute(tmp_block, {i * 3, i * 3 + 1}, i * 3 + 2, input_rows_count);
+        }
+
+        if (tuple_size == 1)
+        {
+            /// Do not call AND for single-element tuple.
+            block.getByPosition(result).column = tmp_block.getByPosition(2).column;
+            return;
         }
 
         /// Logical convolution.
@@ -982,19 +1005,31 @@ private:
         for (size_t i = 0; i < tuple_size; ++i)
             convolution_args[i] = i * 3 + 2;
 
-        func_convolution.execute(tmp_block, convolution_args, tuple_size * 3, input_rows_count);
+        ColumnsWithTypeAndName convolution_types(convolution_args.size(), { nullptr, std::make_shared<DataTypeUInt8>(), "" });
+        auto impl = func_convolution->build(convolution_types);
+
+        impl->execute(tmp_block, convolution_args, tuple_size * 3, input_rows_count);
         block.getByPosition(result).column = tmp_block.getByPosition(tuple_size * 3).column;
     }
 
-    template <typename HeadComparisonFunction, typename TailComparisonFunction>
-    void executeTupleLessGreaterImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
-                                         const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count)
+    void executeTupleLessGreaterImpl(
+        std::shared_ptr<IFunctionOverloadResolver> func_compare_head,
+        std::shared_ptr<IFunctionOverloadResolver> func_compare_tail,
+        std::shared_ptr<IFunctionOverloadResolver> func_and,
+        std::shared_ptr<IFunctionOverloadResolver> func_or,
+        std::shared_ptr<IFunctionOverloadResolver> func_equals,
+        Block & block,
+        size_t result,
+        const ColumnsWithTypeAndName & x,
+        const ColumnsWithTypeAndName & y,
+        size_t tuple_size,
+        size_t input_rows_count)
     {
-        HeadComparisonFunction func_compare_head(context);
-        TailComparisonFunction func_compare_tail(context);
-        FunctionAnd func_and;
-        FunctionOr func_or;
-        FunctionComparison<EqualsOp, NameEquals> func_equals(context);
+        ColumnsWithTypeAndName bin_args = {{ nullptr, std::make_shared<DataTypeUInt8>(), "" },
+                                           { nullptr, std::make_shared<DataTypeUInt8>(), "" }};
+
+        auto func_and_adaptor = func_and->build(bin_args);
+        auto func_or_adaptor = func_or->build(bin_args);
 
         Block tmp_block;
 
@@ -1008,14 +1043,20 @@ private:
 
             if (i + 1 != tuple_size)
             {
-                func_compare_head.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
+                auto impl_head = func_compare_head->build({x[i], y[i]});
+                impl_head->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
 
                 tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-                func_equals.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 3, input_rows_count);
+
+                auto impl_equals = func_equals->build({x[i], y[i]});
+                impl_equals->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 3, input_rows_count);
 
             }
             else
-                func_compare_tail.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
+            {
+                auto impl_tail = func_compare_tail->build({x[i], y[i]});
+                impl_tail->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
+            }
         }
 
         /// Combination. Complex code - make a drawing. It can be replaced by a recursive comparison of tuples.
@@ -1023,9 +1064,9 @@ private:
         while (i > 0)
         {
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_and.execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 3}, tmp_block.columns() - 1, input_rows_count);
+            func_and_adaptor->execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 3}, tmp_block.columns() - 1, input_rows_count);
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_or.execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 2}, tmp_block.columns() - 1, input_rows_count);
+            func_or_adaptor->execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 2}, tmp_block.columns() - 1, input_rows_count);
             --i;
         }
 
@@ -1120,12 +1161,14 @@ public:
 
         if (left_tuple && right_tuple)
         {
+            auto adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(FunctionComparison<Op, Name>::create(context)));
+
             size_t size = left_tuple->getElements().size();
             for (size_t i = 0; i < size; ++i)
             {
                 ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
                                                {nullptr, right_tuple->getElements()[i], ""}};
-                getReturnType(args);
+                adaptor.build(args);
             }
         }
 

@@ -1,3 +1,4 @@
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 #include <gtest/gtest.h>
 
 #include <IO/ReadHelpers.h>
@@ -20,7 +21,7 @@ struct DateTime64StringsTestParam
     const DateLUTImpl & timezone = DateLUT::instance();
 };
 
-std::ostream & operator << (std::ostream & ostr, const DateTime64StringsTestParam & param)
+static std::ostream & operator << (std::ostream & ostr, const DateTime64StringsTestParam & param)
 {
     return ostr << param.comment;
 }
@@ -78,7 +79,7 @@ TEST_P(DateTime64StringParseBestEffortTest, parse)
 
 
 // YYYY-MM-DD HH:MM:SS.NNNNNNNNN
-INSTANTIATE_TEST_CASE_P(Basic,
+INSTANTIATE_TEST_SUITE_P(Basic,
     DateTime64StringParseTest,
     ::testing::ValuesIn(std::initializer_list<DateTime64StringsTestParam>{
         {
@@ -129,10 +130,10 @@ INSTANTIATE_TEST_CASE_P(Basic,
             1568650817'1ULL,
             1
         }
-    }),
+    })
 );
 
-INSTANTIATE_TEST_CASE_P(BestEffort,
+INSTANTIATE_TEST_SUITE_P(BestEffort,
     DateTime64StringParseBestEffortTest,
     ::testing::ValuesIn(std::initializer_list<DateTime64StringsTestParam>{
         {
@@ -141,13 +142,13 @@ INSTANTIATE_TEST_CASE_P(BestEffort,
             1568650817'123456ULL,
             6
         }
-    }),
+    })
 );
 
 
 // TODO: add negative test cases for invalid strings, verifying that error is reported properly
 
-INSTANTIATE_TEST_CASE_P(Basic,
+INSTANTIATE_TEST_SUITE_P(Basic,
     DateTime64StringWriteTest,
     ::testing::ValuesIn(std::initializer_list<DateTime64StringsTestParam>{
         {
@@ -180,6 +181,6 @@ INSTANTIATE_TEST_CASE_P(Basic,
             1568650817'001ULL,
             3
         }
-    }),
+    })
 );
 

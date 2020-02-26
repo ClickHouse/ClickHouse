@@ -6,6 +6,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+}
 
 namespace
 {

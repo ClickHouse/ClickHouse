@@ -26,7 +26,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_ARRAY_SIZE;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -192,8 +191,6 @@ public:
     {
         return true;
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 #undef AGGREGATE_FUNCTION_MOVING_MAX_ARRAY_SIZE

@@ -7,6 +7,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 
 NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData::DataPartPtr & part, Names & columns)
 {
@@ -73,7 +78,8 @@ MergeTreeReadTask::MergeTreeReadTask(
     : data_part{data_part_}, mark_ranges{mark_ranges_}, part_index_in_query{part_index_in_query_},
     ordered_names{ordered_names_}, column_name_set{column_name_set_}, columns{columns_}, pre_columns{pre_columns_},
     remove_prewhere_column{remove_prewhere_column_}, should_reorder{should_reorder_}, size_predictor{std::move(size_predictor_)}
-{}
+{
+}
 
 MergeTreeReadTask::~MergeTreeReadTask() = default;
 
@@ -242,9 +248,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(const MergeTreeData & storage, const
         /// Under owned_data_part->columns_lock we check that all requested columns are of the same type as in the table.
         /// This may be not true in case of ALTER MODIFY.
         if (!pre_column_names.empty())
-            storage.check(data_part->columns, pre_column_names);
+            storage.check(data_part->getColumns(), pre_column_names);
         if (!column_names.empty())
-            storage.check(data_part->columns, column_names);
+            storage.check(data_part->getColumns(), column_names);
 
         const NamesAndTypesList & physical_columns = storage.getColumns().getAllPhysical();
         result.pre_columns = physical_columns.addTypes(pre_column_names);
@@ -252,8 +258,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(const MergeTreeData & storage, const
     }
     else
     {
-        result.pre_columns = data_part->columns.addTypes(pre_column_names);
-        result.columns = data_part->columns.addTypes(column_names);
+        result.pre_columns = data_part->getColumns().addTypes(pre_column_names);
+        result.columns = data_part->getColumns().addTypes(column_names);
     }
 
     result.should_reorder = should_reorder;

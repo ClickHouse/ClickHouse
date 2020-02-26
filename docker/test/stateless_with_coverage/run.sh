@@ -1,15 +1,16 @@
 #!/bin/bash
 
 kill_clickhouse () {
+    echo "clickhouse pids" `ps aux | grep clickhouse` | ts '%Y-%m-%d %H:%M:%S'
     kill `pgrep -u clickhouse` 2>/dev/null
 
     for i in {1..10}
     do
         if ! kill -0 `pgrep -u clickhouse`; then
-            echo "No clickhouse process"
+            echo "No clickhouse process" | ts '%Y-%m-%d %H:%M:%S'
             break
         else
-            echo "Process" `pgrep -u clickhouse` "still alive"
+            echo "Process" `pgrep -u clickhouse` "still alive" | ts '%Y-%m-%d %H:%M:%S'
             sleep 10
         fi
     done
@@ -18,7 +19,7 @@ kill_clickhouse () {
 wait_llvm_profdata () {
     while kill -0 `pgrep llvm-profdata-9`;
     do
-        echo "Waiting for profdata" `pgrep llvm-profdata-9` "still alive"
+        echo "Waiting for profdata" `pgrep llvm-profdata-9` "still alive" | ts '%Y-%m-%d %H:%M:%S'
         sleep 3
     done
 }
@@ -62,6 +63,12 @@ ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/con
     ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/; \
+    ln -s /usr/share/clickhouse-test/config/disks.xml /etc/clickhouse-server/config.d/; \
+    ln -s /usr/share/clickhouse-test/config/secure_ports.xml /etc/clickhouse-server/config.d/; \
+    ln -s /usr/share/clickhouse-test/config/server.key /etc/clickhouse-server/; \
+    ln -s /usr/share/clickhouse-test/config/server.crt /etc/clickhouse-server/; \
+    ln -s /usr/share/clickhouse-test/config/dhparam.pem /etc/clickhouse-server/; \
+    ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml; \
     ln -s /usr/lib/llvm-8/bin/llvm-symbolizer /usr/bin/llvm-symbolizer
 
 service zookeeper start

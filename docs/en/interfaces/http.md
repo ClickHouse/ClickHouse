@@ -3,7 +3,7 @@
 The HTTP interface lets you use ClickHouse on any platform from any programming language. We use it for working from Java and Perl, as well as shell scripts. In other departments, the HTTP interface is used from Perl, Python, and Go. The HTTP interface is more limited than the native interface, but it has better compatibility.
 
 By default, clickhouse-server listens for HTTP on port 8123 (this can be changed in the config).
-If you make a GET / request without parameters, it returns the string "Ok" (with a line feed at the end). You can use this in health-check scripts.
+If you make a GET / request without parameters, it returns the string "Ok." (with a line feed at the end). You can use this in health-check scripts.
 
 ```bash
 $ curl 'http://localhost:8123/'
@@ -172,7 +172,7 @@ $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?data
 
 By default, the database that is registered in the server settings is used as the default database. By default, this is the database called 'default'. Alternatively, you can always specify the database using a dot before the table name.
 
-The username and password can be indicated in one of two ways:
+The username and password can be indicated in one of three ways:
 
 1. Using HTTP Basic Authentication. Example:
 
@@ -186,10 +186,16 @@ $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 $ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
 ```
 
+3. Using ‘X-ClickHouse-User’ and ‘X-ClickHouse-Key’ headers. Example:
+
+```bash
+$ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: password' 'http://localhost:8123/' -d @-
+```
+
 If the user name is not specified, the `default` name is used. If the password is not specified, the empty password is used.
 You can also use the URL parameters to specify any settings for processing a single query, or entire profiles of settings. Example:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
-For more information, see the [Settings][../operations/settings/index.md] section.
+For more information, see the [Settings](../operations/settings/index.md) section.
 
 ```bash
 $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:8123/?' --data-binary @-
@@ -258,8 +264,6 @@ You can create a query with parameters and pass values for them from the corresp
 $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/http_interface/) <!--hide-->
-
 ## Predefined HTTP Interface {#predefined_http_interface}
 
 ClickHouse supports specific queries through the HTTP interface. For example, you can write data to a table as follows:
@@ -271,64 +275,64 @@ $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VA
 ClickHouse also supports Predefined HTTP Interface which can help you more easy integration with third party tools like [Prometheus exporter](https://github.com/percona-lab/clickhouse_exporter). 
 
 Example:
+ 
+*  First of all, add this section to server configuration file:
+ 
+``` xml
+<http_handlers>
+  <predefine_query_handler>
+	  <url>/metrics</url>
+	    <method>GET</method>
+	    <queries>
+	        <query>SELECT * FROM system.metrics LIMIT 5 FORMAT Template SETTINGS format_template_resultset = 'prometheus_template_output_format_resultset', format_template_row = 'prometheus_template_output_format_row', format_template_rows_between_delimiter = '\n'</query>
+	    </queries>
+  </predefine_query_handler>
+</http_handlers>
+```
+ 
+* You can now request the url directly for data in the Prometheus format:
+ 
+``` bash
+curl -vvv 'http://localhost:8123/metrics'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /metrics HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
 > 
-> *  First of all, add this section to server configuration file:
-> 
-> ``` xml
-> <http_handlers>
->	<predefine_query_handler>
->	    <url>/metrics</url>
->	    <method>GET</method>
->	    <queries>
->	        <query>SELECT * FROM system.metrics LIMIT 5 FORMAT Template SETTINGS format_template_resultset = 'prometheus_template_output_format_resultset', format_template_row = 'prometheus_template_output_format_row', format_template_rows_between_delimiter = '\n'</query>
->	    </queries>
->	</predefine_query_handler>
-> </http_handlers>
-> ```
-> 
-> * You can now request the url directly for data in the Prometheus format:
-> 
-> ``` bash
-> curl -vvv 'http://localhost:8123/metrics'
-> *   Trying ::1...
-> * Connected to localhost (::1) port 8123 (#0)
-> > GET /metrics HTTP/1.1
-> > Host: localhost:8123
-> > User-Agent: curl/7.47.0
-> > Accept: */*
-> > 
-> < HTTP/1.1 200 OK
-> < Date: Wed, 27 Nov 2019 08:54:25 GMT
-> < Connection: Keep-Alive
-> < Content-Type: text/plain; charset=UTF-8
-> < X-ClickHouse-Server-Display-Name: i-tl62qd0o
-> < Transfer-Encoding: chunked
-> < X-ClickHouse-Query-Id: f39235f6-6ed7-488c-ae07-c7ceafb960f6
-> < Keep-Alive: timeout=3
-> < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
-> < 
-> # HELP "Query" "Number of executing queries"
-> # TYPE "Query" counter
-> "Query" 1
->
-> # HELP "Merge" "Number of executing background merges"
-> # TYPE "Merge" counter
-> "Merge" 0
-> 
-> # HELP "PartMutation" "Number of mutations (ALTER DELETE/UPDATE)"
-> # TYPE "PartMutation" counter
-> "PartMutation" 0
-> 
-> # HELP "ReplicatedFetch" "Number of data parts being fetched from replica"
-> # TYPE "ReplicatedFetch" counter
-> "ReplicatedFetch" 0
-> 
-> # HELP "ReplicatedSend" "Number of data parts being sent to replicas"
-> # TYPE "ReplicatedSend" counter
-> "ReplicatedSend" 0
-> 
-> * Connection #0 to host localhost left intact
-> ```
+< HTTP/1.1 200 OK
+< Date: Wed, 27 Nov 2019 08:54:25 GMT
+< Connection: Keep-Alive
+< Content-Type: text/plain; charset=UTF-8
+< X-ClickHouse-Server-Display-Name: i-tl62qd0o
+< Transfer-Encoding: chunked
+< X-ClickHouse-Query-Id: f39235f6-6ed7-488c-ae07-c7ceafb960f6
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+< 
+# HELP "Query" "Number of executing queries"
+# TYPE "Query" counter
+"Query" 1
+
+# HELP "Merge" "Number of executing background merges"
+# TYPE "Merge" counter
+"Merge" 0
+ 
+# HELP "PartMutation" "Number of mutations (ALTER DELETE/UPDATE)"
+# TYPE "PartMutation" counter
+"PartMutation" 0
+ 
+# HELP "ReplicatedFetch" "Number of data parts being fetched from replica"
+# TYPE "ReplicatedFetch" counter
+"ReplicatedFetch" 0
+ 
+# HELP "ReplicatedSend" "Number of data parts being sent to replicas"
+# TYPE "ReplicatedSend" counter
+"ReplicatedSend" 0
+ 
+* Connection #0 to host localhost left intact
+```
 
 As you can see from the example, if `<http_handlers>` is configured in the config.xml file, ClickHouse will match the HTTP requests received to the predefined type in `<http_handlers>`, then ClickHouse will execute the corresponding predefined query if the match is successful.
 
@@ -450,9 +454,8 @@ $ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:
 max_alter_threads	2
 ```
 
-> !!! note "Note":
->
-> In one `<predefined_query_handler>`, one `<queries>` only supports one `<query>` of an insert type.
+!!! note "Note"
+    In one `<predefined_query_handler>`, one `<queries>` only supports one `<query>` of an insert type.
 
 ## dynamic_query_handler
 
@@ -484,4 +487,4 @@ $ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC' -H 'PARAMS_XXX:max_threads' 'http://l
 2
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/predefined_http_interface/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/interfaces/http_interface/) <!--hide-->

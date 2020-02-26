@@ -212,19 +212,21 @@ public:
     Float64 getFloat64(size_t n) const override;
     Float32 getFloat32(size_t n) const override;
 
-    UInt64 getUInt(size_t n) const override
+    /// Out of range conversion is permitted.
+    UInt64 NO_SANITIZE_UNDEFINED getUInt(size_t n) const override
     {
         return UInt64(data[n]);
+    }
+
+    /// Out of range conversion is permitted.
+    Int64 NO_SANITIZE_UNDEFINED getInt(size_t n) const override
+    {
+        return Int64(data[n]);
     }
 
     bool getBool(size_t n) const override
     {
         return bool(data[n]);
-    }
-
-    Int64 getInt(size_t n) const override
-    {
-        return Int64(data[n]);
     }
 
     void insert(const Field & x) override

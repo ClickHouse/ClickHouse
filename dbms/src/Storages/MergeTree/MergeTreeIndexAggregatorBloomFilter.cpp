@@ -7,6 +7,7 @@
 #include <Common/HashTable/Hash.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/BloomFilterHash.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -15,7 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int ILLEGAL_COLUMN;
 }
 
 MergeTreeIndexAggregatorBloomFilter::MergeTreeIndexAggregatorBloomFilter(

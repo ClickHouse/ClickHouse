@@ -30,7 +30,7 @@ public:
         , variant(variant_)
     {}
 
-    UInt8 getMethodByte() const override;
+    uint8_t getMethodByte() const override;
     String getCodecDesc() const override
     {
         return String("T64") + ((variant == Variant::Byte) ? "" : "(\'bit\')");
@@ -52,5 +52,8 @@ private:
     TypeIndex type_idx;
     Variant variant;
 };
+
+class CompressionCodecFactory;
+void registerCodecT64(CompressionCodecFactory & factory);
 
 }

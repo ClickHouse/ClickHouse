@@ -92,18 +92,18 @@ SELECT 1, URL, count(*) AS c FROM hits_10m GROUP BY 1, URL ORDER BY c DESC LIMIT
 
 SELECT ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3, count(*) AS c FROM hits_10m GROUP BY ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3 ORDER BY c DESC LIMIT 10;
  
-SELECT URL,     count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= TIMESTAMP('2013-07-01') AND EventDate <= TIMESTAMP('2013-07-31') AND NOT DontCountHits != 0 AND NOT Refresh != 0 AND URL != '' GROUP BY URL ORDER BY PageViews DESC LIMIT 10;
+SELECT URL,     count(*) AS PageViews FROM hits_10m WHERE CounterID = 62 AND EventDate >= TIMESTAMP('2013-07-01') AND EventDate <= TIMESTAMP('2013-07-31') AND NOT DontCountHits != 0 AND NOT Refresh != 0 AND URL != '' GROUP BY URL ORDER BY PageViews DESC LIMIT 10;
 
 
-SELECT Title, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= TIMESTAMP('2013-07-01') AND EventDate <= TIMESTAMP('2013-07-31') AND NOT DontCountHits != 0 AND NOT Refresh != 0 AND Title != '' GROUP BY Title ORDER BY PageViews DESC LIMIT 10;
+SELECT Title, count(*) AS PageViews FROM hits_10m WHERE CounterID = 62 AND EventDate >= TIMESTAMP('2013-07-01') AND EventDate <= TIMESTAMP('2013-07-31') AND NOT DontCountHits != 0 AND NOT Refresh != 0 AND Title != '' GROUP BY Title ORDER BY PageViews DESC LIMIT 10;
 
 
-SELECT URL, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= TIMESTAMP('2013-07-01') AND EventDate <= TIMESTAMP('2013-07-31') AND NOT Refresh != 0 AND IsLink != 0 AND NOT IsDownload != 0  GROUP BY URL ORDER BY PageViews DESC LIMIT 1000;
+SELECT URL, count(*) AS PageViews FROM hits_10m WHERE CounterID = 62 AND EventDate >= TIMESTAMP('2013-07-01') AND EventDate <= TIMESTAMP('2013-07-31') AND NOT Refresh != 0 AND IsLink != 0 AND NOT IsDownload != 0  GROUP BY URL ORDER BY PageViews DESC LIMIT 1000;
 
-SELECT TraficSourceID, SearchEngineID, AdvEngineID, URL, count(*) as c, if(SearchEngineID   = 0 AND AdvEngineID = 0 , Referer, '') as src FROM hits_100m WHERE CounterID = 34 AND EventDate >= TIMESTAMP('2013-07-01') AND EventDate <= TIMESTAMP('2013-07-31') AND NOT Refresh != 0 GROUP BY TraficSourceID, SearchEngineID,  AdvEngineID, URL, if(SearchEngineID   = 0 AND AdvEngineID = 0 , Referer, '') ORDER BY c DESC LIMIT 1000;
+SELECT TraficSourceID, SearchEngineID, AdvEngineID, URL, count(*) as c, if(SearchEngineID   = 0 AND AdvEngineID = 0 , Referer, '') as src FROM hits_100m WHERE CounterID = 62 AND EventDate >= TIMESTAMP('2013-07-01') AND EventDate <= TIMESTAMP('2013-07-31') AND NOT Refresh != 0 GROUP BY TraficSourceID, SearchEngineID,  AdvEngineID, URL, if(SearchEngineID   = 0 AND AdvEngineID = 0 , Referer, '') ORDER BY c DESC LIMIT 1000;
 
-SELECT URLHash, EventDate, count(*) AS PageViews FROM hits_10m WHERE   CounterID = 34 AND EventDate >= TIMESTAMP('2013-07-01') AND EventDate <= TIMESTAMP('2013-07-31') AND NOT Refresh != 0 AND TraficSourceID IN (-1, 6) AND RefererHash =  6202628419148573758  GROUP BY URLHash, EventDate ORDER BY PageViews DESC LIMIT 100000; 
+SELECT URLHash, EventDate, count(*) AS PageViews FROM hits_10m WHERE   CounterID = 62 AND EventDate >= TIMESTAMP('2013-07-01') AND EventDate <= TIMESTAMP('2013-07-31') AND NOT Refresh != 0 AND TraficSourceID IN (-1, 6) AND RefererHash =  6202628419148573758  GROUP BY URLHash, EventDate ORDER BY PageViews DESC LIMIT 100000; 
 
-SELECT WindowClientWidth, WindowClientHeight, count(*)  AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= TIMESTAMP('2013-07-01') AND EventDate       <= TIMESTAMP('2013-07-31') AND NOT Refresh != 0 AND NOT DontCountHits != 0 AND URLHash =  6202628419148573758 GROUP BY WindowClientWidth, WindowClientHeight ORDER BY      PageViews  DESC LIMIT 10000; 
+SELECT WindowClientWidth, WindowClientHeight, count(*)  AS PageViews FROM hits_10m WHERE CounterID = 62 AND EventDate >= TIMESTAMP('2013-07-01') AND EventDate       <= TIMESTAMP('2013-07-31') AND NOT Refresh != 0 AND NOT DontCountHits != 0 AND URLHash =  6202628419148573758 GROUP BY WindowClientWidth, WindowClientHeight ORDER BY      PageViews  DESC LIMIT 10000; 
 
-SELECT unix_timestamp(EventTime) - SECOND(EventTime) AS m, count(*) FROM hits_10m WHERE CounterID = 34 AND EventDate >= TIMESTAMP('2013-07-01') AND EventDate <= TIMESTAMP('2013-07-02') AND NOT Refresh != 0 AND NOT DontCountHits != 0 GROUP BY unix_timestamp(EventTime) - SECOND(EventTime) ORDER BY m; 
+SELECT unix_timestamp(EventTime) - SECOND(EventTime) AS m, count(*) FROM hits_10m WHERE CounterID = 62 AND EventDate >= TIMESTAMP('2013-07-01') AND EventDate <= TIMESTAMP('2013-07-02') AND NOT Refresh != 0 AND NOT DontCountHits != 0 GROUP BY unix_timestamp(EventTime) - SECOND(EventTime) ORDER BY m; 

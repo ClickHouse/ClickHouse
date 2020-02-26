@@ -16,7 +16,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 template <typename X, typename Y, typename Ret>
@@ -107,11 +106,6 @@ public:
     String getName() const override
     {
         return "simpleLinearRegression";
-    }
-
-    const char * getHeaderFilePath() const override
-    {
-        return __FILE__;
     }
 
     void add(

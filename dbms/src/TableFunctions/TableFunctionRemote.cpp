@@ -6,6 +6,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -14,6 +15,8 @@
 #include <Common/parseRemoteDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
+#include <ext/range.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB
@@ -62,8 +65,8 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     if (is_cluster_function)
     {
-        ASTPtr ast_name = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-        cluster_name = ast_name->as<ASTLiteral &>().value.safeGet<const String &>();
+        args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
+        cluster_name = args[arg_num]->as<ASTLiteral &>().value.safeGet<const String &>();
     }
     else
     {
@@ -71,8 +74,6 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             cluster_description = getStringLiteral(*args[arg_num], "Hosts pattern");
     }
     ++arg_num;
-
-    args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
 
     const auto * function = args[arg_num]->as<ASTFunction>();
 
@@ -83,6 +84,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     }
     else
     {
+        args[arg_num] = evaluateConstantExpressionForDatabaseName(args[arg_num], context);
         remote_database = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
 
         ++arg_num;
@@ -130,6 +132,8 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     if (arg_num < args.size())
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+    context.checkAccess(AccessType::remote);
+
     /// ExpressionAnalyzer will be created in InterpreterSelectQuery that will meet these `Identifier` when processing the request.
     /// We need to mark them as the name of the database or table, because the default value is column.
     for (auto ast : args)
@@ -139,7 +143,10 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     if (!cluster_name.empty())
     {
         /// Use an existing cluster from the main config
-        cluster = context.getCluster(cluster_name);
+        if (name != "clusterAllReplicas")
+            cluster = context.getCluster(cluster_name);
+        else
+            cluster = context.getCluster(cluster_name)->getClusterWithReplicasAsShards(context.getSettings());
     }
     else
     {
@@ -163,26 +170,35 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             {
                 size_t colon = host.find(':');
                 if (colon == String::npos)
-                    context.getRemoteHostFilter().checkHostAndPort(host, toString((secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort())));
+                    context.getRemoteHostFilter().checkHostAndPort(
+                        host,
+                        toString((secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort())));
                 else
                     context.getRemoteHostFilter().checkHostAndPort(host.substr(0, colon), host.substr(colon + 1));
             }
         }
 
-        cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password, (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort()), false, secure);
+        cluster = std::make_shared<Cluster>(
+            context.getSettings(),
+            names,
+            username,
+            password,
+            (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort()),
+            false,
+            secure);
     }
 
     auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_database, remote_table, context, remote_table_function_ptr);
 
     StoragePtr res = remote_table_function_ptr
         ? StorageDistributed::createWithOwnCluster(
-            table_name,
+            StorageID("", table_name),
             structure_remote_table,
             remote_table_function_ptr,
             cluster,
             context)
         : StorageDistributed::createWithOwnCluster(
-            table_name,
+            StorageID("", table_name),
             structure_remote_table,
             remote_database,
             remote_table,
@@ -197,7 +213,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_)
     : name{name_}, secure{secure_}
 {
-    is_cluster_function = name == "cluster";
+    is_cluster_function = (name == "cluster" || name == "clusterAllReplicas");
 
     std::stringstream ss;
     ss << "Table function '" << name + "' requires from 2 to " << (is_cluster_function ? 3 : 5) << " parameters"
@@ -212,6 +228,7 @@ void registerTableFunctionRemote(TableFunctionFactory & factory)
     factory.registerFunction("remote", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote"); });
     factory.registerFunction("remoteSecure", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); });
     factory.registerFunction("cluster", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); });
+    factory.registerFunction("clusterAllReplicas", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); });
 }
 
 }

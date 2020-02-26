@@ -13,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/HDFSCommon.h>
 #include <Formats/FormatFactory.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
@@ -24,28 +25,33 @@
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 #include <hdfs/hdfs.h>
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Pipe.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
 }
 
 StorageHDFS::StorageHDFS(const String & uri_,
-    const std::string & database_name_,
-    const std::string & table_name_,
+    const StorageID & table_id_,
     const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : uri(uri_)
+    : IStorage(table_id_,
+               ColumnsDescription({
+                                          {"_path", std::make_shared<DataTypeString>()},
+                                          {"_file", std::make_shared<DataTypeString>()}
+                                  },
+                                  true    /// all_virtuals
+                                 )
+              )
+    , uri(uri_)
     , format_name(format_name_)
-    , table_name(table_name_)
-    , database_name(database_name_)
     , context(context_)
     , compression_method(compression_method_)
 {
@@ -57,20 +63,48 @@ StorageHDFS::StorageHDFS(const String & uri_,
 namespace
 {
 
-class HDFSBlockInputStream : public IBlockInputStream
+class HDFSSource : public SourceWithProgress
 {
 public:
-    HDFSBlockInputStream(const String & uri,
-        const String & format,
-        const Block & sample_block,
-        const Context & context,
-        UInt64 max_block_size,
-        const CompressionMethod compression_method)
+    struct SourcesInfo
     {
-        auto read_buf = getReadBuffer<ReadBufferFromHDFS>(compression_method, uri);
+        std::vector<String> uris;
 
-        auto input_stream = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
-        reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
+        std::atomic<size_t> next_uri_to_read = 0;
+
+        bool need_path_column = false;
+        bool need_file_column = false;
+    };
+
+    using SourcesInfoPtr = std::shared_ptr<SourcesInfo>;
+
+    static Block getHeader(Block header, bool need_path_column, bool need_file_column)
+    {
+        if (need_path_column)
+            header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
+        if (need_file_column)
+            header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
+
+        return header;
+    }
+
+    HDFSSource(
+        SourcesInfoPtr source_info_,
+        String uri_,
+        String format_,
+        String compression_method_,
+        Block sample_block_,
+        const Context & context_,
+        UInt64 max_block_size_)
+        : SourceWithProgress(getHeader(sample_block_, source_info_->need_path_column, source_info_->need_file_column))
+        , source_info(std::move(source_info_))
+        , uri(std::move(uri_))
+        , format(std::move(format_))
+        , compression_method(compression_method_)
+        , max_block_size(max_block_size_)
+        , sample_block(std::move(sample_block_))
+        , context(context_)
+    {
     }
 
     String getName() const override
@@ -78,28 +112,67 @@ public:
         return "HDFS";
     }
 
-    Block readImpl() override
+    Chunk generate() override
     {
-        return reader->read();
-    }
+        while (true)
+        {
+            if (!reader)
+            {
+                auto pos = source_info->next_uri_to_read.fetch_add(1);
+                if (pos >= source_info->uris.size())
+                    return {};
 
-    Block getHeader() const override
-    {
-        return reader->getHeader();
-    }
+                auto path =  source_info->uris[pos];
+                current_path = uri + path;
 
-    void readPrefixImpl() override
-    {
-        reader->readPrefix();
-    }
+                auto compression = chooseCompressionMethod(path, compression_method);
+                auto read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(current_path), compression);
+                auto input_stream = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
 
-    void readSuffixImpl() override
-    {
-        reader->readSuffix();
+                reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
+                reader->readPrefix();
+            }
+
+            if (auto res = reader->read())
+            {
+                Columns columns = res.getColumns();
+                UInt64 num_rows = res.rows();
+
+                /// Enrich with virtual columns.
+                if (source_info->need_path_column)
+                {
+                    auto column = DataTypeString().createColumnConst(num_rows, current_path);
+                    columns.push_back(column->convertToFullColumnIfConst());
+                }
+
+                if (source_info->need_file_column)
+                {
+                    size_t last_slash_pos = current_path.find_last_of('/');
+                    auto file_name = current_path.substr(last_slash_pos + 1);
+
+                    auto column = DataTypeString().createColumnConst(num_rows, std::move(file_name));
+                    columns.push_back(column->convertToFullColumnIfConst());
+                }
+
+                return Chunk(std::move(columns), num_rows);
+            }
+
+            reader->readSuffix();
+            reader.reset();
+        }
     }
 
 private:
     BlockInputStreamPtr reader;
+    SourcesInfoPtr source_info;
+    String uri;
+    String format;
+    String compression_method;
+    String current_path;
+
+    UInt64 max_block_size;
+    Block sample_block;
+    const Context & context;
 };
 
 class HDFSBlockOutputStream : public IBlockOutputStream
@@ -112,7 +185,7 @@ public:
         const CompressionMethod compression_method)
         : sample_block(sample_block_)
     {
-        write_buf = getWriteBuffer<WriteBufferFromHDFS>(compression_method, uri);
+        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri), compression_method, 3);
         writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
     }
 
@@ -193,8 +266,8 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
 }
 
 
-BlockInputStreams StorageHDFS::read(
-    const Names & /*column_names*/,
+Pipes StorageHDFS::read(
+    const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context_,
     QueryProcessingStage::Enum  /*processed_stage*/,
@@ -208,21 +281,27 @@ BlockInputStreams StorageHDFS::read(
     HDFSBuilderPtr builder = createHDFSBuilder(uri_without_path + "/");
     HDFSFSPtr fs = createHDFSFS(builder.get());
 
-    const Strings res_paths = LSWithRegexpMatching("/", fs, path_from_uri);
-    BlockInputStreams result;
-    for (const auto & res_path : res_paths)
+    auto sources_info = std::make_shared<HDFSSource::SourcesInfo>();
+    sources_info->uris = LSWithRegexpMatching("/", fs, path_from_uri);
+
+    for (const auto & column : column_names)
     {
-        result.push_back(std::make_shared<HDFSBlockInputStream>(uri_without_path + res_path, format_name, getSampleBlock(), context_,
-                                                               max_block_size, IStorage::chooseCompressionMethod(res_path, compression_method)));
+        if (column == "_path")
+            sources_info->need_path_column = true;
+        if (column == "_file")
+            sources_info->need_file_column = true;
     }
 
-    return narrowBlockInputStreams(result, num_streams);
-}
+    if (num_streams > sources_info->uris.size())
+        num_streams = sources_info->uris.size();
 
-void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
-{
-    table_name = new_table_name;
-    database_name = new_database_name;
+    Pipes pipes;
+
+    for (size_t i = 0; i < num_streams; ++i)
+        pipes.emplace_back(std::make_shared<HDFSSource>(
+                sources_info, uri_without_path, format_name, compression_method, getSampleBlock(), context_, max_block_size));
+
+    return pipes;
 }
 
 BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Context & /*context*/)
@@ -231,7 +310,7 @@ BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Context 
         format_name,
         getSampleBlock(),
         context,
-        IStorage::chooseCompressionMethod(uri, compression_method));
+        chooseCompressionMethod(uri, compression_method));
 }
 
 void registerStorageHDFS(StorageFactory & factory)
@@ -259,7 +338,7 @@ void registerStorageHDFS(StorageFactory & factory)
             compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         } else compression_method = "auto";
 
-        return StorageHDFS::create(url, args.database_name, args.table_name, format_name, args.columns, args.constraints, args.context, compression_method);
+        return StorageHDFS::create(url, args.table_id, format_name, args.columns, args.constraints, args.context, compression_method);
     });
 }
 

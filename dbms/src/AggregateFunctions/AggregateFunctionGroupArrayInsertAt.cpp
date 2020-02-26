@@ -2,10 +2,15 @@
 #include <AggregateFunctions/AggregateFunctionGroupArrayInsertAt.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
 
 namespace
 {

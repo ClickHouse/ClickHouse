@@ -5,6 +5,7 @@
 #include <Interpreters/AsteriskSemantic.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -22,13 +23,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TOO_DEEP_AST;
     extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
 }
-
-NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context);
 
 namespace
 {
@@ -56,7 +54,7 @@ public:
                 }
 
                 String table_name = DatabaseAndTableWithAlias(*expr, context.getCurrentDatabase()).getQualifiedNamePrefix(false);
-                NamesAndTypesList columns = getNamesAndTypeListFromTableExpression(*expr, context);
+                NamesAndTypesList columns = getColumnsFromTableExpression(*expr, context);
                 tables_order.push_back(table_name);
                 table_columns.emplace(std::move(table_name), std::move(columns));
             }
@@ -160,7 +158,7 @@ struct ColumnAliasesMatcher
                         aliases[alias] = long_name;
                         rev_aliases[long_name].push_back(alias);
 
-                        identifier->setShortName(alias);
+                        IdentifierSemantic::coverName(*identifier, alias);
                         if (is_public)
                         {
                             identifier->setAlias(long_name);
@@ -178,7 +176,7 @@ struct ColumnAliasesMatcher
                     if (is_public && allowed_long_names.count(long_name))
                         ; /// leave original name unchanged for correct output
                     else
-                        identifier->setShortName(it->second[0]);
+                        IdentifierSemantic::coverName(*identifier, it->second[0]);
                 }
             }
         }
@@ -230,7 +228,7 @@ struct ColumnAliasesMatcher
 
             if (!last_table)
             {
-                node.setShortName(alias);
+                IdentifierSemantic::coverName(node, alias);
                 node.setAlias("");
             }
         }

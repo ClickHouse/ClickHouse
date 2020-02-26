@@ -88,12 +88,13 @@ endif()
 
 include (cmake/sanitize.cmake)
 
-
-if (CMAKE_GENERATOR STREQUAL "Ninja")
+if (CMAKE_GENERATOR STREQUAL "Ninja" AND NOT DISABLE_COLORED_BUILD)
     # Turn on colored output. https://github.com/ninja-build/ninja/wiki/FAQ
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-color=always")
 endif ()
+
+include (cmake/add_warning.cmake)
 
 if (NOT MSVC)
     set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
@@ -176,7 +177,9 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
-set (CMAKE_CXX_STANDARD 17)
+# cmake < 3.12 doesn't supoprt 20. We'll set CMAKE_CXX_FLAGS for now
+# set (CMAKE_CXX_STANDARD 20)
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++2a")
 set (CMAKE_CXX_EXTENSIONS 0) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -206,6 +209,13 @@ set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} ${C
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
 
+if (COMPILER_CLANG)
+    # Exception unwinding doesn't work in clang release build without this option
+    # TODO investigate that
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
+endif ()
+
 option (ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
 
 option (UNBUNDLED "Try find all libraries in system. We recommend to avoid this mode for production builds, because we cannot guarantee exact versions and variants of libraries your system has installed. This mode exists for enthusiastic developers who search for trouble. Also it is useful for maintainers of OS packages." OFF)
@@ -215,9 +225,15 @@ else ()
     set(NOT_UNBUNDLED 1)
 endif ()
 
-# Using system libs can cause lot of warnings in includes.
-if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
-    option (NO_WERROR "Disable -Werror compiler option" ON)
+if (UNBUNDLED OR NOT (OS_LINUX OR OS_DARWIN) OR ARCH_32)
+    # Using system libs can cause a lot of warnings in includes (on macro expansion).
+    option (WERROR "Enable -Werror compiler option" OFF)
+else ()
+    option (WERROR "Enable -Werror compiler option" ON)
+endif ()
+
+if (WERROR)
+    add_warning(error)
 endif ()
 
 # Make this extra-checks for correct library dependencies.
@@ -241,8 +257,16 @@ endif ()
 string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
-if (NOT MAKE_STATIC_LIBRARIES)
-    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+if (MAKE_STATIC_LIBRARIES)
+    set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
+    if (OS_LINUX)
+        # Slightly more efficient code can be generated
+        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
+        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no-pie")
+    endif ()
+else ()
+    set (CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif ()
 
 # Using "include-what-you-use" tool.
@@ -307,9 +331,7 @@ include (cmake/find/poco.cmake)
 include (cmake/find/lz4.cmake)
 include (cmake/find/xxhash.cmake)
 include (cmake/find/sparsehash.cmake)
-include (cmake/find/rt.cmake)
 include (cmake/find/execinfo.cmake)
-include (cmake/find/readline_edit.cmake)
 include (cmake/find/re2.cmake)
 include (cmake/find/libgsasl.cmake)
 include (cmake/find/rdkafka.cmake)
@@ -323,8 +345,10 @@ endif()
 include (cmake/find/libxml2.cmake)
 include (cmake/find/brotli.cmake)
 include (cmake/find/protobuf.cmake)
+include (cmake/find/grpc.cmake)
 include (cmake/find/pdqsort.cmake)
 include (cmake/find/hdfs3.cmake) # uses protobuf
+include (cmake/find/s3.cmake)
 include (cmake/find/consistent-hashing.cmake)
 include (cmake/find/base64.cmake)
 include (cmake/find/parquet.cmake)
@@ -333,6 +357,7 @@ include (cmake/find/simdjson.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/orc.cmake)
+include (cmake/find/avro.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
@@ -344,28 +369,15 @@ if (ENABLE_TESTS)
 endif ()
 
 # Need to process before "contrib" dir:
-include (libs/libcommon/cmake/find_gperftools.cmake)
-include (libs/libcommon/cmake/find_jemalloc.cmake)
-include (libs/libcommon/cmake/find_cctz.cmake)
-include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
+include (cmake/find/jemalloc.cmake)
+include (cmake/find/cctz.cmake)
+include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
 if (USE_JEMALLOC)
     message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
     set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
-elseif (USE_TCMALLOC)
-    if (DEBUG_TCMALLOC AND NOT GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
-        message (FATAL_ERROR "Requested DEBUG_TCMALLOC but debug library is not found. You should install Google Perftools. Example: sudo apt-get install libgoogle-perftools-dev")
-    endif ()
-
-    if (DEBUG_TCMALLOC AND GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
-        message (STATUS "Link libtcmalloc_minimal_debug for testing: ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG}")
-        set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG})
-    else ()
-        message (STATUS "Link libtcmalloc_minimal: ${GPERFTOOLS_TCMALLOC_MINIMAL}")
-        set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL})
-    endif ()
 elseif (SANITIZE)
     message (STATUS "Will use ${SANITIZE} sanitizer.")
 elseif (OS_LINUX)
@@ -391,7 +403,7 @@ macro (add_executable target)
     endif()
 endmacro()
 
-add_subdirectory (libs)
+add_subdirectory (base)
 add_subdirectory (utils)
 add_subdirectory (dbms)
 

@@ -15,7 +15,7 @@ public:
 
     CompressionCodecZSTD(int level_);
 
-    UInt8 getMethodByte() const override;
+    uint8_t getMethodByte() const override;
 
     String getCodecDesc() const override;
 
@@ -29,5 +29,9 @@ protected:
 private:
     const int level;
 };
+
+
+class CompressionCodecFactory;
+void registerCodecZSTD(CompressionCodecFactory & factory);
 
 }

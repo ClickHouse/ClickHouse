@@ -552,8 +552,6 @@ public:
         }
     }
 
-    const char * getHeaderFilePath() const override { return __FILE__; }
-
 private:
     UInt32 src_scale;
 };

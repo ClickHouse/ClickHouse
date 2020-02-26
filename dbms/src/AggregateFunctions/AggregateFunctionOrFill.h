@@ -11,7 +11,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 /**
@@ -47,11 +46,6 @@ public:
             return nested_function->getName() + "OrNull";
         else
             return nested_function->getName() + "OrDefault";
-    }
-
-    const char * getHeaderFilePath() const override
-    {
-        return __FILE__;
     }
 
     bool isState() const override

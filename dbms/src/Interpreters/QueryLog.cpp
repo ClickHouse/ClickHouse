@@ -49,6 +49,7 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeUInt64>(),                                  "memory_usage"},
 
         {std::make_shared<DataTypeString>(),                                  "query"},
+        {std::make_shared<DataTypeInt32>(),                                   "exception_code"},
         {std::make_shared<DataTypeString>(),                                  "exception"},
         {std::make_shared<DataTypeString>(),                                  "stack_trace"},
 
@@ -75,8 +76,7 @@ Block QueryLogElement::createBlock()
 
         {std::make_shared<DataTypeUInt32>(),                                  "revision"},
 
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()), "thread_numbers"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()), "os_thread_ids"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "thread_ids"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents.Names"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents.Values"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Names"},
@@ -107,6 +107,7 @@ void QueryLogElement::appendToBlock(Block & block) const
     columns[i++]->insert(memory_usage);
 
     columns[i++]->insertData(query.data(), query.size());
+    columns[i++]->insert(exception_code);
     columns[i++]->insertData(exception.data(), exception.size());
     columns[i++]->insertData(stack_trace.data(), stack_trace.size());
 
@@ -116,17 +117,9 @@ void QueryLogElement::appendToBlock(Block & block) const
 
     {
         Array threads_array;
-        threads_array.reserve(thread_numbers.size());
-        for (const UInt32 thread_number : thread_numbers)
-            threads_array.emplace_back(UInt64(thread_number));
-        columns[i++]->insert(threads_array);
-    }
-
-    {
-        Array threads_array;
-        threads_array.reserve(os_thread_ids.size());
-        for (const UInt32 thread_number : os_thread_ids)
-            threads_array.emplace_back(UInt64(thread_number));
+        threads_array.reserve(thread_ids.size());
+        for (const UInt64 thread_id : thread_ids)
+            threads_array.emplace_back(thread_id);
         columns[i++]->insert(threads_array);
     }
 
