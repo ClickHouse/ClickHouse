@@ -71,7 +71,8 @@ std::unique_ptr<ICell> GridRoot::makeCell(Float64 current_min_x, Float64 current
     {
         auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, &depth, i](Float64 x, Float64 y)
         {
-            for (size_t j = 0; j < kSplit; y += y_shift, ++j) {
+            for (size_t j = 0; j < kSplit; y += y_shift, ++j)
+            {
                 children[i * kSplit + j] = makeCell(x, y, x + x_shift, y + y_shift, possible_ids, depth);
             }
         };
