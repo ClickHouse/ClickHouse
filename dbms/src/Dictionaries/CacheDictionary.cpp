@@ -839,14 +839,22 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
             /// To perform parallel loading.
             BlockInputStreamPtr stream = nullptr;
             {
-                write_lock.unlock();
+                ProfilingScoperWriteUnlocker unlocker(write_lock);
                 stream = source_ptr->loadIds(bunch_update_unit.getRequestedIds());
-                write_lock.lock();
             }
 
             stream->readPrefix();
-            while (const auto block = stream->read())
+
+            while (true)
             {
+                Block block;
+                {
+                    ProfilingScoperWriteUnlocker unlocker(write_lock);
+                    block = stream->read();
+                    if (!block)
+                        break;
+                }
+
                 const auto id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
                 if (!id_column)
                     throw Exception{name + ": id column has type different from UInt64.", ErrorCodes::TYPE_MISMATCH};

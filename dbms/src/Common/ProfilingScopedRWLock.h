@@ -7,30 +7,49 @@
 
 namespace DB
 {
+
+class ProfilingScoperWriteUnlocker;
+
 class ProfilingScopedWriteRWLock
 {
 public:
-    ProfilingScopedWriteRWLock(std::shared_mutex & rwl, ProfileEvents::Event event) :
+    friend class ProfilingScoperWriteUnlocker;
+
+    ProfilingScopedWriteRWLock(std::shared_mutex & rwl, ProfileEvents::Event event_) :
         watch(),
+        event(event_),
         scoped_write_lock(rwl)
     {
         ProfileEvents::increment(event, watch.elapsed());
     }
 
-    /// Unsafe!
-    void lock()
+private:
+    Stopwatch watch;
+    ProfileEvents::Event event;
+    std::unique_lock<std::shared_mutex> scoped_write_lock;
+};
+
+/// Inversed RAII
+/// Used to unlock current writelock for various purposes.
+class ProfilingScoperWriteUnlocker
+{
+public:
+    ProfilingScoperWriteUnlocker() = delete;
+
+    ProfilingScoperWriteUnlocker(ProfilingScopedWriteRWLock & parent_lock_) : parent_lock(parent_lock_)
     {
-        scoped_write_lock.lock();
+        parent_lock.scoped_write_lock.unlock();
     }
 
-    void unlock()
+    ~ProfilingScoperWriteUnlocker()
     {
-        scoped_write_lock.unlock();
+        Stopwatch watch;
+        parent_lock.scoped_write_lock.lock();
+        ProfileEvents::increment(parent_lock.event, watch.elapsed());
     }
 
 private:
-    Stopwatch watch;
-    std::unique_lock<std::shared_mutex> scoped_write_lock;
+    ProfilingScopedWriteRWLock & parent_lock;
 };
 
 class ProfilingScopedReadRWLock
