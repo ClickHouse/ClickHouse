@@ -12,6 +12,7 @@ namespace DB
 class ASTFunction;
 class AnalyzedJoin;
 class Context;
+struct Settings;
 struct SelectQueryOptions;
 using Scalars = std::map<String, Block>;
 
@@ -70,23 +71,25 @@ using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 class SyntaxAnalyzer
 {
 public:
-    SyntaxAnalyzer(const Context & context_, const SelectQueryOptions & select_options = {})
+    SyntaxAnalyzer(const Context & context_)
         : context(context_)
-        , subquery_depth(select_options.subquery_depth)
-        , remove_duplicates(select_options.remove_duplicates)
     {}
 
-    SyntaxAnalyzerResultPtr analyze(
+    /// Analyze and rewrite not select query
+    SyntaxAnalyzerResultPtr analyze(ASTPtr & query, const NamesAndTypesList & source_columns_, StoragePtr storage = {}) const;
+
+    /// Analyze and rewrite select query
+    SyntaxAnalyzerResultPtr analyzeSelect(
         ASTPtr & query,
-        const NamesAndTypesList & source_columns_,
-        const Names & required_result_columns = {},
+        const NamesAndTypesList & source_columns,
         StoragePtr storage = {},
-        const NamesAndTypesList & additional_source_columns = {}) const;
+        const SelectQueryOptions & select_options = {},
+        const Names & required_result_columns = {}) const;
 
 private:
     const Context & context;
-    size_t subquery_depth;
-    bool remove_duplicates;
+
+    void rewriteAst(ASTPtr & query, const Settings & settings, Aliases & aliases) const;
 };
 
 }

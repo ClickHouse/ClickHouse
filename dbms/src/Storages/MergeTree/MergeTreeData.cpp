@@ -451,12 +451,12 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
             indices_names.insert(new_indices.back()->name);
         }
     }
-    auto syntax_primary = SyntaxAnalyzer(global_context, {}).analyze(
+    auto syntax_primary = SyntaxAnalyzer(global_context).analyze(
             skip_indices_with_primary_key_expr_list, all_columns);
     auto new_indices_with_primary_key_expr = ExpressionAnalyzer(
             skip_indices_with_primary_key_expr_list, syntax_primary, global_context).getActions(false);
 
-    auto syntax_sorting = SyntaxAnalyzer(global_context, {}).analyze(
+    auto syntax_sorting = SyntaxAnalyzer(global_context).analyze(
             skip_indices_with_sorting_key_expr_list, all_columns);
     auto new_indices_with_sorting_key_expr = ExpressionAnalyzer(
             skip_indices_with_sorting_key_expr_list, syntax_sorting, global_context).getActions(false);

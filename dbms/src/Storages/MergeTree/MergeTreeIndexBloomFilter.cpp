@@ -93,7 +93,7 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
 
     ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
 
-    auto syntax = SyntaxAnalyzer(context, {}).analyze(expr_list, columns);
+    auto syntax = SyntaxAnalyzer(context).analyze(expr_list, columns);
     auto index_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
     auto index_sample = ExpressionAnalyzer(expr_list, syntax, context).getActions(true)->getSampleBlock();
 
