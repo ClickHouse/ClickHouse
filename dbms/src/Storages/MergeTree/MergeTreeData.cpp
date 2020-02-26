@@ -115,6 +115,8 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNKNOWN_PART_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
+    extern const int UNKNOWN_DISK;
+    extern const int NOT_ENOUGH_SPACE;
 }
 
 

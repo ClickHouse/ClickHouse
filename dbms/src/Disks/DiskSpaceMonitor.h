@@ -16,9 +16,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-}
 
 /// Parse .xml configuration and store information about disks
 /// Mostly used for introspection.
