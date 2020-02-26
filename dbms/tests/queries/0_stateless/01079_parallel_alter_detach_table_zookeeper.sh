@@ -66,7 +66,7 @@ export -f correct_alter_thread;
 export -f insert_thread;
 export -f detach_attach_thread;
 
-TIMEOUT=30
+TIMEOUT=15
 
 # Sometimes we detach and attach tables
 timeout $TIMEOUT bash -c detach_attach_thread 2> /dev/null &
