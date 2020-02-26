@@ -28,7 +28,7 @@ pull_request_rules:
 pull_request_rules:
   - name:Aautomatic merge for ImgBot pull requests
     conditions:
-      - a"uthor=imgbot[bot]"
+      - "author=imgbot[bot]"
       - "#status-failure=1" # Description check
       - "base=master"
     actions:
