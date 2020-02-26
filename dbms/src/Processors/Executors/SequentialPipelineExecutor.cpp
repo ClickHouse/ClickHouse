@@ -4,6 +4,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 //SequentialPipelineExecutor::SequentialPipelineExecutor(const Processors & processors)
 //    : processors(processors)

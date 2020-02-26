@@ -19,8 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_SLOW;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
