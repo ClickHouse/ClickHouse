@@ -64,7 +64,7 @@ StoragePtr TableFunctionGenerate::executeImpl(const ASTPtr & ast_function, const
         random_seed = args[3]->as<ASTLiteral &>().value.safeGet<UInt64>();
 
     ColumnsDescription columns = parseColumnsListFromString(structure, context);
-    
+
     auto res = StorageGenerate::create(StorageID(getDatabaseName(), table_name), columns, max_array_length, max_string_length, random_seed);
     res->startup();
     return res;
