@@ -146,9 +146,6 @@ endif ()
 
 if(USE_INTERNAL_SNAPPY_LIBRARY)
     set(SNAPPY_BUILD_TESTS 0 CACHE INTERNAL "")
-    if (NOT MAKE_STATIC_LIBRARIES)
-        set(BUILD_SHARED_LIBS 1) # TODO: set at root dir
-    endif()
 
     add_subdirectory(snappy)
 
