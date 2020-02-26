@@ -202,3 +202,5 @@ struct ArrayAndValueSourceSelectorBySink : public ArraySinkSelector<ArrayAndValu
 };
 
 }
+
+}

@@ -47,3 +47,5 @@ void concat(const std::vector<std::unique_ptr<IArraySource>> & sources, IArraySi
     return ArrayConcat::select(*sources.front(), sink, sources);
 }
 }
+
+}
