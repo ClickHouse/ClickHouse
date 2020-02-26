@@ -3579,10 +3579,17 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
                                                                                 const String & tmp_part_prefix,
                                                                                 const MergeTreePartInfo & dst_part_info)
 {
+    /// Check that the storage policy contains the disk where the src_part is located.
+    
     bool does_storage_policy_allow_same_disk = false;
     for (const DiskPtr & disk : getStoragePolicy()->getDisks())
+    {
         if (disk->getName() == src_part->disk->getName())
+        {
             does_storage_policy_allow_same_disk = true;
+            break;
+        }
+    }
     if (!does_storage_policy_allow_same_disk)
         throw Exception(
             "Could not clone and load part " + quoteString(src_part->getFullPath()) + " because disk does not belong to storage policy", ErrorCodes::LOGICAL_ERROR);
