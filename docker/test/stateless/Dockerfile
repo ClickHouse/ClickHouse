@@ -1,8 +1,6 @@
 # docker build -t yandex/clickhouse-stateless-test .
 FROM yandex/clickhouse-deb-builder
 
-ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.3.20200115/clickhouse-odbc-1.1.3-Linux.tar.gz"
-
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-install-recommends \
@@ -33,12 +31,25 @@ RUN apt-get update -y \
             unixodbc \
             wget
 
-RUN mkdir -p /tmp/clickhouse-odbc-tmp \
-   && wget --quiet -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
-   && cp /tmp/clickhouse-odbc-tmp/lib64/*.so /usr/local/lib/ \
-   && odbcinst -i -d -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbcinst.ini.sample \
-   && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
-   && rm -rf /tmp/clickhouse-odbc-tmp
+ARG cmake_url=https://cmake.org/files/v3.16/cmake-3.16.4-Linux-x86_64.tar.gz
+
+# clickhouse-odbc build & install (also temporary install newer cmake)
+RUN mkdir -p /tmp/odbc-driver-build/cmake \
+   && wget --no-check-certificate --quiet -O - ${cmake_url} | tar --strip-components=1 -xz -C /tmp/odbc-driver-build/cmake \
+   # shallow clone is enough for build, but smaller and clone is faster
+   && git clone --depth 1 https://github.com/ClickHouse/clickhouse-odbc.git /tmp/odbc-driver-build/clickhouse-odbc \
+   && cd /tmp/odbc-driver-build/clickhouse-odbc \
+   # shallow submodules are MUCH smaller and faster
+   && git submodule update --init --depth 1  \
+   && mkdir build \
+   && cd build \
+   && /tmp/odbc-driver-build/cmake/bin/cmake --version \
+   && /tmp/odbc-driver-build/cmake/bin/cmake .. -DCMAKE_C_COMPILER=`which gcc-9` -DCMAKE_CXX_COMPILER=`which g++-9` -DCH_ODBC_ENABLE_TESTING=OFF \
+   && /tmp/odbc-driver-build/cmake/bin/cmake --build . --parallel --target install \
+   && odbcinst -i -d -f /usr/local/share/doc/clickhouse-odbc/config/odbcinst.ini.sample \
+   && odbcinst -i -s -l -f /usr/local/share/doc/clickhouse-odbc/config/odbc.ini.sample \
+   # make resulting docker image smaller:
+   && rm -rf /tmp/odbc-driver-build
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
