@@ -184,8 +184,8 @@ Pipes StorageMerge::read(
     /** Just in case, turn off optimization "transfer to PREWHERE",
       * since there is no certainty that it works when one of table is MergeTree and other is not.
       */
-    Context modified_context = context;
-    modified_context.getSettingsRef().optimize_move_to_prewhere = false;
+    auto modified_context = std::make_shared<Context>(context);
+    modified_context->getSettingsRef().optimize_move_to_prewhere = false;
 
     /// What will be result structure depending on query processed stage in source tables?
     Block header = getQueryHeader(column_names, query_info, context, processed_stage);
@@ -254,7 +254,7 @@ Pipes StorageMerge::read(
 Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
     const UInt64 max_block_size, const Block & header, const StorageWithLockAndName & storage_with_lock,
     Names & real_column_names,
-    Context & modified_context, size_t streams_num, bool has_table_virtual_column,
+    const std::shared_ptr<Context> & modified_context, size_t streams_num, bool has_table_virtual_column,
     bool concat_streams)
 {
     auto & [storage, struct_lock, table_name] = storage_with_lock;
@@ -271,38 +271,38 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
         {
             /// This flag means that pipeline must be tree-shaped,
             /// so we can't enable processors for InterpreterSelectQuery here.
-            auto stream = InterpreterSelectQuery(modified_query_info.query, modified_context, std::make_shared<OneBlockInputStream>(header),
+            auto stream = InterpreterSelectQuery(modified_query_info.query, *modified_context, std::make_shared<OneBlockInputStream>(header),
                                                  SelectQueryOptions(processed_stage).analyze()).execute().in;
 
             pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
             return pipes;
         }
 
-        pipes.emplace_back(
-            InterpreterSelectQuery(modified_query_info.query, modified_context,
-                                   std::make_shared<OneBlockInputStream>(header),
-                                   SelectQueryOptions(processed_stage).analyze()).executeWithProcessors().getPipe());
-
+        auto pipe = InterpreterSelectQuery(modified_query_info.query, *modified_context,
+                                             std::make_shared<OneBlockInputStream>(header),
+                                             SelectQueryOptions(processed_stage).analyze()).executeWithProcessors().getPipe();
+        pipe.addInterpreterContext(modified_context);
+        pipes.emplace_back(std::move(pipe));
         return pipes;
     }
 
-    if (processed_stage <= storage->getQueryProcessingStage(modified_context))
+    if (processed_stage <= storage->getQueryProcessingStage(*modified_context))
     {
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.empty())
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage->getColumns().getAllPhysical()));
 
-        pipes = storage->read(real_column_names, modified_query_info, modified_context, processed_stage, max_block_size, UInt32(streams_num));
+        pipes = storage->read(real_column_names, modified_query_info, *modified_context, processed_stage, max_block_size, UInt32(streams_num));
     }
-    else if (processed_stage > storage->getQueryProcessingStage(modified_context))
+    else if (processed_stage > storage->getQueryProcessingStage(*modified_context))
     {
         modified_query_info.query->as<ASTSelectQuery>()->replaceDatabaseAndTable(source_database, table_name);
 
         /// Maximum permissible parallelism is streams_num
-        modified_context.getSettingsRef().max_threads = UInt64(streams_num);
-        modified_context.getSettingsRef().max_streams_to_max_threads_ratio = 1;
+        modified_context->getSettingsRef().max_threads = UInt64(streams_num);
+        modified_context->getSettingsRef().max_streams_to_max_threads_ratio = 1;
 
-        InterpreterSelectQuery interpreter{modified_query_info.query, modified_context, SelectQueryOptions(processed_stage)};
+        InterpreterSelectQuery interpreter{modified_query_info.query, *modified_context, SelectQueryOptions(processed_stage)};
 
         if (query_info.force_tree_shaped_pipeline)
         {
@@ -342,9 +342,11 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
 
             /// Subordinary tables could have different but convertible types, like numeric types of different width.
             /// We must return streams with structure equals to structure of Merge table.
-            convertingSourceStream(header, modified_context, modified_query_info.query, pipe, processed_stage);
+            convertingSourceStream(header, *modified_context, modified_query_info.query, pipe, processed_stage);
 
             pipe.addTableLock(struct_lock);
+            pipe.addInterpreterContext(modified_context);
+
         }
     }
 
