@@ -26,7 +26,6 @@ namespace DB
 
 #if USE_EMBEDDED_COMPILER
         static constexpr bool compilable = false;
-
 #endif
     };
 

@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 /// 0b11 -- can be true and false at the same time
-const Field UNKNOWN_FIELD(3u);
+static const Field UNKNOWN_FIELD(3u);
 
 
 MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(const MergeTreeIndexSet & index_)
@@ -236,8 +236,6 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         expression_ast = select.where()->clone();
     else if (select.prewhere())
         expression_ast = select.prewhere()->clone();
-    else
-        expression_ast = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
 
     useless = checkASTUseless(expression_ast);
     /// Do not proceed if index is useless for this query.
@@ -260,6 +258,9 @@ bool MergeTreeIndexConditionSet::alwaysUnknownOrTrue() const
 
 bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
+    if (useless)
+        return true;
+
     auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleSet>(idx_granule);
     if (!granule)
         throw Exception(
@@ -405,8 +406,11 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node) const
     return true;
 }
 
-bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr &node, bool atomic) const
+bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomic) const
 {
+    if (!node)
+        return true;
+
     if (const auto * func = node->as<ASTFunction>())
     {
         if (key_columns.count(func->getColumnName()))
@@ -422,7 +426,7 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr &node, bool atomic
             return checkASTUseless(args[0], atomic);
         else
             return std::any_of(args.begin(), args.end(),
-                    [this](const auto & arg) { return checkASTUseless(arg, true); });
+                [this](const auto & arg) { return checkASTUseless(arg, true); });
     }
     else if (const auto * literal = node->as<ASTLiteral>())
         return !atomic && literal->value.get<bool>();
