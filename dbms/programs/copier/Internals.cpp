@@ -73,6 +73,8 @@ ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
 {
     String storage_str = queryToString(storage_ast);
 
+    std::cout << "inside extractPartitionKey " << storage_str << std::endl;
+
     const auto & storage = storage_ast->as<ASTStorage &>();
     const auto & engine = storage.engine->as<ASTFunction &>();
 
@@ -115,7 +117,12 @@ ASTPtr extractPrimaryKeyOrOrderBy(const ASTPtr & storage_ast)
 {
     String storage_str = queryToString(storage_ast);
 
-    const auto & storage = storage_ast->as<ASTStorage &>();
+    ParserStorage parser_storage;
+    auto new_storage_ast = parseQuery(parser_storage, storage_str, 0);
+
+    std::cout << "inside extractPrimaryKeyOrOrderBy" << storage_str << std::endl;
+
+    const auto & storage = new_storage_ast->as<ASTStorage &>();
     const auto & engine = storage.engine->as<ASTFunction &>();
 
     if (!endsWith(engine.name, "MergeTree"))
@@ -124,7 +131,6 @@ ASTPtr extractPrimaryKeyOrOrderBy(const ASTPtr & storage_ast)
                         ErrorCodes::BAD_ARGUMENTS);
     }
 
-    /// FIXME
     if (!isExtendedDefinitionStorage(storage_ast))
     {
         throw Exception("Is not extended deginition storage " + storage_str + " Will be fixed later.",

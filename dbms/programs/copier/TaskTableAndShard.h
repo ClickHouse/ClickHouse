@@ -246,7 +246,9 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
     {
         ParserStorage parser_storage;
         engine_push_ast = parseQuery(parser_storage, engine_push_str, 0);
+        std::cout << engine_push_str << std::endl;
         engine_push_partition_key_ast = extractPartitionKey(engine_push_ast);
+        std::cout << engine_push_str << std::endl;
         primary_key_comma_separated = createCommaSeparatedStringFrom(extractPrimaryKeyString(engine_push_ast));
     }
 
