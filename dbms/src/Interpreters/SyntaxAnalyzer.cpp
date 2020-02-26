@@ -941,6 +941,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
 
     rewriteAst(query, settings, result.aliases);
 
+    /// Executing scalar subqueries. Column defaults could be a scalar subquery.
+    executeScalarSubqueries(query, context, 0, result.scalars);
+
     result.aggregates = getAggregates(query);
     result.collectUsedColumns(query, {});
     return std::make_shared<const SyntaxAnalyzerResult>(result);
