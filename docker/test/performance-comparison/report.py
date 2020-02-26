@@ -4,8 +4,13 @@ import collections
 import csv
 import os
 import sys
+import traceback
 
-doc_template = """
+report_errors = []
+status = 'success'
+message = 'See the report'
+
+print("""
 <!DOCTYPE html>
 <html>
   <style>
@@ -38,24 +43,14 @@ p.links a {{ padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-
 }}
 tr:nth-child(odd) td {{filter: brightness(95%);}}
   </style>
-  <title>{header}</title>
+  <title>Clickhouse performance comparison</title>
 </head>
 <body>
 <div class="main">
 
-<h1>{header}</h1>
-{test_part}
-<p class="links">
-<a href="{raw_log_url}">{raw_log_name}</a>
-<a href="{branch_url}">{branch_name}</a>
-<a href="{commit_url}">Commit</a>
-{additional_urls}
-<a href="output.7z">Test output</a>
-<a href="{task_url}">Task (private network)</a>
-</p>
-</body>
-</html>
-"""
+<h1>ClickHouse performance comparison</h1>
+""".format())
+
 
 table_template = """
 <h2 id="{anchor}"><a class="cancela" href="#{anchor}">{caption}</a></h2>
@@ -84,74 +79,138 @@ def tr(x):
     #return '<tr onclick="location.href=\'#{a}\'" id={a}>{x}</tr>'.format(a=a, x=str(x))
     return '<tr id={a}>{x}</tr>'.format(a=a, x=str(x))
 
-def td(x):
-    return '<td>' + str(x) + '</td>'
+def td(value, cell_class = ''):
+    return '<td class="{cell_class}">{value}</td>'.format(
+        cell_class = cell_class,
+        value = value)
 
 def th(x):
     return '<th>' + str(x) + '</th>'
 
-def table_row(r):
+def tableRow(r):
     return tr(''.join([td(f) for f in r]))
 
-def table_header(r):
+def tableHeader(r):
     return tr(''.join([th(f) for f in r]))
 
-def tsv_rows(n):
+def tableStart(title):
+    return """
+<h2 id="{anchor}"><a class="cancela" href="#{anchor}">{title}</a></h2>
+<table>""".format(
+        anchor = nextTableAnchor(),
+        title = title)
+
+def tableEnd():
+    return '</table>'
+
+def tsvRowsRaw(n):
+    result = []
+    try:
+        with open(n, encoding='utf-8') as fd:
+            return [row for row in csv.reader(fd, delimiter="\t", quotechar='"')]
+    except:
+        report_errors.append(
+            traceback.format_exception_only(
+                *sys.exc_info()[:2])[-1])
+        pass
+    return []
+
+def tsvTableRows(n):
+    rawRows = tsvRowsRaw(n)
     result = ''
-    with open(n, encoding='utf-8') as fd:
-        for row in csv.reader(fd, delimiter="\t", quotechar='"'):
-            result += table_row(row)
+    for row in rawRows:
+        result += tableRow(row)
     return result
 
-params = collections.defaultdict(str)
-params['header'] = "ClickHouse Performance Comparison"
-params['test_part'] = (
-    table_template.format(
+print(table_template.format(
         anchor = nextTableAnchor(),
         caption = 'Tested commits',
-        header = table_header(['Old', 'New']),
-        rows = table_row([open('left-commit.txt').read(), open('right-commit.txt').read()])
-        ) +
-    table_template.format(
-        anchor = nextTableAnchor(),
-        caption = 'Changes in performance',
-        header = table_header(['Old, s', 'New, s',
-            'Relative difference (new&nbsp;-&nbsp;old)/old',
-            'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%]',
-            'Test', 'Query']),
-        rows = tsv_rows('changed-perf.tsv')) +
-    table_template.format(
-        anchor = nextTableAnchor(),
-        caption = 'Slow on client',
-        header = table_header(['Client time, s', 'Server time, s', 'Ratio', 'Query']),
-        rows = tsv_rows('slow-on-client.tsv')) +
-    table_template.format(
-        anchor = nextTableAnchor(),
-        caption = 'Unstable queries',
-        header = table_header(['Old, s', 'New, s',
-            'Relative difference (new&nbsp;-&nbsp;old)/old',
-            'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%]',
-            'Test', 'Query']),
-        rows = tsv_rows('unstable-queries.tsv')) +
-    table_template.format(
-        anchor = nextTableAnchor(),
-        caption = 'Run errors',
-        header = table_header(['A', 'B']),
-        rows = tsv_rows('run-errors.log')) +
-    table_template.format(
-        anchor = nextTableAnchor(),
-        caption = 'Tests with most unstable queries',
-        header = table_header(['Test', 'Unstable', 'Changed perf', 'Total not OK']),
-        rows = tsv_rows('bad-tests.tsv')) +
-    table_template.format(
-        anchor = nextTableAnchor(),
-        caption = 'Tests times',
-        header = table_header(['Test', 'Wall clock time, s', 'Total client time, s',
-            'Total queries',
-            'Ignored short queries',
-            'Longest query<br>(sum for all runs), s',
-            'Avg wall clock time<br>(sum for all runs), s',
-            'Shortest query<br>(sum for all runs), s']),
-        rows = tsv_rows('test-times.tsv'))
-)
-print(doc_template.format_map(params))
+        header = tableHeader(['Old', 'New']),
+        rows = tableRow([open('left-commit.txt').read(), open('right-commit.txt').read()])))
+
+print(table_template.format(
+    anchor = nextTableAnchor(),
+    caption = 'Changes in performance',
+    header = tableHeader(['Old, s', 'New, s',
+        'Relative difference (new&nbsp;-&nbsp;old)/old',
+        'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%]',
+        'Test', 'Query']),
+    rows = tsvTableRows('changed-perf.tsv')))
+
+print(table_template.format(
+    anchor = nextTableAnchor(),
+    caption = 'Slow on client',
+    header = tableHeader(['Client time, s', 'Server time, s', 'Ratio', 'Query']),
+    rows = tsvTableRows('slow-on-client.tsv')))
+
+print(table_template.format(
+    anchor = nextTableAnchor(),
+    caption = 'Unstable queries',
+    header = tableHeader(['Old, s', 'New, s',
+        'Relative difference (new&nbsp;-&nbsp;old)/old',
+        'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%]',
+        'Test', 'Query']),
+    rows = tsvTableRows('unstable-queries.tsv')))
+
+print(table_template.format(
+    anchor = nextTableAnchor(),
+    caption = 'Run errors',
+    header = tableHeader(['A', 'B']),
+    rows = tsvTableRows('run-errors.log')))
+
+print(table_template.format(
+    anchor = nextTableAnchor(),
+    caption = 'Tests with most unstable queries',
+    header = tableHeader(['Test', 'Unstable', 'Changed perf', 'Total not OK']),
+    rows = tsvTableRows('bad-tests.tsv')))
+
+def print_test_times():
+    rows = tsvRowsRaw('test-times.tsv')
+    if not rows:
+        return
+
+    print(rows, file=sys.stderr)
+
+    print(tableStart('Test times'))
+    print(tableHeader([
+        'Test',                                          #0
+        'Wall clock time, s',                            #1
+        'Total client time, s',                          #2
+        'Total queries',                                 #3
+        'Ignored short queries',                         #4
+        'Longest query<br>(sum for all runs), s',        #5
+        'Avg wall clock time<br>(sum for all runs), s',  #6
+        'Shortest query<br>(sum for all runs), s',       #7
+        ]))
+
+    for r in rows:
+        print(tableRow(r))
+
+    print(tableEnd())
+
+print_test_times()
+
+if len(report_errors):
+    print(tableStart('Errors while building the report'))
+    print(tableHeader(['Error']))
+    for x in report_errors:
+        print(tableRow([x]))
+    print(tableEnd())
+
+
+print("""
+<p class="links">
+<a href="output.7z">Test output</a>
+</p>
+</body>
+</html>
+""")
+
+if report_errors:
+    status = 'error'
+    message = 'Errors while building the report.'
+
+print("""
+<!--status: {status}-->
+<!--message: {message}-->
+""".format(status=status, message=message))
