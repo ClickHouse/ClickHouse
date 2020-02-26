@@ -18,8 +18,8 @@ struct BlockIO
     BlockIO(const BlockIO &) = default;
     ~BlockIO() = default;
 
-    /** process_list_entry should be destroyed after in and after out,
-      *  since in and out contain pointer to objects inside process_list_entry (query-level MemoryTracker for example),
+    /** process_list_entry should be destroyed after in, after out and after pipeline,
+      *  since in, out and pipeline contain pointer to objects inside process_list_entry (query-level MemoryTracker for example),
       *  which could be used before destroying of in and out.
       */
     std::shared_ptr<ProcessListEntry> process_list_entry;
@@ -56,6 +56,7 @@ struct BlockIO
 
         out.reset();
         in.reset();
+        pipeline = QueryPipeline();
         process_list_entry.reset();
 
         process_list_entry      = rhs.process_list_entry;

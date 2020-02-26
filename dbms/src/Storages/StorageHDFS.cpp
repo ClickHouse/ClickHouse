@@ -158,6 +158,7 @@ public:
             }
 
             reader->readSuffix();
+            reader.reset();
         }
     }
 
