@@ -70,9 +70,7 @@ TIMEOUT=15
 
 # Sometimes we detach and attach tables
 timeout $TIMEOUT bash -c detach_attach_thread 2> /dev/null &
-timeout $TIMEOUT bash -c detach_attach_thread 2> /dev/null &
 
-timeout $TIMEOUT bash -c correct_alter_thread 2> /dev/null &
 timeout $TIMEOUT bash -c correct_alter_thread 2> /dev/null &
 
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
