@@ -16,7 +16,7 @@ If you want to help ClickHouse with documentation you can face, for example, the
 
     Here are some [tips](#how-to-contribute).
 
-Writing the docs is extremely useful for project's users and developers, and grows your karma.
+Writing the docs is extremely useful for ClickHouse users and developers, and grows your karma.
 
 **Contents**
 
