@@ -12,6 +12,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+}
 
 template <typename Derived>
 std::vector<IColumn::MutablePtr> IColumn::scatterImpl(ColumnIndex num_columns,

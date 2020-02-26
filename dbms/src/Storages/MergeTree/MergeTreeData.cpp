@@ -84,15 +84,24 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NO_SUCH_DATA_PART;
+    extern const int TABLE_DIFFERS_TOO_MUCH;
+    extern const int NOT_IMPLEMENTED;
+    extern const int DIRECTORY_ALREADY_EXISTS;
+    extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
+    extern const int DUPLICATE_DATA_PART;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_COLUMN;
+    extern const int CORRUPTED_DATA;
+    extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
     extern const int MEMORY_LIMIT_EXCEEDED;
-    extern const int SYNTAX_ERROR;
     extern const int INVALID_PARTITION_VALUE;
     extern const int METADATA_MISMATCH;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int TOO_MANY_PARTS;
     extern const int INCOMPATIBLE_COLUMNS;
-    extern const int CANNOT_UPDATE_COLUMN;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
@@ -104,6 +113,8 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNKNOWN_PART_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
+    extern const int UNKNOWN_DISK;
+    extern const int NOT_ENOUGH_SPACE;
 }
 
 

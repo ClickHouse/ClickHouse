@@ -11,6 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int TYPE_MISMATCH;
 }

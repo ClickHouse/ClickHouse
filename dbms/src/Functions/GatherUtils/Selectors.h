@@ -6,8 +6,18 @@
 #include "ValueSourceVisitor.h"
 
 
-namespace DB::GatherUtils
+namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
+namespace GatherUtils
+{
+
 /// Base classes which selects template function implementation with concrete ArraySource or ArraySink
 /// Derived classes should implement selectImpl for ArraySourceSelector and ArraySinkSelector,
 ///  selectSourceSink for ArraySinkSourceSelector and selectSourcePair for ArraySourcePairSelector
@@ -190,5 +200,7 @@ struct ArrayAndValueSourceSelectorBySink : public ArraySinkSelector<ArrayAndValu
                                    typeid_cast<ValueSource *>(&value_source));
     }
 };
+
+}
 
 }
