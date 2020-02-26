@@ -52,8 +52,8 @@ private:
     bool find(const Point & point, size_t & id) const override;
 
     GridRoot grid;
-    static constexpr size_t kMinIntersections = 3;
-    static constexpr size_t kMaxDepth = 3;
+    static constexpr size_t kMinIntersections = 1;
+    static constexpr size_t kMaxDepth = 7;
 };
 
 }

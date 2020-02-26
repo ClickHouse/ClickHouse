@@ -64,7 +64,7 @@ std::unique_ptr<ICell> GridRoot::makeCell(Float64 current_min_x, Float64 current
                 children[i * kSplit + j] = makeCell(x, y, x + x_shift, y + y_shift, possible_ids, depth);
             }
         };
-        if (depth == 1)
+        if (depth <= kMultiProcessingDepth)
             threads.emplace_back(handle_row, current_min_x, current_min_y);
         else
             handle_row(current_min_x, current_min_y);
