@@ -9,9 +9,11 @@ namespace DB
 FinalCell::FinalCell(std::vector<size_t> polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_):
 polygon_ids(std::move(polygon_ids_))
 {
+    Polygon tmp_poly;
+    bg::convert(box_, tmp_poly);
     std::transform(polygon_ids.begin(), polygon_ids.end(), std::back_inserter(is_covered_by), [&](const auto id)
     {
-        return bg::covered_by(box_, polygons_[id]);
+        return bg::covered_by(tmp_poly, polygons_[id]);
     });
 }
 
