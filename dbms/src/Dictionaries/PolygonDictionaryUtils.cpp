@@ -1,5 +1,7 @@
 #include "PolygonDictionaryUtils.h"
 
+#include <Common/ThreadPool.h>
+
 #include <algorithm>
 #include <thread>
 
@@ -64,7 +66,7 @@ std::unique_ptr<ICell> GridRoot::makeCell(Float64 current_min_x, Float64 current
     auto y_shift = (current_max_y - current_min_y) / kSplit;
     std::vector<std::unique_ptr<ICell>> children;
     children.resize(kSplit * kSplit);
-    std::vector<std::thread> threads;
+    std::vector<ThreadFromGlobalPool> threads;
     for (size_t i = 0; i < kSplit; current_min_x += x_shift, ++i)
     {
         auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, &depth, i](Float64 x, Float64 y)
