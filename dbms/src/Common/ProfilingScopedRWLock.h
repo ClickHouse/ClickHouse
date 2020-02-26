@@ -17,6 +17,17 @@ public:
         ProfileEvents::increment(event, watch.elapsed());
     }
 
+    /// Unsafe!
+    void lock()
+    {
+        scoped_write_lock.lock();
+    }
+
+    void unlock()
+    {
+        scoped_write_lock.unlock();
+    }
+
 private:
     Stopwatch watch;
     std::unique_lock<std::shared_mutex> scoped_write_lock;
