@@ -15,8 +15,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int NO_DATA_FOR_REQUIRED_PROTOBUF_FIELD;
 }
 
 

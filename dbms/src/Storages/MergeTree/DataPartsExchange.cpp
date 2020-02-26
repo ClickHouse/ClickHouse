@@ -19,11 +19,12 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int DIRECTORY_ALREADY_EXISTS;
+    extern const int NO_SUCH_DATA_PART;
     extern const int ABORTED;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int CHECKSUM_DOESNT_MATCH;
-    extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_PROTOCOL;
     extern const int INSECURE_PATH;
 }

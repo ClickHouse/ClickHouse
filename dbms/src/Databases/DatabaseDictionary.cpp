@@ -14,12 +14,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int TABLE_ALREADY_EXISTS;
-    extern const int UNKNOWN_TABLE;
-    extern const int LOGICAL_ERROR;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int SYNTAX_ERROR;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 DatabaseDictionary::DatabaseDictionary(const String & name_)
