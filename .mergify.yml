@@ -75,7 +75,7 @@ pull_request_rules:
       - "body~=Build.*Improvement"
     actions:
       label:
-        add: ["pr-performance", "no-docs-needed"]
+        add: ["pr-build", "no-docs-needed"]
 pull_request_rules:
   - name: Automatic add pr-non-significant label
     conditions:
