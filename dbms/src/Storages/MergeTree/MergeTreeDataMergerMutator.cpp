@@ -53,6 +53,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int DIRECTORY_ALREADY_EXISTS;
+    extern const int LOGICAL_ERROR;
     extern const int ABORTED;
 }
 

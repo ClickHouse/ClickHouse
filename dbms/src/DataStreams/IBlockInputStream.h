@@ -18,8 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int OUTPUT_IS_NOT_SORTED;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 class ProcessListElement;

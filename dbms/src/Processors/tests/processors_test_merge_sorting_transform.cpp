@@ -25,8 +25,13 @@
 #include <Poco/AutoPtr.h>
 
 
-using namespace DB;
+namespace DB
+{
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class NumbersSource : public ISource
 {
@@ -110,6 +115,11 @@ struct measure
         return duration.count();
     }
 };
+
+}
+
+
+using namespace DB;
 
 int main(int, char **)
 try
