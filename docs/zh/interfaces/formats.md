@@ -29,7 +29,7 @@ ClickHouse 可以接受多种数据格式，可以在 (`INSERT`) 以及 (`SELECT
 | [PrettySpace](#prettyspace) | ✗ | ✔ |
 | [Protobuf](#protobuf) | ✔ | ✔ |
 | [Avro](#data-format-avro) | ✔ | ✔ |
-| AvroConfluent | ✔ | ✗ |
+| [AvroConfluent](#data-format-avro-confluent) | ✔ | ✗ |
 | [Parquet](#data-format-parquet) | ✔ | ✔ |
 | [ORC](#data-format-orc) | ✔ | ✗ |
 | [RowBinary](#rowbinary) | ✔ | ✔ |
@@ -914,7 +914,7 @@ Column names must:
 
 Output Avro file compression and sync interval can be configured with [output_format_avro_codec](../operations/settings/settings.md#settings-output_format_avro_codec) and [output_format_avro_sync_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) respectively.
 
-## AvroConfluent
+## AvroConfluent {#data-format-avro-confluent}
 
 AvroConfluent supports decoding single-object Avro messages commonly used with [Kafka](https://kafka.apache.org/) and [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html).
 
