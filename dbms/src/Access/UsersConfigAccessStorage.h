@@ -21,7 +21,7 @@ public:
     UsersConfigAccessStorage();
     ~UsersConfigAccessStorage() override;
 
-    void loadFromConfig(const Poco::Util::AbstractConfiguration & config);
+    void setConfiguration(const Poco::Util::AbstractConfiguration & config);
 
 private:
     std::optional<UUID> findImpl(std::type_index type, const String & name) const override;
