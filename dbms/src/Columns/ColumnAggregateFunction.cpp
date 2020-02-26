@@ -157,6 +157,21 @@ void ColumnAggregateFunction::ensureOwnership()
 }
 
 
+bool ColumnAggregateFunction::structureEquals(const IColumn & to) const
+{
+    const auto * to_concrete = typeid_cast<const ColumnAggregateFunction *>(&to);
+    if (!to_concrete)
+        return false;
+
+    /// AggregateFunctions must be the same.
+
+    const IAggregateFunction & func_this = *func;
+    const IAggregateFunction & func_to = *to_concrete->func;
+
+    return typeid(func_this) == typeid(func_to);
+}
+
+
 void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start, size_t length)
 {
     const ColumnAggregateFunction & from_concrete = assert_cast<const ColumnAggregateFunction &>(from);
