@@ -28,6 +28,8 @@ public:
         return std::static_pointer_cast<const IDictionaryBase>(tryLoad(name));
     }
 
+    static void resetAll();
+
 protected:
     LoadablePtr create(const std::string & name, const Poco::Util::AbstractConfiguration & config,
             const std::string & key_in_config, const std::string & repository_name) const override;

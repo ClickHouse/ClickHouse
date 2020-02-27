@@ -9,13 +9,13 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-DICTIONARY_FILES = ['configs/dictionaries/mysql_dict1.xml', 'configs/dictionaries/mysql_dict2.xml']
+CONFIG_FILES = ['configs/dictionaries/mysql_dict1.xml', 'configs/dictionaries/mysql_dict2.xml', 'configs/remote_servers.xml']
 
 cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
-instance = cluster.add_instance('instance', main_configs=DICTIONARY_FILES)
+instance = cluster.add_instance('instance', main_configs=CONFIG_FILES, with_mysql = True)
 
 create_table_mysql_template = """
-    CREATE TABLE `test`.`{}` (
+    CREATE TABLE IF NOT EXISTS `test`.`{}` (
         `id` int(11) NOT NULL,
         `value` varchar(50) NOT NULL,
         PRIMARY KEY (`id`)
@@ -23,17 +23,19 @@ create_table_mysql_template = """
     """
 
 create_clickhouse_dictionary_table_template = """
-    CREATE TABLE `test`.`dict_table_{}` (`id` Int32, `value` String) ENGINE = Dictionary({})
-    ORDER BY `id` DESC SETTINGS index_granularity = 8192
+    CREATE TABLE IF NOT EXISTS `test`.`dict_table_{}` (`id` Int32, `value` String) ENGINE = Dictionary({})
     """
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
+        #time.sleep(30)
         cluster.start()
         
         # Create a MySQL database
-        create_mysql_db(get_mysql_conn(), 'test')
+        mysql_connection = get_mysql_conn()
+        create_mysql_db(mysql_connection, 'test')
+        mysql_connection.close()
         
         # Create database in ClickHouse
         instance.query("CREATE DATABASE IF NOT EXISTS test")
@@ -54,7 +56,7 @@ def test_load_mysql_dictionaries(started_cluster):
     
     for n in range(0, 5):
         # Create MySQL tables, fill them and create CH dict tables
-        prepare_tables('test' + n)
+        prepare_mysql_table('test', str(n))
     
     # Check dictionaries are loaded and have correct number of elements
     for n in range(0, 100):
@@ -62,34 +64,32 @@ def test_load_mysql_dictionaries(started_cluster):
         if (n % 10) == 0:
             query("SYSTEM RELOAD DICTIONARIES")
 
-        # Check number of rows            
-        assert query("SELECT count() FROM `dict_table_`.{}".format('test' + (n % 5))).rstrip() == '10000'
+        # Check number of row
+        assert query("SELECT count() FROM `test`.`dict_table_{}`".format('test' + str(n % 5))).rstrip() == '10000'
 
 def create_mysql_db(mysql_connection, name):
     with mysql_connection.cursor() as cursor:
-        cursor.execute(
-            "CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(name))
+        cursor.execute("CREATE DATABASE IF NOT EXISTS {} DEFAULT CHARACTER SET 'utf8'".format(name))
 
-def prepare_mysql_table(table_name):
+def prepare_mysql_table(table_name, index):
     mysql_connection = get_mysql_conn()
     
     # Create table
-    create_mysql_table(mysql_connection, table_name)
+    create_mysql_table(mysql_connection, table_name + str(index))
 
     # Insert rows using CH
     query = instance.query
-    query("INSERT INTO `clickhouse_mysql`.{}(id, value) select number, concat('{} value ', toString(number)) from numbers(10000) ".format(table_name, table_name))
-    assert query("SELECT count() FROM `clickhouse_mysql`.{}".format(table_name)).rstrip() == '10000'
+    query("INSERT INTO `clickhouse_mysql`.{}(id, value) select number, concat('{} value ', toString(number)) from numbers(10000) ".format(table_name + str(index), table_name + str(index)))
+    assert query("SELECT count() FROM `clickhouse_mysql`.{}".format(table_name + str(index))).rstrip() == '10000'
     mysql_connection.close()
     
     #Create CH Dictionary tables based on MySQL tables 
-    query(create_clickhouse_dictionary_table_template.format(table_name + n), 'dict' + n)
+    query(create_clickhouse_dictionary_table_template.format(table_name + str(index), 'dict' + str(index)))
 
 def get_mysql_conn():
-    conn = pymysql.connect(user='root', password='clickhouse', host='mysql1', port=3308)
+    conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.10', port=3308)
     return conn
 
 def create_mysql_table(conn, table_name):
     with conn.cursor() as cursor:
         cursor.execute(create_table_mysql_template.format(table_name))
-
