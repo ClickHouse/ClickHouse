@@ -4,8 +4,7 @@
 
 namespace DB
 {
-/* random(structure, limit) - creates a temporary storage filling columns with random data
- * random is case-insensitive table function
+/* random(structure(, max_array_length, max_string_length, random_seed)) - creates a temporary storage that generates columns with random data
  */
 class TableFunctionGenerate : public ITableFunction
 {

@@ -81,10 +81,10 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<UInt64> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
+            pcg64_fast generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
-                UInt64 a = static_cast<UInt64>(generator()) << 32 | static_cast<UInt64>(generator());
+                UInt64 a = static_cast<UInt64>(generator());
                 data[i] = static_cast<UInt64>(a);
             }
             break;
@@ -128,10 +128,10 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<Int64> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
+            pcg64_fast generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
-                Int64 a = static_cast<Int64>(generator()) << 32 | static_cast<Int64>(generator());
+                Int64 a = static_cast<Int64>(generator());
                 data[i] = static_cast<Int64>(a);
             }
             break;
@@ -155,12 +155,12 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<Float64> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
+            pcg64_fast generator(random_seed);
             double d = 1.0;
             for (UInt64 i = 0; i < limit; ++i)
             {
                 d = std::numeric_limits<double>::max();
-                data[i] = (d / pcg32::max()) * generator();
+                data[i] = (d / pcg64::max()) * generator();
             }
             break;
         }
@@ -218,17 +218,29 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
                 for (UInt64 i = 0; i < limit; ++i)
                 {
                     offset += 1 + static_cast<UInt64>(generator()) % max_string_length;
-                    offsets[i] = offset - 1;
+                    offsets[i] = offset;
                 }
                 chars.resize(offset);
                 for (UInt64 i = 0; i < offset; ++i)
                 {
-                    chars[i] = 32 + generator() % 95;
+                    if (offset - i > 5 ) {
+                        UInt32 r = generator();
+                        chars[i] = 32 + (r & 0x7F) % 95;
+                        chars[i+1] = 32 + ((r >> 7) & 0x7F) % 95;
+                        chars[i+2] = 32 + ((r >> 14) & 0x7F) % 95;
+                        chars[i+3] = 32 + ((r >> 21) & 0x7F) % 95;
+                        chars[i+4] = 32 + (r >> 28);
+                        i+=4;
+                    }
+                    else {
+                        UInt32 r = generator();
+                        chars[i] = 32 + (r % 95);
+                    }
                 }
                 // add terminating zero char
                 for (auto & i : offsets)
                 {
-                    chars[i] = 0;
+                    chars[i-1] = 0;
                 }
             }
             break;
@@ -297,7 +309,7 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnDecimal<Decimal64> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
+            pcg64_fast generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
                 UInt64 a = static_cast<UInt64>(generator()) << 32 | static_cast<UInt64>(generator());
@@ -309,11 +321,10 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnDecimal<Decimal128> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
+            pcg64_fast generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
-                Int128 x = static_cast<Int128>(generator()) << 96 | static_cast<Int128>(generator()) << 32 |
-                           static_cast<Int128>(generator()) << 64 | static_cast<Int128>(generator());
+                Int128 x = static_cast<Int128>(generator()) << 64 | static_cast<Int128>(generator());
                 data[i] = x;
             }
         }
@@ -322,11 +333,11 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<UInt128> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
+            pcg64_fast generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
-                UInt64 a = static_cast<UInt64>(generator()) << 32 | static_cast<UInt64>(generator());
-                UInt64 b = static_cast<UInt64>(generator()) << 32 | static_cast<UInt64>(generator());
+                UInt64 a = static_cast<UInt64>(generator());
+                UInt64 b = static_cast<UInt64>(generator());
                 auto x = UInt128(a, b);
                 data[i] = x;
             }
@@ -397,8 +408,9 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
 
 StorageGenerate::StorageGenerate(const StorageID & table_id_, const ColumnsDescription & columns_,
     UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_)
-    : IStorage(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_), random_seed(random_seed_)
+    : IStorage(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_)
 {
+    random_seed = random_seed_ ? random_seed_ : randomSeed();
     setColumns(columns_);
 }
 
@@ -409,37 +421,24 @@ void registerStorageGenerate(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (engine_args.size() < 1)
-            throw Exception("Storage Generate requires at least one argument: "\
-                        " structure(, max_array_length, max_string_length, random_seed).",
+        if (engine_args.size() > 3)
+            throw Exception("Storage Generate requires at most three arguments: "\
+                        "max_array_length, max_string_length, random_seed.",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (engine_args.size() > 5)
-            throw Exception("Storage Generate requires at most five arguments: "\
-                        " structure, max_array_length, max_string_length, random_seed.",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        /// Parsing first argument as table structure and creating a sample block
-        std::string structure = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         UInt64 max_array_length_ = 10;
         UInt64 max_string_length_ = 10;
         UInt64 random_seed_ = 0; // zero for random
 
         /// Parsing second argument if present
+        if (engine_args.size() >= 1)
+            max_array_length_ = engine_args[0]->as<ASTLiteral &>().value.safeGet<UInt64>();
+
         if (engine_args.size() >= 2)
-            max_array_length_ = engine_args[1]->as<ASTLiteral &>().value.safeGet<UInt64>();
+            max_string_length_ = engine_args[1]->as<ASTLiteral &>().value.safeGet<UInt64>();
 
-        if (engine_args.size() >= 3)
-            max_string_length_ = engine_args[2]->as<ASTLiteral &>().value.safeGet<UInt64>();
-
-        if (engine_args.size() == 4)
-            random_seed_ = engine_args[3]->as<ASTLiteral &>().value.safeGet<UInt64>();
-
-        /// do not use predefined seed
-        if (!random_seed_)
-            random_seed_ = randomSeed();
-
+        if (engine_args.size() == 3)
+            random_seed_ = engine_args[2]->as<ASTLiteral &>().value.safeGet<UInt64>();
 
         return StorageGenerate::create(args.table_id, args.columns, max_array_length_, max_string_length_, random_seed_);
     });
