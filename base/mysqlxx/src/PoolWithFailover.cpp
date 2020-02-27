@@ -15,6 +15,7 @@ PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & cfg
                                    const unsigned max_connections, const size_t max_tries)
     : max_tries(max_tries)
 {
+    shareable = cfg.getBool(config_name + ".share_connection", false);
     if (cfg.has(config_name + ".replica"))
     {
         Poco::Util::AbstractConfiguration::Keys replica_keys;
@@ -48,7 +49,7 @@ PoolWithFailover::PoolWithFailover(const std::string & config_name, const unsign
 {}
 
 PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
-    : max_tries{other.max_tries}, config_name{other.config_name}
+    : max_tries{other.max_tries}, config_name{other.config_name}, shareable{other.shareable}
 {
     if (shareable)
     {
@@ -88,7 +89,7 @@ PoolWithFailover::Entry PoolWithFailover::Get()
 
                 try
                 {
-                    Entry entry = pool->tryGet();
+                    Entry entry = shareable ? pool->Get() : pool->tryGet();
 
                     if (!entry.isNull())
                     {

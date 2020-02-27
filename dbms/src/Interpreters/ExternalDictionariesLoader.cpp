@@ -28,4 +28,12 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
     bool dictionary_from_database = !repository_name.empty();
     return DictionaryFactory::instance().create(name, config, key_in_config, context, dictionary_from_database);
 }
+
+void ExternalDictionariesLoader::resetAll()
+{
+    #if USE_MYSQL
+        mysqlxx::PoolFactory::instance().reset();
+    #endif
+}
+
 }
