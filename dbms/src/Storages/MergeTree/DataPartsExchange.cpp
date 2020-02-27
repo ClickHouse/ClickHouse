@@ -34,7 +34,7 @@ namespace DataPartsExchange
 
 namespace
 {
-
+/// Supported protocol versions
 static constexpr auto REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE = 0;
 static constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = 1;
 static constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS = 2;
