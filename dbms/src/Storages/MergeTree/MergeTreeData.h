@@ -41,13 +41,6 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int INVALID_PARTITION_NAME;
-    extern const int NO_SUCH_DATA_PART;
-    extern const int DUPLICATE_DATA_PART;
-    extern const int DIRECTORY_ALREADY_EXISTS;
-    extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int TABLE_DIFFERS_TOO_MUCH;
 }
 
 

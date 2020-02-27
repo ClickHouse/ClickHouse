@@ -6,7 +6,7 @@ FROM mt
 ANY LEFT JOIN
 (
     SELECT 1 AS x
-) USING (x)
+) js2 USING (x)
 PREWHERE x IN (1) WHERE y = today();
 
 DROP TABLE mt;

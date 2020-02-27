@@ -80,11 +80,12 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int NOT_IMPLEMENTED;
     extern const int NO_ZOOKEEPER;
     extern const int INCORRECT_DATA;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int REPLICA_IS_ALREADY_EXIST;
-    extern const int NO_SUCH_REPLICA;
     extern const int NO_REPLICA_HAS_PART;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
@@ -99,16 +100,11 @@ namespace ErrorCodes
     extern const int TOO_MANY_RETRIES_TO_FETCH_PARTS;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int PARTITION_DOESNT_EXIST;
-    extern const int CHECKSUM_DOESNT_MATCH;
-    extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
-    extern const int UNEXPECTED_FILE_IN_DATA_PART;
-    extern const int NO_FILE_IN_DATA_PART;
     extern const int UNFINISHED;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int TOO_MANY_FETCHES;
     extern const int BAD_DATA_PART_NAME;
     extern const int PART_IS_TEMPORARILY_LOCKED;
-    extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int KEEPER_EXCEPTION;
     extern const int ALL_REPLICAS_LOST;
@@ -129,42 +125,6 @@ namespace ActionLocks
 static const auto QUEUE_UPDATE_ERROR_SLEEP_MS     = 1 * 1000;
 static const auto MERGE_SELECTING_SLEEP_MS        = 5 * 1000;
 static const auto MUTATIONS_FINALIZING_SLEEP_MS   = 1 * 1000;
-
-/** There are three places for each part, where it should be
-  * 1. In the RAM, data_parts, all_data_parts.
-  * 2. In the filesystem (FS), the directory with the data of the table.
-  * 3. in ZooKeeper (ZK).
-  *
-  * When adding a part, it must be added immediately to these three places.
-  * This is done like this
-  * - [FS] first write the part into a temporary directory on the filesystem;
-  * - [FS] rename the temporary part to the result on the filesystem;
-  * - [RAM] immediately afterwards add it to the `data_parts`, and remove from `data_parts` any parts covered by this one;
-  * - [RAM] also set the `Transaction` object, which in case of an exception (in next point),
-  *   rolls back the changes in `data_parts` (from the previous point) back;
-  * - [ZK] then send a transaction (multi) to add a part to ZooKeeper (and some more actions);
-  * - [FS, ZK] by the way, removing the covered (old) parts from filesystem, from ZooKeeper and from `all_data_parts`
-  *   is delayed, after a few minutes.
-  *
-  * There is no atomicity here.
-  * It could be possible to achieve atomicity using undo/redo logs and a flag in `DataPart` when it is completely ready.
-  * But it would be inconvenient - I would have to write undo/redo logs for each `Part` in ZK, and this would increase already large number of interactions.
-  *
-  * Instead, we are forced to work in a situation where at any time
-  *  (from another thread, or after server restart), there may be an unfinished transaction.
-  *  (note - for this the part should be in RAM)
-  * From these cases the most frequent one is when the part is already in the data_parts, but it's not yet in ZooKeeper.
-  * This case must be distinguished from the case where such a situation is achieved due to some kind of damage to the state.
-  *
-  * Do this with the threshold for the time.
-  * If the part is young enough, its lack in ZooKeeper will be perceived optimistically - as if it just did not have time to be added there
-  *  - as if the transaction has not yet been executed, but will soon be executed.
-  * And if the part is old, its absence in ZooKeeper will be perceived as an unfinished transaction that needs to be rolled back.
-  *
-  * PS. Perhaps it would be better to add a flag to the DataPart that a part is inserted into ZK.
-  * But here it's too easy to get confused with the consistency of this flag.
-  */
-extern const int MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER = 5 * 60;
 
 
 void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)

@@ -12,12 +12,11 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int FILE_DOESNT_EXIST;
     extern const int FILE_ALREADY_EXISTS;
     extern const int DIRECTORY_DOESNT_EXIST;
     extern const int CANNOT_DELETE_DIRECTORY;
-    extern const int CANNOT_SEEK_THROUGH_FILE;
-    extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
 
 

@@ -26,6 +26,7 @@ nav:
   - '命令行客户端接口': 'interfaces/cli.md'
   - '原生客户端接口 (TCP)': 'interfaces/tcp.md'
   - 'HTTP 客户端接口': 'interfaces/http.md'
+  - 'MySQL 客户端接口': 'interfaces/mysql.md'
   - '输入输出格式': 'interfaces/formats.md'
   - 'JDBC 驱动': 'interfaces/jdbc.md'
   - 'ODBC 驱动': 'interfaces/odbc.md'
@@ -69,6 +70,7 @@ nav:
 - '数据库引擎':
     - '介绍': 'database_engines/index.md'
     - 'MySQL': 'database_engines/mysql.md'
+    - 'Lazy': 'database_engines/lazy.md'
 
 - '表引擎':
   - '介绍': 'operations/table_engines/index.md'
@@ -183,6 +185,10 @@ nav:
   - '操作符': 'query_language/operators.md'
   - '语法说明': 'query_language/syntax.md'
 
+- 'Guides':
+  - 'Overview': 'guides/index.md'
+  - 'Applying CatBoost Models': 'guides/apply_catboost_model.md'
+
 - '运维':
   - '介绍': 'operations/index.md'
   - '环境要求': 'operations/requirements.md'
@@ -226,6 +232,7 @@ nav:
   - '如何在Linux中编译ClickHouse': 'development/build.md'
   - '如何在Mac OS X中编译ClickHouse': 'development/build_osx.md'
   - '如何在Linux中编译Mac OS X ClickHouse': 'development/build_cross_osx.md'
+  - '如何在Linux中编译AARCH64 (ARM64) ClickHouse': 'development/build_cross_arm.md'
   - '如何编写C++代码': 'development/style.md'
   - '如何运行ClickHouse测试': 'development/tests.md'
   - '使用的第三方库': 'development/contrib.md'

@@ -71,6 +71,7 @@ using LogAST = DebugASTLog<false>; /// set to true to enable logs
 
 namespace ErrorCodes
 {
+    extern const int UNKNOWN_TYPE_OF_AST_NODE;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int ILLEGAL_PREWHERE;
     extern const int LOGICAL_ERROR;
