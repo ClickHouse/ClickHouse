@@ -1,12 +1,13 @@
-# pull_request_rules:
-#   - name: Automatic merge on approval
-#     conditions:
-#       - "#approved-reviews-by>=1"
-#       - "#status-failure=0"
-#       - "base=master"
-#     actions:
-#       merge:
-#         method: merge
+pull_request_rules:
+  - name: Automatic merge on approval
+    conditions:
+      - "#approved-reviews-by>=1"
+      - "status-success=Marker check"
+      - "#status-failure=0"
+      - "base=master"
+    actions:
+      merge:
+        method: merge
 pull_request_rules:
   - name: Automatic merge for Dependabot pull requests
     conditions:
