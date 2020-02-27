@@ -116,10 +116,7 @@ namespace ErrorCodes
 }
 
 
-namespace
-{
-    const char * DELETE_ON_DESTROY_MARKER_PATH = "delete-on-destroy.txt";
-}
+const char * DELETE_ON_DESTROY_MARKER_PATH = "delete-on-destroy.txt";
 
 
 MergeTreeData::MergeTreeData(
@@ -3200,6 +3197,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
 
     LOG_DEBUG(log, "Cloning part " << fullPath(disk, src_part_path) << " to " << fullPath(disk, dst_part_path));
     localBackup(disk, src_part_path, dst_part_path);
+    disk->removeIfExists(dst_part_path + "/" + DELETE_ON_DESTROY_MARKER_PATH);
 
     auto dst_data_part = createPart(dst_part_name, dst_part_info, reservation->getDisk(), tmp_dst_part_name);
 
@@ -3285,6 +3283,8 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
 
         String backup_part_path = backup_path + relative_data_path + part->relative_path;
         localBackup(part->disk, part->getFullRelativePath(), backup_part_path);
+        part->disk->removeIfExists(backup_part_path + "/" + DELETE_ON_DESTROY_MARKER_PATH);
+
         part->is_frozen.store(true, std::memory_order_relaxed);
         ++parts_processed;
     }
