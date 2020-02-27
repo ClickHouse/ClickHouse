@@ -78,9 +78,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int READONLY;
     extern const int UNKNOWN_TYPE_OF_QUERY;
-    extern const int QUERY_IS_PROHIBITED;
 }
 
 

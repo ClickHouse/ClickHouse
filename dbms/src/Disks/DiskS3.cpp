@@ -25,8 +25,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int FILE_ALREADY_EXISTS;
-    extern const int FILE_DOESNT_EXIST;
     extern const int PATH_ACCESS_DENIED;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int CANNOT_SEEK_THROUGH_FILE;

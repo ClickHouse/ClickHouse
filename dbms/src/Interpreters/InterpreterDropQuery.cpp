@@ -18,14 +18,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TABLE_WAS_NOT_DROPPED;
     extern const int DATABASE_NOT_EMPTY;
-    extern const int UNKNOWN_DATABASE;
-    extern const int READONLY;
     extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_TABLE;
-    extern const int QUERY_IS_PROHIBITED;
     extern const int UNKNOWN_DICTIONARY;
 }
 

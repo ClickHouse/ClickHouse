@@ -27,6 +27,9 @@ static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int INCORRECT_FILE_NAME;
     extern const int SYNTAX_ERROR;

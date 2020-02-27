@@ -41,6 +41,7 @@ nav:
 - 'Движки баз данных':
     - 'Введение': 'database_engines/index.md'
     - 'MySQL': 'database_engines/mysql.md'
+    - 'Lazy': 'database_engines/lazy.md'
 
 - 'Движки таблиц':
   - 'Введение': 'operations/table_engines/index.md'
@@ -219,6 +220,7 @@ nav:
     - 'Введение': 'operations/utils/index.md'
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
+    - 'clickhouse-benchmark': 'operations/utils/clickhouse-benchmark.md'
 
 - 'Разработка':
   - 'hidden': 'development/index.md'
@@ -228,6 +230,7 @@ nav:
   - 'Как собрать ClickHouse на Linux': 'development/build.md'
   - 'Как собрать ClickHouse на Mac OS X': 'development/build_osx.md'
   - 'Как собрать ClickHouse на Linux для Mac OS X': 'development/build_cross_osx.md'
+  - 'Как собрать ClickHouse на Linux для AARCH64 (ARM64)': 'development/build_cross_arm.md'
   - 'Как писать код на C++': 'development/style.md'
   - 'Как запустить тесты': 'development/tests.md'
   - 'Сторонние библиотеки': 'development/contrib.md'

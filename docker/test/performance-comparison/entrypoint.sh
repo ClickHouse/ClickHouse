@@ -42,6 +42,8 @@ done
     echo
 ) | tee right-commit.txt
 
+(cd ch && git diff --name-only $SHA_TO_TEST $(git merge-base $SHA_TO_TEST master) -- dbms/tests/performance) | tee changed-tests.txt
+
 # Set python output encoding so that we can print queries with Russian letters.
 export PYTHONIOENCODING=utf-8
 
@@ -57,7 +59,18 @@ set -m
 time ../compare.sh 0 $ref_sha $PR_TO_TEST $SHA_TO_TEST 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
 set +m
 
-dmesg > dmesg.log
+# Stop the servers to free memory. Normally they are restarted before getting
+# the profile info, so they shouldn't use much, but if the comparison script
+# fails in the middle, this might not be the case.
+for i in {1..30}
+do
+    if ! killall clickhouse
+    then
+        break
+    fi
+done
 
-7z a /output/output.7z *.log *.tsv *.html *.txt *.rep *.svg
+dmesg -T > dmesg.log
+
+7z a /output/output.7z *.log *.tsv *.html *.txt *.rep *.svg {right,left}/db/preprocessed_configs
 cp compare.log /output

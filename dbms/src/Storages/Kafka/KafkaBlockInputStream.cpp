@@ -8,6 +8,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 KafkaBlockInputStream::KafkaBlockInputStream(
     StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix_)
     : storage(storage_)

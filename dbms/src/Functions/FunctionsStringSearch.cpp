@@ -14,6 +14,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
 /** Implementation details for functions of 'position' family depending on ASCII/UTF8 and case sensitiveness.
   */
 struct PositionCaseSensitiveASCII

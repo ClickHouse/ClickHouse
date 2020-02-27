@@ -15,8 +15,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_ELEMENT_IN_AST;
 }
 
 PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(

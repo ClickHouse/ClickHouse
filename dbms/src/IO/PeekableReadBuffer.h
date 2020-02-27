@@ -8,7 +8,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 /// Also allows to set checkpoint at some position in stream and come back to this position later.

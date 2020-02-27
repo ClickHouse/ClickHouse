@@ -14,16 +14,11 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int TYPE_MISMATCH;
     extern const int UNKNOWN_LOAD_BALANCING;
     extern const int UNKNOWN_OVERFLOW_MODE;
-    extern const int ILLEGAL_OVERFLOW_MODE;
     extern const int UNKNOWN_TOTALS_MODE;
-    extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int UNKNOWN_DISTRIBUTED_PRODUCT_MODE;
-    extern const int UNKNOWN_GLOBAL_SUBQUERIES_METHOD;
     extern const int UNKNOWN_JOIN;
-    extern const int UNKNOWN_LOG_LEVEL;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_SETTING;
