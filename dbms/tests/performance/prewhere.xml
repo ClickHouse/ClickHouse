@@ -14,12 +14,12 @@
 
 
     <preconditions>
-        <table_exists>default.hits_10m_single</table_exists>
+        <table_exists>test.hits</table_exists>
     </preconditions>
 
     <settings>
         <max_threads>1</max_threads>
     </settings>
 
-    <query>SELECT Title, URL FROM hits_10m_single PREWHERE WatchID % 2 = 1 WHERE UserID = 10000 FORMAT Null</query>
+    <query>SELECT Title, URL FROM test.hits PREWHERE WatchID % 2 = 1 WHERE UserID = 10000 FORMAT Null</query>
 </test>

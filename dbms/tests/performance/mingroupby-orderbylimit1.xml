@@ -15,7 +15,7 @@
         <substitution>
            <name>aggregationscale</name>
            <values>
-               <value>11111111</value>
+               <value>1111111</value>
                <value>11111</value>
            </values>
        </substitution>
