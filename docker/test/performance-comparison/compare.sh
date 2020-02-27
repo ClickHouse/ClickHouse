@@ -208,14 +208,21 @@ function run_tests
 
         grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
         grep ^client-time "$test_name-raw.tsv" | cut -f2- > "$test_name-client-time.tsv"
-        # this may be slow, run it in background
-        right/clickhouse local --file "$test_name-queries.tsv" --structure 'query text, run int, version UInt32, time float' --query "$(cat $script_dir/eqmed.sql)" > "$test_name-report.tsv" &
-
     done
 
     unset TIMEFORMAT
 
     wait
+}
+
+function analyze_queries
+{
+    # Build and analyze randomization distribution for all queries.
+    ls *-queries.tsv | xargs -n1 -I% basename % -queries.tsv | \
+        parallel --verbose right/clickhouse local --file "{}-queries.tsv" \
+            --structure "\"query text, run int, version UInt32, time float\"" \
+            --query "\"$(cat $script_dir/eqmed.sql)\"" \
+            ">" {}-report.tsv
 }
 
 function get_profiles
@@ -431,6 +438,9 @@ case "$stage" in
     ;&
 "get_profiles")
     time get_profiles
+    ;&
+"analyze_queries")
+    analyze_queries
     ;&
 "report")
     time report
