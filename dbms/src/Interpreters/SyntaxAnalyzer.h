@@ -89,7 +89,7 @@ public:
 private:
     const Context & context;
 
-    void rewriteAst(ASTPtr & query, const Settings & settings, Aliases & aliases) const;
+    void normalize(ASTPtr & query, const Settings & settings, Aliases & aliases) const;
 };
 
 }
