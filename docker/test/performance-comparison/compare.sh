@@ -4,6 +4,7 @@ set -o pipefail
 trap "exit" INT TERM
 trap "kill 0" EXIT
 
+stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 mkdir db0 ||:
@@ -160,17 +161,10 @@ function run_tests
 
     rm -v test-times.tsv ||:
 
-    # Why the ugly cut:
-    # 1) can't make --out-format='%n' work for deleted files, it outputs things
-    # like "deleted 1.xml";
-    # 2) the output is not tab separated, but at least it's fixed width, so I
-    # cut by characters.
-    changed_files=$(rsync --dry-run --dirs --checksum --delete --itemize-changes left/performance/ right/performance/ | cut -c13-)
-
     # FIXME remove some broken long tests
     rm right/performance/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
 
-    test_files=$(ls right/performance/*)
+    test_files=$(ls right/performance/*.xml)
 
     # FIXME a quick crutch to bring the run time down for the flappy tests --
     # if some performance tests xmls were changed in a PR, run only these ones.
@@ -186,7 +180,9 @@ function run_tests
     # Run only explicitly specified tests, if any
     if [ -v CHPC_TEST_GLOB ]
     then
-        test_files=$(ls right/performance/${CHPC_TEST_GLOB}.xml)
+        # I do want to expand the globs in the variable.
+        # shellcheck disable=SC2086
+        test_files=$(ls right/performance/$CHPC_TEST_GLOB.xml)
     fi
 
     # Run the tests.
@@ -199,8 +195,8 @@ function run_tests
         right/clickhouse client --port 9002 --query "select 1 format Null" \
             || { echo $test_name >> right-server-died.log ; restart ; continue ; }
 
-        test_name=$(basename $test ".xml")
-        echo test $test_name
+        test_name=$(basename "$test" ".xml")
+        echo test "$test_name"
 
         TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
         # the grep is to filter out set -x output and keep only time output
@@ -218,10 +214,10 @@ function run_tests
 function analyze_queries
 {
     # Build and analyze randomization distribution for all queries.
-    ls *-queries.tsv | xargs -n1 -I% basename % -queries.tsv | \
+    ls ./*-queries.tsv | xargs -n1 -I% basename % -queries.tsv | \
         parallel --verbose right/clickhouse local --file "{}-queries.tsv" \
             --structure "\"query text, run int, version UInt32, time float\"" \
-            --query "\"$(cat $script_dir/eqmed.sql)\"" \
+            --query "\"$(cat "$script_dir/eqmed.sql")\"" \
             ">" {}-report.tsv
 }
 
@@ -260,7 +256,7 @@ do
         | tr '\n' ', ' | sed 's/,$//' > "$x.columns"
 done
 
-rm *.rep *.svg test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
+rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
 
 right/clickhouse local --query "
 create table queries engine Memory as select
@@ -402,7 +398,7 @@ create table stacks engine File(TSV, 'stacks.rep') as
 IFS=$'\n'
 for query in $(cut -d'	' -f1 stacks.rep | sort | uniq)
 do
-    query_file=$(echo $query | cut -c-120 | sed 's/[/]/_/g')
+    query_file=$(echo "$query" | cut -c-120 | sed 's/[/]/_/g')
     grep -F "$query" stacks.rep \
         | cut -d'	' -f 2- \
         | tee "$query_file.stacks.rep" \
@@ -413,9 +409,9 @@ unset IFS
 
 # Remember that grep sets error code when nothing is found, hence the bayan
 # operator
-grep -m2 Exception:[^:] *-err.log | sed 's/:/\t/' > run-errors.tsv ||:
+grep -m2 'Exception:[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
 
-$script_dir/report.py > report.html
+"$script_dir/report.py" > report.html
 }
 
 case "$stage" in
