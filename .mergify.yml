@@ -38,21 +38,21 @@ pull_request_rules:
 pull_request_rules:
   - name: Automatic add pr-documentation label via description
     conditions:
-      - "body~=Documentation"
+      - "body~=- Documentation"
     actions:
       label:
         add: ["pr-documentation"]
 pull_request_rules:
   - name: Automatic add pr-feature label
     conditions:
-      - "body~=New Feature"
+      - "body~=- New Feature"
     actions:
       label:
         add: ["pr-feature", "doc-alert"]
 pull_request_rules:
   - name: Automatic add pr-bugfix label
     conditions:
-      - "body~=Bug Fix"
+      - "body~=- Bug Fix"
     actions:
       label:
         add: ["pr-bugfix", "no-docs-needed"]
@@ -80,7 +80,7 @@ pull_request_rules:
 pull_request_rules:
   - name: Automatic add pr-non-significant label
     conditions:
-      - "body~=Non-significant"
+      - "body~=- Non-significant"
     actions:
       label:
         add: ["pr-non-significant", "no-docs-needed"]
