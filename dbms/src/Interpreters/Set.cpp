@@ -544,8 +544,9 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     auto compare = [](const IColumn & lhs, const ValueWithInfinity & rhs, size_t row)
     {
         auto type = rhs.getType();
+        /// Return inverted infinity sign, because in 'lhs' all values are finite.
         if (type != ValueWithInfinity::NORMAL)
-            return static_cast<int>(type);
+            return -static_cast<int>(type);
 
         return lhs.compareAt(row, 0, rhs.getColumnIfFinite(), 1);
     };
@@ -599,7 +600,7 @@ void ValueWithInfinity::update(const Field & x)
 const IColumn & ValueWithInfinity::getColumnIfFinite() const
 {
     if (type != NORMAL)
-        throw Exception("Tring to get column of infinite type", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Trying to get column of infinite type", ErrorCodes::LOGICAL_ERROR);
     return *column;
 }
 
