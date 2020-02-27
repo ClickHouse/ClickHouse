@@ -194,7 +194,7 @@ public:
     };
 
     ValueWithInfinity(MutableColumnPtr && column_)
-        : column(std::move(column_)) {}
+        : column(std::move(column_)), type(NORMAL) {}
 
     void update(const Field & x);
     void update(Type type_) { type = type_; }
