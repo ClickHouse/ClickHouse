@@ -30,16 +30,14 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
 
     client1.send('CREATE TABLE test.dst(count UInt64) Engine=MergeTree ORDER BY tuple()')
     client1.expect(prompt)
-    client1.send('CREATE TABLE test.mt(a Int32) ENGINE=MergeTree ORDER BY tuple()')
+    client1.send('CREATE TABLE test.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()')
     client1.expect(prompt)
-    client1.send("CREATE WINDOW VIEW test.wv TO test.dst AS SELECT count(a) AS count FROM test.mt GROUP BY HOP(now(), INTERVAL '1' SECOND, INTERVAL '2' SECOND) AS wid;")
+    client1.send("CREATE WINDOW VIEW test.wv ENGINE=MergeTree ORDER BY tuple() WATERMARK INTERVAL '1' SECOND AS SELECT count(a) AS count FROM test.mt GROUP BY HOP(timestamp, INTERVAL '1' SECOND, INTERVAL '1' SECOND) AS wid;")
     client1.expect(prompt)
     
     client1.send('WATCH test.wv')
+    client2.send('INSERT INTO test.mt VALUES (1, now())')
     client1.expect('Progress: 0.00 rows.*\)')
-    client2.send('INSERT INTO test.mt VALUES (1)')
-    client1.expect('1' + end_of_block)
-    client1.expect('Progress: 1.00 rows.*\)')
     client1.expect('1' + end_of_block)
     client1.expect('Progress: 1.00 rows.*\)')
 

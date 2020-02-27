@@ -368,7 +368,7 @@ inline void StorageWindowView::cleanCache()
 
 inline void StorageWindowView::fire(UInt32 timestamp_)
 {
-    if (target_table_id.empty() || watch_streams.empty())
+    if (target_table_id.empty() && watch_streams.empty())
         return;
 
     auto in_stream = getNewBlocksInputStreamPtr(timestamp_);
@@ -839,7 +839,7 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
     {
         BlocksListPtr new_mergeable_blocks = std::make_shared<BlocksList>();
         while (Block block_ = source_stream->read())
-                new_mergeable_blocks->push_back(std::move(block_));
+            new_mergeable_blocks->push_back(std::move(block_));
 
         std::unique_lock lock(window_view.mutex);
         window_view.getMergeableBlocksList()->push_back(new_mergeable_blocks);
