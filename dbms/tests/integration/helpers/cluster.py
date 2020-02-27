@@ -686,6 +686,9 @@ class ClickHouseInstance:
         self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
         time.sleep(stop_start_wait_sec)
         self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
+        # wait start
+        from helpers.test_tools import assert_eq_with_retry
+        assert_eq_with_retry(self, "select 1", "1", retry_count=int(stop_start_wait_sec / 0.5), sleep_time=0.5)
 
     def exec_in_container(self, cmd, detach=False, **kwargs):
         container = self.get_docker_handle()
