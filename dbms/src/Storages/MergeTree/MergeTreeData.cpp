@@ -3592,7 +3592,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
                                                                                 const MergeTreePartInfo & dst_part_info)
 {
     /// Check that the storage policy contains the disk where the src_part is located.
-    
     bool does_storage_policy_allow_same_disk = false;
     for (const DiskPtr & disk : getStoragePolicy()->getDisks())
     {
