@@ -340,6 +340,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->hosts = std::move(hosts);
     query->add_hosts = std::move(add_hosts);
     query->remove_hosts = std::move(remove_hosts);
+    query->default_roles = std::move(default_roles);
     query->profile = std::move(profile);
 
     return true;

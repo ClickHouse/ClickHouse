@@ -35,7 +35,7 @@ namespace
 
         const GenericRoleSet * default_roles = nullptr;
         std::optional<GenericRoleSet> temp_role_set;
-        if (default_roles)
+        if (default_roles_from_query)
             default_roles = &*default_roles_from_query;
         else if (query.default_roles)
             default_roles = &temp_role_set.emplace(*query.default_roles);
