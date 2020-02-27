@@ -59,6 +59,17 @@ set -m
 time ../compare.sh 0 $ref_sha $PR_TO_TEST $SHA_TO_TEST 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
 set +m
 
+# Stop the servers to free memory. Normally they are restarted before getting
+# the profile info, so they shouldn't use much, but if the comparison script
+# fails in the middle, this might not be the case.
+for i in {1..30}
+do
+    if ! killall clickhouse
+    then
+        break
+    fi
+done
+
 dmesg -T > dmesg.log
 
 7z a /output/output.7z *.log *.tsv *.html *.txt *.rep *.svg {right,left}/db/preprocessed_configs
