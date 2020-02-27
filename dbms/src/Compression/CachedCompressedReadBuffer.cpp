@@ -72,11 +72,18 @@ bool CachedCompressedReadBuffer::nextImpl()
 }
 
 
+CachedCompressedReadBuffer::CachedCompressedReadBuffer(std::unique_ptr<ReadBufferFromFileBase> file_in_, UncompressedCache * cache_)
+    : ReadBuffer(nullptr, 0), cache(cache_), file_in(std::move(file_in_)), path(file_in->getFileName()), file_pos(0)
+{
+    compressed_in = file_in.get();
+}
+
+
 CachedCompressedReadBuffer::CachedCompressedReadBuffer(
     const std::string & path_, UncompressedCache * cache_,
     size_t estimated_size_, size_t aio_threshold_, size_t mmap_threshold_,
     size_t buf_size_)
-    : ReadBuffer(nullptr, 0), path(path_), cache(cache_), buf_size(buf_size_), estimated_size(estimated_size_),
+    : ReadBuffer(nullptr, 0), cache(cache_), path(path_), buf_size(buf_size_), estimated_size(estimated_size_),
         aio_threshold(aio_threshold_), mmap_threshold(mmap_threshold_), file_pos(0)
 {
 }

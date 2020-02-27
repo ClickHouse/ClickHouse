@@ -27,18 +27,22 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     : IMergeTreeReader(data_part_, columns_,
         uncompressed_cache_, mark_cache_, mark_ranges_,
         settings_, avg_value_size_hints_)
-    , marks_loader(mark_cache,
-        data_part->index_granularity_info.getMarksFilePath(path + MergeTreeDataPartCompact::DATA_FILE_NAME),
+    , marks_loader(
+        data_part->disk,
+        mark_cache,
+        data_part->index_granularity_info.getMarksFilePath(data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME),
         data_part->getMarksCount(), data_part->index_granularity_info,
         settings.save_marks_in_cache, data_part->getColumns().size())
 {
     size_t buffer_size = settings.max_read_buffer_size;
-    const String full_data_path = path + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
+    const String full_data_path = data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
 
     if (uncompressed_cache)
     {
-        auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            full_data_path, uncompressed_cache, 0, settings.min_bytes_to_use_direct_io, buffer_size);
+        auto buffer =
+            std::make_unique<CachedCompressedReadBuffer>(
+                data_part->disk->readFile(full_data_path, buffer_size, 0, settings.min_bytes_to_use_direct_io, 0),
+                uncompressed_cache);
 
         if (profile_callback_)
             buffer->setProfileCallback(profile_callback_, clock_type_);
@@ -48,8 +52,9 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     }
     else
     {
-        auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            full_data_path, 0, settings.min_bytes_to_use_direct_io, buffer_size);
+        auto buffer =
+            std::make_unique<CompressedReadBufferFromFile>(
+                data_part->disk->readFile(full_data_path, buffer_size, 0, settings.min_bytes_to_use_direct_io, 0));
 
         if (profile_callback_)
             buffer->setProfileCallback(profile_callback_, clock_type_);

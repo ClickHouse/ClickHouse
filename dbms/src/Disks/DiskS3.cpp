@@ -157,19 +157,36 @@ namespace
 
         off_t seek(off_t offset_, int whence) override
         {
-            if (whence != SEEK_SET)
-                throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+            if (whence == SEEK_CUR)
+            {
+                /// If position within current working buffer - shift pos.
+                if (working_buffer.size() && size_t(getPosition() + offset_) < absolute_position)
+                {
+                    pos += offset_;
+                    return getPosition();
+                }
+                else
+                {
+                    absolute_position += offset_;
+                }
+            }
+            else if (whence == SEEK_SET)
+            {
+                /// If position within current working buffer - shift pos.
+                if (working_buffer.size() && size_t(offset_) >= absolute_position - working_buffer.size()
+                    && size_t(offset_) < absolute_position)
+                {
+                    pos = working_buffer.end() - (absolute_position - offset_);
+                    return getPosition();
+                }
+                else
+                {
+                    absolute_position = offset_;
+                }
+            }
+            else
+                throw Exception("Only SEEK_SET or SEEK_CUR modes are allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
-            if (offset_ < 0 || metadata.total_size <= static_cast<UInt64>(offset_))
-                throw Exception(
-                    "Seek position is out of bounds. "
-                    "Offset: "
-                        + std::to_string(offset_) + ", Max: " + std::to_string(metadata.total_size),
-                    ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
-
-            absolute_position = offset_;
-
-            /// TODO: Do not re-initialize buffer if current position within working buffer.
             current_buf = initialize();
             pos = working_buffer.end();
 
@@ -187,8 +204,7 @@ namespace
             for (UInt32 i = 0; i < metadata.s3_objects_count; ++i)
             {
                 current_buf_idx = i;
-                auto path = metadata.s3_objects[i].first;
-                auto size = metadata.s3_objects[i].second;
+                auto [path, size] = metadata.s3_objects[i];
                 if (size > offset)
                 {
                     auto buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, path, buf_size);
@@ -324,6 +340,8 @@ public:
         else
             return folder_path + iter.name();
     }
+
+    String name() const override { return iter.name(); }
 
 private:
     Poco::DirectoryIterator iter;
@@ -547,7 +565,7 @@ void DiskS3::removeRecursive(const String & path)
     Poco::File file(metadata_path + path);
     if (file.isFile())
     {
-        remove(metadata_path + path);
+        remove(path);
     }
     else
     {
