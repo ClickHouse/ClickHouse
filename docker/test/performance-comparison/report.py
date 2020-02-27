@@ -10,8 +10,12 @@ import traceback
 report_errors = []
 status = 'success'
 message = 'See the report'
-long_tests = 0
-run_errors = 0
+message_array = []
+error_tests = 0
+slow_average_tests = 0
+faster_queries = 0
+slower_queries = 0
+unstable_queries = 0
 
 print("""
 <!DOCTYPE html>
@@ -138,12 +142,15 @@ def print_changes():
     if not rows:
         return
 
+    global faster_queries, slower_queries
+
     print(tableStart('Changes in performance'))
     columns = [
         'Old, s',                                                        # 0
         'New, s',                                                        # 1
         'Relative difference (new&nbsp;-&nbsp;old)/old',                 # 2
-        'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%]', # 3
+        'Randomization distribution quantiles \
+            [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]',                          # 3
         'Test',                                                          # 4
         'Query',                                                         # 5
         ]
@@ -152,9 +159,11 @@ def print_changes():
 
     attrs = ['' for c in columns]
     for row in rows:
-        if float(row[2]) > 0.:
+        if float(row[2]) < 0.:
+            faster_queries += 1
             attrs[2] = 'style="background: #adbdff"'
         else:
+            slower_queries += 1
             attrs[2] = 'style="background: #ffb0a0"'
 
         print(tableRow(row, attrs))
@@ -163,26 +172,32 @@ def print_changes():
 
 print_changes()
 
+slow_on_client_rows = tsvRows('slow-on-client.tsv')
+error_tests += len(slow_on_client_rows)
 printSimpleTable('Slow on client',
     ['Client time, s', 'Server time, s', 'Ratio', 'Query'],
-    tsvRows('slow-on-client.tsv'))
+    slow_on_client_rows)
 
+unstable_rows = tsvRows('unstable-queries.tsv')
+unstable_queries += len(unstable_rows)
 printSimpleTable('Unstable queries',
     [
         'Old, s', 'New, s', 'Relative difference (new&nbsp;-&nbsp;old)/old',
-        'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%]',
+        'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]',
         'Test', 'Query'
     ],
-    tsvRows('unstable-queries.tsv'))
+    unstable_rows)
 
-printSimpleTable('Run errors', ['Test', 'Error'], tsvRows('run-errors.tsv'))
+run_error_rows = tsvRows('run-errors.tsv')
+error_tests += len(run_error_rows)
+printSimpleTable('Run errors', ['Test', 'Error'], run_error_rows)
 
 printSimpleTable('Tests with most unstable queries',
     ['Test', 'Unstable', 'Changed perf', 'Total not OK'],
     tsvRows('bad-tests.tsv'))
 
 def print_test_times():
-    global long_tests
+    global slow_average_tests
     rows = tsvRows('test-times.tsv')
     if not rows:
         return
@@ -203,8 +218,8 @@ def print_test_times():
 
     attrs = ['' for c in columns]
     for r in rows:
-        if float(r[6]) > 10:
-            long_tests += 1
+        if float(r[6]) > 30:
+            slow_average_tests += 1
             attrs[6] = 'style="background: #ffb0a0"'
         else:
             attrs[6] = ''
@@ -230,6 +245,26 @@ print("""
 </body>
 </html>
 """)
+
+if slow_average_tests:
+    #status = 'failure'
+    message_array.append(str(slow_average_tests) + ' too long')
+
+if faster_queries:
+    message_array.append(str(faster_queries) + ' faster')
+
+if slower_queries:
+    message_array.append(str(slower_queries) + ' slower')
+
+if unstable_queries:
+    message_array.append(str(unstable_queries) + ' unstable')
+
+error_tests += slow_average_tests
+if error_tests:
+    message_array.append(str(error_tests) + ' errors')
+
+if message_array:
+    message = ', '.join(message_array)
 
 if report_errors:
     status = 'failure'
