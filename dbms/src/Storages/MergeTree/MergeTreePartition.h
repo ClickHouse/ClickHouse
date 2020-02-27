@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <Core/Row.h>
+#include <Core/Types.h>
+#include <Disks/IDisk.h>
 #include <IO/WriteBuffer.h>
 
 namespace DB
@@ -30,9 +31,9 @@ public:
 
     void serializeText(const MergeTreeData & storage, WriteBuffer & out, const FormatSettings & format_settings) const;
 
-    void load(const MergeTreeData & storage, const String & part_path);
-    void store(const MergeTreeData & storage, const String & part_path, MergeTreeDataPartChecksums & checksums) const;
-    void store(const Block & partition_key_sample, const String & part_path, MergeTreeDataPartChecksums & checksums) const;
+    void load(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path);
+    void store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const;
+    void store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const;
 
     void assign(const MergeTreePartition & other) { value.assign(other.value); }
 };

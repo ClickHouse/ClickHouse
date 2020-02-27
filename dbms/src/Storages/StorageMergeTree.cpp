@@ -95,7 +95,8 @@ void StorageMergeTree::startup()
 
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup.restart();
-    merging_mutating_task_handle = global_context.getBackgroundPool().addTask([this] { return mergeMutateTask(); });
+    if (!getSettings()->disable_background_merges)
+        merging_mutating_task_handle = global_context.getBackgroundPool().addTask([this] { return mergeMutateTask(); });
     if (areBackgroundMovesNeeded())
         moving_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
 }
@@ -417,7 +418,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See loadMutations().
     auto disk = storage_policy->getAnyDisk();
-    MergeTreeMutationEntry entry(commands, getFullPathOnDisk(disk), insert_increment.get());
+    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get());
     String file_name;
     Int64 version;
     {
@@ -558,22 +559,20 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 
 void StorageMergeTree::loadMutations()
 {
-    Poco::DirectoryIterator end;
-    const auto full_paths = getDataPaths();
-    for (const String & full_path : full_paths)
+    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
     {
-        for (auto it = Poco::DirectoryIterator(full_path); it != end; ++it)
+        for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
         {
-            if (startsWith(it.name(), "mutation_"))
+            if (startsWith(it->name(), "mutation_"))
             {
-                MergeTreeMutationEntry entry(full_path, it.name());
+                MergeTreeMutationEntry entry(disk, it->path(), it->name());
                 Int64 block_number = entry.block_number;
-                auto insertion = current_mutations_by_id.emplace(it.name(), std::move(entry));
+                auto insertion = current_mutations_by_id.emplace(it->name(), std::move(entry));
                 current_mutations_by_version.emplace(block_number, insertion.first->second);
             }
-            else if (startsWith(it.name(), "tmp_mutation_"))
+            else if (startsWith(it->name(), "tmp_mutation_"))
             {
-                it->remove();
+                disk->remove(it->path());
             }
         }
     }

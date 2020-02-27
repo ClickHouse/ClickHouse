@@ -67,6 +67,8 @@ public:
             return dir_path + iter.name();
     }
 
+    String name() const override { return iter.name(); }
+
 private:
     String dir_path;
     Poco::DirectoryIterator iter;

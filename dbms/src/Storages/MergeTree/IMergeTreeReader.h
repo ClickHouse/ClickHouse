@@ -59,8 +59,6 @@ protected:
     ValueSizeMap avg_value_size_hints;
     /// Stores states for IDataType::deserializeBinaryBulk
     DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map;
-    /// Path to the directory containing the part
-    String path;
 
     /// Columns that are read.
     NamesAndTypesList columns;

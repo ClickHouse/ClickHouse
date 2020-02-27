@@ -162,6 +162,9 @@ public:
     /// Path to the file that the iterator currently points to.
     virtual String path() const = 0;
 
+    /// Name of the file that the iterator currently points to.
+    virtual String name() const = 0;
+
     virtual ~IDiskDirectoryIterator() = default;
 };
 
