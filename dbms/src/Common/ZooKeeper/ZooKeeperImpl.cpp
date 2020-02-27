@@ -846,8 +846,8 @@ ZooKeeper::ZooKeeper(
     {
         ACL acl;
         acl.permissions = ACL::All;
-        acl.scheme = "auth";
-        acl.id = "";
+        acl.scheme = auth_scheme;
+        acl.id = auth_data;
         default_acls.emplace_back(std::move(acl));
     }
 
