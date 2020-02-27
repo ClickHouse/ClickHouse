@@ -63,7 +63,7 @@ void updateQuotaFromQueryImpl(Quota & quota, const ASTCreateQuotaQuery & query, 
 
         const GenericRoleSet * roles = nullptr;
         std::optional<GenericRoleSet> temp_role_set;
-        if (roles)
+        if (roles_from_query)
             roles = &*roles_from_query;
         else if (query.roles)
             roles = &temp_role_set.emplace(*query.roles);
