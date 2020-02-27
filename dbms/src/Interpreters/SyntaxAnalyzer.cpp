@@ -622,8 +622,9 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & s
     }
 }
 
-void replaceJoinedTable(const ASTTablesInSelectQueryElement * join)
+void replaceJoinedTable(const ASTSelectQuery & select_query)
 {
+    const ASTTablesInSelectQueryElement * join = select_query.join();
     if (!join || !join->table_expression)
         return;
 
@@ -649,28 +650,22 @@ void replaceJoinedTable(const ASTTablesInSelectQueryElement * join)
     }
 }
 
-std::vector<const ASTFunction *> getAggregates(const ASTPtr & query)
+std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
-    if (const auto * select_query = query->as<ASTSelectQuery>())
-    {
-        /// There can not be aggregate functions inside the WHERE and PREWHERE.
-        if (select_query->where())
-            assertNoAggregates(select_query->where(), "in WHERE");
-        if (select_query->prewhere())
-            assertNoAggregates(select_query->prewhere(), "in PREWHERE");
+    /// There can not be aggregate functions inside the WHERE and PREWHERE.
+    if (select_query.where())
+        assertNoAggregates(select_query.where(), "in WHERE");
+    if (select_query.prewhere())
+        assertNoAggregates(select_query.prewhere(), "in PREWHERE");
 
-        GetAggregatesVisitor::Data data;
-        GetAggregatesVisitor(data).visit(query);
+    GetAggregatesVisitor::Data data;
+    GetAggregatesVisitor(data).visit(query);
 
-        /// There can not be other aggregate functions within the aggregate functions.
-        for (const ASTFunction * node : data.aggregates)
-            for (auto & arg : node->arguments->children)
-                assertNoAggregates(arg, "inside another aggregate function");
-        return data.aggregates;
-    }
-    else
-        assertNoAggregates(query, "in wrong place");
-    return {};
+    /// There can not be other aggregate functions within the aggregate functions.
+    for (const ASTFunction * node : data.aggregates)
+        for (auto & arg : node->arguments->children)
+            assertNoAggregates(arg, "inside another aggregate function");
+    return data.aggregates;
 }
 
 }
@@ -879,8 +874,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         renameDuplicatedColumns(select_query);
 
     if (settings.enable_optimize_predicate_expression)
-        if (const ASTTablesInSelectQueryElement * table_join_node = select_query->join())
-            replaceJoinedTable(table_join_node);
+        replaceJoinedTable(*select_query);
 
     NamesAndTypesList & columns_from_joined_table = result.analyzed_join->columns_from_joined_table;
     std::vector<TableWithColumnNames> tables_with_columns =
@@ -900,7 +894,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     /// Optimizes logical expressions.
     LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
 
-    normalize(query, settings, result.aliases);
+    normalize(query, result.aliases, settings);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
@@ -937,7 +931,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
     }
 
-    result.aggregates = getAggregates(query);
+    result.aggregates = getAggregates(query, *select_query);
     result.collectUsedColumns(query, {});
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
@@ -957,19 +951,19 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
         collectSourceColumns(storage->getColumns(), result.source_columns, false);
     removeDuplicateColumns(result.source_columns);
 
-    normalize(query, settings, result.aliases);
+    normalize(query, result.aliases, settings);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
     executeScalarSubqueries(query, context, 0, result.scalars);
 
     optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
-    result.aggregates = getAggregates(query);
+    assertNoAggregates(query, "in wrong place");
     result.collectUsedColumns(query, {});
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
-void SyntaxAnalyzer::normalize(ASTPtr & query, const Settings & settings, Aliases & aliases) const
+void SyntaxAnalyzer::normalize(ASTPtr & query, Aliases & aliases, const Settings & settings) const
 {
     CustomizeFunctionsVisitor::Data data{settings.count_distinct_implementation};
     CustomizeFunctionsVisitor(data).visit(query);
