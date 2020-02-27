@@ -22,6 +22,11 @@
 #include "IDictionary.h"
 #include "IDictionarySource.h"
 
+namespace CurrentMetrics
+{
+    extern const Metric CacheDictionaryUpdateQueueSize;
+}
+
 
 namespace DB
 {
@@ -364,6 +369,9 @@ private:
 
         std::atomic<bool> is_done{false};
         std::exception_ptr current_exception{nullptr};
+
+        /// While UpdateUnit is alive, it is accounted in update_queue size.
+        CurrentMetrics::Increment alive_update_unit{CurrentMetrics::CacheDictionaryUpdateQueueSize};
     };
 
     using UpdateUnitPtr = std::shared_ptr<UpdateUnit>;
