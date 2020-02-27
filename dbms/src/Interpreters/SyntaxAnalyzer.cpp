@@ -118,6 +118,41 @@ std::vector<TableWithColumnNames> getTablesWithColumns(const std::vector<const A
     return tables_with_columns;
 }
 
+std::vector<TableWithColumnNames> getTablesWithColumns(const ASTSelectQuery & select_query, StoragePtr storage, const Context & context,
+                                                       const NamesAndTypesList & source_columns,
+                                                       NamesAndTypesList & columns_from_joined_table)
+{
+    std::vector<TableWithColumnNames> tables_with_columns;
+
+    std::vector<const ASTTableExpression *> table_expressions = getTableExpressions(select_query);
+    tables_with_columns = getTablesWithColumns(table_expressions, context);
+
+    if (tables_with_columns.empty())
+    {
+        if (storage)
+        {
+            const ColumnsDescription & storage_columns = storage->getColumns();
+            tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, storage_columns.getOrdinary().getNames());
+            auto & table = tables_with_columns.back();
+            table.addHiddenColumns(storage_columns.getMaterialized());
+            table.addHiddenColumns(storage_columns.getAliases());
+            table.addHiddenColumns(storage_columns.getVirtuals());
+        }
+        else
+        {
+            Names columns;
+            columns.reserve(source_columns.size());
+            for (const auto & column : source_columns)
+                columns.push_back(column.name);
+            tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, columns);
+        }
+    }
+
+    if (table_expressions.size() > 1)
+        columns_from_joined_table = getColumnsFromTableExpression(*table_expressions[1], context);
+
+    return tables_with_columns;
+}
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
 /// Expand asterisks and qualified asterisks with column names.
@@ -462,6 +497,15 @@ void optimizeUsing(const ASTSelectQuery * select_query)
         expression_list = uniq_expressions_list;
 }
 
+void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_miltiif)
+{
+    /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
+    OptimizeIfWithConstantConditionVisitor(aliases).visit(query);
+
+    if (if_chain_to_miltiif)
+        OptimizeIfChainsVisitor().visit(query);
+}
+
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
                            const NamesAndTypesList & source_columns, const NameSet & source_columns_set)
 {
@@ -800,7 +844,6 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, const NamesA
     required_source_columns.swap(source_columns);
 }
 
-
 SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     ASTPtr & query,
     const NamesAndTypesList & source_columns,
@@ -831,60 +874,33 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     if (storage)
         collectSourceColumns(storage->getColumns(), result.source_columns, true);
     NameSet source_columns_set = removeDuplicateColumns(result.source_columns);
-    std::vector<TableWithColumnNames> tables_with_columns;
 
+    if (remove_duplicates)
+        renameDuplicatedColumns(select_query);
+
+    if (settings.enable_optimize_predicate_expression)
+        if (const ASTTablesInSelectQueryElement * table_join_node = select_query->join())
+            replaceJoinedTable(table_join_node);
+
+    NamesAndTypesList & columns_from_joined_table = result.analyzed_join->columns_from_joined_table;
+    std::vector<TableWithColumnNames> tables_with_columns =
+        getTablesWithColumns(*select_query, storage, context, result.source_columns, columns_from_joined_table);
+
+    if (columns_from_joined_table.size())
     {
-        if (remove_duplicates)
-            renameDuplicatedColumns(select_query);
-
-        const ASTTablesInSelectQueryElement * table_join_node = select_query->join();
-        if (table_join_node)
-        {
-            if (settings.enable_optimize_predicate_expression)
-                replaceJoinedTable(table_join_node);
-        }
-
-        std::vector<const ASTTableExpression *> table_expressions = getTableExpressions(*select_query);
-        tables_with_columns = getTablesWithColumns(table_expressions, context);
-
-        if (tables_with_columns.empty())
-        {
-            if (storage)
-            {
-                const ColumnsDescription & storage_columns = storage->getColumns();
-                tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, storage_columns.getOrdinary().getNames());
-                auto & table = tables_with_columns.back();
-                table.addHiddenColumns(storage_columns.getMaterialized());
-                table.addHiddenColumns(storage_columns.getAliases());
-                table.addHiddenColumns(storage_columns.getVirtuals());
-            }
-            else
-            {
-                Names columns;
-                columns.reserve(result.source_columns.size());
-                for (const auto & column : result.source_columns)
-                    columns.push_back(column.name);
-                tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, columns);
-            }
-        }
-
-        if (table_expressions.size() > 1)
-        {
-            result.analyzed_join->columns_from_joined_table = getColumnsFromTableExpression(*table_expressions[1], context);
-            result.analyzed_join->deduplicateAndQualifyColumnNames(
-                source_columns_set, tables_with_columns[1].table.getQualifiedNamePrefix());
-        }
-
-        translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
-
-        /// Rewrite IN and/or JOIN for distributed tables according to distributed_product_mode setting.
-        InJoinSubqueriesPreprocessor(context).visit(query);
-
-        /// Optimizes logical expressions.
-        LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
+        result.analyzed_join->deduplicateAndQualifyColumnNames(
+            source_columns_set, tables_with_columns[1].table.getQualifiedNamePrefix());
     }
 
-    rewriteAst(query, settings, result.aliases);
+    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
+
+    /// Rewrite IN and/or JOIN for distributed tables according to distributed_product_mode setting.
+    InJoinSubqueriesPreprocessor(context).visit(query);
+
+    /// Optimizes logical expressions.
+    LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
+
+    normalize(query, settings, result.aliases);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
@@ -896,6 +912,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     executeScalarSubqueries(query, context, subquery_depth, result.scalars);
 
     {
+        optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
+
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
 
@@ -939,17 +957,19 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
         collectSourceColumns(storage->getColumns(), result.source_columns, false);
     removeDuplicateColumns(result.source_columns);
 
-    rewriteAst(query, settings, result.aliases);
+    normalize(query, settings, result.aliases);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
     executeScalarSubqueries(query, context, 0, result.scalars);
+
+    optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
     result.aggregates = getAggregates(query);
     result.collectUsedColumns(query, {});
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
-void SyntaxAnalyzer::rewriteAst(ASTPtr & query, const Settings & settings, Aliases & aliases) const
+void SyntaxAnalyzer::normalize(ASTPtr & query, const Settings & settings, Aliases & aliases) const
 {
     CustomizeFunctionsVisitor::Data data{settings.count_distinct_implementation};
     CustomizeFunctionsVisitor(data).visit(query);
@@ -965,12 +985,6 @@ void SyntaxAnalyzer::rewriteAst(ASTPtr & query, const Settings & settings, Alias
     /// Common subexpression elimination. Rewrite rules.
     QueryNormalizer::Data normalizer_data(aliases, settings);
     QueryNormalizer(normalizer_data).visit(query);
-
-    /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
-    OptimizeIfWithConstantConditionVisitor(aliases).visit(query);
-
-    if (settings.optimize_if_chain_to_miltiif)
-        OptimizeIfChainsVisitor().visit(query);
 }
 
 }
