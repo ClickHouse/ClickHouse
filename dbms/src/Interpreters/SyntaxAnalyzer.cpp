@@ -123,10 +123,10 @@ std::vector<TableWithColumnNames> getTablesWithColumns(const std::vector<const A
 /// Expand asterisks and qualified asterisks with column names.
 /// There would be columns in normal form & column aliases after translation. Column & column alias would be normalized in QueryNormalizer.
 void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query, const NameSet & source_columns_set,
-                             std::vector<TableWithColumnNames> && tables_with_columns)
+                             std::vector<TableWithColumnNames> & tables_with_columns)
 {
     LogAST log;
-    TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, std::move(tables_with_columns));
+    TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns);
     TranslateQualifiedNamesVisitor visitor(visitor_data, log.stream());
     visitor.visit(query);
 
@@ -875,7 +875,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
                 source_columns_set, tables_with_columns[1].table.getQualifiedNamePrefix());
         }
 
-        translateQualifiedNames(query, *select_query, source_columns_set, std::move(tables_with_columns));
+        translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
 
         /// Rewrite IN and/or JOIN for distributed tables according to distributed_product_mode setting.
         InJoinSubqueriesPreprocessor(context).visit(query);
