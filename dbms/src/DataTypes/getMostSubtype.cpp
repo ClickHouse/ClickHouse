@@ -18,7 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
 extern const int NO_COMMON_TYPE;
 }
 

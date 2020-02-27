@@ -8,6 +8,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_TYPE_OF_FIELD;
+}
 
 /// Collapses the same rows with the opposite sign roughly like CollapsingSortedBlockInputStream.
 /// Outputs the rows in random order (the input streams must still be ordered).

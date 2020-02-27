@@ -9,7 +9,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_GRANT;
-    extern const int LOGICAL_ERROR;
 }
 
 

@@ -6,6 +6,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CURRENT_WRITE_BUFFER_IS_EXHAUSTED;
     extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
     extern const int CANNOT_CREATE_IO_BUFFER;
 }

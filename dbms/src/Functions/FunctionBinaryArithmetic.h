@@ -47,7 +47,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DECIMAL_OVERFLOW;
     extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES;
-    extern const int ILLEGAL_DIVISION;
 }
 
 

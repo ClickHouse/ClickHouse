@@ -12,6 +12,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 /// inspired by https://github.com/cyb70289/utf8/
 struct ValidUTF8Impl
 {

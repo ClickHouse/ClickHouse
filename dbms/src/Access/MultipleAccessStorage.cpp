@@ -7,7 +7,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int ACCESS_ENTITY_FOUND_DUPLICATES;
 }
 
