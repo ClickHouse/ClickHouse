@@ -868,7 +868,8 @@ void IMergeTreeDataPart::checkConsistencyBase() const
     }
     else
     {
-        auto check_file_not_empty = [&path](const DiskPtr & disk_, const String & file_path) {
+        auto check_file_not_empty = [&path](const DiskPtr & disk_, const String & file_path)
+        {
             UInt64 file_size;
             if (!disk_->exists(file_path) || (file_size = disk_->getFileSize(file_path)) == 0)
                 throw Exception("Part " + fullPath(disk_, path) + " is broken: " + fullPath(disk_, file_path) + " is empty", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
