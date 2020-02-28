@@ -844,11 +844,11 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
         auto lock_ = inner_storage->lockStructureForShare(true, context.getCurrentQueryId());
         auto stream = inner_storage->write(window_view.getInnerQuery(), context);
         copyData(*source_stream, *stream);
-        source_stream->readSuffix();
     }
     else
     {
         BlocksListPtr new_mergeable_blocks = std::make_shared<BlocksList>();
+        source_stream->readPrefix();
         while (Block block_ = source_stream->read())
             new_mergeable_blocks->push_back(std::move(block_));
         source_stream->readSuffix();
