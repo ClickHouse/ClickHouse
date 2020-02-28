@@ -471,7 +471,7 @@ void QueryPipeline::unitePipelines(
 
         table_locks.insert(table_locks.end(), std::make_move_iterator(pipeline.table_locks.begin()), std::make_move_iterator(pipeline.table_locks.end()));
         interpreter_context.insert(interpreter_context.end(), pipeline.interpreter_context.begin(), pipeline.interpreter_context.end());
-        storage_holder.insert(storage_holder.end(), pipeline.storage_holder.begin(), pipeline.storage_holder.end());
+        storage_holders.insert(storage_holders.end(), pipeline.storage_holders.begin(), pipeline.storage_holders.end());
 
         max_threads = std::max(max_threads, pipeline.max_threads);
     }
@@ -627,6 +627,33 @@ PipelineExecutorPtr QueryPipeline::execute()
         throw Exception("Cannot execute pipeline because it doesn't have output.", ErrorCodes::LOGICAL_ERROR);
 
     return std::make_shared<PipelineExecutor>(processors, process_list_element);
+}
+
+QueryPipeline & QueryPipeline::operator= (QueryPipeline && rhs)
+{
+    /// Reset primitive fields
+    process_list_element = rhs.process_list_element;
+    rhs.process_list_element = nullptr;
+    max_threads = rhs.max_threads;
+    rhs.max_threads = 0;
+    output_format = rhs.output_format;
+    rhs.output_format = nullptr;
+    has_resize = rhs.has_resize;
+    rhs.has_resize = false;
+    extremes_port = rhs.extremes_port;
+    rhs.extremes_port = nullptr;
+    totals_having_port = rhs.totals_having_port;
+    rhs.totals_having_port = nullptr;
+
+    /// Move these fields in destruction order (it's important)
+    streams = std::move(rhs.streams);
+    processors = std::move(rhs.processors);
+    current_header = std::move(rhs.current_header);
+    table_locks = std::move(rhs.table_locks);
+    storage_holders = std::move(rhs.storage_holders);
+    interpreter_context = std::move(rhs.interpreter_context);
+
+    return *this;
 }
 
 }
