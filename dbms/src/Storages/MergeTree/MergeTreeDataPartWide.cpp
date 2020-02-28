@@ -176,7 +176,7 @@ void MergeTreeDataPartWide::accumulateColumnSizes(ColumnToSize & column_to_size)
 void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
 {
     checkConsistencyBase();
-    String path = getFullPath();
+    String path = getFullRelativePath();
 
     if (!checksums.empty())
     {
@@ -191,10 +191,10 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
                     String mrk_file_name = file_name + index_granularity_info.marks_file_extension;
                     String bin_file_name = file_name + ".bin";
                     if (!checksums.files.count(mrk_file_name))
-                        throw Exception("No " + mrk_file_name + " file checksum for column " + name_type.name + " in part " + path,
+                        throw Exception("No " + mrk_file_name + " file checksum for column " + name_type.name + " in part " + fullPath(disk, path),
                             ErrorCodes::NO_FILE_IN_DATA_PART);
                     if (!checksums.files.count(bin_file_name))
-                        throw Exception("No " + bin_file_name + " file checksum for column " + name_type.name + " in part " + path,
+                        throw Exception("No " + bin_file_name + " file checksum for column " + name_type.name + " in part " + fullPath(disk, path),
                             ErrorCodes::NO_FILE_IN_DATA_PART);
                 }, stream_path);
             }
@@ -209,15 +209,15 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
         {
             name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
             {
-                Poco::File file(IDataType::getFileNameForStream(name_type.name, substream_path) + index_granularity_info.marks_file_extension);
+                auto file_path = path + IDataType::getFileNameForStream(name_type.name, substream_path) + index_granularity_info.marks_file_extension;
 
                 /// Missing file is Ok for case when new column was added.
-                if (file.exists())
+                if (disk->exists(file_path))
                 {
-                    UInt64 file_size = file.getSize();
+                    UInt64 file_size = disk->getFileSize(file_path);
 
                     if (!file_size)
-                        throw Exception("Part " + path + " is broken: " + file.path() + " is empty.",
+                        throw Exception("Part " + path + " is broken: " + fullPath(disk, file_path) + " is empty.",
                             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
 
                     if (!marks_size)

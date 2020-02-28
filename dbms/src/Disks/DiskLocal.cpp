@@ -239,6 +239,11 @@ void DiskLocal::removeRecursive(const String & path)
     Poco::File(disk_path + path).remove(true);
 }
 
+void DiskLocal::listFiles(const String & path, std::vector<String> & file_names)
+{
+    Poco::File(disk_path + path).list(file_names);
+}
+
 
 void DiskLocalReservation::update(UInt64 new_size)
 {

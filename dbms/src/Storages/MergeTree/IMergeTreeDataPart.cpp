@@ -244,10 +244,9 @@ void IMergeTreeDataPart::removeIfNeeded()
     {
         try
         {
-            std::string path = getFullPath();
+            auto path = getFullRelativePath();
 
-            Poco::File dir(path);
-            if (!dir.exists())
+            if (!disk->exists(path))
                 return;
 
             if (is_temp)
@@ -508,14 +507,14 @@ void IMergeTreeDataPart::loadChecksums(bool require)
             bytes_on_disk = checksums.getTotalSizeOnDisk();
         }
         else
-            bytes_on_disk = calculateTotalSizeOnDisk(getFullPath());
+            bytes_on_disk = calculateTotalSizeOnDisk(disk, getFullRelativePath());
     }
     else
     {
         if (require)
             throw Exception("No checksums.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
-        bytes_on_disk = calculateTotalSizeOnDisk(getFullPath());
+        bytes_on_disk = calculateTotalSizeOnDisk(disk, getFullRelativePath());
     }
 }
 
@@ -633,16 +632,15 @@ void IMergeTreeDataPart::loadColumns(bool require)
         column_name_to_position.emplace(column.name, pos++);
 }
 
-UInt64 IMergeTreeDataPart::calculateTotalSizeOnDisk(const String & from)
+UInt64 IMergeTreeDataPart::calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from)
 {
-    Poco::File cur(from);
-    if (cur.isFile())
-        return cur.getSize();
+    if (disk_->isFile(from))
+        return disk_->getFileSize(from);
     std::vector<std::string> files;
-    cur.list(files);
+    disk_->listFiles(from, files);
     UInt64 res = 0;
     for (const auto & file : files)
-        res += calculateTotalSizeOnDisk(from + file);
+        res += calculateTotalSizeOnDisk(disk_, from + file);
     return res;
 }
 
@@ -661,8 +659,8 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     {
         if (remove_new_dir_if_exists)
         {
-            /// TODO: List files.
             Names files;
+            disk->listFiles(to, files);
 
             LOG_WARNING(storage.log, "Part directory " << fullPath(disk, to) << " already exists"
                 << " and contains " << files.size() << " files. Removing it.");

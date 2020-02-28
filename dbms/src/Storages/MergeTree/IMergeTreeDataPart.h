@@ -306,7 +306,7 @@ public:
     /// Checks that .bin and .mrk files exist
     virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const{ return false; }
 
-    static UInt64 calculateTotalSizeOnDisk(const String & from);
+    static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
 
 protected:
     /// Columns description.

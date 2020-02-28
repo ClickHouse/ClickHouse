@@ -121,6 +121,9 @@ public:
     /// Copy the file from `from_path` to `to_path`.
     virtual void copyFile(const String & from_path, const String & to_path) = 0;
 
+    /// List files at `path` and add their names to `file_names`
+    virtual void listFiles(const String & path, std::vector<String> & file_names) = 0;
+
     /// Open the file for read and return ReadBufferFromFileBase object.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
