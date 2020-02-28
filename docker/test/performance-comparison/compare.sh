@@ -271,8 +271,8 @@ create table queries engine Memory as select
         -- immediately, so for now we pretend they don't exist. We don't want to
         -- remove them altogether because we want to be able to detect regressions,
         -- but the right way to do this is not yet clear.
-        not short and abs(diff) < 0.05 and rd[3] > 0.05 as unstable,
-        not short and abs(diff) > 0.10 and abs(diff) > rd[3] as changed,
+        not short and abs(diff) < 0.10 and rd[3] > 0.10 as unstable,
+        not short and abs(diff) > 0.15 and abs(diff) > rd[3] as changed,
         *
     from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
 
