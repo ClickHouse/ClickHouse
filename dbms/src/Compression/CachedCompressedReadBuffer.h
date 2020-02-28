@@ -24,10 +24,10 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> file_in;
 
     const std::string path;
-    size_t buf_size;
-    size_t estimated_size;
-    size_t aio_threshold;
-    size_t mmap_threshold;
+    size_t buf_size {};
+    size_t estimated_size {};
+    size_t aio_threshold {};
+    size_t mmap_threshold {};
 
     size_t file_pos;
 
