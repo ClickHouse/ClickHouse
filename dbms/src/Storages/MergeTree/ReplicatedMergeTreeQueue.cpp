@@ -13,9 +13,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNFINISHED;
-    extern const int PART_IS_TEMPORARILY_LOCKED;
 }
 
 

@@ -39,16 +39,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
-    extern const int UNKNOWN_EXCEPTION;
-    extern const int CANNOT_READ_FROM_ISTREAM;
-    extern const int INVALID_CONFIG_PARAMETER;
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNSUPPORTED_METHOD;
-    extern const int UNKNOWN_SETTING;
-    extern const int READONLY_SETTING;
 }
 
 namespace

@@ -25,9 +25,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int READONLY;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_KILL;
     extern const int ACCESS_DENIED;
 }
 

@@ -16,7 +16,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 template <typename X, typename Y, typename Ret>

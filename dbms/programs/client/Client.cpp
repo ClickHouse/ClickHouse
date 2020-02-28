@@ -101,13 +101,9 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_READ_HISTORY;
-    extern const int CANNOT_APPEND_HISTORY;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
-    extern const int CANNOT_SET_SIGNAL_HANDLER;
-    extern const int SYSTEM_ERROR;
     extern const int INVALID_USAGE_OF_INPUT;
 }
 

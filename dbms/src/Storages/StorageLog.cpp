@@ -38,8 +38,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int DUPLICATE_COLUMN;
     extern const int SIZES_OF_MARKS_FILES_ARE_INCONSISTENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
