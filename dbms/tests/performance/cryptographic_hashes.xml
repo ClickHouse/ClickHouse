@@ -1,12 +1,11 @@
 <test>
-    <type>once</type>
+    <type>loop</type>
 
     <stop_conditions>
         <all_of>
             <total_time_ms>10000</total_time_ms>
         </all_of>
         <any_of>
-            <average_speed_not_changing_for_ms>5000</average_speed_not_changing_for_ms>
             <total_time_ms>20000</total_time_ms>
         </any_of>
     </stop_conditions>
@@ -36,11 +35,11 @@
         <substitution>
            <name>table</name>
            <values>
-               <value>numbers</value>
-               <value>numbers_mt</value>
+               <value>numbers(1000000)</value>
+               <value>numbers_mt(10000000)</value>
            </values>
         </substitution>
     </substitutions>
 
-    <query>SELECT ignore({crypto_hash_func}({string})) FROM system.{table}</query>
+    <query>SELECT ignore({crypto_hash_func}({string})) FROM {table}</query>
 </test>

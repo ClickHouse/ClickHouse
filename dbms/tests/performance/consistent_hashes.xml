@@ -1,9 +1,8 @@
 <test>
-    <type>once</type>
+    <type>loop</type>
 
     <stop_conditions>
         <any_of>
-            <average_speed_not_changing_for_ms>6000</average_speed_not_changing_for_ms>
             <total_time_ms>15000</total_time_ms>
         </any_of>
     </stop_conditions>
@@ -27,6 +26,6 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT {hash_func}(number, {buckets}) FROM system.numbers</query>
-    <query>SELECT sumburConsistentHash(toUInt32(number), {buckets}) FROM system.numbers</query>
+    <query>SELECT {hash_func}(number, {buckets}) FROM numbers(1000000)</query>
+    <query>SELECT sumburConsistentHash(toUInt32(number), {buckets}) FROM numbers(1000000)</query>
 </test>
