@@ -436,7 +436,7 @@ public:
     {
         static_assert(pad_right_ >= 15);
         insertPrepare(from_begin, from_end, std::forward<TAllocatorParams>(allocator_params)...);
-        size_t bytes_to_copy = this->byte_size(from_end - from_begin);
+        size_t bytes_to_copy = (from_end - from_begin) * sizeof(*from_begin);
         memcpySmallAllowReadWriteOverflow15(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
         this->c_end += bytes_to_copy;
     }
@@ -446,7 +446,7 @@ public:
         typename std::iterator_traits<It2>::pointer * = nullptr> /// Only for iterator-like types
     void insert(iterator it, It1 from_begin, It2 from_end)
     {
-        size_t bytes_to_copy = this->byte_size(from_end - from_begin);
+        size_t bytes_to_copy = (from_end - from_begin) * sizeof(*from_begin);
         size_t bytes_to_move = (end() - it) * sizeof(T);
 
         insertPrepare(from_begin, from_end);
@@ -463,7 +463,7 @@ public:
         typename std::iterator_traits<It2>::pointer * = nullptr> /// Only for iterator-like types
     void insert_assume_reserved(It1 from_begin, It2 from_end)
     {
-        size_t bytes_to_copy = this->byte_size(from_end - from_begin);
+        size_t bytes_to_copy = (from_end - from_begin) * sizeof(*from_begin);
         memcpy(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
         this->c_end += bytes_to_copy;
     }
