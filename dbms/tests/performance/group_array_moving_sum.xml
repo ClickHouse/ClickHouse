@@ -7,7 +7,6 @@
             <total_time_ms>30000</total_time_ms>
         </all_of>
         <any_of>
-            <average_speed_not_changing_for_ms>6000</average_speed_not_changing_for_ms>
             <total_time_ms>60000</total_time_ms>
         </any_of>
     </stop_conditions>
