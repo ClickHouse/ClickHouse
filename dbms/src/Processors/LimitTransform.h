@@ -13,6 +13,7 @@ private:
     InputPort & input;
     OutputPort & output;
 
+
     size_t limit;
     size_t offset;
     size_t rows_read = 0; /// including the last read block
@@ -26,10 +27,12 @@ private:
 
     bool with_ties;
     const SortDescription description;
-    SharedChunkRowRef ties_row_ref;
+
+    SharedChunkPtr previous_row_chunk;
 
     std::vector<size_t> sort_column_positions;
-    ColumnRawPtrs extractSortColumns(const Columns & columns);
+    SharedChunkPtr makeChunkWithPreviousRow(const Chunk & current_chunk, size_t row_num) const;
+    ColumnRawPtrs extractSortColumns(const Columns & columns) const;
 
 public:
     LimitTransform(
