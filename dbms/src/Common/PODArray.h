@@ -5,6 +5,7 @@
 #include <cassert>
 #include <algorithm>
 #include <memory>
+#include <iterator>
 
 #include <boost/noncopyable.hpp>
 #include <boost/iterator_adaptors.hpp>
@@ -303,13 +304,17 @@ public:
         assign(n, x);
     }
 
-    PODArray(const_iterator from_begin, const_iterator from_end)
+    template <typename It1, typename It2,
+        typename std::iterator_traits<It1>::pointer * = nullptr,
+        typename std::iterator_traits<It2>::pointer * = nullptr> /// Only for iterator-like types
+    PODArray(It1 from_begin, It2 from_end)
     {
         this->alloc_for_num_elements(from_end - from_begin);
         insert(from_begin, from_end);
     }
 
-    PODArray(std::initializer_list<T> il) : PODArray(std::begin(il), std::end(il)) {}
+    template <typename U>
+    PODArray(std::initializer_list<U> il) : PODArray(std::begin(il), std::end(il)) {}
 
     PODArray(PODArray && other)
     {
@@ -403,7 +408,9 @@ public:
     }
 
     /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.
-    template <typename It1, typename It2, typename ... TAllocatorParams>
+    template <typename It1, typename It2, typename ... TAllocatorParams,
+        typename std::iterator_traits<It1>::pointer * = nullptr,
+        typename std::iterator_traits<It2>::pointer * = nullptr> /// Only for iterator-like types>
     void insertPrepare(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
         size_t required_capacity = this->size() + (from_end - from_begin);
@@ -412,7 +419,9 @@ public:
     }
 
     /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.
-    template <typename It1, typename It2, typename ... TAllocatorParams>
+    template <typename It1, typename It2, typename ... TAllocatorParams,
+        typename std::iterator_traits<It1>::pointer * = nullptr,
+        typename std::iterator_traits<It2>::pointer * = nullptr> /// Only for iterator-like types
     void insert(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
         insertPrepare(from_begin, from_end, std::forward<TAllocatorParams>(allocator_params)...);
@@ -420,20 +429,24 @@ public:
     }
 
     /// Works under assumption, that it's possible to read up to 15 excessive bytes after `from_end` and this PODArray is padded.
-    template <typename It1, typename It2, typename ... TAllocatorParams>
+    template <typename It1, typename It2, typename ... TAllocatorParams,
+        typename std::iterator_traits<It1>::pointer * = nullptr,
+        typename std::iterator_traits<It2>::pointer * = nullptr> /// Only for types with operator*
     void insertSmallAllowReadWriteOverflow15(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
         static_assert(pad_right_ >= 15);
         insertPrepare(from_begin, from_end, std::forward<TAllocatorParams>(allocator_params)...);
-        size_t bytes_to_copy = this->byte_size(from_end - from_begin);
+        size_t bytes_to_copy = (from_end - from_begin) * sizeof(*from_begin);
         memcpySmallAllowReadWriteOverflow15(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
         this->c_end += bytes_to_copy;
     }
 
-    template <typename It1, typename It2>
+    template <typename It1, typename It2,
+        typename std::iterator_traits<It1>::pointer * = nullptr,
+        typename std::iterator_traits<It2>::pointer * = nullptr> /// Only for iterator-like types
     void insert(iterator it, It1 from_begin, It2 from_end)
     {
-        size_t bytes_to_copy = this->byte_size(from_end - from_begin);
+        size_t bytes_to_copy = (from_end - from_begin) * sizeof(*from_begin);
         size_t bytes_to_move = (end() - it) * sizeof(T);
 
         insertPrepare(from_begin, from_end);
@@ -445,10 +458,12 @@ public:
         this->c_end += bytes_to_copy;
     }
 
-    template <typename It1, typename It2>
+    template <typename It1, typename It2,
+        typename std::iterator_traits<It1>::pointer * = nullptr,
+        typename std::iterator_traits<It2>::pointer * = nullptr> /// Only for iterator-like types
     void insert_assume_reserved(It1 from_begin, It2 from_end)
     {
-        size_t bytes_to_copy = this->byte_size(from_end - from_begin);
+        size_t bytes_to_copy = (from_end - from_begin) * sizeof(*from_begin);
         memcpy(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
         this->c_end += bytes_to_copy;
     }
@@ -577,7 +592,9 @@ public:
         std::fill(begin(), end(), x);
     }
 
-    template <typename It1, typename It2, typename... TAllocatorParams>
+    template <typename It1, typename It2, typename... TAllocatorParams,
+        typename std::iterator_traits<It1>::pointer * = nullptr,
+        typename std::iterator_traits<It2>::pointer * = nullptr> /// Only for iterator-like types
     void assign(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
         size_t required_capacity = from_end - from_begin;
