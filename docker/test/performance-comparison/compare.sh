@@ -204,6 +204,11 @@ function run_tests
 
         grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
         grep ^client-time "$test_name-raw.tsv" | cut -f2- > "$test_name-client-time.tsv"
+        skipped=$(grep ^skipped "$test_name-raw.tsv" | cut -f2-)
+        if [ "$skipped" != "" ]
+        then
+            printf "$test_name""\t""$skipped""\n" >> skipped-tests.tsv
+        fi
     done
 
     unset TIMEFORMAT
@@ -266,8 +271,8 @@ create table queries engine Memory as select
         -- immediately, so for now we pretend they don't exist. We don't want to
         -- remove them altogether because we want to be able to detect regressions,
         -- but the right way to do this is not yet clear.
-        not short and abs(diff) < 0.05 and rd[3] > 0.05 as unstable,
-        not short and abs(diff) > 0.10 and abs(diff) > rd[3] as changed,
+        not short and abs(diff) < 0.10 and rd[3] > 0.10 as unstable,
+        not short and abs(diff) > 0.15 and abs(diff) > rd[3] as changed,
         *
     from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
 
@@ -399,7 +404,7 @@ IFS=$'\n'
 for query in $(cut -d'	' -f1 stacks.rep | sort | uniq)
 do
     query_file=$(echo "$query" | cut -c-120 | sed 's/[/]/_/g')
-    grep -F "$query" stacks.rep \
+    grep -F "$query	" stacks.rep \
         | cut -d'	' -f 2- \
         | tee "$query_file.stacks.rep" \
         | ~/fg/flamegraph.pl > "$query_file.svg" &
@@ -427,16 +432,17 @@ case "$stage" in
     time restart
     ;&
 "run_tests")
-    # If the tests fail with OOM or something, still try to restart the servers
-    # to collect the logs.
+    # Ignore the errors to collect the log anyway
     time run_tests ||:
-    time restart
     ;&
 "get_profiles")
-    time get_profiles
+    # If the tests fail with OOM or something, still try to restart the servers
+    # to collect the logs. Prefer not to restart, because addresses might change
+    # and we won't be able to process trace_log data.
+    time get_profiles || restart || get_profiles
     ;&
 "analyze_queries")
-    analyze_queries
+    time analyze_queries
     ;&
 "report")
     time report
