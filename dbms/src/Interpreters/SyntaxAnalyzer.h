@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Aliases.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/JoinedTables.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
@@ -84,6 +85,7 @@ public:
         const NamesAndTypesList & source_columns,
         StoragePtr storage = {},
         const SelectQueryOptions & select_options = {},
+        const JoinedTables & joined_tables = {},
         const Names & required_result_columns = {}) const;
 
 private:

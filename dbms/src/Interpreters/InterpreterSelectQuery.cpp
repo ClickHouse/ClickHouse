@@ -51,6 +51,7 @@
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/Join.h>
+#include <Interpreters/JoinedTables.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -304,6 +305,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
+    /// Extract joined tables colunms if any.
+    /// It could get storage from context without lockStructureForShare(). TODO: add lock there or rewrite this logic.
+    JoinedTables joined_tables;
+    joined_tables.resolveTables(*query_ptr->as<ASTSelectQuery>(), storage, *context, source_header.getNamesAndTypesList());
+
     if (storage)
     {
         table_lock = storage->lockStructureForShare(false, context->getInitialQueryId());
@@ -313,7 +319,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     auto analyze = [&] (bool try_move_to_prewhere = true)
     {
         syntax_analyzer_result = SyntaxAnalyzer(*context).analyzeSelect(
-                query_ptr, source_header.getNamesAndTypesList(), storage, options, required_result_column_names);
+                query_ptr, source_header.getNamesAndTypesList(), storage, options, joined_tables, required_result_column_names);
 
         /// Save scalar sub queries's results in the query context
         if (context->hasQueryContext())
