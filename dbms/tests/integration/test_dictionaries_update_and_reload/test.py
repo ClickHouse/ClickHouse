@@ -38,6 +38,12 @@ def get_loading_start_time(dictionary_name):
         return None
     return time.strptime(s, "%Y-%m-%d %H:%M:%S")
 
+def get_last_successful_update_time(dictionary_name):
+    s = instance.query("SELECT last_successful_update_time FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip("\n")
+    if s == "0000-00-00 00:00:00":
+        return None
+    return time.strptime(s, "%Y-%m-%d %H:%M:%S")
+
 
 def get_loading_duration(dictionary_name):
     return float(instance.query("SELECT loading_duration FROM system.dictionaries WHERE name='" + dictionary_name + "'"))
@@ -92,6 +98,9 @@ def test_reload_while_loading(started_cluster):
 
     # This time loading should finish quickly.
     assert get_status('slow') == "LOADED"
+
+    last_successful_update_time = get_last_successful_update_time('slow')
+    assert last_successful_update_time > start_time
     assert query("SELECT dictGetInt32('slow', 'a', toUInt64(5))") == "6\n"
 
 

@@ -9,6 +9,11 @@ class EventCounter;
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+}
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;

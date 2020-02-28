@@ -15,9 +15,20 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     const ASTPtr & table_expression, const Context & context, size_t subquery_depth, const Names & required_source_columns)
+{
+    auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth);
+    return interpretSubquery(table_expression, context, required_source_columns, subquery_options);
+}
+
+std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
+    const ASTPtr & table_expression, const Context & context, const Names & required_source_columns, const SelectQueryOptions & options)
 {
     if (auto * expr = table_expression->as<ASTTableExpression>())
     {
@@ -29,7 +40,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         else if (expr->database_and_table_name)
             table = expr->database_and_table_name;
 
-        return interpretSubquery(table, context, subquery_depth, required_source_columns);
+        return interpretSubquery(table, context, required_source_columns, options);
     }
 
     /// Subquery or table name. The name of the table is similar to the subquery `SELECT * FROM t`.
@@ -55,7 +66,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     subquery_settings.extremes = 0;
     subquery_context.setSettings(subquery_settings);
 
-    auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth).subquery();
+    auto subquery_options = options.subquery();
 
     ASTPtr query;
     if (table || function)

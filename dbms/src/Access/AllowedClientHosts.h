@@ -46,7 +46,7 @@ public:
     struct AnyHostTag {};
 
     AllowedClientHosts() {}
-    explicit AllowedClientHosts(AnyHostTag) { addAnyHost(); }
+    AllowedClientHosts(AnyHostTag) { addAnyHost(); }
     ~AllowedClientHosts() {}
 
     AllowedClientHosts(const AllowedClientHosts & src) = default;
@@ -71,12 +71,12 @@ public:
     /// For example, 312.234.1.1/255.255.255.0 or 2a02:6b8::3/64
     void addSubnet(const IPSubnet & subnet);
     void addSubnet(const String & subnet) { addSubnet(IPSubnet{subnet}); }
-    void addSubnet(const IPAddress & prefix, const IPAddress & mask) { addSubnet({prefix, mask}); }
-    void addSubnet(const IPAddress & prefix, size_t num_prefix_bits) { addSubnet({prefix, num_prefix_bits}); }
+    void addSubnet(const IPAddress & prefix, const IPAddress & mask) { addSubnet(IPSubnet{prefix, mask}); }
+    void addSubnet(const IPAddress & prefix, size_t num_prefix_bits) { addSubnet(IPSubnet{prefix, num_prefix_bits}); }
     void removeSubnet(const IPSubnet & subnet);
     void removeSubnet(const String & subnet) { removeSubnet(IPSubnet{subnet}); }
-    void removeSubnet(const IPAddress & prefix, const IPAddress & mask) { removeSubnet({prefix, mask}); }
-    void removeSubnet(const IPAddress & prefix, size_t num_prefix_bits) { removeSubnet({prefix, num_prefix_bits}); }
+    void removeSubnet(const IPAddress & prefix, const IPAddress & mask) { removeSubnet(IPSubnet{prefix, mask}); }
+    void removeSubnet(const IPAddress & prefix, size_t num_prefix_bits) { removeSubnet(IPSubnet{prefix, num_prefix_bits}); }
     const std::vector<IPSubnet> & getSubnets() const { return subnets; }
 
     /// Allows an exact host name. The `contains()` function will check that the provided address equals to one of that host's addresses.

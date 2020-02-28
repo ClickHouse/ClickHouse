@@ -1,7 +1,7 @@
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Parsers/ASTShowGrantsQuery.h>
 #include <Parsers/ASTGrantQuery.h>
-#include <Parsers/ASTRoleList.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnString.h>
@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
+#include <Access/Role.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 
@@ -88,19 +89,44 @@ BlockInputStreamPtr InterpreterShowGrantsQuery::executeImpl()
 
 ASTs InterpreterShowGrantsQuery::getGrantQueries(const ASTShowGrantsQuery & show_query) const
 {
+    const auto & access_control = context.getAccessControlManager();
     UserPtr user;
+    RolePtr role;
     if (show_query.current_user)
         user = context.getUser();
     else
-        user = context.getAccessControlManager().getUser(show_query.name);
+    {
+        user = access_control.tryRead<User>(show_query.name);
+        if (!user)
+            role = access_control.read<Role>(show_query.name);
+    }
+
+    const AccessRights * access = nullptr;
+    const AccessRights * access_with_grant_option = nullptr;
+    const boost::container::flat_set<UUID> * granted_roles = nullptr;
+    const boost::container::flat_set<UUID> * granted_roles_with_admin_option = nullptr;
+    if (user)
+    {
+        access = &user->access;
+        access_with_grant_option = &user->access_with_grant_option;
+        granted_roles = &user->granted_roles;
+        granted_roles_with_admin_option = &user->granted_roles_with_admin_option;
+    }
+    else
+    {
+        access = &role->access;
+        access_with_grant_option = &role->access_with_grant_option;
+        granted_roles = &role->granted_roles;
+        granted_roles_with_admin_option = &role->granted_roles_with_admin_option;
+    }
 
     ASTs res;
 
     for (bool grant_option : {true, false})
     {
-        if (!grant_option && (user->access == user->access_with_grant_option))
+        if (!grant_option && (*access == *access_with_grant_option))
             continue;
-        const auto & access_rights = grant_option ? user->access_with_grant_option : user->access;
+        const auto & access_rights = grant_option ? *access_with_grant_option : *access;
         const auto grouped_elements = groupByTable(access_rights.getElements());
 
         using Kind = ASTGrantQuery::Kind;
@@ -111,12 +137,31 @@ ASTs InterpreterShowGrantsQuery::getGrantQueries(const ASTShowGrantsQuery & show
                 auto grant_query = std::make_shared<ASTGrantQuery>();
                 grant_query->kind = kind;
                 grant_query->grant_option = grant_option;
-                grant_query->to_roles = std::make_shared<ASTRoleList>();
-                grant_query->to_roles->roles.push_back(user->getName());
+                grant_query->to_roles = std::make_shared<ASTGenericRoleSet>();
+                grant_query->to_roles->names.push_back(show_query.name);
                 grant_query->access_rights_elements = elements;
                 res.push_back(std::move(grant_query));
             }
         }
+    }
+
+    for (bool admin_option : {true, false})
+    {
+        if (!admin_option && (*granted_roles == *granted_roles_with_admin_option))
+            continue;
+
+        const auto & roles = admin_option ? *granted_roles_with_admin_option : *granted_roles;
+        if (roles.empty())
+            continue;
+
+        auto grant_query = std::make_shared<ASTGrantQuery>();
+        using Kind = ASTGrantQuery::Kind;
+        grant_query->kind = Kind::GRANT;
+        grant_query->admin_option = admin_option;
+        grant_query->to_roles = std::make_shared<ASTGenericRoleSet>();
+        grant_query->to_roles->names.push_back(show_query.name);
+        grant_query->roles = GenericRoleSet{roles}.toAST(access_control);
+        res.push_back(std::move(grant_query));
     }
 
     return res;

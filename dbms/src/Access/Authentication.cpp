@@ -7,6 +7,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
     extern const int REQUIRED_PASSWORD;
     extern const int WRONG_PASSWORD;
 }
@@ -87,4 +89,3 @@ void Authentication::checkPassword(const String & password_, const String & user
 }
 
 }
-

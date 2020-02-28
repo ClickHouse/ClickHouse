@@ -31,6 +31,7 @@
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Processors/Sources/SourceFromInputStream.h>
 
 
 namespace DB
@@ -38,16 +39,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
-    extern const int UNKNOWN_EXCEPTION;
-    extern const int CANNOT_READ_FROM_ISTREAM;
-    extern const int INVALID_CONFIG_PARAMETER;
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNSUPPORTED_METHOD;
-    extern const int UNKNOWN_SETTING;
-    extern const int READONLY_SETTING;
 }
 
 namespace
@@ -117,7 +112,7 @@ StorageKafka::StorageKafka(
 }
 
 
-BlockInputStreams StorageKafka::read(
+Pipes StorageKafka::read(
     const Names & column_names,
     const SelectQueryInfo & /* query_info */,
     const Context & context,
@@ -126,11 +121,11 @@ BlockInputStreams StorageKafka::read(
     unsigned /* num_streams */)
 {
     if (num_created_consumers == 0)
-        return BlockInputStreams();
+        return {};
 
     /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
-    BlockInputStreams streams;
-    streams.reserve(num_created_consumers);
+    Pipes pipes;
+    pipes.reserve(num_created_consumers);
 
     // Claim as many consumers as requested, but don't block
     for (size_t i = 0; i < num_created_consumers; ++i)
@@ -138,11 +133,12 @@ BlockInputStreams StorageKafka::read(
         /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
         /// TODO: probably that leads to awful performance.
         /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
-        streams.emplace_back(std::make_shared<KafkaBlockInputStream>(*this, context, column_names, 1));
+        /// TODO: rewrite KafkaBlockInputStream to KafkaSource. Now it is used in other place.
+        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<KafkaBlockInputStream>(*this, context, column_names, 1)));
     }
 
-    LOG_DEBUG(log, "Starting reading " << streams.size() << " streams");
-    return streams;
+    LOG_DEBUG(log, "Starting reading " << pipes.size() << " streams");
+    return pipes;
 }
 
 

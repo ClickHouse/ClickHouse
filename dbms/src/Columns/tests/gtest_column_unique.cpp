@@ -186,3 +186,28 @@ TEST(column_unique, column_unique_unique_deserialize_from_arena_Nullable_String_
     auto column = ColumnNullable::create(std::move(column_string), std::move(null_mask));
     column_unique_unique_deserialize_from_arena_impl(*column, *data_type);
 }
+
+TEST(ColumnVector, correctness_of_replicate)
+{
+    const auto column = ColumnUInt8::create();
+
+    column->insertValue(3);
+    column->insertValue(2);
+    column->insertValue(1);
+
+    const auto empty_column = column->replicate({0, 0, 0});
+    const auto empty_column_ptr = typeid_cast<const ColumnUInt8 *>(empty_column.get());
+    EXPECT_NE(empty_column_ptr, nullptr);
+    EXPECT_EQ(empty_column_ptr->size(), 0);
+
+    const auto new_column = column->replicate({1, 1, 5});
+    const auto new_column_ptr = typeid_cast<const ColumnUInt8 *>(new_column.get());
+    EXPECT_NE(new_column_ptr, nullptr);
+    EXPECT_EQ(new_column_ptr->size(), 5);
+    auto it = new_column_ptr->getData().cbegin();
+    for (const auto num : {3, 1, 1, 1, 1})
+    {
+        EXPECT_EQ(*it, num);
+        ++it;
+    }
+}

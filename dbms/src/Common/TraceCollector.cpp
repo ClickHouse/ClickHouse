@@ -36,8 +36,6 @@ namespace
 
 namespace ErrorCodes
 {
-    extern const int NULL_POINTER_DEREFERENCE;
-    extern const int THREAD_IS_NOT_JOINABLE;
 }
 
 TraceCollector::TraceCollector()

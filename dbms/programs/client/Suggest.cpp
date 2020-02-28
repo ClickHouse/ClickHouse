@@ -5,6 +5,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_PACKET_FROM_SERVER;
+}
 
 void Suggest::load(const ConnectionParameters & connection_parameters, size_t suggestion_limit)
 {
@@ -31,7 +36,17 @@ void Suggest::load(const ConnectionParameters & connection_parameters, size_t su
 
         /// Note that keyword suggestions are available even if we cannot load data from server.
 
-        std::sort(words.begin(), words.end());
+        if (case_insensitive)
+            std::sort(words.begin(), words.end(), [](const std::string & str1, const std::string & str2)
+            {
+                return std::lexicographical_compare(begin(str1), end(str1), begin(str2), end(str2), [](const char char1, const char char2)
+                {
+                    return std::tolower(char1) < std::tolower(char2);
+                });
+            });
+        else
+            std::sort(words.begin(), words.end());
+
         ready = true;
     });
 }

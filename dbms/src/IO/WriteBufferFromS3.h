@@ -38,10 +38,6 @@ private:
 
     Logger * log = &Logger::get("WriteBufferFromS3");
 
-protected:
-    // Total size of all uploaded parts.
-    size_t total_size = 0;
-
 public:
     explicit WriteBufferFromS3(
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,

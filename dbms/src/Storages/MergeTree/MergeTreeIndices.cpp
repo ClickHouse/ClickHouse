@@ -16,7 +16,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
-    extern const int UNKNOWN_EXCEPTION;
 }
 
 void MergeTreeIndexFactory::registerIndex(const std::string & name, Creator creator)

@@ -48,6 +48,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int NOT_AN_AGGREGATE;
     extern const int UNEXPECTED_EXPRESSION;

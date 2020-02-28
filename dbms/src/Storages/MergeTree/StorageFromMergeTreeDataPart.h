@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Core/Defines.h>
 
@@ -19,7 +19,7 @@ class StorageFromMergeTreeDataPart : public ext::shared_ptr_helper<StorageFromMe
 public:
     String getName() const override { return "FromMergeTreeDataPart"; }
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -27,24 +27,25 @@ public:
         size_t max_block_size,
         unsigned num_streams) override
     {
-        auto pipes = MergeTreeDataSelectExecutor(part->storage).readFromParts(
+        return MergeTreeDataSelectExecutor(part->storage).readFromParts(
                 {part}, column_names, query_info, context, max_block_size, num_streams);
-
-        /// Wrap processors to BlockInputStreams. It is temporary. Will be changed to processors interface later.
-        BlockInputStreams streams;
-        streams.reserve(pipes.size());
-
-        for (auto & pipe : pipes)
-            streams.emplace_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipe)));
-
-        return streams;
     }
+
+
 
     bool supportsIndexForIn() const override { return true; }
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override
     {
         return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context);
+    }
+
+    bool hasAnyTTL() const override { return part->storage.hasAnyTTL(); }
+    bool hasRowsTTL() const override { return part->storage.hasRowsTTL(); }
+
+    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override
+    {
+        return part->storage.getColumnDependencies(updated_columns);
     }
 
     StorageInMemoryMetadata getInMemoryMetadata() const override
