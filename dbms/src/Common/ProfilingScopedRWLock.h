@@ -8,12 +8,12 @@
 namespace DB
 {
 
-class ProfilingScoperWriteUnlocker;
+class ProfilingScopedWriteUnlocker;
 
 class ProfilingScopedWriteRWLock
 {
 public:
-    friend class ProfilingScoperWriteUnlocker;
+    friend class ProfilingScopedWriteUnlocker;
 
     ProfilingScopedWriteRWLock(std::shared_mutex & rwl, ProfileEvents::Event event_) :
         watch(),
@@ -31,17 +31,17 @@ private:
 
 /// Inversed RAII
 /// Used to unlock current writelock for various purposes.
-class ProfilingScoperWriteUnlocker
+class ProfilingScopedWriteUnlocker
 {
 public:
-    ProfilingScoperWriteUnlocker() = delete;
+    ProfilingScopedWriteUnlocker() = delete;
 
-    ProfilingScoperWriteUnlocker(ProfilingScopedWriteRWLock & parent_lock_) : parent_lock(parent_lock_)
+    ProfilingScopedWriteUnlocker(ProfilingScopedWriteRWLock & parent_lock_) : parent_lock(parent_lock_)
     {
         parent_lock.scoped_write_lock.unlock();
     }
 
-    ~ProfilingScoperWriteUnlocker()
+    ~ProfilingScopedWriteUnlocker()
     {
         Stopwatch watch;
         parent_lock.scoped_write_lock.lock();

@@ -839,7 +839,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
             /// To perform parallel loading.
             BlockInputStreamPtr stream = nullptr;
             {
-                ProfilingScoperWriteUnlocker unlocker(write_lock);
+                ProfilingScopedWriteUnlocker unlocker(write_lock);
                 stream = source_ptr->loadIds(bunch_update_unit.getRequestedIds());
             }
 
@@ -849,7 +849,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
             {
                 Block block;
                 {
-                    ProfilingScoperWriteUnlocker unlocker(write_lock);
+                    ProfilingScopedWriteUnlocker unlocker(write_lock);
                     block = stream->read();
                     if (!block)
                         break;
