@@ -628,6 +628,11 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                                     ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
             }
         }
+        else if (command.type == AlterCommand::MODIFY_SETTING)
+        {
+            if (metadata.settings_ast == nullptr)
+                throw Exception{"Cannot alter settings, because table engine doesn't support settings changes", ErrorCodes::BAD_ARGUMENTS};
+        }
     }
 }
 
