@@ -23,6 +23,18 @@ LimitTransform::LimitTransform(
     }
 }
 
+SharedChunkPtr LimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, size_t row) const
+{
+    assert(row < chunk.getNumRows());
+    auto last_row_columns = chunk.cloneEmptyColumns();
+    const auto & current_columns = chunk.getColumns();
+    for (size_t i = 0; i < current_columns.size(); ++i)
+        last_row_columns[i]->insertFrom(*current_columns[i], row);
+    SharedChunkPtr shared_chunk = std::make_shared<detail::SharedChunk>(Chunk(std::move(last_row_columns), 1));
+    shared_chunk->sort_columns = extractSortColumns(shared_chunk->getColumns());
+    return shared_chunk;
+}
+
 
 LimitTransform::Status LimitTransform::prepare()
 {
@@ -53,7 +65,7 @@ LimitTransform::Status LimitTransform::prepare()
     }
 
     /// Check if we are done with pushing.
-    bool pushing_is_finished = (rows_read >= offset + limit) && ties_row_ref.empty();
+    bool pushing_is_finished = (rows_read >= offset + limit) && !previous_row_chunk;
     if (pushing_is_finished)
     {
         if (!always_read_till_end)
@@ -125,12 +137,9 @@ LimitTransform::Status LimitTransform::prepare()
         if (output.hasData())
             return Status::PortFull;
 
+        /// Save the last row of current block to check if next block begins with the same row (for WITH TIES).
         if (with_ties && rows_read == offset + limit)
-        {
-            SharedChunkPtr shared_chunk = new detail::SharedChunk(current_chunk.clone());
-            shared_chunk->sort_columns = extractSortColumns(shared_chunk->getColumns());
-            ties_row_ref.set(shared_chunk, &shared_chunk->sort_columns, shared_chunk->getNumRows() - 1);
-        }
+            previous_row_chunk = makeChunkWithPreviousRow(current_chunk, current_chunk.getNumRows() - 1);
 
         output.push(std::move(current_chunk));
         has_block = false;
@@ -138,8 +147,9 @@ LimitTransform::Status LimitTransform::prepare()
         return Status::PortFull;
     }
 
+    bool may_need_more_data_for_ties = previous_row_chunk || rows_read - rows <= offset + limit;
     /// No more data is needed.
-    if (!always_read_till_end && rows_read >= offset + limit)
+    if (!always_read_till_end && (rows_read >= offset + limit) && !may_need_more_data_for_ties)
         input.close();
 
     return Status::Ready;
@@ -148,36 +158,32 @@ LimitTransform::Status LimitTransform::prepare()
 
 void LimitTransform::work()
 {
-    SharedChunkPtr shared_chunk = new detail::SharedChunk(std::move(current_chunk));
+    SharedChunkPtr shared_chunk = std::make_shared<detail::SharedChunk>(std::move(current_chunk));
     shared_chunk->sort_columns = extractSortColumns(shared_chunk->getColumns());
 
     size_t num_rows = shared_chunk->getNumRows();
     size_t num_columns = shared_chunk->getNumColumns();
 
-    if (!ties_row_ref.empty() && rows_read >= offset + limit)
+    if (previous_row_chunk && rows_read >= offset + limit)
     {
-        UInt64 len;
-        for (len = 0; len < num_rows; ++len)
+        /// Scan until the first row, which is not equal to previous_row_chunk (for WITH TIES)
+        size_t current_row_num = 0;
+        for (; current_row_num < num_rows; ++current_row_num)
         {
-            SharedChunkRowRef current_row;
-            current_row.set(shared_chunk, &shared_chunk->sort_columns, len);
-
-            if (current_row != ties_row_ref)
-            {
-                ties_row_ref.reset();
+            if (!shared_chunk->sortColumnsEqualAt(current_row_num, 0, *previous_row_chunk))
                 break;
-            }
         }
 
         auto columns = shared_chunk->detachColumns();
 
-        if (len < num_rows)
+        if (current_row_num < num_rows)
         {
+            previous_row_chunk = {};
             for (size_t i = 0; i < num_columns; ++i)
-                columns[i] = columns[i]->cut(0, len);
+                columns[i] = columns[i]->cut(0, current_row_num);
         }
 
-        current_chunk.setColumns(std::move(columns), len);
+        current_chunk.setColumns(std::move(columns), current_row_num);
         block_processed = true;
         return;
     }
@@ -193,22 +199,21 @@ void LimitTransform::work()
         static_cast<Int64>(limit) + static_cast<Int64>(offset) - static_cast<Int64>(rows_read) + static_cast<Int64>(num_rows)));
 
     /// check if other rows in current block equals to last one in limit
-    if (with_ties)
+    if (with_ties && length)
     {
-        ties_row_ref.set(shared_chunk, &shared_chunk->sort_columns, start + length - 1);
-        SharedChunkRowRef current_row;
+        size_t current_row_num = start + length;
+        previous_row_chunk = makeChunkWithPreviousRow(*shared_chunk, current_row_num - 1);
 
-        for (size_t i = ties_row_ref.row_num + 1; i < num_rows; ++i)
+        for (; current_row_num < num_rows; ++current_row_num)
         {
-            current_row.set(shared_chunk, &shared_chunk->sort_columns, i);
-            if (current_row == ties_row_ref)
-                ++length;
-            else
+            if (!shared_chunk->sortColumnsEqualAt(current_row_num, 0, *previous_row_chunk))
             {
-                ties_row_ref.reset();
+                previous_row_chunk = {};
                 break;
             }
         }
+
+        length = current_row_num - start;
     }
 
     if (length == num_rows)
@@ -228,7 +233,7 @@ void LimitTransform::work()
     block_processed = true;
 }
 
-ColumnRawPtrs LimitTransform::extractSortColumns(const Columns & columns)
+ColumnRawPtrs LimitTransform::extractSortColumns(const Columns & columns) const
 {
     ColumnRawPtrs res;
     res.reserve(description.size());

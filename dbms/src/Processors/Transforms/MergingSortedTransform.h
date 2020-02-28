@@ -146,7 +146,7 @@ private:
 
         if (!shared_chunk_ptr)
         {
-            shared_chunk_ptr = new detail::SharedChunk(std::move(chunk));
+            shared_chunk_ptr = std::make_shared<detail::SharedChunk>(std::move(chunk));
             cursors[source_num] = SortCursorImpl(shared_chunk_ptr->getColumns(), description, source_num);
             has_collation |= cursors[source_num].has_collation;
         }
