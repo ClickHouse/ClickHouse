@@ -29,9 +29,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int DATABASE_ACCESS_DENIED;
+extern const int NOT_IMPLEMENTED;
+extern const int LOGICAL_ERROR;
+extern const int BAD_TYPE_OF_FIELD;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
 void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
@@ -223,7 +224,8 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
                 chars.resize(offset);
                 for (UInt64 i = 0; i < offset; ++i)
                 {
-                    if (offset - i > 5 ) {
+                    if (offset - i > 5)
+                    {
                         UInt32 r = generator();
                         chars[i] = 32 + (r & 0x7F) % 95;
                         chars[i+1] = 32 + ((r >> 7) & 0x7F) % 95;
@@ -232,7 +234,8 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
                         chars[i+4] = 32 + (r >> 28);
                         i+=4;
                     }
-                    else {
+                    else
+                    {
                         UInt32 r = generator();
                         chars[i] = 32 + (r % 95);
                     }
@@ -398,7 +401,7 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
             break;
         }
         case TypeIndex::Function:
-            throw Exception("Type 'Funclion' can not be stored in a table.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Type 'Function' can not be stored in a table.", ErrorCodes::LOGICAL_ERROR);
         case TypeIndex::AggregateFunction:
             throw Exception("Random Generator not implemented for type 'AggregateFunction'.", ErrorCodes::NOT_IMPLEMENTED);
         case TypeIndex::LowCardinality:
