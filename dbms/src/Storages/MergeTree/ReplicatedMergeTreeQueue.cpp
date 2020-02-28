@@ -1345,7 +1345,11 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
         }
     }
 
-    return candidates.size() != finished.size();
+    /// Mutations may finish in non sequential order because we may fetch
+    /// already mutated parts from other replicas. So, because we updated
+    /// mutation pointer we have to recheck all previous mutations, they may be
+    /// also finished.
+    return !finished.empty();
 }
 
 
