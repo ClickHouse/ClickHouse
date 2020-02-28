@@ -702,6 +702,11 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                     throw Exception{"Wrong column name. Cannot find column " + command.column_name + " to comment", ErrorCodes::ILLEGAL_COLUMN};
             }
         }
+        else if (command.type == AlterCommand::MODIFY_SETTING)
+        {
+            if (metadata.settings_ast == nullptr)
+                throw Exception{"Cannot alter settings, because table engine doesn't support settings changes", ErrorCodes::BAD_ARGUMENTS};
+        }
     }
 }
 
