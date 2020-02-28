@@ -730,6 +730,8 @@ set(CRYPTO_SRCS
 
 if (ARCH_AMD64)
     set (CRYPTO_SRCS ${CRYPTO_SRCS}
+        ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_dgst.c
+        ${OPENSSL_SOURCE_DIR}/crypto/bn/asm/x86_64-gcc.c
         ${OPENSSL_BINARY_DIR}/crypto/bn/rsaz-avx2.s
         ${OPENSSL_BINARY_DIR}/crypto/bn/rsaz-x86_64.s
         ${OPENSSL_BINARY_DIR}/crypto/aes/aesni-mb-x86_64.s
@@ -757,9 +759,7 @@ if (ARCH_AMD64)
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-x86_64.s
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-x86_64.s
         ${OPENSSL_BINARY_DIR}/crypto/whrlpool/wp-x86_64.s
-        ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_dgst.c
         ${OPENSSL_BINARY_DIR}/crypto/x86_64cpuid.s
-        ${OPENSSL_SOURCE_DIR}/crypto/bn/asm/x86_64-gcc.c
     )
 elseif (ARCH_AARCH64)
     set (CRYPTO_SRCS ${CRYPTO_SRCS}
