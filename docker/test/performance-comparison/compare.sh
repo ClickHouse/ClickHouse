@@ -159,7 +159,11 @@ function run_tests
     # Just check that the script runs at all
     "$script_dir/perf.py" --help > /dev/null
 
-    rm -v test-times.tsv ||:
+    for x in {test-times,skipped-tests}.tsv
+    do
+        rm -v "$x" ||:
+        touch "$x"
+    done
 
     # FIXME remove some broken long tests
     rm right/performance/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
