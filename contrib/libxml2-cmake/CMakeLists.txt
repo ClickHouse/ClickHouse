@@ -52,7 +52,7 @@ set(SRCS
 )
 add_library(libxml2 ${SRCS})
 
-target_link_libraries(libxml2 PRIVATE ${ZLIB_LIBRARIES} ${CMAKE_DL_LIBS})
+target_link_libraries(libxml2 PRIVATE ${ZLIB_LIBRARIES})
 if(M_LIBRARY)
     target_link_libraries(libxml2 PRIVATE ${M_LIBRARY})
 endif()
