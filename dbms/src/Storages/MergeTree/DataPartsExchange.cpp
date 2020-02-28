@@ -35,7 +35,6 @@ namespace DataPartsExchange
 namespace
 {
 
-static constexpr auto REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE = 0;
 static constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = 1;
 static constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS = 2;
 
@@ -57,11 +56,6 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     int client_protocol_version = parse<int>(params.get("client_protocol_version", "0"));
 
     String part_name = params.get("part");
-
-    if (client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS
-        && client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE
-        && client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE)
-        throw Exception("Unsupported fetch protocol version", ErrorCodes::UNKNOWN_PROTOCOL);
 
     const auto data_settings = data.getSettings();
 
