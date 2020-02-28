@@ -339,7 +339,7 @@ ColumnPtr ColumnVector<T>::index(const IColumn & indexes, size_t limit) const
 template <typename T>
 ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 {
-    size_t size = data.size();
+    const size_t size = data.size();
     if (size != offsets.size())
         throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
@@ -348,12 +348,13 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 
     auto res = this->create(offsets.back());
 
-    auto it = res->getData().begin();
+    typename Self::Container::value_type * const start = res->getData().data();
+    typename Self::Container::value_type * curr = start;
     for (size_t i = 0; i < size; ++i)
     {
-        const auto span_end = res->getData().begin() + offsets[i];
-        for (; it < span_end; ++it)
-            *it = data[i];
+        const auto span_end = start + offsets[i];
+        while (curr < span_end)
+            *curr++ = data[i];
     }
 
     return res;
