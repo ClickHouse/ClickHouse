@@ -61,7 +61,8 @@ private:
     ASTPtr fetch_column_query;
 
     Context & global_context;
-    bool is_proctime_tumble{false};
+    bool is_proctime{false};
+    bool is_tumble; // false if is hop
     std::atomic<bool> shutdown_called{false};
     mutable Block sample_block;
     mutable Block mergeable_sample_block;

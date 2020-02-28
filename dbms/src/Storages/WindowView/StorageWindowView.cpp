@@ -49,13 +49,13 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int CANNOT_PARSE_TEXT;
+    extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_QUERY;
-    extern const int TABLE_WAS_NOT_DROPPED;
+    extern const int LOGICAL_ERROR;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int CANNOT_PARSE_TEXT;
+    extern const int TABLE_WAS_NOT_DROPPED;
 }
 
 namespace
@@ -128,7 +128,7 @@ namespace
 
         struct Data
         {
-            bool is_proctime_tumble = false;
+            bool is_proctime = false;
             String window_column_name;
         };
 
@@ -150,10 +150,15 @@ namespace
             {
                 if (const auto * t = node.arguments->children[0]->as<ASTFunction>(); t && t->name == "now")
                 {
-                    data.is_proctime_tumble = true;
+                    data.is_proctime = true;
                     node_ptr->children[0]->children[0] = std::make_shared<ASTIdentifier>("____timestamp");
                     data.window_column_name = node.getColumnName();
                 }
+            }
+            else if (node.name == "HOP")
+            {
+                if (const auto * t = node.arguments->children[0]->as<ASTFunction>(); t && t->name == "now")
+                    data.is_proctime = true;
             }
         }
     };
@@ -417,7 +422,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
 
     auto columns_list = std::make_shared<ASTExpressionList>();
 
-    if (is_proctime_tumble)
+    if (is_proctime && is_tumble)
     {
         auto column_window = std::make_shared<ASTColumnDeclaration>();
         column_window->name = window_column_name;
@@ -668,8 +673,8 @@ StorageWindowView::StorageWindowView(
     final_query = inner_query->clone();
     ParserProcTimeFinalMatcher::Data final_query_data;
     ParserProcTimeFinalMatcher::Visitor(final_query_data).visit(final_query);
-    is_proctime_tumble = final_query_data.is_proctime_tumble;
-    if (is_proctime_tumble)
+    is_proctime = final_query_data.is_proctime;
+    if (is_proctime && is_tumble)
         window_column_name = final_query_data.window_column_name;
 
     /// If the table is not specified - use the table `system.one`
@@ -690,7 +695,7 @@ StorageWindowView::StorageWindowView(
 
     if (query.watermark_function)
     {
-        if (is_proctime_tumble)
+        if (is_proctime)
             throw Exception("WATERMARK is not support for Processing time processing.", ErrorCodes::INCORRECT_QUERY);
 
         // parser watermark function
@@ -779,6 +784,7 @@ ASTPtr StorageWindowView::innerQueryParser(ASTSelectQuery & query)
     if (!stageMergeableOneData.is_tumble && !stageMergeableOneData.is_hop)
         throw Exception("WINDOW FUNCTION is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
     window_column_name = stageMergeableOneData.window_column_name;
+    is_tumble = stageMergeableOneData.is_tumble;
 
     // parser window function
     ASTFunction & window_function = typeid_cast<ASTFunction &>(*stageMergeableOneData.window_function);
@@ -803,18 +809,22 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
     Pipe pipe(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), Chunk(block.getColumns(), block.rows())));
 
     std::shared_lock<std::shared_mutex> fire_signal_lock;
-    if (window_view.is_proctime_tumble)
+    if (window_view.is_proctime)
     {
         fire_signal_lock = std::shared_lock<std::shared_mutex>(window_view.fire_signal_mutex);
         timestamp_now = std::time(nullptr);
         watermark = window_view.getWindowLowerBound(timestamp_now);
-        pipe.addSimpleTransform(std::make_shared<AddingConstColumnTransform<UInt32>>(
-            pipe.getHeader(), std::make_shared<DataTypeDateTime>(), timestamp_now, "____timestamp"));
+        if (window_view.is_tumble)
+            pipe.addSimpleTransform(std::make_shared<AddingConstColumnTransform<UInt32>>(
+                pipe.getHeader(), std::make_shared<DataTypeDateTime>(), timestamp_now, "____timestamp"));
     }
     else
     {
         timestamp_now = std::time(nullptr);
-        watermark = window_view.getWatermark(timestamp_now);
+        if (window_view.watermark_num_units == 0)
+            watermark = window_view.getWindowLowerBound(timestamp_now);
+        else
+            watermark = window_view.getWatermark(timestamp_now);
     }
 
     InterpreterSelectQuery select_block(window_view.getFinalQuery(), context, {std::move(pipe)}, QueryProcessingStage::WithMergeableState);
@@ -834,12 +844,14 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
         auto lock_ = inner_storage->lockStructureForShare(true, context.getCurrentQueryId());
         auto stream = inner_storage->write(window_view.getInnerQuery(), context);
         copyData(*source_stream, *stream);
+        source_stream->readSuffix();
     }
     else
     {
         BlocksListPtr new_mergeable_blocks = std::make_shared<BlocksList>();
         while (Block block_ = source_stream->read())
             new_mergeable_blocks->push_back(std::move(block_));
+        source_stream->readSuffix();
 
         std::unique_lock lock(window_view.mutex);
         window_view.getMergeableBlocksList()->push_back(new_mergeable_blocks);
