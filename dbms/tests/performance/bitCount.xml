@@ -1,5 +1,5 @@
 <test>
-    <type>once</type>
+    <type>loop</type>
 
     <stop_conditions>
         <any_of>
@@ -23,5 +23,5 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT bitCount({expr}) FROM system.numbers</query>
+    <query>SELECT bitCount({expr}) FROM numbers(1000000)</query>
 </test>
