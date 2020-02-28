@@ -48,6 +48,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EMPTY_NESTED_TABLE;
+    extern const int LOGICAL_ERROR;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
     extern const int NOT_IMPLEMENTED;
