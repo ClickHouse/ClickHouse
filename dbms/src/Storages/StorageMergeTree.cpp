@@ -565,7 +565,7 @@ void StorageMergeTree::loadMutations()
         {
             if (startsWith(it->name(), "mutation_"))
             {
-                MergeTreeMutationEntry entry(disk, it->path(), it->name());
+                MergeTreeMutationEntry entry(disk, path, it->name());
                 Int64 block_number = entry.block_number;
                 auto insertion = current_mutations_by_id.emplace(it->name(), std::move(entry));
                 current_mutations_by_version.emplace(block_number, insertion.first->second);
@@ -1325,26 +1325,26 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
 
     for (auto & part : data_parts)
     {
-        String full_part_path = part->getFullPath();
+        auto disk = part->disk;
+        String part_path = part->getFullRelativePath();
         /// If the checksums file is not present, calculate the checksums and write them to disk.
-        String checksums_path = full_part_path + "checksums.txt";
-        String tmp_checksums_path = full_part_path + "checksums.txt.tmp";
-        if (!Poco::File(checksums_path).exists())
+        String checksums_path = part_path + "checksums.txt";
+        String tmp_checksums_path = part_path + "checksums.txt.tmp";
+        if (!disk->exists(checksums_path))
         {
             try
             {
                 auto calculated_checksums = checkDataPart(part, false);
                 calculated_checksums.checkEqual(part->checksums, true);
-                WriteBufferFromFile out(tmp_checksums_path, 4096);
-                part->checksums.write(out);
-                Poco::File(tmp_checksums_path).renameTo(checksums_path);
+                auto out = disk->writeFile(tmp_checksums_path, 4096);
+                part->checksums.write(*out);
+                disk->moveFile(tmp_checksums_path, checksums_path);
                 results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
             }
             catch (const Exception & ex)
             {
-                Poco::File tmp_file(tmp_checksums_path);
-                if (tmp_file.exists())
-                    tmp_file.remove();
+                if (disk->exists(tmp_checksums_path))
+                    disk->remove(tmp_checksums_path);
 
                 results.emplace_back(part->name, false,
                     "Check of part finished with error: '" + ex.message() + "'");

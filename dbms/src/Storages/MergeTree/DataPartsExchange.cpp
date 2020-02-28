@@ -122,16 +122,17 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
         {
             String file_name = it.first;
 
-            String path = part->getFullPath() + file_name;
+            auto disk = part->disk;
+            String path = part->getFullRelativePath() + file_name;
 
-            UInt64 size = Poco::File(path).getSize();
+            UInt64 size = disk->getFileSize(path);
 
             writeStringBinary(it.first, out);
             writeBinary(size, out);
 
-            ReadBufferFromFile file_in(path);
+            auto file_in = disk->readFile(path);
             HashingWriteBuffer hashing_out(out);
-            copyData(file_in, hashing_out, blocker.getCounter());
+            copyData(*file_in, hashing_out, blocker.getCounter());
 
             if (blocker.isCancelled())
                 throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);

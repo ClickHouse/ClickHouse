@@ -608,6 +608,12 @@ bool DiskS3::tryReserve(UInt64 bytes)
     return false;
 }
 
+void DiskS3::listFiles(const String & path, std::vector<String> & file_names)
+{
+    for (auto it = iterateDirectory(path); it->isValid(); it->next())
+        file_names.push_back(it->name());
+}
+
 
 DiskS3Reservation::~DiskS3Reservation()
 {

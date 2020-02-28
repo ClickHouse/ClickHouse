@@ -67,6 +67,8 @@ public:
 
     void copyFile(const String & from_path, const String & to_path) override;
 
+    void listFiles(const String & path, std::vector<String> & file_names) override;
+
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
