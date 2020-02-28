@@ -1,6 +1,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/Context.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 
 
@@ -9,6 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
 }
 

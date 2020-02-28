@@ -10,7 +10,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int READONLY;
     extern const int UNKNOWN_FUNCTION;
     extern const int LOGICAL_ERROR;
 }
@@ -32,9 +31,6 @@ TableFunctionPtr TableFunctionFactory::get(
     const std::string & name,
     const Context & context) const
 {
-    if (context.getSettings().readonly == 1)        /** For example, for readonly = 2 - allowed. */
-        throw Exception("Table functions are forbidden in readonly mode", ErrorCodes::READONLY);
-
     auto res = tryGet(name, context);
     if (!res)
     {

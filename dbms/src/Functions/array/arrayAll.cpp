@@ -6,6 +6,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
 
 /** arrayAll(x1,...,xn -> expression, array1,...,arrayn) - is the expression true for all elements of the array.
   * An overload of the form f(array) is available, which works in the same way as f(x -> x, array).

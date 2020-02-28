@@ -77,6 +77,31 @@ namespace CurrentMetrics
     extern const Metric VersionInteger;
 }
 
+namespace
+{
+
+void setupTmpPath(Logger * log, const std::string & path)
+{
+    LOG_DEBUG(log, "Setting up " << path << " to store temporary data in it");
+
+    Poco::File(path).createDirectories();
+
+    /// Clearing old temporary files.
+    Poco::DirectoryIterator dir_end;
+    for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
+    {
+        if (it->isFile() && startsWith(it.name(), "tmp"))
+        {
+            LOG_DEBUG(log, "Removing old temporary file " << it->path());
+            it->remove();
+        }
+        else
+            LOG_DEBUG(log, "Skipped file in temporary path " << it->path());
+    }
+}
+
+}
+
 namespace DB
 {
 
@@ -91,7 +116,6 @@ namespace ErrorCodes
     extern const int FAILED_TO_GETPWUID;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
-    extern const int PATH_ACCESS_DENIED;
 }
 
 
@@ -331,22 +355,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
     DateLUT::instance();
     LOG_TRACE(log, "Initialized DateLUT with time zone '" << DateLUT::instance().getTimeZone() << "'.");
 
-    /// Directory with temporary data for processing of heavy queries.
+
+    /// Storage with temporary data for processing of heavy queries.
     {
         std::string tmp_path = config().getString("tmp_path", path + "tmp/");
-        global_context->setTemporaryPath(tmp_path);
-        Poco::File(tmp_path).createDirectories();
-
-        /// Clearing old temporary files.
-        Poco::DirectoryIterator dir_end;
-        for (Poco::DirectoryIterator it(tmp_path); it != dir_end; ++it)
-        {
-            if (it->isFile() && startsWith(it.name(), "tmp"))
-            {
-                LOG_DEBUG(log, "Removing old temporary file " << it->path());
-                it->remove();
-            }
-        }
+        std::string tmp_policy = config().getString("tmp_policy", "");
+        const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy);
+        for (const DiskPtr & disk : volume->disks)
+            setupTmpPath(log, disk->getPath());
     }
 
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
@@ -560,6 +576,25 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (hasPHDRCache())
         global_context->initializeTraceCollector();
 #endif
+
+    /// Describe multiple reasons when query profiler cannot work.
+
+#if !USE_UNWIND
+    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work without bundled unwind (stack unwinding) library.");
+#endif
+
+#if WITH_COVERAGE
+    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they work extremely slow with test coverage.");
+#endif
+
+#if defined(SANITIZER)
+    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work under sanitizers"
+        " when two different stack unwinding methods will interfere with each other.");
+#endif
+
+    if (!hasPHDRCache())
+        LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
+            " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 
     global_context->setCurrentDatabase(default_database);
 
@@ -864,7 +899,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
         for (auto & server : servers)
             server->start();
 
-        setTextLog(global_context->getTextLog());
+        {
+            String level_str = config().getString("text_log.level", "");
+            int level = level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(level_str);
+            setTextLog(global_context->getTextLog(), level);
+        }
         buildLoggers(config(), logger());
 
         main_config_reloader->start();

@@ -63,4 +63,4 @@ The example specifies two profiles: `default` and `web`. The `default` profile h
 Settings profiles can inherit from each other. To use inheritance, indicate one or multiple `profile` settings before the other settings that are listed in the profile. In case when one setting is defined in different profiles, the latest defined is used.
 
 
-[Original article](https://clickhouse.yandex/docs/en/operations/settings/settings_profiles/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/settings/settings_profiles/) <!--hide-->

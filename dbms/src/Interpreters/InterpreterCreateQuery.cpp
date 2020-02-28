@@ -32,6 +32,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 
+#include <Access/AccessRightsElement.h>
+
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -57,13 +59,9 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int INCORRECT_QUERY;
-    extern const int ENGINE_REQUIRED;
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int DUPLICATE_COLUMN;
-    extern const int READONLY;
-    extern const int ILLEGAL_COLUMN;
     extern const int DATABASE_ALREADY_EXISTS;
-    extern const int QUERY_IS_PROHIBITED;
     extern const int THERE_IS_NO_DEFAULT_VALUE;
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
     extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
@@ -79,9 +77,6 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
-    if (!create.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, {create.database});
-
     String database_name = create.database;
 
     auto guard = context.getDDLGuard(database_name, "");
@@ -323,7 +318,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
     {
         auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(default_expr_list, column_names_and_types);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
-        for (auto action : actions->getActions())
+        for (auto & action : actions->getActions())
             if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
                 throw Exception("Cannot CREATE table. Unsupported default value that requires ARRAY JOIN or JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
 
@@ -486,7 +481,7 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
-    if (create.storage)
+    if (create.storage || create.is_view || create.is_materialized_view || create.is_live_view || create.is_dictionary)
     {
         if (create.temporary && create.storage->engine->name != "Memory")
             throw Exception(
@@ -496,7 +491,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         return;
     }
 
-    if (create.temporary && !create.is_live_view)
+    if (create.temporary)
     {
         auto engine_ast = std::make_shared<ASTFunction>();
         engine_ast->name = "Memory";
@@ -538,27 +533,20 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
-    if (!create.cluster.empty())
-    {
-        NameSet databases{create.database};
-        if (!create.to_table.empty())
-            databases.emplace(create.to_database);
-
-        return executeDDLQueryOnCluster(query_ptr, context, std::move(databases));
-    }
-
     /// Temporary tables are created out of databases.
-    if (create.temporary && !create.database.empty() && !create.is_live_view)
+    if (create.temporary && !create.database.empty())
         throw Exception("Temporary tables cannot be inside a database. You should not specify a database for a temporary table.",
             ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
 
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
     {
+        bool if_not_exists = create.if_not_exists;
         // Table SQL definition is available even if the table is detached
         auto query = context.getDatabase(create.database)->getCreateTableQuery(context, create.table);
         create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
         create.attach = true;
+        create.if_not_exists = if_not_exists;
     }
 
     String current_database = context.getCurrentDatabase();
@@ -593,7 +581,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
     DatabasePtr database;
 
     const String & table_name = create.table;
-    bool need_add_to_database = !create.temporary || create.is_live_view;
+    bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
     {
         database = context.getDatabase(create.database);
@@ -628,6 +616,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
          return false;
 
     StoragePtr res;
+    /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
     {
         const auto & table_function = create.as_table_function->as<ASTFunction &>();
@@ -690,9 +679,6 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 
 BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 {
-    if (!create.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, {create.database});
-
     String dictionary_name = create.table;
 
     if (create.database.empty())
@@ -730,7 +716,11 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 BlockIO InterpreterCreateQuery::execute()
 {
     auto & create = query_ptr->as<ASTCreateQuery &>();
-    checkAccess(create);
+    if (!create.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccess());
+
+    context.checkAccess(getRequiredAccess());
+
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 
     /// CREATE|ATTACH DATABASE
@@ -743,43 +733,47 @@ BlockIO InterpreterCreateQuery::execute()
 }
 
 
-void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
+AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 {
     /// Internal queries (initiated by the server itself) always have access to everything.
     if (internal)
-        return;
+        return {};
 
-    const Settings & settings = context.getSettingsRef();
-    auto readonly = settings.readonly;
-    auto allow_ddl = settings.allow_ddl;
+    AccessRightsElements required_access;
+    const auto & create = query_ptr->as<const ASTCreateQuery &>();
 
-    if (!readonly && allow_ddl)
-        return;
-
-    /// CREATE|ATTACH DATABASE
-    if (!create.database.empty() && create.table.empty())
+    if (create.table.empty())
     {
-        if (readonly)
-            throw Exception("Cannot create database in readonly mode", ErrorCodes::READONLY);
-
-        throw Exception("Cannot create database. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
+        required_access.emplace_back(AccessType::CREATE_DATABASE, create.database);
     }
-    String object = "table";
-
-    if (create.is_dictionary)
+    else if (create.is_dictionary)
     {
-        if (readonly)
-            throw Exception("Cannot create dictionary in readonly mode", ErrorCodes::READONLY);
-        object = "dictionary";
+        required_access.emplace_back(AccessType::CREATE_DICTIONARY, create.database, create.table);
+    }
+    else if (create.is_view || create.is_materialized_view || create.is_live_view)
+    {
+        if (create.temporary)
+            required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
+        else
+        {
+            if (create.replace_view)
+                required_access.emplace_back(AccessType::DROP_VIEW | AccessType::CREATE_VIEW, create.database, create.table);
+            else
+                required_access.emplace_back(AccessType::CREATE_VIEW, create.database, create.table);
+        }
+    }
+    else
+    {
+        if (create.temporary)
+            required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
+        else
+            required_access.emplace_back(AccessType::CREATE_TABLE, create.database, create.table);
     }
 
-    if (create.temporary && readonly >= 2)
-        return;
+    if (!create.to_table.empty())
+        required_access.emplace_back(AccessType::INSERT, create.to_database, create.to_table);
 
-    if (readonly)
-        throw Exception("Cannot create table or dictionary in readonly mode", ErrorCodes::READONLY);
-
-    throw Exception("Cannot create " + object + ". DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
+    return required_access;
 }
 
 }

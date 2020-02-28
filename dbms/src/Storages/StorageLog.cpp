@@ -5,8 +5,10 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromFile.h>
+#include <Interpreters/evaluateConstantExpression.h>
+
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -20,6 +22,10 @@
 #include <Columns/ColumnArray.h>
 
 #include <Interpreters/Context.h>
+#include <Parsers/ASTLiteral.h>
+#include "StorageLogSettings.h"
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Pipe.h>
 
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -32,8 +38,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int DUPLICATE_COLUMN;
     extern const int SIZES_OF_MARKS_FILES_ARE_INCONSISTENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -41,13 +45,25 @@ namespace ErrorCodes
 }
 
 
-class LogBlockInputStream final : public IBlockInputStream
+class LogSource final : public SourceWithProgress
 {
 public:
-    LogBlockInputStream(
+
+    static Block getHeader(const NamesAndTypesList & columns)
+    {
+        Block res;
+
+        for (const auto & name_type : columns)
+            res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
+
+        return Nested::flatten(res);
+    }
+
+    LogSource(
         size_t block_size_, const NamesAndTypesList & columns_, StorageLog & storage_,
         size_t mark_number_, size_t rows_limit_, size_t max_read_buffer_size_)
-        : block_size(block_size_),
+        : SourceWithProgress(getHeader(columns_)),
+        block_size(block_size_),
         columns(columns_),
         storage(storage_),
         mark_number(mark_number_),
@@ -58,18 +74,8 @@ public:
 
     String getName() const override { return "Log"; }
 
-    Block getHeader() const override
-    {
-        Block res;
-
-        for (const auto & name_type : columns)
-            res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
-
-        return Nested::flatten(res);
-    }
-
 protected:
-    Block readImpl() override;
+    Chunk generate() override;
 
 private:
     size_t block_size;
@@ -83,14 +89,14 @@ private:
     struct Stream
     {
         Stream(const DiskPtr & disk, const String & data_path, size_t offset, size_t max_read_buffer_size_)
-            : plain(fullPath(disk, data_path), std::min(max_read_buffer_size_, disk->getFileSize(data_path))),
-            compressed(plain)
+            : plain(disk->readFile(data_path, std::min(max_read_buffer_size_, disk->getFileSize(data_path)))),
+            compressed(*plain)
         {
             if (offset)
-                plain.seek(offset);
+                plain->seek(offset, SEEK_SET);
         }
 
-        ReadBufferFromFile plain;
+        std::unique_ptr<ReadBufferFromFileBase> plain;
         CompressedReadBuffer compressed;
     };
 
@@ -111,7 +117,7 @@ public:
     explicit LogBlockOutputStream(StorageLog & storage_)
         : storage(storage_),
         lock(storage.rwlock),
-        marks_stream(fullPath(storage.disk, storage.marks_file_path), 4096, O_APPEND | O_CREAT | O_WRONLY)
+        marks_stream(storage.disk->writeFile(storage.marks_file_path, 4096, WriteMode::Rewrite))
     {
     }
 
@@ -139,13 +145,13 @@ private:
     struct Stream
     {
         Stream(const DiskPtr & disk, const String & data_path, CompressionCodecPtr codec, size_t max_compress_block_size) :
-            plain(fullPath(disk, data_path), max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-            compressed(plain, std::move(codec), max_compress_block_size),
+            plain(disk->writeFile(data_path, max_compress_block_size, WriteMode::Append)),
+            compressed(*plain, std::move(codec), max_compress_block_size),
             plain_offset(disk->getFileSize(data_path))
         {
         }
 
-        WriteBufferFromFile plain;
+        std::unique_ptr<WriteBuffer> plain;
         CompressedWriteBuffer compressed;
 
         size_t plain_offset;    /// How many bytes were in the file at the time the LogBlockOutputStream was created.
@@ -153,7 +159,7 @@ private:
         void finalize()
         {
             compressed.next();
-            plain.next();
+            plain->next();
         }
     };
 
@@ -165,7 +171,7 @@ private:
 
     using WrittenStreams = std::set<String>;
 
-    WriteBufferFromFile marks_stream; /// Declared below `lock` to make the file open when rwlock is captured.
+    std::unique_ptr<WriteBuffer> marks_stream; /// Declared below `lock` to make the file open when rwlock is captured.
 
     using SerializeState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializeStates = std::map<String, SerializeState>;
@@ -181,15 +187,15 @@ private:
 };
 
 
-Block LogBlockInputStream::readImpl()
+Chunk LogSource::generate()
 {
     Block res;
 
     if (rows_read == rows_limit)
-        return res;
+        return {};
 
     if (storage.disk->isDirectoryEmpty(storage.table_path))
-        return res;
+        return {};
 
     /// How many rows to read for the next block.
     size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
@@ -208,7 +214,7 @@ Block LogBlockInputStream::readImpl()
             throw;
         }
 
-        if (column->size())
+        if (!column->empty())
             res.insert(ColumnWithTypeAndName(std::move(column), name_type.type, name_type.name));
     }
 
@@ -224,11 +230,13 @@ Block LogBlockInputStream::readImpl()
         streams.clear();
     }
 
-    return Nested::flatten(res);
+    res = Nested::flatten(res);
+    UInt64 num_rows = res.rows();
+    return Chunk(res.getColumns(), num_rows);
 }
 
 
-void LogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read)
+void LogSource::readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read)
 {
     IDataType::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
 
@@ -302,7 +310,7 @@ void LogBlockOutputStream::writeSuffix()
     }
 
     /// Finish write.
-    marks_stream.next();
+    marks_stream->next();
 
     for (auto & name_stream : streams)
         name_stream.second.finalize();
@@ -372,7 +380,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 
         Mark mark;
         mark.rows = (file.marks.empty() ? 0 : file.marks.back().rows) + column.size();
-        mark.offset = stream_it->second.plain_offset + stream_it->second.plain.count();
+        mark.offset = stream_it->second.plain_offset + stream_it->second.plain->count();
 
         out_marks.emplace_back(file.column_index, mark);
     }, settings.path);
@@ -402,8 +410,8 @@ void LogBlockOutputStream::writeMarks(MarksForColumns && marks)
 
     for (const auto & mark : marks)
     {
-        writeIntBinary(mark.second.rows, marks_stream);
-        writeIntBinary(mark.second.offset, marks_stream);
+        writeIntBinary(mark.second.rows, *marks_stream);
+        writeIntBinary(mark.second.offset, *marks_stream);
 
         size_t column_index = mark.first;
         storage.files[storage.column_names_by_idx[column_index]].marks.push_back(mark.second);
@@ -542,8 +550,9 @@ void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLo
 
 const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 {
-    const String & column_name = getColumns().begin()->name;
-    const IDataType & column_type = *getColumns().begin()->type;
+    /// There should be at least one physical column
+    const String column_name = getColumns().getAllPhysical().begin()->name;
+    const auto column_type = getColumns().getAllPhysical().begin()->type;
     String filename;
 
     /** We take marks from first column.
@@ -551,7 +560,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
       * (Example: for Array data type, first stream is array sizes; and number of array sizes is the number of arrays).
       */
     IDataType::SubstreamPath substream_root_path;
-    column_type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    column_type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
     {
         if (filename.empty())
             filename = IDataType::getFileNameForStream(column_name, substream_path);
@@ -564,7 +573,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
     return it->second.marks;
 }
 
-BlockInputStreams StorageLog::read(
+Pipes StorageLog::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
@@ -579,7 +588,7 @@ BlockInputStreams StorageLog::read(
 
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
-    BlockInputStreams res;
+    Pipes pipes;
 
     const Marks & marks = getMarksWithRealRowCount();
     size_t marks_size = marks.size();
@@ -597,7 +606,7 @@ BlockInputStreams StorageLog::read(
         size_t rows_begin = mark_begin ? marks[mark_begin - 1].rows : 0;
         size_t rows_end = mark_end ? marks[mark_end - 1].rows : 0;
 
-        res.emplace_back(std::make_shared<LogBlockInputStream>(
+        pipes.emplace_back(std::make_shared<LogSource>(
             max_block_size,
             all_columns,
             *this,
@@ -606,7 +615,7 @@ BlockInputStreams StorageLog::read(
             max_read_buffer_size));
     }
 
-    return res;
+    return pipes;
 }
 
 BlockOutputStreamPtr StorageLog::write(
@@ -625,6 +634,10 @@ CheckResults StorageLog::checkData(const ASTPtr & /* query */, const Context & /
 
 void registerStorageLog(StorageFactory & factory)
 {
+    StorageFactory::StorageFeatures features{
+        .supports_settings = true
+    };
+
     factory.registerStorage("Log", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
@@ -632,10 +645,13 @@ void registerStorageLog(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+        String disk_name = getDiskName(*args.storage_def);
+        DiskPtr disk = args.context.getDisk(disk_name);
+
         return StorageLog::create(
-            args.context.getDefaultDisk(), args.relative_data_path, args.table_id, args.columns, args.constraints,
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
             args.context.getSettings().max_compress_block_size);
-    });
+    }, features);
 }
 
 }

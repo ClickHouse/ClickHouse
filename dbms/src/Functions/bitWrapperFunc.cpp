@@ -16,6 +16,7 @@ namespace DB
     struct BitWrapperFuncImpl
     {
         using ResultType = UInt8;
+        static constexpr const bool allow_fixed_string = false;
 
         static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
         {
@@ -26,7 +27,6 @@ namespace DB
 
 #if USE_EMBEDDED_COMPILER
         static constexpr bool compilable = false;
-
 #endif
     };
 

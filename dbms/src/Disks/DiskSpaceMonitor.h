@@ -16,17 +16,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int NOT_ENOUGH_SPACE;
-    extern const int NOT_IMPLEMENTED;
-    extern const int SYSTEM_ERROR;
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int UNKNOWN_POLICY;
-    extern const int UNKNOWN_DISK;
-}
 
 /// Parse .xml configuration and store information about disks
 /// Mostly used for introspection.
@@ -66,6 +55,13 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         const DiskSelector & disk_selector);
+
+    /// Next disk (round-robin)
+    ///
+    /// - Used with policy for temporary data
+    /// - Ignores all limitations
+    /// - Shares last access with reserve()
+    DiskPtr getNextDisk();
 
     /// Uses Round-robin to choose disk for reservation.
     /// Returns valid reservation or nullptr if there is no space left on any disk.

@@ -1,4 +1,6 @@
 #include <Access/IAccessStorage.h>
+#include <Access/User.h>
+#include <Access/Role.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
@@ -13,8 +15,9 @@ namespace ErrorCodes
     extern const int BAD_CAST;
     extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
-    extern const int ACCESS_ENTITY_FOUND_DUPLICATES;
     extern const int ACCESS_ENTITY_STORAGE_READONLY;
+    extern const int UNKNOWN_USER;
+    extern const int UNKNOWN_ROLE;
 }
 
 
@@ -299,44 +302,24 @@ std::vector<UUID> IAccessStorage::tryUpdate(const std::vector<UUID> & ids, const
 }
 
 
-IAccessStorage::SubscriptionPtr IAccessStorage::subscribeForChanges(std::type_index type, const OnChangedHandler & handler) const
+ext::scope_guard IAccessStorage::subscribeForChanges(std::type_index type, const OnChangedHandler & handler) const
 {
     return subscribeForChangesImpl(type, handler);
 }
 
 
-IAccessStorage::SubscriptionPtr IAccessStorage::subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const
+ext::scope_guard IAccessStorage::subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const
 {
     return subscribeForChangesImpl(id, handler);
 }
 
 
-IAccessStorage::SubscriptionPtr IAccessStorage::subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const
+ext::scope_guard IAccessStorage::subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const
 {
-    if (ids.empty())
-        return nullptr;
-    if (ids.size() == 1)
-        return subscribeForChangesImpl(ids[0], handler);
-
-    std::vector<SubscriptionPtr> subscriptions;
-    subscriptions.reserve(ids.size());
+    ext::scope_guard subscriptions;
     for (const auto & id : ids)
-    {
-        auto subscription = subscribeForChangesImpl(id, handler);
-        if (subscription)
-            subscriptions.push_back(std::move(subscription));
-    }
-
-    class SubscriptionImpl : public Subscription
-    {
-    public:
-        SubscriptionImpl(std::vector<SubscriptionPtr> subscriptions_)
-            : subscriptions(std::move(subscriptions_)) {}
-    private:
-        std::vector<SubscriptionPtr> subscriptions;
-    };
-
-    return std::make_unique<SubscriptionImpl>(std::move(subscriptions));
+        subscriptions.join(subscribeForChangesImpl(id, handler));
+    return subscriptions;
 }
 
 
@@ -385,8 +368,15 @@ void IAccessStorage::throwNotFound(const UUID & id) const
 
 void IAccessStorage::throwNotFound(std::type_index type, const String & name) const
 {
-    throw Exception(
-        getTypeName(type) + " " + backQuote(name) + " not found in " + getStorageName(), ErrorCodes::ACCESS_ENTITY_NOT_FOUND);
+    int error_code;
+    if (type == typeid(User))
+        error_code = ErrorCodes::UNKNOWN_USER;
+    else if (type == typeid(Role))
+        error_code = ErrorCodes::UNKNOWN_ROLE;
+    else
+        error_code = ErrorCodes::ACCESS_ENTITY_NOT_FOUND;
+
+    throw Exception(getTypeName(type) + " " + backQuote(name) + " not found in " + getStorageName(), error_code);
 }
 
 

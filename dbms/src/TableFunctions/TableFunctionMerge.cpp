@@ -6,9 +6,10 @@
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Access/AccessFlags.h>
 #include <TableFunctions/TableFunctionMerge.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
@@ -61,11 +62,13 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Co
             " - name of source database and regexp for table names.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context);
+    args[0] = evaluateConstantExpressionForDatabaseName(args[0], context);
     args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
 
     String source_database = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     String table_name_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+
+    context.checkAccess(AccessType::merge, source_database);
 
     auto res = StorageMerge::create(
         StorageID(getDatabaseName(), table_name),

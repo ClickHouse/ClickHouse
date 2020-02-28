@@ -5,11 +5,20 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 SourceFromInputStream::SourceFromInputStream(BlockInputStreamPtr stream_, bool force_add_aggregating_info_)
     : ISourceWithProgress(stream_->getHeader())
     , force_add_aggregating_info(force_add_aggregating_info_)
     , stream(std::move(stream_))
+{
+    init();
+}
+
+void SourceFromInputStream::init()
 {
     auto & sample = getPort().getHeader();
     for (auto & type : sample.getDataTypes())
@@ -35,7 +44,7 @@ IProcessor::Status SourceFromInputStream::prepare()
         is_generating_finished = true;
 
         /// Read postfix and get totals if needed.
-        if (!is_stream_finished)
+        if (!is_stream_finished && !isCancelled())
             return Status::Ready;
 
         if (has_totals_port)
@@ -109,7 +118,7 @@ Chunk SourceFromInputStream::generate()
     }
 
     auto block = stream->read();
-    if (!block)
+    if (!block && !isCancelled())
     {
         stream->readSuffix();
 

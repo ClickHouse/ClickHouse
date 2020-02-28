@@ -26,4 +26,4 @@
 接受一个整数。返回一个UInt64类型数组，其中包含一组2的幂列表，其列表中的所有值相加等于这个整数。数组中的数字按升序排列。
 
 
-[来源文章](https://clickhouse.yandex/docs/en/query_language/functions/encoding_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/encoding_functions/) <!--hide-->

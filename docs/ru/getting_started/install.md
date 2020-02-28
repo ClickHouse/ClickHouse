@@ -14,7 +14,7 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 ## Доступные варианты установки
 
-### Из DEB пакетов {#from-deb-packages}
+### Из DEB пакетов {#install-from-deb-packages}
 
 Яндекс рекомендует использовать официальные скомпилированные `deb` пакеты для Debian или Ubuntu.
 
@@ -167,6 +167,6 @@ SELECT 1
 
 **Поздравляем, система работает!**
 
-Для дальнейших экспериментов можно попробовать загрузить один из тестовых наборов данных или пройти [пошаговое руководство для начинающих](https://clickhouse.yandex/tutorial.html).
+Для дальнейших экспериментов можно попробовать загрузить один из тестовых наборов данных или пройти [пошаговое руководство для начинающих](https://clickhouse.tech/tutorial.html).
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/getting_started/install/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/install/) <!--hide-->

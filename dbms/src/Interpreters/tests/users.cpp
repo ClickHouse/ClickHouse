@@ -1,5 +1,7 @@
 #include <Common/Config/ConfigProcessor.h>
-#include <Interpreters/UsersManager.h>
+#include <Access/AccessControlManager.h>
+#include <Access/AccessFlags.h>
+#include <Access/User.h>
 #include <filesystem>
 #include <vector>
 #include <string>
@@ -9,7 +11,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <cstdlib>
-#include <port/unistd.h>
+#include <unistd.h>
 
 namespace
 {
@@ -197,11 +199,11 @@ void runOneTest(const TestDescriptor & test_descriptor)
         throw std::runtime_error(os.str());
     }
 
-    DB::UsersManager users_manager;
+    DB::AccessControlManager acl_manager;
 
     try
     {
-        users_manager.loadFromConfig(*config);
+        acl_manager.loadFromConfig(*config);
     }
     catch (const Poco::Exception & ex)
     {
@@ -216,7 +218,7 @@ void runOneTest(const TestDescriptor & test_descriptor)
 
         try
         {
-            res = users_manager.hasAccessToDatabase(entry.user_name, entry.database_name);
+            res = acl_manager.read<DB::User>(entry.user_name)->access.isGranted(DB::AccessType::ALL, entry.database_name);
         }
         catch (const Poco::Exception &)
         {

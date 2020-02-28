@@ -14,7 +14,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <syscall.h>
 #include <linux/genetlink.h>
 #include <linux/netlink.h>
 #include <linux/taskstats.h>
@@ -31,7 +30,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NETLINK_ERROR;
-    extern const int LOGICAL_ERROR;
 }
 
 // Replace NLMSG_OK with explicit casts since that system macro contains signedness bugs which are not going to be fixed.
@@ -287,16 +285,6 @@ void TaskStatsInfoGetter::getStat(::taskstats & out_stats, pid_t tid)
 }
 
 
-static thread_local pid_t current_tid = 0;
-pid_t TaskStatsInfoGetter::getCurrentTID()
-{
-    if (!current_tid)
-        current_tid = syscall(SYS_gettid); /// This call is always successful. - man gettid
-
-    return current_tid;
-}
-
-
 TaskStatsInfoGetter::~TaskStatsInfoGetter()
 {
     if (netlink_socket_fd >= 0)
@@ -329,11 +317,6 @@ TaskStatsInfoGetter::TaskStatsInfoGetter()
 
 void TaskStatsInfoGetter::getStat(::taskstats &, pid_t)
 {
-}
-
-pid_t TaskStatsInfoGetter::getCurrentTID()
-{
-    return 0;
 }
 
 TaskStatsInfoGetter::~TaskStatsInfoGetter()

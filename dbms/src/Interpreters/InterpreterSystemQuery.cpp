@@ -19,6 +19,7 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
+#include <Access/AccessRightsContext.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -37,6 +38,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_KILL;
     extern const int NOT_IMPLEMENTED;
@@ -96,8 +98,29 @@ void executeCommandsAndThrowIfError(Callables && ... commands)
 }
 
 
+AccessType getRequiredAccessType(StorageActionBlockType action_type)
+{
+    if (action_type == ActionLocks::PartsMerge)
+        return AccessType::STOP_MERGES;
+    else if (action_type == ActionLocks::PartsFetch)
+        return AccessType::STOP_FETCHES;
+    else if (action_type == ActionLocks::PartsSend)
+        return AccessType::STOP_REPLICATED_SENDS;
+    else if (action_type == ActionLocks::ReplicationQueue)
+        return AccessType::STOP_REPLICATION_QUEUES;
+    else if (action_type == ActionLocks::DistributedSend)
+        return AccessType::STOP_DISTRIBUTED_SENDS;
+    else if (action_type == ActionLocks::PartsTTLMerge)
+        return AccessType::STOP_TTL_MERGES;
+    else if (action_type == ActionLocks::PartsMove)
+        return AccessType::STOP_MOVES;
+    else
+        throw Exception("Unknown action type: " + std::to_string(action_type), ErrorCodes::LOGICAL_ERROR);
+}
+
+
 /// Implements SYSTEM [START|STOP] <something action from ActionLocks>
-void startStopAction(Context & context, ASTSystemQuery & query, StorageActionBlockType action_type, bool start)
+void startStopAction(Context & context, Poco::Logger * log, ASTSystemQuery & query, StorageActionBlockType action_type, bool start)
 {
     auto manager = context.getActionLocksManager();
     manager->cleanExpired();
@@ -105,7 +128,7 @@ void startStopAction(Context & context, ASTSystemQuery & query, StorageActionBlo
     if (!query.table.empty())
     {
         String database = !query.database.empty() ? query.database : context.getCurrentDatabase();
-
+        context.checkAccess(getRequiredAccessType(action_type), database, query.table);
         if (start)
             manager->remove(database, query.table, action_type);
         else
@@ -113,12 +136,22 @@ void startStopAction(Context & context, ASTSystemQuery & query, StorageActionBlo
     }
     else
     {
-        if (start)
-            manager->remove(action_type);
-        else
-            manager->add(action_type);
+        for (auto & elem : context.getDatabases())
+        {
+            for (auto iterator = elem.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+            {
+                if (context.getAccessRights()->isGranted(log, getRequiredAccessType(action_type), elem.first, iterator->name()))
+                {
+                    if (start)
+                        manager->remove(iterator->table(), action_type);
+                    else
+                        manager->add(iterator->table(), action_type);
+                }
+            }
+        }
     }
 }
+
 }
 
 
@@ -133,7 +166,7 @@ BlockIO InterpreterSystemQuery::execute()
     auto & query = query_ptr->as<ASTSystemQuery &>();
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, {query.database});
+        return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccessForDDLOnCluster());
 
     using Type = ASTSystemQuery::Type;
 
@@ -151,85 +184,95 @@ BlockIO InterpreterSystemQuery::execute()
     switch (query.type)
     {
         case Type::SHUTDOWN:
+            context.checkAccess(AccessType::SHUTDOWN);
             if (kill(0, SIGTERM))
                 throwFromErrno("System call kill(0, SIGTERM) failed", ErrorCodes::CANNOT_KILL);
             break;
         case Type::KILL:
+            context.checkAccess(AccessType::SHUTDOWN);
             if (kill(0, SIGKILL))
                 throwFromErrno("System call kill(0, SIGKILL) failed", ErrorCodes::CANNOT_KILL);
             break;
         case Type::DROP_DNS_CACHE:
+            context.checkAccess(AccessType::DROP_CACHE);
             DNSResolver::instance().dropCache();
             /// Reinitialize clusters to update their resolved_addresses
             system_context.reloadClusterConfig();
             break;
         case Type::DROP_MARK_CACHE:
+            context.checkAccess(AccessType::DROP_CACHE);
             system_context.dropMarkCache();
             break;
         case Type::DROP_UNCOMPRESSED_CACHE:
+            context.checkAccess(AccessType::DROP_CACHE);
             system_context.dropUncompressedCache();
             break;
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
+            context.checkAccess(AccessType::DROP_CACHE);
             system_context.dropCompiledExpressionCache();
             break;
 #endif
         case Type::RELOAD_DICTIONARY:
+            context.checkAccess(AccessType::RELOAD_DICTIONARY);
             system_context.getExternalDictionariesLoader().loadOrReload(query.target_dictionary);
             break;
         case Type::RELOAD_DICTIONARIES:
+            context.checkAccess(AccessType::RELOAD_DICTIONARY);
             executeCommandsAndThrowIfError(
                     [&] () { system_context.getExternalDictionariesLoader().reloadAllTriedToLoad(); },
                     [&] () { system_context.getEmbeddedDictionaries().reload(); }
             );
             break;
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
+            context.checkAccess(AccessType::RELOAD_DICTIONARY);
             system_context.getEmbeddedDictionaries().reload();
             break;
         case Type::RELOAD_CONFIG:
+            context.checkAccess(AccessType::RELOAD_CONFIG);
             system_context.reloadConfig();
             break;
         case Type::STOP_MERGES:
-            startStopAction(context, query, ActionLocks::PartsMerge, false);
+            startStopAction(context, log, query, ActionLocks::PartsMerge, false);
             break;
         case Type::START_MERGES:
-            startStopAction(context, query, ActionLocks::PartsMerge, true);
+            startStopAction(context, log, query, ActionLocks::PartsMerge, true);
             break;
         case Type::STOP_TTL_MERGES:
-            startStopAction(context, query, ActionLocks::PartsTTLMerge, false);
+            startStopAction(context, log, query, ActionLocks::PartsTTLMerge, false);
             break;
         case Type::START_TTL_MERGES:
-            startStopAction(context, query, ActionLocks::PartsTTLMerge, true);
+            startStopAction(context, log, query, ActionLocks::PartsTTLMerge, true);
             break;
         case Type::STOP_MOVES:
-            startStopAction(context, query, ActionLocks::PartsMove, false);
+            startStopAction(context, log, query, ActionLocks::PartsMove, false);
             break;
         case Type::START_MOVES:
-            startStopAction(context, query, ActionLocks::PartsMove, true);
+            startStopAction(context, log, query, ActionLocks::PartsMove, true);
             break;
         case Type::STOP_FETCHES:
-            startStopAction(context, query, ActionLocks::PartsFetch, false);
+            startStopAction(context, log, query, ActionLocks::PartsFetch, false);
             break;
         case Type::START_FETCHES:
-            startStopAction(context, query, ActionLocks::PartsFetch, true);
+            startStopAction(context, log, query, ActionLocks::PartsFetch, true);
             break;
         case Type::STOP_REPLICATED_SENDS:
-            startStopAction(context, query, ActionLocks::PartsSend, false);
+            startStopAction(context, log, query, ActionLocks::PartsSend, false);
             break;
         case Type::START_REPLICATED_SENDS:
-            startStopAction(context, query, ActionLocks::PartsSend, true);
+            startStopAction(context, log, query, ActionLocks::PartsSend, true);
             break;
         case Type::STOP_REPLICATION_QUEUES:
-            startStopAction(context, query, ActionLocks::ReplicationQueue, false);
+            startStopAction(context, log, query, ActionLocks::ReplicationQueue, false);
             break;
         case Type::START_REPLICATION_QUEUES:
-            startStopAction(context, query, ActionLocks::ReplicationQueue, true);
+            startStopAction(context, log, query, ActionLocks::ReplicationQueue, true);
             break;
         case Type::STOP_DISTRIBUTED_SENDS:
-            startStopAction(context, query, ActionLocks::DistributedSend, false);
+            startStopAction(context, log, query, ActionLocks::DistributedSend, false);
             break;
         case Type::START_DISTRIBUTED_SENDS:
-            startStopAction(context, query, ActionLocks::DistributedSend, true);
+            startStopAction(context, log, query, ActionLocks::DistributedSend, true);
             break;
         case Type::SYNC_REPLICA:
             syncReplica(query);
@@ -246,6 +289,7 @@ BlockIO InterpreterSystemQuery::execute()
                                 ErrorCodes::BAD_ARGUMENTS);
             break;
         case Type::FLUSH_LOGS:
+            context.checkAccess(AccessType::FLUSH_LOGS);
             executeCommandsAndThrowIfError(
                     [&] () { if (auto query_log = context.getQueryLog()) query_log->flush(); },
                     [&] () { if (auto part_log = context.getPartLog("")) part_log->flush(); },
@@ -268,7 +312,9 @@ BlockIO InterpreterSystemQuery::execute()
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_name, const String & table_name, Context & system_context)
 {
+    context.checkAccess(AccessType::RESTART_REPLICA, database_name, table_name);
     auto database = system_context.getDatabase(database_name);
+
     auto table_ddl_guard = system_context.getDDLGuard(database_name, table_name);
     ASTPtr create_ast;
 
@@ -342,6 +388,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
     String database_name = !query.database.empty() ? query.database : context.getCurrentDatabase();
     const String & table_name = query.table;
 
+    context.checkAccess(AccessType::SYNC_REPLICA, database_name, table_name);
     StoragePtr table = context.getTable(database_name, table_name);
 
     if (auto storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
@@ -364,6 +411,7 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
 {
     String database_name = !query.database.empty() ? query.database : context.getCurrentDatabase();
     String & table_name = query.table;
+    context.checkAccess(AccessType::FLUSH_DISTRIBUTED, database_name, table_name);
 
     if (auto storage_distributed = dynamic_cast<StorageDistributed *>(context.getTable(database_name, table_name).get()))
         storage_distributed->flushClusterNodesAllData();
@@ -371,5 +419,136 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
         throw Exception("Table " + database_name + "." + table_name + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
 }
 
+
+AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() const
+{
+    const auto & query = query_ptr->as<const ASTSystemQuery &>();
+    using Type = ASTSystemQuery::Type;
+    AccessRightsElements required_access;
+    switch (query.type)
+    {
+        case Type::SHUTDOWN: [[fallthrough]];
+        case Type::KILL:
+        {
+            required_access.emplace_back(AccessType::SHUTDOWN);
+            break;
+        }
+        case Type::DROP_DNS_CACHE: [[fallthrough]];
+        case Type::DROP_MARK_CACHE: [[fallthrough]];
+#if USE_EMBEDDED_COMPILER
+        case Type::DROP_COMPILED_EXPRESSION_CACHE: [[fallthrough]];
+#endif
+        case Type::DROP_UNCOMPRESSED_CACHE:
+        {
+            required_access.emplace_back(AccessType::DROP_CACHE);
+            break;
+        }
+        case Type::RELOAD_DICTIONARY: [[fallthrough]];
+        case Type::RELOAD_DICTIONARIES: [[fallthrough]];
+        case Type::RELOAD_EMBEDDED_DICTIONARIES:
+        {
+            required_access.emplace_back(AccessType::RELOAD_DICTIONARY);
+            break;
+        }
+        case Type::RELOAD_CONFIG:
+        {
+            required_access.emplace_back(AccessType::RELOAD_CONFIG);
+            break;
+        }
+        case Type::STOP_MERGES: [[fallthrough]];
+        case Type::START_MERGES:
+        {
+            if (query.table.empty())
+                required_access.emplace_back(AccessType::STOP_MERGES);
+            else
+                required_access.emplace_back(AccessType::STOP_MERGES, query.database, query.table);
+            break;
+        }
+        case Type::STOP_TTL_MERGES: [[fallthrough]];
+        case Type::START_TTL_MERGES:
+        {
+            if (query.table.empty())
+                required_access.emplace_back(AccessType::STOP_TTL_MERGES);
+            else
+                required_access.emplace_back(AccessType::STOP_TTL_MERGES, query.database, query.table);
+            break;
+        }
+        case Type::STOP_MOVES: [[fallthrough]];
+        case Type::START_MOVES:
+        {
+            if (query.table.empty())
+                required_access.emplace_back(AccessType::STOP_MOVES);
+            else
+                required_access.emplace_back(AccessType::STOP_MOVES, query.database, query.table);
+            break;
+        }
+        case Type::STOP_FETCHES: [[fallthrough]];
+        case Type::START_FETCHES:
+        {
+            if (query.table.empty())
+                required_access.emplace_back(AccessType::STOP_FETCHES);
+            else
+                required_access.emplace_back(AccessType::STOP_FETCHES, query.database, query.table);
+            break;
+        }
+        case Type::STOP_DISTRIBUTED_SENDS: [[fallthrough]];
+        case Type::START_DISTRIBUTED_SENDS:
+        {
+            if (query.table.empty())
+                required_access.emplace_back(AccessType::STOP_DISTRIBUTED_SENDS);
+            else
+                required_access.emplace_back(AccessType::STOP_DISTRIBUTED_SENDS, query.database, query.table);
+            break;
+        }
+        case Type::STOP_REPLICATED_SENDS: [[fallthrough]];
+        case Type::START_REPLICATED_SENDS:
+        {
+            if (query.table.empty())
+                required_access.emplace_back(AccessType::STOP_REPLICATED_SENDS);
+            else
+                required_access.emplace_back(AccessType::STOP_REPLICATED_SENDS, query.database, query.table);
+            break;
+        }
+        case Type::STOP_REPLICATION_QUEUES: [[fallthrough]];
+        case Type::START_REPLICATION_QUEUES:
+        {
+            if (query.table.empty())
+                required_access.emplace_back(AccessType::STOP_REPLICATION_QUEUES);
+            else
+                required_access.emplace_back(AccessType::STOP_REPLICATION_QUEUES, query.database, query.table);
+            break;
+        }
+        case Type::SYNC_REPLICA:
+        {
+            required_access.emplace_back(AccessType::SYNC_REPLICA, query.database, query.table);
+            break;
+        }
+        case Type::RESTART_REPLICA:
+        {
+            required_access.emplace_back(AccessType::RESTART_REPLICA, query.database, query.table);
+            break;
+        }
+        case Type::RESTART_REPLICAS:
+        {
+            required_access.emplace_back(AccessType::RESTART_REPLICA);
+            break;
+        }
+        case Type::FLUSH_DISTRIBUTED:
+        {
+            required_access.emplace_back(AccessType::FLUSH_DISTRIBUTED, query.database, query.table);
+            break;
+        }
+        case Type::FLUSH_LOGS:
+        {
+            required_access.emplace_back(AccessType::FLUSH_LOGS);
+            break;
+        }
+        case Type::STOP_LISTEN_QUERIES: break;
+        case Type::START_LISTEN_QUERIES: break;
+        case Type::UNKNOWN: break;
+        case Type::END: break;
+    }
+    return required_access;
+}
 
 }

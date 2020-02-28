@@ -36,8 +36,9 @@ using Poco::Net::SSLManager;
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int NOT_IMPLEMENTED;
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
-    extern const int OPENSSL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -218,7 +219,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     try
     {
         // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
-        auto user = connection_context.getUser(user_name);
+        auto user = connection_context.getAccessControlManager().read<User>(user_name);
         const DB::Authentication::Type user_auth_type = user->authentication.getType();
         if (user_auth_type != DB::Authentication::DOUBLE_SHA1_PASSWORD && user_auth_type != DB::Authentication::PLAINTEXT_PASSWORD && user_auth_type != DB::Authentication::NO_PASSWORD)
         {
@@ -282,7 +283,8 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
     else
     {
         bool with_output = false;
-        std::function<void(const String &)> set_content_type = [&with_output](const String &) -> void {
+        std::function<void(const String &, const String &)> set_content_type_and_format = [&with_output](const String &, const String &) -> void
+        {
             with_output = true;
         };
 
@@ -305,7 +307,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         ReadBufferFromString replacement(replacement_query);
 
         Context query_context = connection_context;
-        executeQuery(should_replace ? replacement : payload, *out, true, query_context, set_content_type, nullptr);
+        executeQuery(should_replace ? replacement : payload, *out, true, query_context, set_content_type_and_format, {});
 
         if (!with_output)
             packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);

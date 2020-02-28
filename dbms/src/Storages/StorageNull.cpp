@@ -3,6 +3,7 @@
 #include <Storages/AlterCommands.h>
 
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/Context.h>
 #include <Databases/IDatabase.h>
 
 #include <IO/WriteHelpers.h>
@@ -13,6 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 

@@ -3,6 +3,7 @@
 #include <Storages/AlterCommands.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Interpreters/Context.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 
@@ -17,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
     extern const int DUPLICATE_COLUMN;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
@@ -24,8 +26,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int TYPE_MISMATCH;
-    extern const int SETTINGS_ARE_NOT_SUPPORTED;
-    extern const int UNKNOWN_SETTING;
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
 }
@@ -403,7 +403,7 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Settin
     }
 }
 
-BlockInputStreams IStorage::read(
+BlockInputStreams IStorage::readStreams(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -411,7 +411,8 @@ BlockInputStreams IStorage::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    auto pipes = readWithProcessors(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+    ForceTreeShapedPipeline enable_tree_shape(query_info);
+    auto pipes = read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 
     BlockInputStreams res;
     res.reserve(pipes.size());

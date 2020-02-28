@@ -8,7 +8,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ThreadPool.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
@@ -51,14 +50,31 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         ASTPtr query;
         BlockOutputStreamPtr out;
 
-        if (auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(dependent_table.get()))
+        if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
         {
+            addTableLock(materialized_view->lockStructureForShare(true, context.getInitialQueryId()));
+
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
             query = materialized_view->getInnerQuery();
+
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
             insert->database = inner_table_id.database_name;
             insert->table = inner_table_id.table_name;
+
+            /// Get list of columns we get from select query.
+            auto header = InterpreterSelectQuery(query, *views_context, SelectQueryOptions().analyze())
+                    .getSampleBlock();
+
+            /// Insert only columns returned by select.
+            auto list = std::make_shared<ASTExpressionList>();
+            for (auto & column : header)
+                /// But skip columns which storage doesn't have.
+                if (inner_table->hasColumn(column.name))
+                    list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+
+            insert->columns = std::move(list);
+
             ASTPtr insert_query_ptr(insert.release());
             InterpreterInsertQuery interpreter(insert_query_ptr, *views_context);
             BlockIO io = interpreter.execute();
@@ -230,7 +246,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             /// and two-level aggregation is triggered).
             in = std::make_shared<SquashingBlockInputStream>(
                     in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
-            in = std::make_shared<ConvertingBlockInputStream>(context, in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::NameOrDefault);
+            in = std::make_shared<ConvertingBlockInputStream>(context, in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
         }
         else
             in = std::make_shared<OneBlockInputStream>(block);

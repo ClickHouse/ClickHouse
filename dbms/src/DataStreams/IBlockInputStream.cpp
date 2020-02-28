@@ -17,13 +17,12 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int OUTPUT_IS_NOT_SORTED;
     extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_BYTES;
     extern const int TOO_MANY_ROWS_OR_BYTES;
-    extern const int TIMEOUT_EXCEEDED;
-    extern const int TOO_SLOW;
     extern const int LOGICAL_ERROR;
-    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
     extern const int TOO_DEEP_PIPELINE;
 }
 
@@ -203,30 +202,9 @@ void IBlockInputStream::updateExtremes(Block & block)
 }
 
 
-static bool handleOverflowMode(OverflowMode mode, const String & message, int code)
-{
-    switch (mode)
-    {
-        case OverflowMode::THROW:
-            throw Exception(message, code);
-        case OverflowMode::BREAK:
-            return false;
-        default:
-            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-    }
-}
-
-
 bool IBlockInputStream::checkTimeLimit()
 {
-    if (limits.speed_limits.max_execution_time != 0
-        && info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.speed_limits.max_execution_time.totalMicroseconds()) * 1000)
-        return handleOverflowMode(limits.timeout_overflow_mode,
-            "Timeout exceeded: elapsed " + toString(info.total_stopwatch.elapsedSeconds())
-                + " seconds, maximum: " + toString(limits.speed_limits.max_execution_time.totalMicroseconds() / 1000000.0),
-            ErrorCodes::TIMEOUT_EXCEEDED);
-
-    return true;
+    return limits.speed_limits.checkTimeLimit(info.total_stopwatch.elapsed(), limits.timeout_overflow_mode);
 }
 
 
