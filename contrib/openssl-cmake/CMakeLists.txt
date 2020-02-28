@@ -65,7 +65,7 @@ if (ARCH_AMD64)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha1-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha1-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha256-mb-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-mb-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-x86_64.s)
-    perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-x86_64.s)
+    perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-x86_64.s) # This is not a mistake
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/whrlpool/asm/wp-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/whrlpool/wp-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/x86_64cpuid.pl ${OPENSSL_BINARY_DIR}/crypto/x86_64cpuid.s)
 
@@ -209,7 +209,6 @@ set(CRYPTO_SRCS
     ${OPENSSL_SOURCE_DIR}/crypto/blake2/blake2s.c
     ${OPENSSL_SOURCE_DIR}/crypto/blake2/m_blake2b.c
     ${OPENSSL_SOURCE_DIR}/crypto/blake2/m_blake2s.c
-    ${OPENSSL_SOURCE_DIR}/crypto/bn/asm/x86_64-gcc.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_add.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_blind.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_const.c
@@ -761,6 +760,7 @@ if (ARCH_AMD64)
         ${OPENSSL_BINARY_DIR}/crypto/whrlpool/wp-x86_64.s
         ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_dgst.c
         ${OPENSSL_BINARY_DIR}/crypto/x86_64cpuid.s
+        ${OPENSSL_SOURCE_DIR}/crypto/bn/asm/x86_64-gcc.c
     )
 elseif (ARCH_AARCH64)
     set (CRYPTO_SRCS ${CRYPTO_SRCS}
