@@ -3,6 +3,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ZLIB_INFLATE_FAILED;
+}
 
 ZlibInflatingReadBuffer::ZlibInflatingReadBuffer(
         std::unique_ptr<ReadBuffer> in_,

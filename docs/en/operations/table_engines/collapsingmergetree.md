@@ -109,12 +109,12 @@ When ClickHouse merges data parts, each group of consecutive rows with the same 
 
 For each resulting data part ClickHouse saves:
 
-  1. The first "cancel" and the last "state" rows, if the number of "state" and "cancel" rows matches.
-  2. The last "state" row, if there is one more "state" row than "cancel" rows.
-  3. The first "cancel" row, if there is one more "cancel" row than "state" rows.
+  1. The first "cancel" and the last "state" rows, if the number of "state" and "cancel" rows matches and the last row is a "state" row.
+  2. The last "state" row, if there is more "state" rows than "cancel" rows.
+  3. The first "cancel" row, if there is more "cancel" rows than "state" rows.
   4. None of the rows, in all other cases.
 
-      The merge continues, but ClickHouse treats this situation as a logical error and records it in the server log. This error can occur if the same data were inserted more than once.
+      In addition when there is at least 2 more "state" rows than "cancel" rows, or at least 2 more "cancel" rows then "state" rows, the merge continues, but ClickHouse treats this situation as a logical error and records it in the server log. This error can occur if the same data were inserted more than once.
 
 Thus, collapsing should not change the results of calculating statistics.
 Changes gradually collapsed so that in the end only the last state of almost every object left.

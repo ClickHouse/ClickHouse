@@ -76,6 +76,43 @@ git remote add upstream git@github.com:yandex/ClickHouse.git
 После этого, вы сможете добавлять в свой репозиторий обновления из репозитория Яндекса с помощью команды `git pull upstream master`.
 
 
+## Работа с сабмодулями git
+
+Работа с сабмодулями git может быть достаточно болезненной. Следующие команды позволят содержать их в порядке:
+
+```
+# ! Каждая команда принимает аргумент --recursive
+# Обновить URLs удалённого репозитория для каждого сабмодуля, используется относительно редко
+git submodule sync
+# Добавить новые сабмодули
+git submodule init
+# Обновить сабмодули до актуального состояния
+git submodule update
+# Две последние команды могут быть объединены вместе:
+git submodule update --init
+```
+
+The next commands would help you to reset all submodules to the initial state (!WARING! - any chenges inside will be deleted):
+Следующие команды помогут сбросить все сабмодули в изначальное состояние (!ВНИМАНИЕ! - все изменения в сабмодулях будут утеряны):
+
+```
+# Synchronizes submodules' remote URL with .gitmodules
+# Обновить URLs удалённого репозитория для каждого сабмодуля
+git submodule sync --recursive
+# Обновить существующие модули и добавить отсутствующие
+git submodule update --init --recursive
+# Удалить все изменения в сабмодуле относительно HEAD
+git submodule foreach git reset --hard
+# Очистить игнорируемые файлы
+git submodule foreach git clean -xfd
+# Повторить последние 4 команды для каждого из сабмодулей
+git submodule foreach git submodule sync --recursive
+git submodule foreach git submodule update --init --recursive
+git submodule foreach git submodule foreach git reset --hard
+git submodule foreach git submodule foreach git clean -xfd
+```
+
+
 # Система сборки
 
 ClickHouse использует систему сборки CMake и Ninja.

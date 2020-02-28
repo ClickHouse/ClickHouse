@@ -28,7 +28,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CACHE_DICTIONARY_UPDATE_FAIL;
 }
 
 /*

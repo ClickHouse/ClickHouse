@@ -30,11 +30,20 @@ namespace DB
 {
 
 class ClientInfo;
+class Pipe;
 
-/// The stream of blocks reading from the table and its name
-using ExternalTableData = std::pair<BlockInputStreamPtr, std::string>;
-/// Vector of pairs describing tables
-using ExternalTablesData = std::vector<ExternalTableData>;
+/// Struct which represents data we are going to send for external table.
+struct ExternalTableData
+{
+    /// Pipe of data form table;
+    std::unique_ptr<Pipe> pipe;
+    std::string table_name;
+    /// Flag if need to stop reading.
+    std::atomic_bool is_cancelled = false;
+};
+
+using ExternalTableDataPtr = std::unique_ptr<ExternalTableData>;
+using ExternalTablesData = std::vector<ExternalTableDataPtr>;
 
 class Connection;
 

@@ -1,5 +1,5 @@
 #include <sys/ioctl.h>
-#include <port/unistd.h>
+#include <unistd.h>
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBuffer.h>
@@ -13,7 +13,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
 }
 
 

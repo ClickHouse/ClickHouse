@@ -19,13 +19,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
-    extern const int CANNOT_PARSE_QUOTED_STRING;
-    extern const int CANNOT_PARSE_NUMBER;
-    extern const int CANNOT_PARSE_DATE;
-    extern const int CANNOT_PARSE_DATETIME;
-    extern const int CANNOT_READ_ARRAY_FROM_TEXT;
-    extern const int CANNOT_PARSE_DATE;
     extern const int SYNTAX_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int SUPPORT_IS_DISABLED;

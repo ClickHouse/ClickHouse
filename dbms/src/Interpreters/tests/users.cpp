@@ -11,7 +11,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <cstdlib>
-#include <port/unistd.h>
+#include <unistd.h>
 
 namespace
 {
@@ -218,7 +218,7 @@ void runOneTest(const TestDescriptor & test_descriptor)
 
         try
         {
-            res = acl_manager.getUser(entry.user_name)->access.isGranted(DB::AccessType::ALL, entry.database_name);
+            res = acl_manager.read<DB::User>(entry.user_name)->access.isGranted(DB::AccessType::ALL, entry.database_name);
         }
         catch (const Poco::Exception &)
         {
