@@ -35,7 +35,7 @@ namespace
         ext::Singleton<TraceCollector>()->collect(trace_type, stack_trace, overrun_count);
     }
 
-    [[maybe_unused]] const UInt32 TIMER_PRECISION = 1e9;
+    [[maybe_unused]] constexpr UInt32 TIMER_PRECISION = 1e9;
 }
 
 namespace ErrorCodes
@@ -77,7 +77,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
 
     try
     {
-        struct sigevent sev;
+        struct sigevent sev {};
         sev.sigev_notify = SIGEV_THREAD_ID;
         sev.sigev_signo = pause_signal;
 
