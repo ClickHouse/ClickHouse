@@ -15,10 +15,10 @@ class ProfilingScopedWriteRWLock
 public:
     friend class ProfilingScopedWriteUnlocker;
 
-    ProfilingScopedWriteRWLock(std::shared_mutex & rwl, ProfileEvents::Event event_) :
+    ProfilingScopedWriteRWLock(std::shared_mutex & rwl_, ProfileEvents::Event event_) :
         watch(),
         event(event_),
-        scoped_write_lock(rwl)
+        scoped_write_lock(rwl_)
     {
         ProfileEvents::increment(event, watch.elapsed());
     }
