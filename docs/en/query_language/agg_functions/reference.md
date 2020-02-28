@@ -831,130 +831,37 @@ Creates an array from different argument values. Memory consumption is the same 
 The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements.
 For example, `groupUniqArray(1)(x)` is equivalent to `[any(x)]`.
 
-## quantile(level)(x) {#agg_function-quantile}
+## quantile {#quantile}
 
-Approximates the `level` quantile. `level` is a constant, a floating-point number from 0 to 1.
-We recommend using a `level` value in the range of `[0.01, 0.99]`
-Don't use a `level` value equal to 0 or 1 – use the `min` and `max` functions for these cases.
+Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
-In this function, as well as in all functions for calculating quantiles, the `level` parameter can be omitted. In this case, it is assumed to be equal to 0.5 (in other words, the function will calculate the median).
+This function applies [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192 and a random number generator for sampling. The result is non-deterministic. To get an exact quantile, use the [quantileExact](#quantileexact) function.
 
-Works for numbers, dates, and dates with times.
-Returns: for numbers – `Float64`; for dates – a date; for dates with times – a date with time.
-
-Uses [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192.
-If necessary, the result is output with linear approximation from the two neighboring values.
-This algorithm provides very low accuracy. See also: `quantileTiming`, `quantileTDigest`, `quantileExact`.
-
-The result depends on the order of running the query, and is nondeterministic.
-
-When using multiple `quantile` (and similar) functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the `quantiles` (and similar) functions.
-
-## quantileDeterministic(level)(x, determinator) {#agg_function-quantiledeterministic}
-
-Works the same way as the `quantile` function, but the result is deterministic and does not depend on the order of query execution.
-
-To achieve this, the function takes a second argument – the "determinator". This is a number whose hash is used instead of a random number generator in the reservoir sampling algorithm. For the function to work correctly, the same determinator value should not occur too often. For the determinator, you can use an event ID, user ID, and so on.
-
-Don't use this function for calculating timings. There is a more suitable function for this purpose: `quantileTiming`.
-
-## quantileTiming {#agg_function-quantiletiming}
-
-Computes the quantile of the specified level with determined precision. The function is intended for calculating page loading time quantiles in milliseconds.
-
-```sql
-quantileTiming(level)(expr)
-```
-
-**Parameters**
-
-- `level` — Quantile level. Range: [0, 1].
-- `expr` — [Expression](../syntax.md#syntax-expressions) returning a [Float*](../../data_types/float.md)-type number. The function expects input values in unix timestamp format in milliseconds, but it doesn't validate format.
-
-    - If negative values are passed to the function, the behavior is undefined.
-    - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
-
-**Accuracy**
-
-The calculation is accurate if:
-
-- Total number of values doesn't exceed 5670.
-- Total number of values exceeds 5670, but the page loading time is less than 1024ms.
-
-Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
-
-!!! note "Note"
-    For calculating page loading time quantiles, this function is more effective and accurate than [quantile](#agg_function-quantile).
-
-**Returned value**
-
-- Quantile of the specified level.
-
-Type: `Float32`.
-
-!!! note "Note"
-    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../data_types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../select.md#select-order-by) for notes on sorting `NaN` values.
-
-The result is deterministic (it doesn't depend on the query processing order).
-
-**Example**
-
-```sql
-SELECT quantileTiming(0.5)(number / 2) FROM numbers(10)
-```
-```text
-┌─quantileTiming(0.5)(divide(number, 2))─┐
-│                                      2 │
-└────────────────────────────────────────┘
-```
-
-## quantileTimingWeighted(level)(x, weight) {#quantiletimingweighted}
-
-Differs from the `quantileTiming` function in that it has a second argument, "weights". Weight is a non-negative integer.
-The result is calculated as if the `x` value were passed `weight` number of times to the `quantileTiming` function.
-
-## quantileExact(level)(x) {#quantileexact}
-
-Computes the quantile of 'level' exactly. To do this, all the passed values ​​are combined into an array, which is then partially sorted. Therefore, the function consumes O(n) memory, where 'n' is the number of values that were passed. However, for a small number of values, the function is very effective.
-
-## quantileExactWeighted(level)(x, weight) {#quantileexactweighted}
-
-Computes the quantile of 'level' exactly. In addition, each value is counted with its weight, as if it is present 'weight' times. The arguments of the function can be considered as histograms, where the value 'x' corresponds to a histogram "column" of the height 'weight', and the function itself can be considered as a summation of histograms.
-
-A hash table is used as the algorithm. Because of this, if the passed values ​​are frequently repeated, the function consumes less RAM than `quantileExact`. You can use this function instead of `quantileExact` and specify the weight as 1.
-
-## quantileTDigest(level)(x) {#quantiletdigest}
-
-Approximates the quantile level using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm. The maximum error is 1%. Memory consumption by State is proportional to the logarithm of the number of passed values.
-
-The performance of the function is lower than for `quantile` or `quantileTiming`. In terms of the ratio of State size to precision, this function is much better than `quantile`.
-
-The result depends on the order of running the query, and is nondeterministic.
-
-## median {#median}
-
-Computes an approximate [median](https://en.wikipedia.org/wiki/Median) of a numeric data sequence.
-
-This function applies [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192. The function uses a random number generator for reservoir sampling, so its result is non-detetministic and has low-accuracy. To get an exact median, use the [medianExact](#medianexact) function.
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](#quantiles) function.
 
 **Syntax** 
 
 ```sql
-median(x)
+quantile(level)(expr)
 ```
 
-Alias for [quantile(0.5)(x)](#agg_function-quantile).
+Alias: `median`.
 
 **Parameters** 
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+- `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
 
 **Returned value**
 
-- Middle value of a sorted resampled sequence if it contains an odd count of numbers.
-- Arithmetic mean of two middle values of a sorted resampled sequence if it contains an even count of numbers. The function doesn't round the result.  
+- Approximate quantile of the specified level.
 
-Type: The same data type as the type of the input data.
+Type:
+
+- [Float64](../../data_types/float.md) for numeric data type input.
+- [Date](../../data_types/date.md) if input values have the `Date` type.
+- [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
+
 
 **Example**
 
@@ -972,46 +879,495 @@ Input table:
 Query:
 
 ```sql
-SELECT median(val) FROM t
+SELECT quantile(val) FROM t
 ```
 
 Result:
 
 ```text
-┌─median(val)─┐
-│         1.5 │
-└─────────────┘
+┌─quantile(val)─┐
+│           1.5 │
+└───────────────┘
 ```
 
 **See Also**
 
-- [quantile](#agg_function-quantile)
+- [median](#median)
+- [quantiles](#quantiles)
 
-## medianDeterministic {#medianDeterministic}
 
-Computes an approximate [median](https://en.wikipedia.org/wiki/Median) of a numeric data sequence.
+## quantileDeterministic {#quantiledeterministic}
 
-This function applies [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192. A result of the function is deterministic and has low-accuracy. To get an exact median, use the [medianExact](#medianexact) function.
+Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
+
+This function applies [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192 and deterministic algorithm of sampling. The result is deterministic. To get an exact quantile, use the [quantileExact](#quantileexact) function.
+
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](#quantiles) function.
 
 **Syntax** 
 
 ```sql
-medianDeterministic(x, determinator)
+quantileDeterministic(level)(expr, determinator)
 ```
 
-Alias for [quantileDeterministiquantile(0.5)(x)](#agg_function-quantiledeterministic).
+Alias: `medianDeterministic`.
 
 **Parameters** 
 
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+- `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
 - `determinator` — Number whose hash is used instead of a random number generator in the reservoir sampling algorithm to make the result of sampling deterministic. As a determinator you can use any deterministic positive number, for example, a user id or an event id. If the same determinator value occures too often, the function works incorrectly.
 
 **Returned value**
 
-- Middle value of a sorted resampled sequence if it contains an odd count of numbers.
-- Arithmetic mean of two middle values of a sorted resampled sequence if it contains an even count of numbers. The function doesn't round the result.  
+- Approximate quantile of the specified level.
 
-Type: The same data type as the type of the input data.
+Type:
+
+- [Float64](../../data_types/float.md) for numeric data type input.
+- [Date](../../data_types/date.md) if input values have the `Date` type.
+- [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
+
+
+**Example**
+
+Input table:
+
+```text
+┌─val─┐
+│   1 │
+│   1 │
+│   2 │
+│   3 │
+└─────┘
+```
+
+Query:
+
+```sql
+SELECT quantileDeterministic(val, 1) FROM t
+```
+
+Result:
+
+```text
+┌─quantileDeterministic(val, 1)─┐
+│                           1.5 │
+└───────────────────────────────┘
+```
+
+**See Also**
+
+- [median](#median)
+- [quantiles](#quantiles)
+
+
+## quantileExact {#quantileexact}
+
+Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
+
+To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Therefore, the function consumes `O(n)` memory, where `n` is a number of values that were passed. However, for a small number of values, the function is very effective.
+
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](#quantiles) function.
+
+**Syntax** 
+
+```sql
+quantileExact(level)(expr)
+```
+
+Alias: `medianExact`.
+
+**Parameters** 
+
+- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+- `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+
+**Returned value**
+
+- Quantile of the specified level.
+
+Type:
+
+- [Float64](../../data_types/float.md) for numeric data type input.
+- [Date](../../data_types/date.md) if input values have the `Date` type.
+- [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
+
+**Example**
+
+Query:
+
+```sql
+SELECT quantileExact(number) FROM numbers(10)
+```
+
+Result:
+
+```text
+┌─quantileExact(number)─┐
+│                     5 │
+└───────────────────────┘
+```
+
+**See Also**
+
+- [median](#median)
+- [quantiles](#quantiles)
+
+## quantileExactWeighted {#quantileexactweighted}
+
+Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence, taking into account the weight of each element.
+
+To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Each value is counted with its weight, as if it is present `weight` times. A hash table is used in the algorithm. Because of this, if the passed values ​​are frequently repeated, the function consumes less RAM than [quantileExact](#quantileexact). You can use this function instead of `quantileExact` and specify the weight 1.
+
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](#quantiles) function.
+
+**Syntax** 
+
+```sql
+quantileExactWeighted(level)(expr, weight)
+```
+
+Alias: `medianExactWeighted`.
+
+**Parameters** 
+
+- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+- `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+- `weight` — Column with weights of sequence elements. Weight is a number of value occurrences.
+
+**Returned value**
+
+- Quantile of the specified level.
+
+Type:
+
+- [Float64](../../data_types/float.md) for numeric data type input.
+- [Date](../../data_types/date.md) if input values have the `Date` type.
+- [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
+
+**Example**
+
+Input table:
+
+```text
+┌─n─┬─val─┐
+│ 0 │   3 │
+│ 1 │   2 │
+│ 2 │   1 │
+│ 5 │   4 │
+└───┴─────┘
+```
+
+Query:
+
+```sql
+SELECT quantileExactWeighted(n, val) FROM t
+```
+
+Result:
+
+```text
+┌─quantileExactWeighted(n, val)─┐
+│                             1 │
+└───────────────────────────────┘
+```
+
+**See Also** 
+
+- [median](#median)
+- [quantiles](#quantiles)
+
+## quantileTiming {#quantiletiming}
+
+With the determined precision computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
+
+The result is deterministic (it doesn't depend on the query processing order). The function is optimized for working with sequences which describe distributions like loading web pages times or backend response times.
+
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](#quantiles) function.
+
+**Syntax**
+
+```sql
+quantileTiming(level)(expr)
+```
+
+Alias: `medianTiming`.
+
+**Parameters**
+
+- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+- `expr` — [Expression](../syntax.md#syntax-expressions) over a column values returning a [Float*](../../data_types/float.md)-type number.
+
+    - If negative values are passed to the function, the behavior is undefined.
+    - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
+
+**Accuracy**
+
+The calculation is accurate if:
+
+- Total number of values doesn't exceed 5670.
+- Total number of values exceeds 5670, but the page loading time is less than 1024ms.
+
+Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
+
+!!! note "Note"
+    For calculating page loading time quantiles, this function is more effective and accurate than [quantile](#quantile).
+
+**Returned value**
+
+- Quantile of the specified level.
+
+Type: `Float32`.
+
+!!! note "Note"
+    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../data_types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../select.md#select-order-by) for notes on sorting `NaN` values.
+
+**Example**
+
+Input table:
+
+```text
+┌─response_time─┐
+│            72 │
+│           112 │
+│           126 │
+│           145 │
+│           104 │
+│           242 │
+│           313 │
+│           168 │
+│           108 │
+└───────────────┘
+```
+
+Query:
+
+```sql
+SELECT quantileTiming(response_time) FROM t
+```
+
+Result:
+
+```text
+┌─quantileTiming(response_time)─┐
+│                           126 │
+└───────────────────────────────┘
+```
+
+**See Also**
+
+- [median](#median)
+- [quantiles](#quantiles)
+
+## quantileTimingWeighted {#quantiletimingweighted}
+
+With the determined precision computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence according to the weight of each sequence member.
+
+The result is deterministic (it doesn't depend on the query processing order). The function is optimized for working with sequences which describe distributions like loading web pages times or backend response times.
+
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](#quantiles) function.
+
+**Syntax**
+
+```sql
+quantileTimingWeighted(level)(expr, weight)
+```
+
+Alias: `medianTimingWeighted`.
+
+**Parameters**
+
+- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+- `expr` — [Expression](../syntax.md#syntax-expressions) over a column values returning a [Float*](../../data_types/float.md)-type number.
+
+    - If negative values are passed to the function, the behavior is undefined.
+    - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
+
+- `weight` — Column with weights of sequence elements. Weight is a number of value occurrences.
+
+**Accuracy**
+
+The calculation is accurate if:
+
+- Total number of values doesn't exceed 5670.
+- Total number of values exceeds 5670, but the page loading time is less than 1024ms.
+
+Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
+
+!!! note "Note"
+    For calculating page loading time quantiles, this function is more effective and accurate than [quantile](#quantile).
+
+**Returned value**
+
+- Quantile of the specified level.
+
+Type: `Float32`.
+
+!!! note "Note"
+    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../data_types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../select.md#select-order-by) for notes on sorting `NaN` values.
+
+
+**Example**
+
+Input table:
+
+```text
+┌─response_time─┬─weight─┐
+│            68 │      1 │
+│           104 │      2 │
+│           112 │      3 │
+│           126 │      2 │
+│           138 │      1 │
+│           162 │      1 │
+└───────────────┴────────┘
+```
+
+Query:
+
+```sql
+SELECT quantileTimingWeighted(response_time, weight) FROM t
+```
+
+Result:
+
+```text
+┌─quantileTimingWeighted(response_time, weight)─┐
+│                                           112 │
+└───────────────────────────────────────────────┘
+```
+
+**See Also**
+
+- [median](#median)
+- [quantiles](#quantiles)
+
+
+## quantileTDigest {#quantiletdigest}
+
+Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm.
+
+The maximum error is 1%.  Memory consumption is `log(n)`, where `n` is a number of values. The result depends on the order of running the query, and is nondeterministic.
+
+The performance of the function is lower than performance of [quantile](#quantile) or [quantileTiming](#quantiletiming). In terms of the ratio of State size to precision, this function is much better than `quantile`.
+
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](#quantiles) function.
+
+**Syntax** 
+
+```sql
+quantileTDigest(level)(expr)
+```
+
+Alias: `medianTDigest`.
+
+**Parameters** 
+
+- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+- `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+
+**Returned value**
+
+- Approximate quantile of the specified level.
+
+Type:
+
+- [Float64](../../data_types/float.md) for numeric data type input.
+- [Date](../../data_types/date.md) if input values have the `Date` type.
+- [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
+
+
+**Example**
+
+Query:
+
+```sql
+SELECT quantileTDigest(number) FROM numbers(10)
+```
+
+Result:
+
+```text
+┌─quantileTDigest(number)─┐
+│                     4.5 │
+└─────────────────────────┘
+```
+
+**See Also**
+
+- [median](#median)
+- [quantiles](#quantiles)
+
+## quantileTDigestWeighted {#quantiletdigestweighted}
+
+Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm. The function takes into account the weight of each sequence number. The maximum error is 1%.  Memory consumption is `log(n)`, where `n` is a number of values.
+
+The performance of the function is lower than performance of [quantile](#quantile) or [quantileTiming](#quantiletiming). In terms of the ratio of State size to precision, this function is much better than `quantile`.
+
+The result depends on the order of running the query, and is nondeterministic.
+
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](#quantiles) function.
+
+**Syntax** 
+
+```sql
+quantileTDigest(level)(expr)
+```
+
+Alias: `medianTDigest`.
+
+**Parameters** 
+
+- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+- `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+- `weight` — Column with weights of sequence elements. Weight is a number of value occurrences.
+
+**Returned value**
+
+- Approximate quantile of the specified level.
+
+Type:
+
+- [Float64](../../data_types/float.md) for numeric data type input.
+- [Date](../../data_types/date.md) if input values have the `Date` type.
+- [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
+
+**Example**
+
+Query:
+
+```sql
+SELECT quantileTDigestWeighted(number, 1) FROM numbers(10)
+```
+
+Result:
+
+```text
+┌─quantileTDigestWeighted(number, 1)─┐
+│                                4.5 │
+└────────────────────────────────────┘
+```
+
+**See Also**
+
+- [median](#median)
+- [quantiles](#quantiles)
+
+
+## median {#median}
+
+The `median*` functions are the aliases for the corresponding `quantile*` functions. They calculate median of a numeric data sample.
+
+Functions:
+
+- `median` — Alias for [quantile](#quantile).
+- `medianDeterministic` — Alias for [quantileDeterministic](#quantiledeterministic).
+- `medianExact` —  Alias for [quantileExact](#quantileexact).
+- `medianExactWeighted` — Alias for [quantileExactWeighted](#quantileexactweighted).
+- `medianTiming` — Alias for [quantileTiming](#quantiletiming).
+- `medianTimingWeighted` — Alias for [quantileTimingWeighted](#quantiletimingweighted).
+- `medianTDigest` — Alias for [quantileTDigest](#quantiletdigest).
+- `medianTDigestWeighted` — Alias for [quantileTDigestWeighted](#quantiletdigestweighted).
 
 **Example**
 
@@ -1040,326 +1396,8 @@ Result:
 └─────────────────────────────┘
 ```
 
-**See Also** 
 
-- [quantileDeterministic](#agg_function-quantiledeterministic)
-
-## medianExact {#medianexact}
-
-Computes the exact [median](https://en.wikipedia.org/wiki/Median) of a numeric data sequence.  
-
-Algorithm of the function uses partially sorted arrays and consumes `O(n)` memory, where `n` is a number of values.
-
-**Syntax** 
-
-```sql
-medianExact(x)
-```
-
-Alias for [quantileExact(0.5)(x)](#quantileexact).
-
-
-**Parameters**
-
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
-
-**Returned value**
-
-- Middle value of a sorted sequence if it contains an odd count of numbers.
-- Arithmetic mean of two middle values of a sorted sequence if it contains an even count of numbers. The function doesn't round the result.  
-
-Type: The same data type as the type of the input data.
-
-**Example**
-
-Query:
-
-```sql
-SELECT medianExact(number) FROM numbers(10)
-```
-
-Result:
-
-```text
-┌─medianExact(number)─┐
-│                   5 │
-└─────────────────────┘
-```
-
-**See Also**
-
-- [quantileExact](#quantileexact)
-
-
-## medianExactWeighted {#medianexactweighted}
-
-Computes the exact [median](https://en.wikipedia.org/wiki/Median) of a numeric data sequence according to the weight of each sequence member. 
-
-This function works more efficiently then [medianExact](#medianexact) because it uses hash table in its algorithm.
-
-
-**Syntax**
-
-```sql
-medianExactWeighted(x, weight)
-```
-
-Alias for [quantileExactWeighted(0.5)(x)](#quantileexactweighted).
-
-
-**Parameters** 
-
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
-- `weight` — Number of `x` occurences. 
-
-**Returned value**
-
-- Middle value of a sorted sequence if it contains an odd count of numbers.
-- Arithmetic mean of two middle values of a sorted sequence if it contains an even count of numbers. The function doesn't round the result.
-
-Type: The same data type as the type of the input data.
-
-**Example**
-
-Input table:
-
-```text
-┌─n─┬─val─┐
-│ 0 │   3 │
-│ 1 │   2 │
-│ 2 │   1 │
-│ 5 │   4 │
-└───┴─────┘
-```
-
-Query:
-
-```sql
-SELECT medianExactWeighted(n, val) FROM t
-```
-
-Result:
-
-```text
-┌─medianExactWeighted(n, val)─┐
-│                           1 │
-└─────────────────────────────┘
-```
-
-
-**See Also** 
-
-- [quantileExactWeighted](#quantileexactweighted)
-
-## medianTiming {#mediantiming}
-
-With the determined precision computes the [median](https://en.wikipedia.org/wiki/Median) of a numeric data sequence.
-
-The result is deterministic. The function is optimized for working with sequences which describe distributions like loading web pages times or backend response times.
-
-**Syntax** 
-
-```sql
-medianTiming(x)
-```
-
-Alias for [quantileTiming(0.5)(x)](#agg_function-quantiletiming).
-
-**Parameters**
-
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
-
-**Returned value**
-
-- Middle value of a sorted sequence if it contains an odd count of numbers.
-- Arithmetic mean of two middle values of a sorted sequence if it contains an even count of numbers. The function doesn't round the result.
-
-Type: The same data type as the type of the input data.
-
-**Example**
-
-Input table:
-
-```text
-┌─response_time─┐
-│            72 │
-│           112 │
-│           126 │
-│           145 │
-│           104 │
-│           242 │
-│           313 │
-│           168 │
-│           108 │
-└───────────────┘
-```
-
-Query:
-
-```sql
-SELECT medianTiming(response_time) FROM t
-```
-
-Result:
-
-```text
-┌─medianTiming(response_time)─┐
-│                         126 │
-└─────────────────────────────┘
-```
-
-**See Also**
-
-- [quantileTiming](#agg_function-quantiletiming)
-
-## medianTimingWeighted {#medianTimingWeighted}
-
-With the determined precision computes the [median](https://en.wikipedia.org/wiki/Median) of a numeric data sequence according to the weight of each sequence member.
-
-The result is deterministic. The function is optimized for working with sequences which describe distributions like loading web pages times or backend response times.
-
-**Syntax**
-
-```sql
-medianExactWeighted(x, weight)
-```
-
-Alias for [quantileTimingWeighted(0.5)(x)](#quantiletimingweighted).
-
-**Parameters** 
-
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
-- `weight` — Number of `x` occurences. 
- 
-
-**Returned value**
-
-- Middle value of a sorted sequence if it contains an odd count of numbers.
-- Arithmetic mean of two middle values of a sorted sequence if it contains an even count of numbers. The function doesn't round the result.
-
-Type: The same data type as the type of the input data.
-
-**Example**
-
-Input table:
-
-```text
-┌─response_time─┬─weight─┐
-│            68 │      1 │
-│           104 │      2 │
-│           112 │      3 │
-│           126 │      2 │
-│           138 │      1 │
-│           162 │      1 │
-└───────────────┴────────┘
-```
-
-Query:
-
-```sql
-SELECT medianTimingWeighted(response_time, weight) FROM t
-```
-
-Result:
-
-```text
-┌─medianTimingWeighted(response_time, weight)─┐
-│                                         112 │
-└─────────────────────────────────────────────┘
-```
-
-**See Also**
-
-- [quantileTimingWeighted](#quantiletimingweighted)
-
-## medianTDigest {#medianTDigest}
-
-Computes the [median](https://en.wikipedia.org/wiki/Median) of a numeric data sequence using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm.
-
-A calculated value depends on the order of the query processing, and is non-deterministic. Maximum error is 1%. Memory consumption is `log(n)`, where `n` is a number of values.
-
-**Syntax**
-
-```sql
-medianTDigest(x)
-```
-
-Alias for [quantileTDigest(0.5)(x)](#quantiletdigest).
-
-**Parameters** 
-
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
-
-**Returned value**
-
-- Middle value of a sorted sequence if it contains an odd count of numbers.
-- Arithmetic mean of two middle values of a sorted sequence if it contains an even count of numbers. The function doesn't round the result.
-
-Type: The same data type as the type of the input data.
-
-**Example**
-
-Query:
-
-```sql
-SELECT medianTDigest(number) FROM numbers(10)
-```
-
-Result:
-
-```text
-┌─medianTDigest(number)─┐
-│                   4.5 │
-└───────────────────────┘
-```
-
-**See Also**
-
-- [quantileTdDigest](#quantiletdigest)
-
-## medianTDigestWeighted {#medianTDigestWeighted}
-
-Computes the [median](https://en.wikipedia.org/wiki/Median) of a numeric data sequence using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm. Algorithm of the function takes into account the weight of each sequence member.
-
-A calculated value depends on the order of the query processing, and is non-deterministic. Maximum error is 1%. Memory consumption is `log(n)`, where `n` is a number of values.
-
-**Syntax** 
-
-```sql
-medianTDigestWeighted(x, weight)
-```
-
-Alias for `quantileTDigestWeighted(0.5)(x)`.
-
-**Parameters**
-
-- `x` — Number. Expression resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
-- `weight` — Number of `x` occurences.
-
-**Returned value**
-
-- Middle value of a sorted sequence if it contains an odd count of numbers.
-- Arithmetic mean of two middle values of a sorted sequence if it contains an even count of numbers. The function doesn't round the result.
-
-Type: The same data type as the type of the input data.
-
-**Example**
-
-Query:
-
-```sql
-SELECT medianTDigestWeighted(number, 1) FROM numbers(10)
-```
-
-Result:
-
-```text
-┌─medianTDigestWeighted(number, 1)─┐
-│                              4.5 │
-└──────────────────────────────────┘
-```
-
-## quantiles(level1, level2, ...)(x)
+## quantiles(level1, level2, ...)(x) {#quantiles}
 
 All the quantile functions also have corresponding quantiles functions: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`. These functions calculate all the quantiles of the listed levels in one pass, and return an array of the resulting values.
 
