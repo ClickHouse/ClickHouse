@@ -11,6 +11,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 GenericRoleSet::GenericRoleSet() = default;
 GenericRoleSet::GenericRoleSet(const GenericRoleSet & src) = default;
 GenericRoleSet & GenericRoleSet::operator =(const GenericRoleSet & src) = default;

@@ -16,6 +16,13 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
 namespace
 {
     using FuncLinearRegression = AggregateFunctionMLMethod<LinearModelData, NameLinearRegression>;

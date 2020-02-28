@@ -9,6 +9,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int READONLY;
     extern const int QUERY_IS_PROHIBITED;
     extern const int NO_ELEMENTS_IN_CONFIG;
