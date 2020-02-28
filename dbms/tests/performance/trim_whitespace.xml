@@ -6,8 +6,8 @@
         SELECT value FROM (
             SELECT arrayStringConcat(groupArray(' ')) AS spaces,
                 concat(spaces, toString(any(number)), spaces) AS value
-            FROM numbers_mt(100000000)
-            GROUP BY pow(number, intHash32(number) % 4) % 12345678)</fill_query>
+            FROM numbers_mt(10000000)
+            GROUP BY pow(number, intHash32(number) % 4) % 1234567)</fill_query>
 
     <stop_conditions>
         <all_of>
