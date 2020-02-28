@@ -266,13 +266,19 @@ rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.ts
 right/clickhouse local --query "
 create table queries engine Memory as select
         replaceAll(_file, '-report.tsv', '') test,
-        left + right < 0.01 as short,
+
         -- FIXME Comparison mode doesn't make sense for queries that complete
         -- immediately, so for now we pretend they don't exist. We don't want to
         -- remove them altogether because we want to be able to detect regressions,
         -- but the right way to do this is not yet clear.
+        left + right < 0.01 as short,
+
         not short and abs(diff) < 0.10 and rd[3] > 0.10 as unstable,
-        not short and abs(diff) > 0.15 and abs(diff) > rd[3] as changed,
+
+        -- Do not consider changed the queries with 5% RD below 1% -- e.g., we're
+        -- likely to observe a difference > 1% in less than 5% cases.
+        -- Not sure it is correct, but empirically it filters out a lot of noise.
+        not short and abs(diff) > 0.15 and abs(diff) > rd[3] and rd[1] > 0.01 as changed,
         *
     from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
 
