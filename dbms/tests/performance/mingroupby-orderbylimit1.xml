@@ -15,7 +15,7 @@
         <substitution>
            <name>aggregationscale</name>
            <values>
-               <value>1111111</value>
+               <value>111111</value>
                <value>11111</value>
            </values>
        </substitution>
@@ -25,14 +25,14 @@
         create table mingroupby_orderbylimit1_{aggregationscale}_tuple
         Engine=MergeTree order by tuple() AS
         select toUInt64( number % {aggregationscale} ) key, toUInt64(1) value
-        from numbers(10000000);
+        from numbers(2000000);
     </create_query>
     
     <create_query>
         create table mingroupby_orderbylimit1_{aggregationscale}_key_value
         Engine=MergeTree order by (key,value) AS
         select toUInt64( number % {aggregationscale} ) key, toUInt64(1) value
-        from numbers(10000000);
+        from numbers(2000000);
     </create_query>
     
     <query tag='UsingGroupbyMinTuple'>
