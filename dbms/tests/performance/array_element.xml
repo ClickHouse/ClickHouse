@@ -1,5 +1,5 @@
 <test>
-    <type>once</type>
+    <type>loop</type>
 
     <stop_conditions>
         <any_of>
@@ -9,7 +9,7 @@
     </stop_conditions>
 
 
-    <query>SELECT count() FROM system.numbers WHERE NOT ignore([[1], [2]][number % 2 + 2])</query>
-    <query>SELECT count() FROM system.numbers WHERE NOT ignore([[], [2]][number % 2 + 2])</query>
-    <query>SELECT count() FROM system.numbers WHERE NOT ignore([[], []][number % 2 + 2])</query>
+    <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore([[1], [2]][number % 2 + 2])</query>
+    <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore([[], [2]][number % 2 + 2])</query>
+    <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore([[], []][number % 2 + 2])</query>
 </test>
