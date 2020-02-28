@@ -726,11 +726,11 @@ set(CRYPTO_SRCS
     ${OPENSSL_SOURCE_DIR}/crypto/x509v3/v3_tlsf.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509v3/v3_utl.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509v3/v3err.c
+    ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_dgst.c
 )
 
 if (ARCH_AMD64)
     set (CRYPTO_SRCS ${CRYPTO_SRCS}
-        ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_dgst.c
         ${OPENSSL_SOURCE_DIR}/crypto/bn/asm/x86_64-gcc.c
         ${OPENSSL_BINARY_DIR}/crypto/bn/rsaz-avx2.s
         ${OPENSSL_BINARY_DIR}/crypto/bn/rsaz-x86_64.s
@@ -771,7 +771,6 @@ elseif (ARCH_AARCH64)
         ${OPENSSL_SOURCE_DIR}/crypto/armcap.c
         ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_enc.c
         ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_skey.c
-        ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_block.c
         ${OPENSSL_BINARY_DIR}/crypto/aes/aesv8-armx.S
         ${OPENSSL_BINARY_DIR}/crypto/aes/vpaes-armv8.S
         ${OPENSSL_BINARY_DIR}/crypto/bn/armv8-mont.S
@@ -783,7 +782,9 @@ elseif (ARCH_AARCH64)
         ${OPENSSL_BINARY_DIR}/crypto/sha/keccak1600-armv8.S
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha1-armv8.S
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-armv8.S
-        ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-armv8.S)
+        ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-armv8.S
+        ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_block.c
+    )
 endif ()
 
 
