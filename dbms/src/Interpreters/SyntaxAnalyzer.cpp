@@ -54,7 +54,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int EXPECTED_ALL_OR_ANY;
-    extern const int ALIAS_REQUIRED;
 }
 
 namespace
@@ -101,64 +100,11 @@ void collectSourceColumns(const ColumnsDescription & columns, NamesAndTypesList 
     }
 }
 
-std::vector<TableWithColumnNames> getTablesWithColumns(const std::vector<const ASTTableExpression * > & table_expressions,
-                                                       const Context & context)
-{
-    std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(table_expressions, context);
-
-    auto & settings = context.getSettingsRef();
-    if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
-    {
-        for (auto & pr : tables_with_columns)
-            if (pr.table.table.empty() && pr.table.alias.empty())
-                throw Exception("No alias for subquery or table function in JOIN (set joined_subquery_requires_alias=0 to disable restriction).",
-                                ErrorCodes::ALIAS_REQUIRED);
-    }
-
-    return tables_with_columns;
-}
-
-std::vector<TableWithColumnNames> getTablesWithColumns(const ASTSelectQuery & select_query, StoragePtr storage, const Context & context,
-                                                       const NamesAndTypesList & source_columns,
-                                                       NamesAndTypesList & columns_from_joined_table)
-{
-    std::vector<TableWithColumnNames> tables_with_columns;
-
-    std::vector<const ASTTableExpression *> table_expressions = getTableExpressions(select_query);
-    tables_with_columns = getTablesWithColumns(table_expressions, context);
-
-    if (tables_with_columns.empty())
-    {
-        if (storage)
-        {
-            const ColumnsDescription & storage_columns = storage->getColumns();
-            tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, storage_columns.getOrdinary().getNames());
-            auto & table = tables_with_columns.back();
-            table.addHiddenColumns(storage_columns.getMaterialized());
-            table.addHiddenColumns(storage_columns.getAliases());
-            table.addHiddenColumns(storage_columns.getVirtuals());
-        }
-        else
-        {
-            Names columns;
-            columns.reserve(source_columns.size());
-            for (const auto & column : source_columns)
-                columns.push_back(column.name);
-            tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, columns);
-        }
-    }
-
-    if (table_expressions.size() > 1)
-        columns_from_joined_table = getColumnsFromTableExpression(*table_expressions[1], context);
-
-    return tables_with_columns;
-}
-
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
 /// Expand asterisks and qualified asterisks with column names.
 /// There would be columns in normal form & column aliases after translation. Column & column alias would be normalized in QueryNormalizer.
 void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query, const NameSet & source_columns_set,
-                             std::vector<TableWithColumnNames> & tables_with_columns)
+                             const std::vector<TableWithColumnNames> & tables_with_columns)
 {
     LogAST log;
     TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns);
@@ -844,6 +790,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     const NamesAndTypesList & source_columns,
     StoragePtr storage,
     const SelectQueryOptions & select_options,
+    const JoinedTables & joined_tables,
     const Names & required_result_columns) const
 {
     auto * select_query = query->as<ASTSelectQuery>();
@@ -852,12 +799,6 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
     size_t subquery_depth = select_options.subquery_depth;
     bool remove_duplicates = select_options.remove_duplicates;
-
-    if (!storage)
-    {
-        if (auto db_and_table = getDatabaseAndTable(*select_query, 0))
-            storage = context.tryGetTable(db_and_table->database, db_and_table->table);
-    }
 
     const auto & settings = context.getSettingsRef();
 
@@ -876,11 +817,10 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     if (settings.enable_optimize_predicate_expression)
         replaceJoinedTable(*select_query);
 
-    NamesAndTypesList & columns_from_joined_table = result.analyzed_join->columns_from_joined_table;
-    std::vector<TableWithColumnNames> tables_with_columns =
-        getTablesWithColumns(*select_query, storage, context, result.source_columns, columns_from_joined_table);
+    const std::vector<TableWithColumnNames> & tables_with_columns = joined_tables.tablesWithColumns();
+    result.analyzed_join->columns_from_joined_table = joined_tables.secondTableColumns();
 
-    if (columns_from_joined_table.size())
+    if (result.analyzed_join->columns_from_joined_table.size())
     {
         result.analyzed_join->deduplicateAndQualifyColumnNames(
             source_columns_set, tables_with_columns[1].table.getQualifiedNamePrefix());
