@@ -369,7 +369,7 @@ create table metric_devation engine File(TSVWithNamesAndTypes, 'metric-deviation
         quantilesExact(0, 0.5, 1)(value) q, metric, query
     from (select * from unstable_run_metrics
         union all select * from unstable_run_traces
-        union all select * from unstable_run_metrics_2)
+        union all select * from unstable_run_metrics_2) mm
     join queries using query
     group by query, metric
     having d > 0.5
@@ -406,7 +406,7 @@ unset IFS
 
 # Remember that grep sets error code when nothing is found, hence the bayan
 # operator
-grep Exception:[^:] *-err.log > run-errors.log ||:
+grep -m2 Exception:[^:] *-err.log | sed 's/:/\t/' > run-errors.tsv ||:
 
 $script_dir/report.py > report.html
 }
