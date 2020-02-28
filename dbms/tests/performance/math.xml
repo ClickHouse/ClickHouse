@@ -41,7 +41,7 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore({func}(toFloat64(number)))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore({func}(toFloat32(number)))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore({func}(number))</query>
+    <query>SELECT count() FROM numbers_mt(100000000) WHERE NOT ignore({func}(toFloat64(number)))</query>
+    <query>SELECT count() FROM numbers_mt(100000000) WHERE NOT ignore({func}(toFloat32(number)))</query>
+    <query>SELECT count() FROM numbers_mt(100000000) WHERE NOT ignore({func}(number))</query>
 </test>
