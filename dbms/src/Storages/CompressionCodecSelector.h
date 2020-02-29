@@ -11,7 +11,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 

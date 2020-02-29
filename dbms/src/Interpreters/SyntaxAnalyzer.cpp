@@ -48,7 +48,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EMPTY_NESTED_TABLE;
-    extern const int LOGICAL_ERROR;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
     extern const int NOT_IMPLEMENTED;
@@ -111,7 +110,7 @@ std::vector<TableWithColumnNames> getTablesWithColumns(const std::vector<const A
     {
         for (auto & pr : tables_with_columns)
             if (pr.table.table.empty() && pr.table.alias.empty())
-                throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
+                throw Exception("No alias for subquery or table function in JOIN (set joined_subquery_requires_alias=0 to disable restriction).",
                                 ErrorCodes::ALIAS_REQUIRED);
     }
 

@@ -1,6 +1,6 @@
 # Constraints on Settings
 
-The constraints on settings can be defined in the `users` section of the `user.xml` configuration file and prohibit users from changing some of the settings with the `SET` query.
+The constraints on settings can be defined in the `profiles` section of the `user.xml` configuration file and prohibit users from changing some of the settings with the `SET` query.
 The constraints are defined as following:
 
 ```xml

@@ -39,12 +39,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CLIENT_HAS_CONNECTED_TO_WRONG_PORT;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_EXCEPTION;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
     extern const int POCO_EXCEPTION;
-    extern const int STD_EXCEPTION;
     extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 }
@@ -902,7 +903,7 @@ void TCPHandler::receiveQuery()
         }
         else
         {
-            query_context->switchRowPolicy();
+            query_context->setInitialRowPolicy();
         }
     }
 

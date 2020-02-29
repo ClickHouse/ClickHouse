@@ -36,9 +36,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA;
-    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
-    extern const int CANNOT_PARSE_TEXT;
 }
 
 

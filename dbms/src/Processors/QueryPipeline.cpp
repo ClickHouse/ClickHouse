@@ -22,6 +22,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 void QueryPipeline::checkInitialized()
 {
@@ -597,11 +601,14 @@ void QueryPipeline::calcRowsBeforeLimit()
 
             if (auto * source = typeid_cast<SourceFromInputStream *>(processor))
             {
-                auto & info = source->getStream().getProfileInfo();
-                if (info.hasAppliedLimit())
+                if (auto & stream = source->getStream())
                 {
-                    has_limit = visited_limit = true;
-                    rows_before_limit_at_least += info.getRowsBeforeLimit();
+                    auto & info = stream->getProfileInfo();
+                    if (info.hasAppliedLimit())
+                    {
+                        has_limit = visited_limit = true;
+                        rows_before_limit_at_least += info.getRowsBeforeLimit();
+                    }
                 }
             }
         }
@@ -652,6 +659,9 @@ Pipe QueryPipeline::getPipe() &&
     for (auto & storage : storage_holders)
         pipe.addStorageHolder(storage);
 
+    if (totals_having_port)
+        pipe.setTotalsPort(totals_having_port);
+
     return pipe;
 }
 
@@ -663,6 +673,33 @@ PipelineExecutorPtr QueryPipeline::execute()
         throw Exception("Cannot execute pipeline because it doesn't have output.", ErrorCodes::LOGICAL_ERROR);
 
     return std::make_shared<PipelineExecutor>(processors, process_list_element);
+}
+
+QueryPipeline & QueryPipeline::operator= (QueryPipeline && rhs)
+{
+    /// Reset primitive fields
+    process_list_element = rhs.process_list_element;
+    rhs.process_list_element = nullptr;
+    max_threads = rhs.max_threads;
+    rhs.max_threads = 0;
+    output_format = rhs.output_format;
+    rhs.output_format = nullptr;
+    has_resize = rhs.has_resize;
+    rhs.has_resize = false;
+    extremes_port = rhs.extremes_port;
+    rhs.extremes_port = nullptr;
+    totals_having_port = rhs.totals_having_port;
+    rhs.totals_having_port = nullptr;
+
+    /// Move these fields in destruction order (it's important)
+    streams = std::move(rhs.streams);
+    processors = std::move(rhs.processors);
+    current_header = std::move(rhs.current_header);
+    table_locks = std::move(rhs.table_locks);
+    storage_holders = std::move(rhs.storage_holders);
+    interpreter_context = std::move(rhs.interpreter_context);
+
+    return *this;
 }
 
 }

@@ -22,13 +22,18 @@
 #include "IDictionary.h"
 #include "IDictionarySource.h"
 
+namespace CurrentMetrics
+{
+    extern const Metric CacheDictionaryUpdateQueueBatches;
+    extern const Metric CacheDictionaryUpdateQueueKeys;
+}
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int CACHE_DICTIONARY_UPDATE_FAIL;
 }
 
 /*
@@ -351,12 +356,14 @@ private:
                 AbsentIdHandler absent_id_handler_) :
                 requested_ids(std::move(requested_ids_)),
                 present_id_handler(present_id_handler_),
-                absent_id_handler(absent_id_handler_) {}
+                absent_id_handler(absent_id_handler_),
+                alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_ids.size()){}
 
         explicit UpdateUnit(std::vector<Key> requested_ids_) :
                 requested_ids(std::move(requested_ids_)),
                 present_id_handler([](Key, size_t){}),
-                absent_id_handler([](Key, size_t){}) {}
+                absent_id_handler([](Key, size_t){}),
+                alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_ids.size()){}
 
         std::vector<Key> requested_ids;
         PresentIdHandler present_id_handler;
@@ -364,6 +371,10 @@ private:
 
         std::atomic<bool> is_done{false};
         std::exception_ptr current_exception{nullptr};
+
+        /// While UpdateUnit is alive, it is accounted in update_queue size.
+        CurrentMetrics::Increment alive_batch{CurrentMetrics::CacheDictionaryUpdateQueueBatches};
+        CurrentMetrics::Increment alive_keys;
     };
 
     using UpdateUnitPtr = std::shared_ptr<UpdateUnit>;

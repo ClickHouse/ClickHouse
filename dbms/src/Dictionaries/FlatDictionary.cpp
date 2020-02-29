@@ -11,8 +11,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
-    extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_TYPE;
     extern const int UNSUPPORTED_METHOD;
 }
 

@@ -43,4 +43,9 @@ off_t ReadBufferFromMemory::seek(off_t offset, int whence)
         throw Exception("Only SEEK_SET and SEEK_CUR seek modes allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 }
 
+off_t ReadBufferFromMemory::getPosition()
+{
+    return pos - working_buffer.begin();
+}
+
 }
