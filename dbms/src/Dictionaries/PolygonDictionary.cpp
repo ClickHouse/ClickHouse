@@ -679,6 +679,176 @@ bool SimplePolygonDictionary::find(const Point &point, size_t & id) const
     return found;
 }
 
+SmartPolygonDictionary::SmartPolygonDictionary(
+    const std::string & database_,
+    const std::string & name_,
+    const DictionaryStructure & dict_struct_,
+    DictionarySourcePtr source_ptr_,
+    const DictionaryLifetime dict_lifetime_,
+    InputType input_type_,
+    PointType point_type_)
+    : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_)
+{
+    indexBuild();
+}
+
+std::shared_ptr<const IExternalLoadable> SmartPolygonDictionary::clone() const
+{
+    return std::make_shared<SmartPolygonDictionary>(
+            this->database,
+            this->name,
+            this->dict_struct,
+            this->source_ptr->clone(),
+            this->dict_lifetime,
+            this->input_type,
+            this->point_type);
+}
+
+void SmartPolygonDictionary::indexBuild()
+{
+    for (size_t i = 0; i < (this->polygons).size(); ++i)
+    {
+        indexAddRing(this->polygons[i].outer(), i);
+
+        for (auto & inner : this->polygons[i].inners())
+        {
+            indexAddRing(inner, i);
+        }
+    }
+
+    /** making this->sorted_x sorted and distinct */
+    std::sort(this->sorted_x.begin(), this->sorted_x.end());
+    this->sorted_x.erase(std::unique(this->sorted_x.begin(), this->sorted_x.end()), this->sorted_x.end());
+
+    /** sorting edges consisting of (left_point, right_point, polygon_id) in that order */
+    std::sort(this->all_edges.begin(), this->all_edges.end());
+
+    /** using custom comparator for fetching edges in right_point order, like in scanline */
+    auto cmp = [](const Edge & a, const Edge & b)
+    {
+        if (std::get<1>(a) != std::get<1>(b))
+        {
+            return std::get<1>(a) < std::get<1>(b);
+        }
+
+        return a < b;
+    };
+    std::set<Edge, decltype(cmp)> interesting_edges(cmp);
+
+    if (!this->sorted_x.empty())
+    {
+        this->edges_index.resize(this->sorted_x.size() - 1);
+    }
+
+    size_t edges_it = 0;
+    for (size_t l = 0, r = 1; r < this->sorted_x.size(); ++l, ++r)
+    {
+        const Float64 lx = this->sorted_x[l];
+        const Float64 rx = this->sorted_x[r];
+
+        /** removing edges where right_point.x < lx */
+        while (!interesting_edges.empty() && std::get<1>(*interesting_edges.begin()).get<0>() < lx)
+        {
+            interesting_edges.erase(interesting_edges.begin());
+        }
+
+        /** adding edges where left_point.x <= rx */
+        for (; edges_it < this->all_edges.size() && std::get<0>(this->all_edges[edges_it]).get<0>() <= rx; ++edges_it)
+        {
+            interesting_edges.insert(this->all_edges[edges_it]);
+        }
+
+        this->edges_index[l] = std::vector<Edge>(interesting_edges.begin(), interesting_edges.end());
+    }
+}
+
+void SmartPolygonDictionary::indexAddRing(const Ring & ring, size_t polygon_id)
+{
+    for (auto & point : ring)
+    {
+        this->sorted_x.push_back(point.get<0>());
+    }
+
+    for (size_t i = 0, prev = ring.size() - 1; i < ring.size(); prev = i, ++i)
+    {
+        Point a = ring[prev];
+        Point b = ring[i];
+
+        // making a.x <= b.x
+        if (a.get<0>() > b.get<0>())
+        {
+            std::swap(a, b);
+        }
+
+        if (a.get<0>() == b.get<0>() && a.get<1>() > b.get<1>())
+        {
+            std::swap(a, b);
+        }
+
+        this->all_edges.emplace_back(a, b, polygon_id);
+    }
+}
+
+bool SmartPolygonDictionary::find(const Point &point, size_t & id) const
+{
+    if (this->sorted_x.size() < 1)
+    {
+        return false;
+    }
+
+    Float64 x = point.get<0>();
+    Float64 y = point.get<1>();
+
+    if (x < this->sorted_x[0] || x > this->sorted_x.back())
+    {
+        return false;
+    }
+
+    /** point is considired inside when ray down from point crosses odd number of edges */
+    std::map<size_t, bool> is_inside;
+
+    size_t pos = std::upper_bound(this->sorted_x.begin() + 1, this->sorted_x.end(), x) - this->sorted_x.begin() - 1;
+
+    /** iterating over interesting edges */
+    for (auto & edge : this->edges_index[pos])
+    {
+        const Point & l = std::get<0>(edge);
+        const Point & r = std::get<1>(edge);
+        size_t polygon_id = std::get<2>(edge);
+
+        /** check if point outside of edge's x bounds */
+        if (x < l.get<0>() || x >= r.get<0>())
+        {
+            continue;
+        }
+
+        /** check for vertical edge, seem like never happens */
+        if (l.get<0>() == r.get<0>())
+        {
+            continue;
+        }
+
+        Float64 edge_y = l.get<1>() + (r.get<1>() - l.get<1>()) / (r.get<0>() - l.get<0>()) * (x - l.get<0>());
+        if (edge_y > y)
+        {
+            continue;
+        }
+
+        is_inside[polygon_id] ^= true;
+    }
+
+    bool found = false;
+    for (auto & [polygon_id, inside] : is_inside)
+    {
+        if (inside)
+        {
+            found = true;
+            id = polygon_id;
+        }
+    }
+    return found;
+}
+
 void registerDictionaryPolygon(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string &,
@@ -739,7 +909,7 @@ void registerDictionaryPolygon(DictionaryFactory & factory)
                             ErrorCodes::BAD_ARGUMENTS};
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-        return std::make_unique<SimplePolygonDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, input_type, point_type);
+        return std::make_unique<SmartPolygonDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, input_type, point_type);
     };
     factory.registerLayout("polygon", create_layout, true);
 }

@@ -182,6 +182,8 @@ public:
     using Point = bg::model::point<Float64, 2, bg::cs::cartesian>;
     /** A polygon in boost is a an outer ring of points with zero or more cut out inner rings. */
     using Polygon = bg::model::polygon<Point>;
+    /** A ring in boost used for describing the polygons. */
+    using Ring = bg::model::ring<Point>;
 
 protected:
     /** Returns true if the given point can be found in the polygon dictionary.
@@ -287,6 +289,50 @@ public:
 
 private:
     bool find(const Point & point, size_t & id) const override;
+};
+
+/** Smarty implementation of the polygon dictionary. Generate edge indexes during its construction in
+ *  the following way: sort all polygon's vertexes by x coordinate, and then store all interesting
+ *  polygon edges for each adjacent x coordinates. For each query finds interesting edges and 
+ *  iterates over them, finding required polygon. If there is more than one any such polygon may be returned.
+ */
+class SmartPolygonDictionary : public IPolygonDictionary
+{
+public:
+    SmartPolygonDictionary(
+            const std::string & database_,
+            const std::string & name_,
+            const DictionaryStructure & dict_struct_,
+            DictionarySourcePtr source_ptr_,
+            DictionaryLifetime dict_lifetime_,
+            InputType input_type_,
+            PointType point_type_);
+
+    std::shared_ptr<const IExternalLoadable> clone() const override;
+
+private:
+    bool find(const Point & point, size_t & id) const override;
+
+    /** Builds indexes described above. */
+    void indexBuild();
+
+    /** Auxiliary function for adding ring to index */
+    void indexAddRing(const Ring & ring, size_t polygon_id);
+
+    /** Edge describes edge (adjacent points) of any polygon, and contains polygon's id.
+     *  Invariant here is first point has x not greater than second point.
+     */
+    using Edge = std::tuple<Point, Point, size_t>;
+
+    /** Sorted distinct coordinates of all vertexes. */
+    std::vector<Float64> sorted_x;
+    std::vector<Edge> all_edges;
+
+    /** Edges from all polygons, classified by sorted_x borders.
+     *  edges_index[i] stores all interesting edges in range ( sorted_x[i]; sorted_x[i + 1] ]
+     *  That means edges_index.size() + 1 == sorted_x.size()
+     */
+    std::vector<std::vector<Edge>> edges_index;
 };
 
 }
