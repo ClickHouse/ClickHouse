@@ -305,16 +305,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
-    /// Extract joined tables colunms if any.
-    /// It could get storage from context without lockStructureForShare(). TODO: add lock there or rewrite this logic.
-    JoinedTables joined_tables;
-    joined_tables.resolveTables(*query_ptr->as<ASTSelectQuery>(), storage, *context, source_header.getNamesAndTypesList());
-
     if (storage)
     {
         table_lock = storage->lockStructureForShare(false, context->getInitialQueryId());
         table_id = storage->getStorageID();
     }
+
+    /// Extract joined tables colunms if any.
+    /// It could get storage from context without lockStructureForShare(). TODO: add lock there or rewrite this logic.
+    JoinedTables joined_tables;
+    joined_tables.resolveTables(*query_ptr->as<ASTSelectQuery>(), storage, *context, source_header.getNamesAndTypesList());
 
     auto analyze = [&] (bool try_move_to_prewhere = true)
     {
