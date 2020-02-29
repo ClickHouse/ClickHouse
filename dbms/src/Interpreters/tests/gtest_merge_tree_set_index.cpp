@@ -10,14 +10,14 @@ using namespace DB;
 TEST(MergeTreeSetIndex, checkInRange_one)
 {
     DataTypes types = {std::make_shared<const DataTypeInt64>()};
-    
+
     auto mut = types[0]->createColumn();
     mut->insert(1);
     mut->insert(5);
     mut->insert(7);
 
     Columns columns = {std::move(mut)};
-    
+
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> mapping = {{0, 0, {}}};
     auto set = std::make_unique<MergeTreeSetIndex>(columns, std::move(mapping));
 
@@ -43,7 +43,7 @@ TEST(MergeTreeSetIndex, checkInRange_one)
 
     ranges = {Range::createLeftBounded(10, true)};
     ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, false) << "(10, +inf)";
-    
+
     // Right bounded
     ranges = {Range::createRightBounded(1, true)};
     ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "(-inf, 1)";
@@ -75,7 +75,7 @@ TEST(MergeTreeSetIndex, checkInRange_tuple)
             mut->insert(val);
         columns.push_back(std::move(mut));
     }
-    
+
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> mapping = {{0, 0, {}}, {1, 1, {}}};
     auto set = std::make_unique<MergeTreeSetIndex>(columns, std::move(mapping));
 
