@@ -44,7 +44,43 @@ def test_ttl_columns(started_cluster):
     expected = "1\t0\t0\n2\t0\t0\n"
     assert TSV(node1.query("SELECT id, a, b FROM test_ttl ORDER BY id")) == TSV(expected)
     assert TSV(node2.query("SELECT id, a, b FROM test_ttl ORDER BY id")) == TSV(expected)
+
+
+def test_ttl_many_columns(started_cluster):
+    drop_table([node1, node2], "test_ttl_2")
+    for node in [node1, node2]:
+        node.query(
+        '''
+            CREATE TABLE test_ttl_2(date DateTime, id UInt32,
+                a Int32 TTL date,
+                _idx Int32 TTL date,
+                _offset Int32 TTL date,
+                _partition Int32 TTL date)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_2', '{replica}')
+            ORDER BY id PARTITION BY toDayOfMonth(date) SETTINGS merge_with_ttl_timeout=0;
+        '''.format(replica=node.name))
+
+    node1.query("SYSTEM STOP MERGES test_ttl_2")
+    node2.query("SYSTEM STOP MERGES test_ttl_2")
+
+    node1.query("INSERT INTO test_ttl_2 VALUES (toDateTime('2000-10-10 00:00:00'), 1, 2, 3, 4, 5)")
+    node1.query("INSERT INTO test_ttl_2 VALUES (toDateTime('2100-10-10 10:00:00'), 6, 7, 8, 9, 10)")
+
+    # Check that part will appear in result of merge
+    node1.query("SYSTEM STOP FETCHES test_ttl_2")
+    node2.query("SYSTEM STOP FETCHES test_ttl_2")
+
+    node1.query("SYSTEM START MERGES test_ttl_2")
+    node2.query("SYSTEM START MERGES test_ttl_2")
+
+    time.sleep(1) # sleep to allow use ttl merge selector for second time
+    node1.query("OPTIMIZE TABLE test_ttl_2 FINAL", timeout=5)
+
+    expected = "1\t0\t0\t0\t0\n6\t7\t8\t9\t10\n"
+    assert TSV(node1.query("SELECT id, a, _idx, _offset, _partition FROM test_ttl_2 ORDER BY id")) == TSV(expected)
+    assert TSV(node2.query("SELECT id, a, _idx, _offset, _partition FROM test_ttl_2 ORDER BY id")) == TSV(expected)
  
+
 @pytest.mark.parametrize("delete_suffix", [
     "",
     "DELETE",
