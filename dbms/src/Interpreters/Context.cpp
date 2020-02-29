@@ -626,7 +626,7 @@ void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->users_config = config;
-    shared->access_control_manager.loadFromConfig(*shared->users_config);
+    shared->access_control_manager.setUsersConfig(*shared->users_config);
 }
 
 ConfigurationPtr Context::getUsersConfig()

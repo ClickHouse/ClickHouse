@@ -21,7 +21,7 @@ public:
     UsersConfigAccessStorage();
     ~UsersConfigAccessStorage() override;
 
-    void loadFromConfig(const Poco::Util::AbstractConfiguration & config);
+    void setConfiguration(const Poco::Util::AbstractConfiguration & config);
 
 private:
     std::optional<UUID> findImpl(std::type_index type, const String & name) const override;
@@ -29,6 +29,7 @@ private:
     bool existsImpl(const UUID & id) const override;
     AccessEntityPtr readImpl(const UUID & id) const override;
     String readNameImpl(const UUID & id) const override;
+    bool canInsertImpl(const AccessEntityPtr &) const override { return false; }
     UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
