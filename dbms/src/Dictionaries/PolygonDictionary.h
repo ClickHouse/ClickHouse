@@ -322,7 +322,15 @@ private:
     /** Edge describes edge (adjacent points) of any polygon, and contains polygon's id.
      *  Invariant here is first point has x not greater than second point.
      */
-    using Edge = std::tuple<Point, Point, size_t>;
+    struct Edge
+    {
+        Point l;
+        Point r;
+        size_t polygon_id;
+
+        static bool compare1(const Edge & a, const Edge & b);
+        static bool compare2(const Edge & a, const Edge & b);
+    };
 
     /** Sorted distinct coordinates of all vertexes. */
     std::vector<Float64> sorted_x;
