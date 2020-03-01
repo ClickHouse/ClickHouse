@@ -296,7 +296,15 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     if (is_populate)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " POPULATE" << (settings.hilite ? hilite_none : "");
 
-    if (watermark_function)
+    if (is_watermark_strictly_ascending)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK STRICTLY_ASCENDING" << (settings.hilite ? hilite_none : "");
+    }
+    else if (is_watermark_ascending)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK ASCENDING" << (settings.hilite ? hilite_none : "");
+    }
+    else if (is_watermark_bounded)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK " << (settings.hilite ? hilite_none : "");
         watermark_function->formatImpl(settings, state, frame);

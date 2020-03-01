@@ -647,6 +647,9 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     String cluster_str;
     bool attach = false;
+    bool is_watermark_strictly_ascending = false;
+    bool is_watermark_ascending = false;
+    bool is_watermark_bounded = false;
     bool if_not_exists = false;
     bool is_temporary = false;
 
@@ -720,7 +723,13 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     {
         s_eq.ignore(pos, expected);
 
-        if (!watermark_p.parse(pos, watermark, expected))
+        if (ParserKeyword("STRICTLY_ASCENDING").ignore(pos,expected))
+            is_watermark_strictly_ascending = true;
+        else if (ParserKeyword("ASCENDING").ignore(pos,expected))
+            is_watermark_ascending = true;
+        else if (watermark_p.parse(pos, watermark, expected))
+            is_watermark_bounded = true;
+        else
             return false;
     }
 
@@ -749,6 +758,9 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
+    query->is_watermark_strictly_ascending = is_watermark_strictly_ascending;
+    query->is_watermark_ascending = is_watermark_ascending;
+    query->is_watermark_bounded = is_watermark_bounded;
     query->watermark_function = watermark;
 
     tryGetIdentifierNameInto(as_database, query->as_database);
