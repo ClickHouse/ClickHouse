@@ -42,6 +42,7 @@ public:
     {
         return cpu_time_period_us != 0
             && (yield_probability > 0
+                || migrate_probability > 0
                 || (sleep_probability > 0 && chaos_sleep_time_us > 0));
     }
 
@@ -145,9 +146,11 @@ void ChaosSanitizer::signalHandler(int)
     if (chaos_sanitizer.migrate_probability > 0
         && std::bernoulli_distribution(chaos_sanitizer.migrate_probability)(thread_local_rng))
     {
+        int migrate_to = std::uniform_int_distribution<>(0, chaos_sanitizer.num_cpus - 1)(thread_local_rng);
+
         cpu_set_t set;
         CPU_ZERO(&set);
-        CPU_SET(std::uniform_int_distribution<>(0, chaos_sanitizer.num_cpus - 1)(thread_local_rng), &set);
+        CPU_SET(migrate_to, &set);
 
         (void)sched_setaffinity(0, sizeof(set), &set);
     }
@@ -182,7 +185,7 @@ int main(int argc, char ** argv)
         threads.emplace_back([&]
         {
             for (size_t j = 0; j < num_iterations; ++j)
-                counter = counter + 1;  /// Intentionally wrong.
+                counter.store(counter.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);  /// Intentionally wrong.
         });
     }
 
