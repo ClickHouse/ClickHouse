@@ -102,10 +102,10 @@ private:
         if (sigaction(SIGPROF, &sa, nullptr))
             throwFromErrno("Failed to setup signal handler for chaos_sanitizer", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
-        static constexpr UInt32 TIMER_PRECISION = 1e6;
+        static constexpr UInt32 TIMER_PRECISION = 1000000;
 
         struct timeval interval{.tv_sec = long(cpu_time_period_us / TIMER_PRECISION), .tv_usec = long(cpu_time_period_us % TIMER_PRECISION)};
-        struct itimerval timer = {.it_interval = interval, .it_value = {0, 0}};
+        struct itimerval timer = {.it_interval = interval, .it_value = interval};
 
         if (0 != setitimer(ITIMER_PROF, &timer, nullptr))
             throwFromErrno("Failed to create profiling timer", ErrorCodes::CANNOT_CREATE_TIMER);
