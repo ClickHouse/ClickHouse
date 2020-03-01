@@ -87,12 +87,6 @@ private:
         initFromEnv(chaos_sleep_time_us, "CHAOS_SLEEP_TIME_US");
     }
 
-    void message(const char * msg) const
-    {
-        (void)write(STDERR_FILENO, msg, strlen(msg));
-        (void)write(STDERR_FILENO, "\n", 1);
-    }
-
     void setup()
     {
         struct sigaction sa{};
@@ -125,8 +119,6 @@ void ChaosSanitizer::signalHandler(int)
 {
     auto saved_errno = errno;
 
-    // std::cerr << getThreadId() << "\n";
-
     auto & chaos_sanitizer = ChaosSanitizer::instance();
 
     if (chaos_sanitizer.yield_probability > 0
@@ -151,7 +143,6 @@ void ChaosSanitizer::signalHandler(int)
         && chaos_sanitizer.chaos_sleep_time_us > 0
         && std::bernoulli_distribution(chaos_sanitizer.sleep_probability)(thread_local_rng))
     {
-        // std::cerr << "Sleep in thread " << getThreadId() << "\n";
         sleepForNanoseconds(chaos_sanitizer.chaos_sleep_time_us * 1000);
     }
 
@@ -170,14 +161,20 @@ int main(int argc, char ** argv)
 
     std::vector<std::thread> threads;
 
-    std::atomic<size_t> counter = 0;
+    std::mutex m1;
+    std::mutex m2;
+
+    size_t counter = 0;
 
     for (size_t i = 0; i < num_threads; ++i)
     {
         threads.emplace_back([&]
         {
             for (size_t j = 0; j < num_iterations; ++j)
-                counter.store(counter.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);  /// Intentionally wrong.
+            {
+                std::lock_guard lock1(i % 2 ? m1 : m2);
+                ++counter;
+            }
         });
     }
 
