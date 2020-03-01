@@ -164,19 +164,11 @@ namespace
             auto res = ColumnUInt32::create();
             ColumnUInt32::Container & res_data = res->getData();
             res_data.reserve(column_offsets.size());
-            if (index == 0) // lower bound of hop window
+            IColumn::Offset current_offset = 0;
+            for (size_t i = 0; i < column_offsets.size(); ++i)
             {
-                IColumn::Offset current_offset = 0;
-                for (size_t i = 0; i < column_offsets.size(); ++i)
-                {
-                    res_data.push_back(bound_data[current_offset]);
-                    current_offset = column_offsets[i];
-                }
-            }
-            else // upper bound of hop window
-            {
-                for (size_t i = 0; i < column_offsets.size(); ++i)
-                    res_data.push_back(bound_data[column_offsets[i] - 1]);
+                res_data.push_back(bound_data[current_offset]);
+                current_offset = column_offsets[i];
             }
             return res;
         }
