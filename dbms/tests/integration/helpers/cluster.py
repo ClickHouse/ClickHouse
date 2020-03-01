@@ -619,15 +619,15 @@ class ClickHouseInstance:
         self.with_installed_binary = with_installed_binary
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
-    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False):
-        return self.client.query(sql, stdin, timeout, settings, user, ignore_error)
+    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, ignore_error=False):
+        return self.client.query(sql, stdin, timeout, settings, user, password, ignore_error)
 
-    def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False,
+    def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, ignore_error=False,
                          retry_count=20, sleep_time=0.5, check_callback=lambda x: True):
         result = None
         for i in range(retry_count):
             try:
-                result = self.query(sql, stdin, timeout, settings, user, ignore_error)
+                result = self.query(sql, stdin, timeout, settings, user, password, ignore_error)
                 if check_callback(result):
                     return result
                 time.sleep(sleep_time)
@@ -644,15 +644,15 @@ class ClickHouseInstance:
         return self.client.get_query_request(*args, **kwargs)
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument), expects an error and return its code
-    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None):
-        return self.client.query_and_get_error(sql, stdin, timeout, settings, user)
+    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None):
+        return self.client.query_and_get_error(sql, stdin, timeout, settings, user, password)
 
     # The same as query_and_get_error but ignores successful query.
-    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None):
-        return self.client.query_and_get_answer_with_error(sql, stdin, timeout, settings, user)
+    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None):
+        return self.client.query_and_get_answer_with_error(sql, stdin, timeout, settings, user, password)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
-    def http_query(self, sql, data=None, params=None, user=None):
+    def http_query(self, sql, data=None, params=None, user=None, password=None):
         if params is None:
             params = {}
         else:
@@ -661,7 +661,9 @@ class ClickHouseInstance:
         params["query"] = sql
 
         auth = ""
-        if user:
+        if user and password:
+            auth = "{}:{}@".format(user, password)
+        elif user:
             auth = "{}@".format(user)
 
         url = "http://" + auth + self.ip_address + ":8123/?" + urllib.urlencode(params)
