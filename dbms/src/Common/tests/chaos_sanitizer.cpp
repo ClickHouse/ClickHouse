@@ -1,6 +1,7 @@
 #include <signal.h>
 #include <time.h>
 #include <sys/time.h>
+#include <sys/sysinfo.h>
 #include <sched.h>
 
 #include <thread>
@@ -12,7 +13,6 @@
 #include <common/getThreadId.h>
 
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
 
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
@@ -26,8 +26,6 @@ namespace ErrorCodes
     extern const int CANNOT_MANIPULATE_SIGSET;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_CREATE_TIMER;
-    extern const int CANNOT_DELETE_TIMER;
-    extern const int CANNOT_SET_TIMER_PERIOD;
 }
 
 
@@ -42,22 +40,23 @@ public:
 
     bool isEffective() const
     {
-        return cpu_time_period_ns != 0
+        return cpu_time_period_us != 0
             && (yield_probability > 0
-                || (sleep_probability > 0 && chaos_sleep_time_ns > 0));
+                || (sleep_probability > 0 && chaos_sleep_time_us > 0));
     }
 
 private:
-    uint64_t cpu_time_period_ns = 0;
+    uint64_t cpu_time_period_us = 0;
     double yield_probability = 0;
+    double migrate_probability = 0;
     double sleep_probability = 0;
-    double chaos_sleep_time_ns = 0;
+    double chaos_sleep_time_us = 0;
+
+    int num_cpus = 0;
 
 
     ChaosSanitizer()
     {
-        handleError("Hello");
-
         initConfiguration();
         if (!isEffective())
             return;
@@ -76,19 +75,21 @@ private:
 
     void initConfiguration()
     {
-        initFromEnv(cpu_time_period_ns, "CHAOS_CPU_TIME_PERIOD_NS");
-        if (!cpu_time_period_ns)
+        num_cpus = get_nprocs();
+
+        initFromEnv(cpu_time_period_us, "CHAOS_CPU_TIME_PERIOD_US");
+        if (!cpu_time_period_us)
             return;
         initFromEnv(yield_probability, "CHAOS_YIELD_PROBABILITY");
+        initFromEnv(migrate_probability, "CHAOS_MIGRATE_PROBABILITY");
         initFromEnv(sleep_probability, "CHAOS_SLEEP_PROBABILITY");
-        initFromEnv(chaos_sleep_time_ns, "CHAOS_SLEEP_TIME_NS");
+        initFromEnv(chaos_sleep_time_us, "CHAOS_SLEEP_TIME_US");
     }
 
-    void handleError(const std::string & msg) const
+    void message(const char * msg) const
     {
-        WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
-        out.write(msg.data(), msg.size());
-        out.write('\n');
+        (void)write(STDERR_FILENO, msg, strlen(msg));
+        (void)write(STDERR_FILENO, "\n", 1);
     }
 
     void setup()
@@ -112,9 +113,9 @@ private:
         /// It will allow to sample short queries even if timer period is large.
         /// (For example, with period of 1 second, query with 50 ms duration will be sampled with 1 / 20 probability).
         /// It also helps to avoid interference (moire).
-        UInt32 period_rand = std::uniform_int_distribution<UInt32>(0, cpu_time_period_ns)(thread_local_rng);
+        UInt32 period_rand = std::uniform_int_distribution<UInt32>(0, cpu_time_period_us)(thread_local_rng);
 
-        struct timeval interval{.tv_sec = long(cpu_time_period_ns / TIMER_PRECISION), .tv_usec = long(cpu_time_period_ns % TIMER_PRECISION)};
+        struct timeval interval{.tv_sec = long(cpu_time_period_us / TIMER_PRECISION), .tv_usec = long(cpu_time_period_us % TIMER_PRECISION)};
         struct timeval offset{.tv_sec = period_rand / TIMER_PRECISION, .tv_usec = period_rand % TIMER_PRECISION};
 
         struct itimerval timer = {.it_interval = interval, .it_value = offset};
@@ -126,57 +127,69 @@ private:
     static void signalHandler(int);
 };
 
-// /*thread_local*/ ChaosSanitizer chaos_sanitizer;
 
 void ChaosSanitizer::signalHandler(int)
 {
-    std::uniform_real_distribution<> distribution(0.0, 1.0);
+    auto saved_errno = errno;
+
+    // std::cerr << getThreadId() << "\n";
 
     auto & chaos_sanitizer = ChaosSanitizer::instance();
 
-    if (chaos_sanitizer.yield_probability > 0)
+    if (chaos_sanitizer.yield_probability > 0
+        && std::bernoulli_distribution(chaos_sanitizer.yield_probability)(thread_local_rng))
     {
-        double dice = distribution(thread_local_rng);
-        if (dice < chaos_sanitizer.yield_probability)
-            sched_yield();
+        sched_yield();
     }
 
-    if (chaos_sanitizer.sleep_probability > 0 && chaos_sanitizer.chaos_sleep_time_ns > 0)
+    if (chaos_sanitizer.migrate_probability > 0
+        && std::bernoulli_distribution(chaos_sanitizer.migrate_probability)(thread_local_rng))
     {
-        double dice = distribution(thread_local_rng);
-        if (dice < chaos_sanitizer.sleep_probability)
-        {
-            std::cerr << "Sleep in thread " << getThreadId() << "\n";
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        CPU_SET(std::uniform_int_distribution<>(0, chaos_sanitizer.num_cpus - 1)(thread_local_rng), &set);
 
-            sleepForNanoseconds(chaos_sanitizer.chaos_sleep_time_ns);
-        }
+        (void)sched_setaffinity(0, sizeof(set), &set);
     }
+
+    if (chaos_sanitizer.sleep_probability > 0
+        && chaos_sanitizer.chaos_sleep_time_us > 0
+        && std::bernoulli_distribution(chaos_sanitizer.sleep_probability)(thread_local_rng))
+    {
+        // std::cerr << "Sleep in thread " << getThreadId() << "\n";
+        sleepForNanoseconds(chaos_sanitizer.chaos_sleep_time_us * 1000);
+    }
+
+    errno = saved_errno;
 }
 
 }
 
 
-int main(int, char **)
+int main(int argc, char ** argv)
 {
+    const size_t num_iterations = argc >= 2 ? DB::parse<size_t>(argv[1]) : 1000000000;
+    const size_t num_threads = argc >= 3 ? DB::parse<size_t>(argv[2]) : 16;
+
     std::cerr << DB::ChaosSanitizer::instance().isEffective() << "\n";
 
-    static constexpr size_t num_threads = 16;
     std::vector<std::thread> threads;
+
+    std::atomic<size_t> counter = 0;
 
     for (size_t i = 0; i < num_threads; ++i)
     {
-        threads.emplace_back([=]
+        threads.emplace_back([&]
         {
-            volatile size_t x = 0;
-            while (++x)
-//                if (x % (1 << 27) == 0)
-//                    std::cerr << i << ".";
-                ;
+            for (size_t j = 0; j < num_iterations; ++j)
+                counter = counter + 1;  /// Intentionally wrong.
         });
     }
 
     for (auto & thread : threads)
         thread.join();
+
+    std::cerr << "Result: " << counter << "\n";
 
     return 0;
 }
