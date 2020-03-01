@@ -92,6 +92,7 @@ namespace ErrorCodes
     extern const int SESSION_IS_LOCKED;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_SCALAR;
+    extern const int AUTHENTICATION_FAILED;
 }
 
 
@@ -646,10 +647,20 @@ void Context::setUser(const String & name, const String & password, const Poco::
     if (!quota_key.empty())
         client_info.quota_key = quota_key;
 
-    auto new_user_id = getAccessControlManager().getID<User>(name);
-    auto new_access_rights = getAccessControlManager().getAccessRightsContext(new_user_id, {}, true, settings, current_database, client_info);
-    new_access_rights->checkHostIsAllowed();
-    new_access_rights->checkPassword(password);
+    auto new_user_id = getAccessControlManager().find<User>(name);
+    AccessRightsContextPtr new_access_rights;
+    if (new_user_id)
+    {
+        new_access_rights = getAccessControlManager().getAccessRightsContext(*new_user_id, {}, true, settings, current_database, client_info);
+        if (!new_access_rights->isClientHostAllowed() || !new_access_rights->isCorrectPassword(password))
+        {
+            new_user_id = {};
+            new_access_rights = nullptr;
+        }
+    }
+
+    if (!new_user_id || !new_access_rights)
+        throw Exception(name + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
 
     user_id = new_user_id;
     access_rights = std::move(new_access_rights);
