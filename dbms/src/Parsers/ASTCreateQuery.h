@@ -62,6 +62,9 @@ public:
     bool is_populate{false};
     bool is_dictionary{false}; /// CREATE DICTIONARY
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
+    bool is_watermark_strictly_ascending{false}; /// STRICTLY ASCENDING WATERMARK STRATEGY
+    bool is_watermark_ascending{false}; /// ASCENDING WATERMARK STRATEGY
+    bool is_watermark_bounded{false}; /// BOUNDED OUT OF ORDERNESS WATERMARK STRATEGY
     ASTColumns * columns_list = nullptr;
     ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of dictionary
     ASTExpressionList * tables = nullptr;

@@ -20,6 +20,7 @@ using BlocksListPtrs = std::shared_ptr<std::list<BlocksListPtr>>;
 class StorageWindowView : public ext::shared_ptr_helper<StorageWindowView>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageWindowView>;
+    friend class TimestampTransformation;
     friend class WatermarkBlockInputStream;
     friend class WindowViewBlockInputStream;
 
@@ -51,7 +52,7 @@ public:
 
     BlocksListPtrs getMergeableBlocksList() { return mergeable_blocks; }
 
-    BlockInputStreamPtr getNewBlocksInputStreamPtr(UInt32 timestamp_);
+    BlockInputStreamPtr getNewBlocksInputStreamPtr(UInt32 watermark);
 
     static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, const Context & context);
 
@@ -61,17 +62,23 @@ private:
     ASTPtr fetch_column_query;
 
     Context & global_context;
-    bool is_proctime{false};
+    bool is_proctime{true};
+    bool is_time_column_now;
     bool is_tumble; // false if is hop
     std::atomic<bool> shutdown_called{false};
     mutable Block sample_block;
     mutable Block mergeable_sample_block;
     UInt64 clean_interval;
     const DateLUTImpl & time_zone;
+    UInt32 max_timestamp = 0;
+    UInt32 max_watermark = 0;
+    bool is_watermark_strictly_ascending{false};
+    bool is_watermark_ascending{false};
+    bool is_watermark_bounded{false};
     UInt32 next_fire_signal;
-    std::deque<UInt32> late_fire_signal;
+    std::deque<UInt32> fire_signal;
     std::list<std::weak_ptr<WindowViewBlockInputStream>> watch_streams;
-    std::condition_variable_any late_signal_condition;
+    std::condition_variable_any fire_signal_condition;
     std::condition_variable fire_condition;
     BlocksListPtrs mergeable_blocks;
 
@@ -81,10 +88,13 @@ private:
     std::shared_mutex fire_signal_mutex;
 
     IntervalKind::Kind window_kind;
+    IntervalKind::Kind hop_kind;
     IntervalKind::Kind watermark_kind;
     Int64 window_num_units;
+    Int64 hop_num_units;
     Int64 watermark_num_units = 0;
     String window_column_name;
+    String timestamp_column_name;
 
     StorageID select_table_id = StorageID::createEmpty();
     StorageID target_table_id = StorageID::createEmpty();
@@ -104,13 +114,15 @@ private:
 
     UInt32 getWindowLowerBound(UInt32 time_sec, int window_id_skew = 0);
     UInt32 getWindowUpperBound(UInt32 time_sec, int window_id_skew = 0);
-    UInt32 getWatermark(UInt32 time_sec);
 
-    void fire(UInt32 timestamp_);
+    void fire(UInt32 watermark);
     void cleanCache();
     void threadFuncCleanCache();
-    void threadFuncFire();
-    void addLateFireSignal(UInt32 timestamp_);
+    void threadFuncFireProc();
+    void threadFuncFireEvent();
+    void addFireSignal(std::deque<UInt32> & signals);
+    void updateMaxWatermark(UInt32 watermark);
+    void updateMaxTimestamp(UInt32 timestamp);
 
     static Pipes blocksToPipes(BlocksListPtrs & blocks, Block & sample_block);
 
