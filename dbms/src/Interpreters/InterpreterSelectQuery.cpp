@@ -152,7 +152,7 @@ String InterpreterSelectQuery::generateFilterActions(ExpressionActionsPtr & acti
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
-    auto syntax_result = SyntaxAnalyzer(*context).analyzeSelect(query_ast, storage->getColumns().getAllPhysical());
+    auto syntax_result = SyntaxAnalyzer(*context).analyzeSelect(query_ast, storage->getColumns().getAll());
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context);
     actions = analyzer.simpleSelectActions();
 
