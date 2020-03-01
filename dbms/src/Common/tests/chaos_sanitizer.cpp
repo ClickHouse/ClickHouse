@@ -110,16 +110,8 @@ private:
 
         static constexpr UInt32 TIMER_PRECISION = 1e6;
 
-        /// Randomize offset as uniform random value from 0 to period - 1.
-        /// It will allow to sample short queries even if timer period is large.
-        /// (For example, with period of 1 second, query with 50 ms duration will be sampled with 1 / 20 probability).
-        /// It also helps to avoid interference (moire).
-        UInt32 period_rand = std::uniform_int_distribution<UInt32>(0, cpu_time_period_us)(thread_local_rng);
-
         struct timeval interval{.tv_sec = long(cpu_time_period_us / TIMER_PRECISION), .tv_usec = long(cpu_time_period_us % TIMER_PRECISION)};
-        struct timeval offset{.tv_sec = period_rand / TIMER_PRECISION, .tv_usec = period_rand % TIMER_PRECISION};
-
-        struct itimerval timer = {.it_interval = interval, .it_value = offset};
+        struct itimerval timer = {.it_interval = interval, .it_value = {0, 0}};
 
         if (0 != setitimer(ITIMER_PROF, &timer, nullptr))
             throwFromErrno("Failed to create profiling timer", ErrorCodes::CANNOT_CREATE_TIMER);
