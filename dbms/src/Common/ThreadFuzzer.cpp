@@ -119,7 +119,10 @@ void ThreadFuzzer::setup()
 
     static constexpr UInt32 TIMER_PRECISION = 1000000;
 
-    struct timeval interval{.tv_sec = long(cpu_time_period_us / TIMER_PRECISION), .tv_usec = long(cpu_time_period_us % TIMER_PRECISION)};
+    struct timeval interval;
+    interval.tv_sec = cpu_time_period_us / TIMER_PRECISION;
+    interval.tv_usec = cpu_time_period_us % TIMER_PRECISION;
+
     struct itimerval timer = {.it_interval = interval, .it_value = interval};
 
     if (0 != setitimer(ITIMER_PROF, &timer, nullptr))
