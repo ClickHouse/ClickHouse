@@ -187,12 +187,12 @@ namespace
         });
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTGenericRoleSet> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTGenericRoleSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr node;
-            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected) || !ParserGenericRoleSet{}.parse(pos, node, expected))
+            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected) || !ParserGenericRoleSet{}.enableIDMode(id_mode).parse(pos, node, expected))
                 return false;
 
             roles = std::static_pointer_cast<ASTGenericRoleSet>(node);
@@ -204,13 +204,21 @@ namespace
 
 bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    bool alter;
-    if (ParserKeyword{"CREATE QUOTA"}.ignore(pos, expected))
-        alter = false;
-    else if (ParserKeyword{"ALTER QUOTA"}.ignore(pos, expected))
-        alter = true;
+    bool alter = false;
+    bool attach = false;
+    if (attach_mode)
+    {
+        if (!ParserKeyword{"ATTACH QUOTA"}.ignore(pos, expected))
+            return false;
+        attach = true;
+    }
     else
-        return false;
+    {
+        if (ParserKeyword{"ALTER QUOTA"}.ignore(pos, expected))
+            alter = true;
+        else if (!ParserKeyword{"CREATE QUOTA"}.ignore(pos, expected))
+            return false;
+    }
 
     bool if_exists = false;
     bool if_not_exists = false;
@@ -248,7 +256,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (parseAllLimits(pos, expected, alter, all_limits))
             continue;
 
-        if (!roles && parseToRoles(pos, expected, roles))
+        if (!roles && parseToRoles(pos, expected, attach, roles))
             continue;
 
         break;

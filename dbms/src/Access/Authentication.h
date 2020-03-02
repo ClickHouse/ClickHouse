@@ -70,10 +70,6 @@ public:
     /// Checks if the provided password is correct. Returns false if not.
     bool isCorrectPassword(const String & password) const;
 
-    /// Checks if the provided password is correct. Throws an exception if not.
-    /// `user_name` is only used for generating an error message if the password is incorrect.
-    void checkPassword(const String & password, const String & user_name = String()) const;
-
     friend bool operator ==(const Authentication & lhs, const Authentication & rhs) { return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash); }
     friend bool operator !=(const Authentication & lhs, const Authentication & rhs) { return !(lhs == rhs); }
 
