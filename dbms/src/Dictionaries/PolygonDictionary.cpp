@@ -742,13 +742,13 @@ void SmartPolygonDictionary::indexBuild()
         const Float64 rx = this->sorted_x[r];
 
         /** removing edges where right_point.x < lx */
-        while (!interesting_edges.empty() && interesting_edges.begin()->r.get<0>() < lx)
+        while (!interesting_edges.empty() && interesting_edges.begin()->r.x() < lx)
         {
             interesting_edges.erase(interesting_edges.begin());
         }
 
         /** adding edges where left_point.x <= rx */
-        for (; edges_it < this->all_edges.size() && this->all_edges[edges_it].l.get<0>() <= rx; ++edges_it)
+        for (; edges_it < this->all_edges.size() && this->all_edges[edges_it].l.x() <= rx; ++edges_it)
         {
             interesting_edges.insert(this->all_edges[edges_it]);
         }
@@ -761,7 +761,7 @@ void SmartPolygonDictionary::indexAddRing(const Ring & ring, size_t polygon_id)
 {
     for (auto & point : ring)
     {
-        this->sorted_x.push_back(point.get<0>());
+        this->sorted_x.push_back(point.x());
     }
 
     for (size_t i = 0, prev = ring.size() - 1; i < ring.size(); prev = i, ++i)
@@ -770,12 +770,12 @@ void SmartPolygonDictionary::indexAddRing(const Ring & ring, size_t polygon_id)
         Point b = ring[i];
 
         // making a.x <= b.x
-        if (a.get<0>() > b.get<0>())
+        if (a.x() > b.x())
         {
             std::swap(a, b);
         }
 
-        if (a.get<0>() == b.get<0>() && a.get<1>() > b.get<1>())
+        if (a.x() == b.x() && a.y() > b.y())
         {
             std::swap(a, b);
         }
@@ -786,24 +786,24 @@ void SmartPolygonDictionary::indexAddRing(const Ring & ring, size_t polygon_id)
 
 bool SmartPolygonDictionary::Edge::compare1(const Edge & a, const Edge & b)
 {
-    if (a.l.get<0>() != b.l.get<0>())
+    if (a.l.x() != b.l.x())
     {
-        return a.l.get<0>() < b.l.get<0>();
+        return a.l.x() < b.l.x();
     }
 
-    if (a.l.get<1>() != b.l.get<1>())
+    if (a.l.y() != b.l.y())
     {
-        return a.l.get<1>() < b.l.get<1>();
+        return a.l.y() < b.l.y();
     }
 
-    if (a.r.get<0>() != b.r.get<0>())
+    if (a.r.x() != b.r.x())
     {
-        return a.r.get<0>() < b.r.get<0>();
+        return a.r.x() < b.r.x();
     }
 
-    if (a.r.get<1>() != b.r.get<1>())
+    if (a.r.y() != b.r.y())
     {
-        return a.r.get<1>() < b.r.get<1>();
+        return a.r.y() < b.r.y();
     }
 
     return a.polygon_id < b.polygon_id;
@@ -811,24 +811,24 @@ bool SmartPolygonDictionary::Edge::compare1(const Edge & a, const Edge & b)
 
 bool SmartPolygonDictionary::Edge::compare2(const Edge & a, const Edge & b)
 {
-    if (a.r.get<0>() != b.r.get<0>())
+    if (a.r.x() != b.r.x())
     {
-        return a.r.get<0>() < b.r.get<0>();
+        return a.r.x() < b.r.x();
     }
 
-    if (a.r.get<1>() != b.r.get<1>())
+    if (a.r.y() != b.r.y())
     {
-        return a.r.get<1>() < b.r.get<1>();
+        return a.r.y() < b.r.y();
     }
 
-    if (a.l.get<0>() != b.l.get<0>())
+    if (a.l.x() != b.l.x())
     {
-        return a.l.get<0>() < b.l.get<0>();
+        return a.l.x() < b.l.x();
     }
 
-    if (a.l.get<1>() != b.l.get<1>())
+    if (a.l.y() != b.l.y())
     {
-        return a.l.get<1>() < b.l.get<1>();
+        return a.l.y() < b.l.y();
     }
 
     return a.polygon_id < b.polygon_id;
@@ -841,8 +841,8 @@ bool SmartPolygonDictionary::find(const Point &point, size_t & id) const
         return false;
     }
 
-    Float64 x = point.get<0>();
-    Float64 y = point.get<1>();
+    Float64 x = point.x();
+    Float64 y = point.y();
 
     if (x < this->sorted_x[0] || x > this->sorted_x.back())
     {
@@ -862,18 +862,18 @@ bool SmartPolygonDictionary::find(const Point &point, size_t & id) const
         size_t polygon_id = edge.polygon_id;
 
         /** check if point outside of edge's x bounds */
-        if (x < l.get<0>() || x >= r.get<0>())
+        if (x < l.x() || x >= r.x())
         {
             continue;
         }
 
         /** check for vertical edge, seem like never happens */
-        if (l.get<0>() == r.get<0>())
+        if (l.x() == r.x())
         {
             continue;
         }
 
-        Float64 edge_y = l.get<1>() + (r.get<1>() - l.get<1>()) / (r.get<0>() - l.get<0>()) * (x - l.get<0>());
+        Float64 edge_y = l.y() + (r.y() - l.y()) / (r.x() - l.x()) * (x - l.x());
         if (edge_y > y)
         {
             continue;
