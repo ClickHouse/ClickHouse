@@ -61,8 +61,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             query = materialized_view->getInnerQuery();
 
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-            insert->database = inner_table_id.database_name;
-            insert->table = inner_table_id.table_name;
+            insert->table_id = inner_table_id;
 
             /// Get list of columns we get from select query.
             auto header = InterpreterSelectQuery(query, *views_context, SelectQueryOptions().analyze())

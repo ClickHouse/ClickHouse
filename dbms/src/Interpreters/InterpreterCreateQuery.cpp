@@ -662,11 +662,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         && !create.is_view && !create.is_live_view && (!create.is_materialized_view || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
-
-        if (!create.temporary)
-            insert->database = create.database;
-
-        insert->table = create.table;
+        insert->table_id = context.getSessionContext().resolveStorageID({create.database, create.table, create.uuid}, Context::ResolveExternalOrGlobal);
         insert->select = create.select->clone();
 
         if (create.temporary && !context.getSessionContext().hasQueryContext())

@@ -353,8 +353,7 @@ bool StorageKafka::streamToViews()
 
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
-    insert->database = table_id.database_name;
-    insert->table = table_id.table_name;
+    insert->table_id = table_id;
 
     const Settings & settings = global_context.getSettingsRef();
     size_t block_size = max_block_size;

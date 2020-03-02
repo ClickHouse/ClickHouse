@@ -339,8 +339,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         /// This is needed to support DEFAULT-columns in table.
 
         std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-        insert->database = table_id.database_name;
-        insert->table = table_id.table_name;
+        insert->table_id = table_id;
         ASTPtr query_ptr(insert.release());
 
         InterpreterInsertQuery interpreter(query_ptr, context);

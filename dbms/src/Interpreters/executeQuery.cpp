@@ -330,9 +330,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
         {
             /// Save insertion table (not table function). TODO: support remote() table function.
-            auto db_table = insert_interpreter->getDatabaseTable();
-            if (!db_table.second.empty())
-                context.setInsertionTable(std::move(db_table));
+            auto table_id = insert_interpreter->getDatabaseTable();
+            if (!table_id.empty())
+                context.setInsertionTable(std::move(table_id));
         }
 
         if (process_list_entry)
