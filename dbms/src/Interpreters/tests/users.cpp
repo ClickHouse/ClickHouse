@@ -203,7 +203,7 @@ void runOneTest(const TestDescriptor & test_descriptor)
 
     try
     {
-        acl_manager.loadFromConfig(*config);
+        acl_manager.setUsersConfig(*config);
     }
     catch (const Poco::Exception & ex)
     {

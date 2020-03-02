@@ -53,6 +53,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int DIRECTORY_ALREADY_EXISTS;
+    extern const int LOGICAL_ERROR;
     extern const int ABORTED;
 }
 
@@ -1119,7 +1121,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         if (!indices_to_recalc.empty())
         {
-            auto indices_recalc_syntax = SyntaxAnalyzer(context, {}).analyze(
+            auto indices_recalc_syntax = SyntaxAnalyzer(context).analyze(
                     indices_recalc_expr_list, in_header.getNamesAndTypesList());
             auto indices_recalc_expr = ExpressionAnalyzer(
                     indices_recalc_expr_list,

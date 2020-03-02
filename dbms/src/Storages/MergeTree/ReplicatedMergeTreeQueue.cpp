@@ -13,9 +13,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNFINISHED;
-    extern const int PART_IS_TEMPORARILY_LOCKED;
 }
 
 
@@ -1345,7 +1345,11 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
         }
     }
 
-    return candidates.size() != finished.size();
+    /// Mutations may finish in non sequential order because we may fetch
+    /// already mutated parts from other replicas. So, because we updated
+    /// mutation pointer we have to recheck all previous mutations, they may be
+    /// also finished.
+    return !finished.empty();
 }
 
 
