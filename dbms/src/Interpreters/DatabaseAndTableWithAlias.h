@@ -48,11 +48,11 @@ struct TableWithColumnNames
         , columns(columns_)
     {}
 
-    void addHiddenColumns(const NamesAndTypesList & addition)
-    {
-        for (auto & column : addition)
-            hidden_columns.push_back(column.name);
-    }
+    TableWithColumnNames(const DatabaseAndTableWithAlias table_, Names && columns_, Names && hidden_columns_)
+        : table(table_)
+        , columns(columns_)
+        , hidden_columns(hidden_columns_)
+    {}
 
     bool hasColumn(const String & name) const
     {
@@ -69,9 +69,42 @@ private:
     mutable NameSet columns_set;
 };
 
+struct TableWithColumnNamesAndTypes
+{
+    DatabaseAndTableWithAlias table;
+    NamesAndTypesList columns;
+    NamesAndTypesList hidden_columns;
+
+    TableWithColumnNamesAndTypes(const DatabaseAndTableWithAlias & table_, const NamesAndTypesList & columns_)
+        : table(table_)
+        , columns(columns_)
+    {}
+
+    void addHiddenColumns(const NamesAndTypesList & addition)
+    {
+        hidden_columns.insert(hidden_columns.end(), addition.begin(), addition.end());
+    }
+
+    TableWithColumnNames removeTypes() const
+    {
+        Names out_columns;
+        out_columns.reserve(columns.size());
+        for (auto & col : columns)
+            out_columns.push_back(col.name);
+
+        Names out_hidden_columns;
+        out_hidden_columns.reserve(hidden_columns.size());
+        for (auto & col : hidden_columns)
+            out_hidden_columns.push_back(col.name);
+
+        return TableWithColumnNames(table, std::move(out_columns), std::move(out_hidden_columns));
+    }
+};
+
 std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery & select_query, const String & current_database);
 std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuery & select, size_t table_number);
 
 using TablesWithColumnNames = std::vector<TableWithColumnNames>;
+using TablesWithColumnNamesAndTypes = std::vector<TableWithColumnNames>;
 
 }
