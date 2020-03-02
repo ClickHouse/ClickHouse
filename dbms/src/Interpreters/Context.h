@@ -160,7 +160,7 @@ private:
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
     QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
-    std::pair<String, String> insertion_table;  /// Saved insertion table in query context
+    StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
@@ -297,6 +297,7 @@ public:
          ResolveCurrentDatabase = 2u,                                  /// Use current database
          ResolveOrdinary = ResolveGlobal | ResolveCurrentDatabase,     /// If database name is not specified, use current database
          ResolveExternal = 4u,                                         /// Try get external table
+         ResolveExternalOrGlobal = ResolveGlobal | ResolveExternal,    /// If external table doesn't exist, database name must be specifies
          ResolveAll = ResolveExternal | ResolveOrdinary                /// If database name is not specified, try get external table,
                                                                        ///    if external table not found use current database.
     };
@@ -332,8 +333,8 @@ public:
 
     void killCurrentQuery();
 
-    void setInsertionTable(std::pair<String, String> && db_and_table) { insertion_table = db_and_table; }
-    const std::pair<String, String> & getInsertionTable() const { return insertion_table; }
+    void setInsertionTable(StorageID db_and_table) { insertion_table = std::move(db_and_table); }
+    const StorageID & getInsertionTable() const { return insertion_table; }
 
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);

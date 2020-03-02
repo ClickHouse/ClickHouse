@@ -252,7 +252,7 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     ComFieldList packet;
     packet.readPayload(payload);
     String database = connection_context.getCurrentDatabase();
-    StoragePtr tablePtr = connection_context.getTable(database, packet.table);
+    StoragePtr tablePtr = DatabaseCatalog::instance().getTable({database, packet.table});
     for (const NameAndTypePair & column: tablePtr->getColumns().getAll())
     {
         ColumnDefinition column_definition(

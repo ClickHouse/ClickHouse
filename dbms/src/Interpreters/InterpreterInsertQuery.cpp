@@ -56,10 +56,8 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         return table_function_ptr->execute(query.table_function, context, table_function_ptr->getName());
     }
 
-    /// Into what table to write.
-    if (query.database.empty() && !context.isExternalTableExist(query.table))
-        query.database = context.getCurrentDatabase();
-    return context.getTable(query.database, query.table);
+    query.table_id = context.resolveStorageID(query.table_id);
+    return DatabaseCatalog::instance().getTable(query.table_id);
 }
 
 Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table)
@@ -83,7 +81,7 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
 
         /// The table does not have a column with that name
         if (!table_sample.has(current_name))
-            throw Exception("No such column " + current_name + " in table " + query.table, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+            throw Exception("No such column " + current_name + " in table " + query.table_id.getNameForLogs(), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         if (!allow_materialized && !table_sample_non_materialized.has(current_name))
             throw Exception("Cannot insert column " + current_name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
@@ -107,8 +105,8 @@ BlockIO InterpreterInsertQuery::execute()
     auto table_lock = table->lockStructureForShare(true, context.getInitialQueryId());
 
     auto query_sample_block = getSampleBlock(query, table);
-    if (!query.table.empty() && !query.database.empty() /* always allow access to temporary tables */)
-        context.checkAccess(AccessType::INSERT, query.database, query.table, query_sample_block.getNames());
+    if (!query.table_function)
+        context.checkAccess(AccessType::INSERT, query.table_id.database_name, query.table_id.table_name, query_sample_block.getNames());
 
     BlockInputStreams in_streams;
     size_t out_streams_size = 1;
@@ -159,7 +157,7 @@ BlockIO InterpreterInsertQuery::execute()
             out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
 
         if (const auto & constraints = table->getConstraints(); !constraints.empty())
-            out = std::make_shared<CheckConstraintsBlockOutputStream>(query.table,
+            out = std::make_shared<CheckConstraintsBlockOutputStream>(query.table_id,
              out, query_sample_block, table->getConstraints(), context);
 
         auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
@@ -207,10 +205,9 @@ BlockIO InterpreterInsertQuery::execute()
 }
 
 
-std::pair<String, String> InterpreterInsertQuery::getDatabaseTable() const
+StorageID InterpreterInsertQuery::getDatabaseTable() const
 {
-    const auto & query = query_ptr->as<ASTInsertQuery &>();
-    return {query.database, query.table};
+    return query_ptr->as<ASTInsertQuery &>().table_id;
 }
 
 }

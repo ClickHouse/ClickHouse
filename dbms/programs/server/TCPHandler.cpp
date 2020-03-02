@@ -463,11 +463,11 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
     /// Send ColumnsDescription for insertion table
     if (client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
     {
-        const auto & db_and_table = query_context->getInsertionTable();
+        const auto & table_id = query_context->getInsertionTable();
         if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
         {
-            if (!db_and_table.second.empty())
-                sendTableColumns(query_context->getTable(db_and_table.first, db_and_table.second)->getColumns());
+            if (!table_id.empty())
+                sendTableColumns(DatabaseCatalog::instance().getTable(table_id)->getColumns());
         }
     }
 
