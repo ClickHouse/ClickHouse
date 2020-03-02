@@ -263,7 +263,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     else if (input_pipe)
     {
         /// Read from prepared input.
-        source_header = input_pipe_->getHeader();
+        source_header = input_pipe->getHeader();
     }
     else if (is_subquery)
     {

@@ -14,7 +14,7 @@ namespace
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            if (!ParserGenericRoleSet{}.allowCurrentUser(false).parse(pos, ast, expected))
+            if (!ParserGenericRoleSet{}.enableCurrentUserKeyword(false).parse(pos, ast, expected))
                 return false;
 
             roles = typeid_cast<std::shared_ptr<ASTGenericRoleSet>>(ast);
@@ -30,7 +30,7 @@ namespace
                 return false;
 
             ASTPtr ast;
-            if (!ParserGenericRoleSet{}.allowAll(false).parse(pos, ast, expected))
+            if (!ParserGenericRoleSet{}.enableAllKeyword(false).parse(pos, ast, expected))
                 return false;
 
             to_users = typeid_cast<std::shared_ptr<ASTGenericRoleSet>>(ast);

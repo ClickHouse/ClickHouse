@@ -211,12 +211,12 @@ namespace
     }
 
 
-    bool parseRoles(IParser::Pos & pos, Expected & expected, std::shared_ptr<ASTGenericRoleSet> & roles)
+    bool parseRoles(IParser::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTGenericRoleSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            if (!ParserGenericRoleSet{}.allowAll(false).allowCurrentUser(false).parse(pos, ast, expected))
+            if (!ParserGenericRoleSet{}.enableAllKeyword(false).enableCurrentUserKeyword(false).enableIDMode(id_mode).parse(pos, ast, expected))
                 return false;
 
             roles = typeid_cast<std::shared_ptr<ASTGenericRoleSet>>(ast);
@@ -242,7 +242,7 @@ namespace
             }
 
             ASTPtr ast;
-            if (!ParserGenericRoleSet{}.allowAll(kind == Kind::REVOKE).parse(pos, ast, expected))
+            if (!ParserGenericRoleSet{}.enableAllKeyword(kind == Kind::REVOKE).parse(pos, ast, expected))
                 return false;
 
             to_roles = typeid_cast<std::shared_ptr<ASTGenericRoleSet>>(ast);
@@ -254,6 +254,14 @@ namespace
 
 bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    bool attach = false;
+    if (attach_mode)
+    {
+        if (!ParserKeyword{"ATTACH"}.ignore(pos, expected))
+            return false;
+        attach = true;
+    }
+
     using Kind = ASTGrantQuery::Kind;
     Kind kind;
     if (ParserKeyword{"GRANT"}.ignore(pos, expected))
@@ -275,7 +283,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     AccessRightsElements elements;
     std::shared_ptr<ASTGenericRoleSet> roles;
-    if (!parseAccessRightsElements(pos, expected, elements) && !parseRoles(pos, expected, roles))
+    if (!parseAccessRightsElements(pos, expected, elements) && !parseRoles(pos, expected, attach, roles))
         return false;
 
     std::shared_ptr<ASTGenericRoleSet> to_roles;
@@ -299,6 +307,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     node = query;
 
     query->kind = kind;
+    query->attach = attach;
     query->access_rights_elements = std::move(elements);
     query->roles = std::move(roles);
     query->to_roles = std::move(to_roles);

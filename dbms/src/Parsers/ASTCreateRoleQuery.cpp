@@ -28,8 +28,15 @@ ASTPtr ASTCreateRoleQuery::clone() const
 
 void ASTCreateRoleQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER ROLE" : "CREATE ROLE")
-                  << (settings.hilite ? hilite_none : "");
+    if (attach)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ATTACH ROLE" << (settings.hilite ? hilite_none : "");
+    }
+    else
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER ROLE" : "CREATE ROLE")
+                      << (settings.hilite ? hilite_none : "");
+    }
 
     if (if_exists)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " IF EXISTS" << (settings.hilite ? hilite_none : "");
