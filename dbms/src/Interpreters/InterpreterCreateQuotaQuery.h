@@ -9,7 +9,6 @@ namespace DB
 {
 class ASTCreateQuotaQuery;
 struct Quota;
-struct GenericRoleSet;
 
 
 class InterpreterCreateQuotaQuery : public IInterpreter
@@ -22,9 +21,9 @@ public:
     bool ignoreQuota() const override { return true; }
     bool ignoreLimits() const override { return true; }
 
-private:
-    void updateQuotaFromQuery(Quota & quota, const ASTCreateQuotaQuery & query, const std::optional<GenericRoleSet> & roles_from_query);
+    static void updateQuotaFromQuery(Quota & quota, const ASTCreateQuotaQuery & query);
 
+private:
     ASTPtr query_ptr;
     Context & context;
 };
