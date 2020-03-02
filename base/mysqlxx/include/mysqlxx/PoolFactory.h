@@ -3,14 +3,18 @@
 #include <mutex>
 #include <memory>
 #include <boost/noncopyable.hpp>
-#include "PoolWithFailover.h"
+
+#include <mysqlxx/PoolWithFailover.h>
+
 
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS 1
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS 16
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 3
 
+
 namespace mysqlxx
 {
+
 /*
  * PoolFactory.h
  * This class is a helper singleton to mutualize connections to MySQL.
