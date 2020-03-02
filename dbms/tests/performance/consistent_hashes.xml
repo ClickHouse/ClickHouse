@@ -27,5 +27,7 @@
     </substitutions>
 
     <query>SELECT {hash_func}(number, {buckets}) FROM numbers(1000000)</query>
-    <query>SELECT sumburConsistentHash(toUInt32(number), {buckets}) FROM numbers(1000000)</query>
+
+    <!-- sumbur with high bucket numbers is very slow, so only test two buckers -->
+    <query>SELECT sumburConsistentHash(toUInt32(number), 2) FROM numbers(1000000)</query>
 </test>
