@@ -4,6 +4,22 @@
 
 namespace DB
 {
+namespace
+{
+    void formatRoleNameOrID(const String & str, bool is_id, const IAST::FormatSettings & settings)
+    {
+        if (is_id)
+        {
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ID" << (settings.hilite ? IAST::hilite_none : "") << "("
+                          << quoteString(str) << ")";
+        }
+        else
+        {
+            settings.ostr << backQuoteIfNeed(str);
+        }
+    }
+}
+
 void ASTGenericRoleSet::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     if (empty())
@@ -25,7 +41,7 @@ void ASTGenericRoleSet::formatImpl(const FormatSettings & settings, FormatState 
         {
             if (std::exchange(need_comma, true))
                 settings.ostr << ", ";
-            settings.ostr << backQuoteIfNeed(role);
+            formatRoleNameOrID(role, id_mode, settings);
         }
 
         if (current_user)
@@ -45,7 +61,7 @@ void ASTGenericRoleSet::formatImpl(const FormatSettings & settings, FormatState 
         {
             if (std::exchange(need_comma, true))
                 settings.ostr << ", ";
-            settings.ostr << backQuoteIfNeed(except_role);
+            formatRoleNameOrID(except_role, id_mode, settings);
         }
 
         if (except_current_user)

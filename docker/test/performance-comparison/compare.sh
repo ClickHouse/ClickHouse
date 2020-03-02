@@ -159,7 +159,11 @@ function run_tests
     # Just check that the script runs at all
     "$script_dir/perf.py" --help > /dev/null
 
-    rm -v test-times.tsv ||:
+    for x in {test-times,skipped-tests}.tsv
+    do
+        rm -v "$x" ||:
+        touch "$x"
+    done
 
     # FIXME remove some broken long tests
     rm right/performance/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
@@ -204,6 +208,11 @@ function run_tests
 
         grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
         grep ^client-time "$test_name-raw.tsv" | cut -f2- > "$test_name-client-time.tsv"
+        skipped=$(grep ^skipped "$test_name-raw.tsv" | cut -f2-)
+        if [ "$skipped" != "" ]
+        then
+            printf "$test_name""\t""$skipped""\n" >> skipped-tests.tsv
+        fi
     done
 
     unset TIMEFORMAT
@@ -261,13 +270,19 @@ rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.ts
 right/clickhouse local --query "
 create table queries engine Memory as select
         replaceAll(_file, '-report.tsv', '') test,
-        left + right < 0.01 as short,
+
         -- FIXME Comparison mode doesn't make sense for queries that complete
         -- immediately, so for now we pretend they don't exist. We don't want to
         -- remove them altogether because we want to be able to detect regressions,
         -- but the right way to do this is not yet clear.
-        not short and abs(diff) < 0.05 and rd[3] > 0.05 as unstable,
-        not short and abs(diff) > 0.10 and abs(diff) > rd[3] as changed,
+        left + right < 0.01 as short,
+
+        not short and abs(diff) < 0.10 and rd[3] > 0.10 as unstable,
+
+        -- Do not consider changed the queries with 5% RD below 1% -- e.g., we're
+        -- likely to observe a difference > 1% in less than 5% cases.
+        -- Not sure it is correct, but empirically it filters out a lot of noise.
+        not short and abs(diff) > 0.15 and abs(diff) > rd[3] and rd[1] > 0.01 as changed,
         *
     from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
 
@@ -399,7 +414,7 @@ IFS=$'\n'
 for query in $(cut -d'	' -f1 stacks.rep | sort | uniq)
 do
     query_file=$(echo "$query" | cut -c-120 | sed 's/[/]/_/g')
-    grep -F "$query" stacks.rep \
+    grep -F "$query	" stacks.rep \
         | cut -d'	' -f 2- \
         | tee "$query_file.stacks.rep" \
         | ~/fg/flamegraph.pl > "$query_file.svg" &
@@ -427,16 +442,17 @@ case "$stage" in
     time restart
     ;&
 "run_tests")
-    # If the tests fail with OOM or something, still try to restart the servers
-    # to collect the logs.
+    # Ignore the errors to collect the log anyway
     time run_tests ||:
-    time restart
     ;&
 "get_profiles")
-    time get_profiles
+    # If the tests fail with OOM or something, still try to restart the servers
+    # to collect the logs. Prefer not to restart, because addresses might change
+    # and we won't be able to process trace_log data.
+    time get_profiles || restart || get_profiles
     ;&
 "analyze_queries")
-    analyze_queries
+    time analyze_queries
     ;&
 "report")
     time report

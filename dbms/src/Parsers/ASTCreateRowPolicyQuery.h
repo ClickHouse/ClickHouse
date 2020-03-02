@@ -29,6 +29,7 @@ class ASTCreateRowPolicyQuery : public IAST
 {
 public:
     bool alter = false;
+    bool attach = false;
 
     bool if_exists = false;
     bool if_not_exists = false;
