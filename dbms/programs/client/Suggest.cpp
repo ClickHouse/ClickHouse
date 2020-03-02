@@ -5,6 +5,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_PACKET_FROM_SERVER;
+}
 
 void Suggest::load(const ConnectionParameters & connection_parameters, size_t suggestion_limit)
 {

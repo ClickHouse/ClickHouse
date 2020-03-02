@@ -17,9 +17,9 @@ public:
 
     BlockIO execute() override;
 
-private:
-    void updateRoleFromQuery(Role & role, const ASTCreateRoleQuery & query);
+    static void updateRoleFromQuery(Role & role, const ASTCreateRoleQuery & query);
 
+private:
     ASTPtr query_ptr;
     Context & context;
 };

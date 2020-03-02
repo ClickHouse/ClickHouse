@@ -7,6 +7,7 @@ namespace DB
 {
     namespace ErrorCodes
     {
+        extern const int NO_AVAILABLE_DATA;
         extern const int INCORRECT_DATA;
     }
 }

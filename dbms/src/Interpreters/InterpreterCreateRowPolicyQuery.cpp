@@ -10,6 +10,57 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+    const String & checkCurrentDatabase(const String & current_database)
+    {
+        if (current_database.empty())
+            throw Exception("No current database", ErrorCodes::LOGICAL_ERROR);
+        return current_database;
+    }
+
+    void updateRowPolicyFromQueryImpl(
+        RowPolicy & policy,
+        const ASTCreateRowPolicyQuery & query,
+        const std::optional<GenericRoleSet> & roles_from_query = {},
+        const String & current_database = {})
+    {
+        if (query.alter)
+        {
+            if (!query.new_policy_name.empty())
+                policy.setName(query.new_policy_name);
+        }
+        else
+        {
+            policy.setDatabase(!query.name_parts.database.empty() ? query.name_parts.database : checkCurrentDatabase(current_database));
+            policy.setTableName(query.name_parts.table_name);
+            policy.setName(query.name_parts.policy_name);
+        }
+
+        if (query.is_restrictive)
+            policy.setRestrictive(*query.is_restrictive);
+
+        for (const auto & [index, condition] : query.conditions)
+            policy.conditions[index] = condition ? serializeAST(*condition) : String{};
+
+        const GenericRoleSet * roles = nullptr;
+        std::optional<GenericRoleSet> temp_role_set;
+        if (roles_from_query)
+            roles = &*roles_from_query;
+        else if (query.roles)
+            roles = &temp_role_set.emplace(*query.roles);
+
+        if (roles)
+            policy.roles = *roles;
+    }
+}
+
+
 BlockIO InterpreterCreateRowPolicyQuery::execute()
 {
     const auto & query = query_ptr->as<const ASTCreateRowPolicyQuery &>();
@@ -20,12 +71,14 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     if (query.roles)
         roles_from_query = GenericRoleSet{*query.roles, access_control, context.getUserID()};
 
+    const String current_database = context.getCurrentDatabase();
+
     if (query.alter)
     {
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
         {
             auto updated_policy = typeid_cast<std::shared_ptr<RowPolicy>>(entity->clone());
-            updateRowPolicyFromQuery(*updated_policy, query, roles_from_query);
+            updateRowPolicyFromQueryImpl(*updated_policy, query, roles_from_query, current_database);
             return updated_policy;
         };
         String full_name = query.name_parts.getFullName(context);
@@ -40,7 +93,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     else
     {
         auto new_policy = std::make_shared<RowPolicy>();
-        updateRowPolicyFromQuery(*new_policy, query, roles_from_query);
+        updateRowPolicyFromQueryImpl(*new_policy, query, roles_from_query, current_database);
 
         if (query.if_not_exists)
             access_control.tryInsert(new_policy);
@@ -54,27 +107,9 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
 }
 
 
-void InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(RowPolicy & policy, const ASTCreateRowPolicyQuery & query, const std::optional<GenericRoleSet> & roles_from_query)
+void InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(RowPolicy & policy, const ASTCreateRowPolicyQuery & query)
 {
-    if (query.alter)
-    {
-        if (!query.new_policy_name.empty())
-            policy.setName(query.new_policy_name);
-    }
-    else
-    {
-        policy.setDatabase(query.name_parts.database.empty() ? context.getCurrentDatabase() : query.name_parts.database);
-        policy.setTableName(query.name_parts.table_name);
-        policy.setName(query.name_parts.policy_name);
-    }
-
-    if (query.is_restrictive)
-        policy.setRestrictive(*query.is_restrictive);
-
-    for (const auto & [index, condition] : query.conditions)
-        policy.conditions[index] = condition ? serializeAST(*condition) : String{};
-
-    if (roles_from_query)
-        policy.roles = *roles_from_query;
+    updateRowPolicyFromQueryImpl(policy, query);
 }
+
 }

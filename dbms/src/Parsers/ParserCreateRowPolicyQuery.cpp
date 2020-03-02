@@ -6,6 +6,7 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
 
 
@@ -13,7 +14,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int SYNTAX_ERROR;
 }
 
 
@@ -187,12 +187,13 @@ namespace
         });
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTGenericRoleSet> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTGenericRoleSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected) || !ParserGenericRoleSet{}.parse(pos, ast, expected))
+            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected)
+                || !ParserGenericRoleSet{}.enableIDMode(id_mode).parse(pos, ast, expected))
                 return false;
 
             roles = std::static_pointer_cast<ASTGenericRoleSet>(ast);
@@ -204,13 +205,21 @@ namespace
 
 bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    bool alter;
-    if (ParserKeyword{"CREATE POLICY"}.ignore(pos, expected) || ParserKeyword{"CREATE ROW POLICY"}.ignore(pos, expected))
-        alter = false;
-    else if (ParserKeyword{"ALTER POLICY"}.ignore(pos, expected) || ParserKeyword{"ALTER ROW POLICY"}.ignore(pos, expected))
-        alter = true;
+    bool alter = false;
+    bool attach = false;
+    if (attach_mode)
+    {
+        if (!ParserKeyword{"ATTACH POLICY"}.ignore(pos, expected) && !ParserKeyword{"ATTACH ROW POLICY"}.ignore(pos, expected))
+            return false;
+        attach = true;
+    }
     else
-        return false;
+    {
+        if (ParserKeyword{"ALTER POLICY"}.ignore(pos, expected) || ParserKeyword{"ALTER ROW POLICY"}.ignore(pos, expected))
+            alter = true;
+        else if (!ParserKeyword{"CREATE POLICY"}.ignore(pos, expected) && !ParserKeyword{"CREATE ROW POLICY"}.ignore(pos, expected))
+            return false;
+    }
 
     bool if_exists = false;
     bool if_not_exists = false;
@@ -252,7 +261,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (parseMultipleConditions(pos, expected, alter, conditions))
             continue;
 
-        if (!roles && parseToRoles(pos, expected, roles))
+        if (!roles && parseToRoles(pos, expected, attach, roles))
             continue;
 
         break;
@@ -262,6 +271,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     node = query;
 
     query->alter = alter;
+    query->attach = attach;
     query->if_exists = if_exists;
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;

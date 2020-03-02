@@ -2,6 +2,7 @@
 #include <Access/MultipleAccessStorage.h>
 #include <Access/MemoryAccessStorage.h>
 #include <Access/UsersConfigAccessStorage.h>
+#include <Access/DiskAccessStorage.h>
 #include <Access/AccessRightsContextFactory.h>
 #include <Access/RoleContextFactory.h>
 #include <Access/RowPolicyContextFactory.h>
@@ -15,10 +16,14 @@ namespace
     std::vector<std::unique_ptr<IAccessStorage>> createStorages()
     {
         std::vector<std::unique_ptr<IAccessStorage>> list;
-        list.emplace_back(std::make_unique<MemoryAccessStorage>());
+        list.emplace_back(std::make_unique<DiskAccessStorage>());
         list.emplace_back(std::make_unique<UsersConfigAccessStorage>());
+        list.emplace_back(std::make_unique<MemoryAccessStorage>());
         return list;
     }
+
+    constexpr size_t DISK_ACCESS_STORAGE_INDEX = 0;
+    constexpr size_t USERS_CONFIG_ACCESS_STORAGE_INDEX = 1;
 }
 
 
@@ -37,10 +42,17 @@ AccessControlManager::~AccessControlManager()
 }
 
 
-void AccessControlManager::loadFromConfig(const Poco::Util::AbstractConfiguration & users_config)
+void AccessControlManager::setLocalDirectory(const String & directory_path)
 {
-    auto & users_config_access_storage = dynamic_cast<UsersConfigAccessStorage &>(getStorageByIndex(1));
-    users_config_access_storage.loadFromConfig(users_config);
+    auto & disk_access_storage = dynamic_cast<DiskAccessStorage &>(getStorageByIndex(DISK_ACCESS_STORAGE_INDEX));
+    disk_access_storage.setDirectory(directory_path);
+}
+
+
+void AccessControlManager::setUsersConfig(const Poco::Util::AbstractConfiguration & users_config)
+{
+    auto & users_config_access_storage = dynamic_cast<UsersConfigAccessStorage &>(getStorageByIndex(USERS_CONFIG_ACCESS_STORAGE_INDEX));
+    users_config_access_storage.setConfiguration(users_config);
 }
 
 

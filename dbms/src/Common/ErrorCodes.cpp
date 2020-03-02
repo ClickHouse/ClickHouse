@@ -467,7 +467,7 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_NOT_FOUND = 492;
     extern const int ACCESS_ENTITY_ALREADY_EXISTS = 493;
     extern const int ACCESS_ENTITY_FOUND_DUPLICATES = 494;
-    extern const int ACCESS_ENTITY_STORAGE_READONLY = 495;
+    extern const int ACCESS_STORAGE_READONLY = 495;
     extern const int QUOTA_REQUIRES_CLIENT_KEY = 496;
     extern const int ACCESS_DENIED = 497;
     extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED = 498;
@@ -485,7 +485,10 @@ namespace ErrorCodes
     extern const int UNKNOWN_ROLE = 511;
     extern const int SET_NON_GRANTED_ROLE = 512;
     extern const int UNKNOWN_PART_TYPE = 513;
-    extern const int CANNOT_ASSIGN_ALTER = 514;
+    extern const int ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND = 514;
+    extern const int INCORRECT_ACCESS_ENTITY_DEFINITION = 515;
+    extern const int AUTHENTICATION_FAILED = 516;
+    extern const int CANNOT_ASSIGN_ALTER = 517;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
