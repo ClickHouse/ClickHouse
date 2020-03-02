@@ -14,4 +14,4 @@ ClickHouse is an open-source column-oriented database management system that all
 
 ## Upcoming Events
 
-* [ClickHouse Meetup in Athens](https://www.meetup.com/Athens-Big-Data/events/268379195/) on March 5.
+* [ClickHouse Meetup in Athens](https://www.meetup.com/Athens-Big-Data/events/268379195/) on March 5, 2020.
