@@ -9,8 +9,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int REQUIRED_PASSWORD;
-    extern const int WRONG_PASSWORD;
 }
 
 
@@ -75,17 +73,6 @@ bool Authentication::isCorrectPassword(const String & password_) const
         }
     }
     throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
-}
-
-
-void Authentication::checkPassword(const String & password_, const String & user_name) const
-{
-    if (isCorrectPassword(password_))
-        return;
-    auto info_about_user_name = [&user_name]() { return user_name.empty() ? String() : " for user " + user_name; };
-    if (password_.empty() && (type != NO_PASSWORD))
-        throw Exception("Password required" + info_about_user_name(), ErrorCodes::REQUIRED_PASSWORD);
-    throw Exception("Wrong password" + info_about_user_name(), ErrorCodes::WRONG_PASSWORD);
 }
 
 }

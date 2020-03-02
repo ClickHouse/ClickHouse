@@ -186,20 +186,20 @@ void AccessRightsContext::setRolesInfo(const CurrentRolesInfoPtr & roles_info_) 
 }
 
 
-void AccessRightsContext::checkPassword(const String & password) const
+bool AccessRightsContext::isCorrectPassword(const String & password) const
 {
     std::lock_guard lock{mutex};
     if (!user)
-        throw Exception(user_name + ": User has been dropped", ErrorCodes::UNKNOWN_USER);
-    user->authentication.checkPassword(password, user_name);
+        return false;
+    return user->authentication.isCorrectPassword(password);
 }
 
-void AccessRightsContext::checkHostIsAllowed() const
+bool AccessRightsContext::isClientHostAllowed() const
 {
     std::lock_guard lock{mutex};
     if (!user)
-        throw Exception(user_name + ": User has been dropped", ErrorCodes::UNKNOWN_USER);
-    user->allowed_client_hosts.checkContains(params.address, user_name);
+        return false;
+    return user->allowed_client_hosts.contains(params.address);
 }
 
 
