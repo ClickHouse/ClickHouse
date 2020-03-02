@@ -2,7 +2,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 
-#include <unordered_map>
+#include <map>
 
 namespace DB
 {
@@ -33,7 +33,8 @@ struct MergeTreeDataPartTTLInfo
 /// PartTTLInfo for all columns and table with minimal ttl for whole part
 struct MergeTreeDataPartTTLInfos
 {
-    std::unordered_map<String, MergeTreeDataPartTTLInfo> columns_ttl;
+    /// Order is important as it would be serialized and hashed for checksums
+    std::map<String, MergeTreeDataPartTTLInfo> columns_ttl;
     MergeTreeDataPartTTLInfo table_ttl;
 
     /// `part_min_ttl` and `part_max_ttl` are TTLs which are used for selecting parts
@@ -41,7 +42,8 @@ struct MergeTreeDataPartTTLInfos
     time_t part_min_ttl = 0;
     time_t part_max_ttl = 0;
 
-    std::unordered_map<String, MergeTreeDataPartTTLInfo> moves_ttl;
+    /// Order is important as it would be serialized and hashed for checksums
+    std::map<String, MergeTreeDataPartTTLInfo> moves_ttl;
 
     void read(ReadBuffer & in);
     void write(WriteBuffer & out) const;
