@@ -26,6 +26,10 @@ namespace Poco
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
     enum class RedisStorageType
     {
             SIMPLE,

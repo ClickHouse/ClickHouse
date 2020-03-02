@@ -20,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_TYPE_OF_FIELD;
     extern const int SYNTAX_ERROR;
     extern const int EMPTY_DATA_PASSED;
     extern const int UNEXPECTED_AST_STRUCTURE;

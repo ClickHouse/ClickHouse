@@ -10,6 +10,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 static constexpr UInt64 SEED_GEN_A = 845897321;
 static constexpr UInt64 SEED_GEN_B = 217728422;

@@ -18,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;

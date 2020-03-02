@@ -3,6 +3,7 @@
 #include <Common/quoteString.h>
 #include <ext/chrono_io.h>
 #include <ext/range.h>
+#include <boost/smart_ptr/make_shared.hpp>
 #include <boost/range/algorithm/fill.hpp>
 
 
@@ -171,16 +172,18 @@ QuotaUsageInfo QuotaContext::Intervals::getUsageInfo(std::chrono::system_clock::
 
 
 QuotaContext::QuotaContext()
-    : atomic_intervals(std::make_shared<Intervals>()) /// Unlimited quota.
+    : intervals(boost::make_shared<Intervals>()) /// Unlimited quota.
 {
 }
 
 
 QuotaContext::QuotaContext(
     const String & user_name_,
+    const UUID & user_id_,
+    const std::vector<UUID> & enabled_roles_,
     const Poco::Net::IPAddress & address_,
     const String & client_key_)
-    : user_name(user_name_), address(address_), client_key(client_key_)
+    : user_name(user_name_), user_id(user_id_), enabled_roles(enabled_roles_), address(address_), client_key(client_key_)
 {
 }
 
@@ -188,66 +191,66 @@ QuotaContext::QuotaContext(
 QuotaContext::~QuotaContext() = default;
 
 
-void QuotaContext::used(ResourceType resource_type, ResourceAmount amount, bool check_exceeded)
+void QuotaContext::used(ResourceType resource_type, ResourceAmount amount, bool check_exceeded) const
 {
     used({resource_type, amount}, check_exceeded);
 }
 
 
-void QuotaContext::used(const std::pair<ResourceType, ResourceAmount> & resource, bool check_exceeded)
+void QuotaContext::used(const std::pair<ResourceType, ResourceAmount> & resource, bool check_exceeded) const
 {
-    auto intervals_ptr = std::atomic_load(&atomic_intervals);
+    auto loaded = intervals.load();
     auto current_time = std::chrono::system_clock::now();
-    Impl::used(user_name, *intervals_ptr, resource.first, resource.second, current_time, check_exceeded);
+    Impl::used(user_name, *loaded, resource.first, resource.second, current_time, check_exceeded);
 }
 
 
-void QuotaContext::used(const std::pair<ResourceType, ResourceAmount> & resource1, const std::pair<ResourceType, ResourceAmount> & resource2, bool check_exceeded)
+void QuotaContext::used(const std::pair<ResourceType, ResourceAmount> & resource1, const std::pair<ResourceType, ResourceAmount> & resource2, bool check_exceeded) const
 {
-    auto intervals_ptr = std::atomic_load(&atomic_intervals);
+    auto loaded = intervals.load();
     auto current_time = std::chrono::system_clock::now();
-    Impl::used(user_name, *intervals_ptr, resource1.first, resource1.second, current_time, check_exceeded);
-    Impl::used(user_name, *intervals_ptr, resource2.first, resource2.second, current_time, check_exceeded);
+    Impl::used(user_name, *loaded, resource1.first, resource1.second, current_time, check_exceeded);
+    Impl::used(user_name, *loaded, resource2.first, resource2.second, current_time, check_exceeded);
 }
 
 
-void QuotaContext::used(const std::pair<ResourceType, ResourceAmount> & resource1, const std::pair<ResourceType, ResourceAmount> & resource2, const std::pair<ResourceType, ResourceAmount> & resource3, bool check_exceeded)
+void QuotaContext::used(const std::pair<ResourceType, ResourceAmount> & resource1, const std::pair<ResourceType, ResourceAmount> & resource2, const std::pair<ResourceType, ResourceAmount> & resource3, bool check_exceeded) const
 {
-    auto intervals_ptr = std::atomic_load(&atomic_intervals);
+    auto loaded = intervals.load();
     auto current_time = std::chrono::system_clock::now();
-    Impl::used(user_name, *intervals_ptr, resource1.first, resource1.second, current_time, check_exceeded);
-    Impl::used(user_name, *intervals_ptr, resource2.first, resource2.second, current_time, check_exceeded);
-    Impl::used(user_name, *intervals_ptr, resource3.first, resource3.second, current_time, check_exceeded);
+    Impl::used(user_name, *loaded, resource1.first, resource1.second, current_time, check_exceeded);
+    Impl::used(user_name, *loaded, resource2.first, resource2.second, current_time, check_exceeded);
+    Impl::used(user_name, *loaded, resource3.first, resource3.second, current_time, check_exceeded);
 }
 
 
-void QuotaContext::used(const std::vector<std::pair<ResourceType, ResourceAmount>> & resources, bool check_exceeded)
+void QuotaContext::used(const std::vector<std::pair<ResourceType, ResourceAmount>> & resources, bool check_exceeded) const
 {
-    auto intervals_ptr = std::atomic_load(&atomic_intervals);
+    auto loaded = intervals.load();
     auto current_time = std::chrono::system_clock::now();
     for (const auto & resource : resources)
-        Impl::used(user_name, *intervals_ptr, resource.first, resource.second, current_time, check_exceeded);
+        Impl::used(user_name, *loaded, resource.first, resource.second, current_time, check_exceeded);
 }
 
 
-void QuotaContext::checkExceeded()
+void QuotaContext::checkExceeded() const
 {
-    auto intervals_ptr = std::atomic_load(&atomic_intervals);
-    Impl::checkExceeded(user_name, *intervals_ptr, std::chrono::system_clock::now());
+    auto loaded = intervals.load();
+    Impl::checkExceeded(user_name, *loaded, std::chrono::system_clock::now());
 }
 
 
-void QuotaContext::checkExceeded(ResourceType resource_type)
+void QuotaContext::checkExceeded(ResourceType resource_type) const
 {
-    auto intervals_ptr = std::atomic_load(&atomic_intervals);
-    Impl::checkExceeded(user_name, *intervals_ptr, resource_type, std::chrono::system_clock::now());
+    auto loaded = intervals.load();
+    Impl::checkExceeded(user_name, *loaded, resource_type, std::chrono::system_clock::now());
 }
 
 
 QuotaUsageInfo QuotaContext::getUsageInfo() const
 {
-    auto intervals_ptr = std::atomic_load(&atomic_intervals);
-    return intervals_ptr->getUsageInfo(std::chrono::system_clock::now());
+    auto loaded = intervals.load();
+    return loaded->getUsageInfo(std::chrono::system_clock::now());
 }
 
 

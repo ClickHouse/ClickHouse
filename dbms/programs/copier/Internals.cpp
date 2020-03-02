@@ -2,6 +2,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 

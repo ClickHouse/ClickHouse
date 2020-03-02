@@ -2,7 +2,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -13,9 +13,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNFINISHED;
-    extern const int PART_IS_TEMPORARILY_LOCKED;
 }
 
 
@@ -197,19 +197,21 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
     if (is_successful)
     {
+
+        if (!entry->actual_new_part_name.empty())
+        {
+            /// We don't add bigger fetched part to current_parts because we
+            /// have an invariant `virtual_parts` = `current_parts` + `queue`.
+            /// But we can remove it from mutations, because we actually have it.
+            removePartFromMutations(entry->actual_new_part_name);
+        }
+
         for (const String & virtual_part_name : entry->getVirtualPartNames())
         {
-            Strings replaced_parts;
-            /// In most cases we will replace only current parts, but sometimes
-            /// we can even replace virtual parts. For example when we failed to
-            /// GET source part and dowloaded merged/mutated part instead.
-            current_parts.add(virtual_part_name, &replaced_parts);
-            virtual_parts.add(virtual_part_name, &replaced_parts);
-
-            /// Each part from `replaced_parts` should become Obsolete as a result of executing the entry.
-            /// So it is one less part to mutate for each mutation with block number greater or equal than part_info.getDataVersion()
-            for (const String & replaced_part_name : replaced_parts)
-                removePartFromMutations(replaced_part_name);
+            current_parts.add(virtual_part_name);
+            /// Each processed part may be already mutated, so we try to remove
+            /// all current parts from mutations.
+            removePartFromMutations(virtual_part_name);
         }
 
         String drop_range_part_name;
@@ -1343,7 +1345,11 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
         }
     }
 
-    return candidates.size() != finished.size();
+    /// Mutations may finish in non sequential order because we may fetch
+    /// already mutated parts from other replicas. So, because we updated
+    /// mutation pointer we have to recheck all previous mutations, they may be
+    /// also finished.
+    return !finished.empty();
 }
 
 

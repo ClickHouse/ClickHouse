@@ -32,7 +32,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int TYPE_MISMATCH;
 }
 
 template <typename AttributeType, typename OutputType, typename DefaultGetter>

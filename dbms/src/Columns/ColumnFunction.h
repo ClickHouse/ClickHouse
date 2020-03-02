@@ -11,6 +11,10 @@ using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 
 /** A column containing a lambda expression.

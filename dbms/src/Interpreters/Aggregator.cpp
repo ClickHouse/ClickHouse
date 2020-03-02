@@ -48,6 +48,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
+    extern const int NOT_ENOUGH_SPACE;
     extern const int TOO_MANY_ROWS;
     extern const int EMPTY_DATA_PASSED;
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;

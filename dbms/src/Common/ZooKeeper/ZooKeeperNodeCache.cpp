@@ -1,5 +1,13 @@
 #include "ZooKeeperNodeCache.h"
 
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int NO_ZOOKEEPER;
+    }
+}
+
 namespace zkutil
 {
 
