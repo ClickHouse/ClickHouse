@@ -221,11 +221,18 @@ def print_test_times():
 
     attrs = ['' for c in columns]
     for r in rows:
-        if float(r[6]) > 30:
+        if float(r[6]) > 15:
             slow_average_tests += 1
             attrs[6] = 'style="background: #ffb0a0"'
         else:
             attrs[6] = ''
+
+        if float(r[5]) > 30:
+            # Just a hint for now.
+            # slow_average_tests += 1
+            attrs[5] = 'style="background: #ffb0a0"'
+        else:
+            attrs[5] = ''
 
         print(tableRow(r, attrs))
 
