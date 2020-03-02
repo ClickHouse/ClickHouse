@@ -1,23 +1,4 @@
 $(document).ready(function () {
-    $.get('/events.json', function(e) {
-        var result = [];
-        $.each(e.events, function(idx) {
-            var event = e.events[idx];
-            result.push(
-                '<a class="text-reset" rel="external nofollow" target="_blank" href="' +
-                event.signup_link + '"><span class="text-orange">'+ event.event_date + '</span>&nbsp;' +
-                event.event_name + '</a> '
-            );
-        });
-        if (result.length) {
-            if (result.length === 1) {
-                result = '<h2>Upcoming Event</h2><p class="lead">' + result[0] + '</p>';
-            } else {
-                result = '<h2>Upcoming Events</h2><ul class="lead list-unstyled"><li>' + result.join('</li><li>') + '</li></ul>';
-            }
-            $('#events>.container').html(result);
-        }
-    });
     var name = $('#logo-text').attr('alt').trim().toLowerCase();
     var feedback_address = name + '-feedback' + '@yandex-team.com';
     var feedback_email = $('#feedback_email');

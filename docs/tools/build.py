@@ -119,7 +119,8 @@ def build_for_lang(lang, args):
                 'version_prefix': args.version_prefix,
                 'rev':       args.rev,
                 'rev_short': args.rev_short,
-                'rev_url':   args.rev_url
+                'rev_url':   args.rev_url,
+                'events':    args.events
             }
         )
 
@@ -307,11 +308,12 @@ if __name__ == '__main__':
     args = arg_parser.parse_args()
     args.docs_output_dir = os.path.join(os.path.abspath(args.output_dir), 'docs')
 
-    from github import choose_latest_releases
+    from github import choose_latest_releases, get_events
     args.stable_releases = choose_latest_releases() if args.enable_stable_releases else []
     args.rev = subprocess.check_output('git rev-parse HEAD', shell=True).strip()
     args.rev_short = subprocess.check_output('git rev-parse --short HEAD', shell=True).strip()
     args.rev_url = 'https://github.com/ClickHouse/ClickHouse/commit/%s' % args.rev
+    args.events = get_events(args)
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
