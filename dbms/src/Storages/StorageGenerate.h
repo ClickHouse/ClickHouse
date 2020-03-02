@@ -23,15 +23,13 @@ public:
         unsigned num_streams) override;
 
 private:
-    Block res_block;
-
     UInt64 max_array_length = 10;
     UInt64 max_string_length = 10;
     UInt64 random_seed = 0;
 
 protected:
     StorageGenerate(const StorageID & table_id_, const ColumnsDescription & columns_,
-        UInt64 max_array_length, UInt64 max_string_length,UInt64 random_seed);
+        UInt64 max_array_length, UInt64 max_string_length, UInt64 random_seed);
 };
 
 }

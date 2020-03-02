@@ -35,8 +35,9 @@ extern const int BAD_TYPE_OF_FIELD;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+
 void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
-                              UInt64 max_array_length, UInt64 max_string_length, UInt64 random_seed)
+                              UInt64 max_array_length, UInt64 max_string_length, pcg32& generator, pcg64_fast& generator64)
 {
     TypeIndex idx = type->getTypeId();
     (void) max_string_length;
@@ -49,7 +50,6 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<UInt8> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
                 data[i] = static_cast<UInt8>(generator());
@@ -60,7 +60,6 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<UInt16> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
                 data[i] = static_cast<UInt16>(generator());
@@ -71,7 +70,6 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<UInt32> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
                 data[i] = static_cast<UInt32>(generator());
@@ -82,10 +80,9 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<UInt64> &>(column).getData();
             data.resize(limit);
-            pcg64_fast generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
-                UInt64 a = static_cast<UInt64>(generator());
+                UInt64 a = static_cast<UInt64>(generator64());
                 data[i] = static_cast<UInt64>(a);
             }
             break;
@@ -96,7 +93,6 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<Int8> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
                 data[i] = static_cast<Int8>(generator());
@@ -107,7 +103,6 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<Int16> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
                 data[i] = static_cast<Int16>(generator());
@@ -118,7 +113,6 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<Int32> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
                 data[i] = static_cast<Int32>(generator());
@@ -129,11 +123,9 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<Int64> &>(column).getData();
             data.resize(limit);
-            pcg64_fast generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
-                Int64 a = static_cast<Int64>(generator());
-                data[i] = static_cast<Int64>(a);
+                data[i] =  static_cast<Int64>(generator64());
             }
             break;
         }
@@ -143,7 +135,6 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<Float32> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
             double d = 1.0;
             for (UInt64 i = 0; i < limit; ++i)
             {
@@ -156,12 +147,11 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<Float64> &>(column).getData();
             data.resize(limit);
-            pcg64_fast generator(random_seed);
             double d = 1.0;
             for (UInt64 i = 0; i < limit; ++i)
             {
                 d = std::numeric_limits<double>::max();
-                data[i] = (d / pcg64::max()) * generator();
+                data[i] = (d / pcg64::max()) * generator64();
             }
             break;
         }
@@ -169,7 +159,6 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<UInt16> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
                 data[i] = static_cast<UInt16>(generator());
@@ -180,7 +169,6 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<UInt32> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
                 data[i] = static_cast<UInt32>(generator());
@@ -196,7 +184,6 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
                 throw Exception("Static cast to DataTypeDateTime64 failed ", ErrorCodes::BAD_TYPE_OF_FIELD);
             auto & data = typeid_cast<ColumnDecimal<Decimal64> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
                 UInt32 fractional = static_cast<UInt32>(generator()) % intExp10(scale);
@@ -214,7 +201,6 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
 
             UInt64 offset = 0;
             {
-                pcg32 generator(random_seed);
                 offsets.resize(limit);
                 for (UInt64 i = 0; i < limit; ++i)
                 {
@@ -256,7 +242,6 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
 
             UInt64 num_chars = static_cast<UInt64>(len) * limit;
             {
-                pcg32 generator(random_seed);
                 chars.resize(num_chars);
                 for (UInt64 i = 0; i < num_chars; ++i)
                 {
@@ -270,7 +255,6 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
             auto values = typeid_cast<const DataTypeEnum<Int8> *>(type.get())->getValues();
             auto & data = typeid_cast<ColumnVector<Int8> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
 
             UInt8 size = values.size();
             UInt8 off;
@@ -286,7 +270,6 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
             auto values = typeid_cast<const DataTypeEnum<Int16> *>(type.get())->getValues();
             auto & data = typeid_cast<ColumnVector<Int16> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
 
             UInt16 size = values.size();
             UInt8 off;
@@ -301,7 +284,6 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnDecimal<Decimal32> &>(column).getData();
             data.resize(limit);
-            pcg32 generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
                 data[i] = static_cast<Int32>(generator());
@@ -312,7 +294,6 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnDecimal<Decimal64> &>(column).getData();
             data.resize(limit);
-            pcg64_fast generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
                 UInt64 a = static_cast<UInt64>(generator()) << 32 | static_cast<UInt64>(generator());
@@ -324,10 +305,9 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnDecimal<Decimal128> &>(column).getData();
             data.resize(limit);
-            pcg64_fast generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
-                Int128 x = static_cast<Int128>(generator()) << 64 | static_cast<Int128>(generator());
+                Int128 x = static_cast<Int128>(generator64()) << 64 | static_cast<Int128>(generator64());
                 data[i] = x;
             }
         }
@@ -336,11 +316,10 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
         {
             auto & data = typeid_cast<ColumnVector<UInt128> &>(column).getData();
             data.resize(limit);
-            pcg64_fast generator(random_seed);
             for (UInt64 i = 0; i < limit; ++i)
             {
-                UInt64 a = static_cast<UInt64>(generator());
-                UInt64 b = static_cast<UInt64>(generator());
+                UInt64 a = static_cast<UInt64>(generator64());
+                UInt64 b = static_cast<UInt64>(generator64());
                 auto x = UInt128(a, b);
                 data[i] = x;
             }
@@ -356,7 +335,6 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
 
             UInt64 offset = 0;
             {
-                pcg32 generator(random_seed);
                 offsets.resize(limit);
                 for (UInt64 i = 0; i < limit; ++i)
                 {
@@ -364,7 +342,7 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
                     offsets[i] = offset;
                 }
             }
-            fillColumnWithRandomData(data, nested_type, offset, max_array_length, max_string_length, random_seed);
+            fillColumnWithRandomData(data, nested_type, offset, max_array_length, max_string_length, generator, generator64);
             break;
         }
         case TypeIndex::Tuple:
@@ -374,7 +352,7 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
 
             for (size_t i = 0; i < column_tuple.tupleSize(); ++i)
             {
-                fillColumnWithRandomData(column_tuple.getColumn(i), elements[i], limit, max_array_length, max_string_length, random_seed);
+                fillColumnWithRandomData(column_tuple.getColumn(i), elements[i], limit, max_array_length, max_string_length, generator, generator64);
             }
             break;
         }
@@ -390,9 +368,8 @@ void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
             auto & null_map = column_nullable.getNullMapData();
             IColumn & nested_column = column_nullable.getNestedColumn();
 
-            fillColumnWithRandomData(nested_column, nested_type, limit, max_array_length, max_string_length, random_seed);
+            fillColumnWithRandomData(nested_column, nested_type, limit, max_array_length, max_string_length, generator, generator64);
 
-            pcg32 generator(random_seed);
             null_map.resize(limit);
             for (UInt64 i = 0; i < limit; ++i)
             {
@@ -416,6 +393,52 @@ StorageGenerate::StorageGenerate(const StorageID & table_id_, const ColumnsDescr
     random_seed = random_seed_ ? random_seed_ : randomSeed();
     setColumns(columns_);
 }
+
+
+class GenerateSource : public SourceWithProgress
+{
+public:
+    GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_, Block block_header_)
+        : SourceWithProgress(block_header_), block_size(block_size_), max_array_length(max_array_length_), max_string_length(max_string_length_)
+        , block_header(block_header_), r32(random_seed_), r64(random_seed_) {}
+
+    String getName() const override { return "Generate"; }
+
+protected:
+    Chunk generate() override
+    {
+
+        for (auto & ctn : block_header.getColumnsWithTypeAndName())
+        {
+            fillColumnWithRandomData(ctn.column->assumeMutableRef(), ctn.type, block_size, max_array_length, max_string_length, r32, r64);
+        }
+
+        auto column = ColumnUInt64::create(block_size);
+        ColumnUInt64::Container & vec = column->getData();
+
+        size_t curr = next;     /// The local variable for some reason works faster (>20%) than member of class.
+        UInt64 * pos = vec.data(); /// This also accelerates the code.
+        UInt64 * end = &vec[block_size];
+        while (pos < end)
+            *pos++ = curr++;
+
+        next += step;
+
+        progress({column->size(), column->byteSize()});
+
+        return { Columns {std::move(column)}, block_size };
+    }
+
+private:
+    UInt64 block_size;
+    UInt64 max_array_length;
+    UInt64 max_string_length;
+    Block block_header;
+
+    pcg32 r32;
+    pcg64 r64;
+
+};
 
 
 void registerStorageGenerate(StorageFactory & factory)
@@ -453,28 +476,26 @@ Pipes StorageGenerate::read(
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned /*num_streams*/)
+    unsigned num_streams)
 {
     check(column_names, true);
 
     Pipes pipes;
-    const ColumnsDescription & columns_ = getColumns();
+    pipes.reserve(num_streams);
 
+    const ColumnsDescription & columns_ = getColumns();
+    Block block_header;
     for (const auto & name : column_names)
     {
         const auto & name_type = columns_.get(name);
         MutableColumnPtr column = name_type.type->createColumn();
-        res_block.insert({std::move(column), name_type.type, name_type.name});
+        block_header.insert({std::move(column), name_type.type, name_type.name});
     }
 
-    for (auto & ctn : res_block.getColumnsWithTypeAndName())
+    for (UInt64 i = 0; i < num_streams; ++i)
     {
-        fillColumnWithRandomData(ctn.column->assumeMutableRef(), ctn.type, max_block_size, max_array_length, max_string_length, random_seed);
+        pipes.emplace_back(std::make_shared<GenerateSource>(max_block_size, max_array_length, max_string_length, random_seed + i, block_header));
     }
-
-    Chunk chunk(res_block.getColumns(), res_block.rows());
-    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(res_block.cloneEmpty(), std::move(chunk)));
-
     return pipes;
 }
 
