@@ -164,8 +164,15 @@ ASTPtr ASTCreateUserQuery::clone() const
 
 void ASTCreateUserQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER USER" : "CREATE USER")
-                  << (settings.hilite ? hilite_none : "");
+    if (attach)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ATTACH USER" << (settings.hilite ? hilite_none : "");
+    }
+    else
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER USER" : "CREATE USER")
+                      << (settings.hilite ? hilite_none : "");
+    }
 
     if (if_exists)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " IF EXISTS" << (settings.hilite ? hilite_none : "");
