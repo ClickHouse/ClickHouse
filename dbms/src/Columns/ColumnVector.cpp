@@ -348,13 +348,12 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 
     auto res = this->create(offsets.back());
 
-    typename Self::Container::value_type * const start = res->getData().data();
-    typename Self::Container::value_type * curr = start;
+    auto it = res->getData().begin();
     for (size_t i = 0; i < size; ++i)
     {
-        const auto span_end = start + offsets[i];
-        while (curr < span_end)
-            *curr++ = data[i];
+        const auto span_end = res->getData().begin() + offsets[i];
+        for (; it != span_end; ++it)
+            *it = data[i];
     }
 
     return res;
