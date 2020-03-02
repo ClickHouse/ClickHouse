@@ -652,7 +652,7 @@ SELECT replicate(1, ['a', 'b', 'c'])
 
 使用指定的连接键从Join类型引擎的表中获取数据。
 
-## modelEvaluate(model_name, ...)
+## modelEvaluate(model_name, ...) {#function-modelevaluate}
 使用外部模型计算。
 接受模型的名称以及模型的参数。返回Float64类型的值。
 

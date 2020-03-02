@@ -351,8 +351,10 @@ public:
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
-    void checkSettingsConstraints(const SettingChange & change);
-    void checkSettingsConstraints(const SettingsChanges & changes);
+    void checkSettingsConstraints(const SettingChange & change) const;
+    void checkSettingsConstraints(const SettingsChanges & changes) const;
+    void clampToSettingsConstraints(SettingChange & change) const;
+    void clampToSettingsConstraints(SettingsChanges & changes) const;
 
     /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const { return settings_constraints; }

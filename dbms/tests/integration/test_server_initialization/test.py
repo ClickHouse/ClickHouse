@@ -44,5 +44,3 @@ def test_live_view_dependency(started_cluster):
     instance.query("CREATE TABLE b_load_second.mt (a Int32) Engine=MergeTree order by tuple()")
     instance.query("CREATE LIVE VIEW a_load_first.lv AS SELECT sum(a) FROM b_load_second.mt", settings={'allow_experimental_live_view': 1})
     instance.restart_clickhouse()
-    time.sleep(5)
-    instance.query("SELECT 1")

@@ -4,6 +4,8 @@
 
 #if USE_REPLXX
 #   include <common/ReplxxLineReader.h>
+#elif USE_READLINE
+#   include <common/ReadlineLineReader.h>
 #else
 #   include <common/LineReader.h>
 #endif
@@ -99,13 +101,9 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_READ_HISTORY;
-    extern const int CANNOT_APPEND_HISTORY;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
-    extern const int CANNOT_SET_SIGNAL_HANDLER;
-    extern const int SYSTEM_ERROR;
     extern const int INVALID_USAGE_OF_INPUT;
 }
 
@@ -487,8 +485,12 @@ private:
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
             if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
+            {
+                if (config().has("case_insensitive_suggestion"))
+                    Suggest::instance().setCaseInsensitive();
                 /// Load suggestion data from the server.
                 Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
+            }
 
             /// Load command history if present.
             if (config().has("history_file"))
@@ -507,9 +509,17 @@ private:
 
 #if USE_REPLXX
             ReplxxLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
+#elif USE_READLINE
+            ReadlineLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
 #else
             LineReader lr(history_file, '\\', config().has("multiline") ? ';' : 0);
 #endif
+
+            /// Enable bracketed-paste-mode only when multiquery is enabled and multiline is
+            ///  disabled, so that we are able to paste and execute multiline queries in a whole
+            ///  instead of erroring out, while be less intrusive.
+            if (config().has("multiquery") && !config().has("multiline"))
+                lr.enableBracketedPaste();
 
             do
             {
@@ -1681,6 +1691,7 @@ public:
             ("always_load_suggestion_data", "Load suggestion data even if clickhouse-client is run in non-interactive mode. Used for testing.")
             ("suggestion_limit", po::value<int>()->default_value(10000),
                 "Suggestion limit for how many databases, tables and columns to fetch.")
+            ("case_insensitive_suggestion", "Case sensitive suggestions.")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
             ("format,f", po::value<std::string>(), "default output format")

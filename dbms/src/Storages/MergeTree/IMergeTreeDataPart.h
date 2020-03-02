@@ -37,7 +37,6 @@ class IMergeTreeDataPartWriter;
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMETED;
 }
 
 /// Description of the data part.

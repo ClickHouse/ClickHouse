@@ -51,6 +51,7 @@
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/Join.h>
+#include <Interpreters/JoinedTables.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -106,7 +107,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_DEEP_SUBQUERIES;
-    extern const int THERE_IS_NO_COLUMN;
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_FINAL;
     extern const int ILLEGAL_PREWHERE;
@@ -114,7 +114,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int PARAMETER_OUT_OF_BOUND;
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int INVALID_WITH_FILL_EXPRESSION;
 }
@@ -153,7 +152,7 @@ String InterpreterSelectQuery::generateFilterActions(ExpressionActionsPtr & acti
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
-    auto syntax_result = SyntaxAnalyzer(*context).analyze(query_ast, storage->getColumns().getAllPhysical());
+    auto syntax_result = SyntaxAnalyzer(*context).analyzeSelect(query_ast, storage->getColumns().getAll());
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context);
     actions = analyzer.simpleSelectActions();
 
@@ -265,7 +264,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     else if (input_pipe)
     {
         /// Read from prepared input.
-        source_header = input_pipe_->getHeader();
+        source_header = input_pipe->getHeader();
     }
     else if (is_subquery)
     {
@@ -312,10 +311,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         table_id = storage->getStorageID();
     }
 
+    /// Extract joined tables colunms if any.
+    /// It could get storage from context without lockStructureForShare(). TODO: add lock there or rewrite this logic.
+    JoinedTables joined_tables;
+    joined_tables.resolveTables(*query_ptr->as<ASTSelectQuery>(), storage, *context, source_header.getNamesAndTypesList());
+
     auto analyze = [&] (bool try_move_to_prewhere = true)
     {
-        syntax_analyzer_result = SyntaxAnalyzer(*context, options).analyze(
-                query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage, NamesAndTypesList());
+        syntax_analyzer_result = SyntaxAnalyzer(*context).analyzeSelect(
+                query_ptr, source_header.getNamesAndTypesList(), storage, options, joined_tables, required_result_column_names);
 
         /// Save scalar sub queries's results in the query context
         if (context->hasQueryContext())
@@ -1247,7 +1251,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                     = ext::map<NameSet>(required_columns_after_prewhere, [](const auto & it) { return it.name; });
             }
 
-            auto syntax_result = SyntaxAnalyzer(*context).analyze(required_columns_all_expr, required_columns_after_prewhere, {}, storage);
+            auto syntax_result = SyntaxAnalyzer(*context).analyze(required_columns_all_expr, required_columns_after_prewhere, storage);
             alias_actions = ExpressionAnalyzer(required_columns_all_expr, syntax_result, *context).getActions(true);
 
             /// The set of required columns could be added as a result of adding an action to calculate ALIAS.

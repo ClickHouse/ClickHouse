@@ -18,7 +18,6 @@ namespace ErrorCodes
 {
     extern const int CANNOT_GET_SIZE_OF_FIELD;
     extern const int NOT_IMPLEMENTED;
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 class Arena;

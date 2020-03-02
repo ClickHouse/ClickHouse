@@ -29,11 +29,7 @@ if (NOT ZLIB_FOUND AND NOT MISSING_INTERNAL_ZLIB_LIBRARY)
     set (ZLIB_INCLUDE_DIRS ${ZLIB_INCLUDE_DIR}) # for poco
     set (ZLIB_INCLUDE_DIRECTORIES ${ZLIB_INCLUDE_DIR}) # for protobuf
     set (ZLIB_FOUND 1) # for poco
-    if (USE_STATIC_LIBRARIES)
-        set (ZLIB_LIBRARIES zlibstatic CACHE INTERNAL "")
-    else ()
-        set (ZLIB_LIBRARIES zlib CACHE INTERNAL "")
-    endif ()
+    set (ZLIB_LIBRARIES zlib CACHE INTERNAL "")
 endif ()
 
 message (STATUS "Using ${INTERNAL_ZLIB_NAME}: ${ZLIB_INCLUDE_DIR} : ${ZLIB_LIBRARIES}")

@@ -23,7 +23,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_STORAGE;
     extern const int UNKNOWN_TABLE;
     extern const int TOO_MANY_COLUMNS;
     extern const int SUPPORT_IS_DISABLED;

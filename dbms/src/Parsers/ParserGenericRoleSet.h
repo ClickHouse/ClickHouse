@@ -11,16 +11,18 @@ namespace DB
 class ParserGenericRoleSet : public IParserBase
 {
 public:
-    ParserGenericRoleSet & allowAll(bool allow_) { allow_all = allow_; return *this; }
-    ParserGenericRoleSet & allowCurrentUser(bool allow_) { allow_current_user = allow_; return *this; }
+    ParserGenericRoleSet & enableAllKeyword(bool enable_) { all_keyword = enable_; return *this; }
+    ParserGenericRoleSet & enableCurrentUserKeyword(bool enable_) { current_user_keyword = enable_; return *this; }
+    ParserGenericRoleSet & enableIDMode(bool enable_) { id_mode = enable_; return *this; }
 
 protected:
     const char * getName() const override { return "GenericRoleSet"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:
-    bool allow_all = true;
-    bool allow_current_user = true;
+    bool all_keyword = true;
+    bool current_user_keyword = true;
+    bool id_mode = false;
 };
 
 }

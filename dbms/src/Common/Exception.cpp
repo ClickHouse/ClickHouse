@@ -21,8 +21,6 @@ namespace ErrorCodes
     extern const int POCO_EXCEPTION;
     extern const int STD_EXCEPTION;
     extern const int UNKNOWN_EXCEPTION;
-    extern const int CANNOT_TRUNCATE_FILE;
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 

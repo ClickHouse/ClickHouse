@@ -192,8 +192,7 @@ std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
         throw Exception("Minmax index have not any arguments", ErrorCodes::INCORRECT_QUERY);
 
     ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
-    auto syntax = SyntaxAnalyzer(context, {}).analyze(
-        expr_list, new_columns);
+    auto syntax = SyntaxAnalyzer(context).analyze(expr_list, new_columns);
     auto minmax_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
 
     auto sample = ExpressionAnalyzer(expr_list, syntax, context)

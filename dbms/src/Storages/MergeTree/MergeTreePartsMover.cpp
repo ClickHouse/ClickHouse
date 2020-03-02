@@ -10,8 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
-    extern const int NO_SUCH_DATA_PART;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
