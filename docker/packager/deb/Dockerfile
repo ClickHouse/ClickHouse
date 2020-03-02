@@ -74,7 +74,9 @@ RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/dpkg-deb
 RUN chmod +x dpkg-deb
 RUN cp dpkg-deb /usr/bin
 
-RUN ln -s /usr/bin/lld-8 /usr/bin/ld.lld
+# This symlink required by gcc to find lld compiler but currently we have
+# problems with query profiler when gcc use lld as linker
+# RUN ln -s /usr/bin/lld-8 /usr/bin/ld.lld
 
 COPY build.sh /
 

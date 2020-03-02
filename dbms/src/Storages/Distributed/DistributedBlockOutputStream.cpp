@@ -54,6 +54,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TYPE_MISMATCH;
     extern const int CANNOT_LINK;

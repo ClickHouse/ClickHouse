@@ -28,7 +28,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int TOO_LARGE_SIZE_COMPRESSED;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int CANNOT_DECOMPRESS;
@@ -105,7 +104,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     own_compressed_buffer.resize(header_size);
     compressed_in->readStrict(own_compressed_buffer.data(), header_size);
 
-    UInt8 method = ICompressionCodec::readMethod(own_compressed_buffer.data());
+    uint8_t method = ICompressionCodec::readMethod(own_compressed_buffer.data());
 
     if (!codec)
         codec = CompressionCodecFactory::instance().get(method);
@@ -158,7 +157,7 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
 
-    UInt8 method = ICompressionCodec::readMethod(compressed_buffer);
+    uint8_t method = ICompressionCodec::readMethod(compressed_buffer);
 
     if (!codec)
         codec = CompressionCodecFactory::instance().get(method);

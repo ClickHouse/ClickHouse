@@ -23,8 +23,6 @@ namespace DB
         extern const int UNKNOWN_TYPE;
         extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
         extern const int CANNOT_READ_ALL_DATA;
-        extern const int EMPTY_DATA_PASSED;
-        extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
         extern const int CANNOT_CONVERT_TYPE;
         extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
         extern const int THERE_IS_NO_COLUMN;
@@ -108,7 +106,7 @@ namespace DB
             {
                 if (!chunk.IsNull(offset_i) && buffer)
                 {
-                    const UInt8 * raw_data = buffer->data() + chunk.value_offset(offset_i);
+                    const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
                     column_chars_t.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
                 }
                 column_chars_t.emplace_back('\0');
@@ -259,13 +257,6 @@ namespace DB
         if (!read_status.ok())
             throw Exception{"Error while reading " + format_name + " data: " + read_status.ToString(),
                             ErrorCodes::CANNOT_READ_ALL_DATA};
-
-        if (0 == table->num_rows())
-            throw Exception{"Empty table in input data", ErrorCodes::EMPTY_DATA_PASSED};
-
-        if (header.columns() > static_cast<size_t>(table->num_columns()))
-            // TODO: What if some columns were not presented? Insert NULLs? What if a column is not nullable?
-            throw Exception{"Number of columns is less than the table has", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH};
 
         ++row_group_current;
 

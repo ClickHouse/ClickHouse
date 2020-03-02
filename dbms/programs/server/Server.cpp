@@ -44,6 +44,7 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/SystemLog.cpp>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
+#include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -116,7 +117,6 @@ namespace ErrorCodes
     extern const int FAILED_TO_GETPWUID;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
-    extern const int PATH_ACCESS_DENIED;
 }
 
 
@@ -493,6 +493,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_reloader->reload();
         users_config_reloader->reload();
     });
+
+    /// Sets a local directory storing information about access control.
+    std::string access_control_local_path = config().getString("access_control_path", "");
+    if (!access_control_local_path.empty())
+        global_context->getAccessControlManager().setLocalDirectory(access_control_local_path);
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));

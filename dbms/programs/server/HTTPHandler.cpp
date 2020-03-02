@@ -41,9 +41,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int READONLY;
-    extern const int UNKNOWN_COMPRESSION_METHOD;
 
+    extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_PARSE_QUOTED_STRING;
@@ -706,7 +705,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() &&
             !request.hasContentLength())
         {
-            throw Exception("There is neither Transfer-Encoding header nor Content-Length header", ErrorCodes::HTTP_LENGTH_REQUIRED);
+            throw Exception("The Transfer-Encoding is not chunked and there is no Content-Length header for POST request", ErrorCodes::HTTP_LENGTH_REQUIRED);
         }
 
         processQuery(request, params, response, used_output);

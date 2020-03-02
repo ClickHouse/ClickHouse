@@ -26,6 +26,7 @@ nav:
   - ' کلاینت Command-line': 'interfaces/cli.md'
   - 'Native interface (TCP)': 'interfaces/tcp.md'
   - 'HTTP interface': 'interfaces/http.md'
+  - 'MySQL Interface': 'interfaces/mysql.md'
   - ' فرمت های Input و Output': 'interfaces/formats.md'
   - ' درایور JDBC': 'interfaces/jdbc.md'
   - ' درایور ODBC': 'interfaces/odbc.md'
@@ -183,6 +184,10 @@ nav:
     - 'Operators': 'query_language/operators.md'
     - 'General Syntax': 'query_language/syntax.md'
 
+- 'Guides':
+  - 'Overview': 'guides/index.md'
+  - 'Applying CatBoost Models': 'guides/apply_catboost_model.md'
+
 - 'Operations':
   - 'Introduction': 'operations/index.md'
   - 'Requirements': 'operations/requirements.md'
@@ -225,6 +230,8 @@ nav:
   - 'Browse ClickHouse Source Code': 'development/browse_code.md'
   - 'How to Build ClickHouse on Linux': 'development/build.md'
   - 'How to Build ClickHouse on Mac OS X': 'development/build_osx.md'
+  - 'How to Build ClickHouse on Linux for Mac OS X': 'development/build_cross_osx.md'
+  - 'How to Build ClickHouse on Linux for AARCH64 (ARM64)': 'development/build_cross_arm.md'
   - 'How to Write C++ code': 'development/style.md'
   - 'How to Run ClickHouse Tests': 'development/tests.md'
   - 'Third-Party Libraries Used': 'development/contrib.md'
