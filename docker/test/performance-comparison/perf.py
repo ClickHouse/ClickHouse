@@ -46,17 +46,22 @@ connections = [clickhouse_driver.Client(**server) for server in servers]
 
 report_stage_end('connect')
 
-# Check tables that should exist
-tables = [e.text for e in root.findall('preconditions/table_exists')]
-for t in tables:
-    for c in connections:
-        res = c.execute("show create table {}".format(t))
-
 # Apply settings
 settings = root.findall('settings/*')
 for c in connections:
     for s in settings:
         c.execute("set {} = '{}'".format(s.tag, s.text))
+
+# Check tables that should exist. If they don't exist, just skip this test.
+tables = [e.text for e in root.findall('preconditions/table_exists')]
+for t in tables:
+    for c in connections:
+        try:
+            res = c.execute("show create table {}".format(t))
+        except:
+            print('skipped\t' + traceback.format_exception_only(*sys.exc_info()[:2])[-1])
+            traceback.print_exc()
+            sys.exit(0)
 
 report_stage_end('preconditions')
 

@@ -23,6 +23,12 @@ class QueryPipeline
 {
 public:
     QueryPipeline() = default;
+    QueryPipeline(QueryPipeline &&) = default;
+    ~QueryPipeline() = default;
+    QueryPipeline(const QueryPipeline &) = delete;
+    QueryPipeline & operator= (const QueryPipeline & rhs) = delete;
+
+    QueryPipeline & operator= (QueryPipeline && rhs);
 
     /// All pipes must have same header.
     void init(Pipes pipes);
@@ -97,6 +103,17 @@ public:
     Pipe getPipe() &&;
 
 private:
+    /// Destruction order: processors, header, locks, temporary storages, local contexts
+
+    /// Some Streams (or Processors) may implicitly use Context or temporary Storage created by Interpreter.
+    /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
+    /// because QueryPipeline is alive until query is finished.
+    std::vector<std::shared_ptr<Context>> interpreter_context;
+    std::vector<StoragePtr> storage_holders;
+    TableStructureReadLocks table_locks;
+
+    /// Common header for each stream.
+    Block current_header;
 
     /// All added processors.
     Processors processors;
@@ -110,17 +127,6 @@ private:
 
     /// If resize processor was added to pipeline.
     bool has_resize = false;
-
-    /// Common header for each stream.
-    Block current_header;
-
-    TableStructureReadLocks table_locks;
-
-    /// Some Streams (or Processors) may implicitly use Context or temporary Storage created by Interpreter.
-    /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
-    /// because QueryPipeline is alive until query is finished.
-    std::vector<std::shared_ptr<Context>> interpreter_context;
-    std::vector<StoragePtr> storage_holders;
 
     IOutputFormat * output_format = nullptr;
 

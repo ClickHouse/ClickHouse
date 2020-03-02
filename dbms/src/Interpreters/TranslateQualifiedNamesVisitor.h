@@ -25,11 +25,11 @@ public:
     struct Data
     {
         const NameSet source_columns;
-        const std::vector<TableWithColumnNames> tables;
+        const std::vector<TableWithColumnNames> & tables;
         std::unordered_set<String> join_using_columns;
         bool has_columns;
 
-        Data(const NameSet & source_columns_, std::vector<TableWithColumnNames> && tables_, bool has_columns_ = true)
+        Data(const NameSet & source_columns_, const std::vector<TableWithColumnNames> & tables_, bool has_columns_ = true)
             : source_columns(source_columns_)
             , tables(tables_)
             , has_columns(has_columns_)
@@ -39,16 +39,6 @@ public:
         bool hasTable() const { return !tables.empty(); }
         bool processAsterisks() const { return hasTable() && has_columns; }
         bool unknownColumn(size_t table_pos, const ASTIdentifier & node) const;
-
-        static std::vector<TableWithColumnNames> tablesOnly(const std::vector<DatabaseAndTableWithAlias> & tables)
-        {
-            std::vector<TableWithColumnNames> tables_with_columns;
-            tables_with_columns.reserve(tables.size());
-
-            for (const auto & table : tables)
-                tables_with_columns.emplace_back(TableWithColumnNames{table, {}});
-            return tables_with_columns;
-        }
     };
 
     static void visit(ASTPtr & ast, Data & data);
