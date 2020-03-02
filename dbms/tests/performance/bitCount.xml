@@ -22,5 +22,5 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT bitCount({expr}) FROM numbers(1000000)</query>
+    <query>SELECT bitCount({expr}) FROM numbers(1000000) FORMAT Null</query>
 </test>
