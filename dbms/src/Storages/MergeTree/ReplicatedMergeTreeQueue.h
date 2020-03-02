@@ -405,7 +405,6 @@ private:
     std::unordered_map<String, std::set<Int64>> committing_blocks;
 
     /// Quorum state taken at some later time than prev_virtual_parts.
-    std::set<std::string> last_quorum_parts;
     String inprogress_quorum_part;
 };
 

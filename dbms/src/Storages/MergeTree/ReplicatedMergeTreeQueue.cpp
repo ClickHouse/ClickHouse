@@ -1485,7 +1485,6 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     }
 
     /// Load current quorum status.
-    auto quorum_last_part_future = zookeeper->asyncTryGet(queue.zookeeper_path + "/quorum/last_part");
     auto quorum_status_future = zookeeper->asyncTryGet(queue.zookeeper_path + "/quorum/status");
 
     /// Load current inserts
@@ -1538,19 +1537,6 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     }
 
     queue_.pullLogsToQueue(zookeeper);
-
-    Coordination::GetResponse quorum_last_part_response = quorum_last_part_future.get();
-    if (!quorum_last_part_response.error)
-    {
-        ReplicatedMergeTreeQuorumAddedParts parts_with_quorum(queue.format_version);
-        if (!quorum_last_part_response.data.empty())
-        {
-            parts_with_quorum.fromString(quorum_last_part_response.data);
-            last_quorum_parts.clear();
-            for (const auto & added_part : parts_with_quorum.added_parts)
-                last_quorum_parts.emplace(added_part.second);
-        }
-    }
 
     Coordination::GetResponse quorum_status_response = quorum_status_future.get();
     if (!quorum_status_response.error)
