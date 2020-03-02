@@ -1557,7 +1557,7 @@ std::shared_ptr<QueryLog> Context::getQueryLog()
 {
     auto lock = getLock();
 
-    if (!shared->system_logs || !shared->system_logs->query_log)
+    if (!shared->system_logs)
         return {};
 
     return shared->system_logs->query_log;
@@ -1568,7 +1568,7 @@ std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog()
 {
     auto lock = getLock();
 
-    if (!shared->system_logs || !shared->system_logs->query_thread_log)
+    if (!shared->system_logs)
         return {};
 
     return shared->system_logs->query_thread_log;
@@ -1580,13 +1580,13 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database)
     auto lock = getLock();
 
     /// No part log or system logs are shutting down.
-    if (!shared->system_logs || !shared->system_logs->part_log)
+    if (!shared->system_logs)
         return {};
 
     /// Will not log operations on system tables (including part_log itself).
     /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing,
     /// and also make troubles on startup.
-    if (part_database == shared->system_logs->part_log_database)
+    if (part_database == DatabaseCatalog::SYSTEM_DATABASE)
         return {};
 
     return shared->system_logs->part_log;
@@ -1597,7 +1597,7 @@ std::shared_ptr<TraceLog> Context::getTraceLog()
 {
     auto lock = getLock();
 
-    if (!shared->system_logs || !shared->system_logs->trace_log)
+    if (!shared->system_logs)
         return {};
 
     return shared->system_logs->trace_log;
@@ -1608,7 +1608,7 @@ std::shared_ptr<TextLog> Context::getTextLog()
 {
     auto lock = getLock();
 
-    if (!shared->system_logs || !shared->system_logs->text_log)
+    if (!shared->system_logs)
         return {};
 
     return shared->system_logs->text_log;
@@ -1619,7 +1619,7 @@ std::shared_ptr<MetricLog> Context::getMetricLog()
 {
     auto lock = getLock();
 
-    if (!shared->system_logs || !shared->system_logs->metric_log)
+    if (!shared->system_logs)
         return {};
 
     return shared->system_logs->metric_log;

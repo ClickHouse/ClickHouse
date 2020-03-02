@@ -7,6 +7,7 @@
 #include <Interpreters/MetricLog.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -36,6 +37,15 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
     String database = config.getString(config_prefix + ".database", default_database_name);
     String table = config.getString(config_prefix + ".table", default_table_name);
+
+    if (database != default_database_name)
+    {
+        /// System tables must be loaded before other tables, but loading order is undefined for all databases except `system`
+        LOG_ERROR(&Logger::get("SystemLog"), "Custom database name for a system table specified in config. "
+                                             "Table `" << table << "` will be created in `system` database "
+                                             "instead of `" << database << "`");
+        database = default_database_name;
+    }
 
     String engine;
     if (config.has(config_prefix + ".engine"))
@@ -72,8 +82,6 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds");
         metric_log->startCollectMetric(collect_interval_milliseconds);
     }
-
-    part_log_database = config.getString("part_log.database", "system");
 }
 
 
