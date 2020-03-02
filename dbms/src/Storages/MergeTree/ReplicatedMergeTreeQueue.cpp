@@ -1609,13 +1609,6 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
 
     for (const MergeTreeData::DataPartPtr & part : {left, right})
     {
-        if (last_quorum_parts.find(part->name) != last_quorum_parts.end())
-        {
-            if (out_reason)
-                *out_reason = "Part " + part->name + " is the most recent part with a satisfied quorum";
-            return false;
-        }
-
         if (part->name == inprogress_quorum_part)
         {
             if (out_reason)
@@ -1717,8 +1710,9 @@ std::optional<Int64> ReplicatedMergeTreeMergePredicate::getDesiredMutationVersio
     /// the part (checked by querying queue.virtual_parts), we can confidently assign a mutation to
     /// version X for this part.
 
-    if (last_quorum_parts.find(part->name) != last_quorum_parts.end()
-        || part->name == inprogress_quorum_part)
+    /// We cannot mutate part if it's beeing inserted with quorum and it's not
+    /// already reached.
+    if (part->name == inprogress_quorum_part)
         return {};
 
     std::lock_guard lock(queue.state_mutex);
