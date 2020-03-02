@@ -291,7 +291,7 @@ create table changed_perf_tsv engine File(TSV, 'changed-perf.tsv') as
     order by rd[3] desc;
 
 create table unstable_queries_tsv engine File(TSV, 'unstable-queries.tsv') as
-    select left, right, diff, rd, test, query from queries where unstable or changed
+    select left, right, diff, rd, test, query from queries where unstable
     order by rd[3] desc;
 
 create table unstable_tests_tsv engine File(TSV, 'bad-tests.tsv') as
@@ -347,8 +347,8 @@ create table right_addresses_join engine Join(any, left, address) as
 
 create table unstable_query_runs engine File(TSVWithNamesAndTypes, 'unstable-query-runs.rep') as
     select query_id, query from right_query_log
-    join unstable_queries_tsv using query
-    where query_id not like 'prewarm %'
+    join queries using query
+    where query_id not like 'prewarm %' and (unstable or changed)
     ;
 
 create table unstable_query_log engine File(Vertical, 'unstable-query-log.rep') as
