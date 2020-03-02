@@ -223,16 +223,6 @@ function run_tests
     wait
 }
 
-function analyze_queries
-{
-    # Build and analyze randomization distribution for all queries.
-    ls ./*-queries.tsv | xargs -n1 -I% basename % -queries.tsv | \
-        parallel --verbose right/clickhouse local --file "{}-queries.tsv" \
-            --structure "\"query text, run int, version UInt32, time float\"" \
-            --query "\"$(cat "$script_dir/eqmed.sql")\"" \
-            ">" {}-report.tsv
-}
-
 function get_profiles
 {
     # Collect the profiles
@@ -252,6 +242,16 @@ function get_profiles
     right/clickhouse client --port 9002 --query "select * from system.metric_log format TSVWithNamesAndTypes" > right-metric-log.tsv ||: &
 
     wait
+}
+
+# Build and analyze randomization distribution for all queries.
+function analyze_queries
+{
+    ls ./*-queries.tsv | xargs -n1 -I% basename % -queries.tsv | \
+        parallel --verbose right/clickhouse local --file "{}-queries.tsv" \
+            --structure "\"query text, run int, version UInt32, time float\"" \
+            --query "\"$(cat "$script_dir/eqmed.sql")\"" \
+            ">" {}-report.tsv
 }
 
 # Analyze results
@@ -426,8 +426,8 @@ wait
 unset IFS
 
 # Remember that grep sets error code when nothing is found, hence the bayan
-# operator
-grep -m2 'Exception:[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
+# operator.
+grep -H -m2 'Exception:[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
 
 "$script_dir/report.py" > report.html
 }
