@@ -48,7 +48,7 @@ done
 export PYTHONIOENCODING=utf-8
 
 # Use a default number of runs if not told otherwise
-export CHPC_RUNS=${CHPC_RUNS:-17}
+export CHPC_RUNS=${CHPC_RUNS:-7}
 
 # Even if we have some errors, try our best to save the logs.
 set +e
@@ -70,5 +70,5 @@ done
 
 dmesg -T > dmesg.log
 
-7z a /output/output.7z ./*.{log,tsv,html,txt,rep,svg} {right,left}/db/preprocessed_configs
+7z a /output/output.7z ./*.{log,tsv,html,txt,rep,svg} {right,left}/{performance,db/preprocessed_configs}
 cp compare.log /output
