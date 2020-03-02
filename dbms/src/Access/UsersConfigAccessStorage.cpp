@@ -342,7 +342,7 @@ UsersConfigAccessStorage::UsersConfigAccessStorage() : IAccessStorage("users.xml
 UsersConfigAccessStorage::~UsersConfigAccessStorage() {}
 
 
-void UsersConfigAccessStorage::loadFromConfig(const Poco::Util::AbstractConfiguration & config)
+void UsersConfigAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
     for (const auto & entity : parseUsers(config, getLogger()))

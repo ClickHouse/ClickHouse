@@ -401,77 +401,82 @@ class ClickHouseCluster:
 
             if not subprocess_call(['docker-compose', 'kill']):
                 subprocess_call(['docker-compose', 'down', '--volumes'])
+            logging.info("Unstopped containers killed")
         except:
             pass
 
-        logging.info("Unstopped containers killed")
+        try:
+            if destroy_dirs and p.exists(self.instances_dir):
+                logging.info("Removing instances dir %s", self.instances_dir)
+                shutil.rmtree(self.instances_dir)
 
-        if destroy_dirs and p.exists(self.instances_dir):
-            logging.info("Removing instances dir %s", self.instances_dir)
-            shutil.rmtree(self.instances_dir)
+            for instance in self.instances.values():
+                instance.create_dir(destroy_dir=destroy_dirs)
 
-        for instance in self.instances.values():
-            instance.create_dir(destroy_dir=destroy_dirs)
+            self.docker_client = docker.from_env(version=self.docker_api_version)
 
-        self.docker_client = docker.from_env(version=self.docker_api_version)
+            common_opts = ['up', '-d', '--force-recreate']
 
-        common_opts = ['up', '-d', '--force-recreate']
+            if self.with_zookeeper and self.base_zookeeper_cmd:
+                subprocess_check_call(self.base_zookeeper_cmd + common_opts)
+                for command in self.pre_zookeeper_commands:
+                    self.run_kazoo_commands_with_retries(command, repeats=5)
+                self.wait_zookeeper_to_start(120)
 
-        if self.with_zookeeper and self.base_zookeeper_cmd:
-            subprocess_check_call(self.base_zookeeper_cmd + common_opts)
-            for command in self.pre_zookeeper_commands:
-                self.run_kazoo_commands_with_retries(command, repeats=5)
-            self.wait_zookeeper_to_start(120)
+            if self.with_mysql and self.base_mysql_cmd:
+                subprocess_check_call(self.base_mysql_cmd + common_opts)
+                self.wait_mysql_to_start(120)
 
-        if self.with_mysql and self.base_mysql_cmd:
-            subprocess_check_call(self.base_mysql_cmd + common_opts)
-            self.wait_mysql_to_start(120)
+            if self.with_postgres and self.base_postgres_cmd:
+                subprocess_check_call(self.base_postgres_cmd + common_opts)
+                self.wait_postgres_to_start(120)
 
-        if self.with_postgres and self.base_postgres_cmd:
-            subprocess_check_call(self.base_postgres_cmd + common_opts)
-            self.wait_postgres_to_start(120)
+            if self.with_kafka and self.base_kafka_cmd:
+                subprocess_check_call(self.base_kafka_cmd + common_opts + ['--renew-anon-volumes'])
+                self.kafka_docker_id = self.get_instance_docker_id('kafka1')
+                self.wait_schema_registry_to_start(120)
 
-        if self.with_kafka and self.base_kafka_cmd:
-            subprocess_check_call(self.base_kafka_cmd + common_opts + ['--renew-anon-volumes'])
-            self.kafka_docker_id = self.get_instance_docker_id('kafka1')
-            self.wait_schema_registry_to_start(120)
+            if self.with_hdfs and self.base_hdfs_cmd:
+                subprocess_check_call(self.base_hdfs_cmd + common_opts)
+                self.wait_hdfs_to_start(120)
 
-        if self.with_hdfs and self.base_hdfs_cmd:
-            subprocess_check_call(self.base_hdfs_cmd + common_opts)
-            self.wait_hdfs_to_start(120)
+            if self.with_mongo and self.base_mongo_cmd:
+                subprocess_check_call(self.base_mongo_cmd + common_opts)
+                self.wait_mongo_to_start(30)
 
-        if self.with_mongo and self.base_mongo_cmd:
-            subprocess_check_call(self.base_mongo_cmd + common_opts)
-            self.wait_mongo_to_start(30)
+            if self.with_redis and self.base_redis_cmd:
+                subprocess_check_call(self.base_redis_cmd + ['up', '-d', '--force-recreate'])
+                time.sleep(10)
 
-        if self.with_redis and self.base_redis_cmd:
-            subprocess_check_call(self.base_redis_cmd + ['up', '-d', '--force-recreate'])
-            time.sleep(10)
+            if self.with_minio and self.base_minio_cmd:
+                minio_start_cmd = self.base_minio_cmd + common_opts
+                logging.info("Trying to create Minio instance by command %s", ' '.join(map(str, minio_start_cmd)))
+                subprocess_check_call(minio_start_cmd)
+                logging.info("Trying to connect to Minio...")
+                self.wait_minio_to_start()
 
-        if self.with_minio and self.base_minio_cmd:
-            minio_start_cmd = self.base_minio_cmd + common_opts
-            logging.info("Trying to create Minio instance by command %s", ' '.join(map(str, minio_start_cmd)))
-            subprocess_check_call(minio_start_cmd)
-            logging.info("Trying to connect to Minio...")
-            self.wait_minio_to_start()
+            clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
+            logging.info("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd)))
+            subprocess_check_call(clickhouse_start_cmd)
+            logging.info("ClickHouse instance created")
 
-        clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
-        logging.info("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd)))
-        subprocess_check_call(clickhouse_start_cmd)
-        logging.info("ClickHouse instance created")
+            start_deadline = time.time() + 20.0  # seconds
+            for instance in self.instances.itervalues():
+                instance.docker_client = self.docker_client
+                instance.ip_address = self.get_instance_ip(instance.name)
 
-        start_deadline = time.time() + 20.0  # seconds
-        for instance in self.instances.itervalues():
-            instance.docker_client = self.docker_client
-            instance.ip_address = self.get_instance_ip(instance.name)
+                logging.info("Waiting for ClickHouse start...")
+                instance.wait_for_start(start_deadline)
+                logging.info("ClickHouse started")
 
-            logging.info("Waiting for ClickHouse start...")
-            instance.wait_for_start(start_deadline)
-            logging.info("ClickHouse started")
+                instance.client = Client(instance.ip_address, command=self.client_bin_path)
 
-            instance.client = Client(instance.ip_address, command=self.client_bin_path)
-
-        self.is_up = True
+            self.is_up = True
+        
+        except BaseException, e:
+            print "Failed to start cluster: "
+            print str(e)
+            raise
 
     def shutdown(self, kill=True):
         sanitizer_assert_instance = None
@@ -614,15 +619,15 @@ class ClickHouseInstance:
         self.with_installed_binary = with_installed_binary
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
-    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False):
-        return self.client.query(sql, stdin, timeout, settings, user, ignore_error)
+    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, ignore_error=False):
+        return self.client.query(sql, stdin, timeout, settings, user, password, ignore_error)
 
-    def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False,
+    def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, ignore_error=False,
                          retry_count=20, sleep_time=0.5, check_callback=lambda x: True):
         result = None
         for i in range(retry_count):
             try:
-                result = self.query(sql, stdin, timeout, settings, user, ignore_error)
+                result = self.query(sql, stdin, timeout, settings, user, password, ignore_error)
                 if check_callback(result):
                     return result
                 time.sleep(sleep_time)
@@ -639,15 +644,15 @@ class ClickHouseInstance:
         return self.client.get_query_request(*args, **kwargs)
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument), expects an error and return its code
-    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None):
-        return self.client.query_and_get_error(sql, stdin, timeout, settings, user)
+    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None):
+        return self.client.query_and_get_error(sql, stdin, timeout, settings, user, password)
 
     # The same as query_and_get_error but ignores successful query.
-    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None):
-        return self.client.query_and_get_answer_with_error(sql, stdin, timeout, settings, user)
+    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None):
+        return self.client.query_and_get_answer_with_error(sql, stdin, timeout, settings, user, password)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
-    def http_query(self, sql, data=None, params=None, user=None):
+    def http_query(self, sql, data=None, params=None, user=None, password=None):
         if params is None:
             params = {}
         else:
@@ -656,7 +661,9 @@ class ClickHouseInstance:
         params["query"] = sql
 
         auth = ""
-        if user:
+        if user and password:
+            auth = "{}:{}@".format(user, password)
+        elif user:
             auth = "{}@".format(user)
 
         url = "http://" + auth + self.ip_address + ":8123/?" + urllib.urlencode(params)
@@ -686,6 +693,9 @@ class ClickHouseInstance:
         self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
         time.sleep(stop_start_wait_sec)
         self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
+        # wait start
+        from helpers.test_tools import assert_eq_with_retry
+        assert_eq_with_retry(self, "select 1", "1", retry_count=int(stop_start_wait_sec / 0.5), sleep_time=0.5)
 
     def exec_in_container(self, cmd, detach=False, **kwargs):
         container = self.get_docker_handle()

@@ -30,11 +30,19 @@ struct GenericRoleSet
     GenericRoleSet(const std::vector<UUID> & ids_);
     GenericRoleSet(const boost::container::flat_set<UUID> & ids_);
 
-    GenericRoleSet(const ASTGenericRoleSet & ast, const AccessControlManager & manager, const std::optional<UUID> & current_user_id = {});
-    std::shared_ptr<ASTGenericRoleSet> toAST(const AccessControlManager & manager) const;
+    /// The constructor from AST requires the AccessControlManager if `ast.id_mode == false`.
+    GenericRoleSet(const ASTGenericRoleSet & ast);
+    GenericRoleSet(const ASTGenericRoleSet & ast, const UUID & current_user_id);
+    GenericRoleSet(const ASTGenericRoleSet & ast, const AccessControlManager & manager);
+    GenericRoleSet(const ASTGenericRoleSet & ast, const AccessControlManager & manager, const UUID & current_user_id);
 
-    String toString(const AccessControlManager & manager) const;
-    Strings toStrings(const AccessControlManager & manager) const;
+    std::shared_ptr<ASTGenericRoleSet> toAST() const;
+    String toString() const;
+    Strings toStrings() const;
+
+    std::shared_ptr<ASTGenericRoleSet> toASTWithNames(const AccessControlManager & manager) const;
+    String toStringWithNames(const AccessControlManager & manager) const;
+    Strings toStringsWithNames(const AccessControlManager & manager) const;
 
     bool empty() const;
     void clear();
@@ -61,6 +69,9 @@ struct GenericRoleSet
     boost::container::flat_set<UUID> ids;
     bool all = false;
     boost::container::flat_set<UUID> except_ids;
+
+private:
+    void init(const ASTGenericRoleSet & ast, const AccessControlManager * manager = nullptr, const UUID * current_user_id = nullptr);
 };
 
 }

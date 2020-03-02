@@ -44,26 +44,10 @@ if infinite_sign is not None:
 servers = [{'host': host, 'port': port} for (host, port) in zip(args.host, args.port)]
 connections = [clickhouse_driver.Client(**server) for server in servers]
 
+for s in servers:
+    print('server\t{}\t{}'.format(s['host'], s['port']))
+
 report_stage_end('connect')
-
-# Apply settings
-settings = root.findall('settings/*')
-for c in connections:
-    for s in settings:
-        c.execute("set {} = '{}'".format(s.tag, s.text))
-
-# Check tables that should exist. If they don't exist, just skip this test.
-tables = [e.text for e in root.findall('preconditions/table_exists')]
-for t in tables:
-    for c in connections:
-        try:
-            res = c.execute("show create table {}".format(t))
-        except:
-            print('skipped\t' + traceback.format_exception_only(*sys.exc_info()[:2])[-1])
-            traceback.print_exc()
-            sys.exit(0)
-
-report_stage_end('preconditions')
 
 # Process substitutions
 subst_elems = root.findall('substitutions/substitution')
@@ -84,7 +68,9 @@ def substitute_parameters(query_templates, parameter_combinations):
 
 report_stage_end('substitute')
 
-# Run drop queries, ignoring errors
+# Run drop queries, ignoring errors. Do this before all other activity, because
+# clickhouse_driver disconnects on error (this is not configurable), and the new
+# connection loses the changes in settings.
 drop_query_templates = [q.text for q in root.findall('drop_query')]
 drop_queries = substitute_parameters(drop_query_templates, parameter_combinations)
 for c in connections:
@@ -94,6 +80,29 @@ for c in connections:
         except:
             traceback.print_exc()
             pass
+
+report_stage_end('drop1')
+
+# Apply settings
+settings = root.findall('settings/*')
+for c in connections:
+    for s in settings:
+        c.execute("set {} = '{}'".format(s.tag, s.text))
+
+report_stage_end('settings')
+
+# Check tables that should exist. If they don't exist, just skip this test.
+tables = [e.text for e in root.findall('preconditions/table_exists')]
+for t in tables:
+    for c in connections:
+        try:
+            res = c.execute("show create table {}".format(t))
+        except:
+            print('skipped\t' + traceback.format_exception_only(*sys.exc_info()[:2])[-1])
+            traceback.print_exc()
+            sys.exit(0)
+
+report_stage_end('preconditions')
 
 # Run create queries
 create_query_templates = [q.text for q in root.findall('create_query')]
@@ -151,4 +160,4 @@ for c in connections:
     for q in drop_queries:
         c.execute(q)
 
-report_stage_end('drop')
+report_stage_end('drop2')

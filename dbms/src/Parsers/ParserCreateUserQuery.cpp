@@ -208,7 +208,7 @@ namespace
     }
 
 
-    bool parseDefaultRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTGenericRoleSet> & default_roles)
+    bool parseDefaultRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTGenericRoleSet> & default_roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -216,7 +216,7 @@ namespace
                 return false;
 
             ASTPtr ast;
-            if (!ParserGenericRoleSet{}.allowCurrentUser(false).parse(pos, ast, expected))
+            if (!ParserGenericRoleSet{}.enableCurrentUserKeyword(false).enableIDMode(id_mode).parse(pos, ast, expected))
                 return false;
 
             default_roles = typeid_cast<std::shared_ptr<ASTGenericRoleSet>>(ast);
@@ -245,13 +245,22 @@ namespace
 
 bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    bool alter;
-    if (ParserKeyword{"CREATE USER"}.ignore(pos, expected))
-        alter = false;
-    else if (ParserKeyword{"ALTER USER"}.ignore(pos, expected))
-        alter = true;
+    bool alter = false;
+    bool attach = false;
+    if (attach_mode)
+    {
+        if (ParserKeyword{"ATTACH USER"}.ignore(pos, expected))
+            attach = true;
+        else
+            return false;
+    }
     else
-        return false;
+    {
+        if (ParserKeyword{"ALTER USER"}.ignore(pos, expected))
+            alter = true;
+        else if (!ParserKeyword{"CREATE USER"}.ignore(pos, expected))
+            return false;
+    }
 
     bool if_exists = false;
     bool if_not_exists = false;
@@ -294,7 +303,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!profile && parseProfileName(pos, expected, profile))
             continue;
 
-        if (!default_roles && parseDefaultRoles(pos, expected, default_roles))
+        if (!default_roles && parseDefaultRoles(pos, expected, attach, default_roles))
             continue;
 
         if (alter)
@@ -321,6 +330,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     node = query;
 
     query->alter = alter;
+    query->attach = attach;
     query->if_exists = if_exists;
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;
@@ -330,6 +340,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->hosts = std::move(hosts);
     query->add_hosts = std::move(add_hosts);
     query->remove_hosts = std::move(remove_hosts);
+    query->default_roles = std::move(default_roles);
     query->profile = std::move(profile);
 
     return true;
