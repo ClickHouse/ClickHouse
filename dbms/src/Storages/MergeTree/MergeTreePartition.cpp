@@ -16,6 +16,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 static ReadBufferFromFile openForReading(const String & path)
 {

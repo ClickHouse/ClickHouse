@@ -7,13 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_MANY_ROWS;
-    extern const int TOO_MANY_BYTES;
     extern const int TOO_MANY_ROWS_OR_BYTES;
-    extern const int TIMEOUT_EXCEEDED;
-    extern const int TOO_SLOW;
-    extern const int LOGICAL_ERROR;
-    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
-    extern const int TOO_DEEP_PIPELINE;
 }
 
 

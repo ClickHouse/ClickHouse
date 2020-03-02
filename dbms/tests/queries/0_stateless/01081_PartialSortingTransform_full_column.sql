@@ -2,7 +2,7 @@ drop table if exists test_01081;
 
 create table test_01081 (key Int) engine=MergeTree() order by key;
 insert into test_01081 select * from system.numbers limit 10;
-select 1 from remote('127.{1,2}', currentDatabase(), test_01081) join system.one as rhs on rhs.dummy = 1 order by 1;
+select 1 from remote('127.{1,2}', currentDatabase(), test_01081) lhs join system.one as rhs on rhs.dummy = 1 order by 1;
 
 -- With multiple blocks triggers:
 --
@@ -13,6 +13,6 @@ select 1 from remote('127.{1,2}', currentDatabase(), test_01081) join system.one
 -- With experimental_use_processors=1 (default at the time of writing).
 
 insert into test_01081 select * from system.numbers limit 10;
-select 1 from remote('127.{1,2}', currentDatabase(), test_01081) join system.one as rhs on rhs.dummy = 1 order by 1;
+select 1 from remote('127.{1,2}', currentDatabase(), test_01081) lhs join system.one as rhs on rhs.dummy = 1 order by 1;
 
 drop table if exists test_01081;

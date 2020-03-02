@@ -97,7 +97,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_NUMBER;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 

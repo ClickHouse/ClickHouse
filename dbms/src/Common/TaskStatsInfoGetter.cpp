@@ -30,7 +30,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NETLINK_ERROR;
-    extern const int LOGICAL_ERROR;
 }
 
 // Replace NLMSG_OK with explicit casts since that system macro contains signedness bugs which are not going to be fixed.

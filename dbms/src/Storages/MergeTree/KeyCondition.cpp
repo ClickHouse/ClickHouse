@@ -26,7 +26,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_TYPE_OF_FIELD;
-    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
 

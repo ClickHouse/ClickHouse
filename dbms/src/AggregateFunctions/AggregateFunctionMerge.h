@@ -9,6 +9,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 
 /** Not an aggregate function, but an adapter of aggregate functions,

@@ -103,6 +103,7 @@ size_t getLengthEncodedStringSize(const String & s)
 ColumnDefinition getColumnDefinition(const String & column_name, const TypeIndex type_index)
 {
     ColumnType column_type;
+    CharacterSet charset = CharacterSet::binary;
     int flags = 0;
     switch (type_index)
     {
@@ -157,12 +158,14 @@ ColumnDefinition getColumnDefinition(const String & column_name, const TypeIndex
         case TypeIndex::String:
         case TypeIndex::FixedString:
             column_type = ColumnType::MYSQL_TYPE_STRING;
+            charset = CharacterSet::utf8_general_ci;
             break;
         default:
             column_type = ColumnType::MYSQL_TYPE_STRING;
+            charset = CharacterSet::utf8_general_ci;
             break;
     }
-    return ColumnDefinition(column_name, CharacterSet::binary, 0, column_type, flags, 0);
+    return ColumnDefinition(column_name, charset, 0, column_type, flags, 0);
 }
 
 }
