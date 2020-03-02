@@ -786,21 +786,21 @@ void SmartPolygonDictionary::indexAddRing(const Ring & ring, size_t polygon_id)
 
 bool SmartPolygonDictionary::Edge::compare1(const Edge & a, const Edge & b)
 {
+    /** comparing left point */
     if (a.l.x() != b.l.x())
     {
         return a.l.x() < b.l.x();
     }
-
     if (a.l.y() != b.l.y())
     {
         return a.l.y() < b.l.y();
     }
 
+    /** comparing right point */
     if (a.r.x() != b.r.x())
     {
         return a.r.x() < b.r.x();
     }
-
     if (a.r.y() != b.r.y())
     {
         return a.r.y() < b.r.y();
@@ -811,21 +811,21 @@ bool SmartPolygonDictionary::Edge::compare1(const Edge & a, const Edge & b)
 
 bool SmartPolygonDictionary::Edge::compare2(const Edge & a, const Edge & b)
 {
+    /** comparing right point */
     if (a.r.x() != b.r.x())
     {
         return a.r.x() < b.r.x();
     }
-
     if (a.r.y() != b.r.y())
     {
         return a.r.y() < b.r.y();
     }
 
+    /** comparing left point */
     if (a.l.x() != b.l.x())
     {
         return a.l.x() < b.l.x();
     }
-
     if (a.l.y() != b.l.y())
     {
         return a.l.y() < b.l.y();
@@ -836,7 +836,8 @@ bool SmartPolygonDictionary::Edge::compare2(const Edge & a, const Edge & b)
 
 bool SmartPolygonDictionary::find(const Point &point, size_t & id) const
 {
-    if (this->sorted_x.size() < 1)
+    /** TODO: maybe we should check for vertical line? */
+    if (this->sorted_x.size() < 2)
     {
         return false;
     }
@@ -852,7 +853,7 @@ bool SmartPolygonDictionary::find(const Point &point, size_t & id) const
     /** point is considired inside when ray down from point crosses odd number of edges */
     std::map<size_t, bool> is_inside;
 
-    size_t pos = std::upper_bound(this->sorted_x.begin() + 1, this->sorted_x.end(), x) - this->sorted_x.begin() - 1;
+    size_t pos = std::upper_bound(this->sorted_x.begin() + 1, this->sorted_x.end() - 1, x) - this->sorted_x.begin() - 1;
 
     /** iterating over interesting edges */
     for (auto & edge : this->edges_index[pos])
@@ -867,7 +868,9 @@ bool SmartPolygonDictionary::find(const Point &point, size_t & id) const
             continue;
         }
 
-        /** check for vertical edge, seem like never happens */
+        /** check for vertical edge, seem like never happens 
+         *  TODO: check if point is on this vertical edge
+        */
         if (l.x() == r.x())
         {
             continue;
