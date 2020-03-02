@@ -159,7 +159,11 @@ function run_tests
     # Just check that the script runs at all
     "$script_dir/perf.py" --help > /dev/null
 
-    rm -v test-times.tsv ||:
+    for x in {test-times,skipped-tests}.tsv
+    do
+        rm -v "$x" ||:
+        touch "$x"
+    done
 
     # FIXME remove some broken long tests
     rm right/performance/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
@@ -266,13 +270,19 @@ rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.ts
 right/clickhouse local --query "
 create table queries engine Memory as select
         replaceAll(_file, '-report.tsv', '') test,
-        left + right < 0.01 as short,
+
         -- FIXME Comparison mode doesn't make sense for queries that complete
         -- immediately, so for now we pretend they don't exist. We don't want to
         -- remove them altogether because we want to be able to detect regressions,
         -- but the right way to do this is not yet clear.
+        left + right < 0.01 as short,
+
         not short and abs(diff) < 0.10 and rd[3] > 0.10 as unstable,
-        not short and abs(diff) > 0.15 and abs(diff) > rd[3] as changed,
+
+        -- Do not consider changed the queries with 5% RD below 1% -- e.g., we're
+        -- likely to observe a difference > 1% in less than 5% cases.
+        -- Not sure it is correct, but empirically it filters out a lot of noise.
+        not short and abs(diff) > 0.15 and abs(diff) > rd[3] and rd[1] > 0.01 as changed,
         *
     from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
 
@@ -337,8 +347,8 @@ create table right_addresses_join engine Join(any, left, address) as
 
 create table unstable_query_runs engine File(TSVWithNamesAndTypes, 'unstable-query-runs.rep') as
     select query_id, query from right_query_log
-    join unstable_queries_tsv using query
-    where query_id not like 'prewarm %'
+    join queries using query
+    where query_id not like 'prewarm %' and (unstable or changed)
     ;
 
 create table unstable_query_log engine File(Vertical, 'unstable-query-log.rep') as
