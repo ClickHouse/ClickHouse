@@ -1,7 +1,9 @@
 #include <signal.h>
 #include <time.h>
 #include <sys/time.h>
-#include <sys/sysinfo.h>
+#if OS_LINUX
+    #include <sys/sysinfo.h>
+#endif
 #include <sched.h>
 
 #include <random>
@@ -48,7 +50,9 @@ static void initFromEnv(T & what, const char * name)
 
 void ThreadFuzzer::initConfiguration()
 {
+#if OS_LINUX
     num_cpus = get_nprocs();
+#endif
 
     initFromEnv(cpu_time_period_us, "THREAD_FUZZER_CPU_TIME_PERIOD_US");
     if (!cpu_time_period_us)
@@ -71,7 +75,8 @@ void ThreadFuzzer::signalHandler(int)
         sched_yield();
     }
 
-    if (fuzzer.migrate_probability > 0
+    if (fuzzer.num_cpus > 0
+        && fuzzer.migrate_probability > 0
         && std::bernoulli_distribution(fuzzer.migrate_probability)(thread_local_rng))
     {
         int migrate_to = std::uniform_int_distribution<>(0, fuzzer.num_cpus - 1)(thread_local_rng);
