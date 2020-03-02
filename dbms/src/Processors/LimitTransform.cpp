@@ -23,16 +23,17 @@ LimitTransform::LimitTransform(
     }
 }
 
-SharedChunkPtr LimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, size_t row) const
+Chunk LimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, size_t row) const
 {
     assert(row < chunk.getNumRows());
-    auto last_row_columns = chunk.cloneEmptyColumns();
-    const auto & current_columns = chunk.getColumns();
+    ColumnRawPtrs current_columns = extractSortColumns(chunk.getColumns());
+    MutableColumns last_row_sort_columns;
     for (size_t i = 0; i < current_columns.size(); ++i)
-        last_row_columns[i]->insertFrom(*current_columns[i], row);
-    SharedChunkPtr shared_chunk = std::make_shared<detail::SharedChunk>(Chunk(std::move(last_row_columns), 1));
-    shared_chunk->sort_columns = extractSortColumns(shared_chunk->getColumns());
-    return shared_chunk;
+    {
+        last_row_sort_columns.emplace_back(current_columns[i]->cloneEmpty());
+        last_row_sort_columns[i]->insertFrom(*current_columns[i], row);
+    }
+    return Chunk(std::move(last_row_sort_columns), 1);
 }
 
 
@@ -158,11 +159,9 @@ LimitTransform::Status LimitTransform::prepare()
 
 void LimitTransform::work()
 {
-    SharedChunkPtr shared_chunk = std::make_shared<detail::SharedChunk>(std::move(current_chunk));
-    shared_chunk->sort_columns = extractSortColumns(shared_chunk->getColumns());
-
-    size_t num_rows = shared_chunk->getNumRows();
-    size_t num_columns = shared_chunk->getNumColumns();
+    auto current_chunk_sort_columns = extractSortColumns(current_chunk.getColumns());
+    size_t num_rows = current_chunk.getNumRows();
+    size_t num_columns = current_chunk.getNumColumns();
 
     if (previous_row_chunk && rows_read >= offset + limit)
     {
@@ -170,11 +169,11 @@ void LimitTransform::work()
         size_t current_row_num = 0;
         for (; current_row_num < num_rows; ++current_row_num)
         {
-            if (!shared_chunk->sortColumnsEqualAt(current_row_num, 0, *previous_row_chunk))
+            if (!sortColumnsEqualAt(current_chunk_sort_columns, current_row_num))
                 break;
         }
 
-        auto columns = shared_chunk->detachColumns();
+        auto columns = current_chunk.detachColumns();
 
         if (current_row_num < num_rows)
         {
@@ -202,11 +201,11 @@ void LimitTransform::work()
     if (with_ties && length)
     {
         size_t current_row_num = start + length;
-        previous_row_chunk = makeChunkWithPreviousRow(*shared_chunk, current_row_num - 1);
+        previous_row_chunk = makeChunkWithPreviousRow(current_chunk, current_row_num - 1);
 
         for (; current_row_num < num_rows; ++current_row_num)
         {
-            if (!shared_chunk->sortColumnsEqualAt(current_row_num, 0, *previous_row_chunk))
+            if (!sortColumnsEqualAt(current_chunk_sort_columns, current_row_num))
             {
                 previous_row_chunk = {};
                 break;
@@ -218,12 +217,11 @@ void LimitTransform::work()
 
     if (length == num_rows)
     {
-        current_chunk = std::move(*shared_chunk);
         block_processed = true;
         return;
     }
 
-    auto columns = shared_chunk->detachColumns();
+    auto columns = current_chunk.detachColumns();
 
     for (size_t i = 0; i < num_columns; ++i)
         columns[i] = columns[i]->cut(start, length);
@@ -241,6 +239,17 @@ ColumnRawPtrs LimitTransform::extractSortColumns(const Columns & columns) const
         res.push_back(columns[pos].get());
 
     return res;
+}
+
+bool LimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, size_t current_chunk_row_num) const
+{
+    assert(current_chunk_sort_columns.size() == previous_row_chunk.getNumColumns());
+    size_t size = current_chunk_sort_columns.size();
+    const auto & previous_row_sort_columns = previous_row_chunk.getColumns();
+    for (size_t i = 0; i < size; ++i)
+        if (0 != current_chunk_sort_columns[i]->compareAt(current_chunk_row_num, 0, *previous_row_sort_columns[i], 1))
+            return false;
+    return true;
 }
 
 }
