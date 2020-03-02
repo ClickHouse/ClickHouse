@@ -52,6 +52,8 @@ void ThreadFuzzer::initConfiguration()
 {
 #if OS_LINUX
     num_cpus = get_nprocs();
+#else
+    (void)num_cpus;
 #endif
 
     initFromEnv(cpu_time_period_us, "THREAD_FUZZER_CPU_TIME_PERIOD_US");
@@ -75,6 +77,7 @@ void ThreadFuzzer::signalHandler(int)
         sched_yield();
     }
 
+#if OS_LINUX
     if (fuzzer.num_cpus > 0
         && fuzzer.migrate_probability > 0
         && std::bernoulli_distribution(fuzzer.migrate_probability)(thread_local_rng))
@@ -87,6 +90,7 @@ void ThreadFuzzer::signalHandler(int)
 
         (void)sched_setaffinity(0, sizeof(set), &set);
     }
+#endif
 
     if (fuzzer.sleep_probability > 0
         && fuzzer.chaos_sleep_time_us > 0
