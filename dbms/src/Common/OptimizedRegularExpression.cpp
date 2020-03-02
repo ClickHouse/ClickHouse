@@ -409,14 +409,10 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
     if (is_trivial)
     {
         if (required_substring.empty())
-<<<<<<< HEAD
         {
             matches.emplace_back(Match{0, 0});
             return 1;
         }
-=======
-            return 1;
->>>>>>> d93e7e5ccf... Merge pull request #9279 from ClickHouse/fix-empty-regexp
 
         const UInt8 * pos;
         if (is_case_insensitive)
