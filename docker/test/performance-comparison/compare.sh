@@ -206,6 +206,9 @@ function run_tests
         # the grep is to filter out set -x output and keep only time output
         { time "$script_dir/perf.py" "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; } 2>&1 >/dev/null | grep -v ^+ >> "wall-clock-times.tsv" || continue
 
+        # The test completed with zero status, so we treat stderr as warnings
+        mv "$test_name-err.log" "$test_name-warn.log"
+
         grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
         grep ^client-time "$test_name-raw.tsv" | cut -f2- > "$test_name-client-time.tsv"
         skipped=$(grep ^skipped "$test_name-raw.tsv" | cut -f2-)
