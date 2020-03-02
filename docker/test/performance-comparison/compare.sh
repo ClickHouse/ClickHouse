@@ -291,7 +291,7 @@ create table changed_perf_tsv engine File(TSV, 'changed-perf.tsv') as
     order by rd[3] desc;
 
 create table unstable_queries_tsv engine File(TSV, 'unstable-queries.tsv') as
-    select left, right, diff, rd, test, query from queries where unstable
+    select left, right, diff, rd, test, query from queries where unstable or changed
     order by rd[3] desc;
 
 create table unstable_tests_tsv engine File(TSV, 'bad-tests.tsv') as
