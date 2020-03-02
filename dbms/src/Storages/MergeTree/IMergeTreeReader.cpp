@@ -19,9 +19,6 @@ namespace
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_FOUND_EXPECTED_DATA_PART;
-    extern const int MEMORY_LIMIT_EXCEEDED;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 

@@ -40,7 +40,6 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
     extern const int UNSUPPORTED_URI_SCHEME;
-    extern const int TOO_MANY_REDIRECTS;
 }
 
 

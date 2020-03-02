@@ -10,6 +10,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 MergeTreeRangeReader::DelayedStream::DelayedStream(
         size_t from_mark, IMergeTreeReader * merge_tree_reader_)

@@ -78,25 +78,21 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int DATABASE_ACCESS_DENIED;
+    extern const int BAD_ARGUMENTS;
+    extern const int BAD_GET;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
-    extern const int TABLE_WAS_NOT_DROPPED;
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int THERE_IS_NO_SESSION;
     extern const int THERE_IS_NO_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int DDL_GUARD_IS_ACTIVE;
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
-    extern const int PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
-    extern const int SCALAR_ALREADY_EXISTS;
     extern const int UNKNOWN_SCALAR;
-    extern const int ACCESS_DENIED;
+    extern const int AUTHENTICATION_FAILED;
 }
 
 
@@ -631,7 +627,7 @@ void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->users_config = config;
-    shared->access_control_manager.loadFromConfig(*shared->users_config);
+    shared->access_control_manager.setUsersConfig(*shared->users_config);
 }
 
 ConfigurationPtr Context::getUsersConfig()
@@ -651,10 +647,20 @@ void Context::setUser(const String & name, const String & password, const Poco::
     if (!quota_key.empty())
         client_info.quota_key = quota_key;
 
-    auto new_user_id = getAccessControlManager().getID<User>(name);
-    auto new_access_rights = getAccessControlManager().getAccessRightsContext(new_user_id, {}, true, settings, current_database, client_info);
-    new_access_rights->checkHostIsAllowed();
-    new_access_rights->checkPassword(password);
+    auto new_user_id = getAccessControlManager().find<User>(name);
+    AccessRightsContextPtr new_access_rights;
+    if (new_user_id)
+    {
+        new_access_rights = getAccessControlManager().getAccessRightsContext(*new_user_id, {}, true, settings, current_database, client_info);
+        if (!new_access_rights->isClientHostAllowed() || !new_access_rights->isCorrectPassword(password))
+        {
+            new_user_id = {};
+            new_access_rights = nullptr;
+        }
+    }
+
+    if (!new_user_id || !new_access_rights)
+        throw Exception(name + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
 
     user_id = new_user_id;
     access_rights = std::move(new_access_rights);
@@ -1221,17 +1227,29 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 }
 
 
-void Context::checkSettingsConstraints(const SettingChange & change)
+void Context::checkSettingsConstraints(const SettingChange & change) const
 {
     if (settings_constraints)
         settings_constraints->check(settings, change);
 }
 
-
-void Context::checkSettingsConstraints(const SettingsChanges & changes)
+void Context::checkSettingsConstraints(const SettingsChanges & changes) const
 {
     if (settings_constraints)
         settings_constraints->check(settings, changes);
+}
+
+
+void Context::clampToSettingsConstraints(SettingChange & change) const
+{
+    if (settings_constraints)
+        settings_constraints->clamp(settings, change);
+}
+
+void Context::clampToSettingsConstraints(SettingsChanges & changes) const
+{
+    if (settings_constraints)
+        settings_constraints->clamp(settings, changes);
 }
 
 

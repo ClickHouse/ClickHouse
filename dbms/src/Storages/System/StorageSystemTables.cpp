@@ -24,7 +24,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int TABLE_IS_DROPPED;
 }
 

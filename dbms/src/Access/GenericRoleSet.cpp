@@ -4,6 +4,8 @@
 #include <Access/Role.h>
 #include <Parsers/ASTGenericRoleSet.h>
 #include <Parsers/formatAST.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <boost/range/algorithm/set_algorithm.hpp>
 #include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
@@ -11,6 +13,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 GenericRoleSet::GenericRoleSet() = default;
 GenericRoleSet::GenericRoleSet(const GenericRoleSet & src) = default;
 GenericRoleSet & GenericRoleSet::operator =(const GenericRoleSet & src) = default;
@@ -41,26 +47,51 @@ GenericRoleSet::GenericRoleSet(const boost::container::flat_set<UUID> & ids_)
 }
 
 
-GenericRoleSet::GenericRoleSet(const ASTGenericRoleSet & ast, const AccessControlManager & manager, const std::optional<UUID> & current_user_id)
+GenericRoleSet::GenericRoleSet(const ASTGenericRoleSet & ast)
+{
+    init(ast, nullptr, nullptr);
+}
+
+GenericRoleSet::GenericRoleSet(const ASTGenericRoleSet & ast, const UUID & current_user_id)
+{
+    init(ast, nullptr, &current_user_id);
+}
+
+GenericRoleSet::GenericRoleSet(const ASTGenericRoleSet & ast, const AccessControlManager & manager)
+{
+    init(ast, &manager, nullptr);
+}
+
+GenericRoleSet::GenericRoleSet(const ASTGenericRoleSet & ast, const AccessControlManager & manager, const UUID & current_user_id)
+{
+    init(ast, &manager, &current_user_id);
+}
+
+void GenericRoleSet::init(const ASTGenericRoleSet & ast, const AccessControlManager * manager, const UUID * current_user_id)
 {
     all = ast.all;
+
+    auto name_to_id = [id_mode{ast.id_mode}, manager](const String & name) -> UUID
+    {
+        if (id_mode)
+            return parse<UUID>(name);
+        assert(manager);
+        auto id = manager->find<User>(name);
+        if (id)
+            return *id;
+        return manager->getID<Role>(name);
+    };
 
     if (!ast.names.empty() && !all)
     {
         ids.reserve(ast.names.size());
         for (const String & name : ast.names)
-        {
-            auto id = manager.find<User>(name);
-            if (!id)
-                id = manager.getID<Role>(name);
-            ids.insert(*id);
-        }
+            ids.insert(name_to_id(name));
     }
 
     if (ast.current_user && !all)
     {
-        if (!current_user_id)
-            throw Exception("Current user is unknown", ErrorCodes::LOGICAL_ERROR);
+        assert(current_user_id);
         ids.insert(*current_user_id);
     }
 
@@ -68,18 +99,12 @@ GenericRoleSet::GenericRoleSet(const ASTGenericRoleSet & ast, const AccessContro
     {
         except_ids.reserve(ast.except_names.size());
         for (const String & except_name : ast.except_names)
-        {
-            auto except_id = manager.find<User>(except_name);
-            if (!except_id)
-                except_id = manager.getID<Role>(except_name);
-            except_ids.insert(*except_id);
-        }
+            except_ids.insert(name_to_id(except_name));
     }
 
     if (ast.except_current_user)
     {
-        if (!current_user_id)
-            throw Exception("Current user is unknown", ErrorCodes::LOGICAL_ERROR);
+        assert(current_user_id);
         except_ids.insert(*current_user_id);
     }
 
@@ -87,7 +112,52 @@ GenericRoleSet::GenericRoleSet(const ASTGenericRoleSet & ast, const AccessContro
         ids.erase(except_id);
 }
 
-std::shared_ptr<ASTGenericRoleSet> GenericRoleSet::toAST(const AccessControlManager & manager) const
+
+std::shared_ptr<ASTGenericRoleSet> GenericRoleSet::toAST() const
+{
+    auto ast = std::make_shared<ASTGenericRoleSet>();
+    ast->id_mode = true;
+    ast->all = all;
+
+    if (!ids.empty())
+    {
+        ast->names.reserve(ids.size());
+        for (const UUID & id : ids)
+            ast->names.emplace_back(::DB::toString(id));
+    }
+
+    if (!except_ids.empty())
+    {
+        ast->except_names.reserve(except_ids.size());
+        for (const UUID & except_id : except_ids)
+            ast->except_names.emplace_back(::DB::toString(except_id));
+    }
+
+    return ast;
+}
+
+
+String GenericRoleSet::toString() const
+{
+    auto ast = toAST();
+    return serializeAST(*ast);
+}
+
+
+Strings GenericRoleSet::toStrings() const
+{
+    if (all || !except_ids.empty())
+        return {toString()};
+
+    Strings names;
+    names.reserve(ids.size());
+    for (const UUID & id : ids)
+        names.emplace_back(::DB::toString(id));
+    return names;
+}
+
+
+std::shared_ptr<ASTGenericRoleSet> GenericRoleSet::toASTWithNames(const AccessControlManager & manager) const
 {
     auto ast = std::make_shared<ASTGenericRoleSet>();
     ast->all = all;
@@ -120,17 +190,17 @@ std::shared_ptr<ASTGenericRoleSet> GenericRoleSet::toAST(const AccessControlMana
 }
 
 
-String GenericRoleSet::toString(const AccessControlManager & manager) const
+String GenericRoleSet::toStringWithNames(const AccessControlManager & manager) const
 {
-    auto ast = toAST(manager);
+    auto ast = toASTWithNames(manager);
     return serializeAST(*ast);
 }
 
 
-Strings GenericRoleSet::toStrings(const AccessControlManager & manager) const
+Strings GenericRoleSet::toStringsWithNames(const AccessControlManager & manager) const
 {
     if (all || !except_ids.empty())
-        return {toString(manager)};
+        return {toStringWithNames(manager)};
 
     Strings names;
     names.reserve(ids.size());

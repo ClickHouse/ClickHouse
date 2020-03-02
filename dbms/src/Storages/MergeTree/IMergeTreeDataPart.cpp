@@ -27,6 +27,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int DIRECTORY_ALREADY_EXISTS;
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int NO_FILE_IN_DATA_PART;
     extern const int EXPECTED_END_OF_FILE;

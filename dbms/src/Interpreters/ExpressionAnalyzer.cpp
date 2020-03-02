@@ -71,6 +71,7 @@ using LogAST = DebugASTLog<false>; /// set to true to enable logs
 
 namespace ErrorCodes
 {
+    extern const int UNKNOWN_TYPE_OF_AST_NODE;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int ILLEGAL_PREWHERE;
     extern const int LOGICAL_ERROR;
@@ -535,8 +536,7 @@ static JoinPtr tryGetStorageJoin(const ASTTablesInSelectQueryElement & join_elem
 static ExpressionActionsPtr createJoinedBlockActions(const Context & context, const AnalyzedJoin & analyzed_join)
 {
     ASTPtr expression_list = analyzed_join.rightKeysList();
-    auto syntax_result = SyntaxAnalyzer(context).analyze(expression_list,
-                                                         analyzed_join.columnsFromJoinedTable(), analyzed_join.requiredJoinedNames());
+    auto syntax_result = SyntaxAnalyzer(context).analyze(expression_list, analyzed_join.columnsFromJoinedTable());
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
 }
 

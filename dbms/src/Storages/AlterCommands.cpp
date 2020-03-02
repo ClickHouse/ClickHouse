@@ -33,11 +33,11 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_SETTING;
     extern const int DUPLICATE_COLUMN;
 }
 
@@ -750,6 +750,11 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                     throw Exception{"Wrong column name. Cannot find column " + backQuote(command.column_name) + " to comment",
                                     ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
             }
+        }
+        else if (command.type == AlterCommand::MODIFY_SETTING)
+        {
+            if (metadata.settings_ast == nullptr)
+                throw Exception{"Cannot alter settings, because table engine doesn't support settings changes", ErrorCodes::BAD_ARGUMENTS};
         }
     }
 }

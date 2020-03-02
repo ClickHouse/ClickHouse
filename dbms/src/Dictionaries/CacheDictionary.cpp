@@ -41,10 +41,10 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int CACHE_DICTIONARY_UPDATE_FAIL;
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
-    extern const int LOGICAL_ERROR;
     extern const int TOO_SMALL_BUFFER_SIZE;
 }
 
@@ -820,6 +820,9 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
 
     const auto now = std::chrono::system_clock::now();
 
+    /// Non const because it will be unlocked.
+    ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+
     if (now > backoff_end_time.load())
     {
         try
@@ -832,13 +835,26 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
             }
 
             Stopwatch watch;
-            auto stream = source_ptr->loadIds(bunch_update_unit.getRequestedIds());
 
-            const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+            /// To perform parallel loading.
+            BlockInputStreamPtr stream = nullptr;
+            {
+                ProfilingScopedWriteUnlocker unlocker(write_lock);
+                stream = source_ptr->loadIds(bunch_update_unit.getRequestedIds());
+            }
 
             stream->readPrefix();
-            while (const auto block = stream->read())
+
+            while (true)
             {
+                Block block;
+                {
+                    ProfilingScopedWriteUnlocker unlocker(write_lock);
+                    block = stream->read();
+                    if (!block)
+                        break;
+                }
+
                 const auto id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
                 if (!id_column)
                     throw Exception{name + ": id column has type different from UInt64.", ErrorCodes::TYPE_MISMATCH};
@@ -906,8 +922,6 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
     }
 
     size_t not_found_num = 0, found_num = 0;
-
-    const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
     /// Check which ids have not been found and require setting null_value
     for (const auto & id_found_pair : remaining_ids)

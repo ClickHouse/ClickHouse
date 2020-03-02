@@ -14,6 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
 }
 
@@ -246,7 +247,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     /// Working with UInt8: last bit = can be true, previous = can be false (Like dbms/src/Storages/MergeTree/BoolMask.h).
     traverseAST(expression_ast);
 
-    auto syntax_analyzer_result = SyntaxAnalyzer(context, {}).analyze(
+    auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(
             expression_ast, index.header.getNamesAndTypesList());
     actions = ExpressionAnalyzer(expression_ast, syntax_analyzer_result, context).getActions(true);
 }
@@ -475,8 +476,7 @@ std::unique_ptr<IMergeTreeIndex> setIndexCreator(
 
 
     ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
-    auto syntax = SyntaxAnalyzer(context, {}).analyze(
-            expr_list, new_columns);
+    auto syntax = SyntaxAnalyzer(context).analyze(expr_list, new_columns);
     auto unique_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
 
     auto sample = ExpressionAnalyzer(expr_list, syntax, context)

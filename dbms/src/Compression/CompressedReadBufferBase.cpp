@@ -28,7 +28,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int TOO_LARGE_SIZE_COMPRESSED;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int CANNOT_DECOMPRESS;
