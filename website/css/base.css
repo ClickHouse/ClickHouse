@@ -85,6 +85,15 @@ a.btn-outline-yellow {
     color: #f14600;
 }
 
+.bg-number {
+    position: absolute;
+    font-size: 900%;
+    font-weight: bold;
+    color: rgba(241, 70, 0, 0.1);
+    line-height: 1;
+    margin-top: -1rem;
+}
+
 .dots-lb {
     background: #fff url('/images/dots.svg') no-repeat 0 100%;
 }

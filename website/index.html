@@ -6,82 +6,10 @@
 {% include "templates/index/hero.html" %}
 {% include "templates/index/events.html" %}
 {% include "templates/index/performance.html" %}
-
-<div>
-    <div class="container py-5">
-
-        <h2 id="linearly-scalable" class="mt-5">Linearly scalable</h2>
-
-        <p>ClickHouse allows companies to add servers to their clusters when necessary without investing time or money into
-            any additional DBMS modification. The system has been successfully serving
-            <a href="https://metrica.yandex.com/" rel="external nofollow" target="_blank">Yandex.Metrica</a>,
-            while the count of servers in it's main production cluster have grown from 60 to 394 in two years,
-            which are by the way located in six geographically distributed datacenters.</p>
-
-        <p>ClickHouse scales well both vertically and horizontally. ClickHouse is easily adaptable to perform either on
-            cluster with hundreds of nodes, or on a single server or even on a tiny virtual machine. Currently there are
-            installations with more than two trillion rows per single node,
-            as well as installations with 100Tb of storage per single node.</p>
-
-    </div>
-</div>
-<div>
-    <div class="container text-center">
-        <img src="images/curl.svg" alt="ClickHouse не тормозит" />
-    </div>
-</div>
-<div>
-    <div class="container py-5">
-
-        <h2 id="fault-tolerant" class="mt-5">Fault tolerant</h2>
-
-        <p>ClickHouse supports multi-master asynchronous replication and can be deployed across multiple datacenters.
-            Downtime of a single node or the whole datacenter won't affect the system's availability for both reads and
-            writes.
-            Distributed reads are automatically balanced to live replicas to avoid increasing latency. Replicated data
-            are synchronized automatically or semi-automatically after server downtime.</p>
-    </div>
-</div>
-<div>
-    <div class="container lead py-5">
-        <h2 class="mt-5">Simple and handy</h2>
-        <p>ClickHouse streamlines all your data processing. It's easy to use: ingest all your structured data into the
-            system, and it&nbsp;is instantly available for reports. New columns for new properties or dimensions can be
-            easily added to the system at any time without slowing it&nbsp;down.</p>
-
-        <p>ClickHouse is simple and works out-of-the-box. As well as performing on hundreds of node clusters, this system
-            can be easily installed on a single server or even a virtual machine. No development experience or code-writing
-            skills are required to install ClickHouse.</p>
-    </div>
-</div>
-<div>
-    <div class="container lead py-5">
-
-        <h2 id="feature-rich" class="mt-5">Feature rich</h2>
-
-        <p>ClickHouse features a user-friendly SQL query dialect with a number of built-in analytics capabilities.
-            For example, it includes probabilistic data
-            structures for fast and memory-efficient calculation of cardinalities and quantiles. There are functions for
-            working dates, times and time zones, as well as some specialized ones like addressing URLs and IPs
-            (both IPv4 and IPv6) and many more.</p>
-
-        <p>Data organizing options available in ClickHouse, such as arrays, array joins, tuples and nested data structures, are
-            extremely efficient for managing denormalized data.</p>
-
-        <p>Using ClickHouse allows joining both distributed data and co-located data, as the system supports local joins and
-            distributed joins. It&nbsp;also offers an opportunity to use external dictionaries, dimension tables loaded from
-            an external source, for seamless joins with simple syntax.</p>
-
-        <p>ClickHouse supports approximate query processing – you can get results as fast as you want, which is
-            indispensable when dealing with terabytes and petabytes of data.</p>
-
-        <p>The system's conditional aggregate functions, calculation of totals and extremes, allow getting results with a
-            single query without having to run a number of them.</p>
-    </div>
-</div>
-
+{% include "templates/index/why.html" %}
 {% include "templates/index/success.html" %}
 {% include "templates/index/efficient.html" %}
+{% include "templates/index/rich.html" %}
 {% include "templates/index/features.html" %}
 
 <div>
