@@ -1139,7 +1139,7 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         auto new_engine_push_ast = task_table.engine_push_ast;
         if (task_table.isReplicatedTable())
         {
-            new_engine_push_ast = task_table.rewriteParamsForReplicatedTableFor(current_piece_number);
+            new_engine_push_ast = task_table.rewriteReplicatedCreateQueryToPlain();
         }
 
         auto create_query_push_ast = rewriteCreateQueryStorage(
