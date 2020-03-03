@@ -7,7 +7,6 @@
 #include <Common/HashTable/HashSet.h>
 
 
-
 int main(int, char **)
 {
     {

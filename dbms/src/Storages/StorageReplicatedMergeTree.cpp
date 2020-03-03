@@ -2623,7 +2623,6 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(
 }
 
 
-
 /** If a quorum is tracked for a part, update information about it in ZK.
   */
 void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
