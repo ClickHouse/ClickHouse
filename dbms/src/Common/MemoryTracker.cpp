@@ -7,7 +7,6 @@
 #include <Common/formatReadable.h>
 #include <common/likely.h>
 #include <common/logger_useful.h>
-#include <ext/singleton.h>
 
 #include <atomic>
 #include <cmath>
@@ -78,7 +77,7 @@ void MemoryTracker::alloc(Int64 size)
         return;
 
     /** Using memory_order_relaxed means that if allocations are done simultaneously,
-      * we allow exception about memory limit exceeded to be thrown only on next allocation.
+      *  we allow exception about memory limit exceeded to be thrown only on next allocation.
       * So, we allow over-allocations.
       */
     Int64 will_be = size + amount.fetch_add(size, std::memory_order_relaxed);
@@ -112,8 +111,8 @@ void MemoryTracker::alloc(Int64 size)
     if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
     {
         auto no_track = blocker.cancel();
-        ext::Singleton<DB::TraceCollector>()->collect(size);
-        setOrRaiseProfilerLimit(current_profiler_limit + Int64(std::ceil((will_be - current_profiler_limit) / profiler_step)) * profiler_step);
+        DB::TraceCollector::collect(DB::TraceType::Memory, StackTrace(), size);
+        setOrRaiseProfilerLimit((will_be + profiler_step - 1) / profiler_step * profiler_step);
     }
 
     if (unlikely(current_hard_limit && will_be > current_hard_limit))
@@ -212,7 +211,6 @@ void MemoryTracker::setOrRaiseHardLimit(Int64 value)
 
 void MemoryTracker::setOrRaiseProfilerLimit(Int64 value)
 {
-    /// This is just atomic set to maximum.
     Int64 old_value = profiler_limit.load(std::memory_order_relaxed);
     while (old_value < value && !profiler_limit.compare_exchange_weak(old_value, value))
         ;
