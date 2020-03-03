@@ -346,7 +346,13 @@ public:
         if (is_mutation)
             reserved_space = future_part_.parts[0]->disk->reserve(total_size);
         else
-            reserved_space = storage.reserveSpace(total_size);
+        {
+            size_t max_volume_index = 0;
+            for (auto & part_ptr : future_part_.parts)
+                max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->disk));
+
+            reserved_space = storage.reserveSpace(total_size, max_volume_index);
+        }
         if (!reserved_space)
         {
             if (is_mutation)
