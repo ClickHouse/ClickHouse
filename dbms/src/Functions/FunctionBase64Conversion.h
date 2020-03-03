@@ -7,7 +7,17 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <IO/WriteHelpers.h>
+
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-id-macro"
+#endif
+
 #include <libbase64.h>
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 
 namespace DB
