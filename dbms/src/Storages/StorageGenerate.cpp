@@ -36,7 +36,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
-void fillColumnWithRandomData(IColumn & column, DataTypePtr type, UInt64 limit,
+void fillColumnWithRandomData(IColumn & column, const DataTypePtr type, UInt64 limit,
                               UInt64 max_array_length, UInt64 max_string_length, pcg32& generator, pcg64_fast& generator64)
 {
     TypeIndex idx = type->getTypeId();
@@ -407,26 +407,15 @@ public:
 protected:
     Chunk generate() override
     {
-
-        for (auto & ctn : block_header.getColumnsWithTypeAndName())
+        auto columns = block_header.cloneEmptyColumns();
+        DataTypes types = block_header.getDataTypes();
+        auto cur_type = types.cbegin();
+        for (auto & col : columns)
         {
-            fillColumnWithRandomData(ctn.column->assumeMutableRef(), ctn.type, block_size, max_array_length, max_string_length, r32, r64);
+            fillColumnWithRandomData(col->assumeMutableRef(), *cur_type, block_size, max_array_length, max_string_length, r32, r64);
+            ++cur_type;
         }
-
-        auto column = ColumnUInt64::create(block_size);
-        ColumnUInt64::Container & vec = column->getData();
-
-        size_t curr = next;     /// The local variable for some reason works faster (>20%) than member of class.
-        UInt64 * pos = vec.data(); /// This also accelerates the code.
-        UInt64 * end = &vec[block_size];
-        while (pos < end)
-            *pos++ = curr++;
-
-        next += step;
-
-        progress({column->size(), column->byteSize()});
-
-        return { Columns {std::move(column)}, block_size };
+        return {std::move(columns), block_size};
     }
 
 private:
@@ -436,7 +425,7 @@ private:
     Block block_header;
 
     pcg32 r32;
-    pcg64 r64;
+    pcg64_fast r64;
 
 };
 
@@ -492,9 +481,10 @@ Pipes StorageGenerate::read(
         block_header.insert({std::move(column), name_type.type, name_type.name});
     }
 
+    pcg32 generate(random_seed);
     for (UInt64 i = 0; i < num_streams; ++i)
     {
-        pipes.emplace_back(std::make_shared<GenerateSource>(max_block_size, max_array_length, max_string_length, random_seed + i, block_header));
+        pipes.emplace_back(std::make_shared<GenerateSource>(max_block_size, max_array_length, max_string_length, generate(), block_header));
     }
     return pipes;
 }
