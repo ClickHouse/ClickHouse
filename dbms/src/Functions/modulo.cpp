@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_DIVISION;
+}
+
 /// Optimizations for integer modulo by a constant.
 
 template <typename A, typename B>
