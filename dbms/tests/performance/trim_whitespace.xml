@@ -1,13 +1,15 @@
 <test>
     <type>loop</type>
 
-    <create_query>CREATE TABLE IF NOT EXISTS whitespaces(value String) ENGINE = MergeTree() PARTITION BY tuple() ORDER BY tuple()</create_query>
-    <fill_query>INSERT INTO whitespaces
-        SELECT value FROM (
-            SELECT arrayStringConcat(groupArray(' ')) AS spaces,
-                concat(spaces, toString(any(number)), spaces) AS value
-            FROM numbers_mt(10000000)
-            GROUP BY pow(number, intHash32(number) % 4) % 1234567)</fill_query>
+    <create_query>
+        create table if not exists whitespaces
+        engine = MergeTree() partition by tuple() order by tuple()
+        as
+            with 32 - log2(intHash32(number)) + 1 as num_spaces,
+                repeat(' ', toUInt32(num_spaces)) as spaces
+            select spaces || toString(number) || spaces value
+            from numbers_mt(100000000);
+    </create_query>
 
     <stop_conditions>
         <all_of>
@@ -20,10 +22,14 @@
         <substitution>
            <name>func</name>
            <values>
-               <value>value</value>
                <value>trimLeft(value)</value>
                <value>trimRight(value)</value>
                <value>trimBoth(value)</value>
+           </values>
+       </substitution>
+       <substitution>
+           <name>func_slow</name>
+           <values>
                <value>replaceRegexpOne(value, '^ *', '')</value>
                <value>replaceRegexpOne(value, ' *$', '')</value>
                <value>replaceRegexpAll(value, '^ *| *$', '')</value>
@@ -31,7 +37,8 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM whitespaces WHERE NOT ignore({func})</query>
+    <query>SELECT {func} FROM whitespaces FORMAT Null</query>
+    <query>SELECT {func_slow} FROM whitespaces LIMIT 10000000 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS whitespaces</drop_query>
 </test>
