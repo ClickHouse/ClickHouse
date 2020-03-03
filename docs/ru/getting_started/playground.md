@@ -1,4 +1,4 @@
-#ClickHouse Playground
+# ClickHouse Playground
 
 ClickHouse Playground позволяет моментально выполнить запросы к ClickHouse из бразуера.
 В Playground доступны несколько тестовых массивов данных и примеры запросов, которые показывают некоторые отличительные черты ClickHouse.
@@ -6,6 +6,12 @@ ClickHouse Playground позволяет моментально выполнит
 Запросы выполняются под пользователем с правами `readonly` для которого есть следующие ограничения:
 - запрещены DDL запросы
 - запроещены INSERT запросы
+
+Также установлены следующие опции:
+- `max_result_bytes=10485760` 
+- `max_result_rows=2000`
+- `result_overflow_mode=break`
+- `max_execution_time=60000`
 
 ClickHouse Playground соответствует конфигурации m2.small хосту
 [Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse)
