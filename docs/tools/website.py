@@ -35,7 +35,8 @@ def build_website(args):
     os.makedirs(icons_dir)
     for icon in [
         'github',
-        'edit'
+        'edit',
+        'external-link'
     ]:
         icon = '%s.svg' % icon
         icon_src = os.path.join(args.website_dir, 'images', 'feathericons', 'icons', icon)
