@@ -9,24 +9,48 @@
 #include <common/config_common.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
-#include <ext/singleton.h>
 
 #include <random>
 
+
+namespace ProfileEvents
+{
+    extern const Event QueryProfilerSignalOverruns;
+}
 
 namespace DB
 {
 
 namespace
 {
+    thread_local size_t write_trace_iteration = 0;
+
     void writeTraceInfo(TraceType trace_type, int /* sig */, siginfo_t * info, void * context)
     {
         auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
-        int overrun_count = 0;
 #if defined(OS_LINUX)
         if (info)
-            overrun_count = info->si_overrun;
+        {
+            int overrun_count = info->si_overrun;
+
+            /// Quickly drop if signal handler is called too frequently.
+            /// Otherwise we may end up infinitelly processing signals instead of doing any useful work.
+            ++write_trace_iteration;
+            if (overrun_count)
+            {
+                /// But pass with some frequency to avoid drop of all traces.
+                if (write_trace_iteration % overrun_count == 0)
+                {
+                    ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, overrun_count);
+                }
+                else
+                {
+                    ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, overrun_count + 1);
+                    return;
+                }
+            }
+        }
 #else
         UNUSED(info);
 #endif
@@ -34,7 +58,7 @@ namespace
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         const StackTrace stack_trace(signal_context);
 
-        ext::Singleton<TraceCollector>()->collect(trace_type, stack_trace, overrun_count);
+        TraceCollector::collect(trace_type, stack_trace, 0);
 
         errno = saved_errno;
     }
@@ -156,7 +180,7 @@ QueryProfilerReal::QueryProfilerReal(const UInt64 thread_id, const UInt32 period
 
 void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
 {
-    writeTraceInfo(TraceType::REAL_TIME, sig, info, context);
+    writeTraceInfo(TraceType::Real, sig, info, context);
 }
 
 QueryProfilerCpu::QueryProfilerCpu(const UInt64 thread_id, const UInt32 period)
@@ -165,7 +189,7 @@ QueryProfilerCpu::QueryProfilerCpu(const UInt64 thread_id, const UInt32 period)
 
 void QueryProfilerCpu::signalHandler(int sig, siginfo_t * info, void * context)
 {
-    writeTraceInfo(TraceType::CPU_TIME, sig, info, context);
+    writeTraceInfo(TraceType::CPU, sig, info, context);
 }
 
 }
