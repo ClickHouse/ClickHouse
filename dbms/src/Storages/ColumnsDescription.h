@@ -114,4 +114,5 @@ private:
     Container columns;
 };
 
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, const Context & context);
 }
