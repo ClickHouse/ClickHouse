@@ -4,7 +4,6 @@
 
 
 namespace DB
-
 {
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
