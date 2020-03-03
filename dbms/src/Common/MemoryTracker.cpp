@@ -71,7 +71,6 @@ static void logMemoryUsage(Int64 amount)
 }
 
 
-
 void MemoryTracker::alloc(Int64 size)
 {
     if (blocker.isCancelled())

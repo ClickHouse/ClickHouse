@@ -6,9 +6,9 @@ namespace DB
 {
 
 template <typename A, typename B>
-struct DivideIntegralOrZeroImpl
+struct ModuloOrZeroImpl
 {
-    using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
+    using ResultType = typename NumberTraits::ResultOfModulo<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
@@ -17,7 +17,7 @@ struct DivideIntegralOrZeroImpl
         if (unlikely(divisionLeadsToFPE(a, b)))
             return 0;
 
-        return DivideIntegralImpl<A, B>::template apply<Result>(a, b);
+        return ModuloImpl<A, B>::template apply<Result>(a, b);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -25,12 +25,12 @@ struct DivideIntegralOrZeroImpl
 #endif
 };
 
-struct NameIntDivOrZero { static constexpr auto name = "intDivOrZero"; };
-using FunctionIntDivOrZero = FunctionBinaryArithmetic<DivideIntegralOrZeroImpl, NameIntDivOrZero>;
+struct NameModuloOrZero { static constexpr auto name = "moduloOrZero"; };
+using FunctionModuloOrZero = FunctionBinaryArithmetic<ModuloOrZeroImpl, NameModuloOrZero>;
 
-void registerFunctionIntDivOrZero(FunctionFactory & factory)
+void registerFunctionModuloOrZero(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionIntDivOrZero>();
+    factory.registerFunction<FunctionModuloOrZero>();
 }
 
 }
