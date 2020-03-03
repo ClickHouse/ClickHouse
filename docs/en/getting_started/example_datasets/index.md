@@ -1,6 +1,6 @@
-# Example datasets
+# Example Datasets
 
-This section describes how to obtain example datasets and write them to ClickHouse.
+This section describes how to obtain example datasets and import them into ClickHouse.
 For some datasets example queries are also available.
 
 * [Anonymized Yandex.Metrica Dataset](metrica.md)
