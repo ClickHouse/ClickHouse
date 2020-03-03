@@ -21,6 +21,8 @@ namespace
 {
     void writeTraceInfo(TraceType trace_type, int /* sig */, siginfo_t * info, void * context)
     {
+        auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+
         int overrun_count = 0;
 #if defined(OS_LINUX)
         if (info)
@@ -33,6 +35,8 @@ namespace
         const StackTrace stack_trace(signal_context);
 
         ext::Singleton<TraceCollector>()->collect(trace_type, stack_trace, overrun_count);
+
+        errno = saved_errno;
     }
 
     [[maybe_unused]] constexpr UInt32 TIMER_PRECISION = 1e9;
