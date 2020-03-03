@@ -138,12 +138,12 @@ BlockInputStreamPtr StorageLiveView::completeQuery(BlockInputStreams from)
     auto block_context = std::make_unique<Context>(global_context);
     block_context->makeQueryContext();
 
-    auto blocks_storage = StorageBlocks::createStorage(database_name, table_name, parent_storage->getColumns(),
+    auto blocks_storage = StorageBlocks::createStorage(database_name, table_name, getParentStorage()->getColumns(),
         std::move(from), QueryProcessingStage::WithMergeableState);
 
     block_context->addExternalTable(table_name + "_blocks", blocks_storage);
 
-    InterpreterSelectQuery select(inner_blocks_query->clone(), *block_context, StoragePtr(), SelectQueryOptions(QueryProcessingStage::Complete));
+    InterpreterSelectQuery select(getInnerBlocksQuery(), *block_context, StoragePtr(), SelectQueryOptions(QueryProcessingStage::Complete));
     BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
 
     /// Squashing is needed here because the view query can generate a lot of blocks
@@ -254,11 +254,9 @@ StorageLiveView::StorageLiveView(
         throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
 
     inner_query = query.select->list_of_selects->children.at(0);
-    inner_blocks_query = inner_query->clone();
 
-    InterpreterSelectQuery(inner_blocks_query, *live_view_context, SelectQueryOptions().modify().analyze());
-
-    extractDependentTable(inner_blocks_query, select_database_name, select_table_name, table_name, inner_subquery);
+    auto inner_query_tmp = inner_query->clone();
+    extractDependentTable(inner_query_tmp, select_database_name, select_table_name, table_name, inner_subquery);
 
     /// If the table is not specified - use the table `system.one`
     if (select_table_name.empty())
@@ -270,8 +268,6 @@ StorageLiveView::StorageLiveView(
     global_context.addDependency(
         DatabaseAndTableName(select_database_name, select_table_name),
         DatabaseAndTableName(database_name, table_name));
-
-    parent_storage = local_context.getTable(select_database_name, select_table_name);
 
     is_temporary = query.temporary;
     temporary_live_view_timeout = local_context.getSettingsRef().temporary_live_view_timeout.totalSeconds();
@@ -316,6 +312,21 @@ Block StorageLiveView::getHeader() const
         }
     }
     return sample_block;
+}
+
+ASTPtr StorageLiveView::getInnerBlocksQuery()
+{
+    std::lock_guard lock(sample_block_lock);
+    if (!inner_blocks_query)
+    {
+        inner_blocks_query = inner_query->clone();
+        /// Rewrite inner query with right aliases for JOIN.
+        /// It cannot be done in constructor or startup() because InterpreterSelectQuery may access table,
+        /// which is not loaded yet during server startup, so we do it lazily
+        InterpreterSelectQuery(inner_blocks_query, *live_view_context, SelectQueryOptions().modify().analyze());
+        extractDependentTable(inner_blocks_query, select_database_name, select_table_name, table_name, inner_subquery);
+    }
+    return inner_blocks_query->clone();
 }
 
 bool StorageLiveView::getNewBlocks()
@@ -463,6 +474,9 @@ void StorageLiveView::startup()
 
 void StorageLiveView::shutdown()
 {
+    global_context.removeDependency(
+            DatabaseAndTableName(select_database_name, select_table_name),
+            DatabaseAndTableName(database_name, table_name));
     bool expected = false;
     if (!shutdown_called.compare_exchange_strong(expected, true))
         return;

@@ -263,7 +263,7 @@ void MergeTreeRangeReader::ReadResult::shrink(Columns & old_columns)
             continue;
         auto new_column = old_columns[i]->cloneEmpty();
         new_column->reserve(total_rows_per_granule);
-        for (size_t j = 0, pos = 0; j < rows_per_granule_original.size(); pos += rows_per_granule_original[i], ++j)
+        for (size_t j = 0, pos = 0; j < rows_per_granule_original.size(); pos += rows_per_granule_original[j++])
         {
             if (rows_per_granule[j])
                 new_column->insertRangeFrom(*old_columns[i], pos, rows_per_granule[j]);
@@ -333,8 +333,8 @@ void MergeTreeRangeReader::ReadResult::optimize()
             filter_holder_original = std::move(filter_holder);
             filter = new_filter.get();
             filter_holder = std::move(new_filter);
+            need_filter = true;
         }
-        need_filter = true;
     }
     /// Another guess, if it's worth filtering at PREWHERE
     else if (countBytesInResultFilter(filter->getData()) < 0.6 * filter->size())
@@ -431,9 +431,11 @@ void MergeTreeRangeReader::ReadResult::setFilter(const ColumnPtr & new_filter)
     }
 
     ConstantFilterDescription const_description(*new_filter);
-    if (const_description.always_false)
+    if (const_description.always_true)
+        setFilterConstTrue();
+    else if (const_description.always_false)
         clear();
-    else if (!const_description.always_true)
+    else
     {
         FilterDescription filter_description(*new_filter);
         filter_holder = filter_description.data_holder ? filter_description.data_holder : new_filter;
@@ -688,9 +690,9 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             if (stream.isFinished())
             {
                 result.addRows(stream.finalize(result.columns));
-                stream = Stream(ranges.back().begin, ranges.back().end, merge_tree_reader);
-                result.addRange(ranges.back());
-                ranges.pop_back();
+                stream = Stream(ranges.front().begin, ranges.front().end, merge_tree_reader);
+                result.addRange(ranges.front());
+                ranges.pop_front();
             }
 
             auto rows_to_read = std::min(space_left, stream.numPendingRowsInCurrentGranule());

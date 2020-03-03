@@ -102,6 +102,8 @@ namespace ErrorCodes
     extern const int READONLY_SETTING;
     extern const int ABORTED;
     extern const int UNEXPECTED_AST_STRUCTURE;
+    extern const int UNKNOWN_DISK;
+    extern const int NOT_ENOUGH_SPACE;
 }
 
 
@@ -1450,6 +1452,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         {
             throw Exception(
                 "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax",
+                ErrorCodes::BAD_ARGUMENTS);
+        }
+        if (command.type == AlterCommand::ADD_INDEX && !is_custom_partitioned)
+        {
+            throw Exception(
+                "ALTER ADD INDEX is not supported for tables with the old syntax",
                 ErrorCodes::BAD_ARGUMENTS);
         }
         else if (command.isModifyingData())
@@ -3509,6 +3517,21 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
                                                                                 const String & tmp_part_prefix,
                                                                                 const MergeTreePartInfo & dst_part_info)
 {
+    /// Check that the storage policy contains the disk where the src_part is located.
+    
+    bool does_storage_policy_allow_same_disk = false;
+    for (const DiskPtr & disk : getStoragePolicy()->getDisks())
+    {
+        if (disk->getName() == src_part->disk->getName())
+        {
+            does_storage_policy_allow_same_disk = true;
+            break;
+        }
+    }
+    if (!does_storage_policy_allow_same_disk)
+        throw Exception(
+            "Could not clone and load part " + quoteString(src_part->getFullPath()) + " because disk does not belong to storage policy", ErrorCodes::LOGICAL_ERROR);
+
     String dst_part_name = src_part->getNewName(dst_part_info);
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 

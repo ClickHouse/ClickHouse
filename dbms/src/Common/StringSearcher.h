@@ -222,6 +222,8 @@ public:
         return false;
     }
 
+    /** Returns haystack_end if not found.
+      */
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {
         if (0 == needle_size)

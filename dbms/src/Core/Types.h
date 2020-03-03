@@ -14,41 +14,42 @@ namespace DB
 
 struct Null {};
 
+/// @warning Append only enum! Ids in this enum could be serialized in data.
+/// You MUST NOT change the order, insert or remove ids in the middle.
 enum class TypeIndex
 {
-    Nothing = 0,
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    UInt128,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Int128,
-    Float32,
-    Float64,
-    Date,
-    DateTime,
-    DateTime32 = DateTime,
-    DateTime64,
-    String,
-    FixedString,
-    Enum8,
-    Enum16,
-    Decimal32,
-    Decimal64,
-    Decimal128,
-    UUID,
-    Array,
-    Tuple,
-    Set,
-    Interval,
-    Nullable,
-    Function,
-    AggregateFunction,
-    LowCardinality,
+    Nothing           = 0,
+    UInt8             = 1,
+    UInt16            = 2,
+    UInt32            = 3,
+    UInt64            = 4,
+    UInt128           = 5,
+    Int8              = 6,
+    Int16             = 7,
+    Int32             = 8,
+    Int64             = 9,
+    Int128            = 10,
+    Float32           = 11,
+    Float64           = 12,
+    Date              = 13,
+    DateTime          = 14,
+    String            = 15,
+    FixedString       = 16,
+    Enum8             = 17,
+    Enum16            = 18,
+    Decimal32         = 19,
+    Decimal64         = 20,
+    Decimal128        = 21,
+    UUID              = 22,
+    Array             = 23,
+    Tuple             = 24,
+    Set               = 25,
+    Interval          = 26,
+    Nullable          = 27,
+    Function          = 28,
+    AggregateFunction = 29,
+    LowCardinality    = 30,
+    DateTime64        = 31,
 };
 
 using UInt8 = uint8_t;
@@ -158,8 +159,6 @@ using Decimal32 = Decimal<Int32>;
 using Decimal64 = Decimal<Int64>;
 using Decimal128 = Decimal<Int128>;
 
-// TODO (nemkov): consider making a strong typedef
-//using DateTime32 = time_t;
 using DateTime64 = Decimal64;
 
 template <> struct TypeName<Decimal32>   { static const char * get() { return "Decimal32";   } };
