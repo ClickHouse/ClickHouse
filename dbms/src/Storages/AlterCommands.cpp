@@ -542,7 +542,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Context & context) const
 {
     auto all_columns = metadata.columns;
-    /// Default expression for all added/modified.
+    /// Default expression for all added/modified columns
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     for (size_t i = 0; i < size(); ++i)
     {
