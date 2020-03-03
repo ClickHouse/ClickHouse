@@ -39,6 +39,11 @@ struct TaskTable {
 
     String getCertainPartitionPieceTaskStatusPath(const String & partition_name, const size_t piece_number) const;
 
+    String getReplicatedEngineFirstArgumentForCurrentPiece(const size_t piece_number) const;
+
+
+    bool isReplicatedTable() { return engine_push_zk_path != ""; }
+
     /// Partitions will be splitted into number-of-splits pieces.
     /// Each piece will be copied independently. (10 by default)
     size_t number_of_splits;
@@ -64,6 +69,11 @@ struct TaskTable {
     String engine_push_str;
     ASTPtr engine_push_ast;
     ASTPtr engine_push_partition_key_ast;
+
+    /// First argument of Replicated...MergeTree()
+    String engine_push_zk_path;
+
+    ASTPtr rewriteParamsForReplicatedTableFor(const size_t current_piece_number) const;
 
     /*
      * A Distributed table definition used to split data
@@ -251,10 +261,9 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
     {
         ParserStorage parser_storage;
         engine_push_ast = parseQuery(parser_storage, engine_push_str, 0);
-        std::cout << engine_push_str << std::endl;
         engine_push_partition_key_ast = extractPartitionKey(engine_push_ast);
-        std::cout << engine_push_str << std::endl;
         primary_key_comma_separated = createCommaSeparatedStringFrom(extractPrimaryKeyColumnNames(engine_push_ast));
+        engine_push_zk_path = extractReplicatedTableZookeeperPath(engine_push_ast);
     }
 
     sharding_key_str = config.getString(table_prefix + "sharding_key");
@@ -346,6 +355,24 @@ inline void TaskTable::initShards(RandomEngine && random_engine)
     local_shards.assign(all_shards.begin(), it_first_remote);
 }
 
+inline String TaskTable::getReplicatedEngineFirstArgumentForCurrentPiece(const size_t piece_number) const
+{
+    assert (engine_push_zk_path != "");
+    return engine_push_zk_path + "/" + toString(piece_number);
+}
+
+inline ASTPtr TaskTable::rewriteParamsForReplicatedTableFor(const size_t current_piece_number) const
+{
+    const auto & new_engine_ast = engine_push_ast->clone()->as<ASTFunction &>();
+
+    auto & replicated_table_arguments = new_engine_ast.arguments->children;
+
+    auto & zk_table_path_ast = replicated_table_arguments[0]->as<ASTLiteral &>();
+    zk_table_path_ast.value = getReplicatedEngineFirstArgumentForCurrentPiece(current_piece_number);
+
+    return new_engine_ast.clone();
+}
+
 
 inline String DB::TaskShard::getDescription() const
 {
@@ -359,8 +386,10 @@ inline String DB::TaskShard::getDescription() const
 
 inline String DB::TaskShard::getHostNameExample() const
 {
-    auto &replicas = task_table.cluster_pull->getShardsAddresses().at(indexInCluster());
+    auto & replicas = task_table.cluster_pull->getShardsAddresses().at(indexInCluster());
     return replicas.at(0).readableString();
 }
+
+
 
 }

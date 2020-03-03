@@ -78,8 +78,6 @@ ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
 {
     String storage_str = queryToString(storage_ast);
 
-    std::cout << "inside extractPartitionKey " << storage_str << std::endl;
-
     const auto & storage = storage_ast->as<ASTStorage &>();
     const auto & engine = storage.engine->as<ASTFunction &>();
 
@@ -226,6 +224,33 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
     }
 
     return primary_key_columns;
+}
+
+String extractReplicatedTableZookeeperPath(const ASTPtr & storage_ast)
+{
+    String storage_str = queryToString(storage_ast);
+
+    const auto & storage = storage_ast->as<ASTStorage &>();
+    const auto & engine = storage.engine->as<ASTFunction &>();
+
+    if (!endsWith(engine.name, "MergeTree"))
+    {
+        throw Exception(
+                "Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
+                ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    if (!startsWith(engine.name, "Replicated"))
+    {
+        return "";
+    }
+
+    auto replicated_table_arguments = engine.arguments->children;
+
+    auto zk_table_path_ast = replicated_table_arguments[0]->as<ASTLiteral &>();
+    auto zk_table_path_string = zk_table_path_ast.value.safeGet<String>();
+
+    return zk_table_path_string;
 }
 
 ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std::string & local_hostname, UInt8 random)

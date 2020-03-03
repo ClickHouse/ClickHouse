@@ -480,10 +480,6 @@ bool ClusterCopier::checkPartitionPieceIsDone(const TaskTable & task_table, cons
 
         CleanStateClock clean_state_clock (zookeeper, piece_is_dirty_flag_path, piece_is_dirty_cleaned_path);
 
-        std::cout << piece_is_dirty_flag_path << std::endl;
-        std::cout << piece_is_dirty_cleaned_path << std::endl;
-        std::cout << piece_task_status_path << std::endl;
-
         const bool is_clean = checkPartitionPieceIsClean(zookeeper, clean_state_clock, piece_task_status_path);
 
 
@@ -559,7 +555,8 @@ ASTPtr ClusterCopier::removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast
 }
 
 /// Replaces ENGINE and table name in a create query
-std::shared_ptr<ASTCreateQuery> ClusterCopier::rewriteCreateQueryStorage(const ASTPtr & create_query_ast, const DatabaseAndTableName & new_table, const ASTPtr & new_storage_ast)
+std::shared_ptr<ASTCreateQuery> ClusterCopier::rewriteCreateQueryStorage(
+        const ASTPtr & create_query_ast, const DatabaseAndTableName & new_table, const ASTPtr & new_storage_ast)
 {
     const auto & create = create_query_ast->as<ASTCreateQuery &>();
     auto res = std::make_shared<ASTCreateQuery>(create);
@@ -573,6 +570,7 @@ std::shared_ptr<ASTCreateQuery> ClusterCopier::rewriteCreateQueryStorage(const A
     res->children.clear();
     res->set(res->columns_list, create.columns_list->clone());
     res->set(res->storage, new_storage_ast->clone());
+
 
     return res;
 }
@@ -996,10 +994,6 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
 
     CleanStateClock clean_state_clock(zookeeper, piece_is_dirty_flag_path, piece_is_dirty_cleaned_path);
 
-    std::cout << piece_is_dirty_flag_path << std::endl;
-    std::cout << piece_is_dirty_cleaned_path << std::endl;
-    std::cout << piece_status_path << std::endl;
-
     const bool is_clean = checkPartitionPieceIsClean(zookeeper, clean_state_clock, piece_status_path);
 
     /// Do not start if partition piece is dirty, try to clean it
@@ -1142,8 +1136,16 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
                 task_table.table_push.first,
                 task_table.table_push.second + "_piece_" + toString(current_piece_number));
 
-        auto create_query_push_ast = rewriteCreateQueryStorage(task_shard.current_pull_table_create_query,
-                                                               database_and_table_for_current_piece, task_table.engine_push_ast);
+        auto new_engine_push_ast = task_table.engine_push_ast;
+        if (task_table.isReplicatedTable())
+        {
+            new_engine_push_ast = task_table.rewriteParamsForReplicatedTableFor(current_piece_number);
+        }
+
+        auto create_query_push_ast = rewriteCreateQueryStorage(
+                task_shard.current_pull_table_create_query,
+                database_and_table_for_current_piece, new_engine_push_ast);
+
         create_query_push_ast->as<ASTCreateQuery &>().if_not_exists = true;
         String query = queryToString(create_query_push_ast);
 

@@ -210,6 +210,8 @@ String createCommaSeparatedStringFrom(const Names & strings);
 
 Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast);
 
+String extractReplicatedTableZookeeperPath(const ASTPtr & storage_ast);
+
 ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std::string & local_hostname, UInt8 random);
 
 }
