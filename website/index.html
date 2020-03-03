@@ -11,83 +11,11 @@
 {% include "templates/index/efficient.html" %}
 {% include "templates/index/rich.html" %}
 {% include "templates/index/features.html" %}
-
-<div>
-    <div class="container">
-
-        <h2 id="highly-reliable" class="mt-5">Highly reliable</h2>
-
-        <p>ClickHouse has been managing petabytes of data serving a number of highload mass audience services of
-            <a href="https://www.yandex.com/company/"
-               rel="external nofollow">Yandex</a>, Russia's
-            leading search provider and one of largest European IT companies.
-            Since 2012, ClickHouse has been providing robust database management for the company's <a
-                    href="https://metrica.yandex.com/" rel="external nofollow">web analytics service</a>, comparison
-            e-commerce platform, public email service, online advertising platform, business intelligence tools
-            and infrastructure monitoring.</p>
-
-        <p>ClickHouse can be configured as purely distributed system located on independent nodes,
-            without any single points of failure.</p>
-
-        <p>Software and hardware failures or misconfigurations do not result in loss of data. Instead of deleting "broken"
-            data, ClickHouse saves it&nbsp;or asks you what to do before a startup. All data is checksummed before every
-            read or write to disk or network. It&nbsp;is virtually impossible to delete data by accident as there are safeguards
-            even for human errors.</p>
-
-        <p>ClickHouse offers flexible limits on query complexity and resource usage, which can be fine-tuned with settings.
-            It&nbsp;is possible to simultaneously serve both a number of high priority low-latency requests and some
-            long-running queries with background priority.</p>
-    </div>
-</div>
-
+{% include "templates/index/reliable.html" %}
 {% include "templates/index/use.html" %}
 {% include "templates/index/quickstart.html" %}
+{% include "templates/index/contacts.html" %}
 
-<div>
-    <div class="container">
-
-    <h2 id="contacts" class="mt-5">Contacts</h2>
-    <ul>
-        <li>Subscribe to the <a href="https://clickhouse.yandex/blog/en" target="_blank">official ClickHouse blog</a>
-        and its <a href="https://clickhouse.yandex/blog/ru" target="_blank">counterpart in Russian</a>.</li>
-        <li>Ask any questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse"
-                                    rel="external nofollow" target="_blank">Stack Overflow</a>,
-            <a href="https://join.slack.com/t/clickhousedb/shared_invite/enQtOTUzMjM4ODQwNTc5LWJmMjE3Yjc2YmI1ZDBlZmI4ZTc3OWY3ZTIwYTljYzY4MzBlODM3YzBjZTc1YmYyODRlZTJkYTgzYzBiNTA2Yjk" rel="external nofollow" target="_blank">Slack</a> or
-            <a href="https://groups.google.com/group/clickhouse"
-               rel="external nofollow" target="_blank">Google Group</a>.
-        </li>
-        <li>Join Telegram chat to discuss with real users in <a
-               href="https://telegram.me/clickhouse_en"
-               rel="external nofollow" target="_blank">English</a> or in
-            <a href="https://telegram.me/clickhouse_ru"
-               rel="external nofollow" target="_blank">Russian</a>.</li>
-        <li>Watch video content on <a href="https://www.youtube.com/c/ClickHouseDB"
-                              rel="external nofollow" target="_blank">YouTube channel</a>.</li>
-        <li>Follow official <a
-               href="https://twitter.com/ClickHouseDB"
-               rel="external nofollow" target="_blank">Twitter account</a>.</li>
-        <li>Open <a href="https://github.com/ClickHouse/ClickHouse/issues/new/choose"
-                    rel="external nofollow" target="_blank">GitHub issue</a> if you have a bug report or feature request.</li>
-        <li>Or email Yandex ClickHouse team directly at
-            <a id="feedback_email" href="">turn on JavaScript to see email address</a>.
-            You can also <a href="https://forms.yandex.com/surveys/meet-yandex-clickhouse-team/" target="_blank" rel="external nofollow">fill this form</a> to meet us in person.</li>
-    </ul>
-
-    <p>Friendly reminder: check out the documentation in <a href="docs/en/">English</a>, <a href="docs/ru/">Russian</a>, <a href="docs/zh/">Chinese</a>, <a href="docs/ja/">Japanese</a> or <a href="docs/fa/">Farsi</a> first &mdash; maybe your question is already covered.
-    </p>
-
-    <h2 class="mt-5">Like ClickHouse?</h2>
-    <p>Help to spread the word about it via <a rel="external nofollow" target="_blank" href="https://www.facebook.com/sharer.php?u=https://clickhouse.tech">Facebook</a>,
-        <a rel="external nofollow" target="_blank" href="https://twitter.com/intent/tweet?url=https://clickhouse.tech">Twitter</a> and
-        <a rel="external nofollow" target="_blank" href="https://www.linkedin.com/shareArticle?url=https://clickhouse.tech">LinkedIn</a>!</p>
-
-    <p>Also hosting ClickHouse Meetups is very appreciated, <a href="https://forms.yandex.com/surveys/meet-yandex-clickhouse-team/" target="_blank" rel="external nofollow">fill this form</a>
-        if you are interested and we'll get in touch.
-        Short reports about previous meetups are <a href="https://clickhouse.yandex/blog/en?tag=meetup" target="_blank">published in official ClickHouse blog</a>.</p>
-
-
-    </div>
-</div>
 {% endblock %}
 
 {% block extrajs %}
