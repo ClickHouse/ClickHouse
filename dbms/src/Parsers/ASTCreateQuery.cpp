@@ -310,6 +310,12 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         watermark_function->formatImpl(settings, state, frame);
     }
 
+    if (allowed_lateness)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ALLOWED_LATENESS " << (settings.hilite ? hilite_none : "");
+        lateness_function->formatImpl(settings, state, frame);
+    }
+
     if (select)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS" << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
