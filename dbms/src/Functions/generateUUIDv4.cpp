@@ -54,4 +54,3 @@ void registerFunctionGenerateUUIDv4(FunctionFactory & factory)
 }
 
 
-

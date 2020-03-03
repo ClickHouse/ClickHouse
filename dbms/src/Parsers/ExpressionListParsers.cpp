@@ -74,7 +74,6 @@ const char * ParserTupleElementExpression::operators[] =
 };
 
 
-
 bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool first = true;

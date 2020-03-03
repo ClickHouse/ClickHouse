@@ -6,7 +6,6 @@
 #include <Common/HashTable/SmallTable.h>
 
 
-
 int main(int, char **)
 {
     {
