@@ -39,7 +39,7 @@ struct TaskTable {
 
     String getCertainPartitionPieceTaskStatusPath(const String & partition_name, const size_t piece_number) const;
 
-    String getReplicatedEngineFirstArgumentForCurrentPiece(const size_t piece_number) const;
+    [[maybe_unused]] String getReplicatedEngineFirstArgumentForCurrentPiece(const size_t piece_number) const;
 
 
     bool isReplicatedTable() { return engine_push_zk_path != ""; }
@@ -73,7 +73,7 @@ struct TaskTable {
     /// First argument of Replicated...MergeTree()
     String engine_push_zk_path;
 
-    ASTPtr rewriteParamsForReplicatedTableFor(const size_t current_piece_number) const;
+    ASTPtr rewriteReplicatedCreateQueryToPlain();
 
     /*
      * A Distributed table definition used to split data
@@ -358,19 +358,26 @@ inline void TaskTable::initShards(RandomEngine && random_engine)
 inline String TaskTable::getReplicatedEngineFirstArgumentForCurrentPiece(const size_t piece_number) const
 {
     assert (engine_push_zk_path != "");
-    return engine_push_zk_path + "/" + toString(piece_number);
+    return engine_push_zk_path + "/piece_" + toString(piece_number);
 }
 
-inline ASTPtr TaskTable::rewriteParamsForReplicatedTableFor(const size_t current_piece_number) const
+inline ASTPtr TaskTable::rewriteReplicatedCreateQueryToPlain()
 {
-    const auto & new_engine_ast = engine_push_ast->clone()->as<ASTFunction &>();
+    ASTPtr prev_engine_push_ast = engine_push_ast->clone();
+
+    auto & new_storage_ast = prev_engine_push_ast->as<ASTStorage &>();
+    auto & new_engine_ast = new_storage_ast.engine->as<ASTFunction &>();
 
     auto & replicated_table_arguments = new_engine_ast.arguments->children;
 
-    auto & zk_table_path_ast = replicated_table_arguments[0]->as<ASTLiteral &>();
-    zk_table_path_ast.value = getReplicatedEngineFirstArgumentForCurrentPiece(current_piece_number);
+    /// Delete first two arguments of Replicated...MergeTree() table.
+    replicated_table_arguments.erase(replicated_table_arguments.begin());
+    replicated_table_arguments.erase(replicated_table_arguments.begin());
 
-    return new_engine_ast.clone();
+    /// Remove replicated from name
+    new_engine_ast.name = new_engine_ast.name.substr(10);
+
+    return new_storage_ast.clone();
 }
 
 
