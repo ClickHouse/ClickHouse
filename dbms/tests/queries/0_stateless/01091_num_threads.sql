@@ -2,6 +2,7 @@ set log_queries=1;
 set log_query_threads=1;
 
 SELECT 1;
+SYSTEM FLUSH LOGS;
 
 WITH 
     (
@@ -16,6 +17,7 @@ FROM system.query_thread_log
 WHERE (event_date >= (today() - 1)) AND (query_id = id) AND (thread_id != master_thread_id);
 
 select sum(number) from numbers(1000000);
+SYSTEM FLUSH LOGS;
 
 WITH 
     (
@@ -30,6 +32,7 @@ FROM system.query_thread_log
 WHERE (event_date >= (today() - 1)) AND (query_id = id) AND (thread_id != master_thread_id);
 
 select sum(number) from numbers_mt(1000000);
+SYSTEM FLUSH LOGS;
 
 WITH 
     (
