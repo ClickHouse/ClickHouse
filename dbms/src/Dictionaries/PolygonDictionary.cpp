@@ -834,7 +834,7 @@ bool SmartPolygonDictionary::Edge::compare2(const Edge & a, const Edge & b)
     return a.polygon_id < b.polygon_id;
 }
 
-bool SmartPolygonDictionary::find(const Point &point, size_t & id) const
+bool SmartPolygonDictionary::find(const Point & point, size_t & id) const
 {
     /** TODO: maybe we should check for vertical line? */
     if (this->sorted_x.size() < 2)
@@ -852,6 +852,7 @@ bool SmartPolygonDictionary::find(const Point &point, size_t & id) const
 
     /** point is considired inside when ray down from point crosses odd number of edges */
     std::map<size_t, bool> is_inside;
+    std::map<size_t, bool> on_the_edge;
 
     size_t pos = std::upper_bound(this->sorted_x.begin() + 1, this->sorted_x.end() - 1, x) - this->sorted_x.begin() - 1;
 
@@ -862,16 +863,18 @@ bool SmartPolygonDictionary::find(const Point &point, size_t & id) const
         const Point & r = edge.r;
         size_t polygon_id = edge.polygon_id;
 
-        /** check if point outside of edge's x bounds */
-        if (x < l.x() || x >= r.x())
+        /** check for vertical edge, seem like never happens */
+        if (l.x() == r.x())
         {
+            if (l.x() == x && y >= l.y() && y <= r.y())
+            {
+                on_the_edge[polygon_id] = true;
+            }
             continue;
         }
 
-        /** check for vertical edge, seem like never happens 
-         *  TODO: check if point is on this vertical edge
-        */
-        if (l.x() == r.x())
+        /** check if point outside of edge's x bounds */
+        if (x < l.x() || x >= r.x())
         {
             continue;
         }
@@ -880,6 +883,10 @@ bool SmartPolygonDictionary::find(const Point &point, size_t & id) const
         if (edge_y > y)
         {
             continue;
+        }
+        if (edge_y == y)
+        {
+            on_the_edge[polygon_id] = true;
         }
 
         is_inside[polygon_id] ^= true;
@@ -894,6 +901,15 @@ bool SmartPolygonDictionary::find(const Point &point, size_t & id) const
             id = polygon_id;
         }
     }
+    for (auto & [polygon_id, is_edge] : on_the_edge)
+    {
+        if (is_edge)
+        {
+            found = true;
+            id = polygon_id;
+        }
+    }
+
     return found;
 }
 
