@@ -22,13 +22,20 @@ report_stage_end('start')
 parser = argparse.ArgumentParser(description='Run performance test.')
 # Explicitly decode files as UTF-8 because sometimes we have Russian characters in queries, and LANG=C is set.
 parser.add_argument('file', metavar='FILE', type=argparse.FileType('r', encoding='utf-8'), nargs=1, help='test description file')
-parser.add_argument('--host', nargs='*', default=['127.0.0.1', '127.0.0.1'])
-parser.add_argument('--port', nargs='*', default=[9001, 9002])
-parser.add_argument('--runs', type=int, default=int(os.environ.get('CHPC_RUNS', 7)))
+parser.add_argument('--host', nargs='*', default=['127.0.0.1', '127.0.0.1'], help="Server hostname. Parallel to '--port'.")
+parser.add_argument('--port', nargs='*', default=[9001, 9002], help="Server port. Parallel to '--host'.")
+parser.add_argument('--runs', type=int, default=int(os.environ.get('CHPC_RUNS', 7)), help='Number of query runs per server. Defaults to CHPC_RUNS environment variable.')
+parser.add_argument('--no-long', type=bool, default=True, help='Skip the tests tagged as long.')
 args = parser.parse_args()
 
 tree = et.parse(args.file[0])
 root = tree.getroot()
+
+# Skip long tests
+for tag in root.findall('.//tag'):
+    if tag.text == 'long':
+        print('skipped\tTest is tagged as long.')
+        sys.exit(0)
 
 # Check main metric
 main_metric_element = root.find('main_metric/*')
