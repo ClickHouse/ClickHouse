@@ -136,6 +136,7 @@ Pipes StorageLiveView::blocksToPipes(BlocksPtrs blocks, Block & sample_block)
 /// Complete query using input streams from mergeable blocks
 BlockInputStreamPtr StorageLiveView::completeQuery(Pipes pipes)
 {
+    //FIXME it's dangerous to create Context on stack
     auto block_context = std::make_unique<Context>(global_context);
     block_context->makeQueryContext();
 

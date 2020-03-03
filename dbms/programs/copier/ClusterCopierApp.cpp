@@ -92,7 +92,6 @@ void ClusterCopierApp::mainImpl()
 
     auto context = std::make_unique<Context>(Context::createGlobal());
     context->makeGlobalContext();
-    DatabaseCatalog::init(context.get());
     SCOPE_EXIT(context->shutdown());
 
     context->setConfig(loaded_config.configuration);

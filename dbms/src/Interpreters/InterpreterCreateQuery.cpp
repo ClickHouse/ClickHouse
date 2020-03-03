@@ -583,7 +583,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
 
     DatabasePtr database;
 
-    const String & table_name = create.table;
+    String table_name = create.table;
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
     {
@@ -662,7 +662,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         && !create.is_view && !create.is_live_view && (!create.is_materialized_view || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
-        insert->table_id = context.getSessionContext().resolveStorageID({create.database, create.table, create.uuid}, Context::ResolveExternalOrGlobal);
+        insert->table_id = {create.database, create.table, create.uuid};
         insert->select = create.select->clone();
 
         if (create.temporary && !context.getSessionContext().hasQueryContext())
