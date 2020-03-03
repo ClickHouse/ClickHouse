@@ -88,7 +88,6 @@ using namespace DB;
 struct ZooKeeperRequest;
 
 
-
 /** Usage scenario: look at the documentation for IKeeper class.
   */
 class ZooKeeper : public IKeeper
