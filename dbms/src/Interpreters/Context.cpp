@@ -56,7 +56,7 @@
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
-#include <ext/singleton.h>
+
 
 namespace ProfileEvents
 {
@@ -92,6 +92,7 @@ namespace ErrorCodes
     extern const int SESSION_IS_LOCKED;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_SCALAR;
+    extern const int AUTHENTICATION_FAILED;
 }
 
 
@@ -162,6 +163,8 @@ struct ContextShared
     std::optional<SystemLogs> system_logs;                  /// Used to log queries and operations on parts
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
+
+    std::optional<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
 
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
@@ -293,15 +296,21 @@ struct ContextShared
         schedule_pool.reset();
         ddl_worker.reset();
 
-        ext::Singleton<TraceCollector>::reset();
+        /// Stop trace collector if any
+        trace_collector.reset();
+    }
+
+    bool hasTraceCollector() const
+    {
+        return trace_collector.has_value();
     }
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
     {
-        if (trace_log == nullptr)
+        if (hasTraceCollector())
             return;
 
-        ext::Singleton<TraceCollector>()->setTraceLog(trace_log);
+        trace_collector.emplace(std::move(trace_log));
     }
 };
 
@@ -626,7 +635,7 @@ void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->users_config = config;
-    shared->access_control_manager.loadFromConfig(*shared->users_config);
+    shared->access_control_manager.setUsersConfig(*shared->users_config);
 }
 
 ConfigurationPtr Context::getUsersConfig()
@@ -646,10 +655,20 @@ void Context::setUser(const String & name, const String & password, const Poco::
     if (!quota_key.empty())
         client_info.quota_key = quota_key;
 
-    auto new_user_id = getAccessControlManager().getID<User>(name);
-    auto new_access_rights = getAccessControlManager().getAccessRightsContext(new_user_id, {}, true, settings, current_database, client_info);
-    new_access_rights->checkHostIsAllowed();
-    new_access_rights->checkPassword(password);
+    auto new_user_id = getAccessControlManager().find<User>(name);
+    AccessRightsContextPtr new_access_rights;
+    if (new_user_id)
+    {
+        new_access_rights = getAccessControlManager().getAccessRightsContext(*new_user_id, {}, true, settings, current_database, client_info);
+        if (!new_access_rights->isClientHostAllowed() || !new_access_rights->isCorrectPassword(password))
+        {
+            new_user_id = {};
+            new_access_rights = nullptr;
+        }
+    }
+
+    if (!new_user_id || !new_access_rights)
+        throw Exception(name + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
 
     user_id = new_user_id;
     access_rights = std::move(new_access_rights);
@@ -1216,17 +1235,29 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 }
 
 
-void Context::checkSettingsConstraints(const SettingChange & change)
+void Context::checkSettingsConstraints(const SettingChange & change) const
 {
     if (settings_constraints)
         settings_constraints->check(settings, change);
 }
 
-
-void Context::checkSettingsConstraints(const SettingsChanges & changes)
+void Context::checkSettingsConstraints(const SettingsChanges & changes) const
 {
     if (settings_constraints)
         settings_constraints->check(settings, changes);
+}
+
+
+void Context::clampToSettingsConstraints(SettingChange & change) const
+{
+    if (settings_constraints)
+        settings_constraints->clamp(settings, change);
+}
+
+void Context::clampToSettingsConstraints(SettingsChanges & changes) const
+{
+    if (settings_constraints)
+        settings_constraints->clamp(settings, changes);
 }
 
 
@@ -1761,6 +1792,11 @@ void Context::initializeSystemLogs()
 void Context::initializeTraceCollector()
 {
     shared->initializeTraceCollector(getTraceLog());
+}
+
+bool Context::hasTraceCollector() const
+{
+    return shared->hasTraceCollector();
 }
 
 

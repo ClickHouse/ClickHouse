@@ -365,8 +365,10 @@ public:
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
-    void checkSettingsConstraints(const SettingChange & change);
-    void checkSettingsConstraints(const SettingsChanges & changes);
+    void checkSettingsConstraints(const SettingChange & change) const;
+    void checkSettingsConstraints(const SettingsChanges & changes) const;
+    void clampToSettingsConstraints(SettingChange & change) const;
+    void clampToSettingsConstraints(SettingsChanges & changes) const;
 
     /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const { return settings_constraints; }
@@ -514,8 +516,10 @@ public:
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
 
+    /// Call after initialization before using trace collector.
     void initializeTraceCollector();
-    bool hasTraceCollector();
+
+    bool hasTraceCollector() const;
 
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog();

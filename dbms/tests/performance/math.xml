@@ -15,6 +15,19 @@
 
     <substitutions>
         <substitution>
+           <name>func_slow</name>
+           <values>
+               <value>atan</value>
+               <value>cbrt</value>
+               <value>cos</value>
+               <value>lgamma</value>
+               <value>tgamma</value>
+               <value>log10</value>
+               <value>sin</value>
+               <value>tan</value>
+           </values>
+        </substitution>
+        <substitution>
            <name>func</name>
            <values>
                <value>exp</value>
@@ -22,26 +35,25 @@
                <value>exp2</value>
                <value>log2</value>
                <value>exp10</value>
-               <value>log10</value>
                <value>sqrt</value>
-               <value>cbrt</value>
                <value>erf</value>
                <value>erfc</value>
-               <value>lgamma</value>
-               <value>tgamma</value>
-               <value>sin</value>
-               <value>cos</value>
-               <value>tan</value>
                <value>asin</value>
                <value>acos</value>
-               <value>atan</value>
                <value>sigmoid</value>
                <value>tanh</value>
            </values>
         </substitution>
+        <substitution>
+            <name>arg</name>
+            <values>
+                <value>toFloat64(number)</value>
+                <value>toFloat32(number)</value>
+                <value>number</value>
+            </values>
+        </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore({func}(toFloat64(number)))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore({func}(toFloat32(number)))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore({func}(number))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore({func}({arg}))</query>
+    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore({func_slow}({arg}))</query>
 </test>

@@ -111,10 +111,6 @@ public:
     /// Checks if the provided address is in the list. Returns false if not.
     bool contains(const IPAddress & address) const;
 
-    /// Checks if the provided address is in the list. Throws an exception if not.
-    /// `username` is only used for generating an error message if the address isn't in the list.
-    void checkContains(const IPAddress & address, const String & user_name = String()) const;
-
     friend bool operator ==(const AllowedClientHosts & lhs, const AllowedClientHosts & rhs);
     friend bool operator !=(const AllowedClientHosts & lhs, const AllowedClientHosts & rhs) { return !(lhs == rhs); }
 
