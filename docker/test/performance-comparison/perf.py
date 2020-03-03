@@ -7,6 +7,7 @@ import clickhouse_driver
 import xml.etree.ElementTree as et
 import argparse
 import pprint
+import string
 import time
 import traceback
 
@@ -56,22 +57,23 @@ for s in servers:
 
 report_stage_end('connect')
 
-# Process substitutions
+# Process query parameters
 subst_elems = root.findall('substitutions/substitution')
-
-parameter_keys = []         # ['table',                   'limit'    ]
-parameter_value_arrays = [] # [['hits_100m', 'hits_10m'], ['1', '10']]
-parameter_combinations = [] # [{table: hits_100m, limit: 1}, ...]
-for se in subst_elems:
-    parameter_keys.append(se.find('name').text)
-    parameter_value_arrays.append([v.text for v in se.findall('values/value')])
-parameter_combinations = [dict(zip(parameter_keys, parameter_combination)) for parameter_combination in itertools.product(*parameter_value_arrays)]
+available_parameters = {} # { 'table': ['hits_10m', 'hits_100m'], ... }
+for e in subst_elems:
+    available_parameters[e.find('name').text] = [v.text for v in e.findall('values/value')]
 
 # Take care to keep the order of queries -- sometimes we have DROP IF EXISTS
 # followed by CREATE in create queries section, so the order matters.
-def substitute_parameters(query_templates, parameter_combinations):
-    return [template.format(**parameters) for template, parameters
-        in itertools.product(query_templates, parameter_combinations)]
+def substitute_parameters(query_templates):
+    result = []
+    for q in query_templates:
+        keys = set(n for _, n, _, _ in string.Formatter().parse(q) if n)
+        values = [available_parameters[k] for k in keys]
+        result.extend([
+            q.format(**dict(zip(keys, values_combo)))
+                for values_combo in itertools.product(*values)])
+    return result
 
 report_stage_end('substitute')
 
@@ -79,7 +81,7 @@ report_stage_end('substitute')
 # clickhouse_driver disconnects on error (this is not configurable), and the new
 # connection loses the changes in settings.
 drop_query_templates = [q.text for q in root.findall('drop_query')]
-drop_queries = substitute_parameters(drop_query_templates, parameter_combinations)
+drop_queries = substitute_parameters(drop_query_templates)
 for c in connections:
     for q in drop_queries:
         try:
@@ -113,14 +115,14 @@ report_stage_end('preconditions')
 
 # Run create queries
 create_query_templates = [q.text for q in root.findall('create_query')]
-create_queries = substitute_parameters(create_query_templates, parameter_combinations)
+create_queries = substitute_parameters(create_query_templates)
 for c in connections:
     for q in create_queries:
         c.execute(q)
 
 # Run fill queries
 fill_query_templates = [q.text for q in root.findall('fill_query')]
-fill_queries = substitute_parameters(fill_query_templates, parameter_combinations)
+fill_queries = substitute_parameters(fill_query_templates)
 for c in connections:
     for q in fill_queries:
         c.execute(q)
@@ -132,7 +134,7 @@ def tsv_escape(s):
     return s.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n').replace('\r','')
 
 test_query_templates = [q.text for q in root.findall('query')]
-test_queries = substitute_parameters(test_query_templates, parameter_combinations)
+test_queries = substitute_parameters(test_query_templates)
 
 report_stage_end('substitute2')
 
@@ -162,7 +164,7 @@ report_stage_end('benchmark')
 
 # Run drop queries
 drop_query_templates = [q.text for q in root.findall('drop_query')]
-drop_queries = substitute_parameters(drop_query_templates, parameter_combinations)
+drop_queries = substitute_parameters(drop_query_templates)
 for c in connections:
     for q in drop_queries:
         c.execute(q)
