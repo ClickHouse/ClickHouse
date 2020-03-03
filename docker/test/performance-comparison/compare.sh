@@ -159,7 +159,11 @@ function run_tests
     # Just check that the script runs at all
     "$script_dir/perf.py" --help > /dev/null
 
-    rm -v test-times.tsv ||:
+    for x in {test-times,skipped-tests}.tsv
+    do
+        rm -v "$x" ||:
+        touch "$x"
+    done
 
     # FIXME remove some broken long tests
     rm right/performance/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
@@ -202,6 +206,9 @@ function run_tests
         # the grep is to filter out set -x output and keep only time output
         { time "$script_dir/perf.py" "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; } 2>&1 >/dev/null | grep -v ^+ >> "wall-clock-times.tsv" || continue
 
+        # The test completed with zero status, so we treat stderr as warnings
+        mv "$test_name-err.log" "$test_name-warn.log"
+
         grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
         grep ^client-time "$test_name-raw.tsv" | cut -f2- > "$test_name-client-time.tsv"
         skipped=$(grep ^skipped "$test_name-raw.tsv" | cut -f2-)
@@ -214,16 +221,6 @@ function run_tests
     unset TIMEFORMAT
 
     wait
-}
-
-function analyze_queries
-{
-    # Build and analyze randomization distribution for all queries.
-    ls ./*-queries.tsv | xargs -n1 -I% basename % -queries.tsv | \
-        parallel --verbose right/clickhouse local --file "{}-queries.tsv" \
-            --structure "\"query text, run int, version UInt32, time float\"" \
-            --query "\"$(cat "$script_dir/eqmed.sql")\"" \
-            ">" {}-report.tsv
 }
 
 function get_profiles
@@ -247,6 +244,16 @@ function get_profiles
     wait
 }
 
+# Build and analyze randomization distribution for all queries.
+function analyze_queries
+{
+    ls ./*-queries.tsv | xargs -n1 -I% basename % -queries.tsv | \
+        parallel --verbose right/clickhouse local --file "{}-queries.tsv" \
+            --structure "\"query text, run int, version UInt32, time float\"" \
+            --query "\"$(cat "$script_dir/eqmed.sql")\"" \
+            ">" {}-report.tsv
+}
+
 # Analyze results
 function report
 {
@@ -266,13 +273,19 @@ rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.ts
 right/clickhouse local --query "
 create table queries engine Memory as select
         replaceAll(_file, '-report.tsv', '') test,
-        left + right < 0.01 as short,
+
         -- FIXME Comparison mode doesn't make sense for queries that complete
         -- immediately, so for now we pretend they don't exist. We don't want to
         -- remove them altogether because we want to be able to detect regressions,
         -- but the right way to do this is not yet clear.
+        left + right < 0.01 as short,
+
         not short and abs(diff) < 0.10 and rd[3] > 0.10 as unstable,
-        not short and abs(diff) > 0.15 and abs(diff) > rd[3] as changed,
+
+        -- Do not consider changed the queries with 5% RD below 1% -- e.g., we're
+        -- likely to observe a difference > 1% in less than 5% cases.
+        -- Not sure it is correct, but empirically it filters out a lot of noise.
+        not short and abs(diff) > 0.15 and abs(diff) > rd[3] and rd[1] > 0.01 as changed,
         *
     from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
 
@@ -337,8 +350,8 @@ create table right_addresses_join engine Join(any, left, address) as
 
 create table unstable_query_runs engine File(TSVWithNamesAndTypes, 'unstable-query-runs.rep') as
     select query_id, query from right_query_log
-    join unstable_queries_tsv using query
-    where query_id not like 'prewarm %'
+    join queries using query
+    where query_id not like 'prewarm %' and (unstable or changed)
     ;
 
 create table unstable_query_log engine File(Vertical, 'unstable-query-log.rep') as
@@ -413,8 +426,8 @@ wait
 unset IFS
 
 # Remember that grep sets error code when nothing is found, hence the bayan
-# operator
-grep -m2 'Exception:[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
+# operator.
+grep -H -m2 'Exception:[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
 
 "$script_dir/report.py" > report.html
 }
@@ -440,6 +453,10 @@ case "$stage" in
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data.
     time get_profiles || restart || get_profiles
+
+    # Stop the servers to free memory for the subsequent query analysis.
+    while killall clickhouse; do echo . ; sleep 1 ; done
+    echo Servers stopped.
     ;&
 "analyze_queries")
     time analyze_queries

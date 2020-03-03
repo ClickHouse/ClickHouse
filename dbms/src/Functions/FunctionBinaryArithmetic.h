@@ -22,7 +22,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include "IFunctionImpl.h"
 #include "FunctionHelpers.h"
-#include "intDiv.h"
+#include "DivisionUtils.h"
 #include "castTypeToEither.h"
 #include "FunctionFactory.h"
 #include <Common/typeid_cast.h>
@@ -95,19 +95,67 @@ struct FixedStringOperationImpl
             c[i] = Op::template apply<UInt8>(a[i], b[i]);
     }
 
-    static void NO_INLINE vector_constant(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size, size_t N)
+    template <bool inverted>
+    static void NO_INLINE vector_constant_impl(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size, size_t N)
     {
-        for (size_t i = 0; i < size; ++i)
-            c[i] = Op::template apply<UInt8>(a[i], b[i % N]);
+        /// These complications are needed to avoid integer division in inner loop.
+
+        /// Create a pattern of repeated values of b with at least 16 bytes,
+        /// so we can read 16 bytes of this repeated pattern starting from any offset inside b.
+        ///
+        /// Example:
+        ///
+        ///  N = 6
+        ///  ------
+        /// [abcdefabcdefabcdefabc]
+        ///       ^^^^^^^^^^^^^^^^
+        ///      16 bytes starting from the last offset inside b.
+
+        const size_t b_repeated_size = N + 15;
+        UInt8 b_repeated[b_repeated_size];
+        for (size_t i = 0; i < b_repeated_size; ++i)
+            b_repeated[i] = b[i % N];
+
+        size_t b_offset = 0;
+        size_t b_increment = 16 % N;
+
+        /// Example:
+        ///
+        /// At first iteration we copy 16 bytes at offset 0 from b_repeated:
+        /// [abcdefabcdefabcdefabc]
+        ///  ^^^^^^^^^^^^^^^^
+        /// At second iteration we copy 16 bytes at offset 4 = 16 % 6 from b_repeated:
+        /// [abcdefabcdefabcdefabc]
+        ///      ^^^^^^^^^^^^^^^^
+        /// At third iteration we copy 16 bytes at offset 2 = (16 * 2) % 6 from b_repeated:
+        /// [abcdefabcdefabcdefabc]
+        ///    ^^^^^^^^^^^^^^^^
+
+        /// PaddedPODArray allows overflow for 15 bytes.
+        for (size_t i = 0; i < size; i += 16)
+        {
+            /// This loop is formed in a way to be vectorized into two SIMD mov.
+            for (size_t j = 0; j < 16; ++j)
+                c[i + j] = inverted
+                    ? Op::template apply<UInt8>(a[i + j], b_repeated[b_offset + j])
+                    : Op::template apply<UInt8>(b_repeated[b_offset + j], a[i + j]);
+
+            b_offset += b_increment;
+            if (b_offset >= N) /// This condition is easily predictable.
+                b_offset -= N;
+        }
     }
 
-    static void NO_INLINE constant_vector(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size, size_t N)
+    static void vector_constant(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size, size_t N)
     {
-        for (size_t i = 0; i < size; ++i)
-            c[i] = Op::template apply<UInt8>(a[i % N], b[i]);
+        vector_constant_impl<false>(a, b, c, size, N);
+    }
+
+    static void constant_vector(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size, size_t N)
+    {
+        vector_constant_impl<true>(b, a, c, size, N);
     }
 };
-
 
 
 template <typename A, typename B, typename Op, typename ResultType = typename Op::ResultType>

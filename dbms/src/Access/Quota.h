@@ -5,7 +5,6 @@
 #include <chrono>
 
 
-
 namespace DB
 {
 /** Quota for resources consumption for specific interval.

@@ -17,7 +17,6 @@ namespace DB
 {
 
 
-
 NamesAndTypesList StorageSystemReplicationQueue::getNamesAndTypes()
 {
     return {

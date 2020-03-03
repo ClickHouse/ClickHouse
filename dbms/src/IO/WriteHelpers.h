@@ -464,7 +464,6 @@ void writeAnyQuotedString(const char * begin, const char * end, WriteBuffer & bu
 }
 
 
-
 template <char quote_character>
 void writeAnyQuotedString(const String & s, WriteBuffer & buf)
 {
@@ -1018,7 +1017,6 @@ void writeText(const std::vector<T> & x, WriteBuffer & buf)
 {
     writeQuoted(x, buf);
 }
-
 
 
 /// Serialize exception (so that it can be transferred over the network)
