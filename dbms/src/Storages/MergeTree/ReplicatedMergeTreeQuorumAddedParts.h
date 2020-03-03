@@ -23,7 +23,7 @@ struct ReplicatedMergeTreeQuorumAddedParts
     MergeTreeDataFormatVersion format_version;
 
     ReplicatedMergeTreeQuorumAddedParts(const MergeTreeDataFormatVersion format_version_)
-    : format_version(format_version_)
+        : format_version(format_version_)
     {}
 
     /// Write new parts in buffer with added parts.
