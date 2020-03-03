@@ -9,6 +9,7 @@
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Poco/Logger.h>
 #include <common/logger_useful.h>
 #include <boost/algorithm/string/join.hpp>
@@ -435,8 +436,12 @@ boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess
         | AccessType::DROP_ROLE | AccessType::DROP_POLICY | AccessType::DROP_QUOTA | AccessType::ROLE_ADMIN;
 
     /// Anyone has access to the "system" database.
-    if (!result.isGranted(AccessType::SELECT, "system"))
-        result.grant(AccessType::SELECT, "system");
+    if (!result.isGranted(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE))
+        result.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
+
+    /// User has access to temporary or external table if such table was resolved in session or query context
+    if (!result.isGranted(AccessType::SELECT, DatabaseCatalog::TEMPORARY_DATABASE))
+        result.grant(AccessType::SELECT, DatabaseCatalog::TEMPORARY_DATABASE);
 
     if (readonly_)
         result.fullRevoke(write_table_access | all_dcl | AccessType::SYSTEM | AccessType::KILL);
@@ -452,6 +457,11 @@ boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess
         /// Table functions are forbidden in readonly mode.
         /// For example, for readonly = 2 - allowed.
         result.fullRevoke(AccessType::CREATE_TEMPORARY_TABLE | AccessType::TABLE_FUNCTIONS);
+    }
+    else if (readonly_ == 2)
+    {
+        /// Allow INSERT into temporary tables
+        result.grant(AccessType::INSERT, DatabaseCatalog::TEMPORARY_DATABASE);
     }
 
     if (!allow_introspection_)

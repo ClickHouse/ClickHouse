@@ -19,6 +19,7 @@ namespace ErrorCodes
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int DDL_GUARD_IS_ACTIVE;
     extern const int DATABASE_NOT_EMPTY;
+    extern const int DATABASE_ACCESS_DENIED;
 }
 
 
@@ -79,6 +80,13 @@ StoragePtr DatabaseCatalog::getTableImpl(const StorageID & table_id, const Conte
             exception->emplace("Cannot find table: StorageID is empty", ErrorCodes::UNKNOWN_TABLE);
         return {};
     }
+
+    //if (table_id.database_name == TEMPORARY_DATABASE && !table_id.hasUUID())
+    //{
+    //    if (exception)
+    //        exception->emplace("Direct access to `" + String(TEMPORARY_DATABASE) + "` database is not allowed.", ErrorCodes::DATABASE_ACCESS_DENIED);
+    //    return {};
+    //}
 
     //if (table_id.hasUUID())
     //{

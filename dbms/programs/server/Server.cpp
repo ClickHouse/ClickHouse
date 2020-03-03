@@ -550,7 +550,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     try
     {
-        DatabaseCatalog::init(global_context.get());
         loadMetadataSystem(*global_context);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();

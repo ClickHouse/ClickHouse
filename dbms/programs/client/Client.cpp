@@ -219,12 +219,8 @@ private:
 
         configReadClient(config(), home_path);
 
-        context.makeGlobalContext();
         context.setApplicationType(Context::ApplicationType::CLIENT);
         context.setQueryParameters(query_parameters);
-
-        /// There is no database catalog on client, but we have to initialized this singleton, because context may access it.
-        DatabaseCatalog::init(&context);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
         for (auto && setting : context.getSettingsRef())
@@ -1710,6 +1706,7 @@ public:
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
         ;
 
+        context.makeGlobalContext();
         context.getSettingsRef().addProgramOptions(main_description);
 
         /// Commandline options related to external tables.
