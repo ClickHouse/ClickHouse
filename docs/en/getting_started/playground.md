@@ -8,6 +8,12 @@ The queries are run as readonly user. This implies some limitations:
 - DDL queries are not allowed
 - INSERT queries are not allowed
 
+Following settings are also set:
+- `max_result_bytes=10485760` 
+- `max_result_rows=2000`
+- `result_overflow_mode=break`
+- `max_execution_time=60000`
+
 ClickHouse Playground gives the experience of m2.small
 [Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse)
 instance hosted in [Yandex.Cloud](https://cloud.yandex.com/).
