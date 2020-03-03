@@ -538,6 +538,8 @@ void TCPHandler::processOrdinaryQuery()
     }
 
     state.io.onFinish();
+
+    sendProgress();
 }
 
 
@@ -657,6 +659,8 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
     }
 
     state.io.onFinish();
+
+    sendProgress();
 }
 
 
