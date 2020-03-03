@@ -23,21 +23,6 @@
             installations with more than two trillion rows per single node,
             as well as installations with 100Tb of storage per single node.</p>
 
-
-        <h2 id="hardware-efficient" class="mt-5">Hardware efficient</h2>
-
-        <p>ClickHouse processes typical analytical queries two to three orders of magnitude faster than traditional
-            row-oriented systems with the same available I/O throughput. The system's columnar storage format allows fitting
-            more hot data in RAM, which leads to a shorter response times.</p>
-
-        <p>ClickHouse allows to minimize the number of seeks for range queries, which increases efficiency of using rotational
-            disk drives, as it&nbsp;maintains locality of reference for continually stored data.</p>
-
-        <p>ClickHouse is CPU efficient because of it's vectorized query execution involving relevant processor instructions
-            and runtime code generation.</p>
-
-        <p>By minimizing data transfers for most types of queries, ClickHouse enables companies to manage their data and
-            create reports without using specialized networks that are aimed at high-performance computing.</p>
     </div>
 </div>
 <div>
@@ -96,6 +81,7 @@
 </div>
 
 {% include "templates/index/success.html" %}
+{% include "templates/index/efficient.html" %}
 {% include "templates/index/features.html" %}
 
 <div>
