@@ -88,14 +88,6 @@ StoragePtr JoinedTables::getLeftTableStorage(Context & context)
     return storage;
 }
 
-const NamesAndTypesList & JoinedTables::secondTableColumns() const
-{
-    static const NamesAndTypesList empty;
-    if (tables_with_columns.size() > 1)
-        return tables_with_columns[1].columns;
-    return empty;
-}
-
 void JoinedTables::resolveTables(const Context & context, StoragePtr storage)
 {
     tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context);
