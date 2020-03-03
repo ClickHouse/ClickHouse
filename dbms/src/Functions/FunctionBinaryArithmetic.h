@@ -158,7 +158,6 @@ struct FixedStringOperationImpl
 };
 
 
-
 template <typename A, typename B, typename Op, typename ResultType = typename Op::ResultType>
 struct BinaryOperationImpl : BinaryOperationImplBase<A, B, Op, ResultType>
 {

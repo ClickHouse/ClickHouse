@@ -553,7 +553,6 @@ protected:
 };
 
 
-
 class ProtobufReader::ConverterFromString : public ConverterBaseImpl
 {
 public:
@@ -862,7 +861,6 @@ PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::Fi
 PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FLOAT, float);
 PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_DOUBLE, double);
 #undef PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS
-
 
 
 class ProtobufReader::ConverterFromBool : public ConverterBaseImpl

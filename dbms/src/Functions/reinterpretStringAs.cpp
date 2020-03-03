@@ -152,4 +152,3 @@ void registerFunctionsReinterpretStringAs(FunctionFactory & factory)
 }
 
 
-

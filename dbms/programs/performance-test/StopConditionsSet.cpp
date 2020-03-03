@@ -60,5 +60,4 @@ void StopConditionsSet::report(UInt64 value, StopConditionsSet::StopCondition & 
 }
 
 
-
 }

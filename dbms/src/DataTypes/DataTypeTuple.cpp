@@ -66,7 +66,6 @@ DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
 }
 
 
-
 std::string DataTypeTuple::doGetName() const
 {
     size_t size = elems.size();
