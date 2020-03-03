@@ -1,7 +1,7 @@
 # docker build -t yandex/clickhouse-stateless-test .
 FROM yandex/clickhouse-deb-builder
 
-ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.3.20200115/clickhouse-odbc-1.1.3-Linux.tar.gz"
+ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
