@@ -56,11 +56,20 @@ Block AddingDefaultsBlockInputStream::readImpl()
     if (block_missing_values.empty())
         return res;
 
+    /// res block alredy has all columns values, with default value for type
+    /// (not value specified in table). We identify which columns we need to
+    /// recalculate with help of block_missing_values.
     Block evaluate_block{res};
     /// remove columns for recalculation
     for (const auto & column : column_defaults)
+    {
         if (evaluate_block.has(column.first))
-            evaluate_block.erase(column.first);
+        {
+            size_t column_idx = res.getPositionByName(column.first);
+            if (block_missing_values.hasDefaultBits(column_idx))
+                evaluate_block.erase(column.first);
+        }
+    }
 
     if (!evaluate_block.columns())
         evaluate_block.insert({ColumnConst::create(ColumnUInt8::create(1, 0), res.rows()), std::make_shared<DataTypeUInt8>(), "_dummy"});
