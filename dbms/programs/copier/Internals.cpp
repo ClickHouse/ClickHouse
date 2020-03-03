@@ -1,4 +1,5 @@
 #include "Internals.h"
+#include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
 {
@@ -117,16 +118,11 @@ ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
     }
 }
 
-ASTPtr extractPrimaryKeyOrOrderBy(const ASTPtr & storage_ast)
+ASTPtr extractPrimaryKey(const ASTPtr & storage_ast)
 {
     String storage_str = queryToString(storage_ast);
 
-    ParserStorage parser_storage;
-    auto new_storage_ast = parseQuery(parser_storage, storage_str, 0);
-
-    std::cout << "inside extractPrimaryKeyOrOrderBy" << storage_str << std::endl;
-
-    const auto & storage = new_storage_ast->as<ASTStorage &>();
+    const auto & storage = storage_ast->as<ASTStorage &>();
     const auto & engine = storage.engine->as<ASTFunction &>();
 
     if (!endsWith(engine.name, "MergeTree"))
@@ -144,10 +140,37 @@ ASTPtr extractPrimaryKeyOrOrderBy(const ASTPtr & storage_ast)
     if (storage.primary_key)
         return storage.primary_key->clone();
 
-    return storage.order_by->clone();
+    return nullptr;
 }
 
-String createCommaSeparatedStringFrom(const Strings & strings)
+
+ASTPtr extractOrderBy(const ASTPtr & storage_ast)
+{
+    String storage_str = queryToString(storage_ast);
+
+    const auto & storage = storage_ast->as<ASTStorage &>();
+    const auto & engine = storage.engine->as<ASTFunction &>();
+
+    if (!endsWith(engine.name, "MergeTree"))
+    {
+        throw Exception("Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
+                        ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    if (!isExtendedDefinitionStorage(storage_ast))
+    {
+        throw Exception("Is not extended deginition storage " + storage_str + " Will be fixed later.",
+                        ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    if (storage.order_by)
+        return storage.order_by->clone();
+
+    throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+}
+
+
+String createCommaSeparatedStringFrom(const Names & strings)
 {
     String answer;
     for (auto & string: strings)
@@ -159,20 +182,50 @@ String createCommaSeparatedStringFrom(const Strings & strings)
     return answer;
 }
 
-Strings extractPrimaryKeyString(const ASTPtr & storage_ast)
+Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
 {
-    const auto primary_key_or_order_by = extractPrimaryKeyOrOrderBy(storage_ast)->as<ASTFunction &>();
+    const auto sorting_key_ast = extractOrderBy(storage_ast);
+    const auto primary_key_ast = extractPrimaryKey(storage_ast);
 
-    ASTPtr primary_key_or_order_by_arguments_ast = primary_key_or_order_by.arguments->clone();
-    ASTs & primary_key_or_order_by_arguments = primary_key_or_order_by_arguments_ast->children;
+    const auto sorting_key_expr_list = MergeTreeData::extractKeyExpressionList(sorting_key_ast);
+    const auto primary_key_expr_list = primary_key_ast
+                           ? MergeTreeData::extractKeyExpressionList(primary_key_ast) : sorting_key_expr_list->clone();
 
-    Strings answer;
-    answer.reserve(primary_key_or_order_by_arguments.size());
+    ///    VersionedCollapsing ???
 
-    for (auto & column : primary_key_or_order_by_arguments)
-        answer.push_back(column->getColumnName());
+    size_t primary_key_size = primary_key_expr_list->children.size();
+    size_t sorting_key_size = sorting_key_expr_list->children.size();
 
-    return answer;
+    if (primary_key_size > sorting_key_size)
+        throw Exception("Primary key must be a prefix of the sorting key, but its length: "
+                        + toString(primary_key_size) + " is greater than the sorting key length: " + toString(sorting_key_size),
+                        ErrorCodes::BAD_ARGUMENTS);
+
+    Names primary_key_columns;
+    Names sorting_key_columns;
+    NameSet primary_key_columns_set;
+
+    for (size_t i = 0; i < sorting_key_size; ++i)
+    {
+        String sorting_key_column = sorting_key_expr_list->children[i]->getColumnName();
+        sorting_key_columns.push_back(sorting_key_column);
+
+        if (i < primary_key_size)
+        {
+            String pk_column = primary_key_expr_list->children[i]->getColumnName();
+            if (pk_column != sorting_key_column)
+                throw Exception("Primary key must be a prefix of the sorting key, but in position "
+                                + toString(i) + " its column is " + pk_column + ", not " + sorting_key_column,
+                                ErrorCodes::BAD_ARGUMENTS);
+
+            if (!primary_key_columns_set.emplace(pk_column).second)
+                throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
+
+            primary_key_columns.push_back(pk_column);
+        }
+    }
+
+    return primary_key_columns;
 }
 
 ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std::string & local_hostname, UInt8 random)

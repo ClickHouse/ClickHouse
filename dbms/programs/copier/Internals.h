@@ -202,11 +202,13 @@ ASTPtr extractPartitionKey(const ASTPtr & storage_ast);
 * the data is sorted by both the old and new sorting keys at the moment of table modification.
 *
 * */
-ASTPtr extractPrimaryKeyOrOrderBy(const ASTPtr & storage_ast);
+ASTPtr extractPrimaryKey(const ASTPtr & storage_ast);
 
-String createCommaSeparatedStringFrom(const Strings & strings);
+ASTPtr extractOrderBy(const ASTPtr & storage_ast);
 
-Strings extractPrimaryKeyString(const ASTPtr & storage_ast);
+String createCommaSeparatedStringFrom(const Names & strings);
+
+Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast);
 
 ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std::string & local_hostname, UInt8 random);
 

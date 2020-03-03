@@ -486,17 +486,6 @@ bool ClusterCopier::checkPartitionPieceIsDone(const TaskTable & task_table, cons
 
         const bool is_clean = checkPartitionPieceIsClean(zookeeper, clean_state_clock, piece_task_status_path);
 
-        for (size_t i = 0; i < 10; ++i)
-        {
-            if (checkPartitionPieceIsClean(zookeeper, clean_state_clock, piece_task_status_path))
-            {
-                std::cout << "clean" << std::endl;
-            }
-            else
-            {
-                std::cout << "dirty" << std::endl;
-            }
-        }
 
         if (!is_clean)
         {
@@ -1012,18 +1001,6 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
     std::cout << piece_status_path << std::endl;
 
     const bool is_clean = checkPartitionPieceIsClean(zookeeper, clean_state_clock, piece_status_path);
-
-    for (size_t i = 0; i < 10; ++i)
-    {
-        if (checkPartitionPieceIsClean(zookeeper, clean_state_clock, piece_status_path))
-        {
-            std::cout << "clean" << std::endl;
-        }
-        else
-        {
-            std::cout << "dirty" << std::endl;
-        }
-    }
 
     /// Do not start if partition piece is dirty, try to clean it
     if (is_clean)
