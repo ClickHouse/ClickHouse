@@ -51,6 +51,7 @@
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/Join.h>
+#include <Interpreters/JoinedTables.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -151,7 +152,7 @@ String InterpreterSelectQuery::generateFilterActions(ExpressionActionsPtr & acti
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
-    auto syntax_result = SyntaxAnalyzer(*context).analyze(query_ast, storage->getColumns().getAllPhysical());
+    auto syntax_result = SyntaxAnalyzer(*context).analyzeSelect(query_ast, storage->getColumns().getAll());
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context);
     actions = analyzer.simpleSelectActions();
 
@@ -310,10 +311,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         table_id = storage->getStorageID();
     }
 
+    /// Extract joined tables colunms if any.
+    /// It could get storage from context without lockStructureForShare(). TODO: add lock there or rewrite this logic.
+    JoinedTables joined_tables;
+    joined_tables.resolveTables(*query_ptr->as<ASTSelectQuery>(), storage, *context, source_header.getNamesAndTypesList());
+
     auto analyze = [&] (bool try_move_to_prewhere = true)
     {
-        syntax_analyzer_result = SyntaxAnalyzer(*context, options).analyze(
-                query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage, NamesAndTypesList());
+        syntax_analyzer_result = SyntaxAnalyzer(*context).analyzeSelect(
+                query_ptr, source_header.getNamesAndTypesList(), storage, options, joined_tables, required_result_column_names);
 
         /// Save scalar sub queries's results in the query context
         if (context->hasQueryContext())
@@ -1245,7 +1251,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                     = ext::map<NameSet>(required_columns_after_prewhere, [](const auto & it) { return it.name; });
             }
 
-            auto syntax_result = SyntaxAnalyzer(*context).analyze(required_columns_all_expr, required_columns_after_prewhere, {}, storage);
+            auto syntax_result = SyntaxAnalyzer(*context).analyze(required_columns_all_expr, required_columns_after_prewhere, storage);
             alias_actions = ExpressionAnalyzer(required_columns_all_expr, syntax_result, *context).getActions(true);
 
             /// The set of required columns could be added as a result of adding an action to calculate ALIAS.

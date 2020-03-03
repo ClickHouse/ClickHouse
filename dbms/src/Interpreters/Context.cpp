@@ -1227,17 +1227,29 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 }
 
 
-void Context::checkSettingsConstraints(const SettingChange & change)
+void Context::checkSettingsConstraints(const SettingChange & change) const
 {
     if (settings_constraints)
         settings_constraints->check(settings, change);
 }
 
-
-void Context::checkSettingsConstraints(const SettingsChanges & changes)
+void Context::checkSettingsConstraints(const SettingsChanges & changes) const
 {
     if (settings_constraints)
         settings_constraints->check(settings, changes);
+}
+
+
+void Context::clampToSettingsConstraints(SettingChange & change) const
+{
+    if (settings_constraints)
+        settings_constraints->clamp(settings, change);
+}
+
+void Context::clampToSettingsConstraints(SettingsChanges & changes) const
+{
+    if (settings_constraints)
+        settings_constraints->clamp(settings, changes);
 }
 
 
