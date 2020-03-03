@@ -254,7 +254,7 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
         std::cout << engine_push_str << std::endl;
         engine_push_partition_key_ast = extractPartitionKey(engine_push_ast);
         std::cout << engine_push_str << std::endl;
-        primary_key_comma_separated = createCommaSeparatedStringFrom(extractPrimaryKeyString(engine_push_ast));
+        primary_key_comma_separated = createCommaSeparatedStringFrom(extractPrimaryKeyColumnNames(engine_push_ast));
     }
 
     sharding_key_str = config.getString(table_prefix + "sharding_key");
