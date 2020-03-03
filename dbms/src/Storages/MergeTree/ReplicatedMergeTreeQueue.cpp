@@ -1485,7 +1485,6 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     }
 
     /// Load current quorum status.
-    auto quorum_last_part_future = zookeeper->asyncTryGet(queue.zookeeper_path + "/quorum/last_part");
     auto quorum_status_future = zookeeper->asyncTryGet(queue.zookeeper_path + "/quorum/status");
 
     /// Load current inserts
@@ -1538,19 +1537,6 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     }
 
     queue_.pullLogsToQueue(zookeeper);
-
-    Coordination::GetResponse quorum_last_part_response = quorum_last_part_future.get();
-    if (!quorum_last_part_response.error)
-    {
-        ReplicatedMergeTreeQuorumAddedParts parts_with_quorum(queue.format_version);
-        if (!quorum_last_part_response.data.empty())
-        {
-            parts_with_quorum.fromString(quorum_last_part_response.data);
-            last_quorum_parts.clear();
-            for (const auto & added_part : parts_with_quorum.added_parts)
-                last_quorum_parts.emplace(added_part.second);
-        }
-    }
 
     Coordination::GetResponse quorum_status_response = quorum_status_future.get();
     if (!quorum_status_response.error)
@@ -1609,13 +1595,6 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
 
     for (const MergeTreeData::DataPartPtr & part : {left, right})
     {
-        if (last_quorum_parts.find(part->name) != last_quorum_parts.end())
-        {
-            if (out_reason)
-                *out_reason = "Part " + part->name + " is the most recent part with a satisfied quorum";
-            return false;
-        }
-
         if (part->name == inprogress_quorum_part)
         {
             if (out_reason)
@@ -1717,8 +1696,9 @@ std::optional<Int64> ReplicatedMergeTreeMergePredicate::getDesiredMutationVersio
     /// the part (checked by querying queue.virtual_parts), we can confidently assign a mutation to
     /// version X for this part.
 
-    if (last_quorum_parts.find(part->name) != last_quorum_parts.end()
-        || part->name == inprogress_quorum_part)
+    /// We cannot mutate part if it's beeing inserted with quorum and it's not
+    /// already reached.
+    if (part->name == inprogress_quorum_part)
         return {};
 
     std::lock_guard lock(queue.state_mutex);
