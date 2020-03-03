@@ -260,11 +260,7 @@ MergeTreeData::MergeTreeData(
 
 StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
 {
-    StorageInMemoryMetadata metadata{
-        .columns = getColumns(),
-        .indices = getIndices(),
-        .constraints = getConstraints(),
-    };
+    StorageInMemoryMetadata metadata(getColumns(), getIndices(), getConstraints());
 
     if (partition_by_ast)
         metadata.partition_by_ast = partition_by_ast->clone();
@@ -1727,6 +1723,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     return createPart(name, type, part_info, disk, relative_path);
 }
 
+/// This code is not used anymore in StorageReplicatedMergeTree
+/// soon it will be removed from StorageMergeTree as well
+/// TODO(alesap)
 void MergeTreeData::alterDataPart(
     const NamesAndTypesList & new_columns,
     const IndicesASTs & new_indices,
