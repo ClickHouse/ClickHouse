@@ -11,6 +11,7 @@
 #include <Parsers/ASTFunction.h>
 #include <utility>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 
 
 namespace DB
@@ -27,10 +28,20 @@ static ASTPtr requiredExpressions(Block & block, const NamesAndTypesList & requi
 
         const auto it = column_defaults.find(column.name);
 
-        /// expressions must be cloned to prevent modification by the ExpressionAnalyzer
         if (it != column_defaults.end())
         {
-            auto cast_func = makeASTFunction("CAST", it->second.expression->clone(), std::make_shared<ASTLiteral>(column.type->getName()));
+            /// expressions must be cloned to prevent modification by the ExpressionAnalyzer
+            auto column_default_expr = it->second.expression->clone();
+            RequiredSourceColumnsVisitor::Data columns_context;
+            RequiredSourceColumnsVisitor(columns_context).visit(column_default_expr);
+            NameSet required_columns_names = columns_context.requiredColumns();
+
+            for (const auto & required_column_name : required_columns_names)
+                if (auto rit = column_defaults.find(required_column_name);
+                    rit != column_defaults.end() && rit->second.kind == ColumnDefaultKind::Alias)
+                    default_expr_list->children.emplace_back(setAlias(rit->second.expression->clone(), required_column_name));
+
+            auto cast_func = makeASTFunction("CAST", column_default_expr, std::make_shared<ASTLiteral>(column.type->getName()));
             default_expr_list->children.emplace_back(setAlias(cast_func, it->first));
         }
     }
