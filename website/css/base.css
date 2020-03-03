@@ -26,7 +26,12 @@ a:hover, a:active {
     color: #fff;
 }
 
-.btn-yellow {
+a.btn-outline-yellow {
+    border-color: #fc0;
+    color: #fc0;
+}
+
+.btn-yellow, .btn-outline-yellow:hover {
     background: #fc0;
     color: #000;
 }
