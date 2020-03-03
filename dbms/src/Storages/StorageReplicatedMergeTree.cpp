@@ -2668,6 +2668,7 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
                 parts_with_quorum.fromString(old_added_parts);
 
             auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+            /// We store one last part which reached quorum for each partition.
             parts_with_quorum.added_parts[part_info.partition_id] = part_name;
 
             String new_added_parts = parts_with_quorum.toString();
