@@ -19,7 +19,7 @@ ${CLICKHOUSE_CLIENT} -n -q "
 "
 
 timeout 10s ${CLICKHOUSE_CLIENT} -n -q "
-    SET receive_timeout=60;
+    SET receive_timeout=1;
     SYSTEM SYNC REPLICA $R2
 " 2>&1 | fgrep -q "DB::Exception: SYNC REPLICA ${CLICKHOUSE_DATABASE}.$R2: command timed out!" && echo 'OK' || echo 'Failed!'
 
