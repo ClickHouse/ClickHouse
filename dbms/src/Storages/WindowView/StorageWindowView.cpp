@@ -1,4 +1,3 @@
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
@@ -337,7 +336,7 @@ void StorageWindowView::truncate(const ASTPtr &, const Context &, TableStructure
     else
     {
         std::lock_guard lock(mutex);
-        mergeable_blocks = std::make_shared<std::list<BlocksListPtr>>();
+        mergeable_blocks.clear();
     }
 }
 
@@ -349,12 +348,11 @@ bool StorageWindowView::optimize(const ASTPtr & query, const ASTPtr & partition,
     return getInnerStorage()->optimize(query, partition, final, deduplicate, context);
 }
 
-Pipes StorageWindowView::blocksToPipes(BlocksListPtrs & blocks, Block & sample_block)
+Pipes StorageWindowView::blocksToPipes(BlocksList & blocks, Block & sample_block)
 {
     Pipes pipes;
-    for (auto & blocks_ : *blocks)
-        pipes.emplace_back(std::make_shared<BlocksListSource>(blocks_, sample_block));
-
+    for (auto & block_ : blocks)
+        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(block_.getColumns(), block_.rows())));
     return pipes;
 }
 
@@ -367,16 +365,24 @@ inline void StorageWindowView::cleanCache()
     }
     else
     {
-        std::unique_lock lock(fire_signal_mutex);
+        std::lock_guard lock(fire_signal_mutex);
         if (max_watermark == 0)
             return;
-        w_bound = addTime(max_watermark, window_kind, -1 * window_num_units, time_zone);
+        w_bound = max_fired_watermark;
+        if (w_bound == 0)
+            return;
+
+        if (allowed_lateness)
+        {
+            UInt32 lateness_bound = addTime(max_timestamp, lateness_kind, -1 * lateness_num_units, time_zone);
+            lateness_bound = getWindowLowerBound(lateness_bound);
+            if (lateness_bound < w_bound)
+                w_bound = lateness_bound;
+        }
     }
 
-    if (is_tumble)
-        w_bound = addTime(w_bound, window_kind, -1 * window_num_units, time_zone);
-    else
-        w_bound = addTime(w_bound, hop_kind, -1 * hop_num_units, time_zone);
+    w_bound = is_tumble ? addTime(w_bound, window_kind, -1 * window_num_units, time_zone)
+                        : addTime(w_bound, hop_kind, -1 * hop_num_units, time_zone);
 
     if (!inner_table_id.empty())
     {
@@ -387,24 +393,19 @@ inline void StorageWindowView::cleanCache()
     else
     {
         std::lock_guard lock(mutex);
-        for (BlocksListPtr mergeable_block : *mergeable_blocks)
-        {
-            mergeable_block->remove_if([&w_bound](Block & block_)
+        mergeable_blocks.remove_if([w_bound](Block & block_) {
+            auto & column_ = block_.getByName("____w_end").column;
+            const auto & data = static_cast<const ColumnUInt32 &>(*column_).getData();
+            for (size_t i = 0; i < column_->size(); ++i)
             {
-                auto & column_ = block_.getByName("____w_end").column;
-                const auto & data = static_cast<const ColumnUInt32 &>(*column_).getData();
-                for (size_t i = 0; i < column_->size(); ++i)
-                {
-                    if (data[i] >= w_bound)
-                        return false;
-                }
-                return true;
-            });
-        }
-        mergeable_blocks->remove_if([](BlocksListPtr & ptr) { return ptr->size() == 0; });
+                if (data[i] >= w_bound)
+                    return false;
+            }
+            return true;
+        });
     }
 
-    std::unique_lock lock(fire_signal_mutex);
+    std::lock_guard lock(fire_signal_mutex);
     watch_streams.remove_if([](std::weak_ptr<WindowViewBlockInputStream> & ptr) { return ptr.expired(); });
 }
 
@@ -413,7 +414,12 @@ inline void StorageWindowView::fire(UInt32 watermark)
     if (target_table_id.empty() && watch_streams.empty())
         return;
 
-    auto in_stream = getNewBlocksInputStreamPtr(watermark);
+    BlockInputStreamPtr in_stream;
+    {
+        std::lock_guard lock(mutex);
+        in_stream = getNewBlocksInputStreamPtr(watermark);
+    }
+
     if (target_table_id.empty())
     {
         in_stream->readPrefix();
@@ -502,19 +508,23 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
     return manual_create_query;
 }
 
-inline UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec, int window_id_skew)
+inline UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
 {
-    switch (window_kind)
+    IntervalKind window_kind_;
+    if (is_tumble)
+        window_kind_ = window_kind;
+    else
+        window_kind_ = hop_kind;
+
+    switch (window_kind_)
     {
 #define CASE_WINDOW_KIND(KIND) \
     case IntervalKind::KIND: \
     { \
-        UInt32 start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, window_num_units, time_zone); \
-        UInt32 res = AddTime<IntervalKind::KIND>::execute(start, window_num_units, time_zone); \
-        if (window_id_skew != 0) \
-            return AddTime<IntervalKind::KIND>::execute(res, window_id_skew * window_num_units, time_zone); \
+        if (is_tumble) \
+            return ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, window_num_units, time_zone); \
         else \
-            return res; \
+            return ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, hop_num_units, time_zone); \
     }
         CASE_WINDOW_KIND(Second)
         CASE_WINDOW_KIND(Minute)
@@ -529,49 +539,78 @@ inline UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec, int window
     __builtin_unreachable();
 }
 
-inline void StorageWindowView::addFireSignal(std::deque<UInt32> & signals)
+inline UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
 {
-    std::unique_lock lock(fire_signal_mutex);
-    for (auto signal : signals)
-        fire_signal.push_back(signal);
+    switch (window_kind)
+    {
+#define CASE_WINDOW_KIND(KIND) \
+    case IntervalKind::KIND: \
+    { \
+        UInt32 start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, window_num_units, time_zone); \
+        return AddTime<IntervalKind::KIND>::execute(start, window_num_units, time_zone); \
+    }
+        CASE_WINDOW_KIND(Second)
+        CASE_WINDOW_KIND(Minute)
+        CASE_WINDOW_KIND(Hour)
+        CASE_WINDOW_KIND(Day)
+        CASE_WINDOW_KIND(Week)
+        CASE_WINDOW_KIND(Month)
+        CASE_WINDOW_KIND(Quarter)
+        CASE_WINDOW_KIND(Year)
+#undef CASE_WINDOW_KIND
+    }
+    __builtin_unreachable();
+}
+
+inline void StorageWindowView::addFireSignal(std::set<UInt32> & signals)
+{
+    std::lock_guard lock(fire_signal_mutex);
+    for (auto it = signals.begin(); it != signals.end(); ++it)
+        fire_signal.push_back(*it);
     fire_signal_condition.notify_all();
 }
 
 inline void StorageWindowView::updateMaxTimestamp(UInt32 timestamp)
 {
-    std::unique_lock lock(fire_signal_mutex);
+    std::lock_guard lock(fire_signal_mutex);
     if (timestamp > max_timestamp)
         max_timestamp = timestamp;
 }
 
 inline void StorageWindowView::updateMaxWatermark(UInt32 watermark)
 {
-    std::unique_lock lock(fire_signal_mutex);
+    std::lock_guard lock(fire_signal_mutex);
     if (max_watermark == 0)
     {
         max_watermark = watermark;
         return;
     }
 
+    bool updated;
     if (is_watermark_strictly_ascending)
     {
+        updated = max_watermark < watermark;
         while (max_watermark < watermark)
         {
             fire_signal.push_back(max_watermark);
+            max_fired_watermark = max_watermark;
             max_watermark = addTime(max_watermark, window_kind, window_num_units, time_zone);
         }
     }
     else // strictly || bounded
     {
         UInt32 max_watermark_bias = addTime(max_watermark, watermark_kind, watermark_num_units, time_zone);
+        updated = max_watermark_bias <= watermark;
         while (max_watermark_bias <= max_timestamp)
         {
             fire_signal.push_back(max_watermark);
+            max_fired_watermark = max_watermark;
             max_watermark = addTime(max_watermark, window_kind, window_num_units, time_zone);
             max_watermark_bias = addTime(max_watermark, window_kind, window_num_units, time_zone);
         }
     }
-    fire_signal_condition.notify_all();
+    if (updated)
+        fire_signal_condition.notify_all();
 }
 
 void StorageWindowView::threadFuncCleanCache()
@@ -619,7 +658,6 @@ void StorageWindowView::threadFuncFireEvent()
     while (!shutdown_called)
     {
         bool signaled = std::cv_status::no_timeout == fire_signal_condition.wait_for(lock, std::chrono::seconds(5));
-
         if (!signaled)
             continue;
 
@@ -645,23 +683,17 @@ BlockInputStreams StorageWindowView::watch(
 
     bool has_limit = false;
     UInt64 limit = 0;
-
     if (query.limit_length)
     {
         has_limit = true;
         limit = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_length).value);
     }
 
-    auto reader = std::make_shared<WindowViewBlockInputStream>(
-        std::static_pointer_cast<StorageWindowView>(shared_from_this()),
-        has_limit,
-        limit);
+    auto reader
+        = std::make_shared<WindowViewBlockInputStream>(std::static_pointer_cast<StorageWindowView>(shared_from_this()), has_limit, limit);
 
-    {
-        std::unique_lock lock(fire_signal_mutex);
-        watch_streams.push_back(reader);
-    }
-
+    std::lock_guard lock(fire_signal_mutex);
+    watch_streams.push_back(reader);
     processed_stage = QueryProcessingStage::Complete;
 
     return {reader};
@@ -717,7 +749,6 @@ StorageWindowView::StorageWindowView(
         target_table_id = StorageID(query.to_database, query.to_table);
 
     clean_interval = local_context.getSettingsRef().window_view_clean_interval.totalSeconds();
-    mergeable_blocks = std::make_shared<std::list<BlocksListPtr>>();
     next_fire_signal = getWindowUpperBound(std::time(nullptr));
 
     if (query.is_watermark_strictly_ascending || query.is_watermark_ascending || query.is_watermark_bounded)
@@ -736,12 +767,10 @@ StorageWindowView::StorageWindowView(
             // parser watermark function
             const auto & watermark_function = std::static_pointer_cast<ASTFunction>(query.watermark_function);
             if (!startsWith(watermark_function->name, "toInterval"))
-                throw Exception(
-                    "Illegal type WATERMARK function " + watermark_function->name + ", should be Interval", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception("Illegal type of WATERMARK function, should be Interval", ErrorCodes::ILLEGAL_COLUMN);
 
-            String interval_str = watermark_function->name.substr(10);
             const auto & interval_units_p1 = std::static_pointer_cast<ASTLiteral>(watermark_function->children.front()->children.front());
-            watermark_kind = strToIntervalKind(interval_str);
+            watermark_kind = strToIntervalKind(watermark_function->name.substr(10));
             try
             {
                 watermark_num_units = boost::lexical_cast<int>(interval_units_p1->value.get<String>());
@@ -753,6 +782,30 @@ StorageWindowView::StorageWindowView(
             if (watermark_num_units <= 0)
                 throw Exception("Value for WATERMARK function must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         }
+    }
+
+    if (query.allowed_lateness)
+    {
+        allowed_lateness = true;
+
+        // parser lateness function
+        const auto & lateness_function = std::static_pointer_cast<ASTFunction>(query.lateness_function);
+        if (!startsWith(lateness_function->name, "toInterval"))
+            throw Exception("Illegal type of ALLOWED_LATENESS function, should be Interval", ErrorCodes::ILLEGAL_COLUMN);
+
+        const auto & interval_units_p1 = std::static_pointer_cast<ASTLiteral>(lateness_function->children.front()->children.front());
+        lateness_kind = strToIntervalKind(lateness_function->name.substr(10));
+        try
+        {
+            lateness_num_units = boost::lexical_cast<int>(interval_units_p1->value.get<String>());
+        }
+        catch (const boost::bad_lexical_cast &)
+        {
+            throw Exception(
+                "Cannot parse string '" + interval_units_p1->value.get<String>() + "' as Integer.", ErrorCodes::CANNOT_PARSE_TEXT);
+        }
+        if (lateness_num_units <= 0)
+            throw Exception("Value for ALLOWED_LATENESS function must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 
     if (query.storage)
@@ -871,20 +924,56 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
     }
     else
     {
-        UInt32 max_timestamp_ = 0;
-        if (!window_view.is_tumble || window_view.is_watermark_bounded)
+        UInt32 max_fired_watermark_ = 0;
+        if (window_view.allowed_lateness)
+        {
+            UInt32 max_timestamp_ = 0;
+            UInt32 max_watermark_ = 0;
+            {
+                std::lock_guard lock(window_view.fire_signal_mutex);
+                max_fired_watermark_ = window_view.max_fired_watermark;
+                max_watermark_ = window_view.max_watermark;
+                max_timestamp_ = window_view.max_timestamp;
+            }
+
+            if (max_timestamp_!= 0)
+            {
+                UInt32 lateness_bound
+                    = addTime(max_timestamp_, window_view.lateness_kind, -1 * window_view.lateness_num_units, window_view.time_zone);
+                if (window_view.is_watermark_bounded)
+                {
+                    UInt32 watermark_lower_bound = window_view.is_tumble
+                        ? addTime(max_watermark_, window_view.window_kind, -1 * window_view.window_num_units, window_view.time_zone)
+                        : addTime(max_watermark_, window_view.hop_kind, -1 * window_view.hop_num_units, window_view.time_zone);
+                    if (watermark_lower_bound < lateness_bound)
+                        lateness_bound = watermark_lower_bound;
+                }
+
+                ColumnsWithTypeAndName columns__;
+                columns__.emplace_back(nullptr, std::make_shared<DataTypeDateTime>(), window_view.timestamp_column_name);
+                ExpressionActionsPtr filterExpressions = std::make_shared<ExpressionActions>(columns__, context);
+                filterExpressions->add(
+                    ExpressionAction::addColumn({std::make_shared<DataTypeDateTime>()->createColumnConst(1, toField(lateness_bound)),
+                                                 std::make_shared<DataTypeDateTime>(),
+                                                 "____lateness_bound"}));
+                const auto & function_greater = FunctionFactory::instance().get("greaterOrEquals", context);
+                filterExpressions->add(ExpressionAction::applyFunction(
+                    function_greater, Names{window_view.timestamp_column_name, "____lateness_bound"}, "____filter"));
+                pipe.addSimpleTransform(std::make_shared<FilterTransform>(pipe.getHeader(), filterExpressions, "____filter", true));
+            }
+        }
+
+        UInt32 max_timestamp__ = 0;
+        if (!window_view.is_tumble || window_view.is_watermark_bounded || window_view.allowed_lateness)
         {
             auto & column_timestamp = block.getByName(window_view.timestamp_column_name).column;
             const ColumnUInt32::Container & timestamp_data = static_cast<const ColumnUInt32 &>(*column_timestamp).getData();
             for (size_t i = 0; i < timestamp_data.size(); ++i)
             {
-                if (timestamp_data[i] > max_timestamp_)
-                    max_timestamp_ = timestamp_data[i];
+                if (timestamp_data[i] > max_timestamp__)
+                    max_timestamp__ = timestamp_data[i];
             }
         }
-
-        if (window_view.is_watermark_bounded)
-            window_view.updateMaxTimestamp(max_timestamp_);
 
         InterpreterSelectQuery select_block(window_view.getFinalQuery(), context, {std::move(pipe)}, QueryProcessingStage::WithMergeableState);
 
@@ -895,12 +984,16 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
 
         if (!window_view.is_tumble)
             source_stream
-                = std::make_shared<WatermarkBlockInputStream>(source_stream, window_view, window_view.getWindowUpperBound(max_timestamp_));
+                = std::make_shared<WatermarkBlockInputStream>(source_stream, window_view, window_view.getWindowUpperBound(max_timestamp__));
         else
             source_stream = std::make_shared<WatermarkBlockInputStream>(source_stream, window_view);
+
+        if (window_view.is_watermark_bounded || window_view.allowed_lateness)
+            std::static_pointer_cast<WatermarkBlockInputStream>(source_stream)->setMaxTimestamp(max_timestamp__);
+
+        if (window_view.allowed_lateness && max_fired_watermark_ != 0)
+            std::static_pointer_cast<WatermarkBlockInputStream>(source_stream)->setAllowedLateness(max_fired_watermark_);
     }
-
-
 
     if (!window_view.inner_table_id.empty())
     {
@@ -911,14 +1004,13 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
     }
     else
     {
-        BlocksListPtr new_mergeable_blocks = std::make_shared<BlocksList>();
         source_stream->readPrefix();
-        while (Block block_ = source_stream->read())
-            new_mergeable_blocks->push_back(std::move(block_));
+        {
+            std::lock_guard lock(window_view.mutex);
+            while (Block block_ = source_stream->read())
+                window_view.mergeable_blocks.push_back(std::move(block_));
+        }
         source_stream->readSuffix();
-
-        std::unique_lock lock(window_view.mutex);
-        window_view.getMergeableBlocksList()->push_back(new_mergeable_blocks);
     }
 }
 
@@ -943,6 +1035,48 @@ StorageWindowView::~StorageWindowView()
     shutdown();
 }
 
+Block & StorageWindowView::getHeader() const
+{
+    std::lock_guard lock(sample_block_lock);
+    if (!sample_block)
+    {
+        sample_block = InterpreterSelectQuery(
+                           getInnerQuery(), global_context, getParentStorage(), SelectQueryOptions(QueryProcessingStage::Complete))
+                           .getSampleBlock();
+        for (size_t i = 0; i < sample_block.columns(); ++i)
+            sample_block.safeGetByPosition(i).column = sample_block.safeGetByPosition(i).column->convertToFullColumnIfConst();
+    }
+    return sample_block;
+}
+
+StoragePtr StorageWindowView::getParentStorage() const
+{
+    if (parent_storage == nullptr)
+        parent_storage = global_context.getTable(select_table_id);
+    return parent_storage;
+}
+
+Block & StorageWindowView::getMergeableHeader() const
+{
+    if (!mergeable_sample_block)
+        mergeable_sample_block = mergeable_blocks.front().cloneEmpty();
+    return mergeable_sample_block;
+}
+
+StoragePtr & StorageWindowView::getInnerStorage() const
+{
+    if (inner_storage == nullptr && !inner_table_id.empty())
+        inner_storage = global_context.getTable(inner_table_id);
+    return inner_storage;
+}
+
+StoragePtr & StorageWindowView::getTargetStorage() const
+{
+    if (target_storage == nullptr && !target_table_id.empty())
+        target_storage = global_context.getTable(target_table_id);
+    return target_storage;
+}
+
 BlockInputStreamPtr StorageWindowView::getNewBlocksInputStreamPtr(UInt32 watermark)
 {
     Pipes pipes;
@@ -958,8 +1092,7 @@ BlockInputStreamPtr StorageWindowView::getNewBlocksInputStreamPtr(UInt32 waterma
     }
     else
     {
-        std::unique_lock lock(mutex);
-        if (mergeable_blocks->empty())
+        if (mergeable_blocks.empty())
             return std::make_shared<NullBlockInputStream>(getHeader());
         pipes = blocksToPipes(mergeable_blocks, getMergeableHeader());
     }

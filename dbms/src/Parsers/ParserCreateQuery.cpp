@@ -632,6 +632,7 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserIntervalOperatorExpression watermark_p;
+    ParserIntervalOperatorExpression lateness_p;
     ParserSelectWithUnionQuery select_p;
 
     ASTPtr database;
@@ -641,6 +642,7 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ASTPtr to_table;
     ASTPtr storage;
     ASTPtr watermark;
+    ASTPtr lateness;
     ASTPtr as_database;
     ASTPtr as_table;
     ASTPtr select;
@@ -650,6 +652,7 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     bool is_watermark_strictly_ascending = false;
     bool is_watermark_ascending = false;
     bool is_watermark_bounded = false;
+    bool allowed_lateness = false;
     bool if_not_exists = false;
     bool is_temporary = false;
 
@@ -733,6 +736,16 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
+    // ALLOWED LATENESS
+    if (ParserKeyword{"ALLOWED_LATENESS"}.ignore(pos, expected))
+    {
+        s_eq.ignore(pos, expected);
+        allowed_lateness = true;
+
+        if (!lateness_p.parse(pos, lateness, expected))
+            return false;
+    }
+
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))
         return false;
@@ -762,6 +775,8 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->is_watermark_ascending = is_watermark_ascending;
     query->is_watermark_bounded = is_watermark_bounded;
     query->watermark_function = watermark;
+    query->allowed_lateness = allowed_lateness;
+    query->lateness_function = lateness;
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);

@@ -6,7 +6,6 @@
 namespace DB
 {
 using BlocksListPtr = std::shared_ptr<BlocksList>;
-using BlocksListPtrs = std::shared_ptr<std::list<BlocksListPtr>>;
 
 /** A stream of blocks from a shared list of blocks
   */

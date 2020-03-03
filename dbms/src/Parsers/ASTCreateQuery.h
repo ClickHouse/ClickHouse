@@ -62,9 +62,10 @@ public:
     bool is_populate{false};
     bool is_dictionary{false}; /// CREATE DICTIONARY
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
-    bool is_watermark_strictly_ascending{false}; /// STRICTLY ASCENDING WATERMARK STRATEGY
-    bool is_watermark_ascending{false}; /// ASCENDING WATERMARK STRATEGY
-    bool is_watermark_bounded{false}; /// BOUNDED OUT OF ORDERNESS WATERMARK STRATEGY
+    bool is_watermark_strictly_ascending{false}; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
+    bool is_watermark_ascending{false}; /// ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
+    bool is_watermark_bounded{false}; /// BOUNDED OUT OF ORDERNESS WATERMARK STRATEGY FOR WINDOW VIEW
+    bool allowed_lateness{false}; /// ALLOWED LATENESS FOR WINDOW VIEW
     ASTColumns * columns_list = nullptr;
     ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of dictionary
     ASTExpressionList * tables = nullptr;
@@ -72,6 +73,7 @@ public:
     String to_table;
     ASTStorage * storage = nullptr;
     ASTPtr watermark_function;
+    ASTPtr lateness_function;
     String as_database;
     String as_table;
     ASTPtr as_table_function;
