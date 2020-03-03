@@ -60,21 +60,25 @@ def test_ttl_many_columns(started_cluster):
             ORDER BY id PARTITION BY toDayOfMonth(date) SETTINGS merge_with_ttl_timeout=0;
         '''.format(replica=node.name))
 
-    node1.query("SYSTEM STOP MERGES test_ttl_2")
-    node2.query("SYSTEM STOP MERGES test_ttl_2")
+    node1.query("SYSTEM STOP TTL MERGES test_ttl_2")
+    node2.query("SYSTEM STOP TTL MERGES test_ttl_2")
 
     node1.query("INSERT INTO test_ttl_2 VALUES (toDateTime('2000-10-10 00:00:00'), 1, 2, 3, 4, 5)")
     node1.query("INSERT INTO test_ttl_2 VALUES (toDateTime('2100-10-10 10:00:00'), 6, 7, 8, 9, 10)")
+
+    node2.query("SYSTEM SYNC REPLICA test_ttl_2", timeout=5)
 
     # Check that part will appear in result of merge
     node1.query("SYSTEM STOP FETCHES test_ttl_2")
     node2.query("SYSTEM STOP FETCHES test_ttl_2")
 
-    node1.query("SYSTEM START MERGES test_ttl_2")
-    node2.query("SYSTEM START MERGES test_ttl_2")
+    node1.query("SYSTEM START TTL MERGES test_ttl_2")
+    node2.query("SYSTEM START TTL MERGES test_ttl_2")
 
     time.sleep(1) # sleep to allow use ttl merge selector for second time
     node1.query("OPTIMIZE TABLE test_ttl_2 FINAL", timeout=5)
+    
+    node2.query("SYSTEM SYNC REPLICA test_ttl_2", timeout=5)
 
     expected = "1\t0\t0\t0\t0\n6\t7\t8\t9\t10\n"
     assert TSV(node1.query("SELECT id, a, _idx, _offset, _partition FROM test_ttl_2 ORDER BY id")) == TSV(expected)
