@@ -503,7 +503,7 @@ void TCPHandler::processOrdinaryQuery()
 
             if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
             {
-                /// Some time passed and there is a progress.
+                /// Some time passed.
                 after_send_progress.restart();
                 sendProgress();
             }
