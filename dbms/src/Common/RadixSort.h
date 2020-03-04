@@ -109,7 +109,6 @@ struct RadixSortIdentityTransform
 };
 
 
-
 template <typename TElement>
 struct RadixSortUIntTraits
 {

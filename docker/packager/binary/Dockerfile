@@ -43,9 +43,8 @@ RUN apt-get update -y \
             rename \
             wget
 
-# This symlink required by gcc to find lld compiler but currently we have
-# problems with query profiler when gcc use lld as linker
-# RUN ln -s /usr/bin/lld-8 /usr/bin/ld.lld
+# This symlink required by gcc to find lld compiler
+RUN ln -s /usr/bin/lld-8 /usr/bin/ld.lld
 
 ENV CC=clang-8
 ENV CXX=clang++-8

@@ -282,14 +282,9 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
     }
     else
     {
-        bool with_output = false;
-        std::function<void(const String &, const String &)> set_content_type_and_format = [&with_output](const String &, const String &) -> void
-        {
-            with_output = true;
-        };
-
         String replacement_query = "select ''";
         bool should_replace = false;
+        bool with_output = false;
 
         // Translate query from MySQL to ClickHouse.
         // This is a temporary workaround until ClickHouse supports the syntax "@@var_name".
@@ -307,7 +302,13 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         ReadBufferFromString replacement(replacement_query);
 
         Context query_context = connection_context;
-        executeQuery(should_replace ? replacement : payload, *out, true, query_context, set_content_type_and_format, {});
+
+        executeQuery(should_replace ? replacement : payload, *out, true, query_context,
+            [&with_output](const String &, const String &, const String &, const String &)
+            {
+                with_output = true;
+            }
+        );
 
         if (!with_output)
             packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);

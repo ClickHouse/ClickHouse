@@ -4,7 +4,6 @@
 #include <Formats/FormatFactory.h>
 
 
-
 namespace DB
 {
 

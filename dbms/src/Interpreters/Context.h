@@ -495,8 +495,10 @@ public:
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
 
+    /// Call after initialization before using trace collector.
     void initializeTraceCollector();
-    bool hasTraceCollector();
+
+    bool hasTraceCollector() const;
 
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog();

@@ -109,7 +109,6 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 }
 
 
-
 class SyncKillQueryInputStream : public IBlockInputStream
 {
 public:
