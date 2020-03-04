@@ -453,6 +453,10 @@ case "$stage" in
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data.
     time get_profiles || restart || get_profiles
+
+    # Stop the servers to free memory for the subsequent query analysis.
+    while killall clickhouse; do echo . ; sleep 1 ; done
+    echo Servers stopped.
     ;&
 "analyze_queries")
     time analyze_queries

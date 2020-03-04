@@ -197,8 +197,14 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
                 /// Set query-level memory trackers
                 thread_group->memory_tracker.setOrRaiseHardLimit(process_it->max_memory_usage);
-                thread_group->memory_tracker.setOrRaiseProfilerLimit(settings.memory_profiler_step);
-                thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
+
+                if (query_context.hasTraceCollector())
+                {
+                    /// Set up memory profiling
+                    thread_group->memory_tracker.setOrRaiseProfilerLimit(settings.memory_profiler_step);
+                    thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
+                }
+
                 thread_group->memory_tracker.setDescription("(for query)");
                 if (process_it->memory_tracker_fault_probability)
                     thread_group->memory_tracker.setFaultProbability(process_it->memory_tracker_fault_probability);

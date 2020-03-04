@@ -60,6 +60,7 @@
 #include "TCPHandlerFactory.h"
 #include "Common/config_version.h"
 #include <Common/SensitiveDataMasker.h>
+#include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
 
 #if defined(OS_LINUX)
@@ -218,6 +219,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
+
+    if (ThreadFuzzer::instance().isEffective())
+        LOG_WARNING(log, "ThreadFuzzer is enabled. Application will run slowly and unstable.");
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
