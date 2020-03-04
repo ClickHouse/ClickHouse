@@ -8,23 +8,23 @@
         </any_of>
     </stop_conditions>
 
-    <query>SELECT COUNT(*) FROM generate('ui64 UInt64, i64 Int64, ui32 UInt32, i32 Int32, ui16 UInt16, i16 Int16, ui8 UInt8, i8 Int8') LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('ui64 UInt64, i64 Int64, ui32 UInt32, i32 Int32, ui16 UInt16, i16 Int16, ui8 UInt8, i8 Int8', 10, 10, 1) LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('i Enum8(\'hello\' = 1, \'world\' = 5)', 10, 10, 1) LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('i Array(Nullable(Enum8(\'hello\' = 1, \'world\' = 5)))', 10, 10, 1) LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('i Nullable(Enum16(\'h\' = 1, \'w\' = 5 , \'o\' = -200)))', 10, 10, 1) LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('d Date, dt DateTime, dtm DateTime(\'Europe/Moscow\')', 10, 10, 1) LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('dt64 DateTime64, dts64 DateTime64(6), dtms64 DateTime64(6 ,\'Europe/Moscow\')', 10, 10, 1) LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('f32 Float32, f64 Float64', 10, 10, 1) LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('d32 Decimal32(4), d64 Decimal64(8), d128 Decimal128(16)', 10, 10, 1) LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('i Tuple(Int32, Int64)', 10, 10, 1) LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('i Array(Int8)', 10, 10, 1) LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('i Array(Nullable(Int32))', 10, 10, 1) LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('i Tuple(Int32, Array(Int64))', 10, 10, 1) LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('i Nullable(String)', 10, 10, 1) LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('i Array(String)', 10, 10, 1) LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('i UUID', 10, 10, 1) LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('i Array(Nullable(UUID))', 10, 10, 1) LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('i FixedString(4)', 10, 10, 1) LIMIT 100000;</query>
-    <query>SELECT COUNT(*) FROM generate('i String', 10, 10, 1) LIMIT 100000;</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('ui64 UInt64, i64 Int64, ui32 UInt32, i32 Int32, ui16 UInt16, i16 Int16, ui8 UInt8, i8 Int8') LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('ui64 UInt64, i64 Int64, ui32 UInt32, i32 Int32, ui16 UInt16, i16 Int16, ui8 UInt8, i8 Int8', 10, 10, 1) LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('i Enum8(\'hello\' = 1, \'world\' = 5)', 10, 10, 1) LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('i Array(Nullable(Enum8(\'hello\' = 1, \'world\' = 5)))', 10, 10, 1) LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('i Nullable(Enum16(\'h\' = 1, \'w\' = 5 , \'o\' = -200)))', 10, 10, 1) LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('d Date, dt DateTime, dtm DateTime(\'Europe/Moscow\')', 10, 10, 1) LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('dt64 DateTime64, dts64 DateTime64(6), dtms64 DateTime64(6 ,\'Europe/Moscow\')', 10, 10, 1) LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('f32 Float32, f64 Float64', 10, 10, 1) LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('d32 Decimal32(4), d64 Decimal64(8), d128 Decimal128(16)', 10, 10, 1) LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('i Tuple(Int32, Int64)', 10, 10, 1) LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('i Array(Int8)', 10, 10, 1) LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('i Array(Nullable(Int32))', 10, 10, 1) LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('i Tuple(Int32, Array(Int64))', 10, 10, 1) LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('i Nullable(String)', 10, 10, 1) LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('i Array(String)', 10, 10, 1) LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('i UUID', 10, 10, 1) LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('i Array(Nullable(UUID))', 10, 10, 1) LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('i FixedString(4)', 10, 10, 1) LIMIT 100000);</query>
+    <query>SELECT COUNT(*) FROM (SELECT * FROM generate('i String', 10, 10, 1) LIMIT 100000);</query>
 </test>
