@@ -1161,6 +1161,38 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster):
     assert TSV(result) == TSV('22\t22\t22')
 
 
+@pytest.mark.timeout(120)
+def test_exception_from_destructor(kafka_cluster):
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'xyz',
+                     kafka_group_name = '',
+                     kafka_format = 'JSONEachRow';
+    ''')
+    instance.query_and_get_error('''
+        SELECT * FROM test.kafka;
+    ''')
+    instance.query('''
+        DROP TABLE test.kafka;
+    ''')
+
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'xyz',
+                     kafka_group_name = '',
+                     kafka_format = 'JSONEachRow';
+    ''')
+    instance.query('''
+        DROP TABLE test.kafka;
+    ''')
+
+    kafka_cluster.open_bash_shell('instance')
+    assert TSV(instance.query('SELECT 1')) == TSV('1')
+
 
 if __name__ == '__main__':
     cluster.start()
