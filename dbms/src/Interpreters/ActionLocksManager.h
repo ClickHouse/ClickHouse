@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/ActionLock.h>
+#include <Storages/StorageID.h>
 
 #include <mutex>
 #include <unordered_map>
@@ -23,13 +24,13 @@ public:
     /// Adds new locks for each table
     void add(StorageActionBlockType action_type);
     /// Add new lock for a table if it has not been already added
-    void add(const String & database_name, const String & table_name, StorageActionBlockType action_type);
+    void add(const StorageID & table_id, StorageActionBlockType action_type);
     void add(const StoragePtr & table, StorageActionBlockType action_type);
 
     /// Remove locks for all tables
     void remove(StorageActionBlockType action_type);
     /// Removes a lock for a table if it exists
-    void remove(const String & database_name, const String & table_name, StorageActionBlockType action_type);
+    void remove(const StorageID & table_id, StorageActionBlockType action_type);
     void remove(const StoragePtr & table, StorageActionBlockType action_type);
 
     /// Removes all locks of non-existing tables

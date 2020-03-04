@@ -2,6 +2,9 @@
 #include <Core/Types.h>
 #include <Core/UUID.h>
 #include <tuple>
+#include <Parsers/IAST_fwd.h>
+
+#include <Core/QualifiedTableName.h>
 
 namespace DB
 {
@@ -30,6 +33,8 @@ struct StorageID
     }
 
     StorageID(const ASTQueryWithTableAndOutput & query, const Context & local_context);
+
+    static StorageID resolveFromAST(const ASTPtr & table_identifier_node, const Context & context);
 
     String getDatabaseName() const
     {
@@ -72,6 +77,8 @@ struct StorageID
 
     /// Avoid implicit construction of empty StorageID. However, it's needed for deferred initialization.
     static StorageID createEmpty() { return {}; }
+
+    QualifiedTableName getQualifiedName() const { return {getDatabaseName(), getTableName()}; }
 
 private:
     StorageID() = default;

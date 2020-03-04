@@ -26,8 +26,8 @@ namespace
 
 StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & context)
 {
-    DatabaseAndTableWithAlias db_and_table(database_and_table);
-    return context.tryGetTable(db_and_table.database, db_and_table.table);
+    auto table_id = StorageID::resolveFromAST(database_and_table, context);
+    return DatabaseCatalog::instance().tryGetTable(table_id);
 }
 
 using CheckShardsAndTables = InJoinSubqueriesPreprocessor::CheckShardsAndTables;

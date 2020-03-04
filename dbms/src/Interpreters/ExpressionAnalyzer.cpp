@@ -519,8 +519,8 @@ static JoinPtr tryGetStorageJoin(const ASTTablesInSelectQueryElement & join_elem
     /// TODO This syntax does not support specifying a database name.
     if (table_to_join.database_and_table_name)
     {
-        DatabaseAndTableWithAlias database_table(table_to_join.database_and_table_name);
-        StoragePtr table = context.tryGetTable(database_table.database, database_table.table);
+        auto table_id = StorageID::resolveFromAST(table_to_join.database_and_table_name, context);
+        StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id);
 
         if (table)
         {

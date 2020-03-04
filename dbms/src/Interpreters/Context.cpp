@@ -738,6 +738,8 @@ void Context::checkAccess(const AccessFlags & access, const std::string_view & d
 void Context::checkAccess(const AccessRightsElement & access) const { return checkAccessImpl(access); }
 void Context::checkAccess(const AccessRightsElements & access) const { return checkAccessImpl(access); }
 
+void Context::checkAccess(const AccessFlags & access, const StorageID & table_id) const { checkAccessImpl(access, table_id.getDatabaseName(), table_id.getTableName()); }
+
 AccessRightsContextPtr Context::getAccessRights() const
 {
     auto lock = getLock();
@@ -857,16 +859,10 @@ StoragePtr Context::getTable(const String & database_name, const String & table_
 {
     auto resolved_id = resolveStorageID(StorageID(database_name, table_name));
     std::optional<Exception> exc;
-    auto res = DatabaseCatalog::instance().getTableImpl(resolved_id, *this, &exc);
+    auto res = DatabaseCatalog::instance().getTableImpl(resolved_id, *this, &exc).second;
     if (!res)
         throw *exc;
     return res;
-}
-
-StoragePtr Context::tryGetTable(const String & database_name, const String & table_name) const
-{
-    auto resolved_id = tryResolveStorageID(StorageID(database_name, table_name));
-    return DatabaseCatalog::instance().getTableImpl(resolved_id, *this, nullptr);
 }
 
 

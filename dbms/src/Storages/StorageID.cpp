@@ -3,6 +3,7 @@
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 
 namespace DB
 {
@@ -45,6 +46,12 @@ void StorageID::assertNotEmpty() const
         throw Exception("Table name was replaced with placeholder, but UUID is Nil", ErrorCodes::LOGICAL_ERROR);
     if (table_name.empty() && !database_name.empty())
         throw Exception("Table name is empty, but database name is not", ErrorCodes::LOGICAL_ERROR);
+}
+
+StorageID StorageID::resolveFromAST(const ASTPtr & table_identifier_node, const Context & context)
+{
+    DatabaseAndTableWithAlias database_table(table_identifier_node);
+    return context.tryResolveStorageID({database_table.database, database_table.table});
 }
 
 }

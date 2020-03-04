@@ -73,7 +73,7 @@ ColumnsDescription getStructureOfRemoteTable(
     auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, sample_block, new_context);
     input->setPoolMode(PoolMode::GET_ONE);
     if (!table_func_ptr)
-        input->setMainTable(QualifiedTableName{database, table});
+        input->setMainTable(StorageID{database, table});
     input->readPrefix();
 
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
