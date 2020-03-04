@@ -54,9 +54,9 @@ public:
     }
 
 private:
-    uint64_t cpu_time_period_us = 0;
+    uint64_t cpu_time_period_us = 1000;
     double yield_probability = 0;
-    double migrate_probability = 0;
+    double migrate_probability = 1;
     double sleep_probability = 0;
     double chaos_sleep_time_us = 0;
 
