@@ -3,7 +3,7 @@
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
-#include <Interpreters/evaluateMissingDefaults.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Common/typeid_cast.h>
 #include <Poco/File.h>
@@ -173,6 +173,55 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
             res_columns[pos] = std::move(additional_columns.getByName(name_and_type->name).column);
+    }
+    catch (Exception & e)
+    {
+        /// Better diagnostics.
+        e.addMessage("(while reading from part " + path + ")");
+        throw;
+    }
+}
+
+void IMergeTreeReader::performRequiredConversions(Columns & res_columns)
+{
+    try
+    {
+        size_t num_columns = columns.size();
+
+        if (res_columns.size() != num_columns)
+        {
+            throw Exception(
+                "Invalid number of columns passed to MergeTreeReader::performRequiredConversions. "
+                "Expected "
+                    + toString(num_columns)
+                    + ", "
+                      "got "
+                    + toString(res_columns.size()),
+                ErrorCodes::LOGICAL_ERROR);
+        }
+
+        Block copy_block;
+        auto name_and_type = columns.begin();
+
+        for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
+        {
+            if (res_columns[pos] == nullptr)
+                continue;
+
+            if (columns_from_part.count(name_and_type->name))
+                copy_block.insert({res_columns[pos], columns_from_part[name_and_type->name], name_and_type->name});
+            else
+                copy_block.insert({res_columns[pos], name_and_type->type, name_and_type->name});
+        }
+
+        DB::performRequiredConversions(copy_block, columns, storage.global_context);
+
+        /// Move columns from block.
+        name_and_type = columns.begin();
+        for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
+        {
+            res_columns[pos] = std::move(copy_block.getByName(name_and_type->name).column);
+        }
     }
     catch (Exception & e)
     {

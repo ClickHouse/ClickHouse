@@ -817,7 +817,11 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     if (settings.enable_optimize_predicate_expression)
         replaceJoinedTable(*select_query);
 
-    const std::vector<TableWithColumnNames> & tables_with_columns = joined_tables.tablesWithColumns();
+    /// TODO: Remove unneeded conversion
+    std::vector<TableWithColumnNames> tables_with_columns;
+    for (const auto & table : joined_tables.tablesWithColumns())
+        tables_with_columns.emplace_back(table.removeTypes());
+
     result.analyzed_join->columns_from_joined_table = joined_tables.secondTableColumns();
 
     if (result.analyzed_join->columns_from_joined_table.size())
