@@ -7,6 +7,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 from helpers.client import QueryRuntimeException
+from helpers.network import PartitionManager
 
 import json
 import subprocess
@@ -34,6 +35,7 @@ instance = cluster.add_instance('instance',
                                 config_dir='configs',
                                 main_configs=['configs/kafka.xml', 'configs/log_conf.xml' ],
                                 with_kafka=True,
+                                with_zookeeper=True,
                                 clickhouse_path_dir='clickhouse_path')
 kafka_id = ''
 
@@ -1105,6 +1107,57 @@ def test_kafka_rebalance(kafka_cluster):
     kafka_thread.join()
 
     assert result == 1, 'Messages from kafka get duplicated!'
+
+@pytest.mark.timeout(1200)
+def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster):
+    messages = [json.dumps({'key': j+1, 'value': 'x' * 300}) for j in range(22)]
+    kafka_produce('no_holes_when_write_suffix_failed', messages)
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+
+        CREATE TABLE test.kafka (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'no_holes_when_write_suffix_failed',
+                     kafka_group_name = 'no_holes_when_write_suffix_failed',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 20;
+
+        CREATE TABLE test.view (key UInt64, value String)
+            ENGINE = ReplicatedMergeTree('/clickhouse/kafkatest/tables/no_holes_when_write_suffix_failed', 'node1')
+            ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.kafka
+            WHERE NOT sleepEachRow(1);
+    ''')
+    # the tricky part here is that disconnect should happen after write prefix, but before write suffix
+    # so i use sleepEachRow
+    with PartitionManager() as pm:
+        time.sleep(12)
+        pm.drop_instance_zk_connections(instance)
+        time.sleep(20)
+        pm.heal_all
+
+    # connection restored and it will take a while until next block will be flushed
+    time.sleep(40)
+
+    # as it's a bit tricky to hit the proper moment - let's check in logs if we did it correctly
+    assert instance.contains_in_log("ZooKeeper session has been expired.: while write prefix to view")
+
+    result = instance.query('SELECT count(), uniqExact(key), max(key) FROM test.view')
+    print(result)
+
+    # kafka_cluster.open_bash_shell('instance')
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    assert TSV(result) == TSV('22\t22\t22')
 
 
 
