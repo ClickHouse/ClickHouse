@@ -1,0 +1,6 @@
+;This configuration file loads constructed buffers from given file
+
+"load buffers from binary file" "test_save.dat"; 'char*', load file name of the saved buffer files.
+"CSV separator" ','; char, defines separator used fro CSV output (in soviet russia it is ';' for some reason!)
+"print CSV" "true"; char, Y/N. Fives directions whether to print resulting buffers in CSV format in std::cout.
+;"save file name" "test_save.dat"; char*, file name to save buffers to. Buffers are not saved if the filename is not given.

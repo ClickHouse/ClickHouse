@@ -1,3 +1,4 @@
-if (ENABLE_TESTS)
-    add_subdirectory (tests)
+
+if (USE_CUDA)
+    add_subdirectory (Cuda)
 endif ()

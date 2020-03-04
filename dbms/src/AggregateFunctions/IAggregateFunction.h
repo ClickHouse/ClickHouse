@@ -5,18 +5,23 @@
 #include <vector>
 #include <type_traits>
 
+#include <Common/config.h>
+
 #include <Core/Types.h>
-#include <Core/ColumnNumbers.h>
-#include <Core/Block.h>
-#include <Common/Exception.h>
 #include <Core/Field.h>
+#include <Common/Exception.h>
+
+#if USE_CUDA
+#include <AggregateFunctions/Cuda/ICudaAggregateFunction.h>
+#endif
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
+    extern const int CUDA_UNSUPPORTED_AGGREGATE_FUNCTION;
 }
 
 class Arena;
@@ -43,22 +48,13 @@ using ConstAggregateDataPtr = const char *;
 class IAggregateFunction
 {
 public:
-    IAggregateFunction(const DataTypes & argument_types_, const Array & parameters_)
-        : argument_types(argument_types_), parameters(parameters_) {}
-
     /// Get main function name.
     virtual String getName() const = 0;
 
     /// Get the result type.
     virtual DataTypePtr getReturnType() const = 0;
 
-    /// Get type which will be used for prediction result in case if function is an ML method.
-    virtual DataTypePtr getReturnTypeToPredict() const
-    {
-        throw Exception("Prediction is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    virtual ~IAggregateFunction() {}
+    virtual ~IAggregateFunction() {};
 
     /** Data manipulating functions. */
 
@@ -104,20 +100,6 @@ public:
     /// Inserts results into a column.
     virtual void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const = 0;
 
-    /// Used for machine learning methods. Predict result from trained model.
-    /// Will insert result into `to` column for rows in range [offset, offset + limit).
-    virtual void predictValues(
-        ConstAggregateDataPtr /* place */,
-        IColumn & /*to*/,
-        Block & /*block*/,
-        size_t /*offset*/,
-        size_t /*limit*/,
-        const ColumnNumbers & /*arguments*/,
-        const Context & /*context*/) const
-    {
-        throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     /** Returns true for aggregate functions of type -State.
       * They are executed as other aggregate functions, but not finalized (return an aggregation state that can be combined with another).
       */
@@ -132,29 +114,21 @@ public:
     using AddFunc = void (*)(const IAggregateFunction *, AggregateDataPtr, const IColumn **, size_t, Arena *);
     virtual AddFunc getAddressOfAddFunction() const = 0;
 
-    /** Contains a loop with calls to "add" function. You can collect arguments into array "places"
-      *  and do a single call to "addBatch" for devirtualization and inlining.
+    /** This is used for runtime code generation to determine, which header files to include in generated source.
+      * Always implement it as
+      * const char * getHeaderFilePath() const override { return __FILE__; }
       */
-    virtual void addBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena) const = 0;
+    virtual const char * getHeaderFilePath() const = 0;
 
-    /** The same for single place.
-      */
-    virtual void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
-
-    /** In addition to addBatch, this method collects multiple rows of arguments into array "places"
-      *  as long as they are between offsets[i-1] and offsets[i]. This is used for arrayReduce and
-      *  -Array combinator. It might also be used generally to break data dependency when array
-      *  "places" contains a large number of same values consecutively.
-      */
-    virtual void addBatchArray(
-        size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, const UInt64 * offsets, Arena * arena) const = 0;
-
-    const DataTypes & getArgumentTypes() const { return argument_types; }
-    const Array & getParameters() const { return parameters; }
-
-protected:
-    DataTypes argument_types;
-    Array parameters;
+#if USE_CUDA
+    virtual const CudaAggregateFunctionPtr  createCudaFunction() const
+    {
+        throw Exception("IAggregateFunction::createCudaFunction: aggregate function is not supported", ErrorCodes::CUDA_UNSUPPORTED_AGGREGATE_FUNCTION);
+        return nullptr;
+    }
+#else
+    //#error "no USE_CUDA!!"
+#endif
 };
 
 
@@ -169,36 +143,7 @@ private:
     }
 
 public:
-    IAggregateFunctionHelper(const DataTypes & argument_types_, const Array & parameters_)
-        : IAggregateFunction(argument_types_, parameters_) {}
-
     AddFunc getAddressOfAddFunction() const override { return &addFree; }
-
-    void addBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena) const override
-    {
-        for (size_t i = 0; i < batch_size; ++i)
-            static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
-    }
-
-    void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
-    {
-        for (size_t i = 0; i < batch_size; ++i)
-            static_cast<const Derived *>(this)->add(place, columns, i, arena);
-    }
-
-    void addBatchArray(
-        size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, const UInt64 * offsets, Arena * arena)
-        const override
-    {
-        size_t current_offset = 0;
-        for (size_t i = 0; i < batch_size; ++i)
-        {
-            size_t next_offset = offsets[i];
-            for (size_t j = current_offset; j < next_offset; ++j)
-                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
-            current_offset = next_offset;
-        }
-    }
 };
 
 
@@ -213,9 +158,6 @@ protected:
     static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data*>(place); }
 
 public:
-    IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
-        : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
-
     void create(AggregateDataPtr place) const override
     {
         new (place) Data;

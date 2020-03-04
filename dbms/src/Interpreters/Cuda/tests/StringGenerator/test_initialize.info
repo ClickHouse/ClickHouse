@@ -1,0 +1,13 @@
+;This configuration file initializes construction of buffers from scratch
+
+"maximum memory in MB"  1000;	'float', maximum memory used by the buffer of (keys|texts).
+"CSV separator"         ','; char, defines separator used fro CSV output (in soviet russia it is ';' for some reason!)
+"print CSV"             "false"; bool, gives directions whether to print resulting buffers in CSV format in std::cout.
+"text length"           15; 'int', expected mean length of (texts).
+"text stddev"           5; 'int', standard deviation of the length in (texts).
+"key length"            15; 'int', expected mean length of (keys).
+"key stddev"            5; 'int', standard deviation of the length in (keys).
+"number of unique keys"  10000; 'int', number of unique keys. 
+"number of unique texts" 1000; 'int', ratio of unique texts. 
+"save file name"        "test_save.dat"; file name to save buffers to. Buffers are not saved if the filename is not given.
+"rec_perm" 00000; maximum number of records generated via permutation of the buffer
