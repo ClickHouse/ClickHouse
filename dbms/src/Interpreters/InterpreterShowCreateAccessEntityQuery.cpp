@@ -43,9 +43,6 @@ namespace
         if (user.allowed_client_hosts != AllowedClientHosts::AnyHostTag{})
             query->hosts = user.allowed_client_hosts;
 
-        if (!user.profile.empty())
-            query->profile = user.profile;
-
         if (user.default_roles != ExtendedRoleSet::AllTag{})
         {
             if (attach_mode)

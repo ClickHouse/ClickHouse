@@ -29,6 +29,11 @@ class RowPolicyCache;
 class EnabledQuota;
 class QuotaCache;
 struct QuotaUsageInfo;
+struct SettingsProfile;
+using SettingsProfilePtr = std::shared_ptr<const SettingsProfile>;
+class EnabledSettings;
+class SettingsProfilesCache;
+class SettingsProfileElements;
 class ClientInfo;
 struct Settings;
 
@@ -42,6 +47,7 @@ public:
 
     void setLocalDirectory(const String & directory);
     void setUsersConfig(const Poco::Util::AbstractConfiguration & users_config);
+    void setDefaultProfileName(const String & default_profile_name);
 
     std::shared_ptr<const ContextAccess> getContextAccess(
         const UUID & user_id,
@@ -68,12 +74,20 @@ public:
 
     std::vector<QuotaUsageInfo> getQuotaUsageInfo() const;
 
+    std::shared_ptr<const EnabledSettings> getEnabledSettings(const UUID & user_id,
+                                                              const SettingsProfileElements & settings_from_user,
+                                                              const std::vector<UUID> & enabled_roles,
+                                                              const SettingsProfileElements & settings_from_enabled_roles) const;
+
+    std::shared_ptr<const SettingsChanges> getProfileSettings(const String & profile_name) const;
+
 private:
     class ContextAccessCache;
     std::unique_ptr<ContextAccessCache> context_access_cache;
     std::unique_ptr<RoleCache> role_cache;
     std::unique_ptr<RowPolicyCache> row_policy_cache;
     std::unique_ptr<QuotaCache> quota_cache;
+    std::unique_ptr<SettingsProfilesCache> settings_profiles_cache;
 };
 
 }

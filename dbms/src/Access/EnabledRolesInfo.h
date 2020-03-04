@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/AccessRights.h>
+#include <Access/SettingsProfileElement.h>
 #include <Core/UUID.h>
 #include <unordered_map>
 #include <vector>
@@ -18,6 +19,7 @@ struct EnabledRolesInfo
     std::unordered_map<UUID, String> names_of_roles;
     AccessRights access;
     AccessRights access_with_grant_option;
+    SettingsProfileElements settings_from_enabled_roles;
 
     Strings getCurrentRolesNames() const;
     Strings getEnabledRolesNames() const;

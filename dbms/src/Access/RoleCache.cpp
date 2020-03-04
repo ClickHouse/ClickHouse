@@ -61,6 +61,7 @@ namespace
             new_info->names_of_roles[role_id] = role->getName();
             new_info->access.merge(role->access);
             new_info->access_with_grant_option.merge(role->access_with_grant_option);
+            new_info->settings_from_enabled_roles.merge(role->settings);
         }
         return new_info;
     }
