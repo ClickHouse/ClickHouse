@@ -56,7 +56,7 @@
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
-#include <ext/singleton.h>
+
 
 #include <Databases/DatabaseMemory.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -221,6 +221,8 @@ struct ContextShared
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
+    std::optional<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
+
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
     class SessionKeyHash
@@ -320,15 +322,21 @@ struct ContextShared
         schedule_pool.reset();
         ddl_worker.reset();
 
-        ext::Singleton<TraceCollector>::reset();
+        /// Stop trace collector if any
+        trace_collector.reset();
+    }
+
+    bool hasTraceCollector() const
+    {
+        return trace_collector.has_value();
     }
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
     {
-        if (trace_log == nullptr)
+        if (hasTraceCollector())
             return;
 
-        ext::Singleton<TraceCollector>()->setTraceLog(trace_log);
+        trace_collector.emplace(std::move(trace_log));
     }
 };
 
@@ -1557,6 +1565,11 @@ void Context::initializeSystemLogs()
 void Context::initializeTraceCollector()
 {
     shared->initializeTraceCollector(getTraceLog());
+}
+
+bool Context::hasTraceCollector() const
+{
+    return shared->hasTraceCollector();
 }
 
 

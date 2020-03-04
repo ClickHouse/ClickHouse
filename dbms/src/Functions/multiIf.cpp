@@ -242,4 +242,3 @@ void registerFunctionMultiIf(FunctionFactory & factory)
 }
 
 
-
