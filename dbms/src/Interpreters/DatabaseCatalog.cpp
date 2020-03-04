@@ -72,7 +72,7 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
 }
 
 
-StoragePtr DatabaseCatalog::getTableImpl(const StorageID & table_id, const Context & local_context, std::optional<Exception> * exception) const
+DatabaseAndTable  DatabaseCatalog::getTableImpl(const StorageID & table_id, const Context & local_context, std::optional<Exception> * exception) const
 {
     if (!table_id)
     {
@@ -120,7 +120,7 @@ StoragePtr DatabaseCatalog::getTableImpl(const StorageID & table_id, const Conte
     if (!table && exception)
             exception->emplace("Table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
-    return table;
+    return {database, table};
 }
 
 void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
@@ -343,16 +343,21 @@ bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id, const Contex
 
 StoragePtr DatabaseCatalog::getTable(const StorageID & table_id) const
 {
-    std::optional<Exception> exc;
-    auto res = getTableImpl(table_id, *global_context, &exc);
-    if (!res)
-        throw *exc;
-    return res;
+    return tryGetDatabaseAndTable(table_id).second;
 }
 
 StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id) const
 {
-    return getTableImpl(table_id, *global_context, nullptr);
+    return getTableImpl(table_id, *global_context, nullptr).second;
+}
+
+DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id) const
+{
+    std::optional<Exception> exc;
+    auto res = getTableImpl(table_id, *global_context, &exc);
+    if (!res.second)
+        throw *exc;
+    return res;
 }
 
 
