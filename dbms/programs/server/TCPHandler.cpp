@@ -546,8 +546,8 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
 {
     auto & pipeline = state.io.pipeline;
 
-    if (pipeline.getMaxThreads())
-        num_threads = std::min(num_threads, pipeline.getMaxThreads());
+    /// Reduce the number of threads to recommended value.
+    num_threads = std::min(num_threads, pipeline.getNumThreads());
 
     /// Send header-block, to allow client to prepare output format for data to send.
     {

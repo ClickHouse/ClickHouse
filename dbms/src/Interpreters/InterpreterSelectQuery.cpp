@@ -151,7 +151,7 @@ String InterpreterSelectQuery::generateFilterActions(ExpressionActionsPtr & acti
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
-    auto syntax_result = SyntaxAnalyzer(*context).analyzeSelect(query_ast, storage->getColumns().getAll());
+    auto syntax_result = SyntaxAnalyzer(*context).analyzeSelect(query_ast, SyntaxAnalyzerResult({}, storage));
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context);
     actions = analyzer.simpleSelectActions();
 
@@ -266,7 +266,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         /// Read from subquery.
         interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-            left_table_expression, getSubqueryContext(*context), options.subquery(), required_columns);
+            left_table_expression, getSubqueryContext(*context), options.subquery());
 
         source_header = interpreter_subquery->getSampleBlock();
     }
@@ -295,7 +295,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     auto analyze = [&] (bool try_move_to_prewhere = true)
     {
         syntax_analyzer_result = SyntaxAnalyzer(*context).analyzeSelect(
-                query_ptr, source_header.getNamesAndTypesList(), storage, options, joined_tables, required_result_column_names);
+                query_ptr, SyntaxAnalyzerResult(source_header.getNamesAndTypesList(), storage),
+                options, joined_tables.tablesWithColumns(), required_result_column_names);
 
         /// Save scalar sub queries's results in the query context
         if (context->hasQueryContext())
@@ -333,8 +334,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
                             left_table_expression,
                             getSubqueryContext(*context),
-                            options.subquery(),
-                            required_columns);
+                            options.subquery());
             }
         }
 
