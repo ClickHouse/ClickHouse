@@ -293,6 +293,7 @@ ext::scope_guard MemoryAccessStorage::subscribeForChangesImpl(const UUID & id, c
 
 bool MemoryAccessStorage::hasSubscriptionImpl(const UUID & id) const
 {
+    std::lock_guard lock{mutex};
     auto it = entries.find(id);
     if (it != entries.end())
     {
@@ -305,6 +306,7 @@ bool MemoryAccessStorage::hasSubscriptionImpl(const UUID & id) const
 
 bool MemoryAccessStorage::hasSubscriptionImpl(std::type_index type) const
 {
+    std::lock_guard lock{mutex};
     auto range = handlers_by_type.equal_range(type);
     return range.first != range.second;
 }

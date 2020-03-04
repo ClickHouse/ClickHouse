@@ -35,7 +35,6 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     addTotalRowsApprox(data_part->rows_count);
 
     header = storage.getSampleBlockForColumns(columns_to_read);
-    fixHeader(header);
 
     /// Add columns because we don't want to read empty blocks
     injectRequiredColumns(storage, data_part, columns_to_read);
@@ -109,7 +108,11 @@ try
             reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_readed);
 
             if (should_evaluate_missing_defaults)
+            {
                 reader->evaluateMissingDefaults({}, columns);
+            }
+
+            reader->performRequiredConversions(columns);
 
             res = header.cloneEmpty();
 

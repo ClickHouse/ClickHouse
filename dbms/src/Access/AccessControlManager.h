@@ -45,7 +45,8 @@ public:
     AccessControlManager();
     ~AccessControlManager();
 
-    void loadFromConfig(const Poco::Util::AbstractConfiguration & users_config);
+    void setLocalDirectory(const String & directory);
+    void setUsersConfig(const Poco::Util::AbstractConfiguration & users_config);
 
     AccessRightsContextPtr getAccessRightsContext(
         const UUID & user_id,
