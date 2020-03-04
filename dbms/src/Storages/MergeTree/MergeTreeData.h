@@ -669,7 +669,7 @@ public:
     Strings getDataPaths() const override;
 
     /// Reserves space at least 1MB
-    DiskSpace::ReservationPtr reserveSpace(UInt64 expected_size);
+    DiskSpace::ReservationPtr reserveSpace(UInt64 expected_size, size_t min_volume_index = 0);
 
     /// Choose disk with max available free space
     /// Reserves 0 bytes

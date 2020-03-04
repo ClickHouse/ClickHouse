@@ -3095,13 +3095,13 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     return loaded_parts;
 }
 
-DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size)
+DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size, size_t min_volume_index)
 {
     constexpr UInt64 RESERVATION_MIN_ESTIMATION_SIZE = 1u * 1024u * 1024u; /// 1MB
 
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    auto reservation = storage_policy->reserve(expected_size);
+    auto reservation = storage_policy->reserve(expected_size, min_volume_index);
     if (reservation)
         return reservation;
 
