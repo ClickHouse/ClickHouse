@@ -1142,7 +1142,8 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster):
         pm.heal_all
 
     # connection restored and it will take a while until next block will be flushed
-    time.sleep(40)
+    # it takes years on CI :\
+    time.sleep(90)
 
     # as it's a bit tricky to hit the proper moment - let's check in logs if we did it correctly
     assert instance.contains_in_log("ZooKeeper session has been expired.: while write prefix to view")
