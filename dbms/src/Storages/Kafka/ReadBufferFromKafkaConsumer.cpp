@@ -78,14 +78,16 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
 ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
 {
     /// NOTE: see https://github.com/edenhill/librdkafka/issues/2077
-    try {
+    try
+    {
         if (!consumer->get_subscription().empty())
             consumer->unsubscribe();
-        if (!assignment.empty()) {
+        if (!assignment.empty())
             consumer->unassign();
-        }
         while (consumer->get_consumer_queue().next_event(100ms));
-    } catch (const cppkafka::HandleException & e) {
+    }
+    catch (const cppkafka::HandleException & e)
+    {
         LOG_ERROR(log, "Exception from ReadBufferFromKafkaConsumer destructor: " << e.what());
     }
 }
@@ -192,10 +194,13 @@ void ReadBufferFromKafkaConsumer::unsubscribe()
     BufferBase::set(nullptr, 0, 0);
 
     // it should not raise exception as used in destructor
-    try {
+    try
+    {
         if (!consumer->get_subscription().empty())
             consumer->unsubscribe();
-    } catch (const cppkafka::HandleException &e) {
+    }
+    catch (const cppkafka::HandleException & e)
+    {
         LOG_ERROR(log, "Exception from ReadBufferFromKafkaConsumer::unsubscribe: " << e.what());
     }
 
