@@ -32,7 +32,6 @@ public:
     void resolveTables(const Context & context, const NamesAndTypesList & source_columns);
 
     const std::vector<TableWithColumnNamesAndTypes> & tablesWithColumns() const { return tables_with_columns; }
-    const NamesAndTypesList & secondTableColumns() const;
 
     bool isLeftTableSubquery() const;
     bool isLeftTableFunction() const;
