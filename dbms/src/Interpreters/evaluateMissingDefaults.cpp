@@ -7,8 +7,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTWithAlias.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
 #include <utility>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -29,10 +27,8 @@ static ASTPtr requiredExpressions(Block & block, const NamesAndTypesList & requi
 
         /// expressions must be cloned to prevent modification by the ExpressionAnalyzer
         if (it != column_defaults.end())
-        {
-            auto cast_func = makeASTFunction("CAST", it->second.expression->clone(), std::make_shared<ASTLiteral>(column.type->getName()));
-            default_expr_list->children.emplace_back(setAlias(cast_func, it->first));
-        }
+            default_expr_list->children.emplace_back(
+                setAlias(it->second.expression->clone(), it->first));
     }
 
     if (default_expr_list->children.empty())
