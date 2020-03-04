@@ -1,7 +1,7 @@
 # Broken in macos. TODO: update clang, re-test, enable
 if (NOT APPLE)
     option (ENABLE_EMBEDDED_COMPILER "Set to TRUE to enable support for 'compile_expressions' option for query execution" ${ENABLE_LIBRARIES})
-    option (USE_INTERNAL_LLVM_LIBRARY "Use bundled or system LLVM library." ${NOT_UNBUNDLED})
+    option (USE_INTERNAL_LLVM_LIBRARY "Use bundled LLVM library." ${NOT_UNBUNDLED})
 endif ()
 
 if (ENABLE_EMBEDDED_COMPILER)
@@ -11,30 +11,8 @@ if (ENABLE_EMBEDDED_COMPILER)
     endif ()
 
     if (NOT USE_INTERNAL_LLVM_LIBRARY)
-        set (LLVM_PATHS "/usr/local/lib/llvm")
-
-        foreach(llvm_v 9 8)
-            if (NOT LLVM_FOUND)
-                find_package (LLVM ${llvm_v} CONFIG PATHS ${LLVM_PATHS})
-            endif ()
-        endforeach ()
-
-        if (LLVM_FOUND)
-            # Remove dynamically-linked zlib and libedit from LLVM's dependencies:
-            set_target_properties(LLVMSupport PROPERTIES INTERFACE_LINK_LIBRARIES "-lpthread;LLVMDemangle;${ZLIB_LIBRARIES}")
-            set_target_properties(LLVMLineEditor PROPERTIES INTERFACE_LINK_LIBRARIES "LLVMSupport")
-
-            option(LLVM_HAS_RTTI "Enable if LLVM was build with RTTI enabled" ON)
-            set (USE_EMBEDDED_COMPILER 1)
-        else()
-            set (USE_EMBEDDED_COMPILER 0)
-        endif()
-
-        if (LLVM_FOUND AND OS_LINUX AND USE_LIBCXX)
-            message(WARNING "Option USE_INTERNAL_LLVM_LIBRARY is not set but the LLVM library from OS packages in Linux is incompatible with libc++ ABI. LLVM Will be disabled.")
-            set (LLVM_FOUND 0)
-            set (USE_EMBEDDED_COMPILER 0)
-        endif ()
+        set (LLVM_FOUND 0)
+        set (USE_EMBEDDED_COMPILER 0)
     else()
         if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_CURRENT_BINARY_DIR)
             message(WARNING "Option ENABLE_EMBEDDED_COMPILER is set but LLVM library cannot build if build directory is the same as source directory.")
@@ -114,14 +92,3 @@ LLVMDebugInfoCodeView
 LLVMSupport
 LLVMDemangle
 )
-
-#function(llvm_libs_all REQUIRED_LLVM_LIBRARIES)
-#    llvm_map_components_to_libnames (result all)
-#    if (USE_STATIC_LIBRARIES OR NOT "LLVM" IN_LIST result)
-#        list (REMOVE_ITEM result "LTO" "LLVM")
-#    else()
-#        set (result "LLVM")
-#    endif ()
-#    list (APPEND result ${CMAKE_DL_LIBS} ${ZLIB_LIBRARIES})
-#    set (${REQUIRED_LLVM_LIBRARIES} ${result} PARENT_SCOPE)
-#endfunction()
