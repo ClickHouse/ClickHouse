@@ -153,7 +153,6 @@ private:
     std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
     String current_database;
     Settings settings;                                  /// Setting for query execution.
-    std::shared_ptr<const SettingsConstraints> settings_constraints;
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
     QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
@@ -353,7 +352,7 @@ public:
     void clampToSettingsConstraints(SettingsChanges & changes) const;
 
     /// Returns the current constraints (can return null).
-    std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const { return settings_constraints; }
+    std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const;
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
@@ -593,7 +592,6 @@ private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 
     /// Compute and set actual user settings, client_info.current_user should be set
-    void calculateUserSettings();
     void calculateAccessRights();
 
     template <typename... Args>

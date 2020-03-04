@@ -5,6 +5,7 @@
 #include <Access/AllowedClientHosts.h>
 #include <Access/AccessRights.h>
 #include <Access/ExtendedRoleSet.h>
+#include <Access/SettingsProfileElement.h>
 #include <Core/UUID.h>
 #include <boost/container/flat_set.hpp>
 
@@ -22,7 +23,7 @@ struct User : public IAccessEntity
     boost::container::flat_set<UUID> granted_roles;
     boost::container::flat_set<UUID> granted_roles_with_admin_option;
     ExtendedRoleSet default_roles = ExtendedRoleSet::AllTag{};
-    String profile;
+    SettingsProfileElements settings;
 
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<User>(); }

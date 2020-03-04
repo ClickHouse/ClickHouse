@@ -30,6 +30,7 @@
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Access/User.h>
+#include <Access/SettingsProfile.h>
 #include <Access/SettingsConstraints.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
@@ -633,7 +634,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
     std::shared_ptr<const ContextAccess> new_access;
     if (new_user_id)
     {
-        new_access = getAccessControlManager().getContextAccess(*new_user_id, {}, true, settings, current_database, client_info);
+        new_access = getAccessControlManager().getContextAccess(*new_user_id, {}, true, {}, current_database, client_info);
         if (!new_access->isClientHostAllowed() || !new_access->isCorrectPassword(password))
         {
             new_user_id = {};
@@ -649,7 +650,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
     current_roles.clear();
     use_default_roles = true;
 
-    calculateUserSettings();
+    setSettings(*access->getDefaultSettings());
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -776,42 +777,9 @@ std::shared_ptr<const EnabledQuota> Context::getQuota() const
 }
 
 
-void Context::calculateUserSettings()
+void Context::setProfile(const String & profile_name)
 {
-    auto lock = getLock();
-    String profile = getUser()->profile;
-
-    bool old_readonly = settings.readonly;
-    bool old_allow_ddl = settings.allow_ddl;
-    bool old_allow_introspection_functions = settings.allow_introspection_functions;
-
-    /// 1) Set default settings (hardcoded values)
-    /// NOTE: we ignore global_context settings (from which it is usually copied)
-    /// NOTE: global_context settings are immutable and not auto updated
-    settings = Settings();
-    settings_constraints = nullptr;
-
-    /// 2) Apply settings from default profile
-    auto default_profile_name = getDefaultProfileName();
-    if (profile != default_profile_name)
-        setProfile(default_profile_name);
-
-    /// 3) Apply settings from current user
-    setProfile(profile);
-
-    /// 4) Recalculate access rights if it's necessary.
-    if ((settings.readonly != old_readonly) || (settings.allow_ddl != old_allow_ddl) || (settings.allow_introspection_functions != old_allow_introspection_functions))
-        calculateAccessRights();
-}
-
-void Context::setProfile(const String & profile)
-{
-    settings.setProfile(profile, *shared->users_config);
-
-    auto new_constraints
-        = settings_constraints ? std::make_shared<SettingsConstraints>(*settings_constraints) : std::make_shared<SettingsConstraints>();
-    new_constraints->setProfile(profile, *shared->users_config);
-    settings_constraints = std::move(new_constraints);
+    applySettingsChanges(*getAccessControlManager().getProfileSettings(profile_name));
 }
 
 
@@ -993,27 +961,34 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 
 void Context::checkSettingsConstraints(const SettingChange & change) const
 {
-    if (settings_constraints)
+    if (auto settings_constraints = getSettingsConstraints())
         settings_constraints->check(settings, change);
 }
 
 void Context::checkSettingsConstraints(const SettingsChanges & changes) const
 {
-    if (settings_constraints)
+    if (auto settings_constraints = getSettingsConstraints())
         settings_constraints->check(settings, changes);
 }
 
 
 void Context::clampToSettingsConstraints(SettingChange & change) const
 {
-    if (settings_constraints)
+    if (auto settings_constraints = getSettingsConstraints())
         settings_constraints->clamp(settings, change);
 }
 
 void Context::clampToSettingsConstraints(SettingsChanges & changes) const
 {
-    if (settings_constraints)
+    if (auto settings_constraints = getSettingsConstraints())
         settings_constraints->clamp(settings, changes);
+}
+
+
+std::shared_ptr<const SettingsConstraints> Context::getSettingsConstraints() const
+{
+    auto lock = getLock();
+    return access->getSettingsConstraints();
 }
 
 
@@ -1877,8 +1852,10 @@ void Context::setApplicationType(ApplicationType type)
 void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)
 {
     shared->default_profile_name = config.getString("default_profile", "default");
+    getAccessControlManager().setDefaultProfileName(shared->default_profile_name);
+
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
-    setSetting("profile", shared->system_profile_name);
+    setProfile(shared->system_profile_name);
 }
 
 String Context::getDefaultProfileName() const

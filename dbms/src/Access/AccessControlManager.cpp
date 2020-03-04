@@ -8,6 +8,7 @@
 #include <Access/RowPolicyCache.h>
 #include <Access/QuotaCache.h>
 #include <Access/QuotaUsageInfo.h>
+#include <Access/SettingsProfilesCache.h>
 #include <Core/Settings.h>
 #include <Poco/ExpireCache.h>
 #include <mutex>
@@ -36,7 +37,13 @@ class AccessControlManager::ContextAccessCache
 public:
     explicit ContextAccessCache(const AccessControlManager & manager_) : manager(manager_) {}
 
-    std::shared_ptr<const ContextAccess> getContextAccess(const UUID & user_id, const std::vector<UUID> & current_roles, bool use_default_roles, const Settings & settings, const String & current_database, const ClientInfo & client_info)
+    std::shared_ptr<const ContextAccess> getContextAccess(
+        const UUID & user_id,
+        const std::vector<UUID> & current_roles,
+        bool use_default_roles,
+        const Settings & settings,
+        const String & current_database,
+        const ClientInfo & client_info)
     {
         ContextAccess::Params params;
         params.user_id = user_id;
@@ -72,7 +79,8 @@ AccessControlManager::AccessControlManager()
       context_access_cache(std::make_unique<ContextAccessCache>(*this)),
       role_cache(std::make_unique<RoleCache>(*this)),
       row_policy_cache(std::make_unique<RowPolicyCache>(*this)),
-      quota_cache(std::make_unique<QuotaCache>(*this))
+      quota_cache(std::make_unique<QuotaCache>(*this)),
+      settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this))
 {
 }
 
@@ -91,6 +99,12 @@ void AccessControlManager::setUsersConfig(const Poco::Util::AbstractConfiguratio
 {
     auto & users_config_access_storage = dynamic_cast<UsersConfigAccessStorage &>(getStorageByIndex(USERS_CONFIG_ACCESS_STORAGE_INDEX));
     users_config_access_storage.setConfiguration(users_config);
+}
+
+
+void AccessControlManager::setDefaultProfileName(const String & default_profile_name)
+{
+    settings_profiles_cache->setDefaultProfileName(default_profile_name);
 }
 
 
@@ -130,6 +144,21 @@ std::shared_ptr<const EnabledQuota> AccessControlManager::getEnabledQuota(
 std::vector<QuotaUsageInfo> AccessControlManager::getQuotaUsageInfo() const
 {
     return quota_cache->getUsageInfo();
+}
+
+
+std::shared_ptr<const EnabledSettings> AccessControlManager::getEnabledSettings(
+    const UUID & user_id,
+    const SettingsProfileElements & settings_from_user,
+    const std::vector<UUID> & enabled_roles,
+    const SettingsProfileElements & settings_from_enabled_roles) const
+{
+    return settings_profiles_cache->getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles);
+}
+
+std::shared_ptr<const SettingsChanges> AccessControlManager::getProfileSettings(const String & profile_name) const
+{
+    return settings_profiles_cache->getProfileSettings(profile_name);
 }
 
 }

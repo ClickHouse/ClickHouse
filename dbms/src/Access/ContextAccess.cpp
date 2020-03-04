@@ -5,6 +5,7 @@
 #include <Access/EnabledQuota.h>
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
+#include <Access/EnabledSettings.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
@@ -123,6 +124,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
         roles_with_admin_option = nullptr;
         enabled_row_policies = nullptr;
         enabled_quota = nullptr;
+        enabled_settings = nullptr;
         return;
     }
 
@@ -172,6 +174,7 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
     boost::range::fill(result_access, nullptr /* need recalculate */);
     enabled_row_policies = manager->getEnabledRowPolicies(*params.user_id, roles_info->enabled_roles);
     enabled_quota = manager->getEnabledQuota(*params.user_id, user_name, roles_info->enabled_roles, params.address, params.quota_key);
+    enabled_settings = manager->getEnabledSettings(*params.user_id, user->settings, roles_info->enabled_roles, roles_info->settings_from_enabled_roles);
 }
 
 
@@ -530,6 +533,20 @@ std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
         return full_access;
     }();
     return res;
+}
+
+
+std::shared_ptr<const Settings> ContextAccess::getDefaultSettings() const
+{
+    std::lock_guard lock{mutex};
+    return enabled_settings->getSettings();
+}
+
+
+std::shared_ptr<const SettingsConstraints> ContextAccess::getSettingsConstraints() const
+{
+    std::lock_guard lock{mutex};
+    return enabled_settings->getConstraints();
 }
 
 }

@@ -21,7 +21,9 @@ struct EnabledRolesInfo;
 class EnabledRoles;
 class EnabledRowPolicies;
 class EnabledQuota;
+class EnabledSettings;
 struct Settings;
+class SettingsConstraints;
 class AccessControlManager;
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
@@ -69,6 +71,8 @@ public:
     std::shared_ptr<const EnabledRowPolicies> getRowPolicies() const;
     ASTPtr getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType index, const ASTPtr & extra_condition = nullptr) const;
     std::shared_ptr<const EnabledQuota> getQuota() const;
+    std::shared_ptr<const Settings> getDefaultSettings() const;
+    std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const;
 
     /// Checks if a specified access is granted, and throws an exception if not.
     /// Empty database means the current database.
@@ -124,6 +128,7 @@ private:
 
     void setUser(const UserPtr & user_) const;
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const;
+    void setSettingsAndConstraints() const;
 
     template <int mode, bool grant_option, typename... Args>
     bool checkAccessImpl(Poco::Logger * log_, const AccessFlags & flags, const Args &... args) const;
@@ -150,6 +155,7 @@ private:
     mutable boost::atomic_shared_ptr<const AccessRights> result_access[7];
     mutable std::shared_ptr<const EnabledRowPolicies> enabled_row_policies;
     mutable std::shared_ptr<const EnabledQuota> enabled_quota;
+    mutable std::shared_ptr<const EnabledSettings> enabled_settings;
     mutable std::mutex mutex;
 };
 

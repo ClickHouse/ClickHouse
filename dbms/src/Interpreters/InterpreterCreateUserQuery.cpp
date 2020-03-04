@@ -47,9 +47,6 @@ namespace
 
             InterpreterSetRoleQuery::updateUserSetDefaultRoles(user, *default_roles);
         }
-
-        if (query.profile)
-            user.profile = *query.profile;
     }
 }
 
