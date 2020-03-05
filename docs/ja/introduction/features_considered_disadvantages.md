@@ -5,3 +5,4 @@
 3. インデックスが疎であるため、ClickHouseは、キーで単一行を取得するようなクエリにはあまり適していません。
 
 [Original article](https://clickhouse.yandex/docs/en/introduction/features_considered_disadvantages/) <!--hide-->
+
