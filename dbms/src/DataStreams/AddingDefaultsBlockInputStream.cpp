@@ -1,7 +1,7 @@
 #include <Common/typeid_cast.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/evaluateMissingDefaults.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Columns/ColumnsNumber.h>

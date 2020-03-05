@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
-#include <Processors/SharedChunk.h>
 #include <Core/SortDescription.h>
 
 namespace DB
@@ -12,6 +11,7 @@ class LimitTransform : public IProcessor
 private:
     InputPort & input;
     OutputPort & output;
+
 
     size_t limit;
     size_t offset;
@@ -26,10 +26,13 @@ private:
 
     bool with_ties;
     const SortDescription description;
-    SharedChunkRowRef ties_row_ref;
+
+    Chunk previous_row_chunk;  /// for WITH TIES, contains only sort columns
 
     std::vector<size_t> sort_column_positions;
-    ColumnRawPtrs extractSortColumns(const Columns & columns);
+    Chunk makeChunkWithPreviousRow(const Chunk & current_chunk, size_t row_num) const;
+    ColumnRawPtrs extractSortColumns(const Columns & columns) const;
+    bool sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, size_t current_chunk_row_num) const;
 
 public:
     LimitTransform(
