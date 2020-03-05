@@ -286,7 +286,7 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
 
 bool CrossToInnerJoinMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
 {
-    if (auto * t = node->as<ASTSubquery>())
+    if (node->as<ASTSubquery>())
         return false;
     return true;
 }
