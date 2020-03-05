@@ -4,7 +4,7 @@
 
 namespace DB
 {
-/* random(structure(, max_array_length, max_string_length, random_seed)) - creates a temporary storage that generates columns with random data
+/* generate(structure, [max_array_length, max_string_length, random_seed]) - creates a temporary storage that generates columns with random data
  */
 class TableFunctionGenerate : public ITableFunction
 {
