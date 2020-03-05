@@ -76,6 +76,16 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.from_table = command_ast->from_table;
         return res;
     }
+    else if (command_ast->type == ASTAlterCommand::COPY_PARTITION)
+    {
+        PartitionCommand res;
+        res.type = COPY_PARTITION;
+        res.partition = command_ast->partition;
+        res.replace = command_ast->replace;
+        res.from_database = command_ast->from_database;
+        res.from_table = command_ast->from_table;
+        return res;
+    }
     else if (command_ast->type == ASTAlterCommand::FETCH_PARTITION)
     {
         PartitionCommand res;

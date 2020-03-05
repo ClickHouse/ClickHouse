@@ -254,6 +254,12 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess() const
                 required_access.emplace_back(AccessType::DELETE | AccessType::INSERT, alter.database, alter.table);
                 break;
             }
+            case ASTAlterCommand::COPY_PARTITION:
+            {
+                required_access.emplace_back(AccessType::SELECT, command_ast->from_database, command_ast->from_table);
+                required_access.emplace_back(AccessType::DELETE | AccessType::INSERT, alter.database, alter.table);
+                break;
+            }
             case ASTAlterCommand::FETCH_PARTITION:
             {
                 required_access.emplace_back(AccessType::FETCH_PARTITION, alter.database, alter.table);

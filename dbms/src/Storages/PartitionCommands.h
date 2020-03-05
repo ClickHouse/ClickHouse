@@ -28,6 +28,7 @@ struct PartitionCommand
         FREEZE_ALL_PARTITIONS,
         FREEZE_PARTITION,
         REPLACE_PARTITION,
+        COPY_PARTITION
     };
 
     Type type;

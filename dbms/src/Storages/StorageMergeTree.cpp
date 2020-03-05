@@ -1064,6 +1064,15 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             }
             break;
 
+            case PartitionCommand::COPY_PARTITION:
+            {
+                checkPartitionCanBeDropped(command.partition);
+                String from_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
+                auto from_storage = context.getTable(from_database, command.from_table);
+                copyPartitionFrom(from_storage, command.partition, context);
+            }
+            break;
+
             case PartitionCommand::FREEZE_PARTITION:
             {
                 auto lock = lockStructureForShare(false, context.getCurrentQueryId());
@@ -1215,6 +1224,70 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
             if (replace)
                 removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
+        }
+
+        PartLog::addNewParts(global_context, dst_parts, watch.elapsed());
+    }
+    catch (...)
+    {
+        PartLog::addNewParts(global_context, dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
+        throw;
+    }
+}
+
+/*
+ * The same as MOVE PARTITION, but doesn't remove partition from source table.
+ * In addition it allows to copy partition from replicated table.
+ * */
+
+void StorageMergeTree::copyPartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, const Context & context)
+{
+    auto dest_table_lock = lockStructureForShare(false, context.getCurrentQueryId());
+    auto src_table_lock  = source_table->lockStructureForShare(false, context.getCurrentQueryId());
+
+    /// TODO: Maybe something about storage policy?
+
+    Stopwatch watch;
+
+    MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table);
+    String partition_id = getPartitionIDFromQuery(partition, context);
+
+    DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    MutableDataPartsVector dst_parts;
+
+    static const String TMP_PREFIX = "tmp_copy_from_";
+
+    for (const DataPartPtr & src_part : src_parts)
+    {
+        if (!canReplacePartition(src_part))
+            throw Exception(
+                    "Cannot copy partition '" + partition_id + "' because part '" + src_part->name +
+                    "' has inconsistent granularity with table", ErrorCodes::LOGICAL_ERROR);
+
+        /// This will generate unique name in scope of current server process.
+        Int64 temp_index = insert_increment.get();
+        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+
+        std::shared_lock<std::shared_mutex> part_lock(src_part->columns_lock);
+        dst_parts.emplace_back(cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info));
+    }
+
+    /// empty part set
+    if (dst_parts.empty())
+        return;
+
+    /// Copy new parts to the destination table. NOTE It doesn't look atomic.
+    try
+    {
+        {
+            Transaction transaction(*this);
+
+            auto data_parts_lock = lockParts();
+
+            for (MutableDataPartPtr & part : dst_parts)
+                renameTempPartAndReplace(part, &increment, &transaction, data_parts_lock);
+
+            transaction.commit(&data_parts_lock);
         }
 
         PartLog::addNewParts(global_context, dst_parts, watch.elapsed());

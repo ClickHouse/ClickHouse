@@ -59,6 +59,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_move_part("MOVE PART");
     ParserKeyword s_fetch_partition("FETCH PARTITION");
     ParserKeyword s_replace_partition("REPLACE PARTITION");
+    ParserKeyword s_copy_partition("COPY PARTITION");
     ParserKeyword s_freeze("FREEZE");
     ParserKeyword s_partition("PARTITION");
 
@@ -352,6 +353,19 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
             command->replace = true;
             command->type = ASTAlterCommand::REPLACE_PARTITION;
+        }
+        else if (s_copy_partition.ignore(pos, expected))
+        {
+            if (!parser_partition.parse(pos, command->partition, expected))
+                return false;
+
+            if (!s_from.ignore(pos, expected))
+                return false;
+
+            if (!parseDatabaseAndTableName(pos, expected, command->from_database, command->from_table))
+                return false;
+
+            command->type = ASTAlterCommand::COPY_PARTITION;
         }
         else if (s_attach_part.ignore(pos, expected))
         {

@@ -206,6 +206,7 @@ static bool isSupportedAlterType(int type)
     static const std::unordered_set<int> unsupported_alter_types{
         ASTAlterCommand::ATTACH_PARTITION,
         ASTAlterCommand::REPLACE_PARTITION,
+        ASTAlterCommand::COPY_PARTITION,  /// not sure
         ASTAlterCommand::FETCH_PARTITION,
         ASTAlterCommand::FREEZE_PARTITION,
         ASTAlterCommand::FREEZE_ALL,

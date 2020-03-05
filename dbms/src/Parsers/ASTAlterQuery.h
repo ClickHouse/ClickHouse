@@ -47,6 +47,7 @@ public:
         ATTACH_PARTITION,
         MOVE_PARTITION,
         REPLACE_PARTITION,
+        COPY_PARTITION,
         FETCH_PARTITION,
         FREEZE_PARTITION,
         FREEZE_ALL,
