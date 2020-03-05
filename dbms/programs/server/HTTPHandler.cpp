@@ -592,12 +592,14 @@ void HTTPHandler::processQuery(
     customizeContext(context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response] (const String & content_type, const String & format)
+        [&response] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
         {
             response.setContentType(content_type);
+            response.add("X-ClickHouse-Query-Id", current_query_id);
             response.add("X-ClickHouse-Format", format);
-        },
-        [&response] (const String & current_query_id) { response.add("X-ClickHouse-Query-Id", current_query_id); });
+            response.add("X-ClickHouse-Timezone", timezone);
+        }
+    );
 
     if (used_output.hasDelayed())
     {
@@ -705,7 +707,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() &&
             !request.hasContentLength())
         {
-            throw Exception("There is neither Transfer-Encoding header nor Content-Length header", ErrorCodes::HTTP_LENGTH_REQUIRED);
+            throw Exception("The Transfer-Encoding is not chunked and there is no Content-Length header for POST request", ErrorCodes::HTTP_LENGTH_REQUIRED);
         }
 
         processQuery(request, params, response, used_output);

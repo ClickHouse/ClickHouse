@@ -44,6 +44,7 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/SystemLog.cpp>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
+#include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -59,6 +60,7 @@
 #include "TCPHandlerFactory.h"
 #include "Common/config_version.h"
 #include <Common/SensitiveDataMasker.h>
+#include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
 
 #if defined(OS_LINUX)
@@ -217,6 +219,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
+
+    if (ThreadFuzzer::instance().isEffective())
+        LOG_WARNING(log, "ThreadFuzzer is enabled. Application will run slowly and unstable.");
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
@@ -465,6 +470,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
+
+            global_context->updateStorageConfiguration(*config);
         },
         /* already_loaded = */ true);
 
@@ -492,6 +499,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_reloader->reload();
         users_config_reloader->reload();
     });
+
+    /// Sets a local directory storing information about access control.
+    std::string access_control_local_path = config().getString("access_control_path", "");
+    if (!access_control_local_path.empty())
+        global_context->getAccessControlManager().setLocalDirectory(access_control_local_path);
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
