@@ -21,8 +21,8 @@ void Pool::Entry::incrementRefCount()
 {
     if (!data)
         return;
-    ++(data->ref_count);
-    if (data->ref_count==1)
+    ++data->ref_count;
+    if (data->ref_count == 1)
         mysql_thread_init();
 }
 
@@ -32,8 +32,8 @@ void Pool::Entry::decrementRefCount()
         return;
     if (data->ref_count > 0)
     {
-        --(data->ref_count);
-        if (data->ref_count==0)
+        --data->ref_count;
+        if (data->ref_count == 0)
             mysql_thread_end();
     }
 }
