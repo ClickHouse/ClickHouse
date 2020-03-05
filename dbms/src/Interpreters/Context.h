@@ -93,14 +93,17 @@ struct StorageID;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;
+using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 class StoragePolicySelector;
+using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
+
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class Volume;
 using VolumePtr = std::shared_ptr<Volume>;
-struct Session;
+struct NamedSession;
 
 
 #if USE_EMBEDDED_COMPILER
@@ -177,7 +180,7 @@ private:
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
 
-    friend class Sessions;
+    friend class NamedSessions;
 
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
@@ -419,7 +422,11 @@ public:
     const Databases getDatabases() const;
     Databases getDatabases();
 
-    std::shared_ptr<Session> acquireSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check);
+    /// Allow to use named sessions. The thread will be run to cleanup sessions after timeout has expired.
+    /// The method must be called at the server startup.
+    void enableNamedSessions();
+
+    std::shared_ptr<NamedSession> acquireNamedSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check);
 
     /// For methods below you may need to acquire a lock by yourself.
     std::unique_lock<std::recursive_mutex> getLock() const;
@@ -539,16 +546,18 @@ public:
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
-    DiskSelector & getDiskSelector() const;
+    DiskSelectorPtr getDiskSelector() const;
 
     /// Provides storage disks
-    const DiskPtr & getDisk(const String & name) const;
-    const DiskPtr & getDefaultDisk() const { return getDisk("default"); }
+    DiskPtr getDisk(const String & name) const;
+    DiskPtr getDefaultDisk() const { return getDisk("default"); }
 
-    StoragePolicySelector & getStoragePolicySelector() const;
+    StoragePolicySelectorPtr getStoragePolicySelector() const;
+
+    void updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     /// Provides storage politics schemes
-    const StoragePolicyPtr & getStoragePolicy(const String &name) const;
+    StoragePolicyPtr getStoragePolicy(const String & name) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;
@@ -593,8 +602,6 @@ public:
     void setCompiledExpressionCache(size_t cache_size);
     void dropCompiledExpressionCache() const;
 #endif
-
-    void createSessionCleaner();
 
     /// Add started bridge command. It will be killed after context destruction
     void addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
@@ -656,21 +663,21 @@ private:
 };
 
 
-class Sessions;
+class NamedSessions;
 
 /// User name and session identifier. Named sessions are local to users.
-using SessionKey = std::pair<String, String>;
+using NamedSessionKey = std::pair<String, String>;
 
 /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
-struct Session
+struct NamedSession
 {
-    SessionKey key;
+    NamedSessionKey key;
     UInt64 close_cycle = 0;
     Context context;
     std::chrono::steady_clock::duration timeout;
-    Sessions & parent;
+    NamedSessions & parent;
 
-    Session(SessionKey key_, Context & context_, std::chrono::steady_clock::duration timeout_, Sessions & parent_)
+    NamedSession(NamedSessionKey key_, Context & context_, std::chrono::steady_clock::duration timeout_, NamedSessions & parent_)
         : key(key_), context(context_), timeout(timeout_), parent(parent_)
     {
     }

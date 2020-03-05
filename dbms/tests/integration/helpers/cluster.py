@@ -880,19 +880,19 @@ class ClickHouseInstance:
         # used by all utils with any config
         conf_d_dir = p.abspath(p.join(configs_dir, 'conf.d'))
         # used by server with main config.xml
-        config_d_dir = p.abspath(p.join(configs_dir, 'config.d'))
+        self.config_d_dir = p.abspath(p.join(configs_dir, 'config.d'))
         users_d_dir = p.abspath(p.join(configs_dir, 'users.d'))
         os.mkdir(conf_d_dir)
-        os.mkdir(config_d_dir)
+        os.mkdir(self.config_d_dir)
         os.mkdir(users_d_dir)
 
         # The file is named with 0_ prefix to be processed before other configuration overloads.
-        shutil.copy(p.join(HELPERS_DIR, '0_common_instance_config.xml'), config_d_dir)
+        shutil.copy(p.join(HELPERS_DIR, '0_common_instance_config.xml'), self.config_d_dir)
 
         # Generate and write macros file
         macros = self.macros.copy()
         macros['instance'] = self.name
-        with open(p.join(config_d_dir, 'macros.xml'), 'w') as macros_config:
+        with open(p.join(self.config_d_dir, 'macros.xml'), 'w') as macros_config:
             macros_config.write(self.dict_to_xml({"macros": macros}))
 
         # Put ZooKeeper config
@@ -905,7 +905,7 @@ class ClickHouseInstance:
 
         # Copy config.d configs
         for path in self.custom_main_config_paths:
-            shutil.copy(path, config_d_dir)
+            shutil.copy(path, self.config_d_dir)
 
         # Copy users.d configs
         for path in self.custom_user_config_paths:
@@ -976,7 +976,7 @@ class ClickHouseInstance:
                 binary_volume=binary_volume,
                 odbc_bridge_volume=odbc_bridge_volume,
                 configs_dir=configs_dir,
-                config_d_dir=config_d_dir,
+                config_d_dir=self.config_d_dir,
                 db_dir=db_dir,
                 tmpfs=str(self.tmpfs),
                 logs_dir=logs_dir,
