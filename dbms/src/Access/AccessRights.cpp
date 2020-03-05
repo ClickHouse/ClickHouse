@@ -38,7 +38,14 @@ namespace
         const AccessFlags show_flag = AccessType::SHOW;
         const AccessFlags exists_flag = AccessType::EXISTS;
         const AccessFlags create_table_flag = AccessType::CREATE_TABLE;
+        const AccessFlags create_view_flag = AccessType::CREATE_VIEW;
         const AccessFlags create_temporary_table_flag = AccessType::CREATE_TEMPORARY_TABLE;
+        const AccessFlags alter_table_flag = AccessType::ALTER_TABLE;
+        const AccessFlags alter_view_flag = AccessType::ALTER_VIEW;
+        const AccessFlags truncate_table_flag = AccessType::TRUNCATE_TABLE;
+        const AccessFlags truncate_view_flag = AccessType::TRUNCATE_VIEW;
+        const AccessFlags drop_table_flag = AccessType::DROP_TABLE;
+        const AccessFlags drop_view_flag = AccessType::DROP_VIEW;
     };
 
     std::string_view checkCurrentDatabase(const std::string_view & current_database)
@@ -380,6 +387,21 @@ private:
 
         if ((level == GLOBAL_LEVEL) && (final_access & helper.create_table_flag))
             implicit_access |= helper.create_temporary_table_flag;
+
+        if (level <= TABLE_LEVEL)
+        {
+            if (access & helper.create_table_flag)
+                implicit_access |= helper.create_view_flag;
+
+            if (access & helper.drop_table_flag)
+                implicit_access |= helper.drop_view_flag;
+
+            if (access & helper.alter_table_flag)
+                implicit_access |= helper.alter_view_flag;
+
+            if (access & helper.truncate_table_flag)
+                implicit_access |= helper.truncate_view_flag;
+        }
 
         final_access = access | implicit_access;
 
