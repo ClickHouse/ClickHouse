@@ -1,12 +1,14 @@
-#include "evaluateMissingDefaults.h"
+#include "inplaceBlockConversions.h"
 
 #include <Core/Block.h>
+#include <Parsers/queryToString.h>
 #include <Storages/ColumnDefault.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <utility>
@@ -17,7 +19,10 @@
 namespace DB
 {
 
-static ASTPtr requiredExpressions(Block & block, const NamesAndTypesList & required_columns, const ColumnDefaults & column_defaults)
+namespace
+{
+
+ASTPtr defaultRequiredExpressions(Block & block, const NamesAndTypesList & required_columns, const ColumnDefaults & column_defaults)
 {
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
 
@@ -51,22 +56,41 @@ static ASTPtr requiredExpressions(Block & block, const NamesAndTypesList & requi
     return default_expr_list;
 }
 
-void evaluateMissingDefaults(Block & block,
-    const NamesAndTypesList & required_columns,
-    const ColumnDefaults & column_defaults,
-    const Context & context, bool save_unneeded_columns)
+ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & required_columns)
 {
-    if (column_defaults.empty())
-        return;
+    ASTPtr conversion_expr_list = std::make_shared<ASTExpressionList>();
+    for (const auto & required_column : required_columns)
+    {
+        if (!block.has(required_column.name))
+            continue;
 
-    ASTPtr default_expr_list = requiredExpressions(block, required_columns, column_defaults);
-    if (!default_expr_list)
+        auto column_in_block = block.getByName(required_column.name);
+        if (column_in_block.type->equals(*required_column.type))
+            continue;
+
+        auto cast_func = makeASTFunction(
+            "CAST", std::make_shared<ASTIdentifier>(required_column.name), std::make_shared<ASTLiteral>(required_column.type->getName()));
+
+        conversion_expr_list->children.emplace_back(setAlias(cast_func, required_column.name));
+
+    }
+    return conversion_expr_list;
+}
+
+void executeExpressionsOnBlock(
+    Block & block,
+    ASTPtr expr_list,
+    bool save_unneeded_columns,
+    const NamesAndTypesList & required_columns,
+    const Context & context)
+{
+    if (!expr_list)
         return;
 
     if (!save_unneeded_columns)
     {
-        auto syntax_result = SyntaxAnalyzer(context).analyze(default_expr_list, block.getNamesAndTypesList());
-        ExpressionAnalyzer{default_expr_list, syntax_result, context}.getActions(true)->execute(block);
+        auto syntax_result = SyntaxAnalyzer(context).analyze(expr_list, block.getNamesAndTypesList());
+        ExpressionAnalyzer{expr_list, syntax_result, context}.getActions(true)->execute(block);
         return;
     }
 
@@ -74,8 +98,8 @@ void evaluateMissingDefaults(Block & block,
       * we are going to operate on a copy instead of the original block */
     Block copy_block{block};
 
-    auto syntax_result = SyntaxAnalyzer(context).analyze(default_expr_list, block.getNamesAndTypesList());
-    auto expression_analyzer = ExpressionAnalyzer{default_expr_list, syntax_result, context};
+    auto syntax_result = SyntaxAnalyzer(context).analyze(expr_list, block.getNamesAndTypesList());
+    auto expression_analyzer = ExpressionAnalyzer{expr_list, syntax_result, context};
     auto required_source_columns = syntax_result->requiredSourceColumns();
     auto rows_was = copy_block.rows();
 
@@ -108,9 +132,34 @@ void evaluateMissingDefaults(Block & block,
             auto evaluated_col = copy_block.getByName(col->name);
             evaluated_col.column = evaluated_col.column->convertToFullColumnIfConst();
 
-            block.insert(pos, std::move(evaluated_col));
+            if (block.has(col->name))
+                block.getByName(col->name) = std::move(evaluated_col);
+            else
+                block.insert(pos, std::move(evaluated_col));
         }
     }
+}
+
+}
+
+void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, const Context & context)
+{
+    ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns);
+    if (conversion_expr_list->children.empty())
+        return;
+    executeExpressionsOnBlock(block, conversion_expr_list, true, required_columns, context);
+}
+
+void evaluateMissingDefaults(Block & block,
+    const NamesAndTypesList & required_columns,
+    const ColumnDefaults & column_defaults,
+    const Context & context, bool save_unneeded_columns)
+{
+    if (column_defaults.empty())
+        return;
+
+    ASTPtr default_expr_list = defaultRequiredExpressions(block, required_columns, column_defaults);
+    executeExpressionsOnBlock(block, default_expr_list, save_unneeded_columns, required_columns, context);
 }
 
 }

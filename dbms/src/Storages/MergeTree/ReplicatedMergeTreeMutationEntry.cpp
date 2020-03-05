@@ -23,6 +23,11 @@ void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
 
     out << "commands: ";
     commands.writeText(out);
+    out << "\n";
+
+    out << "alter version: ";
+    out << alter_version;
+
 }
 
 void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
@@ -47,6 +52,7 @@ void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
 
     in >> "commands: ";
     commands.readText(in);
+    in >> "\nalter version: " >> alter_version;
 }
 
 String ReplicatedMergeTreeMutationEntry::toString() const
