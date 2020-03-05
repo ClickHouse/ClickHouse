@@ -64,6 +64,10 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     if (client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE && client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE)
         throw Exception("Unsupported fetch protocol version", ErrorCodes::UNKNOWN_PROTOCOL);
 
+    StoragePtr owned_storage = storage.lock();
+    if (!owned_storage)
+        throw Exception("The table was already dropped", ErrorCodes::UNKNOWN_TABLE);
+    
     const auto data_settings = data.getSettings();
 
     /// Validation of the input that may come from malicious replica.
@@ -87,10 +91,6 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
     ++data.current_table_sends;
     SCOPE_EXIT({--data.current_table_sends;});
-
-    StoragePtr owned_storage = storage.lock();
-    if (!owned_storage)
-        throw Exception("The table was already dropped", ErrorCodes::UNKNOWN_TABLE);
 
     LOG_TRACE(log, "Sending part " << part_name);
 
