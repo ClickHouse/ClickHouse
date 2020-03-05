@@ -3,11 +3,14 @@
 #include <Processors/IProcessor.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
-#include <Processors/SharedChunk.h>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class MergingSortedTransform : public IProcessor
 {
@@ -62,7 +65,7 @@ protected:
             {
                 num_rows = limit_rows;
                 for (auto & column : columns)
-                    column = (*column->cut(0, num_rows)->convertToFullColumnIfConst()).mutate();
+                    column = (*column->cut(0, num_rows)).mutate();
             }
 
             total_merged_rows += num_rows;
@@ -109,7 +112,7 @@ protected:
     WriteBuffer * out_row_sources_buf = nullptr;
 
     /// Chunks currently being merged.
-    std::vector<SharedChunkPtr> source_chunks;
+    std::vector<Chunk> source_chunks;
 
     SortCursorImpls cursors;
 
@@ -138,22 +141,19 @@ private:
 
         chunk.setColumns(std::move(columns), num_rows);
 
-        auto & shared_chunk_ptr = source_chunks[source_num];
+        auto & source_chunk = source_chunks[source_num];
 
-        if (!shared_chunk_ptr)
+        if (source_chunk.empty())
         {
-            shared_chunk_ptr = new detail::SharedChunk(std::move(chunk));
-            cursors[source_num] = SortCursorImpl(shared_chunk_ptr->getColumns(), description, source_num);
+            source_chunk = std::move(chunk);
+            cursors[source_num] = SortCursorImpl(source_chunk.getColumns(), description, source_num);
             has_collation |= cursors[source_num].has_collation;
         }
         else
         {
-            *shared_chunk_ptr = std::move(chunk);
-            cursors[source_num].reset(shared_chunk_ptr->getColumns(), {});
+            source_chunk = std::move(chunk);
+            cursors[source_num].reset(source_chunk.getColumns(), {});
         }
-
-        shared_chunk_ptr->all_columns = cursors[source_num].all_columns;
-        shared_chunk_ptr->sort_columns = cursors[source_num].sort_columns;
     }
 };
 

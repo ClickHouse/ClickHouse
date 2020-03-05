@@ -3,7 +3,7 @@
 #include <Access/RowPolicy.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <common/StringRef.h>
+#include <boost/smart_ptr/atomic_shared_ptr.hpp>
 #include <memory>
 #include <unordered_map>
 
@@ -30,6 +30,9 @@ public:
     /// The returned filter can be a combination of the filters defined by multiple row policies.
     ASTPtr getCondition(const String & database, const String & table_name, ConditionIndex index) const;
 
+    /// Combines two conditions into one by using the logical AND operator.
+    static ASTPtr combineConditionsUsingAnd(const ASTPtr & lhs, const ASTPtr & rhs);
+
     /// Returns IDs of all the policies used by the current user.
     std::vector<UUID> getCurrentPolicyIDs() const;
 
@@ -39,10 +42,10 @@ public:
 private:
     friend class RowPolicyContextFactory;
     friend struct ext::shared_ptr_helper<RowPolicyContext>;
-    RowPolicyContext(const String & user_name_); /// RowPolicyContext should be created by RowPolicyContextFactory.
+    RowPolicyContext(const UUID & user_id_, const std::vector<UUID> & enabled_roles_); /// RowPolicyContext should be created by RowPolicyContextFactory.
 
     using DatabaseAndTableName = std::pair<String, String>;
-    using DatabaseAndTableNameRef = std::pair<StringRef, StringRef>;
+    using DatabaseAndTableNameRef = std::pair<std::string_view, std::string_view>;
     struct Hash
     {
         size_t operator()(const DatabaseAndTableNameRef & database_and_table_name) const;
@@ -57,10 +60,11 @@ private:
     };
     using MapOfMixedConditions = std::unordered_map<DatabaseAndTableNameRef, MixedConditions, Hash>;
 
-    const String user_name;
-    std::shared_ptr<const MapOfMixedConditions> atomic_map_of_mixed_conditions; /// Changed atomically, not protected by `mutex`.
+    const UUID user_id;
+    const std::vector<UUID> enabled_roles;
+    mutable boost::atomic_shared_ptr<const MapOfMixedConditions> map_of_mixed_conditions;
 };
 
 
-using RowPolicyContextPtr = std::shared_ptr<RowPolicyContext>;
+using RowPolicyContextPtr = std::shared_ptr<const RowPolicyContext>;
 }

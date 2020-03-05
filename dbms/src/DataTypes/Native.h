@@ -22,6 +22,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 template <typename... Ts>
 static inline bool typeIsEither(const IDataType & type)

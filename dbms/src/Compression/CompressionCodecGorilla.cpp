@@ -21,8 +21,6 @@ namespace ErrorCodes
 {
 extern const int CANNOT_COMPRESS;
 extern const int CANNOT_DECOMPRESS;
-extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
-extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
 namespace
@@ -242,9 +240,9 @@ CompressionCodecGorilla::CompressionCodecGorilla(UInt8 data_bytes_size_)
 {
 }
 
-UInt8 CompressionCodecGorilla::getMethodByte() const
+uint8_t CompressionCodecGorilla::getMethodByte() const
 {
-    return static_cast<UInt8>(CompressionMethodByte::Gorilla);
+    return static_cast<uint8_t>(CompressionMethodByte::Gorilla);
 }
 
 String CompressionCodecGorilla::getCodecDesc() const

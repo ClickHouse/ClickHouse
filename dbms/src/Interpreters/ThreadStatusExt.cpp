@@ -9,8 +9,6 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/TraceCollector.h>
 
-#include <ext/singleton.h>
-
 #if defined(OS_LINUX)
 #   include <Common/hasLinuxCapability.h>
 
@@ -27,6 +25,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int CANNOT_SET_THREAD_PRIORITY;
 }
 
@@ -156,7 +155,7 @@ void ThreadStatus::finalizePerformanceCounters()
 void ThreadStatus::initQueryProfiler()
 {
     /// query profilers are useless without trace collector
-    if (!global_context || !ext::Singleton<TraceCollector>::isInitialized())
+    if (!global_context || !global_context->hasTraceCollector())
         return;
 
     const auto & settings = query_context->getSettingsRef();

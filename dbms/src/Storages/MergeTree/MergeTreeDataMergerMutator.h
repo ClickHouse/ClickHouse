@@ -18,18 +18,27 @@ struct FutureMergedMutatedPart
 {
     String name;
     String path;
+    MergeTreeDataPartType type;
     MergeTreePartInfo part_info;
     MergeTreeData::DataPartsVector parts;
 
     const MergeTreePartition & getPartition() const { return parts.front()->partition; }
 
     FutureMergedMutatedPart() = default;
+
     explicit FutureMergedMutatedPart(MergeTreeData::DataPartsVector parts_)
     {
         assign(std::move(parts_));
     }
 
+    FutureMergedMutatedPart(MergeTreeData::DataPartsVector parts_, MergeTreeDataPartType future_part_type)
+    {
+        assign(std::move(parts_), future_part_type);
+    }
+
     void assign(MergeTreeData::DataPartsVector parts_);
+    void assign(MergeTreeData::DataPartsVector parts_, MergeTreeDataPartType future_part_type);
+
     void updatePath(const MergeTreeData & storage, const ReservationPtr & reservation);
 };
 
@@ -104,8 +113,10 @@ public:
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
-        const std::vector<MutationCommand> & commands,
-        MergeListEntry & merge_entry, const Context & context,
+        const MutationCommands & commands,
+        MergeListEntry & merge_entry,
+        time_t time_of_mutation,
+        const Context & context,
         const ReservationPtr & disk_reservation,
         TableStructureReadLockHolder & table_lock_holder);
 
@@ -123,7 +134,32 @@ private:
       */
     MergeTreeData::DataPartsVector selectAllPartsFromPartition(const String & partition_id);
 
-public:
+    /** Split mutation commands into two parts:
+      * First part should be executed by mutations interpreter.
+      * Other is just simple drop/renames, so they can be executed without interpreter.
+      */
+    void splitMutationCommands(
+        MergeTreeData::DataPartPtr part,
+        const MutationCommands & commands,
+        MutationCommands & for_interpreter,
+        MutationCommands & for_file_renames) const;
+
+
+    /// Apply commands to source_part i.e. remove some columns in source_part
+    /// and return set of files, that have to be removed from filesystem and checksums
+    NameSet collectFilesToRemove(MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension) const;
+
+    /// Files, that we don't need to remove and don't need to hardlink, for example columns.txt and checksums.txt.
+    /// Because we will generate new versions of them after we perform mutation.
+    NameSet collectFilesToSkip(const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension) const;
+
+    /// Get the columns list of the resulting part in the same order as all_columns.
+    NamesAndTypesList getColumnsForNewDataPart(MergeTreeData::DataPartPtr source_part, const Block & updated_header, NamesAndTypesList all_columns) const;
+
+    bool shouldExecuteTTL(const Names & columns, const MutationCommands & commands) const;
+
+
+public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
       * All new attempts to start a merge or mutation will throw an exception until all 'LockHolder' objects will be destroyed.
       */

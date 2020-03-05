@@ -14,6 +14,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {

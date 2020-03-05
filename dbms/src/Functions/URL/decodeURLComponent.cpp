@@ -6,6 +6,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
 
 /// We assume that size of the dst buf isn't less than src_size.
 static size_t decodeURL(const char * src, size_t src_size, char * dst)

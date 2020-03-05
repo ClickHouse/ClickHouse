@@ -13,6 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT;
@@ -115,7 +116,7 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
 
 const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
 {
-    UInt8 val = *reinterpret_cast<const UInt8 *>(pos);
+    UInt8 val = unalignedLoad<UInt8>(pos);
     pos += sizeof(val);
 
     getNullMapData().push_back(val);
