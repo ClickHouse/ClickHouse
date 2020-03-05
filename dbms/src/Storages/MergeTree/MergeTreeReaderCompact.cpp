@@ -39,10 +39,17 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
 
     if (uncompressed_cache)
     {
-        auto buffer =
-            std::make_unique<CachedCompressedReadBuffer>(
-                data_part->disk->readFile(full_data_path, buffer_size, 0, settings.min_bytes_to_use_direct_io, 0),
-                uncompressed_cache);
+        auto buffer = std::make_unique<CachedCompressedReadBuffer>(
+            full_data_path,
+            [&]() {
+                return data_part->disk->readFile(
+                    full_data_path,
+                    buffer_size,
+                    0,
+                    settings.min_bytes_to_use_direct_io,
+                    0);
+            },
+            uncompressed_cache);
 
         if (profile_callback_)
             buffer->setProfileCallback(profile_callback_, clock_type_);
