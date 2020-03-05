@@ -37,10 +37,9 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 
 
 void fillColumnWithRandomData(IColumn & column, const DataTypePtr type, UInt64 limit,
-                              UInt64 max_array_length, UInt64 max_string_length, pcg32& generator, pcg64_fast& generator64)
+                              UInt64 max_array_length, UInt64 max_string_length, pcg32 & generator, pcg64_fast & generator64)
 {
     TypeIndex idx = type->getTypeId();
-    (void) max_string_length;
 
     switch (idx)
     {
@@ -214,11 +213,11 @@ void fillColumnWithRandomData(IColumn & column, const DataTypePtr type, UInt64 l
                     {
                         UInt32 r = generator();
                         chars[i] = 32 + (r & 0x7F) % 95;
-                        chars[i+1] = 32 + ((r >> 7) & 0x7F) % 95;
-                        chars[i+2] = 32 + ((r >> 14) & 0x7F) % 95;
-                        chars[i+3] = 32 + ((r >> 21) & 0x7F) % 95;
-                        chars[i+4] = 32 + (r >> 28);
-                        i+=4;
+                        chars[i + 1] = 32 + ((r >> 7) & 0x7F) % 95;
+                        chars[i + 2] = 32 + ((r >> 14) & 0x7F) % 95;
+                        chars[i + 3] = 32 + ((r >> 21) & 0x7F) % 95;
+                        chars[i + 4] = 32 + (r >> 28);
+                        i += 4;
                     }
                     else
                     {
@@ -229,7 +228,7 @@ void fillColumnWithRandomData(IColumn & column, const DataTypePtr type, UInt64 l
                 // add terminating zero char
                 for (auto & i : offsets)
                 {
-                    chars[i-1] = 0;
+                    chars[i - 1] = 0;
                 }
             }
             break;
@@ -237,7 +236,7 @@ void fillColumnWithRandomData(IColumn & column, const DataTypePtr type, UInt64 l
         case TypeIndex::FixedString:
         {
             auto & column_string = typeid_cast<ColumnFixedString &>(column);
-            size_t len = column_string.sizeOfValueIfFixed();
+            const size_t len = column_string.sizeOfValueIfFixed();
             auto & chars = column_string.getChars();
 
             UInt64 num_chars = static_cast<UInt64>(len) * limit;
@@ -310,8 +309,8 @@ void fillColumnWithRandomData(IColumn & column, const DataTypePtr type, UInt64 l
                 Int128 x = static_cast<Int128>(generator64()) << 64 | static_cast<Int128>(generator64());
                 data[i] = x;
             }
-        }
             break;
+        }
         case TypeIndex::UUID:
         {
             auto & data = typeid_cast<ColumnVector<UInt128> &>(column).getData();
@@ -323,8 +322,8 @@ void fillColumnWithRandomData(IColumn & column, const DataTypePtr type, UInt64 l
                 auto x = UInt128(a, b);
                 data[i] = x;
             }
-        }
             break;
+        }
         case TypeIndex::Array:
         {
             auto & column_array = typeid_cast<ColumnArray &>(column);
@@ -373,7 +372,7 @@ void fillColumnWithRandomData(IColumn & column, const DataTypePtr type, UInt64 l
             null_map.resize(limit);
             for (UInt64 i = 0; i < limit; ++i)
             {
-                null_map[i] = generator() < 1024;
+                null_map[i] = generator() < 1024; /// No real motivation for this.
             }
             break;
         }
