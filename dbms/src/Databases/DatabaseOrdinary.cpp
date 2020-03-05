@@ -159,7 +159,7 @@ void DatabaseOrdinary::loadStoredObjects(
         if (!create_query.is_dictionary)
             pool.scheduleOrThrowOnError([&]()
             {
-                tryAttachTable(context, create_query, *this, getDatabaseName(), name_with_query.first, has_force_restore_data_flag);
+                tryAttachTable(context, create_query, *this, getDatabaseName(), getMetadataPath() + name_with_query.first, has_force_restore_data_flag);
 
                 /// Messages, so that it's not boring to wait for the server to load for a long time.
                 logAboutProgress(log, ++tables_processed, total_tables, watch);
