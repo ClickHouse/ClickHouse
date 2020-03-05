@@ -35,12 +35,12 @@ StoragePtr TableFunctionGenerate::executeImpl(const ASTPtr & ast_function, const
     ASTs & args = args_func.at(0)->children;
 
     if (args.size() < 1)
-        throw Exception("Table function '" + getName() + "' requires at least one argument: "\
+        throw Exception("Table function '" + getName() + "' requires at least one argument: "
                         " structure(, max_array_length, max_string_length, random_seed).",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (args.size() > 4)
-        throw Exception("Table function '" + getName() + "' requires at most four arguments: "\
+        throw Exception("Table function '" + getName() + "' requires at most four arguments: "
                         " structure, max_array_length, max_string_length, random_seed.",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
