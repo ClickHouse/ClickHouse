@@ -125,7 +125,8 @@
 	url = https://github.com/curl/curl.git
 [submodule "contrib/openssl"]
 	path = contrib/openssl
-	url = https://github.com/ClickHouse-Extras/openssl.git
+	url = https://github.com/tavplubix/openssl.git
+	branch = patch_for_msan
 [submodule "contrib/icudata"]
 	path = contrib/icudata
 	url = https://github.com/ClickHouse-Extras/icudata.git
