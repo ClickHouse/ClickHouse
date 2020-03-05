@@ -97,7 +97,7 @@ void QueryPipeline::init(Pipes pipes)
             totals.emplace_back(totals_port);
         }
 
-        streams.emplace_back(&pipe.getPort());
+        streams.addStream(&pipe.getPort());
         auto cur_processors = std::move(pipe).detachProcessors();
         processors.insert(processors.end(), cur_processors.begin(), cur_processors.end());
     }
@@ -225,7 +225,7 @@ void QueryPipeline::addPipe(Processors pipe)
     streams.reserve(last->getOutputs().size());
     for (auto & output : last->getOutputs())
     {
-        streams.emplace_back(&output);
+        streams.addStream(&output);
         if (header)
             assertBlocksHaveEqualStructure(header, output.getHeader(), "QueryPipeline");
         else
@@ -244,7 +244,7 @@ void QueryPipeline::addDelayedStream(ProcessorPtr source)
     assertBlocksHaveEqualStructure(current_header, source->getOutputs().front().getHeader(), "QueryPipeline");
 
     IProcessor::PortNumbers delayed_streams = { streams.size() };
-    streams.emplace_back(&source->getOutputs().front());
+    streams.addStream(&source->getOutputs().front());
     processors.emplace_back(std::move(source));
 
     auto processor = std::make_shared<DelayedPortsProcessor>(current_header, streams.size(), delayed_streams);
@@ -274,7 +274,7 @@ void QueryPipeline::resize(size_t num_streams, bool force, bool strict)
     streams.clear();
     streams.reserve(num_streams);
     for (auto & output : resize->getOutputs())
-        streams.emplace_back(&output);
+        streams.addStream(&output);
 
     processors.emplace_back(std::move(resize));
 }
@@ -302,7 +302,7 @@ void QueryPipeline::addTotalsHavingTransform(ProcessorPtr transform)
 
     auto & outputs = transform->getOutputs();
 
-    streams = { &outputs.front() };
+    streams.assign({ &outputs.front() });
     totals_having_port = &outputs.back();
     current_header = outputs.front().getHeader();
     processors.emplace_back(std::move(transform));
@@ -374,7 +374,7 @@ void QueryPipeline::addExtremesTransform(ProcessorPtr transform)
 
     auto & outputs = transform->getOutputs();
 
-    streams = { &outputs.front() };
+    streams.assign({ &outputs.front() });
     extremes_port = &outputs.back();
     current_header = outputs.front().getHeader();
     processors.emplace_back(std::move(transform));
@@ -394,7 +394,7 @@ void QueryPipeline::addCreatingSetsTransform(ProcessorPtr transform)
     connect(transform->getOutputs().front(), concat->getInputs().front());
     connect(*streams.back(), concat->getInputs().back());
 
-    streams = { &concat->getOutputs().front() };
+    streams.assign({ &concat->getOutputs().front() });
     processors.emplace_back(std::move(transform));
     processors.emplace_back(std::move(concat));
 }
@@ -490,7 +490,7 @@ void QueryPipeline::unitePipelines(
         }
 
         processors.insert(processors.end(), pipeline.processors.begin(), pipeline.processors.end());
-        streams.insert(streams.end(), pipeline.streams.begin(), pipeline.streams.end());
+        streams.addStreams(pipeline.streams);
 
         table_locks.insert(table_locks.end(), std::make_move_iterator(pipeline.table_locks.begin()), std::make_move_iterator(pipeline.table_locks.end()));
         interpreter_context.insert(interpreter_context.end(), pipeline.interpreter_context.begin(), pipeline.interpreter_context.end());

@@ -4,7 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Aliases.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/JoinedTables.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
@@ -23,6 +23,7 @@ struct SyntaxAnalyzerResult
     std::shared_ptr<AnalyzedJoin> analyzed_join;
 
     NamesAndTypesList source_columns;
+    NameSet source_columns_set; /// Set of names of source_columns.
     /// Set of columns that are enough to read from the table to evaluate the expression. It does not include joined columns.
     NamesAndTypesList required_source_columns;
 
@@ -50,7 +51,15 @@ struct SyntaxAnalyzerResult
 
     bool maybe_optimize_trivial_count = false;
 
-    void collectUsedColumns(const ASTPtr & query, const NamesAndTypesList & additional_source_columns);
+    SyntaxAnalyzerResult(const NamesAndTypesList & source_columns_, StoragePtr storage_ = {}, bool add_virtuals = true)
+        : storage(storage_)
+        , source_columns(source_columns_)
+    {
+        collectSourceColumns(add_virtuals);
+    }
+
+    void collectSourceColumns(bool add_virtuals);
+    void collectUsedColumns(const ASTPtr & query);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
     const Scalars & getScalars() const { return scalars; }
 };
@@ -82,10 +91,9 @@ public:
     /// Analyze and rewrite select query
     SyntaxAnalyzerResultPtr analyzeSelect(
         ASTPtr & query,
-        const NamesAndTypesList & source_columns,
-        StoragePtr storage = {},
+        SyntaxAnalyzerResult && result,
         const SelectQueryOptions & select_options = {},
-        const JoinedTables & joined_tables = {},
+        const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns = {},
         const Names & required_result_columns = {}) const;
 
 private:

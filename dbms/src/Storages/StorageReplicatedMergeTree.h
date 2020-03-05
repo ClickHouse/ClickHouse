@@ -14,7 +14,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeAlterThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
@@ -36,7 +35,7 @@ namespace DB
 /** The engine that uses the merge tree (see MergeTreeData) and replicated through ZooKeeper.
   *
   * ZooKeeper is used for the following things:
-  * - the structure of the table (/ metadata, /columns)
+  * - the structure of the table (/metadata, /columns)
   * - action log with data (/log/log-...,/replicas/replica_name/queue/queue-...);
   * - a replica list (/replicas), and replica activity tag (/replicas/replica_name/is_active), replica addresses (/replicas/replica_name/host);
   * - select the leader replica (/leader_election) - this is the replica that assigns the merge;
@@ -107,6 +106,7 @@ public:
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
+    void waitMutation(const String & znode_name, size_t mutation_sync) const;
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
     CancellationCode killMutation(const String & mutation_id) override;
 
@@ -177,6 +177,8 @@ public:
     /// Checks ability to use granularity
     bool canUseAdaptiveGranularity() const override;
 
+    int getMetadataVersion() const { return metadata_version; }
+
 private:
 
     /// Get a sequential consistent view of current parts.
@@ -216,17 +218,6 @@ private:
       */
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
 
-    /** Version of the /columns node in ZooKeeper corresponding to the current data.columns.
-      * Read and modify along with the data.columns - under TableStructureLock.
-      */
-    int columns_version = -1;
-
-    /// Version of the /metadata node in ZooKeeper.
-    int metadata_version = -1;
-
-    /// Used to delay setting table structure till startup() in case of an offline ALTER.
-    std::function<void()> set_table_structure_at_startup;
-
     /** Is this replica "leading". The leader replica selects the parts to merge.
       */
     std::atomic<bool> is_leader {false};
@@ -260,6 +251,7 @@ private:
     /// Limiting parallel fetches per one table
     std::atomic_uint current_table_fetches {0};
 
+    int metadata_version = 0;
     /// Threads.
 
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
@@ -286,9 +278,6 @@ private:
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 
-    /// A thread monitoring changes to the column list in ZooKeeper and updating the parts in accordance with these changes.
-    ReplicatedMergeTreeAlterThread alter_thread;
-
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;
 
@@ -313,11 +302,7 @@ private:
       */
     void createNewZooKeeperNodes();
 
-    /** Verify that the list of columns and table settings match those specified in ZK (/metadata).
-      * If not, throw an exception.
-      * Must be called before startup().
-      */
-    void checkTableStructure(bool skip_sanity_checks, bool allow_alter);
+    void checkTableStructure(const String & zookeeper_prefix);
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
     /// Must be called under IStorage::lockStructureForAlter() lock.
@@ -381,9 +366,20 @@ private:
     /// Do the merge or recommend to make the fetch instead of the merge
     bool tryExecuteMerge(const LogEntry & entry);
 
+    /// Execute alter of table metadata. Set replica/metdata and replica/columns
+    /// nodes in zookeeper and also changes in memory metadata.
+    /// New metadata and columns values stored in entry.
+    bool executeMetadataAlter(const LogEntry & entry);
+
+    /// Execute MUTATE_PART entry. Part name and mutation commands
+    /// stored in entry. This function relies on MergerMutator class.
     bool tryExecutePartMutation(const LogEntry & entry);
 
 
+    /// Fetch part from other replica (inserted or merged/mutated)
+    /// NOTE: Attention! First of all tries to find covering part on other replica
+    /// and set it into entry.actual_new_part_name. After that tries to fetch this new covering part.
+    /// If fetch was not successful, clears entry.actual_new_part_name.
     bool executeFetch(LogEntry & entry);
 
     void executeClearColumnOrIndexInPartition(const LogEntry & entry);
@@ -443,7 +439,7 @@ private:
         bool force_ttl,
         ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
 
-    bool createLogEntryToMutatePart(const IMergeTreeDataPart & part, Int64 mutation_version);
+    bool createLogEntryToMutatePart(const IMergeTreeDataPart & part, Int64 mutation_version, int alter_version);
 
     /// Exchange parts.
 
@@ -486,7 +482,7 @@ private:
       * Because it effectively waits for other thread that usually has to also acquire a lock to proceed and this yields deadlock.
       * TODO: There are wrong usages of this method that are not fixed yet.
       */
-    void waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
+    Strings waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
 
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
@@ -536,6 +532,8 @@ private:
     /// Wait for timeout seconds mutation is finished on replicas
     void waitMutationToFinishOnReplicas(
         const Strings & replicas, const String & mutation_id) const;
+
+    StorageInMemoryMetadata getMetadataFromSharedZookeeper(const String & metadata_str, const String & columns_str) const;
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
