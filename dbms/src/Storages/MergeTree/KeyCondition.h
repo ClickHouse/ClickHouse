@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_TYPE_OF_FIELD;
+}
+
 class IFunction;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
@@ -206,10 +211,17 @@ public:
     FieldWithInfinity(Field && field_);
 
     static FieldWithInfinity getMinusInfinity();
-    static FieldWithInfinity getPlusinfinity();
+    static FieldWithInfinity getPlusInfinity();
 
     bool operator<(const FieldWithInfinity & other) const;
     bool operator==(const FieldWithInfinity & other) const;
+
+    Field getFieldIfFinite() const
+    {
+        if (type != NORMAL)
+            throw Exception("Trying to get field of infinite type", ErrorCodes::BAD_TYPE_OF_FIELD);
+        return field;
+    }
 
 private:
     Field field;
