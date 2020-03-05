@@ -96,12 +96,12 @@ namespace ErrorCodes
 }
 
 
-class Sessions
+class NamedSessions
 {
 public:
-    using Key = SessionKey;
+    using Key = NamedSessionKey;
 
-    ~Sessions()
+    ~NamedSessions()
     {
         try
         {
@@ -120,7 +120,11 @@ public:
     }
 
     /// Find existing session or create a new.
-    std::shared_ptr<Session> acquireSession(const String & session_id, Context & context, std::chrono::steady_clock::duration timeout, bool throw_if_not_found)
+    std::shared_ptr<NamedSession> acquireSession(
+        const String & session_id,
+        Context & context,
+        std::chrono::steady_clock::duration timeout,
+        bool throw_if_not_found)
     {
         std::unique_lock lock(mutex);
 
@@ -138,7 +142,7 @@ public:
                 throw Exception("Session not found.", ErrorCodes::SESSION_NOT_FOUND);
 
             /// Create a new session from current context.
-            it = sessions.insert(std::make_pair(key, std::make_shared<Session>(key, context, timeout, *this))).first;
+            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSession>(key, context, timeout, *this))).first;
         }
         else if (it->second->key.first != context.client_info.current_user)
         {
@@ -154,7 +158,7 @@ public:
         return session;
     }
 
-    void releaseSession(Session & session)
+    void releaseSession(NamedSession & session)
     {
         std::unique_lock lock(mutex);
         scheduleCloseSession(session, lock);
@@ -173,7 +177,7 @@ private:
         }
     };
 
-    using Container = std::unordered_map<Key, std::shared_ptr<Session>, SessionKeyHash>;
+    using Container = std::unordered_map<Key, std::shared_ptr<NamedSession>, SessionKeyHash>;
     using CloseTimes = std::deque<std::vector<Key>>;
     Container sessions;
     CloseTimes close_times;
@@ -181,7 +185,7 @@ private:
     std::chrono::steady_clock::time_point close_cycle_time = std::chrono::steady_clock::now();
     UInt64 close_cycle = 0;
 
-    void scheduleCloseSession(Session & session, std::unique_lock<std::mutex> &)
+    void scheduleCloseSession(NamedSession & session, std::unique_lock<std::mutex> &)
     {
         /// Push it on a queue of sessions to close, on a position corresponding to the timeout.
         /// (timeout is measured from current moment of time)
@@ -247,11 +251,11 @@ private:
     std::mutex mutex;
     std::condition_variable cond;
     std::atomic<bool> quit{false};
-    ThreadFromGlobalPool thread{&Sessions::cleanThread, this};
+    ThreadFromGlobalPool thread{&NamedSessions::cleanThread, this};
 };
 
 
-void Session::release()
+void NamedSession::release()
 {
     parent.releaseSession(*this);
 }
@@ -326,8 +330,7 @@ struct ContextShared
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
     std::optional<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
-
-    Sessions sessions;        /// Controls named HTTP sessions.
+    std::optional<NamedSessions> named_sessions;        /// Controls named HTTP sessions.
 
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
@@ -501,9 +504,17 @@ Databases Context::getDatabases()
 }
 
 
-std::shared_ptr<Session> Context::acquireSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check)
+void Context::enableNamedSessions()
 {
-    return shared->sessions.acquireSession(session_id, *this, timeout, session_check);
+    shared->named_sessions.emplace();
+}
+
+std::shared_ptr<NamedSession> Context::acquireNamedSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check)
+{
+    if (!shared->named_sessions)
+        throw Exception("Support for named sessions is not enabled", ErrorCodes::NOT_IMPLEMENTED);
+
+    return shared->named_sessions->acquireSession(session_id, *this, timeout, session_check);
 }
 
 

@@ -908,6 +908,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         if (servers.empty())
              throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
+        global_context->enableNamedSessions();
+
         for (auto & server : servers)
             server->start();
 
