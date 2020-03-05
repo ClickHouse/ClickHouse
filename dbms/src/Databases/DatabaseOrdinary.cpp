@@ -66,8 +66,8 @@ namespace
         catch (Exception & e)
         {
             e.addMessage("Cannot attach table " + backQuote(database_name) + "." + backQuote(query.table)
-                + " from metadata file " + metadata_path)
-                + " from query " + serializeAST(query);
+                + " from metadata file " + metadata_path
+                + " from query " + serializeAST(query));
             throw;
         }
     }
