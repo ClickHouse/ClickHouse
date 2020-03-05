@@ -138,7 +138,7 @@ public:
                 throw Exception("Session not found.", ErrorCodes::SESSION_NOT_FOUND);
 
             /// Create a new session from current context.
-            it = sessions.insert(std::make_pair(key, std::make_shared<Session>(key, context, timeout, *this))).first;
+            it = sessions.emplace(key, std::make_shared<Session>(key, context, timeout, *this)).first;
         }
         else if (it->second->key.first != context.client_info.current_user)
         {
@@ -174,6 +174,8 @@ private:
     };
 
     using Container = std::unordered_map<Key, std::shared_ptr<Session>, SessionKeyHash>;
+
+    /// TODO it's very complicated. Make simple std::map with time_t or boost::multi_index.
     using CloseTimes = std::deque<std::vector<Key>>;
     Container sessions;
     CloseTimes close_times;
@@ -236,8 +238,17 @@ private:
         {
             const auto session = sessions.find(key);
 
-            if (session != sessions.end() && session->second.unique() && session->second->close_cycle <= current_cycle)
-                sessions.erase(session);
+            if (session != sessions.end() && session->second->close_cycle <= current_cycle)
+            {
+                if (!session->second.unique())
+                {
+                    /// Skip but move it to close on the next cycle.
+                    session->second->timeout = std::chrono::steady_clock::duration{0};
+                    scheduleCloseSession(*session->second, lock);
+                }
+                else
+                    sessions.erase(session);
+            }
         }
 
         close_times.pop_front();
