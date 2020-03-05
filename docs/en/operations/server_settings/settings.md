@@ -218,6 +218,7 @@ If `http_port` is specified, the openSSL configuration is ignored even if it is 
 ## http_server_default_response {#server_settings-http_server_default_response}
 
 The page that is shown by default when you access the ClickHouse HTTP(s) server.
+Default value is "Ok." (with a line feed at the end)
 
 **Example**
 
