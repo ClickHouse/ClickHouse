@@ -96,11 +96,34 @@ namespace ErrorCodes
 }
 
 
+class Sessions;
+
+/// User name and session identifier. Named sessions are local to users.
+using SessionKey = std::pair<String, String>;
+
 /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
+struct Session
+{
+    SessionKey key;
+    UInt64 close_cycle = 0;
+    bool is_used = false;
+    Context context;
+    std::chrono::steady_clock::duration timeout;
+    Sessions & parent;
+
+    Session(SessionKey key_, Context & context_, std::chrono::steady_clock::duration timeout_, Sessions & parent_)
+        : key(key_), context(context_), timeout(timeout_), parent(parent_)
+    {
+    }
+
+    ~Session();
+};
+
+
 class Sessions
 {
 public:
-    using Key = Context::SessionKey;
+    using Key = SessionKey;
 
     ~Sessions()
     {
@@ -121,9 +144,16 @@ public:
     }
 
     /// Find existing session or create a new.
-    std::shared_ptr<Context> acquireSession(const Key & key, Context & context, std::chrono::steady_clock::duration timeout, bool throw_if_not_found)
+    std::shared_ptr<Session> acquireSession(const String & session_id, Context & context, std::chrono::steady_clock::duration timeout, bool throw_if_not_found)
     {
         std::unique_lock lock(mutex);
+
+        auto & user_name = context.client_info.current_user;
+
+        if (user_name.empty())
+            throw Exception("Empty user name.", ErrorCodes::LOGICAL_ERROR);
+
+        Key key(user_name, session_id);
 
         auto it = sessions.find(key);
         if (it == sessions.end())
@@ -132,29 +162,31 @@ public:
                 throw Exception("Session not found.", ErrorCodes::SESSION_NOT_FOUND);
 
             /// Create a new session from current context.
-            auto new_session = std::make_shared<Context>(context);
-            scheduleCloseSession(key, *new_session, timeout, lock);
+            auto new_session = std::make_shared<Session>(key, context, timeout, *this);
+
+            scheduleCloseSession(*new_session, lock);
             it = sessions.insert(std::make_pair(key, std::move(new_session))).first;
         }
-        else if (it->second->client_info.current_user != context.client_info.current_user)
+        else if (it->second->key.first != context.client_info.current_user)
         {
             throw Exception("Session belongs to a different user", ErrorCodes::LOGICAL_ERROR);
         }
 
+        /// Use existing session.
         const auto & session = it->second;
 
-        if (session->session_is_used)
+        if (session->is_used)
             throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
 
-        session->session_is_used = true;
+        session->is_used = true;
         return session;
     }
 
-    void releaseSession(const Key & key, Context & session, std::chrono::steady_clock::duration timeout)
+    void releaseSession(Session & session)
     {
         std::unique_lock lock(mutex);
-        session.session_is_used = false;
-        scheduleCloseSession(key, session, timeout, lock);
+        session.is_used = false;
+        scheduleCloseSession(session, lock);
     }
 
 private:
@@ -170,7 +202,7 @@ private:
         }
     };
 
-    using Container = std::unordered_map<Key, std::shared_ptr<Context>, SessionKeyHash>;
+    using Container = std::unordered_map<Key, std::shared_ptr<Session>, SessionKeyHash>;
     using CloseTimes = std::deque<std::vector<Key>>;
     Container sessions;
     CloseTimes close_times;
@@ -178,17 +210,20 @@ private:
     std::chrono::steady_clock::time_point close_cycle_time = std::chrono::steady_clock::now();
     UInt64 close_cycle = 0;
 
-    void scheduleCloseSession(const Key & key, Context & session, std::chrono::steady_clock::duration timeout, std::unique_lock<std::mutex> &)
+    void scheduleCloseSession(Session & session, std::unique_lock<std::mutex> &)
     {
-        const UInt64 close_index = timeout / close_interval + 1;
+        /// Push it on a queue of sessions to close, on a position corresponding to the timeout.
+        /// (timeout is measured from current moment of time)
+
+        const UInt64 close_index = session.timeout / close_interval + 1;
         const auto new_close_cycle = close_cycle + close_index;
 
-        if (session.session_close_cycle != new_close_cycle)
+        if (session.close_cycle != new_close_cycle)
         {
-            session.session_close_cycle = new_close_cycle;
+            session.close_cycle = new_close_cycle;
             if (close_times.size() < close_index + 1)
                 close_times.resize(close_index + 1);
-            close_times[close_index].emplace_back(key);
+            close_times[close_index].emplace_back(session.key);
         }
     }
 
@@ -230,10 +265,13 @@ private:
         {
             const auto session = sessions.find(key);
 
-            if (session != sessions.end() && session->second->session_close_cycle <= current_cycle)
+            if (session != sessions.end() && session->second->close_cycle <= current_cycle)
             {
-                if (session->second->session_is_used)
-                    scheduleCloseSession(key, *session->second, std::chrono::seconds(0), lock);
+                if (session->second->is_used)
+                {
+                    session->second->timeout = std::chrono::steady_clock::duration{0};
+                    scheduleCloseSession(*session->second, lock);
+                }
                 else
                     sessions.erase(session);
             }
@@ -248,6 +286,12 @@ private:
     std::atomic<bool> quit{false};
     ThreadFromGlobalPool thread{&Sessions::cleanThread, this};
 };
+
+
+Session::~Session()
+{
+    parent.releaseSession(*this);
+}
 
 
 /** Set of known objects (environment), that could be used in query.
@@ -494,26 +538,9 @@ Databases Context::getDatabases()
 }
 
 
-Context::SessionKey Context::getSessionKey(const String & session_id) const
+std::shared_ptr<Session> Context::acquireSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check)
 {
-    auto & user_name = client_info.current_user;
-
-    if (user_name.empty())
-        throw Exception("Empty user name.", ErrorCodes::LOGICAL_ERROR);
-
-    return SessionKey(user_name, session_id);
-}
-
-
-std::shared_ptr<Context> Context::acquireSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check)
-{
-    return shared->sessions.acquireSession(getSessionKey(session_id), *this, timeout, session_check);
-}
-
-
-void Context::releaseSession(const String & session_id, std::chrono::steady_clock::duration timeout)
-{
-    shared->sessions.releaseSession(getSessionKey(session_id), *this, timeout);
+    return shared->sessions.acquireSession(session_id, *this, timeout, session_check);
 }
 
 

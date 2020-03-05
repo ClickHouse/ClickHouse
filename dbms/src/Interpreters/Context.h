@@ -100,11 +100,10 @@ class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class Volume;
 using VolumePtr = std::shared_ptr<Volume>;
+struct Session;
 
 #if USE_EMBEDDED_COMPILER
-
 class CompiledExpressionCache;
-
 #endif
 
 /// Table -> set of table-views that make SELECT from it.
@@ -177,8 +176,6 @@ private:
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
 
     friend class Sessions;
-    UInt64 session_close_cycle = 0;
-    bool session_is_used = false;
 
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
@@ -420,8 +417,7 @@ public:
     const Databases getDatabases() const;
     Databases getDatabases();
 
-    std::shared_ptr<Context> acquireSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check);
-    void releaseSession(const String & session_id, std::chrono::steady_clock::duration timeout);
+    std::shared_ptr<Session> acquireSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check);
 
     /// For methods below you may need to acquire a lock by yourself.
     std::unique_lock<std::recursive_mutex> getLock() const;
@@ -582,9 +578,6 @@ public:
     String getFormatSchemaPath() const;
     void setFormatSchemaPath(const String & path);
 
-    /// User name and session identifier. Named sessions are local to users.
-    using SessionKey = std::pair<String, String>;
-
     SampleBlockCache & getSampleBlockCache() const;
 
     /// Query parameters for prepared statements.
@@ -628,8 +621,6 @@ private:
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 
     StoragePtr getTableImpl(const StorageID & table_id, std::optional<Exception> * exception) const;
-
-    SessionKey getSessionKey(const String & session_id) const;
 
     void checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const;
 };
