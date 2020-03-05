@@ -291,6 +291,11 @@ void HTTPHandler::processQuery(
         context.setSessionContext(session->context);
     }
 
+    SCOPE_EXIT({
+        if (session)
+            session->release();
+    });
+
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
     CompressionMethod http_response_compression_method = CompressionMethod::None;

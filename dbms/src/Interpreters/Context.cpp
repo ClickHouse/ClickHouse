@@ -96,30 +96,6 @@ namespace ErrorCodes
 }
 
 
-class Sessions;
-
-/// User name and session identifier. Named sessions are local to users.
-using SessionKey = std::pair<String, String>;
-
-/// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
-struct Session
-{
-    SessionKey key;
-    UInt64 close_cycle = 0;
-    bool is_used = false;
-    Context context;
-    std::chrono::steady_clock::duration timeout;
-    Sessions & parent;
-
-    Session(SessionKey key_, Context & context_, std::chrono::steady_clock::duration timeout_, Sessions & parent_)
-        : key(key_), context(context_), timeout(timeout_), parent(parent_)
-    {
-    }
-
-    ~Session();
-};
-
-
 class Sessions
 {
 public:
@@ -162,10 +138,7 @@ public:
                 throw Exception("Session not found.", ErrorCodes::SESSION_NOT_FOUND);
 
             /// Create a new session from current context.
-            auto new_session = std::make_shared<Session>(key, context, timeout, *this);
-
-            scheduleCloseSession(*new_session, lock);
-            it = sessions.insert(std::make_pair(key, std::move(new_session))).first;
+            it = sessions.insert(std::make_pair(key, std::make_shared<Session>(key, context, timeout, *this))).first;
         }
         else if (it->second->key.first != context.client_info.current_user)
         {
@@ -175,17 +148,15 @@ public:
         /// Use existing session.
         const auto & session = it->second;
 
-        if (session->is_used)
+        if (!session.unique())
             throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
 
-        session->is_used = true;
         return session;
     }
 
     void releaseSession(Session & session)
     {
         std::unique_lock lock(mutex);
-        session.is_used = false;
         scheduleCloseSession(session, lock);
     }
 
@@ -265,16 +236,8 @@ private:
         {
             const auto session = sessions.find(key);
 
-            if (session != sessions.end() && session->second->close_cycle <= current_cycle)
-            {
-                if (session->second->is_used)
-                {
-                    session->second->timeout = std::chrono::steady_clock::duration{0};
-                    scheduleCloseSession(*session->second, lock);
-                }
-                else
-                    sessions.erase(session);
-            }
+            if (session != sessions.end() && session->second.unique() && session->second->close_cycle <= current_cycle)
+                sessions.erase(session);
         }
 
         close_times.pop_front();
@@ -288,7 +251,7 @@ private:
 };
 
 
-Session::~Session()
+void Session::release()
 {
     parent.releaseSession(*this);
 }
