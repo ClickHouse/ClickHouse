@@ -80,6 +80,10 @@ public:
 
     void removeRecursive(const String & path) override;
 
+    void setLastModified(const String &, const Poco::Timestamp &) override { }
+
+    Poco::Timestamp getLastModified(const String &) override { return Poco::Timestamp(); }
+
 private:
     void createDirectoriesImpl(const String & path);
     void replaceFileImpl(const String & from_path, const String & to_path);
