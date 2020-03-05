@@ -141,14 +141,14 @@ namespace
 
         if (databases)
         {
-            user->access.fullRevoke(AccessFlags::databaseLevel());
+            user->access.revoke(AccessFlags::databaseLevel());
             for (const String & database : *databases)
                 user->access.grant(AccessFlags::databaseLevel(), database);
         }
 
         if (dictionaries)
         {
-            user->access.fullRevoke(AccessType::dictGet, IDictionary::NO_DATABASE_TAG);
+            user->access.revoke(AccessType::dictGet, IDictionary::NO_DATABASE_TAG);
             for (const String & dictionary : *dictionaries)
                 user->access.grant(AccessType::dictGet, IDictionary::NO_DATABASE_TAG, dictionary);
         }
