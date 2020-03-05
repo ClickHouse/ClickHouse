@@ -3105,7 +3105,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             for (const DataPartPtr & part : data_parts)
                 partition_ids.emplace(part->info.partition_id);
 
-            UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
+            UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
 
             for (const String & partition_id : partition_ids)
             {
@@ -3133,7 +3133,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             else
             {
 
-                UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
+                UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
                 String partition_id = getPartitionIDFromQuery(partition, query_context);
                 selected = merger_mutator.selectAllPartsToMergeWithinPartition(
                     future_merged_part, disk_space, can_merge, partition_id, final, &disable_reason);
