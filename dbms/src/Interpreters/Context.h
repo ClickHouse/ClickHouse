@@ -102,6 +102,7 @@ class Volume;
 using VolumePtr = std::shared_ptr<Volume>;
 struct Session;
 
+
 #if USE_EMBEDDED_COMPILER
 class CompiledExpressionCache;
 #endif
@@ -132,6 +133,7 @@ struct IHostContext
 };
 
 using IHostContextPtr = std::shared_ptr<IHostContext>;
+
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
@@ -651,6 +653,29 @@ private:
     Map::iterator it;
     std::unique_lock<std::mutex> guards_lock;
     std::unique_lock<std::mutex> table_lock;
+};
+
+
+class Sessions;
+
+/// User name and session identifier. Named sessions are local to users.
+using SessionKey = std::pair<String, String>;
+
+/// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
+struct Session
+{
+    SessionKey key;
+    UInt64 close_cycle = 0;
+    Context context;
+    std::chrono::steady_clock::duration timeout;
+    Sessions & parent;
+
+    Session(SessionKey key_, Context & context_, std::chrono::steady_clock::duration timeout_, Sessions & parent_)
+        : key(key_), context(context_), timeout(timeout_), parent(parent_)
+    {
+    }
+
+    void release();
 };
 
 }
