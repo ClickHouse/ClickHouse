@@ -220,7 +220,7 @@ private:
     }
 
     /// Close sessions, that has been expired. Returns how long to wait for next session to be expired, if no new sessions will be added.
-    std::chrono::steady_clock::duration closeSessions(std::unique_lock<std::mutex> &)
+    std::chrono::steady_clock::duration closeSessions(std::unique_lock<std::mutex> & lock)
     {
         const auto now = std::chrono::steady_clock::now();
 
