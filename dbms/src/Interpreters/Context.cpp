@@ -27,11 +27,10 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Core/Settings.h>
 #include <Access/AccessControlManager.h>
+#include <Access/AccessRightsContext.h>
+#include <Access/RowPolicyContext.h>
 #include <Access/User.h>
 #include <Access/SettingsConstraints.h>
-#include <Access/QuotaContext.h>
-#include <Access/RowPolicyContext.h>
-#include <Access/AccessRightsContext.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -57,7 +56,7 @@
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
-#include <ext/singleton.h>
+
 
 namespace ProfileEvents
 {
@@ -79,25 +78,21 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int DATABASE_ACCESS_DENIED;
+    extern const int BAD_ARGUMENTS;
+    extern const int BAD_GET;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
-    extern const int TABLE_WAS_NOT_DROPPED;
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int THERE_IS_NO_SESSION;
     extern const int THERE_IS_NO_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int DDL_GUARD_IS_ACTIVE;
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
-    extern const int PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
-    extern const int SCALAR_ALREADY_EXISTS;
     extern const int UNKNOWN_SCALAR;
-    extern const int ACCESS_DENIED;
+    extern const int AUTHENTICATION_FAILED;
 }
 
 
@@ -156,9 +151,9 @@ struct ContextShared
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     /// Storage disk chooser for MergeTree engines
-    mutable std::unique_ptr<DiskSelector> merge_tree_disk_selector;
+    mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector;
     /// Storage policy chooser for MergeTree engines
-    mutable std::unique_ptr<StoragePolicySelector> merge_tree_storage_policy_selector;
+    mutable std::shared_ptr<const StoragePolicySelector> merge_tree_storage_policy_selector;
 
     std::optional<MergeTreeSettings> merge_tree_settings;   /// Settings of MergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
@@ -168,6 +163,8 @@ struct ContextShared
     std::optional<SystemLogs> system_logs;                  /// Used to log queries and operations on parts
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
+
+    std::optional<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
 
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
@@ -299,15 +296,21 @@ struct ContextShared
         schedule_pool.reset();
         ddl_worker.reset();
 
-        ext::Singleton<TraceCollector>::reset();
+        /// Stop trace collector if any
+        trace_collector.reset();
+    }
+
+    bool hasTraceCollector() const
+    {
+        return trace_collector.has_value();
     }
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
     {
-        if (trace_log == nullptr)
+        if (hasTraceCollector())
             return;
 
-        ext::Singleton<TraceCollector>()->setTraceLog(trace_log);
+        trace_collector.emplace(std::move(trace_log));
     }
 };
 
@@ -320,9 +323,8 @@ Context & Context::operator=(const Context &) = default;
 Context Context::createGlobal()
 {
     Context res;
-    res.quota = std::make_shared<QuotaContext>();
-    res.row_policy = std::make_shared<RowPolicyContext>();
     res.access_rights = std::make_shared<AccessRightsContext>();
+    res.initial_row_policy = std::make_shared<RowPolicyContext>();
     res.shared = std::make_shared<ContextShared>();
     return res;
 }
@@ -575,7 +577,7 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
     }
     else
     {
-        StoragePolicyPtr tmp_policy = getStoragePolicySelector()[policy_name];
+        StoragePolicyPtr tmp_policy = getStoragePolicySelector()->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
              throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
         shared->tmp_volume = tmp_policy->getVolume(0);
@@ -617,22 +619,139 @@ const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
     return shared->config ? *shared->config : Poco::Util::Application::instance().config();
 }
 
+
 AccessControlManager & Context::getAccessControlManager()
 {
-    auto lock = getLock();
     return shared->access_control_manager;
 }
 
 const AccessControlManager & Context::getAccessControlManager() const
 {
-    auto lock = getLock();
     return shared->access_control_manager;
 }
+
+
+void Context::setUsersConfig(const ConfigurationPtr & config)
+{
+    auto lock = getLock();
+    shared->users_config = config;
+    shared->access_control_manager.setUsersConfig(*shared->users_config);
+}
+
+ConfigurationPtr Context::getUsersConfig()
+{
+    auto lock = getLock();
+    return shared->users_config;
+}
+
+
+void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
+{
+    auto lock = getLock();
+
+    client_info.current_user = name;
+    client_info.current_password = password;
+    client_info.current_address = address;
+    if (!quota_key.empty())
+        client_info.quota_key = quota_key;
+
+    auto new_user_id = getAccessControlManager().find<User>(name);
+    AccessRightsContextPtr new_access_rights;
+    if (new_user_id)
+    {
+        new_access_rights = getAccessControlManager().getAccessRightsContext(*new_user_id, {}, true, settings, current_database, client_info);
+        if (!new_access_rights->isClientHostAllowed() || !new_access_rights->isCorrectPassword(password))
+        {
+            new_user_id = {};
+            new_access_rights = nullptr;
+        }
+    }
+
+    if (!new_user_id || !new_access_rights)
+        throw Exception(name + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
+
+    user_id = new_user_id;
+    access_rights = std::move(new_access_rights);
+    current_roles.clear();
+    use_default_roles = true;
+
+    calculateUserSettings();
+}
+
+std::shared_ptr<const User> Context::getUser() const
+{
+    auto lock = getLock();
+    return access_rights->getUser();
+}
+
+String Context::getUserName() const
+{
+    auto lock = getLock();
+    return access_rights->getUserName();
+}
+
+UUID Context::getUserID() const
+{
+    auto lock = getLock();
+    if (!user_id)
+        throw Exception("No current user", ErrorCodes::LOGICAL_ERROR);
+    return *user_id;
+}
+
+
+void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
+{
+    auto lock = getLock();
+    if (current_roles == current_roles_ && !use_default_roles)
+        return;
+    current_roles = current_roles_;
+    use_default_roles = false;
+    calculateAccessRights();
+}
+
+void Context::setCurrentRolesDefault()
+{
+    auto lock = getLock();
+    if (use_default_roles)
+        return;
+    current_roles.clear();
+    use_default_roles = true;
+    calculateAccessRights();
+}
+
+std::vector<UUID> Context::getCurrentRoles() const
+{
+    return getAccessRights()->getCurrentRoles();
+}
+
+Strings Context::getCurrentRolesNames() const
+{
+    return getAccessRights()->getCurrentRolesNames();
+}
+
+std::vector<UUID> Context::getEnabledRoles() const
+{
+    return getAccessRights()->getEnabledRoles();
+}
+
+Strings Context::getEnabledRolesNames() const
+{
+    return getAccessRights()->getEnabledRolesNames();
+}
+
+
+void Context::calculateAccessRights()
+{
+    auto lock = getLock();
+    if (user_id)
+        access_rights = getAccessControlManager().getAccessRightsContext(*user_id, current_roles, use_default_roles, settings, current_database, client_info);
+}
+
 
 template <typename... Args>
 void Context::checkAccessImpl(const Args &... args) const
 {
-    getAccessRights()->check(args...);
+    getAccessRights()->checkAccess(args...);
 }
 
 void Context::checkAccess(const AccessFlags & access) const { return checkAccessImpl(access); }
@@ -644,28 +763,46 @@ void Context::checkAccess(const AccessFlags & access, const std::string_view & d
 void Context::checkAccess(const AccessRightsElement & access) const { return checkAccessImpl(access); }
 void Context::checkAccess(const AccessRightsElements & access) const { return checkAccessImpl(access); }
 
-void Context::switchRowPolicy()
-{
-    row_policy = getAccessControlManager().getRowPolicyContext(client_info.initial_user);
-}
-
-void Context::setUsersConfig(const ConfigurationPtr & config)
+AccessRightsContextPtr Context::getAccessRights() const
 {
     auto lock = getLock();
-    shared->users_config = config;
-    shared->access_control_manager.loadFromConfig(*shared->users_config);
+    return access_rights;
 }
 
-ConfigurationPtr Context::getUsersConfig()
+RowPolicyContextPtr Context::getRowPolicy() const
+{
+    return getAccessRights()->getRowPolicy();
+}
+
+void Context::setInitialRowPolicy()
 {
     auto lock = getLock();
-    return shared->users_config;
+    auto initial_user_id = getAccessControlManager().find<User>(client_info.initial_user);
+    if (initial_user_id)
+        initial_row_policy = getAccessControlManager().getRowPolicyContext(*initial_user_id, {});
 }
+
+RowPolicyContextPtr Context::getInitialRowPolicy() const
+{
+    auto lock = getLock();
+    return initial_row_policy;
+}
+
+
+QuotaContextPtr Context::getQuota() const
+{
+    return getAccessRights()->getQuota();
+}
+
 
 void Context::calculateUserSettings()
 {
     auto lock = getLock();
-    String profile = user->profile;
+    String profile = getUser()->profile;
+
+    bool old_readonly = settings.readonly;
+    bool old_allow_ddl = settings.allow_ddl;
+    bool old_allow_introspection_functions = settings.allow_introspection_functions;
 
     /// 1) Set default settings (hardcoded values)
     /// NOTE: we ignore global_context settings (from which it is usually copied)
@@ -680,13 +817,10 @@ void Context::calculateUserSettings()
 
     /// 3) Apply settings from current user
     setProfile(profile);
-}
 
-void Context::calculateAccessRights()
-{
-    auto lock = getLock();
-    if (user)
-        std::atomic_store(&access_rights, getAccessControlManager().getAccessRightsContext(user, client_info, settings, current_database));
+    /// 4) Recalculate access rights if it's necessary.
+    if ((settings.readonly != old_readonly) || (settings.allow_ddl != old_allow_ddl) || (settings.allow_introspection_functions != old_allow_introspection_functions))
+        calculateAccessRights();
 }
 
 void Context::setProfile(const String & profile)
@@ -699,50 +833,6 @@ void Context::setProfile(const String & profile)
     settings_constraints = std::move(new_constraints);
 }
 
-std::shared_ptr<const User> Context::getUser() const
-{
-    if (!user)
-        throw Exception("No current user", ErrorCodes::LOGICAL_ERROR);
-    return user;
-}
-
-UUID Context::getUserID() const
-{
-    if (!user)
-        throw Exception("No current user", ErrorCodes::LOGICAL_ERROR);
-    return user_id;
-}
-
-void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
-{
-    auto lock = getLock();
-
-    client_info.current_user = name;
-    client_info.current_address = address;
-    client_info.current_password = password;
-
-    if (!quota_key.empty())
-        client_info.quota_key = quota_key;
-
-    user_id = shared->access_control_manager.getID<User>(name);
-    user = shared->access_control_manager.authorizeAndGetUser(
-        user_id,
-        password,
-        address.host(),
-        [this](const UserPtr & changed_user)
-        {
-            user = changed_user;
-            calculateAccessRights();
-        },
-        &subscription_for_user_change.subscription);
-
-    quota = getAccessControlManager().createQuotaContext(
-        client_info.current_user, client_info.current_address.host(), client_info.quota_key);
-    row_policy = getAccessControlManager().getRowPolicyContext(client_info.current_user);
-
-    calculateUserSettings();
-    calculateAccessRights();
-}
 
 void Context::addDependencyUnsafe(const StorageID & from, const StorageID & where)
 {
@@ -1145,17 +1235,29 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 }
 
 
-void Context::checkSettingsConstraints(const SettingChange & change)
+void Context::checkSettingsConstraints(const SettingChange & change) const
 {
     if (settings_constraints)
         settings_constraints->check(settings, change);
 }
 
-
-void Context::checkSettingsConstraints(const SettingsChanges & changes)
+void Context::checkSettingsConstraints(const SettingsChanges & changes) const
 {
     if (settings_constraints)
         settings_constraints->check(settings, changes);
+}
+
+
+void Context::clampToSettingsConstraints(SettingChange & change) const
+{
+    if (settings_constraints)
+        settings_constraints->clamp(settings, change);
+}
+
+void Context::clampToSettingsConstraints(SettingsChanges & changes) const
+{
+    if (settings_constraints)
+        settings_constraints->clamp(settings, changes);
 }
 
 
@@ -1692,6 +1794,11 @@ void Context::initializeTraceCollector()
     shared->initializeTraceCollector(getTraceLog());
 }
 
+bool Context::hasTraceCollector() const
+{
+    return shared->hasTraceCollector();
+}
+
 
 std::shared_ptr<QueryLog> Context::getQueryLog()
 {
@@ -1785,17 +1892,17 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
 }
 
 
-const DiskPtr & Context::getDisk(const String & name) const
+DiskPtr Context::getDisk(const String & name) const
 {
     auto lock = getLock();
 
-    const auto & disk_selector = getDiskSelector();
+    auto disk_selector = getDiskSelector();
 
-    return disk_selector[name];
+    return disk_selector->get(name);
 }
 
 
-DiskSelector & Context::getDiskSelector() const
+DiskSelectorPtr Context::getDiskSelector() const
 {
     auto lock = getLock();
 
@@ -1804,23 +1911,23 @@ DiskSelector & Context::getDiskSelector() const
         constexpr auto config_name = "storage_configuration.disks";
         auto & config = getConfigRef();
 
-        shared->merge_tree_disk_selector = std::make_unique<DiskSelector>(config, config_name, *this);
+        shared->merge_tree_disk_selector = std::make_shared<DiskSelector>(config, config_name, *this);
     }
-    return *shared->merge_tree_disk_selector;
+    return shared->merge_tree_disk_selector;
 }
 
 
-const StoragePolicyPtr & Context::getStoragePolicy(const String & name) const
+StoragePolicyPtr Context::getStoragePolicy(const String & name) const
 {
     auto lock = getLock();
 
-    auto & policy_selector = getStoragePolicySelector();
+    auto policy_selector = getStoragePolicySelector();
 
-    return policy_selector[name];
+    return policy_selector->get(name);
 }
 
 
-StoragePolicySelector & Context::getStoragePolicySelector() const
+StoragePolicySelectorPtr Context::getStoragePolicySelector() const
 {
     auto lock = getLock();
 
@@ -1829,9 +1936,30 @@ StoragePolicySelector & Context::getStoragePolicySelector() const
         constexpr auto config_name = "storage_configuration.policies";
         auto & config = getConfigRef();
 
-        shared->merge_tree_storage_policy_selector = std::make_unique<StoragePolicySelector>(config, config_name, getDiskSelector());
+        shared->merge_tree_storage_policy_selector = std::make_shared<StoragePolicySelector>(config, config_name, getDiskSelector());
     }
-    return *shared->merge_tree_storage_policy_selector;
+    return shared->merge_tree_storage_policy_selector;
+}
+
+
+void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+
+    if (shared->merge_tree_disk_selector)
+        shared->merge_tree_disk_selector = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", *this);
+
+    if (shared->merge_tree_storage_policy_selector)
+    {
+        try
+        {
+            shared->merge_tree_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(config, "storage_configuration.policies", shared->merge_tree_disk_selector);
+        }
+        catch (Exception & e)
+        {
+            LOG_ERROR(shared->log, "An error has occured while reloading storage policies, storage policies were not applied: " << e.message());
+        }
+    }
 }
 
 

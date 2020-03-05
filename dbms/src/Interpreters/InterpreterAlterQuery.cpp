@@ -23,8 +23,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int ILLEGAL_COLUMN;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int INCORRECT_QUERY;
 }
 
 
@@ -69,7 +69,13 @@ BlockIO InterpreterAlterQuery::execute()
             partition_commands.emplace_back(std::move(*partition_command));
         }
         else if (auto mut_command = MutationCommand::parse(command_ast))
+        {
+            if (mut_command->type == MutationCommand::MATERIALIZE_TTL && !table->hasAnyTTL())
+                throw Exception("Cannot MATERIALIZE TTL as there is no TTL set for table "
+                    + table->getStorageID().getNameForLogs(), ErrorCodes::INCORRECT_QUERY);
+
             mutation_commands.emplace_back(std::move(*mut_command));
+        }
         else if (auto live_view_command = LiveViewCommand::parse(command_ast))
             live_view_commands.emplace_back(std::move(*live_view_command));
         else
@@ -109,7 +115,7 @@ BlockIO InterpreterAlterQuery::execute()
         auto table_lock_holder = table->lockAlterIntention(context.getCurrentQueryId());
         StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
         alter_commands.validate(metadata, context);
-        alter_commands.prepare(metadata, context);
+        alter_commands.prepare(metadata);
         table->checkAlterIsPossible(alter_commands, context.getSettingsRef());
         table->alter(alter_commands, context, table_lock_holder);
     }
@@ -205,6 +211,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess() const
             case ASTAlterCommand::MODIFY_TTL:
             {
                 required_access.emplace_back(AccessType::MODIFY_TTL, alter.database, alter.table);
+                break;
+            }
+            case ASTAlterCommand::MATERIALIZE_TTL:
+            {
+                required_access.emplace_back(AccessType::MATERIALIZE_TTL, alter.database, alter.table);
                 break;
             }
             case ASTAlterCommand::MODIFY_SETTING:

@@ -21,7 +21,7 @@ namespace DB
   *  performs significantly faster than the reference implementation due to the absence of sprintf calls,
   *  bounds checking, unnecessary string copying and length calculation.
   */
-void formatIPv6(const unsigned char * src, char *& dst, UInt8 zeroed_tail_bytes_count = 0);
+void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_bytes_count = 0);
 
 /** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv4 string.
  *
@@ -195,7 +195,7 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
   *     formatIPv4(&0x7f000001, dst, mask_tail_octets = 1, "0");
   *         > dst == "127.0.0.0"
   */
-inline void formatIPv4(const unsigned char * src, char *& dst, UInt8 mask_tail_octets = 0, const char * mask_string = "xxx")
+inline void formatIPv4(const unsigned char * src, char *& dst, uint8_t mask_tail_octets = 0, const char * mask_string = "xxx")
 {
     extern const char one_byte_to_string_lookup_table[256][4];
 
@@ -203,9 +203,9 @@ inline void formatIPv4(const unsigned char * src, char *& dst, UInt8 mask_tail_o
     const size_t limit = std::min(IPV4_BINARY_LENGTH, IPV4_BINARY_LENGTH - mask_tail_octets);
     for (size_t octet = 0; octet < limit; ++octet)
     {
-        const UInt8 value = static_cast<UInt8>(src[IPV4_BINARY_LENGTH - octet - 1]);
+        const uint8_t value = static_cast<uint8_t>(src[IPV4_BINARY_LENGTH - octet - 1]);
         auto rep = one_byte_to_string_lookup_table[value];
-        const UInt8 len = rep[0];
+        const uint8_t len = rep[0];
         const char* str = rep + 1;
 
         memcpy(dst, str, len);

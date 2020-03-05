@@ -98,12 +98,6 @@ WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
 }
 
 
-off_t WriteBufferFromFileDescriptor::getPositionInFile()
-{
-    return seek(0, SEEK_CUR);
-}
-
-
 void WriteBufferFromFileDescriptor::sync()
 {
     /// If buffer has pending data - write it.
@@ -116,7 +110,7 @@ void WriteBufferFromFileDescriptor::sync()
 }
 
 
-off_t WriteBufferFromFileDescriptor::doSeek(off_t offset, int whence)
+off_t WriteBufferFromFileDescriptor::seek(off_t offset, int whence)
 {
     off_t res = lseek(fd, offset, whence);
     if (-1 == res)
@@ -126,7 +120,7 @@ off_t WriteBufferFromFileDescriptor::doSeek(off_t offset, int whence)
 }
 
 
-void WriteBufferFromFileDescriptor::doTruncate(off_t length)
+void WriteBufferFromFileDescriptor::truncate(off_t length)
 {
     int res = ftruncate(fd, length);
     if (-1 == res)

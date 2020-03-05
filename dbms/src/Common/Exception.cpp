@@ -21,8 +21,6 @@ namespace ErrorCodes
     extern const int POCO_EXCEPTION;
     extern const int STD_EXCEPTION;
     extern const int UNKNOWN_EXCEPTION;
-    extern const int CANNOT_TRUNCATE_FILE;
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -35,7 +33,14 @@ Exception::Exception(const std::string & msg, int code)
     : Poco::Exception(msg, code)
 {
     // In debug builds, treat LOGICAL_ERROR as an assertion failure.
-    assert(code != ErrorCodes::LOGICAL_ERROR);
+    // Log the message before we fail.
+#ifndef NDEBUG
+    if (code == ErrorCodes::LOGICAL_ERROR)
+    {
+        LOG_ERROR(&Poco::Logger::root(), "Logical error: '" + msg + "'.");
+        assert(false);
+    }
+#endif
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)

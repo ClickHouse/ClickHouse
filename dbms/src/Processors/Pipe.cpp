@@ -3,6 +3,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 static void checkSingleInput(const IProcessor & transform)
 {
@@ -102,7 +106,7 @@ void Pipe::setLimits(const ISourceWithProgress::LocalLimits & limits)
     }
 }
 
-void Pipe::setQuota(const std::shared_ptr<QuotaContext> & quota)
+void Pipe::setQuota(const QuotaContextPtr & quota)
 {
     for (auto & processor : processors)
     {

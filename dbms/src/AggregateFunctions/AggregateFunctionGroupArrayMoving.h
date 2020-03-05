@@ -26,7 +26,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_ARRAY_SIZE;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -85,7 +84,6 @@ struct MovingAvgData
     }
 
 };
-
 
 
 template <typename T, typename Tlimit_num_elems, typename Data>

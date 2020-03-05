@@ -1,4 +1,6 @@
 #include <Access/IAccessStorage.h>
+#include <Access/User.h>
+#include <Access/Role.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
@@ -13,8 +15,9 @@ namespace ErrorCodes
     extern const int BAD_CAST;
     extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
-    extern const int ACCESS_ENTITY_FOUND_DUPLICATES;
-    extern const int ACCESS_ENTITY_STORAGE_READONLY;
+    extern const int ACCESS_STORAGE_READONLY;
+    extern const int UNKNOWN_USER;
+    extern const int UNKNOWN_ROLE;
 }
 
 
@@ -67,7 +70,6 @@ bool IAccessStorage::exists(const UUID & id) const
 {
     return existsImpl(id);
 }
-
 
 
 AccessEntityPtr IAccessStorage::tryReadBase(const UUID & id) const
@@ -365,8 +367,15 @@ void IAccessStorage::throwNotFound(const UUID & id) const
 
 void IAccessStorage::throwNotFound(std::type_index type, const String & name) const
 {
-    throw Exception(
-        getTypeName(type) + " " + backQuote(name) + " not found in " + getStorageName(), ErrorCodes::ACCESS_ENTITY_NOT_FOUND);
+    int error_code;
+    if (type == typeid(User))
+        error_code = ErrorCodes::UNKNOWN_USER;
+    else if (type == typeid(Role))
+        error_code = ErrorCodes::UNKNOWN_ROLE;
+    else
+        error_code = ErrorCodes::ACCESS_ENTITY_NOT_FOUND;
+
+    throw Exception(getTypeName(type) + " " + backQuote(name) + " not found in " + getStorageName(), error_code);
 }
 
 
@@ -409,7 +418,7 @@ void IAccessStorage::throwReadonlyCannotInsert(std::type_index type, const Strin
 {
     throw Exception(
         "Cannot insert " + getTypeName(type) + " " + backQuote(name) + " to " + getStorageName() + " because this storage is readonly",
-        ErrorCodes::ACCESS_ENTITY_STORAGE_READONLY);
+        ErrorCodes::ACCESS_STORAGE_READONLY);
 }
 
 
@@ -417,7 +426,7 @@ void IAccessStorage::throwReadonlyCannotUpdate(std::type_index type, const Strin
 {
     throw Exception(
         "Cannot update " + getTypeName(type) + " " + backQuote(name) + " in " + getStorageName() + " because this storage is readonly",
-        ErrorCodes::ACCESS_ENTITY_STORAGE_READONLY);
+        ErrorCodes::ACCESS_STORAGE_READONLY);
 }
 
 
@@ -425,6 +434,6 @@ void IAccessStorage::throwReadonlyCannotRemove(std::type_index type, const Strin
 {
     throw Exception(
         "Cannot remove " + getTypeName(type) + " " + backQuote(name) + " from " + getStorageName() + " because this storage is readonly",
-        ErrorCodes::ACCESS_ENTITY_STORAGE_READONLY);
+        ErrorCodes::ACCESS_STORAGE_READONLY);
 }
 }

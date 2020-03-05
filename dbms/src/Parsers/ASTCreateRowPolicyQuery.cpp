@@ -1,5 +1,5 @@
 #include <Parsers/ASTCreateRowPolicyQuery.h>
-#include <Parsers/ASTRoleList.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <Parsers/formatAST.h>
 #include <Common/quoteString.h>
 #include <boost/range/algorithm/transform.hpp>
@@ -19,7 +19,7 @@ namespace
     }
 
 
-    void formatIsRestrictive(bool is_restrictive, const IAST::FormatSettings & settings)
+    void formatAsRestrictiveOrPermissive(bool is_restrictive, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS " << (is_restrictive ? "RESTRICTIVE" : "PERMISSIVE")
                       << (settings.hilite ? IAST::hilite_none : "");
@@ -112,7 +112,7 @@ namespace
         }
     }
 
-    void formatRoles(const ASTRoleList & roles, const IAST::FormatSettings & settings)
+    void formatToRoles(const ASTGenericRoleSet & roles, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TO " << (settings.hilite ? IAST::hilite_none : "");
         roles.format(settings);
@@ -134,8 +134,15 @@ ASTPtr ASTCreateRowPolicyQuery::clone() const
 
 void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER POLICY" : "CREATE POLICY")
-                  << (settings.hilite ? hilite_none : "");
+    if (attach)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ATTACH POLICY";
+    }
+    else
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER POLICY" : "CREATE POLICY")
+                      << (settings.hilite ? hilite_none : "");
+    }
 
     if (if_exists)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " IF EXISTS" << (settings.hilite ? hilite_none : "");
@@ -154,11 +161,11 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
         formatRenameTo(new_policy_name, settings);
 
     if (is_restrictive)
-        formatIsRestrictive(*is_restrictive, settings);
+        formatAsRestrictiveOrPermissive(*is_restrictive, settings);
 
     formatMultipleConditions(conditions, alter, settings);
 
     if (roles)
-        formatRoles(*roles, settings);
+        formatToRoles(*roles, settings);
 }
 }

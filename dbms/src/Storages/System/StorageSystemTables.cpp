@@ -24,7 +24,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int TABLE_IS_DROPPED;
 }
 
@@ -392,7 +391,7 @@ private:
 };
 
 
-Pipes StorageSystemTables::readWithProcessors(
+Pipes StorageSystemTables::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,

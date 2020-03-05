@@ -22,7 +22,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include "IFunctionImpl.h"
 #include "FunctionHelpers.h"
-#include "intDiv.h"
+#include "DivisionUtils.h"
 #include "castTypeToEither.h"
 #include "FunctionFactory.h"
 #include <Common/typeid_cast.h>
@@ -47,7 +47,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DECIMAL_OVERFLOW;
     extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES;
-    extern const int ILLEGAL_DIVISION;
 }
 
 
@@ -63,23 +62,20 @@ struct BinaryOperationImplBase
     using ResultType = ResultType_;
     static const constexpr bool allow_fixed_string = false;
 
-    static void NO_INLINE vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE vector_vector(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size)
     {
-        size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<ResultType>(a[i], b[i]);
     }
 
-    static void NO_INLINE vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE vector_constant(const A * __restrict a, B b, ResultType * __restrict c, size_t size)
     {
-        size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<ResultType>(a[i], b);
     }
 
-    static void NO_INLINE constant_vector(A a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE constant_vector(A a, const B * __restrict b, ResultType * __restrict c, size_t size)
     {
-        size_t size = b.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<ResultType>(a, b[i]);
     }
@@ -93,28 +89,73 @@ struct BinaryOperationImplBase
 template <typename Op>
 struct FixedStringOperationImpl
 {
-    static void NO_INLINE vector_vector(const ColumnFixedString::Chars & a, const ColumnFixedString::Chars & b, ColumnFixedString::Chars & c)
+    static void NO_INLINE vector_vector(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size)
     {
-        size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<UInt8>(a[i], b[i]);
     }
 
-    static void NO_INLINE vector_constant(const ColumnFixedString::Chars & a, const ColumnFixedString::Chars & b, ColumnFixedString::Chars & c)
+    template <bool inverted>
+    static void NO_INLINE vector_constant_impl(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size, size_t N)
     {
-        size_t size = a.size();
-        for (size_t i = 0; i < size; ++i)
-            c[i] = Op::template apply<UInt8>(a[i], b[i % b.size()]);
+        /// These complications are needed to avoid integer division in inner loop.
+
+        /// Create a pattern of repeated values of b with at least 16 bytes,
+        /// so we can read 16 bytes of this repeated pattern starting from any offset inside b.
+        ///
+        /// Example:
+        ///
+        ///  N = 6
+        ///  ------
+        /// [abcdefabcdefabcdefabc]
+        ///       ^^^^^^^^^^^^^^^^
+        ///      16 bytes starting from the last offset inside b.
+
+        const size_t b_repeated_size = N + 15;
+        UInt8 b_repeated[b_repeated_size];
+        for (size_t i = 0; i < b_repeated_size; ++i)
+            b_repeated[i] = b[i % N];
+
+        size_t b_offset = 0;
+        size_t b_increment = 16 % N;
+
+        /// Example:
+        ///
+        /// At first iteration we copy 16 bytes at offset 0 from b_repeated:
+        /// [abcdefabcdefabcdefabc]
+        ///  ^^^^^^^^^^^^^^^^
+        /// At second iteration we copy 16 bytes at offset 4 = 16 % 6 from b_repeated:
+        /// [abcdefabcdefabcdefabc]
+        ///      ^^^^^^^^^^^^^^^^
+        /// At third iteration we copy 16 bytes at offset 2 = (16 * 2) % 6 from b_repeated:
+        /// [abcdefabcdefabcdefabc]
+        ///    ^^^^^^^^^^^^^^^^
+
+        /// PaddedPODArray allows overflow for 15 bytes.
+        for (size_t i = 0; i < size; i += 16)
+        {
+            /// This loop is formed in a way to be vectorized into two SIMD mov.
+            for (size_t j = 0; j < 16; ++j)
+                c[i + j] = inverted
+                    ? Op::template apply<UInt8>(a[i + j], b_repeated[b_offset + j])
+                    : Op::template apply<UInt8>(b_repeated[b_offset + j], a[i + j]);
+
+            b_offset += b_increment;
+            if (b_offset >= N) /// This condition is easily predictable.
+                b_offset -= N;
+        }
     }
 
-    static void NO_INLINE constant_vector(const ColumnFixedString::Chars & a, const ColumnFixedString::Chars & b, ColumnFixedString::Chars & c)
+    static void vector_constant(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size, size_t N)
     {
-        size_t size = b.size();
-        for (size_t i = 0; i < size; ++i)
-            c[i] = Op::template apply<UInt8>(a[i % a.size()], b[i]);
+        vector_constant_impl<false>(a, b, c, size, N);
+    }
+
+    static void constant_vector(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size, size_t N)
+    {
+        vector_constant_impl<true>(b, a, c, size, N);
     }
 };
-
 
 
 template <typename A, typename B, typename Op, typename ResultType = typename Op::ResultType>
@@ -812,9 +853,10 @@ public:
                 auto col_res = ColumnFixedString::create(col_left->getN());
                 auto & out_chars = col_res->getChars();
                 out_chars.resize(col_left->getN());
-                OpImpl::vector_vector(col_left->getChars(),
-                                      col_right->getChars(),
-                                      out_chars);
+                OpImpl::vector_vector(col_left->getChars().data(),
+                                      col_right->getChars().data(),
+                                      out_chars.data(),
+                                      out_chars.size());
                 block.getByPosition(result).column = ColumnConst::create(std::move(col_res), block.rows());
                 return true;
             }
@@ -834,26 +876,36 @@ public:
         {
             if (col_left->getN() != col_right->getN())
                 return false;
+
             auto col_res = ColumnFixedString::create(col_left->getN());
             auto & out_chars = col_res->getChars();
             out_chars.resize((is_right_column_const ? col_left->size() : col_right->size()) * col_left->getN());
+
             if (!is_left_column_const && !is_right_column_const)
             {
-                OpImpl::vector_vector(col_left->getChars(),
-                                      col_right->getChars(),
-                                      out_chars);
+                OpImpl::vector_vector(
+                    col_left->getChars().data(),
+                    col_right->getChars().data(),
+                    out_chars.data(),
+                    out_chars.size());
             }
             else if (is_left_column_const)
             {
-                OpImpl::constant_vector(col_left->getChars(),
-                                        col_right->getChars(),
-                                        out_chars);
+                OpImpl::constant_vector(
+                    col_left->getChars().data(),
+                    col_right->getChars().data(),
+                    out_chars.data(),
+                    out_chars.size(),
+                    col_left->getN());
             }
             else
             {
-                OpImpl::vector_constant(col_left->getChars(),
-                                        col_right->getChars(),
-                                        out_chars);
+                OpImpl::vector_constant(
+                    col_left->getChars().data(),
+                    col_right->getChars().data(),
+                    out_chars.data(),
+                    out_chars.size(),
+                    col_left->getN());
             }
             block.getByPosition(result).column = std::move(col_res);
             return true;
@@ -861,12 +913,13 @@ public:
         return false;
     }
 
-    template<typename A, typename B>
+    template <typename A, typename B>
     bool executeNumeric(Block & block, const ColumnNumbers & arguments, size_t result [[maybe_unused]], const A & left, const B & right)
     {
         using LeftDataType = std::decay_t<decltype(left)>;
         using RightDataType = std::decay_t<decltype(right)>;
         using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+
         if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
         {
             constexpr bool result_is_decimal = IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>;
@@ -947,7 +1000,7 @@ public:
                                                 scale_a, scale_b, check_decimal_overflow);
                     }
                     else
-                        OpImpl::constant_vector(col_left_const->template getValue<T0>(), col_right->getData(), vec_res);
+                        OpImpl::constant_vector(col_left_const->template getValue<T0>(), col_right->getData().data(), vec_res.data(), vec_res.size());
                 }
                 else
                     return false;
@@ -978,9 +1031,9 @@ public:
                 else
                 {
                     if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
-                        OpImpl::vector_vector(col_left->getData(), col_right->getData(), vec_res);
+                        OpImpl::vector_vector(col_left->getData().data(), col_right->getData().data(), vec_res.data(), vec_res.size());
                     else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw))
-                        OpImpl::vector_constant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res);
+                        OpImpl::vector_constant(col_left->getData().data(), col_right_const->template getValue<T1>(), vec_res.data(), vec_res.size());
                     else
                         return false;
                 }
@@ -992,9 +1045,9 @@ public:
             return true;
         }
         return false;
-}
+    }
 
-void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type))

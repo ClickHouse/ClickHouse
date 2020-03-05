@@ -244,7 +244,6 @@ void aggregate5(Map & local_map, MapSmallLocks & global_map, Source::const_itera
 }*/
 
 
-
 int main(int argc, char ** argv)
 {
     size_t n = atoi(argv[1]);
