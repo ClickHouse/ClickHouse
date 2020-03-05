@@ -16,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_POLICY;
