@@ -1074,8 +1074,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             else
                 has_adaptive_parts.store(true, std::memory_order_relaxed);
 
-            /// TODO: Add modification time functionality to IDisk.
-            part->modification_time = Poco::File(getFullPathOnDisk(part_disk_ptr) + part_name).getLastModified().epochTime();
+            part->modification_time = part_disk_ptr->getLastModified(relative_data_path + part_name).epochTime();
             /// Assume that all parts are Committed, covered parts will be detected and marked as Outdated later
             part->state = DataPartState::Committed;
 
@@ -1158,14 +1157,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 /// Is the part directory old.
 /// True if its modification time and the modification time of all files inside it is less then threshold.
 /// (Only files on the first level of nesting are considered).
-static bool isOldPartDirectory(Poco::File & directory, time_t threshold)
+static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_path, time_t threshold)
 {
-    if (directory.getLastModified().epochTime() >= threshold)
+    if (disk->getLastModified(directory_path).epochTime() >= threshold)
         return false;
 
-    Poco::DirectoryIterator end;
-    for (Poco::DirectoryIterator it(directory); it != end; ++it)
-        if (it->getLastModified().epochTime() >= threshold)
+    for (auto it = disk->iterateDirectory(directory_path); it->isValid(); it->next())
+        if (disk->getLastModified(it->path()).epochTime() >= threshold)
             return false;
 
     return true;
@@ -1192,15 +1190,12 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
         {
             if (startsWith(it->name(), "tmp_"))
             {
-                /// TODO: Add modification time functionality to IDisk.
-                Poco::File tmp_dir(fullPath(disk, it->path()));
-
                 try
                 {
-                    if (tmp_dir.isDirectory() && isOldPartDirectory(tmp_dir, deadline))
+                    if (disk->isDirectory(it->path()) && isOldPartDirectory(disk, it->path(), deadline))
                     {
                         LOG_WARNING(log, "Removing temporary directory " << fullPath(disk, it->path()));
-                        tmp_dir.remove(true);
+                        disk->removeRecursive(it->path());
                     }
                 }
                 catch (const Poco::FileNotFoundException &)

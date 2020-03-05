@@ -673,7 +673,7 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
         }
     }
 
-    //from_file.setLastModified(Poco::Timestamp::fromEpochTime(time(nullptr)));
+    disk->setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
     disk->moveFile(from, to);
     relative_path = new_relative_path;
 }

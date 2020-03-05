@@ -10,6 +10,7 @@
 #include <utility>
 #include <boost/noncopyable.hpp>
 #include <Poco/Path.h>
+#include <Poco/Timestamp.h>
 
 
 namespace CurrentMetrics
@@ -145,6 +146,12 @@ public:
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     virtual void removeRecursive(const String & path) = 0;
+
+    /// Set last modified time to file or directory at `path`.
+    virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;
+
+    /// Get last modified time of file or directory at `path`.
+    virtual Poco::Timestamp getLastModified(const String & path) = 0;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;

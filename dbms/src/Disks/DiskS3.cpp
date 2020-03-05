@@ -614,6 +614,16 @@ void DiskS3::listFiles(const String & path, std::vector<String> & file_names)
         file_names.push_back(it->name());
 }
 
+void DiskS3::setLastModified(const String & path, const Poco::Timestamp & timestamp)
+{
+    Poco::File(metadata_path + path).setLastModified(timestamp);
+}
+
+Poco::Timestamp DiskS3::getLastModified(const String & path)
+{
+    return Poco::File(metadata_path + path).getLastModified();
+}
+
 
 DiskS3Reservation::~DiskS3Reservation()
 {

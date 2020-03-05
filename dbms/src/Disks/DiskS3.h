@@ -87,6 +87,10 @@ public:
 
     void removeRecursive(const String & path) override;
 
+    void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
+
+    Poco::Timestamp getLastModified(const String & path) override;
+
 private:
     String getRandomName() const;
 
