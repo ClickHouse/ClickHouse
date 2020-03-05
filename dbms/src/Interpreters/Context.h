@@ -426,7 +426,7 @@ public:
     /// The method must be called at the server startup.
     void enableNamedSessions();
 
-    std::shared_ptr<NamedSession> acquireNamedSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check);
+    std::shared_ptr<NamedSession> acquireNamedSession(const String & session_id, uint32_t timeout, bool session_check);
 
     /// For methods below you may need to acquire a lock by yourself.
     std::unique_lock<std::recursive_mutex> getLock() const;
@@ -672,12 +672,11 @@ using NamedSessionKey = std::pair<String, String>;
 struct NamedSession
 {
     NamedSessionKey key;
-    UInt64 close_cycle = 0;
     Context context;
-    std::chrono::steady_clock::duration timeout;
+    uint32_t timeout;
     NamedSessions & parent;
 
-    NamedSession(NamedSessionKey key_, Context & context_, std::chrono::steady_clock::duration timeout_, NamedSessions & parent_)
+    NamedSession(NamedSessionKey key_, Context & context_, uint32_t timeout_, NamedSessions & parent_)
         : key(key_), context(context_), timeout(timeout_), parent(parent_)
     {
     }
