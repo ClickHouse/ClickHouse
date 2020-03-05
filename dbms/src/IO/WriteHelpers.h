@@ -509,7 +509,7 @@ inline void writeBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
 }
 
 
-/// Write quoted if the string doesn't look like and identifier or if the string can parse as non identifier.
+/// Write quoted if the string doesn't look like and identifier.
 void writeProbablyBackQuotedString(const StringRef & s, WriteBuffer & buf);
 void writeProbablyDoubleQuotedString(const StringRef & s, WriteBuffer & buf);
 void writeProbablyBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf);

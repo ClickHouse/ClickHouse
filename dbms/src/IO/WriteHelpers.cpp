@@ -65,7 +65,6 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
 
 
 /// The same, but quotes apply only if there are characters that do not match the identifier without quotes
-///  or the identifier is a keyword that can appear in the same place as identifier but parse as operator.
 template <typename F>
 static inline void writeProbablyQuotedStringImpl(const StringRef & s, WriteBuffer & buf, F && write_quoted_string)
 {
@@ -75,12 +74,6 @@ static inline void writeProbablyQuotedStringImpl(const StringRef & s, WriteBuffe
     }
     else
     {
-        if (0 == strncasecmp(s.data, "INTERVAL", s.size))
-        {
-            write_quoted_string(s, buf);
-            return;
-        }
-
         const char * pos = s.data + 1;
         const char * end = s.data + s.size;
         for (; pos < end; ++pos)
