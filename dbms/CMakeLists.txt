@@ -36,6 +36,11 @@ if (NOT MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
 endif ()
 
+if (USE_DEBUG_HELPERS)
+    set (INCLUDE_DEBUG_HELPERS "-I${ClickHouse_SOURCE_DIR}/base -include ${ClickHouse_SOURCE_DIR}/dbms/src/Core/iostream_debug_helpers.h")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
+endif ()
+
 # Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
 
 option (WEVERYTHING "Enables -Weverything option with some exceptions. This is intended for exploration of new compiler warnings that may be found to be useful. Only makes sense for clang." ON)
@@ -171,8 +176,12 @@ elseif (COMPILER_GCC)
     add_cxx_compile_options(-Wsizeof-array-argument)
     # Warn for suspicious length parameters to certain string and memory built-in functions if the argument uses sizeof
     add_cxx_compile_options(-Wsizeof-pointer-memaccess)
-    # Warn about overriding virtual functions that are not marked with the override keyword
-    add_cxx_compile_options(-Wsuggest-override)
+
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 9)
+        # Warn about overriding virtual functions that are not marked with the override keyword
+        add_cxx_compile_options(-Wsuggest-override)
+    endif ()
+
     # Warn whenever a switch statement has an index of boolean type and the case values are outside the range of a boolean type
     add_cxx_compile_options(-Wswitch-bool)
     # Warn if a self-comparison always evaluates to true or false
@@ -258,16 +267,6 @@ endif ()
 add_subdirectory(src/Common/ZooKeeper)
 add_subdirectory(src/Common/Config)
 
-# It's Ok to avoid tracking of unresolved symbols for static linkage because
-# they will be resolved at link time nevertheless.
-function(target_ignore_unresolved_symbols target)
-    if (OS_DARWIN)
-        target_link_libraries (${target} PRIVATE -Wl,-undefined,dynamic_lookup)
-    else()
-        target_link_libraries (${target} PRIVATE -Wl,--unresolved-symbols=ignore-all)
-    endif()
-endfunction()
-
 set (all_modules)
 macro(add_object_library name common_path)
     if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
@@ -276,7 +275,7 @@ macro(add_object_library name common_path)
         list (APPEND all_modules ${name})
         add_headers_and_sources(${name} ${common_path})
         add_library(${name} SHARED ${${name}_sources} ${${name}_headers})
-        target_ignore_unresolved_symbols(${name})
+        target_link_libraries (${name} PRIVATE -Wl,--unresolved-symbols=ignore-all)
     endif ()
 endmacro()
 
@@ -307,7 +306,6 @@ add_object_library(clickhouse_processors_sources src/Processors/Sources)
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
     set (all_modules dbms)
-    target_ignore_unresolved_symbols (dbms)
 else()
     add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
     target_link_libraries (dbms PUBLIC ${all_modules})
@@ -562,6 +560,13 @@ endif()
 if (USE_JEMALLOC)
     dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # used in Interpreters/AsynchronousMetrics.cpp
     target_include_directories (clickhouse_new_delete SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR})
+
+    if(NOT MAKE_STATIC_LIBRARIES AND ${JEMALLOC_LIBRARIES} MATCHES "${CMAKE_STATIC_LIBRARY_SUFFIX}$")
+        # mallctl in dbms/src/Interpreters/AsynchronousMetrics.cpp
+        # Actually we link JEMALLOC to almost all libraries.
+        # This is just hotfix for some uninvestigated problem.
+        target_link_libraries(clickhouse_interpreters PRIVATE ${JEMALLOC_LIBRARIES})
+    endif()
 endif ()
 
 dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR})

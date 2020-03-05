@@ -20,7 +20,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
 }
 
 /// Conditions like "x = N" are considered good if abs(N) > threshold.
@@ -86,6 +85,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node)
 
         collectIdentifiersNoSubqueries(node, cond.identifiers);
 
+        cond.columns_size = getIdentifiersColumnSize(cond.identifiers);
+
         cond.viable =
             /// Condition depend on some column. Constant expressions are not moved.
             !cond.identifiers.empty()
@@ -95,13 +96,12 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node)
             /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
             && isSubsetOfTableColumns(cond.identifiers)
             /// Do not move conditions involving all queried columns.
-            && cond.identifiers.size() < queried_columns.size();
+            && cond.identifiers.size() < queried_columns.size()
+            /// Columns size of compact parts can't be counted. If all parts are compact do not move any condition.
+            && cond.columns_size > 0;
 
         if (cond.viable)
-        {
-            cond.columns_size = getIdentifiersColumnSize(cond.identifiers);
             cond.good = isConditionGood(node);
-        }
 
         res.emplace_back(std::move(cond));
     }

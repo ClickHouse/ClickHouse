@@ -1,5 +1,8 @@
 DROP TABLE IF EXISTS test.replicated_alter1;
 DROP TABLE IF EXISTS test.replicated_alter2;
+
+SET replication_alter_partitions_sync = 2;
+
 CREATE TABLE test.replicated_alter1 (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test/alter', 'r1', d, k, 8192);
 CREATE TABLE test.replicated_alter2 (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test/alter', 'r2', d, k, 8192);
 
@@ -95,7 +98,7 @@ DESC TABLE test.replicated_alter2;
 SHOW CREATE TABLE test.replicated_alter2;
 SELECT * FROM test.replicated_alter1 ORDER BY k;
 
-ALTER TABLE test.replicated_alter1 MODIFY COLUMN dt Date, MODIFY COLUMN s DateTime;
+ALTER TABLE test.replicated_alter1 MODIFY COLUMN dt Date, MODIFY COLUMN s DateTime DEFAULT '0000-00-00 00:00:00';
 
 DESC TABLE test.replicated_alter1;
 SHOW CREATE TABLE test.replicated_alter1;

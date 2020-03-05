@@ -47,6 +47,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
@@ -455,10 +457,10 @@ struct ImplMetroHash64
         union
         {
             UInt64 u64;
-            UInt8 u8[sizeof(u64)];
+            uint8_t u8[sizeof(u64)];
         };
 
-        metrohash64_1(reinterpret_cast<const UInt8 *>(s), len, 0, u8);
+        metrohash64_1(reinterpret_cast<const uint8_t *>(s), len, 0, u8);
 
         return u64;
     }
@@ -553,7 +555,7 @@ public:
                 Impl::apply(
                     reinterpret_cast<const char *>(&data[current_offset]),
                     offsets[i] - current_offset - 1,
-                    &chars_to[i * Impl::length]);
+                    reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
 
                 current_offset = offsets[i];
             }

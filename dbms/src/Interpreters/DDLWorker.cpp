@@ -46,16 +46,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int INVALID_CONFIG_PARAMETER;
     extern const int UNKNOWN_FORMAT_VERSION;
-    extern const int INCONSISTENT_TABLE_ACCROSS_SHARDS;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int UNFINISHED;
-    extern const int UNKNOWN_STATUS_OF_DISTRIBUTED_DDL_TASK;
     extern const int QUERY_IS_PROHIBITED;
 }
 
@@ -556,7 +553,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
         current_context = std::make_unique<Context>(context);
         current_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         current_context->setCurrentQueryId(""); // generate random query_id
-        executeQuery(istr, ostr, false, *current_context, {}, {});
+        executeQuery(istr, ostr, false, *current_context, {});
     }
     catch (...)
     {

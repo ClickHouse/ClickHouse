@@ -2,6 +2,8 @@
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/IStorage_fwd.h>
+#include <DataTypes/IDataType.h>
+#include <Core/Names.h>
 
 #include <optional>
 #include <unordered_map>
@@ -25,7 +27,11 @@ struct MutationCommand
         EMPTY,     /// Not used.
         DELETE,
         UPDATE,
-        MATERIALIZE_INDEX
+        MATERIALIZE_INDEX,
+        READ_COLUMN,
+        DROP_COLUMN,
+        DROP_INDEX,
+        MATERIALIZE_TTL
     };
 
     Type type = EMPTY;
@@ -40,7 +46,12 @@ struct MutationCommand
     String index_name;
     ASTPtr partition;
 
-    static std::optional<MutationCommand> parse(ASTAlterCommand * command);
+    /// For reads, drops and etc.
+    String column_name;
+    DataTypePtr data_type; /// Maybe empty if we just want to drop column
+
+    /// If from_zookeeper, than consider more Alter commands as mutation commands
+    static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool from_zookeeper=false);
 };
 
 /// Multiple mutation commands, possible from different ALTER queries

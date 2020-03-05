@@ -8,18 +8,19 @@
 class LineReader
 {
 public:
-    class Suggest
+    struct Suggest
     {
-    protected:
         using Words = std::vector<std::string>;
         using WordsRange = std::pair<Words::const_iterator, Words::const_iterator>;
 
         Words words;
         std::atomic<bool> ready{false};
 
-    public:
         /// Get iterators for the matched range of words if any.
         WordsRange getCompletions(const String & prefix, size_t prefix_length) const;
+
+        /// case sensitive suggestion
+        bool case_insensitive = false;
     };
 
     LineReader(const String & history_file_path, char extender, char delimiter = 0);  /// if delimiter != 0, then it's multiline mode
@@ -30,6 +31,13 @@ public:
     /// Non-empty line is appended to history - without duplication.
     /// Typical delimiter is ';' (semicolon) and typical extender is '\' (backslash).
     String readLine(const String & first_prompt, const String & second_prompt);
+
+    /// When bracketed paste mode is set, pasted text is bracketed with control sequences so
+    /// that the program can differentiate pasted text from typed-in text. This helps
+    /// clickhouse-client so that without -m flag, one can still paste multiline queries, and
+    /// possibly get better pasting performance. See https://cirw.in/blog/bracketed-paste for
+    /// more details.
+    virtual void enableBracketedPaste() {}
 
 protected:
     enum InputStatus

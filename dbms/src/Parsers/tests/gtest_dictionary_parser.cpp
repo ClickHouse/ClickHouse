@@ -273,7 +273,6 @@ TEST(ParserDictionaryDDL, NestedSource)
 }
 
 
-
 TEST(ParserDictionaryDDL, Formatting)
 {
     String input = " CREATE DICTIONARY test.dict5"

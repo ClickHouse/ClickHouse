@@ -36,6 +36,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
     extern const int OPENSSL_ERROR;
@@ -953,7 +954,7 @@ public:
             throw Exception("Wrong size of auth response. Expected: " + std::to_string(Poco::SHA1Engine::DIGEST_SIZE) + " bytes, received: " + std::to_string(auth_response->size()) + " bytes.",
                             ErrorCodes::UNKNOWN_EXCEPTION);
 
-        auto user = context.getAccessControlManager().getUser(user_name);
+        auto user = context.getAccessControlManager().read<User>(user_name);
 
         Poco::SHA1Engine::Digest double_sha1_value = user->authentication.getPasswordDoubleSHA1();
         assert(double_sha1_value.size() == Poco::SHA1Engine::DIGEST_SIZE);

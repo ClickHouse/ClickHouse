@@ -36,7 +36,7 @@ public:
     void startup() override;
     void shutdown() override;
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

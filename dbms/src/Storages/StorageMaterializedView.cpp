@@ -20,6 +20,7 @@
 #include <Storages/ReadInOrderOptimizer.h>
 
 #include <Common/typeid_cast.h>
+#include <Processors/Sources/SourceFromInputStream.h>
 
 
 namespace DB
@@ -27,10 +28,10 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
-    extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW;
 }
 
 static inline String generateInnerTableName(const String & table_name)
@@ -165,13 +166,9 @@ bool StorageMaterializedView::hasColumn(const String & column_name) const
 
 StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
 {
-    return
-        {
-            .columns = getColumns(),
-            .indices = getIndices(),
-            .constraints = getConstraints(),
-            .select = getSelectQuery(),
-        };
+    StorageInMemoryMetadata result(getColumns(), getIndices(), getConstraints());
+    result.select = getSelectQuery();
+    return result;
 }
 
 QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context) const
@@ -179,7 +176,7 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(cons
     return getTargetTable()->getQueryProcessingStage(context);
 }
 
-BlockInputStreams StorageMaterializedView::read(
+Pipes StorageMaterializedView::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -192,10 +189,12 @@ BlockInputStreams StorageMaterializedView::read(
     if (query_info.order_by_optimizer)
         query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(storage);
 
-    auto streams = storage->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
-    for (auto & stream : streams)
-        stream->addTableLock(lock);
-    return streams;
+    Pipes pipes = storage->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+
+    for (auto & pipe : pipes)
+        pipe.addTableLock(lock);
+
+    return pipes;
 }
 
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Context & context)

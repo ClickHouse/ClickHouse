@@ -46,7 +46,8 @@ void ASTShowCreateAccessEntityQuery::formatQueryImpl(const FormatSettings & sett
                   << (settings.hilite ? hilite_none : "");
 
     if ((kind == Kind::USER) && current_user)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " CURRENT_USER" << (settings.hilite ? hilite_none : "");
+    {
+    }
     else if ((kind == Kind::QUOTA) && current_quota)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " CURRENT" << (settings.hilite ? hilite_none : "");
     else if (kind == Kind::ROW_POLICY)
