@@ -207,9 +207,10 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## http_server_default_response
+## http_server_default_response {#server_settings-http_server_default_response}
 
 Страница, показываемая по умолчанию, при обращении к HTTP(s) серверу ClickHouse.
+Значение по умолчанию "Ok." (с переводом строки на конце).
 
 **Пример**
 

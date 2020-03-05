@@ -87,7 +87,7 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, const Context &
         storage_name_column.insert(storage_name);
         key_type_column.insert(static_cast<UInt8>(quota->key_type));
 
-        for (const String & role : quota->roles.toStrings(access_control))
+        for (const String & role : quota->roles.toStringsWithNames(access_control))
             roles_data.insert(role);
         roles_offsets.push_back(roles_data.size());
 

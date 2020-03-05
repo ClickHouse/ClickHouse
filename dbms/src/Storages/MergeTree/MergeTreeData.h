@@ -367,7 +367,7 @@ public:
 
     ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override;
 
-    StoragePolicyPtr getStoragePolicy() const override { return storage_policy; }
+    StoragePolicyPtr getStoragePolicy() const override;
 
     bool supportsPrewhere() const override { return true; }
     bool supportsSampling() const override { return sample_by_ast != nullptr; }
@@ -703,7 +703,7 @@ public:
                                                                 size_t min_volume_index = 0) const;
     /// Choose disk with max available free space
     /// Reserves 0 bytes
-    ReservationPtr makeEmptyReservationOnLargestDisk() { return storage_policy->makeEmptyReservationOnLargestDisk(); }
+    ReservationPtr makeEmptyReservationOnLargestDisk() { return getStoragePolicy()->makeEmptyReservationOnLargestDisk(); }
 
     MergeTreeDataFormatVersion format_version;
 
@@ -752,10 +752,10 @@ public:
         ASTPtr entry_ast;
 
         /// Returns destination disk or volume for this rule.
-        SpacePtr getDestination(const StoragePolicyPtr & policy) const;
+        SpacePtr getDestination(StoragePolicyPtr policy) const;
 
         /// Checks if given part already belongs destination disk or volume for this rule.
-        bool isPartInDestination(const StoragePolicyPtr & policy, const IMergeTreeDataPart & part) const;
+        bool isPartInDestination(StoragePolicyPtr policy, const IMergeTreeDataPart & part) const;
 
         bool isEmpty() const { return expression == nullptr; }
     };
@@ -827,8 +827,6 @@ protected:
     /// Storage settings.
     /// Use get and set to receive readonly versions.
     MultiVersion<MergeTreeSettings> storage_settings;
-
-    StoragePolicyPtr storage_policy;
 
     /// Work with data parts
 
@@ -931,6 +929,8 @@ protected:
         const NamesAndTypesList & new_columns,
         const IndicesASTs & old_indices,
         const IndicesASTs & new_indices) const;
+
+    void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy);
 
     void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);
 

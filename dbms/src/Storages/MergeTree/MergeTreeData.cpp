@@ -147,7 +147,6 @@ MergeTreeData::MergeTreeData(
     , log_name(table_id_.getNameForLogs())
     , log(&Logger::get(log_name))
     , storage_settings(std::move(storage_settings_))
-    , storage_policy(context_.getStoragePolicy(getSettings()->storage_policy))
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
     , parts_mover(this)
@@ -259,11 +258,7 @@ MergeTreeData::MergeTreeData(
 
 StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
 {
-    StorageInMemoryMetadata metadata{
-        .columns = getColumns(),
-        .indices = getIndices(),
-        .constraints = getConstraints(),
-    };
+    StorageInMemoryMetadata metadata(getColumns(), getIndices(), getConstraints());
 
     if (partition_by_ast)
         metadata.partition_by_ast = partition_by_ast->clone();
@@ -284,6 +279,11 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
         metadata.settings_ast = settings_ast->clone();
 
     return metadata;
+}
+
+StoragePolicyPtr MergeTreeData::getStoragePolicy() const
+{
+    return global_context.getStoragePolicy(getSettings()->storage_policy);
 }
 
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name)
@@ -459,12 +459,12 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
             indices_names.insert(new_indices.back()->name);
         }
     }
-    auto syntax_primary = SyntaxAnalyzer(global_context, {}).analyze(
+    auto syntax_primary = SyntaxAnalyzer(global_context).analyze(
             skip_indices_with_primary_key_expr_list, all_columns);
     auto new_indices_with_primary_key_expr = ExpressionAnalyzer(
             skip_indices_with_primary_key_expr_list, syntax_primary, global_context).getActions(false);
 
-    auto syntax_sorting = SyntaxAnalyzer(global_context, {}).analyze(
+    auto syntax_sorting = SyntaxAnalyzer(global_context).analyze(
             skip_indices_with_sorting_key_expr_list, all_columns);
     auto new_indices_with_sorting_key_expr = ExpressionAnalyzer(
             skip_indices_with_sorting_key_expr_list, syntax_sorting, global_context).getActions(false);
@@ -715,54 +715,10 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
 }
 
 
-void MergeTreeData::setStoragePolicy(const String & new_storage_policy_name, bool only_check)
+void MergeTreeData::checkStoragePolicy(const StoragePolicyPtr & new_storage_policy)
 {
     const auto old_storage_policy = getStoragePolicy();
-    const auto & new_storage_policy = global_context.getStoragePolicySelector()[new_storage_policy_name];
-
-    std::unordered_set<String> new_volume_names;
-    for (const auto & volume : new_storage_policy->getVolumes())
-        new_volume_names.insert(volume->getName());
-
-    for (const auto & volume : old_storage_policy->getVolumes())
-    {
-        if (new_volume_names.count(volume->getName()) == 0)
-            throw Exception("New storage policy shall contain volumes of old one", ErrorCodes::LOGICAL_ERROR);
-
-        std::unordered_set<String> new_disk_names;
-        for (const auto & disk : new_storage_policy->getVolumeByName(volume->getName())->disks)
-            new_disk_names.insert(disk->getName());
-
-        for (const auto & disk : volume->disks)
-            if (new_disk_names.count(disk->getName()) == 0)
-                throw Exception("New storage policy shall contain disks of old one", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    std::unordered_set<String> all_diff_disk_names;
-    for (const auto & disk : new_storage_policy->getDisks())
-        all_diff_disk_names.insert(disk->getName());
-    for (const auto & disk : old_storage_policy->getDisks())
-        all_diff_disk_names.erase(disk->getName());
-
-    for (const String & disk_name : all_diff_disk_names)
-    {
-        const auto & path = getFullPathOnDisk(new_storage_policy->getDiskByName(disk_name));
-        if (Poco::File(path).exists())
-            throw Exception("New storage policy contain disks which already contain data of a table with the same name", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    if (!only_check)
-    {
-        for (const String & disk_name : all_diff_disk_names)
-        {
-            const auto & path = getFullPathOnDisk(new_storage_policy->getDiskByName(disk_name));
-            Poco::File(path).createDirectories();
-            Poco::File(path + "detached").createDirectory();
-        }
-
-        storage_policy = new_storage_policy;
-        /// TODO: Query lock is fine but what about background moves??? And downloading of parts?
-    }
+    old_storage_policy->checkCompatibleWith(new_storage_policy);
 }
 
 
@@ -905,7 +861,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     Strings part_file_names;
     Poco::DirectoryIterator end;
 
-    auto disks = storage_policy->getDisks();
+    auto disks = getStoragePolicy()->getDisks();
 
     /// Only check if user did touch storage configuration for this table.
     if (!getStoragePolicy()->isDefaultPolicy() && !skip_sanity_checks)
@@ -915,7 +871,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         for (const auto & disk_ptr : disks)
             defined_disk_names.insert(disk_ptr->getName());
 
-        for (auto & [disk_name, disk] : global_context.getDiskSelector().getDisksMap())
+        for (auto & [disk_name, disk] : global_context.getDiskSelector()->getDisksMap())
         {
             if (defined_disk_names.count(disk_name) == 0 && disk->exists(relative_data_path))
             {
@@ -1352,7 +1308,7 @@ void MergeTreeData::rename(
     const String & new_table_path, const String & new_database_name,
     const String & new_table_name, TableStructureWriteLockHolder &)
 {
-    auto disks = storage_policy->getDisks();
+    auto disks = getStoragePolicy()->getDisks();
 
     for (const auto & disk : disks)
     {
@@ -1575,7 +1531,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             }
 
             if (changed_setting.name == "storage_policy")
-                setStoragePolicy(changed_setting.value.safeGet<String>(), /* only_check = */ true);
+                checkStoragePolicy(global_context.getStoragePolicy(changed_setting.value.safeGet<String>()));
         }
     }
 
@@ -1718,6 +1674,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     return createPart(name, type, part_info, disk, relative_path);
 }
 
+/// This code is not used anymore in StorageReplicatedMergeTree
+/// soon it will be removed from StorageMergeTree as well
+/// TODO(alesap)
 void MergeTreeData::alterDataPart(
     const NamesAndTypesList & new_columns,
     const IndicesASTs & new_indices,
@@ -1889,14 +1848,41 @@ void MergeTreeData::changeSettings(
     if (new_settings)
     {
         const auto & new_changes = new_settings->as<const ASTSetQuery &>().changes;
+
+        for (const auto & change : new_changes)
+            if (change.name == "storage_policy")
+            {
+                StoragePolicyPtr new_storage_policy = global_context.getStoragePolicy(change.value.safeGet<String>());
+                StoragePolicyPtr old_storage_policy = getStoragePolicy();
+
+                checkStoragePolicy(new_storage_policy);
+
+                std::unordered_set<String> all_diff_disk_names;
+                for (const auto & disk : new_storage_policy->getDisks())
+                    all_diff_disk_names.insert(disk->getName());
+                for (const auto & disk : old_storage_policy->getDisks())
+                    all_diff_disk_names.erase(disk->getName());
+
+                for (const String & disk_name : all_diff_disk_names)
+                {
+                    const auto & path = getFullPathOnDisk(new_storage_policy->getDiskByName(disk_name));
+                    if (Poco::File(path).exists())
+                        throw Exception("New storage policy contain disks which already contain data of a table with the same name", ErrorCodes::LOGICAL_ERROR);
+                }
+
+                for (const String & disk_name : all_diff_disk_names)
+                {
+                    const auto & path = getFullPathOnDisk(new_storage_policy->getDiskByName(disk_name));
+                    Poco::File(path).createDirectories();
+                    Poco::File(path + "detached").createDirectory();
+                }
+                /// FIXME how would that be done while reloading configuration???
+            }
+
         MergeTreeSettings copy = *getSettings();
         copy.applyChanges(new_changes);
         storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
         settings_ast = new_settings;
-
-        for (const auto & change : new_changes)
-            if (change.name == "storage_policy")
-                setStoragePolicy(change.value.safeGet<String>());
     }
 }
 
@@ -2908,9 +2894,9 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     else
         parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
-    auto disk = storage_policy->getDiskByName(name);
+    auto disk = getStoragePolicy()->getDiskByName(name);
     if (!disk)
-        throw Exception("Disk " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
+        throw Exception("Disk " + name + " does not exists on policy " + getStoragePolicy()->getName(), ErrorCodes::UNKNOWN_DISK);
 
     parts.erase(std::remove_if(parts.begin(), parts.end(), [&](auto part_ptr)
         {
@@ -2956,9 +2942,9 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     else
         parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
-    auto volume = storage_policy->getVolumeByName(name);
+    auto volume = getStoragePolicy()->getVolumeByName(name);
     if (!volume)
-        throw Exception("Volume " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
+        throw Exception("Volume " + name + " does not exists on policy " + getStoragePolicy()->getName(), ErrorCodes::UNKNOWN_DISK);
 
     if (parts.empty())
         throw Exception("Nothing to move", ErrorCodes::NO_SUCH_DATA_PART);
@@ -3200,7 +3186,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
         ActiveDataPartSet active_parts(format_version);
 
-        const auto disks = storage_policy->getDisks();
+        const auto disks = getStoragePolicy()->getDisks();
         for (const DiskPtr & disk : disks)
         {
             const auto full_path = getFullPathOnDisk(disk);
@@ -3274,7 +3260,7 @@ ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    auto reservation = storage_policy->reserve(expected_size);
+    auto reservation = getStoragePolicy()->reserve(expected_size);
 
     return checkAndReturnReservation(expected_size, std::move(reservation));
 }
@@ -3319,7 +3305,7 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
     auto ttl_entry = selectTTLEntryForTTLInfos(ttl_infos, time_of_move);
     if (ttl_entry)
     {
-        SpacePtr destination_ptr = ttl_entry->getDestination(storage_policy);
+        SpacePtr destination_ptr = ttl_entry->getDestination(getStoragePolicy());
         if (!destination_ptr)
         {
             if (ttl_entry->destination_type == PartDestinationType::VOLUME)
@@ -3348,12 +3334,12 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
         }
     }
 
-    reservation = storage_policy->reserve(expected_size, min_volume_index);
+    reservation = getStoragePolicy()->reserve(expected_size, min_volume_index);
 
     return reservation;
 }
 
-SpacePtr MergeTreeData::TTLEntry::getDestination(const StoragePolicyPtr & policy) const
+SpacePtr MergeTreeData::TTLEntry::getDestination(StoragePolicyPtr policy) const
 {
     if (destination_type == PartDestinationType::VOLUME)
         return policy->getVolumeByName(destination_name);
@@ -3363,7 +3349,7 @@ SpacePtr MergeTreeData::TTLEntry::getDestination(const StoragePolicyPtr & policy
         return {};
 }
 
-bool MergeTreeData::TTLEntry::isPartInDestination(const StoragePolicyPtr & policy, const IMergeTreeDataPart & part) const
+bool MergeTreeData::TTLEntry::isPartInDestination(StoragePolicyPtr policy, const IMergeTreeDataPart & part) const
 {
     if (destination_type == PartDestinationType::VOLUME)
     {
@@ -3627,7 +3613,7 @@ String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
 
 DiskPtr MergeTreeData::getDiskForPart(const String & part_name, const String & relative_path) const
 {
-    const auto disks = storage_policy->getDisks();
+    const auto disks = getStoragePolicy()->getDisks();
     for (const DiskPtr & disk : disks)
     {
         const auto disk_path = getFullPathOnDisk(disk);
@@ -3650,7 +3636,7 @@ String MergeTreeData::getFullPathForPart(const String & part_name, const String 
 Strings MergeTreeData::getDataPaths() const
 {
     Strings res;
-    auto disks = storage_policy->getDisks();
+    auto disks = getStoragePolicy()->getDisks();
     for (const auto & disk : disks)
         res.push_back(getFullPathOnDisk(disk));
     return res;
@@ -3659,7 +3645,7 @@ Strings MergeTreeData::getDataPaths() const
 MergeTreeData::PathsWithDisks MergeTreeData::getDataPathsWithDisks() const
 {
     PathsWithDisks res;
-    auto disks = storage_policy->getDisks();
+    auto disks = getStoragePolicy()->getDisks();
     for (const auto & disk : disks)
         res.emplace_back(getFullPathOnDisk(disk), disk);
     return res;
@@ -3819,7 +3805,7 @@ bool MergeTreeData::selectPartsAndMove()
 
 bool MergeTreeData::areBackgroundMovesNeeded() const
 {
-    auto policy = storage_policy;
+    auto policy = getStoragePolicy();
 
     if (policy->getVolumes().size() > 1)
         return true;
