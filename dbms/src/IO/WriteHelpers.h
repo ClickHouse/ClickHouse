@@ -509,40 +509,10 @@ inline void writeBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
 }
 
 
-/// The same, but quotes apply only if there are characters that do not match the identifier without quotes.
-template <typename F>
-inline void writeProbablyQuotedStringImpl(const StringRef & s, WriteBuffer & buf, F && write_quoted_string)
-{
-    if (!s.size || !isValidIdentifierBegin(s.data[0]))
-        write_quoted_string(s, buf);
-    else
-    {
-        const char * pos = s.data + 1;
-        const char * end = s.data + s.size;
-        for (; pos < end; ++pos)
-            if (!isWordCharASCII(*pos))
-                break;
-        if (pos != end)
-            write_quoted_string(s, buf);
-        else
-            writeString(s, buf);
-    }
-}
-
-inline void writeProbablyBackQuotedString(const StringRef & s, WriteBuffer & buf)
-{
-    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedString(s_, buf_); });
-}
-
-inline void writeProbablyDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
-{
-    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
-}
-
-inline void writeProbablyBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
-{
-    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedStringMySQL(s_, buf_); });
-}
+/// Write quoted if the string doesn't look like and identifier.
+void writeProbablyBackQuotedString(const StringRef & s, WriteBuffer & buf);
+void writeProbablyDoubleQuotedString(const StringRef & s, WriteBuffer & buf);
+void writeProbablyBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf);
 
 
 /** Outputs the string in for the CSV format.
