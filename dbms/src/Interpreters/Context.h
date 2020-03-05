@@ -599,8 +599,6 @@ public:
     void dropCompiledExpressionCache() const;
 #endif
 
-    void createSessionCleaner();
-
     /// Add started bridge command. It will be killed after context destruction
     void addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
 
