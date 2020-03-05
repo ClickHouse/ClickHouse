@@ -59,6 +59,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(const Poco::Util::AbstractConfigu
 
     std::shared_ptr<DiskSelector> result = std::make_shared<DiskSelector>(*this);
 
+    constexpr auto default_disk_name = "default";
     std::set<String> old_disks_minus_new_disks;
     for (const auto & [disk_name, _] : result->disks)
     {
@@ -83,6 +84,8 @@ DiskSelectorPtr DiskSelector::updateFromConfig(const Poco::Util::AbstractConfigu
             /// implementing that may appear as not trivial task.
         }
     }
+
+    old_disks_minus_new_disks.erase(default_disk_name);
 
     if (!old_disks_minus_new_disks.empty())
     {
@@ -465,9 +468,11 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
 
     std::shared_ptr<StoragePolicySelector> result = std::make_shared<StoragePolicySelector>(config, config_prefix, disks);
 
+    constexpr auto default_storage_policy_name = "default";
+
     for (const auto & [name, policy] : policies)
     {
-        if (result->policies.count(name) == 0)
+        if (name != default_storage_policy_name && result->policies.count(name) == 0)
             throw Exception("Storage policy " + backQuote(name) + " is missing in new configuration", ErrorCodes::BAD_ARGUMENTS);
 
         policy->checkCompatibleWith(result->policies[name]);
