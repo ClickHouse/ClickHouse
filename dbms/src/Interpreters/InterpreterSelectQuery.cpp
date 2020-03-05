@@ -264,7 +264,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
     {
-        CrossToInnerJoinVisitor::Data cross_to_inner;
+        CrossToInnerJoinVisitor::Data cross_to_inner{joined_tables.tablesWithColumns(), context->getCurrentDatabase()};
         CrossToInnerJoinVisitor(cross_to_inner).visit(query_ptr);
 
         JoinToSubqueryTransformVisitor::Data join_to_subs_data{*context};
@@ -273,7 +273,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         joined_tables.reset(getSelectQuery());
         joined_tables.resolveTables();
 
-        if (joined_tables.isLeftTableSubquery())
+        if (storage && joined_tables.isLeftTableSubquery())
         {
             /// Rewritten with subquery. Free storage here locks here.
             storage = {};

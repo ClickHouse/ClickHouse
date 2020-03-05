@@ -14,16 +14,6 @@ namespace ErrorCodes
 namespace
 {
 
-const DatabaseAndTableWithAlias & extractTable(const DatabaseAndTableWithAlias & table)
-{
-    return table;
-}
-
-const DatabaseAndTableWithAlias & extractTable(const TableWithColumnNames & table)
-{
-    return table.table;
-}
-
 template <typename T>
 IdentifierSemantic::ColumnMatch tryChooseTable(const ASTIdentifier & identifier, const std::vector<T> & tables,
                                                size_t & best_table_pos, bool allow_ambiguous)
@@ -36,7 +26,7 @@ IdentifierSemantic::ColumnMatch tryChooseTable(const ASTIdentifier & identifier,
 
     for (size_t i = 0; i < tables.size(); ++i)
     {
-        auto match = IdentifierSemantic::canReferColumnToTable(identifier, extractTable(tables[i]));
+        auto match = IdentifierSemantic::canReferColumnToTable(identifier, tables[i]);
         if (match != ColumnMatch::NoMatch)
         {
             if (match > best_match)
@@ -139,6 +129,13 @@ bool IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std
     return tryChooseTable<TableWithColumnNames>(identifier, tables, best_table_pos, ambiguous) != no_match;
 }
 
+bool IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<TableWithColumnNamesAndTypes> & tables,
+                                     size_t & best_table_pos, bool ambiguous)
+{
+    static constexpr auto no_match = IdentifierSemantic::ColumnMatch::NoMatch;
+    return tryChooseTable<TableWithColumnNamesAndTypes>(identifier, tables, best_table_pos, ambiguous) != no_match;
+}
+
 std::pair<String, String> IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
 {
     if (identifier.name_parts.size() > 2)
@@ -196,6 +193,22 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
     }
 
     return ColumnMatch::NoMatch;
+}
+
+IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const ASTIdentifier & identifier,
+                                                                          const TableWithColumnNames & db_and_table)
+{
+    /// TODO: ColumnName match logic is disabled cause caller's code is not ready for it
+    return canReferColumnToTable(identifier, db_and_table.table);
+}
+
+IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const ASTIdentifier & identifier,
+                                                                          const TableWithColumnNamesAndTypes & db_and_table)
+{
+    ColumnMatch match = canReferColumnToTable(identifier, db_and_table.table);
+    if (match == ColumnMatch::NoMatch && identifier.isShort() && db_and_table.hasColumn(identifier.shortName()))
+        match = ColumnMatch::ColumnName;
+    return match;
 }
 
 /// Strip qualificators from left side of column name.
