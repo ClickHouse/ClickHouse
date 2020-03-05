@@ -1,9 +1,9 @@
 #include "CachedCompressedReadBuffer.h"
 
-#include <IO/createReadBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
-#include <Compression/CompressionInfo.h>
 #include <Compression/LZ4_decompress_faster.h>
+
+#include <utility>
 
 
 namespace DB
@@ -19,7 +19,7 @@ void CachedCompressedReadBuffer::initInput()
 {
     if (!file_in)
     {
-        file_in = createReadBufferFromFileBase(path, estimated_size, aio_threshold, mmap_threshold, buf_size);
+        file_in = file_in_creator();
         compressed_in = file_in.get();
 
         if (profile_callback)
@@ -71,23 +71,11 @@ bool CachedCompressedReadBuffer::nextImpl()
     return true;
 }
 
-
-CachedCompressedReadBuffer::CachedCompressedReadBuffer(std::unique_ptr<ReadBufferFromFileBase> file_in_, UncompressedCache * cache_)
-    : ReadBuffer(nullptr, 0), cache(cache_), file_in(std::move(file_in_)), path(file_in->getFileName()), file_pos(0)
-{
-    compressed_in = file_in.get();
-}
-
-
 CachedCompressedReadBuffer::CachedCompressedReadBuffer(
-    const std::string & path_, UncompressedCache * cache_,
-    size_t estimated_size_, size_t aio_threshold_, size_t mmap_threshold_,
-    size_t buf_size_)
-    : ReadBuffer(nullptr, 0), cache(cache_), path(path_), buf_size(buf_size_), estimated_size(estimated_size_),
-        aio_threshold(aio_threshold_), mmap_threshold(mmap_threshold_), file_pos(0)
+    const std::string & path_, std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator_, UncompressedCache * cache_)
+    : ReadBuffer(nullptr, 0), file_in_creator(std::move(file_in_creator_)), cache(cache_), path(path_), file_pos(0)
 {
 }
-
 
 void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)
 {
