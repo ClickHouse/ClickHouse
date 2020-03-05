@@ -164,7 +164,7 @@ public:
         bool hilite = false;
         bool one_line;
         /// This is needed for ClickHouse to correctly format identifiers that can be keywords in some context, like `interval`.
-        bool always_quote_identifiers = true;
+        bool always_quote_identifiers = false;
         IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
 
         char nl_or_ws;
