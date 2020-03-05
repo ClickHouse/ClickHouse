@@ -21,6 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TABLE_IS_DROPPED;
 }
 
@@ -218,7 +219,7 @@ StoragesInfo StoragesInfoStream::next()
     return {};
 }
 
-Pipes StorageSystemPartsBase::readWithProcessors(
+Pipes StorageSystemPartsBase::read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

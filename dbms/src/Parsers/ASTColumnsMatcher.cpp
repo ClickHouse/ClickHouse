@@ -4,9 +4,12 @@
 #include <re2/re2.h>
 
 
-
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int CANNOT_COMPILE_REGEXP;
+}
 
 ASTPtr ASTColumnsMatcher::clone() const
 {

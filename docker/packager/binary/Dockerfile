@@ -43,6 +43,7 @@ RUN apt-get update -y \
             rename \
             wget
 
+# This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-8 /usr/bin/ld.lld
 
 ENV CC=clang-8

@@ -2,6 +2,7 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateUserQuery.h>
+#include <Parsers/ASTCreateRoleQuery.h>
 #include <Parsers/ASTCreateQuotaQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ASTDropAccessEntityQuery.h>
@@ -13,6 +14,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSetRoleQuery.h>
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowGrantsQuery.h>
@@ -29,6 +31,7 @@
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterCreateUserQuery.h>
+#include <Interpreters/InterpreterCreateRoleQuery.h>
 #include <Interpreters/InterpreterCreateQuotaQuery.h>
 #include <Interpreters/InterpreterCreateRowPolicyQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
@@ -44,6 +47,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/InterpreterSetRoleQuery.h>
 #include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
@@ -74,9 +78,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int READONLY;
     extern const int UNKNOWN_TYPE_OF_QUERY;
-    extern const int QUERY_IS_PROHIBITED;
 }
 
 
@@ -125,6 +127,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         /// readonly is checked inside InterpreterSetQuery
         return std::make_unique<InterpreterSetQuery>(query, context);
+    }
+    else if (query->as<ASTSetRoleQuery>())
+    {
+        return std::make_unique<InterpreterSetRoleQuery>(query, context);
     }
     else if (query->as<ASTOptimizeQuery>())
     {
@@ -185,6 +191,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else if (query->as<ASTCreateUserQuery>())
     {
         return std::make_unique<InterpreterCreateUserQuery>(query, context);
+    }
+    else if (query->as<ASTCreateRoleQuery>())
+    {
+        return std::make_unique<InterpreterCreateRoleQuery>(query, context);
     }
     else if (query->as<ASTCreateQuotaQuery>())
     {

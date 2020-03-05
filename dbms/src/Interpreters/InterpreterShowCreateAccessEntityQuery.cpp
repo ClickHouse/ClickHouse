@@ -1,16 +1,18 @@
 #include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateUserQuery.h>
+#include <Parsers/ASTCreateRoleQuery.h>
 #include <Parsers/ASTCreateQuotaQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
-#include <Parsers/ASTRoleList.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Access/AccessControlManager.h>
 #include <Access/QuotaContext.h>
 #include <Access/User.h>
+#include <Access/Role.h>
 #include <Columns/ColumnString.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
@@ -21,6 +23,141 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+    ASTPtr getCreateQueryImpl(
+        const User & user,
+        const AccessControlManager * manager /* not used if attach_mode == true */,
+        bool attach_mode = false)
+    {
+        auto query = std::make_shared<ASTCreateUserQuery>();
+        query->name = user.getName();
+        query->attach = attach_mode;
+
+        if (user.allowed_client_hosts != AllowedClientHosts::AnyHostTag{})
+            query->hosts = user.allowed_client_hosts;
+
+        if (!user.profile.empty())
+            query->profile = user.profile;
+
+        if (user.default_roles != GenericRoleSet::AllTag{})
+        {
+            if (attach_mode)
+                query->default_roles = GenericRoleSet{user.default_roles}.toAST();
+            else
+                query->default_roles = GenericRoleSet{user.default_roles}.toASTWithNames(*manager);
+        }
+
+        if (attach_mode && (user.authentication.getType() != Authentication::NO_PASSWORD))
+        {
+            /// We don't show password unless it's an ATTACH statement.
+            query->authentication = user.authentication;
+        }
+        return query;
+    }
+
+
+    ASTPtr getCreateQueryImpl(const Role & role, const AccessControlManager *, bool attach_mode = false)
+    {
+        auto query = std::make_shared<ASTCreateRoleQuery>();
+        query->name = role.getName();
+        query->attach = attach_mode;
+        return query;
+    }
+
+
+    ASTPtr getCreateQueryImpl(
+        const Quota & quota,
+        const AccessControlManager * manager /* not used if attach_mode == true */,
+        bool attach_mode = false)
+    {
+        auto query = std::make_shared<ASTCreateQuotaQuery>();
+        query->name = quota.getName();
+        query->attach = attach_mode;
+
+        query->key_type = quota.key_type;
+        query->all_limits.reserve(quota.all_limits.size());
+
+        for (const auto & limits : quota.all_limits)
+        {
+            ASTCreateQuotaQuery::Limits create_query_limits;
+            create_query_limits.duration = limits.duration;
+            create_query_limits.randomize_interval = limits.randomize_interval;
+            for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
+                if (limits.max[resource_type])
+                    create_query_limits.max[resource_type] = limits.max[resource_type];
+            query->all_limits.push_back(create_query_limits);
+        }
+
+        if (!quota.roles.empty())
+        {
+            if (attach_mode)
+                query->roles = quota.roles.toAST();
+            else
+                query->roles = quota.roles.toASTWithNames(*manager);
+        }
+
+        return query;
+    }
+
+
+    ASTPtr getCreateQueryImpl(
+        const RowPolicy & policy,
+        const AccessControlManager * manager /* not used if attach_mode == true */,
+        bool attach_mode = false)
+    {
+        auto query = std::make_shared<ASTCreateRowPolicyQuery>();
+        query->name_parts = RowPolicy::FullNameParts{policy.getDatabase(), policy.getTableName(), policy.getName()};
+        query->attach = attach_mode;
+
+        if (policy.isRestrictive())
+            query->is_restrictive = policy.isRestrictive();
+
+        for (auto index : ext::range_with_static_cast<RowPolicy::ConditionIndex>(RowPolicy::MAX_CONDITION_INDEX))
+        {
+            const auto & condition = policy.conditions[index];
+            if (!condition.empty())
+            {
+                ParserExpression parser;
+                ASTPtr expr = parseQuery(parser, condition, 0);
+                query->conditions.push_back(std::pair{index, expr});
+            }
+        }
+
+        if (!policy.roles.empty())
+        {
+            if (attach_mode)
+                query->roles = policy.roles.toAST();
+            else
+                query->roles = policy.roles.toASTWithNames(*manager);
+        }
+
+        return query;
+    }
+
+    ASTPtr getCreateQueryImpl(
+        const IAccessEntity & entity,
+        const AccessControlManager * manager /* not used if attach_mode == true */,
+        bool attach_mode = false)
+    {
+        if (const User * user = typeid_cast<const User *>(&entity))
+            return getCreateQueryImpl(*user, manager, attach_mode);
+        if (const Role * role = typeid_cast<const Role *>(&entity))
+            return getCreateQueryImpl(*role, manager, attach_mode);
+        if (const RowPolicy * policy = typeid_cast<const RowPolicy *>(&entity))
+            return getCreateQueryImpl(*policy, manager, attach_mode);
+        if (const Quota * quota = typeid_cast<const Quota *>(&entity))
+            return getCreateQueryImpl(*quota, manager, attach_mode);
+        throw Exception("Unexpected type of access entity: " + entity.getTypeName(), ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
+
 BlockIO InterpreterShowCreateAccessEntityQuery::execute()
 {
     BlockIO res;
@@ -57,107 +194,43 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 
 ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(const ASTShowCreateAccessEntityQuery & show_query) const
 {
+    const auto & access_control = context.getAccessControlManager();
     using Kind = ASTShowCreateAccessEntityQuery::Kind;
     switch (show_query.kind)
     {
-        case Kind::USER: return getCreateUserQuery(show_query);
-        case Kind::QUOTA: return getCreateQuotaQuery(show_query);
-        case Kind::ROW_POLICY: return getCreateRowPolicyQuery(show_query);
+        case Kind::USER:
+        {
+            UserPtr user;
+            if (show_query.current_user)
+                user = context.getUser();
+            else
+                user = access_control.read<User>(show_query.name);
+            return getCreateQueryImpl(*user, &access_control);
+        }
+
+        case Kind::QUOTA:
+        {
+            QuotaPtr quota;
+            if (show_query.current_quota)
+                quota = access_control.read<Quota>(context.getQuota()->getUsageInfo().quota_id);
+            else
+                quota = access_control.read<Quota>(show_query.name);
+            return getCreateQueryImpl(*quota, &access_control);
+        }
+
+        case Kind::ROW_POLICY:
+        {
+            RowPolicyPtr policy = access_control.read<RowPolicy>(show_query.row_policy_name.getFullName(context));
+            return getCreateQueryImpl(*policy, &access_control);
+        }
     }
     __builtin_unreachable();
 }
 
 
-ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateUserQuery(const ASTShowCreateAccessEntityQuery & show_query) const
+ASTPtr InterpreterShowCreateAccessEntityQuery::getAttachQuery(const IAccessEntity & entity)
 {
-    UserPtr user;
-    if (show_query.current_user)
-        user = context.getUser();
-    else
-        user = context.getAccessControlManager().getUser(show_query.name);
-
-    auto create_query = std::make_shared<ASTCreateUserQuery>();
-    create_query->name = user->getName();
-
-    if (!user->allowed_client_hosts.containsAnyHost())
-        create_query->hosts = user->allowed_client_hosts;
-
-    if (!user->profile.empty())
-        create_query->profile = user->profile;
-
-    return create_query;
+    return getCreateQueryImpl(entity, nullptr, true);
 }
 
-
-ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuotaQuery(const ASTShowCreateAccessEntityQuery & show_query) const
-{
-    auto & access_control = context.getAccessControlManager();
-
-    QuotaPtr quota;
-    if (show_query.current_quota)
-        quota = access_control.read<Quota>(context.getQuota()->getUsageInfo().quota_id);
-    else
-        quota = access_control.read<Quota>(show_query.name);
-
-    auto create_query = std::make_shared<ASTCreateQuotaQuery>();
-    create_query->name = quota->getName();
-    create_query->key_type = quota->key_type;
-    create_query->all_limits.reserve(quota->all_limits.size());
-
-    for (const auto & limits : quota->all_limits)
-    {
-        ASTCreateQuotaQuery::Limits create_query_limits;
-        create_query_limits.duration = limits.duration;
-        create_query_limits.randomize_interval = limits.randomize_interval;
-        for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
-            if (limits.max[resource_type])
-                create_query_limits.max[resource_type] = limits.max[resource_type];
-        create_query->all_limits.push_back(create_query_limits);
-    }
-
-    if (!quota->roles.empty() || quota->all_roles)
-    {
-        auto create_query_roles = std::make_shared<ASTRoleList>();
-        create_query_roles->roles = quota->roles;
-        create_query_roles->all_roles = quota->all_roles;
-        create_query_roles->except_roles = quota->except_roles;
-        create_query->roles = std::move(create_query_roles);
-    }
-
-    return create_query;
-}
-
-
-ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateRowPolicyQuery(const ASTShowCreateAccessEntityQuery & show_query) const
-{
-    auto & access_control = context.getAccessControlManager();
-    RowPolicyPtr policy = access_control.read<RowPolicy>(show_query.row_policy_name.getFullName(context));
-
-    auto create_query = std::make_shared<ASTCreateRowPolicyQuery>();
-    create_query->name_parts = RowPolicy::FullNameParts{policy->getDatabase(), policy->getTableName(), policy->getName()};
-    if (policy->isRestrictive())
-        create_query->is_restrictive = policy->isRestrictive();
-
-    for (auto index : ext::range_with_static_cast<RowPolicy::ConditionIndex>(RowPolicy::MAX_CONDITION_INDEX))
-    {
-        const auto & condition = policy->conditions[index];
-        if (!condition.empty())
-        {
-            ParserExpression parser;
-            ASTPtr expr = parseQuery(parser, condition, 0);
-            create_query->conditions.push_back(std::pair{index, expr});
-        }
-    }
-
-    if (!policy->roles.empty() || policy->all_roles)
-    {
-        auto create_query_roles = std::make_shared<ASTRoleList>();
-        create_query_roles->roles = policy->roles;
-        create_query_roles->all_roles = policy->all_roles;
-        create_query_roles->except_roles = policy->except_roles;
-        create_query->roles = std::move(create_query_roles);
-    }
-
-    return create_query;
-}
 }

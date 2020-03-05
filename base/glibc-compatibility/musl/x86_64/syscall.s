@@ -2,6 +2,7 @@
 .hidden __syscall
 .type __syscall,@function
 __syscall:
+.cfi_startproc
 	movq %rdi,%rax
 	movq %rsi,%rdi
 	movq %rdx,%rsi
@@ -11,3 +12,4 @@ __syscall:
 	movq 8(%rsp),%r9
 	syscall
 	ret
+.cfi_endproc

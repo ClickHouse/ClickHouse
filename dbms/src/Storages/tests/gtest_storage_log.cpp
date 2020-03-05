@@ -15,6 +15,7 @@
 #include <Common/tests/gtest_global_context.h>
 
 #include <memory>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 #if !__clang__
 #    pragma GCC diagnostic push
@@ -111,7 +112,7 @@ std::string readData(DB::StoragePtr & table)
 
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(getContext());
 
-    BlockInputStreamPtr in = table->read(column_names, {}, getContext(), stage, 8192, 1)[0];
+    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, getContext(), stage, 8192, 1)[0]));
 
     Block sample;
     {

@@ -3,9 +3,10 @@
 #include <Interpreters/Context.h>
 #include <Access/AccessControlManager.h>
 #include <Access/AccessFlags.h>
+#include <Access/User.h>
+#include <Access/Role.h>
 #include <Access/Quota.h>
 #include <Access/RowPolicy.h>
-#include <Access/User.h>
 #include <boost/range/algorithm/transform.hpp>
 
 
@@ -26,6 +27,16 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
                 access_control.tryRemove(access_control.find<User>(query.names));
             else
                 access_control.remove(access_control.getIDs<User>(query.names));
+            return {};
+        }
+
+        case Kind::ROLE:
+        {
+            context.checkAccess(AccessType::DROP_ROLE);
+            if (query.if_exists)
+                access_control.tryRemove(access_control.find<Role>(query.names));
+            else
+                access_control.remove(access_control.getIDs<Role>(query.names));
             return {};
         }
 

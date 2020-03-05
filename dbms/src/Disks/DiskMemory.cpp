@@ -1,8 +1,9 @@
 #include "DiskMemory.h"
 #include "DiskFactory.h"
 
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/SeekableReadBuffer.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 
@@ -11,12 +12,11 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int FILE_DOESNT_EXIST;
     extern const int FILE_ALREADY_EXISTS;
     extern const int DIRECTORY_DOESNT_EXIST;
     extern const int CANNOT_DELETE_DIRECTORY;
-    extern const int CANNOT_SEEK_THROUGH_FILE;
-    extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
 
 
@@ -39,87 +39,100 @@ private:
     std::vector<String>::iterator iter;
 };
 
-ReadIndirectBuffer::ReadIndirectBuffer(String path_, const String & data_)
-    : ReadBufferFromFileBase(), buf(ReadBufferFromString(data_)), path(std::move(path_))
+/// Adapter with actual behaviour as ReadBufferFromString.
+class ReadIndirectBuffer : public ReadBufferFromFileBase
 {
-    internal_buffer = buf.buffer();
-    working_buffer = internal_buffer;
-    pos = working_buffer.begin();
-}
-
-off_t ReadIndirectBuffer::seek(off_t offset, int whence)
-{
-    if (whence == SEEK_SET)
+public:
+    ReadIndirectBuffer(String path_, const String & data_)
+        : ReadBufferFromFileBase(), impl(ReadBufferFromString(data_)), path(std::move(path_))
     {
-        if (offset >= 0 && working_buffer.begin() + offset < working_buffer.end())
+        internal_buffer = impl.buffer();
+        working_buffer = internal_buffer;
+        pos = working_buffer.begin();
+    }
+
+    std::string getFileName() const override { return path; }
+
+    off_t seek(off_t off, int whence) override
+    {
+        impl.swap(*this);
+        off_t result = impl.seek(off, whence);
+        impl.swap(*this);
+        return result;
+    }
+
+    off_t getPosition() override { return pos - working_buffer.begin(); }
+
+private:
+    ReadBufferFromString impl;
+    const String path;
+};
+
+/// This class is responsible to update files metadata after buffer is finalized.
+class WriteIndirectBuffer : public WriteBufferFromFileBase
+{
+public:
+    WriteIndirectBuffer(DiskMemory * disk_, String path_, WriteMode mode_, size_t buf_size)
+        : WriteBufferFromFileBase(buf_size, nullptr, 0), impl(), disk(disk_), path(std::move(path_)), mode(mode_)
+    {
+    }
+
+    ~WriteIndirectBuffer() override
+    {
+        try
         {
-            pos = working_buffer.begin() + offset;
-            return size_t(pos - working_buffer.begin());
+            finalize();
         }
-        else
-            throw Exception(
-                "Seek position is out of bounds. "
-                "Offset: "
-                    + std::to_string(offset) + ", Max: " + std::to_string(size_t(working_buffer.end() - working_buffer.begin())),
-                ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
-    }
-    else if (whence == SEEK_CUR)
-    {
-        Position new_pos = pos + offset;
-        if (new_pos >= working_buffer.begin() && new_pos < working_buffer.end())
+        catch (...)
         {
-            pos = new_pos;
-            return size_t(pos - working_buffer.begin());
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-        else
-            throw Exception(
-                "Seek position is out of bounds. "
-                "Offset: "
-                    + std::to_string(offset) + ", Max: " + std::to_string(size_t(working_buffer.end() - working_buffer.begin())),
-                ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
     }
-    else
-        throw Exception("Only SEEK_SET and SEEK_CUR seek modes allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
-}
 
-off_t ReadIndirectBuffer::getPosition()
-{
-    return pos - working_buffer.begin();
-}
-
-void WriteIndirectBuffer::finalize()
-{
-    if (isFinished())
-        return;
-
-    next();
-    WriteBufferFromVector::finalize();
-
-    auto iter = disk->files.find(path);
-
-    if (iter == disk->files.end())
-        throw Exception("File '" + path + "' does not exist", ErrorCodes::FILE_DOESNT_EXIST);
-
-    // Resize to the actual number of bytes written to string.
-    value.resize(count());
-
-    if (mode == WriteMode::Rewrite)
-        disk->files.insert_or_assign(path, DiskMemory::FileData{iter->second.type, value});
-    else if (mode == WriteMode::Append)
-        disk->files.insert_or_assign(path, DiskMemory::FileData{iter->second.type, iter->second.data + value});
-}
-
-WriteIndirectBuffer::~WriteIndirectBuffer()
-{
-    try
+    void finalize() override
     {
-        finalize();
+        if (impl.isFinished())
+            return;
+
+        next();
+
+        /// str() finalizes buffer.
+        String value = impl.str();
+
+        auto iter = disk->files.find(path);
+
+        if (iter == disk->files.end())
+            throw Exception("File '" + path + "' does not exist", ErrorCodes::FILE_DOESNT_EXIST);
+
+        /// Resize to the actual number of bytes written to string.
+        value.resize(count());
+
+        if (mode == WriteMode::Rewrite)
+            disk->files.insert_or_assign(path, DiskMemory::FileData{iter->second.type, value});
+        else if (mode == WriteMode::Append)
+            disk->files.insert_or_assign(path, DiskMemory::FileData{iter->second.type, iter->second.data + value});
     }
-    catch (...)
+
+    std::string getFileName() const override { return path; }
+
+    void sync() override {}
+
+private:
+    void nextImpl() override
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        if (!offset())
+            return;
+
+        impl.write(working_buffer.begin(), offset());
     }
-}
+
+private:
+    WriteBufferFromOwnString impl;
+    DiskMemory * disk;
+    const String path;
+    const WriteMode mode;
+};
+
 
 ReservationPtr DiskMemory::reserve(UInt64 /*bytes*/)
 {
@@ -302,7 +315,7 @@ void DiskMemory::copyFile(const String & /*from_path*/, const String & /*to_path
     throw Exception("Method copyFile is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, size_t /*buf_size*/) const
+std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, size_t /*buf_size*/, size_t, size_t, size_t) const
 {
     std::lock_guard lock(mutex);
 
@@ -313,7 +326,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path
     return std::make_unique<ReadIndirectBuffer>(path, iter->second.data);
 }
 
-std::unique_ptr<WriteBuffer> DiskMemory::writeFile(const String & path, size_t /*buf_size*/, WriteMode mode)
+std::unique_ptr<WriteBufferFromFileBase> DiskMemory::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t, size_t)
 {
     std::lock_guard lock(mutex);
 
@@ -328,7 +341,7 @@ std::unique_ptr<WriteBuffer> DiskMemory::writeFile(const String & path, size_t /
         files.emplace(path, FileData{FileType::File});
     }
 
-    return std::make_unique<WriteIndirectBuffer>(this, path, mode);
+    return std::make_unique<WriteIndirectBuffer>(this, path, mode, buf_size);
 }
 
 void DiskMemory::remove(const String & path)

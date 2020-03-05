@@ -24,7 +24,6 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 //
@@ -41,7 +40,6 @@ std::string DataTypeDecimal<T>::doGetName() const
     ss << this->scale << ")";
     return ss.str();
 }
-
 
 
 template <typename T>

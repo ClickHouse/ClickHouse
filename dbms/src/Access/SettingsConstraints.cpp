@@ -9,6 +9,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int READONLY;
     extern const int QUERY_IS_PROHIBITED;
     extern const int NO_ELEMENTS_IN_CONFIG;
@@ -198,6 +199,77 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
 }
 
 
+void SettingsConstraints::clamp(const Settings & current_settings, SettingChange & change) const
+{
+    const String & name = change.name;
+    size_t setting_index = Settings::findIndex(name);
+    if (setting_index == Settings::npos)
+        return;
+
+    Field new_value = Settings::valueToCorrespondingType(setting_index, change.value);
+    Field current_value = current_settings.get(setting_index);
+
+    /// Setting isn't checked if value wasn't changed.
+    if (current_value == new_value)
+        return;
+
+    if (!current_settings.allow_ddl && name == "allow_ddl")
+    {
+        change.value = current_value;
+        return;
+    }
+
+    /** The `readonly` value is understood as follows:
+      * 0 - everything allowed.
+      * 1 - only read queries can be made; you can not change the settings.
+      * 2 - You can only do read queries and you can change the settings, except for the `readonly` setting.
+      */
+    if (current_settings.readonly == 1)
+    {
+        change.value = current_value;
+        return;
+    }
+
+    if (current_settings.readonly > 1 && name == "readonly")
+    {
+        change.value = current_value;
+        return;
+    }
+
+    const Constraint * constraint = tryGetConstraint(setting_index);
+    if (constraint)
+    {
+        if (constraint->read_only)
+        {
+            change.value = current_value;
+            return;
+        }
+
+        if (!constraint->min_value.isNull() && (new_value < constraint->min_value))
+        {
+            if (!constraint->max_value.isNull() && (constraint->min_value > constraint->max_value))
+                change.value = current_value;
+            else
+                change.value = constraint->min_value;
+            return;
+        }
+
+        if (!constraint->max_value.isNull() && (new_value > constraint->max_value))
+        {
+            change.value = constraint->max_value;
+            return;
+        }
+    }
+}
+
+
+void SettingsConstraints::clamp(const Settings & current_settings, SettingsChanges & changes) const
+{
+    for (auto & change : changes)
+        clamp(current_settings, change);
+}
+
+
 SettingsConstraints::Constraint & SettingsConstraints::getConstraintRef(size_t index)
 {
     auto it = constraints_by_index.find(index);
@@ -224,7 +296,7 @@ void SettingsConstraints::setProfile(const String & profile_name, const Poco::Ut
 
     for (const std::string & key : config_keys)
     {
-        if (key == "profile" || 0 == key.compare(0, strlen("profile["), "profile["))   /// Inheritance of profiles from the current one.
+        if (key == "profile" || key.starts_with("profile["))   /// Inheritance of profiles from the current one.
             setProfile(config.getString(elem + "." + key), config);
         else
             continue;
