@@ -80,7 +80,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             path_prefix + data_file_extension,
-            [&]() {
+            [&]()
+            {
                 return disk->readFile(
                     path_prefix + data_file_extension,
                     buffer_size,

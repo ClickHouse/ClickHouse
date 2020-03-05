@@ -41,7 +41,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             full_data_path,
-            [&]() {
+            [&]()
+            {
                 return data_part->disk->readFile(
                     full_data_path,
                     buffer_size,
