@@ -75,6 +75,7 @@ nav:
       - 'MaterializedView': 'operations/table_engines/materializedview.md'
       - 'Memory': 'operations/table_engines/memory.md'
       - 'Buffer': 'operations/table_engines/buffer.md'
+      - 'Generate': 'operations/table_engines/generate.md'
 
   - 'Database Engines':
       - 'Introduction': 'database_engines/index.md'

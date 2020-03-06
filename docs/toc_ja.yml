@@ -79,7 +79,7 @@ nav:
     - 'MaterializedView': 'operations/table_engines/materializedview.md'
     - 'Memory': 'operations/table_engines/memory.md'
     - 'Buffer': 'operations/table_engines/buffer.md'
-
+    - 'Generate': 'operations/table_engines/generate.md'
 - 'SQL Reference':
   - 'hidden': 'query_language/index.md'
   - 'Syntax': 'query_language/syntax.md'
@@ -143,7 +143,7 @@ nav:
     - 'hdfs': 'query_language/table_functions/hdfs.md'
     - 'input': 'query_language/table_functions/input.md'
     - 'generate': 'query_language/table_functions/generate.md'
-- 'Dictionaries':
+  - 'Dictionaries':
     - 'Introduction': 'query_language/dicts/index.md'
     - 'External Dictionaries':
       - 'General Description': 'query_language/dicts/external_dicts.md'
