@@ -8,11 +8,11 @@ namespace DB
 {
 /* Generates random data for given schema.
  */
-class StorageGenerate : public ext::shared_ptr_helper<StorageGenerate>, public IStorage
+class StorageGenerateRandom : public ext::shared_ptr_helper<StorageGenerateRandom>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageGenerate>;
+    friend struct ext::shared_ptr_helper<StorageGenerateRandom>;
 public:
-    std::string getName() const override { return "Generate"; }
+    std::string getName() const override { return "GenerateRandom"; }
 
     Pipes read(
         const Names & column_names,
@@ -28,7 +28,7 @@ private:
     UInt64 random_seed = 0;
 
 protected:
-    StorageGenerate(const StorageID & table_id_, const ColumnsDescription & columns_,
+    StorageGenerateRandom(const StorageID & table_id_, const ColumnsDescription & columns_,
         UInt64 max_array_length, UInt64 max_string_length, UInt64 random_seed);
 };
 
