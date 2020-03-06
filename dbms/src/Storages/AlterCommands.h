@@ -4,8 +4,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/MutationCommands.h>
 #include <Storages/ColumnsDescription.h>
-
 #include <Common/SettingsChanges.h>
 
 
@@ -18,6 +18,9 @@ class ASTAlterCommand;
 /// Adding Nested columns is not expanded to add individual columns.
 struct AlterCommand
 {
+    /// The AST of the whole command
+    ASTPtr ast;
+
     enum Type
     {
         ADD_COLUMN,
@@ -100,11 +103,18 @@ struct AlterCommand
     /// in each part on disk (it's not lightweight alter).
     bool isModifyingData() const;
 
+    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata) const;
+
     /// Checks that only settings changed by alter
     bool isSettingsAlter() const;
 
     /// Checks that only comment changed by alter
     bool isCommentAlter() const;
+
+    /// If possible, convert alter command to mutation command. In other case
+    /// return empty optional. Some storages may execute mutations after
+    /// metadata changes.
+    std::optional<MutationCommand> tryConvertToMutationCommand(const StorageInMemoryMetadata & metadata) const;
 };
 
 /// Return string representation of AlterCommand::Type
@@ -117,16 +127,6 @@ class AlterCommands : public std::vector<AlterCommand>
 {
 private:
     bool prepared = false;
-private:
-
-    /// Validate that default expression and type are compatible, i.e. default
-    /// expression result can be casted to column_type
-    void validateDefaultExpressionForColumn(
-        const ASTPtr default_expression,
-        const String & column_name,
-        const DataTypePtr column_type,
-        const ColumnsDescription & all_columns,
-        const Context & context) const;
 
 public:
     /// Validate that commands can be applied to metadata.
@@ -151,6 +151,11 @@ public:
 
     /// At least one command modify comments.
     bool isCommentAlter() const;
+
+    /// Return mutation commands which some storages may execute as part of
+    /// alter. If alter can be performed is pure metadata update, than result is
+    /// empty.
+    MutationCommands getMutationCommands(const StorageInMemoryMetadata & metadata) const;
 };
 
 }

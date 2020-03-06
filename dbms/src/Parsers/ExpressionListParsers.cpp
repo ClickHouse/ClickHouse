@@ -74,7 +74,6 @@ const char * ParserTupleElementExpression::operators[] =
 };
 
 
-
 bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool first = true;
@@ -602,18 +601,26 @@ bool ParserNullityChecking::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
 bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// If no INTERVAL keyword, go to nested parser.
+    auto begin = pos;
+
+    /// If no INTERVAL keyword, go to the nested parser.
     if (!ParserKeyword("INTERVAL").ignore(pos, expected))
         return next_parser.parse(pos, node, expected);
 
     ASTPtr expr;
     /// Any expression can be inside, because operator surrounds it.
     if (!ParserExpressionWithOptionalAlias(false).parse(pos, expr, expected))
-        return false;
+    {
+        pos = begin;
+        return next_parser.parse(pos, node, expected);
+    }
 
     IntervalKind interval_kind;
     if (!parseIntervalKind(pos, expected, interval_kind))
-        return false;
+    {
+        pos = begin;
+        return next_parser.parse(pos, node, expected);
+    }
 
     /// the function corresponding to the operator
     auto function = std::make_shared<ASTFunction>();
