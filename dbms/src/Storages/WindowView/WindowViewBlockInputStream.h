@@ -16,10 +16,12 @@ public:
     WindowViewBlockInputStream(
         std::shared_ptr<StorageWindowView> storage_,
         const bool has_limit_,
-        const UInt64 limit_)
+        const UInt64 limit_,
+        const UInt64 heartbeat_interval_sec_)
         : storage(std::move(storage_))
         , has_limit(has_limit_)
-        , limit(limit_) {}
+        , limit(limit_)
+        , heartbeat_interval_sec(heartbeat_interval_sec_) {}
 
     String getName() const override { return "WindowViewBlock"; }
 
@@ -64,7 +66,7 @@ protected:
                 return getHeader();
             }
 
-            storage->fire_condition.wait_for(lock_, std::chrono::seconds(5));
+            storage->fire_condition.wait_for(lock_, std::chrono::seconds(heartbeat_interval_sec));
 
             if (isCancelled() || storage->is_dropped)
             {
@@ -97,5 +99,6 @@ private:
     Int64 num_updates = -1;
     bool end_of_blocks = false;
     std::mutex blocks_mutex;
+    UInt64 heartbeat_interval_sec;
 };
 }
