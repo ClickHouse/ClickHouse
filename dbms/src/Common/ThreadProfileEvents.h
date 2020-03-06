@@ -174,9 +174,9 @@ struct PerfEventsCounters
 
     static const PerfEventInfo perf_raw_events_info[];
 
-    int events_descriptors[NUMBER_OF_RAW_EVENTS];
+    int events_descriptors[NUMBER_OF_RAW_EVENTS]{};
     // temp array just to not create it each time event processing finishes
-    long long raw_event_values[NUMBER_OF_RAW_EVENTS];
+    long long raw_event_values[NUMBER_OF_RAW_EVENTS]{};
     bool perf_events_recording = false;
 #endif
 

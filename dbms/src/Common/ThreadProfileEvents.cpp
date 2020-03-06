@@ -47,7 +47,7 @@ namespace DB {
             
             // This reports the CPU clock, a high-resolution per-CPU timer.
             // a bit broken according to this: https://stackoverflow.com/a/56967896
-//            makeInfo(perf_type_id::PERF_TYPE_SOFTWARE, perf_sw_ids::PERF_COUNT_SW_CPU_CLOCK, ProfileEvents::PERF_COUNT_SW_CPU_CLOCK),
+//            softwareEvent(PERF_COUNT_SW_CPU_CLOCK, ProfileEvents::PERF_COUNT_SW_CPU_CLOCK),
             softwareEvent(PERF_COUNT_SW_TASK_CLOCK, ProfileEvents::PERF_COUNT_SW_TASK_CLOCK),
             softwareEvent(PERF_COUNT_SW_PAGE_FAULTS, ProfileEvents::PERF_COUNT_SW_PAGE_FAULTS),
             softwareEvent(PERF_COUNT_SW_CONTEXT_SWITCHES, ProfileEvents::PERF_COUNT_SW_CONTEXT_SWITCHES),
@@ -59,7 +59,7 @@ namespace DB {
             // This is a placeholder event that counts nothing. Informational sample record types such as mmap or
             // comm must be associated with an active event. This dummy event allows gathering such records
             // without requiring a counting event.
-//            softwareEventInfo(perf_sw_ids::PERF_COUNT_SW_DUMMY, ProfileEvents::PERF_COUNT_SW_DUMMY)
+//            softwareEventInfo(PERF_COUNT_SW_DUMMY, ProfileEvents::PERF_COUNT_SW_DUMMY)
     };
 
     static_assert(std::size(PerfEventsCounters::perf_raw_events_info) == PerfEventsCounters::NUMBER_OF_RAW_EVENTS);
@@ -88,19 +88,17 @@ namespace DB {
         return static_cast<int>(syscall(SYS_perf_event_open, hw_event, pid, cpu, group_fd, flags));
     }
 
-    static bool getPerfEventParanoid(int &result) {
+    static bool getPerfEventParanoid(int & result) {
         // the longest possible variant: "-1\0"
         constexpr int MAX_LENGTH = 3;
-        FILE *fp;
-        char str[MAX_LENGTH];
 
-        fp = fopen("/proc/sys/kernel/perf_event_paranoid", "r");
+        FILE * fp = fopen("/proc/sys/kernel/perf_event_paranoid", "r");
         if (fp == nullptr)
             return false;
 
-        char *res = fgets(str, MAX_LENGTH, fp);
+        char str[MAX_LENGTH];
+        char * res = fgets(str, MAX_LENGTH, fp);
         fclose(fp);
-
         if (res == nullptr)
             return false;
 
@@ -114,7 +112,7 @@ namespace DB {
         return true;
     }
 
-    static void perfEventOpenDisabled(int perf_event_paranoid, int perf_event_type, int perf_event_config, int &event_file_descriptor) {
+    static void perfEventOpenDisabled(int perf_event_paranoid, int perf_event_type, int perf_event_config, int & event_file_descriptor) {
         perf_event_attr pe = perf_event_attr();
         pe.type = perf_event_type;
         pe.size = sizeof(struct perf_event_attr);
@@ -133,8 +131,6 @@ namespace DB {
 
         int perf_event_paranoid = 0;
         bool is_pref_available = getPerfEventParanoid(perf_event_paranoid);
-//        printf("is_perf_available: %s, perf_event_paranoid: %d\n", is_pref_available ? "true" : "false", perf_event_paranoid);
-
         if (!is_pref_available)
             return;
 
@@ -149,9 +145,7 @@ namespace DB {
 
             if (fd == -1 && log_unsupported_event)
             {
-                LOG_WARNING(
-                        getLogger(),
-                        "Perf event is unsupported: event_type=" << event_info.event_type
+                LOG_WARNING(getLogger(), "Perf event is unsupported: event_type=" << event_info.event_type
                             << ", event_config=" << event_info.event_config);
             }
         }
@@ -190,9 +184,9 @@ namespace DB {
 
             if (ioctl(fd, PERF_EVENT_IOC_DISABLE, 0))
                 LOG_WARNING(getLogger(), "Can't disable perf event with file descriptor: " << fd);
-
             if (close(fd))
-                LOG_WARNING(getLogger(), "Can't close perf event file descriptor: " << fd << "; error: " << errno << " - " << strerror(errno));
+                LOG_WARNING(getLogger(),"Can't close perf event file descriptor: " << fd
+                            << "; error: " << errno << " - " << strerror(errno));
 
             fd = -1;
         }
