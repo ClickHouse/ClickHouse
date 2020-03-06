@@ -580,7 +580,7 @@ Possible values:
 
 Default value: 0.
 
-Parallel `INSERT SELECT` has effect only if the SELECT part is run in parallel, see [max_threads](#settings-max_threads) setting.
+Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [max_threads](#settings-max_threads) setting.
 Higher values will lead to higher memory usage.
 
 ## max_compress_block_size
