@@ -312,7 +312,6 @@ public:
     const Scalars & getScalars() const;
     const Block & getScalar(const String & name) const;
     Tables getExternalTables() const;
-    StoragePtr getTable(const String & database_name, const String & table_name) const;
     void addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast = {});
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;

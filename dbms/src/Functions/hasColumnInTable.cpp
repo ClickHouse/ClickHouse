@@ -113,7 +113,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     bool has_column;
     if (host_name.empty())
     {
-        const StoragePtr & table = global_context.getTable(database_name, table_name);
+        const StoragePtr & table = DatabaseCatalog::instance().getTable({database_name, table_name});
         has_column = table->hasColumn(column_name);
     }
     else
@@ -128,7 +128,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
             global_context.getTCPPort(),
             false);
 
-        auto remote_columns = getStructureOfRemoteTable(*cluster, database_name, table_name, global_context);
+        auto remote_columns = getStructureOfRemoteTable(*cluster, {database_name, table_name}, global_context);
         has_column = remote_columns.hasPhysical(column_name);
     }
 

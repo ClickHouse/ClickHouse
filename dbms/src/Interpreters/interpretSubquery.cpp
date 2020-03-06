@@ -84,7 +84,6 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         const auto select_expression_list = select_query->select();
 
         NamesAndTypesList columns;
-
         /// get columns list for target table
         if (function)
         {
@@ -95,10 +94,10 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         }
         else
         {
-            DatabaseAndTableWithAlias database_table(*table);
-            const auto & storage = context.getTable(database_table.database, database_table.table);
+            auto table_id = StorageID::resolveFromAST(table_expression, context);
+            const auto & storage = DatabaseCatalog::instance().getTable(table_id);
             columns = storage->getColumns().getOrdinary();
-            select_query->replaceDatabaseAndTable(database_table.database, database_table.table);
+            select_query->replaceDatabaseAndTable(table_id.database_name, table_id.table_name);
         }
 
         select_expression_list->children.reserve(columns.size());

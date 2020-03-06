@@ -3,7 +3,6 @@
 #include <Core/UUID.h>
 #include <tuple>
 #include <Parsers/IAST_fwd.h>
-
 #include <Core/QualifiedTableName.h>
 
 namespace DB
@@ -12,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_DATABASE;
 }
 
 static constexpr char const * TABLE_WITH_UUID_NAME_PLACEHOLDER = "_";
@@ -36,11 +36,7 @@ struct StorageID
 
     static StorageID resolveFromAST(const ASTPtr & table_identifier_node, const Context & context);
 
-    String getDatabaseName() const
-    {
-        assertNotEmpty();
-        return database_name;
-    }
+    String getDatabaseName() const;
 
     String getTableName() const
     {
@@ -48,11 +44,7 @@ struct StorageID
         return table_name;
     }
 
-    String getFullTableName() const
-    {
-        assertNotEmpty();
-        return (database_name.empty() ? "" : database_name + ".") + table_name;
-    }
+    String getFullTableName() const;
 
     String getNameForLogs() const;
 

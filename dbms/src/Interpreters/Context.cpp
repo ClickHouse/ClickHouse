@@ -834,7 +834,6 @@ const Block & Context::getScalar(const String & name) const
 
 Tables Context::getExternalTables() const
 {
-    //FIXME getTable() may acquire some locks. Better not to call it while holding context lock
     auto lock = getLock();
 
     Tables res;
@@ -851,17 +850,6 @@ Tables Context::getExternalTables() const
         Tables buf = global_context->getExternalTables();
         res.insert(buf.begin(), buf.end());
     }
-    return res;
-}
-
-
-StoragePtr Context::getTable(const String & database_name, const String & table_name) const
-{
-    auto resolved_id = resolveStorageID(StorageID(database_name, table_name));
-    std::optional<Exception> exc;
-    auto res = DatabaseCatalog::instance().getTableImpl(resolved_id, *this, &exc).second;
-    if (!res)
-        throw *exc;
     return res;
 }
 
