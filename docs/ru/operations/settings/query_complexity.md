@@ -97,7 +97,7 @@
 
 Что делать, если количество строк, полученное перед сортировкой, превысило одно из ограничений: throw или break. По умолчанию: throw.
 
-## max_result_rows
+## max_result_rows {#setting-max_result_rows}
 
 Ограничение на количество строк результата. Проверяются также для подзапросов и на удалённых серверах при выполнении части распределённого запроса.
 
@@ -109,7 +109,7 @@
 
 Что делать, если объём результата превысил одно из ограничений: throw или break. По умолчанию: throw.
 
-Использование break по смыслу похоже на LIMIT. Break прерывает выполнение только на уровне блока. Т.е. число строк которые вернет запрос будет больше чем ограничение [max_result_rows](#max_result_rows), кратно [max_block_size](settings.md#max_block_size) и зависит от [max_threads](settings.md#settings-max_threads).
+Использование break по смыслу похоже на LIMIT. Break прерывает выполнение только на уровне блока. Т.е. число строк которые вернет запрос будет больше чем ограничение [max_result_rows](#setting-max_result_rows), кратно [max_block_size](settings.md#setting-max_block_size) и зависит от [max_threads](settings.md#settings-max_threads).
 
 Пример:
 ```sql
