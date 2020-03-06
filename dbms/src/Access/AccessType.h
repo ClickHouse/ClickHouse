@@ -79,8 +79,6 @@ enum class AccessType
     OPTIMIZE,           /// allows to execute OPTIMIZE TABLE
 
     KILL_QUERY,         /// allows to kill a query started by another user (anyone can kill his own queries)
-    KILL_MUTATION,      /// allows to kill a mutation
-    KILL,               /// allows to execute KILL {MUTATION|QUERY}
 
     CREATE_USER,
     ALTER_USER,
@@ -244,8 +242,6 @@ namespace impl
             ACCESS_TYPE_TO_KEYWORD_CASE(OPTIMIZE);
 
             ACCESS_TYPE_TO_KEYWORD_CASE(KILL_QUERY);
-            ACCESS_TYPE_TO_KEYWORD_CASE(KILL_MUTATION);
-            ACCESS_TYPE_TO_KEYWORD_CASE(KILL);
 
             ACCESS_TYPE_TO_KEYWORD_CASE(CREATE_USER);
             ACCESS_TYPE_TO_KEYWORD_CASE(ALTER_USER);
