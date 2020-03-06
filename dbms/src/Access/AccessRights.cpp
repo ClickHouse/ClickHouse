@@ -31,12 +31,19 @@ namespace
             return res;
         }
 
-        const AccessFlags database_level_flags = AccessFlags::databaseLevel();
-        const AccessFlags table_level_flags = AccessFlags::tableLevel();
-        const AccessFlags column_level_flags = AccessFlags::columnLevel();
+        const AccessFlags all_flags = AccessFlags::allFlags();
+        const AccessFlags database_flags = AccessFlags::allDatabaseFlags();
+        const AccessFlags table_flags = AccessFlags::allTableFlags();
+        const AccessFlags column_flags = AccessFlags::allColumnFlags();
+        const AccessFlags dictionary_flags = AccessFlags::allDictionaryFlags();
+        const AccessFlags column_level_flags = column_flags;
+        const AccessFlags table_level_flags = table_flags | dictionary_flags | column_level_flags;
+        const AccessFlags database_level_flags = database_flags | table_level_flags;
 
-        const AccessFlags show_flag = AccessType::SHOW;
-        const AccessFlags exists_flag = AccessType::EXISTS;
+        const AccessFlags show_databases_flag = AccessType::SHOW_DATABASES;
+        const AccessFlags show_tables_flag = AccessType::SHOW_TABLES;
+        const AccessFlags show_columns_flag = AccessType::SHOW_COLUMNS;
+        const AccessFlags show_dictionaries_flag = AccessType::SHOW_DICTIONARIES;
         const AccessFlags create_table_flag = AccessType::CREATE_TABLE;
         const AccessFlags create_view_flag = AccessType::CREATE_VIEW;
         const AccessFlags create_temporary_table_flag = AccessType::CREATE_TEMPORARY_TABLE;
@@ -367,25 +374,46 @@ private:
     void calculateFinalAccess(const Helper & helper)
     {
         /// Calculate min and max access among children.
-        AccessFlags min_access_among_children = AccessType::ALL;
+        AccessFlags min_access_among_children = helper.all_flags;
         AccessFlags max_access_among_children;
         if (children)
         {
             for (const auto & child : *children | boost::adaptors::map_values)
             {
-                min_access &= child.min_access;
-                max_access |= child.max_access;
+                min_access_among_children &= child.min_access;
+                max_access_among_children |= child.max_access;
             }
         }
 
         /// Calculate implicit access:
         AccessFlags implicit_access;
-        if (access & helper.database_level_flags)
-            implicit_access |= helper.show_flag | helper.exists_flag;
-        else if ((level >= DATABASE_LEVEL) && children)
-            implicit_access |= helper.exists_flag;
 
-        if ((level == GLOBAL_LEVEL) && (final_access & helper.create_table_flag))
+        if (level <= DATABASE_LEVEL)
+        {
+            if (access & helper.database_flags)
+                implicit_access |= helper.show_databases_flag;
+        }
+        if (level <= TABLE_LEVEL)
+        {
+            if (access & helper.table_flags)
+                implicit_access |= helper.show_tables_flag;
+            if (access & helper.dictionary_flags)
+                implicit_access |= helper.show_dictionaries_flag;
+        }
+        if (level <= COLUMN_LEVEL)
+        {
+            if (access & helper.column_flags)
+                implicit_access |= helper.show_columns_flag;
+        }
+        if (children && max_access_among_children)
+        {
+            if (level == DATABASE_LEVEL)
+                implicit_access |= helper.show_databases_flag;
+            else if (level == TABLE_LEVEL)
+                implicit_access |= helper.show_tables_flag;
+        }
+
+        if ((level == GLOBAL_LEVEL) && ((access | max_access_among_children) & helper.create_table_flag))
             implicit_access |= helper.create_temporary_table_flag;
 
         if (level <= TABLE_LEVEL)

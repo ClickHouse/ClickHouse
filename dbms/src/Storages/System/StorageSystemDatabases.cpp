@@ -21,12 +21,12 @@ NamesAndTypesList StorageSystemDatabases::getNamesAndTypes()
 void StorageSystemDatabases::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
     const auto access_rights = context.getAccessRights();
-    const bool check_access_for_databases = !access_rights->isGranted(AccessType::SHOW);
+    const bool check_access_for_databases = !access_rights->isGranted(AccessType::SHOW_DATABASES);
 
     auto databases = DatabaseCatalog::instance().getDatabases();
     for (const auto & database : databases)
     {
-        if (check_access_for_databases && !access_rights->isGranted(AccessType::SHOW, database.first))
+        if (check_access_for_databases && !access_rights->isGranted(AccessType::SHOW_DATABASES, database.first))
             continue;
 
         res_columns[0]->insert(database.first);

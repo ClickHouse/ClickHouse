@@ -50,7 +50,7 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
 void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & /*query_info*/) const
 {
     const auto access_rights = context.getAccessRights();
-    const bool check_access_for_dictionaries = !access_rights->isGranted(AccessType::SHOW);
+    const bool check_access_for_dictionaries = !access_rights->isGranted(AccessType::SHOW_DICTIONARIES);
 
     const auto & external_dictionaries = context.getExternalDictionariesLoader();
     for (const auto & load_result : external_dictionaries.getCurrentLoadResults())
@@ -74,7 +74,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         }
 
         if (check_access_for_dictionaries
-            && !access_rights->isGranted(AccessType::SHOW, database.empty() ? IDictionary::NO_DATABASE_TAG : database, short_name))
+            && !access_rights->isGranted(AccessType::SHOW_DICTIONARIES, database.empty() ? IDictionary::NO_DATABASE_TAG : database, short_name))
             continue;
 
         size_t i = 0;

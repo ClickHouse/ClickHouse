@@ -435,22 +435,11 @@ boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess
         | AccessType::CREATE_QUOTA | AccessType::ALTER_USER | AccessType::ALTER_POLICY | AccessType::ALTER_QUOTA | AccessType::DROP_USER
         | AccessType::DROP_ROLE | AccessType::DROP_POLICY | AccessType::DROP_QUOTA | AccessType::ROLE_ADMIN;
 
-    /// Anyone has access to the "system" database.
-    if (!result.isGranted(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE))
-        result.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
-
-    /// User has access to temporary or external table if such table was resolved in session or query context
-    if (!result.isGranted(AccessType::SELECT, DatabaseCatalog::TEMPORARY_DATABASE))
-        result.grant(AccessType::SELECT, DatabaseCatalog::TEMPORARY_DATABASE);
-
     if (readonly_)
         result.revoke(write_table_access | all_dcl | AccessType::SYSTEM | AccessType::KILL);
 
     if (readonly_ || !allow_ddl_)
         result.revoke(table_and_dictionary_ddl);
-
-    if (readonly_ && grant_option)
-        result.revoke(AccessType::ALL);
 
     if (readonly_ == 1)
     {
@@ -458,14 +447,24 @@ boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess
         /// For example, for readonly = 2 - allowed.
         result.revoke(AccessType::CREATE_TEMPORARY_TABLE | AccessType::TABLE_FUNCTIONS);
     }
-    else if (readonly_ == 2)
-    {
-        /// Allow INSERT into temporary tables
-        result.grant(AccessType::INSERT, DatabaseCatalog::TEMPORARY_DATABASE);
-    }
 
     if (!allow_introspection_)
         result.revoke(AccessType::INTROSPECTION);
+
+    /// Anyone has access to the "system" database.
+    result.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
+
+    if (readonly_ != 1)
+    {
+        /// User has access to temporary or external table if such table was resolved in session or query context
+        result.grant(AccessFlags::allTableFlags() | AccessFlags::allColumnFlags(), DatabaseCatalog::TEMPORARY_DATABASE);
+    }
+
+    if (readonly_ && grant_option)
+    {
+        /// No grant option in readonly mode.
+        result.revoke(AccessType::ALL);
+    }
 
     result_access_cache[cache_index].store(result_ptr);
 

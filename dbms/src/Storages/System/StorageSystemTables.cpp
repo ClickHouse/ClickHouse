@@ -106,7 +106,7 @@ protected:
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
         const auto access_rights = context.getAccessRights();
-        const bool check_access_for_databases = !access_rights->isGranted(AccessType::SHOW);
+        const bool check_access_for_databases = !access_rights->isGranted(AccessType::SHOW_TABLES);
 
         size_t rows_count = 0;
         while (rows_count < max_block_size)
@@ -196,7 +196,7 @@ protected:
                 return Chunk(std::move(res_columns), num_rows);
             }
 
-            const bool check_access_for_tables = check_access_for_databases && !access_rights->isGranted(AccessType::SHOW, database_name);
+            const bool check_access_for_tables = check_access_for_databases && !access_rights->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getTablesWithDictionaryTablesIterator(context);
@@ -206,7 +206,7 @@ protected:
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
                 auto table_name = tables_it->name();
-                if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW, database_name, table_name))
+                if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
                 StoragePtr table = nullptr;

@@ -37,11 +37,11 @@ NamesAndTypesList StorageSystemMerges::getNamesAndTypes()
 void StorageSystemMerges::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
     const auto access_rights = context.getAccessRights();
-    const bool check_access_for_tables = !access_rights->isGranted(AccessType::SHOW);
+    const bool check_access_for_tables = !access_rights->isGranted(AccessType::SHOW_TABLES);
 
     for (const auto & merge : context.getMergeList().get())
     {
-        if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW, merge.database, merge.table))
+        if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW_TABLES, merge.database, merge.table))
             continue;
 
         size_t i = 0;

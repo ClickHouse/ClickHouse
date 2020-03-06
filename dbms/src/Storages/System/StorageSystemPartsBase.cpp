@@ -74,7 +74,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
     MutableColumnPtr active_column_mut = ColumnUInt8::create();
 
     const auto access_rights = context.getAccessRights();
-    const bool check_access_for_tables = !access_rights->isGranted(AccessType::SHOW);
+    const bool check_access_for_tables = !access_rights->isGranted(AccessType::SHOW_TABLES);
 
     {
         Databases databases = DatabaseCatalog::instance().getDatabases();
@@ -119,7 +119,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))
                         continue;
 
-                    if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW, database_name, table_name))
+                    if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                         continue;
 
                     storages[std::make_pair(database_name, iterator->name())] = storage;
