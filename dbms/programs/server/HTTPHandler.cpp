@@ -141,15 +141,15 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
 }
 
 
-static uint32_t parseSessionTimeout(
+static std::chrono::steady_clock::duration parseSessionTimeout(
     const Poco::Util::AbstractConfiguration & config,
     const HTMLForm & params)
 {
-    uint32_t session_timeout = config.getInt("default_session_timeout", 60);
+    unsigned session_timeout = config.getInt("default_session_timeout", 60);
 
     if (params.has("session_timeout"))
     {
-        uint32_t max_session_timeout = config.getUInt("max_session_timeout", 3600);
+        unsigned max_session_timeout = config.getUInt("max_session_timeout", 3600);
         std::string session_timeout_str = params.get("session_timeout");
 
         ReadBufferFromString buf(session_timeout_str);
@@ -162,7 +162,7 @@ static uint32_t parseSessionTimeout(
                 ErrorCodes::INVALID_SESSION_TIMEOUT);
     }
 
-    return session_timeout;
+    return std::chrono::seconds(session_timeout);
 }
 
 
@@ -275,7 +275,7 @@ void HTTPHandler::processQuery(
 
     std::shared_ptr<NamedSession> session;
     String session_id;
-    uint32_t session_timeout;
+    std::chrono::steady_clock::duration session_timeout;
     bool session_is_set = params.has("session_id");
     const auto & config = server.config();
 
