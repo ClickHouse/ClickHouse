@@ -7,3 +7,5 @@ fun:tolower
 
 # May be it's not OK, but suppress it to run other tests
 src:../contrib/openssl/crypto/bn/*
+# For CI
+src:/build/contrib/openssl/crypto/bn/*
