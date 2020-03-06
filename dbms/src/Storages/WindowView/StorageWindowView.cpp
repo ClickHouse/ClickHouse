@@ -393,7 +393,8 @@ inline void StorageWindowView::cleanCache()
     else
     {
         std::lock_guard lock(mutex);
-        mergeable_blocks.remove_if([w_bound](Block & block_) {
+        mergeable_blocks.remove_if([w_bound](Block & block_)
+        {
             auto & column_ = block_.getByName("____w_end").column;
             const auto & data = static_cast<const ColumnUInt32 &>(*column_).getData();
             for (size_t i = 0; i < column_->size(); ++i)
@@ -689,8 +690,11 @@ BlockInputStreams StorageWindowView::watch(
         limit = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_length).value);
     }
 
-    auto reader
-        = std::make_shared<WindowViewBlockInputStream>(std::static_pointer_cast<StorageWindowView>(shared_from_this()), has_limit, limit);
+    auto reader = std::make_shared<WindowViewBlockInputStream>(
+        std::static_pointer_cast<StorageWindowView>(shared_from_this()),
+        has_limit,
+        limit,
+        global_context.getSettingsRef().window_view_heartbeat_interval.totalSeconds());
 
     std::lock_guard lock(fire_signal_mutex);
     watch_streams.push_back(reader);
