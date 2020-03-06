@@ -221,7 +221,7 @@ MergeTreeData::MergeTreeData(
 
     /// If not choose any
     if (version_file.first.empty())
-        version_file = {relative_data_path + "format_version.txt", storage_policy->getAnyDisk()};
+        version_file = {relative_data_path + "format_version.txt", getStoragePolicy()->getAnyDisk()};
 
     bool version_file_exists = version_file.second->exists(version_file.first);
 
