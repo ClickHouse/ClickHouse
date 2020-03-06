@@ -22,15 +22,20 @@ void Pool::Entry::incrementRefCount()
     if (!data)
         return;
     ++data->ref_count;
-    mysql_thread_init();
+    if (data->ref_count == 1)
+        mysql_thread_init();
 }
 
 void Pool::Entry::decrementRefCount()
 {
     if (!data)
         return;
-    --data->ref_count;
-    mysql_thread_end();
+    if (data->ref_count > 0)
+    {
+        --data->ref_count;
+        if (data->ref_count == 0)
+            mysql_thread_end();
+    }
 }
 
 
@@ -169,14 +174,24 @@ Pool::Entry Pool::tryGet()
     return Entry();
 }
 
+void Pool::removeConnection(Connection* connection)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    if (connection)
+    {
+        if (connection->ref_count > 0)
+        {
+            connection->conn.disconnect();
+            connection->ref_count = 0;
+        }
+        connections.remove(connection);
+    }
+}
+
 
 void Pool::Entry::disconnect()
 {
-    if (data)
-    {
-        decrementRefCount();
-        data->conn.disconnect();
-    }
+    pool->removeConnection(data);
 }
 
 
