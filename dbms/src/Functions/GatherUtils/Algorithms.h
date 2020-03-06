@@ -162,7 +162,6 @@ inline ALWAYS_INLINE void writeSlice(const NumericValueSlice<T> & slice, Generic
 }
 
 
-
 template <typename SourceA, typename SourceB, typename Sink>
 void NO_INLINE concat(SourceA && src_a, SourceB && src_b, Sink && sink)
 {

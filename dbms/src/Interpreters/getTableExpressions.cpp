@@ -114,10 +114,10 @@ NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression & table
     return getColumnsFromTableExpression(table_expression, context, materialized, aliases, virtuals);
 }
 
-std::vector<TableWithColumnNames> getDatabaseAndTablesWithColumnNames(const std::vector<const ASTTableExpression *> & table_expressions,
-                                                                      const Context & context, bool remove_duplicates)
+std::vector<TableWithColumnNamesAndTypes> getDatabaseAndTablesWithColumns(const std::vector<const ASTTableExpression *> & table_expressions,
+                                                                          const Context & context)
 {
-    std::vector<TableWithColumnNames> tables_with_columns;
+    std::vector<TableWithColumnNamesAndTypes> tables_with_columns;
 
     if (!table_expressions.empty())
     {
@@ -125,17 +125,16 @@ std::vector<TableWithColumnNames> getDatabaseAndTablesWithColumnNames(const std:
 
         for (const ASTTableExpression * table_expression : table_expressions)
         {
-            DatabaseAndTableWithAlias table_name(*table_expression, current_database);
-
             NamesAndTypesList materialized;
             NamesAndTypesList aliases;
             NamesAndTypesList virtuals;
             NamesAndTypesList names_and_types = getColumnsFromTableExpression(*table_expression, context, materialized, aliases, virtuals);
 
-            if (remove_duplicates)
-                removeDuplicateColumns(names_and_types);
+            removeDuplicateColumns(names_and_types);
 
-            tables_with_columns.emplace_back(std::move(table_name), names_and_types.getNames());
+            tables_with_columns.emplace_back(
+                DatabaseAndTableWithAlias(*table_expression, current_database), names_and_types);
+
             auto & table = tables_with_columns.back();
             table.addHiddenColumns(materialized);
             table.addHiddenColumns(aliases);
@@ -144,6 +143,17 @@ std::vector<TableWithColumnNames> getDatabaseAndTablesWithColumnNames(const std:
     }
 
     return tables_with_columns;
+}
+
+std::vector<TableWithColumnNames> getDatabaseAndTablesWithColumnNames(const std::vector<const ASTTableExpression *> & table_expressions,
+                                                                      const Context & context)
+{
+    std::vector<TableWithColumnNamesAndTypes> tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context);
+    std::vector<TableWithColumnNames> out;
+    out.reserve(tables_with_columns.size());
+    for (auto & table : tables_with_columns)
+        out.emplace_back(table.removeTypes());
+    return out;
 }
 
 }

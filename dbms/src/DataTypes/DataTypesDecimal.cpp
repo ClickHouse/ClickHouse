@@ -42,7 +42,6 @@ std::string DataTypeDecimal<T>::doGetName() const
 }
 
 
-
 template <typename T>
 bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
 {

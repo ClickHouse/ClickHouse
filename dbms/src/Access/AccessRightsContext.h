@@ -60,8 +60,8 @@ public:
     UserPtr getUser() const;
     String getUserName() const;
 
-    void checkPassword(const String & password) const;
-    void checkHostIsAllowed() const;
+    bool isCorrectPassword(const String & password) const;
+    bool isClientHostAllowed() const;
 
     CurrentRolesInfoPtr getRolesInfo() const;
     std::vector<UUID> getCurrentRoles() const;

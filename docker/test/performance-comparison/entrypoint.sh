@@ -10,10 +10,8 @@ cd workspace
 # We will compare to the most recent testing tag in master branch, let's find it.
 rm -rf ch ||:
 git clone --branch master --single-branch --depth 50 --bare https://github.com/ClickHouse/ClickHouse ch
-(cd ch && git fetch origin "$SHA_TO_TEST:to-test") # fetch it so that we can show the commit message
-# FIXME sometimes we have testing tags on commits without published builds -- these
-# are documentation commits, normally. Loop to skip them.
-start_ref=master
+(cd ch && git fetch origin "$SHA_TO_TEST:to-test")
+start_ref=to-test
 while :
 do
     ref_tag=$(cd ch && git describe --match='v*-testing' --abbrev=0 --first-parent $start_ref)
@@ -22,6 +20,8 @@ do
     # dereference the tag to get the commit it points to, hence the '~0' thing.
     ref_sha=$(cd ch && git rev-parse "$ref_tag~0")
 
+    # FIXME sometimes we have testing tags on commits without published builds --
+    # normally these are documentation commits. Loop to skip them.
     if curl --fail --head "https://clickhouse-builds.s3.yandex.net/0/$ref_sha/performance/performance.tgz"
     then
         break
@@ -48,7 +48,7 @@ done
 export PYTHONIOENCODING=utf-8
 
 # Use a default number of runs if not told otherwise
-export CHPC_RUNS=${CHPC_RUNS:-17}
+export CHPC_RUNS=${CHPC_RUNS:-7}
 
 # Even if we have some errors, try our best to save the logs.
 set +e
@@ -70,5 +70,5 @@ done
 
 dmesg -T > dmesg.log
 
-7z a /output/output.7z ./*.{log,tsv,html,txt,rep,svg} {right,left}/db/preprocessed_configs
+7z a /output/output.7z ./*.{log,tsv,html,txt,rep,svg} {right,left}/{performance,db/preprocessed_configs}
 cp compare.log /output

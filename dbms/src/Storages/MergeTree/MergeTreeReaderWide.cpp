@@ -1,10 +1,12 @@
-#include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeArray.h>
-#include <Common/escapeForFileName.h>
-#include <Columns/ColumnArray.h>
-#include <Interpreters/evaluateMissingDefaults.h>
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
+
+#include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/NestedUtils.h>
+#include <Interpreters/inplaceBlockConversions.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
+#include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 
 
@@ -30,17 +32,27 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     MarkCache * mark_cache_,
     const MarkRanges & mark_ranges_,
     const MergeTreeReaderSettings & settings_,
-    const ValueSizeMap & avg_value_size_hints_,
+    const IMergeTreeDataPart::ValueSizeMap & avg_value_size_hints_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
-    : IMergeTreeReader(data_part_, columns_
-    , uncompressed_cache_, mark_cache_, mark_ranges_
-    , settings_, avg_value_size_hints_)
+    : IMergeTreeReader(
+        data_part_, columns_, uncompressed_cache_, mark_cache_,
+        mark_ranges_, settings_, avg_value_size_hints_)
 {
     try
     {
+        for (const NameAndTypePair & column_from_part : data_part->getColumns())
+        {
+            columns_from_part[column_from_part.name] = column_from_part.type;
+        }
+
         for (const NameAndTypePair & column : columns)
-            addStreams(column.name, *column.type, profile_callback_, clock_type_);
+        {
+            if (columns_from_part.count(column.name))
+                addStreams(column.name, *columns_from_part[column.name], profile_callback_, clock_type_);
+            else
+                addStreams(column.name, *column.type, profile_callback_, clock_type_);
+        }
     }
     catch (...)
     {
@@ -70,12 +82,17 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
-            auto & [name, type] = *name_and_type;
+            String & name = name_and_type->name;
+            DataTypePtr type;
+            if (columns_from_part.count(name))
+                type = columns_from_part[name];
+            else
+                type = name_and_type->type;
 
             /// The column is already present in the block so we will append the values to the end.
             bool append = res_columns[pos] != nullptr;
             if (!append)
-                res_columns[pos] = name_and_type->type->createColumn();
+                res_columns[pos] = type->createColumn();
 
             /// To keep offsets shared. TODO Very dangerous. Get rid of this.
             MutableColumnPtr column = res_columns[pos]->assumeMutable();

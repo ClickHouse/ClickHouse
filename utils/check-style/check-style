@@ -45,3 +45,6 @@ find $ROOT_PATH/{dbms,base} -name '*.h' -or -name '*.cpp' | xargs grep -l -P 'Er
 
 # Duplicate ErrorCodes
 find $ROOT_PATH/{dbms,base} -name '*.h' -or -name '*.cpp' | xargs grep -l -P 'ErrorCodes::[_A-Z]+' | while read file; do grep -P 'extern const int [_A-Z]+;' $file | sort | uniq -c | grep -v -P ' +1 ' && echo "Duplicate ErrorCode in file $file"; done
+
+# Three or more consecutive empty lines
+find $ROOT_PATH/{dbms,base} -name '*.h' -or -name '*.cpp' | while read file; do awk '/^$/ { ++i; if (i > 2) { print "More than two consecutive empty lines in file '$file'" } } /./ { i = 0 }' $file; done
