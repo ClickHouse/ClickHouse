@@ -37,14 +37,23 @@ ASTPtr defaultRequiredExpressions(Block & block, const NamesAndTypesList & requi
         {
             /// expressions must be cloned to prevent modification by the ExpressionAnalyzer
             auto column_default_expr = it->second.expression->clone();
+
+            /// Our default may depend on columns with ALIAS as default expr which not present in block
+            /// we can easily add them from column_defaults struct
             RequiredSourceColumnsVisitor::Data columns_context;
             RequiredSourceColumnsVisitor(columns_context).visit(column_default_expr);
             NameSet required_columns_names = columns_context.requiredColumns();
 
             for (const auto & required_column_name : required_columns_names)
+            {
+                /// If we have such default column and it's alias than we should
+                /// add it into default_expression_list
                 if (auto rit = column_defaults.find(required_column_name);
                     rit != column_defaults.end() && rit->second.kind == ColumnDefaultKind::Alias)
+                {
                     default_expr_list->children.emplace_back(setAlias(rit->second.expression->clone(), required_column_name));
+                }
+            }
 
             auto cast_func = makeASTFunction("CAST", column_default_expr, std::make_shared<ASTLiteral>(column.type->getName()));
             default_expr_list->children.emplace_back(setAlias(cast_func, it->first));
