@@ -27,7 +27,7 @@ requests==2.23.0
 singledispatch==3.4.0.3
 six==1.14.0
 snowballstemmer==1.2.1
-Sphinx==1.6.5
+Sphinx==2.4.4
 sphinxcontrib-websupport==1.0.1
 tornado==5.1
 typing==3.7.4.1
