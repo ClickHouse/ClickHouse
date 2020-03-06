@@ -569,6 +569,20 @@ For queries that are completed quickly because of a LIMIT, you can set a lower '
 
 The smaller the `max_threads` value, the less memory is consumed.
 
+## max_insert_threads {#settings-max_insert_threads}
+
+The maximum number of threads to execute the `INSERT SELECT` query.
+
+Possible values:
+
+- 0 (or 1) — `INSERT SELECT` no parallel execution.
+- Positive integer. Bigger than 1.
+
+Default value: 0.
+
+Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [max_threads](#settings-max_threads) setting.
+Higher values will lead to higher memory usage.
+
 ## max_compress_block_size
 
 The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). If the size is reduced, the compression rate is significantly reduced, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced. There usually isn't any reason to change this setting.
