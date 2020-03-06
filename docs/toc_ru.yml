@@ -80,6 +80,7 @@ nav:
     - 'MaterializedView': 'operations/table_engines/materializedview.md'
     - 'Memory': 'operations/table_engines/memory.md'
     - 'Buffer': 'operations/table_engines/buffer.md'
+    - 'GenerateRandom': 'operations/table_engines/generate.md'
 
 - 'Справка по SQL':
   - 'hidden': 'query_language/index.md'
@@ -143,7 +144,7 @@ nav:
     - 'odbc': 'query_language/table_functions/odbc.md'
     - 'hdfs': 'query_language/table_functions/hdfs.md'
     - 'input': 'query_language/table_functions/input.md'
-    - 'generate': 'query_language/table_functions/generate.md'
+    - 'generateRandom': 'query_language/table_functions/generate.md'
   - 'Словари':
     - 'Введение': 'query_language/dicts/index.md'
     - 'Внешние словари':
