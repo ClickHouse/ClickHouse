@@ -127,16 +127,6 @@ class AlterCommands : public std::vector<AlterCommand>
 {
 private:
     bool prepared = false;
-private:
-
-    /// Validate that default expression and type are compatible, i.e. default
-    /// expression result can be casted to column_type
-    void validateDefaultExpressionForColumn(
-        const ASTPtr default_expression,
-        const String & column_name,
-        const DataTypePtr column_type,
-        const ColumnsDescription & all_columns,
-        const Context & context) const;
 
 public:
     /// Validate that commands can be applied to metadata.
