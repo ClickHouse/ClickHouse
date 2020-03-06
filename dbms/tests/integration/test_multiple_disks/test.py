@@ -1164,7 +1164,6 @@ def test_kill_while_insert(start_cluster):
         except:
             """"""
 
-        time.sleep(0.5)
         assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["10"]
 
     finally:

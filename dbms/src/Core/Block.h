@@ -12,7 +12,6 @@
 #include <Core/ColumnsWithTypeAndName.h>
 
 
-
 namespace DB
 {
 

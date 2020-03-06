@@ -12,6 +12,68 @@
 
 namespace DB
 {
+namespace
+{
+void updateQuotaFromQueryImpl(Quota & quota, const ASTCreateQuotaQuery & query, const std::optional<GenericRoleSet> & roles_from_query = {})
+    {
+        if (query.alter)
+        {
+            if (!query.new_name.empty())
+                quota.setName(query.new_name);
+        }
+        else
+            quota.setName(query.name);
+
+        if (query.key_type)
+            quota.key_type = *query.key_type;
+
+        auto & quota_all_limits = quota.all_limits;
+        for (const auto & query_limits : query.all_limits)
+        {
+            auto duration = query_limits.duration;
+
+            auto it = boost::range::find_if(quota_all_limits, [&](const Quota::Limits & x) { return x.duration == duration; });
+            if (query_limits.unset_tracking)
+            {
+                if (it != quota_all_limits.end())
+                    quota_all_limits.erase(it);
+                continue;
+            }
+
+            if (it == quota_all_limits.end())
+            {
+                /// We keep `all_limits` sorted by duration.
+                it = quota_all_limits.insert(
+                    boost::range::upper_bound(
+                        quota_all_limits,
+                        duration,
+                        [](const std::chrono::seconds & lhs, const Quota::Limits & rhs) { return lhs < rhs.duration; }),
+                    Quota::Limits{});
+                it->duration = duration;
+            }
+
+            auto & quota_limits = *it;
+            quota_limits.randomize_interval = query_limits.randomize_interval;
+            for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
+            {
+                if (query_limits.max[resource_type])
+                    quota_limits.max[resource_type] = *query_limits.max[resource_type];
+            }
+        }
+
+        const GenericRoleSet * roles = nullptr;
+        std::optional<GenericRoleSet> temp_role_set;
+        if (roles_from_query)
+            roles = &*roles_from_query;
+        else if (query.roles)
+            roles = &temp_role_set.emplace(*query.roles);
+
+        if (roles)
+            quota.roles = *roles;
+    }
+}
+
+
 BlockIO InterpreterCreateQuotaQuery::execute()
 {
     const auto & query = query_ptr->as<const ASTCreateQuotaQuery &>();
@@ -27,7 +89,7 @@ BlockIO InterpreterCreateQuotaQuery::execute()
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
         {
             auto updated_quota = typeid_cast<std::shared_ptr<Quota>>(entity->clone());
-            updateQuotaFromQuery(*updated_quota, query, roles_from_query);
+            updateQuotaFromQueryImpl(*updated_quota, query, roles_from_query);
             return updated_quota;
         };
         if (query.if_exists)
@@ -41,7 +103,7 @@ BlockIO InterpreterCreateQuotaQuery::execute()
     else
     {
         auto new_quota = std::make_shared<Quota>();
-        updateQuotaFromQuery(*new_quota, query, roles_from_query);
+        updateQuotaFromQueryImpl(*new_quota, query, roles_from_query);
 
         if (query.if_not_exists)
             access_control.tryInsert(new_quota);
@@ -55,54 +117,9 @@ BlockIO InterpreterCreateQuotaQuery::execute()
 }
 
 
-void InterpreterCreateQuotaQuery::updateQuotaFromQuery(Quota & quota, const ASTCreateQuotaQuery & query, const std::optional<GenericRoleSet> & roles_from_query)
+void InterpreterCreateQuotaQuery::updateQuotaFromQuery(Quota & quota, const ASTCreateQuotaQuery & query)
 {
-    if (query.alter)
-    {
-        if (!query.new_name.empty())
-            quota.setName(query.new_name);
-    }
-    else
-        quota.setName(query.name);
-
-    if (query.key_type)
-        quota.key_type = *query.key_type;
-
-    auto & quota_all_limits = quota.all_limits;
-    for (const auto & query_limits : query.all_limits)
-    {
-        auto duration = query_limits.duration;
-
-        auto it = boost::range::find_if(quota_all_limits, [&](const Quota::Limits & x) { return x.duration == duration; });
-        if (query_limits.unset_tracking)
-        {
-            if (it != quota_all_limits.end())
-                quota_all_limits.erase(it);
-            continue;
-        }
-
-        if (it == quota_all_limits.end())
-        {
-            /// We keep `all_limits` sorted by duration.
-            it = quota_all_limits.insert(
-                boost::range::upper_bound(
-                    quota_all_limits,
-                    duration,
-                    [](const std::chrono::seconds & lhs, const Quota::Limits & rhs) { return lhs < rhs.duration; }),
-                Quota::Limits{});
-            it->duration = duration;
-        }
-
-        auto & quota_limits = *it;
-        quota_limits.randomize_interval = query_limits.randomize_interval;
-        for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
-        {
-            if (query_limits.max[resource_type])
-                quota_limits.max[resource_type] = *query_limits.max[resource_type];
-        }
-    }
-
-    if (roles_from_query)
-        quota.roles = *roles_from_query;
+    updateQuotaFromQueryImpl(quota, query);
 }
+
 }
