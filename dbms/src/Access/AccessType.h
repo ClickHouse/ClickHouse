@@ -14,12 +14,11 @@ enum class AccessType
     NONE,  /// no access
     ALL,   /// full access
 
-    SHOW,  /// allows to execute SHOW TABLES, SHOW CREATE TABLE, SHOW DATABASES and so on
-           /// (granted implicitly with any other grant)
-
-    EXISTS,  /// allows to execute EXISTS, USE, i.e. to check existence
-             /// (granted implicitly on the database level with any other grant on the database and lower levels,
-             ///  e.g. "GRANT SELECT(x) ON db.table" also grants EXISTS on db.*)
+    SHOW_DATABASES,    /// allows to execute SHOW DATABASES, SHOW CREATE DATABASE, USE <database>
+    SHOW_TABLES,       /// allows to execute SHOW TABLES, EXISTS <table>, CHECK <table>
+    SHOW_COLUMNS,      /// allows to execute SHOW CREATE TABLE, DESCRIBE
+    SHOW_DICTIONARIES, /// allows to execute SHOW DICTIONARIES, SHOW CREATE DICTIONARY, EXISTS <dictionary>
+    SHOW,              /// allows to execute SHOW, USE, EXISTS, CHECK, DESCRIBE
 
     SELECT,
     INSERT,
@@ -179,8 +178,12 @@ namespace impl
 
             ACCESS_TYPE_TO_KEYWORD_CASE(NONE);
             ACCESS_TYPE_TO_KEYWORD_CASE(ALL);
+
+            ACCESS_TYPE_TO_KEYWORD_CASE(SHOW_DATABASES);
+            ACCESS_TYPE_TO_KEYWORD_CASE(SHOW_TABLES);
+            ACCESS_TYPE_TO_KEYWORD_CASE(SHOW_COLUMNS);
+            ACCESS_TYPE_TO_KEYWORD_CASE(SHOW_DICTIONARIES);
             ACCESS_TYPE_TO_KEYWORD_CASE(SHOW);
-            ACCESS_TYPE_TO_KEYWORD_CASE(EXISTS);
 
             ACCESS_TYPE_TO_KEYWORD_CASE(SELECT);
             ACCESS_TYPE_TO_KEYWORD_CASE(INSERT);

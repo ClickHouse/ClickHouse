@@ -82,7 +82,7 @@ protected:
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
         size_t rows_count = 0;
 
-        const bool check_access_for_tables = !access_rights->isGranted(AccessType::SHOW);
+        const bool check_access_for_tables = !access_rights->isGranted(AccessType::SHOW_COLUMNS);
 
         while (rows_count < max_block_size && db_table_num < total_tables)
         {
@@ -128,14 +128,14 @@ protected:
                 column_sizes = storage->getColumnSizes();
             }
 
-            bool check_access_for_columns = check_access_for_tables && !access_rights->isGranted(AccessType::SHOW, database_name, table_name);
+            bool check_access_for_columns = check_access_for_tables && !access_rights->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
 
             for (const auto & column : columns)
             {
                 if (column.is_virtual)
                     continue;
 
-                if (check_access_for_columns && !access_rights->isGranted(AccessType::SHOW, database_name, table_name, column.name))
+                if (check_access_for_columns && !access_rights->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
                     continue;
 
                 size_t src_index = 0;

@@ -141,19 +141,18 @@ namespace
 
         if (databases)
         {
-            user->access.revoke(AccessFlags::databaseLevel());
+            user->access.revoke(AccessFlags::allFlags() - AccessFlags::allGlobalFlags());
+            user->access.grant(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
             for (const String & database : *databases)
-                user->access.grant(AccessFlags::databaseLevel(), database);
+                user->access.grant(AccessFlags::allFlags(), database);
         }
 
         if (dictionaries)
         {
-            user->access.revoke(AccessType::dictGet, IDictionary::NO_DATABASE_TAG);
+            user->access.revoke(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
             for (const String & dictionary : *dictionaries)
-                user->access.grant(AccessType::dictGet, IDictionary::NO_DATABASE_TAG, dictionary);
+                user->access.grant(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG, dictionary);
         }
-        else if (databases)
-            user->access.grant(AccessType::dictGet, IDictionary::NO_DATABASE_TAG);
 
         user->access_with_grant_option = user->access;
 
