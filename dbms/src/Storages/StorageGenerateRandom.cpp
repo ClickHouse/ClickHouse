@@ -63,9 +63,23 @@ ColumnPtr fillColumnWithRandomData(
     {
         case TypeIndex::String:
         {
-            Block block{ColumnWithTypeAndName{nullptr, type, "result"}};
-            FunctionFactory::instance().get("randomPrintableASCII", context)->build({})->execute(block, {}, 0, limit);
-            return block.getByPosition(0).column;
+            auto size_column = ColumnUInt32::create();
+            auto & sizes = size_column->getData();
+
+            sizes.resize(limit);
+            for (UInt64 i = 0; i < limit; ++i)
+                sizes[i] = static_cast<UInt32>(rng()) % max_string_length;  /// Slow
+
+            ColumnWithTypeAndName argument{std::move(size_column), std::make_shared<DataTypeUInt32>(), "size"};
+
+            Block block
+            {
+                argument,
+                {nullptr, type, "result"}
+            };
+
+            FunctionFactory::instance().get("randomPrintableASCII", context)->build({argument})->execute(block, {0}, 1, limit);
+            return block.getByPosition(1).column;
         }
 
         case TypeIndex::Enum8:
@@ -238,8 +252,7 @@ ColumnPtr fillColumnWithRandomData(
             fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit * sizeof(Decimal32), rng);
             return column;
         }
-        case TypeIndex::Decimal64: [[fallthrough]];
-        case TypeIndex::DateTime64:
+        case TypeIndex::Decimal64:
         {
             auto column = type->createColumn();
             auto & column_concrete = typeid_cast<ColumnDecimal<Decimal64> &>(*column);
@@ -253,6 +266,19 @@ ColumnPtr fillColumnWithRandomData(
             auto & column_concrete = typeid_cast<ColumnDecimal<Decimal128> &>(*column);
             column_concrete.getData().resize(limit);
             fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit * sizeof(Decimal128), rng);
+            return column;
+        }
+        case TypeIndex::DateTime64:
+        {
+            auto column = type->createColumn();
+            auto & column_concrete = typeid_cast<ColumnDecimal<Decimal64> &>(*column);
+            column_concrete.getData().resize(limit);
+
+            UInt64 range = (1ULL << 32) * intExp10(typeid_cast<const DataTypeDateTime64 &>(*type).getScale());
+
+            for (size_t i = 0; i < limit; ++i)
+                column_concrete.getData()[i] = rng() % range;   /// Slow
+
             return column;
         }
 
