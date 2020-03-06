@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS test.minmax_idx_r;
 DROP TABLE IF EXISTS test.minmax_idx2;
 DROP TABLE IF EXISTS test.minmax_idx2_r;
 
+SET replication_alter_partitions_sync = 2;
 
 CREATE TABLE test.minmax_idx
 (

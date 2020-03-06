@@ -34,6 +34,17 @@ There are some environment variables that influence what the test does:
  * `-e CHPC_TEST_GLOB` -- the names of the tests (xml files) to run, interpreted
  as a shell glob.
 
+#### Re-genarate report with your tweaks
+From the workspace directory (extracted test output archive):
+```
+stage=report compare.sh
+```
+More stages are available, e.g. restart servers or run the tests. See the code.
+
+#### Run a single test on the already configured servers
+```
+docker/test/performance-comparison/perf.py --host localhost --port 9000 --host localhost --port 9000 --runs=1 dbms/tests/performance/logical_functions_small.xml
+```
 
 ### References
 1\. Box, Hunter, Hunter "Statictics for exprerimenters", p. 78: "A Randomized Design Used in the Comparison of Standard and Modified Fertilizer Mixtures for Tomato Plants."

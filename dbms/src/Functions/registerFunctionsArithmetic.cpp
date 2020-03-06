@@ -10,6 +10,7 @@ void registerFunctionDivide(FunctionFactory & factory);
 void registerFunctionIntDiv(FunctionFactory & factory);
 void registerFunctionIntDivOrZero(FunctionFactory & factory);
 void registerFunctionModulo(FunctionFactory & factory);
+void registerFunctionModuloOrZero(FunctionFactory & factory);
 void registerFunctionNegate(FunctionFactory & factory);
 void registerFunctionAbs(FunctionFactory & factory);
 void registerFunctionBitAnd(FunctionFactory & factory);
@@ -49,6 +50,7 @@ void registerFunctionsArithmetic(FunctionFactory & factory)
     registerFunctionIntDiv(factory);
     registerFunctionIntDivOrZero(factory);
     registerFunctionModulo(factory);
+    registerFunctionModuloOrZero(factory);
     registerFunctionNegate(factory);
     registerFunctionAbs(factory);
     registerFunctionBitAnd(factory);
