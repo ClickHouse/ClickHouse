@@ -197,15 +197,17 @@ private:
     /// @return table position to attach expression to or 0.
     size_t checkIdentifiers(const ASTIdentifier & left, const ASTIdentifier & right)
     {
-        size_t left_table_pos = 0;
-        bool left_match = IdentifierSemantic::chooseTable(left, tables, left_table_pos);
+        std::optional<size_t> left_table_pos = IdentifierSemantic::getMembership(left);
+        if (!left_table_pos)
+            left_table_pos = IdentifierSemantic::chooseTable(left, tables);
 
-        size_t right_table_pos = 0;
-        bool right_match = IdentifierSemantic::chooseTable(right, tables, right_table_pos);
+        std::optional<size_t> right_table_pos = IdentifierSemantic::getMembership(right);
+        if (!right_table_pos)
+            right_table_pos = IdentifierSemantic::chooseTable(right, tables);
 
-        if (left_match && right_match && (left_table_pos != right_table_pos))
+        if (left_table_pos && right_table_pos && (*left_table_pos != *right_table_pos))
         {
-            size_t table_pos = std::max(left_table_pos, right_table_pos);
+            size_t table_pos = std::max(*left_table_pos, *right_table_pos);
             if (joined_tables[table_pos].canAttachOnExpression())
                 return table_pos;
         }

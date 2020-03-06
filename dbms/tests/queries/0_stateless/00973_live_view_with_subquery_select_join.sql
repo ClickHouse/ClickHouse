@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS B;
 CREATE TABLE A (id Int32) Engine=Memory;
 CREATE TABLE B (id Int32, name String) Engine=Memory;
 
-CREATE LIVE VIEW lv AS SELECT A.id, name FROM ( SELECT A.id, B.name FROM A as A, B as B WHERE A.id = B.id );
+CREATE LIVE VIEW lv AS SELECT id, name FROM ( SELECT A.id, B.name FROM A as A, B as B WHERE A.id = B.id );
 
 SELECT * FROM lv;
 

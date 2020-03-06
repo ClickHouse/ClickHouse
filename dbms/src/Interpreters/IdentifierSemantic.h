@@ -51,11 +51,11 @@ struct IdentifierSemantic
     static void coverName(ASTIdentifier &, const String & alias);
     static std::optional<ASTIdentifier> uncover(const ASTIdentifier & identifier);
     static std::optional<size_t> getMembership(const ASTIdentifier & identifier);
-    static bool chooseTable(const ASTIdentifier &, const std::vector<DatabaseAndTableWithAlias> & tables, size_t & best_table_pos,
+    static std::optional<size_t> chooseTable(const ASTIdentifier &, const std::vector<DatabaseAndTableWithAlias> & tables,
                             bool allow_ambiguous = false);
-    static bool chooseTable(const ASTIdentifier &, const std::vector<TableWithColumnNames> & tables, size_t & best_table_pos,
+    static std::optional<size_t> chooseTable(const ASTIdentifier &, const std::vector<TableWithColumnNames> & tables,
                             bool allow_ambiguous = false);
-    static bool chooseTable(const ASTIdentifier &, const std::vector<TableWithColumnNamesAndTypes> & tables, size_t & best_table_pos,
+    static std::optional<size_t> chooseTable(const ASTIdentifier &, const std::vector<TableWithColumnNamesAndTypes> & tables,
                             bool allow_ambiguous = false);
 
 private:

@@ -15,12 +15,11 @@ namespace
 {
 
 template <typename T>
-IdentifierSemantic::ColumnMatch tryChooseTable(const ASTIdentifier & identifier, const std::vector<T> & tables,
-                                               size_t & best_table_pos, bool allow_ambiguous)
+std::optional<size_t> tryChooseTable(const ASTIdentifier & identifier, const std::vector<T> & tables, bool allow_ambiguous)
 {
     using ColumnMatch = IdentifierSemantic::ColumnMatch;
 
-    best_table_pos = 0;
+    size_t best_table_pos = 0;
     auto best_match = ColumnMatch::NoMatch;
     size_t same_match = 0;
 
@@ -44,9 +43,13 @@ IdentifierSemantic::ColumnMatch tryChooseTable(const ASTIdentifier & identifier,
     {
         if (!allow_ambiguous)
             throw Exception("Ambiguous column '" + identifier.name + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
-        return ColumnMatch::Ambiguous;
+        best_match = ColumnMatch::Ambiguous;
+        return best_table_pos;
     }
-    return best_match;
+
+    if (best_match != ColumnMatch::NoMatch)
+        return best_table_pos;
+    return {};
 }
 
 }
@@ -115,25 +118,22 @@ std::optional<size_t> IdentifierSemantic::getMembership(const ASTIdentifier & id
     return identifier.semantic->membership;
 }
 
-bool IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<DatabaseAndTableWithAlias> & tables,
-                                     size_t & best_table_pos, bool ambiguous)
+std::optional<size_t> IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<DatabaseAndTableWithAlias> & tables,
+                                                      bool ambiguous)
 {
-    static constexpr auto no_match = IdentifierSemantic::ColumnMatch::NoMatch;
-    return tryChooseTable<DatabaseAndTableWithAlias>(identifier, tables, best_table_pos, ambiguous) != no_match;
+    return tryChooseTable<DatabaseAndTableWithAlias>(identifier, tables, ambiguous);
 }
 
-bool IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<TableWithColumnNames> & tables,
-                                     size_t & best_table_pos, bool ambiguous)
+std::optional<size_t> IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<TableWithColumnNames> & tables,
+                                                      bool ambiguous)
 {
-    static constexpr auto no_match = IdentifierSemantic::ColumnMatch::NoMatch;
-    return tryChooseTable<TableWithColumnNames>(identifier, tables, best_table_pos, ambiguous) != no_match;
+    return tryChooseTable<TableWithColumnNames>(identifier, tables, ambiguous);
 }
 
-bool IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<TableWithColumnNamesAndTypes> & tables,
-                                     size_t & best_table_pos, bool ambiguous)
+std::optional<size_t> IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<TableWithColumnNamesAndTypes> & tables,
+                                                      bool ambiguous)
 {
-    static constexpr auto no_match = IdentifierSemantic::ColumnMatch::NoMatch;
-    return tryChooseTable<TableWithColumnNamesAndTypes>(identifier, tables, best_table_pos, ambiguous) != no_match;
+    return tryChooseTable<TableWithColumnNamesAndTypes>(identifier, tables, ambiguous);
 }
 
 std::pair<String, String> IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
