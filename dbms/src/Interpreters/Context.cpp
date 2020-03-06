@@ -124,7 +124,7 @@ public:
     std::shared_ptr<NamedSession> acquireSession(
         const String & session_id,
         Context & context,
-        uint32_t timeout,
+        std::chrono::steady_clock::duration timeout,
         bool throw_if_not_found)
     {
         std::unique_lock lock(mutex);
@@ -162,7 +162,7 @@ public:
     void releaseSession(NamedSession & session)
     {
         std::unique_lock lock(mutex);
-        close_times.emplace(time(nullptr) + session.timeout, session.key);
+        scheduleCloseSession(session, lock);
     }
 
 private:
@@ -178,11 +178,31 @@ private:
         }
     };
 
+    /// TODO it's very complicated. Make simple std::map with time_t or boost::multi_index.
     using Container = std::unordered_map<Key, std::shared_ptr<NamedSession>, SessionKeyHash>;
-    using CloseTimes = std::multimap<time_t, Key>;
-
+    using CloseTimes = std::deque<std::vector<Key>>;
     Container sessions;
     CloseTimes close_times;
+    std::chrono::steady_clock::duration close_interval = std::chrono::seconds(1);
+    std::chrono::steady_clock::time_point close_cycle_time = std::chrono::steady_clock::now();
+    UInt64 close_cycle = 0;
+
+    void scheduleCloseSession(NamedSession & session, std::unique_lock<std::mutex> &)
+    {
+        /// Push it on a queue of sessions to close, on a position corresponding to the timeout.
+        /// (timeout is measured from current moment of time)
+
+        const UInt64 close_index = session.timeout / close_interval + 1;
+        const auto new_close_cycle = close_cycle + close_index;
+
+        if (session.close_cycle != new_close_cycle)
+        {
+            session.close_cycle = new_close_cycle;
+            if (close_times.size() < close_index + 1)
+                close_times.resize(close_index + 1);
+            close_times[close_index].emplace_back(session.key);
+        }
+    }
 
     void cleanThread()
     {
@@ -192,32 +212,51 @@ private:
 
         while (true)
         {
-            closeSessions(lock);
-            if (cond.wait_for(lock, std::chrono::seconds(1), [this]() -> bool { return quit; }))
+            auto interval = closeSessions(lock);
+
+            if (cond.wait_for(lock, interval, [this]() -> bool { return quit; }))
                 break;
         }
     }
 
     /// Close sessions, that has been expired. Returns how long to wait for next session to be expired, if no new sessions will be added.
-    void closeSessions(std::unique_lock<std::mutex> &)
+    std::chrono::steady_clock::duration closeSessions(std::unique_lock<std::mutex> & lock)
     {
-        time_t now = time(nullptr);
-        for (auto it = close_times.begin(); it != close_times.end();)
+        const auto now = std::chrono::steady_clock::now();
+
+        /// The time to close the next session did not come
+        if (now < close_cycle_time)
+            return close_cycle_time - now;  /// Will sleep until it comes.
+
+        const auto current_cycle = close_cycle;
+
+        ++close_cycle;
+        close_cycle_time = now + close_interval;
+
+        if (close_times.empty())
+            return close_interval;
+
+        auto & sessions_to_close = close_times.front();
+
+        for (const auto & key : sessions_to_close)
         {
-            if (it->first >= now)
-                break;
+            const auto session = sessions.find(key);
 
-            const auto session_it = sessions.find(it->second);
-            it = close_times.erase(it);
-
-            if (session_it == sessions.end())
-                continue;
-
-            if (session_it->second.unique())
-                sessions.erase(session_it);
-            else
-                close_times.emplace(now + session_it->second->timeout, session_it->second->key);    /// Does not invalidate iterators.
+            if (session != sessions.end() && session->second->close_cycle <= current_cycle)
+            {
+                if (!session->second.unique())
+                {
+                    /// Skip but move it to close on the next cycle.
+                    session->second->timeout = std::chrono::steady_clock::duration{0};
+                    scheduleCloseSession(*session->second, lock);
+                }
+                else
+                    sessions.erase(session);
+            }
         }
+
+        close_times.pop_front();
+        return close_interval;
     }
 
     std::mutex mutex;
@@ -481,7 +520,7 @@ void Context::enableNamedSessions()
     shared->named_sessions.emplace();
 }
 
-std::shared_ptr<NamedSession> Context::acquireNamedSession(const String & session_id, uint32_t timeout, bool session_check)
+std::shared_ptr<NamedSession> Context::acquireNamedSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check)
 {
     if (!shared->named_sessions)
         throw Exception("Support for named sessions is not enabled", ErrorCodes::NOT_IMPLEMENTED);
