@@ -4,3 +4,6 @@ fun:__gxx_personality_*
 # We apply std::tolower to uninitialized padding, but don't use the result, so
 # it is OK. Reproduce with "select ngramDistanceCaseInsensitive(materialize(''), '')"
 fun:tolower
+
+# May be it's not OK, but suppress it to run other tests
+src:../contrib/openssl/crypto/bn/*
