@@ -362,7 +362,7 @@ FieldWithInfinity FieldWithInfinity::getMinusInfinity()
     return FieldWithInfinity(Type::MINUS_INFINITY);
 }
 
-FieldWithInfinity FieldWithInfinity::getPlusinfinity()
+FieldWithInfinity FieldWithInfinity::getPlusInfinity()
 {
     return FieldWithInfinity(Type::PLUS_INFINITY);
 }

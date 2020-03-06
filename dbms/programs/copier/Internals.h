@@ -133,7 +133,6 @@ struct TaskStateWithOwner
 };
 
 
-
 struct ShardPriority
 {
     UInt8 is_remote = 1;

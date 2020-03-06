@@ -7,6 +7,7 @@
 #include <Common/quoteString.h>
 
 #include <set>
+
 #include <Poco/File.h>
 
 
@@ -15,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_POLICY;
@@ -48,7 +50,68 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
 }
 
 
-const DiskPtr & DiskSelector::operator[](const String & name) const
+DiskSelectorPtr DiskSelector::updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context) const
+{
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_prefix, keys);
+
+    auto & factory = DiskFactory::instance();
+
+    std::shared_ptr<DiskSelector> result = std::make_shared<DiskSelector>(*this);
+
+    constexpr auto default_disk_name = "default";
+    std::set<String> old_disks_minus_new_disks;
+    for (const auto & [disk_name, _] : result->disks)
+    {
+        old_disks_minus_new_disks.insert(disk_name);
+    }
+
+    for (const auto & disk_name : keys)
+    {
+        if (!std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
+            throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+
+        if (result->disks.count(disk_name) == 0)
+        {
+            auto disk_config_prefix = config_prefix + "." + disk_name;
+            result->disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context));
+        }
+        else
+        {
+            old_disks_minus_new_disks.erase(disk_name);
+
+            /// TODO: Ideally ClickHouse shall complain if disk has changed, but
+            /// implementing that may appear as not trivial task.
+        }
+    }
+
+    old_disks_minus_new_disks.erase(default_disk_name);
+
+    if (!old_disks_minus_new_disks.empty())
+    {
+        WriteBufferFromOwnString warning;
+        if (old_disks_minus_new_disks.size() == 1)
+            writeString("Disk ", warning);
+        else
+            writeString("Disks ", warning);
+
+        int index = 0;
+        for (const String & name : old_disks_minus_new_disks)
+        {
+            if (index++ > 0)
+                writeString(", ", warning);
+            writeBackQuotedString(name, warning);
+        }
+
+        writeString(" disappeared from configuration, this change will be applied after restart of ClickHouse", warning);
+        LOG_WARNING(&Logger::get("DiskSelector"), warning.str());
+    }
+
+    return result;
+}
+
+
+DiskPtr DiskSelector::get(const String & name) const
 {
     auto it = disks.find(name);
     if (it == disks.end())
@@ -61,7 +124,7 @@ Volume::Volume(
     String name_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    const DiskSelector & disk_selector)
+    DiskSelectorPtr disk_selector)
     : name(std::move(name_))
 {
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -74,7 +137,7 @@ Volume::Volume(
         if (startsWith(disk, "disk"))
         {
             auto disk_name = config.getString(config_prefix + "." + disk);
-            disks.push_back(disk_selector[disk_name]);
+            disks.push_back(disk_selector->get(disk_name));
         }
     }
 
@@ -162,7 +225,7 @@ StoragePolicy::StoragePolicy(
     String name_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    const DiskSelector & disks)
+    DiskSelectorPtr disks)
     : name(std::move(name_))
 {
     String volumes_prefix = config_prefix + ".volumes";
@@ -330,6 +393,28 @@ ReservationPtr StoragePolicy::makeEmptyReservationOnLargestDisk() const
 }
 
 
+void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const
+{
+    std::unordered_set<String> new_volume_names;
+    for (const auto & volume : new_storage_policy->getVolumes())
+        new_volume_names.insert(volume->getName());
+
+    for (const auto & volume : getVolumes())
+    {
+        if (new_volume_names.count(volume->getName()) == 0)
+            throw Exception("New storage policy shall contain volumes of old one", ErrorCodes::LOGICAL_ERROR);
+
+        std::unordered_set<String> new_disk_names;
+        for (const auto & disk : new_storage_policy->getVolumeByName(volume->getName())->disks)
+            new_disk_names.insert(disk->getName());
+
+        for (const auto & disk : volume->disks)
+            if (new_disk_names.count(disk->getName()) == 0)
+                throw Exception("New storage policy shall contain disks of old one", ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
+
 size_t StoragePolicy::getVolumeIndexByDisk(const DiskPtr & disk_ptr) const
 {
     for (size_t i = 0; i < volumes.size(); ++i)
@@ -346,7 +431,7 @@ size_t StoragePolicy::getVolumeIndexByDisk(const DiskPtr & disk_ptr) const
 StoragePolicySelector::StoragePolicySelector(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    const DiskSelector & disks)
+    DiskSelectorPtr disks)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -368,18 +453,41 @@ StoragePolicySelector::StoragePolicySelector(
     /// Add default policy if it's not specified explicetly
     if (policies.find(default_storage_policy_name) == policies.end())
     {
-        auto default_volume = std::make_shared<Volume>(default_volume_name, std::vector<DiskPtr>{disks[default_disk_name]}, 0);
+        auto default_volume = std::make_shared<Volume>(default_volume_name, std::vector<DiskPtr>{disks->get(default_disk_name)}, 0);
 
         auto default_policy = std::make_shared<StoragePolicy>(default_storage_policy_name, Volumes{default_volume}, 0.0);
         policies.emplace(default_storage_policy_name, default_policy);
     }
 }
 
-const StoragePolicyPtr & StoragePolicySelector::operator[](const String & name) const
+
+StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks) const
+{
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_prefix, keys);
+
+    std::shared_ptr<StoragePolicySelector> result = std::make_shared<StoragePolicySelector>(config, config_prefix, disks);
+
+    constexpr auto default_storage_policy_name = "default";
+
+    for (const auto & [name, policy] : policies)
+    {
+        if (name != default_storage_policy_name && result->policies.count(name) == 0)
+            throw Exception("Storage policy " + backQuote(name) + " is missing in new configuration", ErrorCodes::BAD_ARGUMENTS);
+
+        policy->checkCompatibleWith(result->policies[name]);
+    }
+
+    return result;
+}
+
+
+StoragePolicyPtr StoragePolicySelector::get(const String & name) const
 {
     auto it = policies.find(name);
     if (it == policies.end())
         throw Exception("Unknown StoragePolicy " + name, ErrorCodes::UNKNOWN_POLICY);
+
     return it->second;
 }
 

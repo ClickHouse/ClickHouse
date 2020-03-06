@@ -25,7 +25,6 @@
 #include <Poco/DirectoryIterator.h>
 
 
-
 namespace DB
 {
 

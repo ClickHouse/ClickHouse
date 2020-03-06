@@ -178,7 +178,6 @@ inline bool operator==(StringRef_Compare8_1_byUInt64 lhs, StringRef_Compare8_1_b
 }
 
 
-
 inline bool compare_byMemcmp(const char * p1, const char * p2)
 {
     return 0 == memcmp(p1, p2, 16);
@@ -574,7 +573,6 @@ inline bool operator==(StringRef_CompareAlmostAlwaysTrue lhs, StringRef_CompareA
 
     return true;
 }
-
 
 
 using Value = UInt64;

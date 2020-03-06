@@ -23,26 +23,26 @@ namespace mysqlxx
 class ResultBase;
 
 
-/** Представляет одно значение, считанное из MySQL.
-  * Объект сам не хранит данные, а является всего лишь обёрткой над парой (const char *, size_t).
-  * Если уничтожить UseQueryResult/StoreQueryResult или Connection,
-  *  или считать следующий Row при использовании UseQueryResult, то объект станет некорректным.
-  * Позволяет преобразовать значение (распарсить) в различные типы данных:
-  * - с помощью функций вида getUInt(), getString(), ... (рекомендуется);
-  * - с помощью шаблонной функции get<Type>(), которая специализирована для многих типов (для шаблонного кода);
-  * - шаблонная функция get<Type> работает также для всех типов, у которых есть конструктор из Value
-  *   (это сделано для возможности расширения);
-  * - с помощью operator Type() - но этот метод реализован лишь для совместимости и не рекомендуется
-  *   к использованию, так как неудобен (часто возникают неоднозначности).
+/** Represents a single value read from MySQL.
+  * It doesn't owns the value. It's just a wrapper of a pair (const char *, size_t).
+  * If the UseQueryResult/StoreQueryResult or Connection is destroyed,
+  *  or you have read the next Row while using UseQueryResult, then the object is invalidated.
+  * Allows to transform (parse) the value to various data types:
+  * - with getUInt(), getString(), ... (recommended);
+  * - with template function get<Type>() that is specialized for multiple data types;
+  * - the template function get<Type> also works for all types that can be constructed from Value
+  *   (it is an extension point);
+  * - with operator Type() - this is done for compatibility and not recommended because ambiguities possible.
   *
-  * При ошибке парсинга, выкидывается исключение.
-  * При попытке достать значение, которое равно nullptr, выкидывается исключение
-  * - используйте метод isNull() для проверки.
+  * On parsing error, exception is thrown.
+  * When trying to extract a value that is nullptr, exception is thrown
+  * - use isNull() method to check.
   *
-  * Во всех распространённых системах, time_t - это всего лишь typedef от Int64 или Int32.
-  * Для того, чтобы можно было писать row[0].get<time_t>(), ожидая, что значение вида '2011-01-01 00:00:00'
-  *  корректно распарсится согласно текущей тайм-зоне, сделано так, что метод getUInt и соответствующие методы get<>()
-  *  также умеют парсить дату и дату-время.
+  * As time_t is just an alias for integer data type
+  * to allow to write row[0].get<time_t>(), and expect that the values like '2011-01-01 00:00:00'
+  *  will be successfully parsed according to the current time zone,
+  *  the getUInt method and the corresponding get<>() methods
+  *  are capable of parsing Date and DateTime.
   */
 class Value
 {
@@ -166,7 +166,7 @@ private:
         else
             throwException("Cannot parse DateTime");
 
-        return 0;    /// чтобы не было warning-а.
+        return 0;    /// avoid warning.
     }
 
 
@@ -184,7 +184,7 @@ private:
         else
             throwException("Cannot parse Date");
 
-        return 0;    /// чтобы не было warning-а.
+        return 0;    /// avoid warning.
     }
 
 
@@ -231,7 +231,7 @@ private:
     double readFloatText(const char * buf, size_t length) const;
 
     /// Выкинуть исключение с подробной информацией
-    void throwException(const char * text) const;
+    [[noreturn]] void throwException(const char * text) const;
 };
 
 
