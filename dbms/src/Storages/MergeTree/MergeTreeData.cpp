@@ -3654,7 +3654,7 @@ MergeTreeData::PathsWithDisks MergeTreeData::getDataPathsWithDisks() const
 MergeTreeData::PathsWithDisks MergeTreeData::getRelativeDataPathsWithDisks() const
 {
     PathsWithDisks res;
-    auto disks = storage_policy->getDisks();
+    auto disks = getStoragePolicy()->getDisks();
     for (const auto & disk : disks)
         res.emplace_back(relative_data_path, disk);
     return res;
