@@ -65,7 +65,7 @@ if (ARCH_AMD64)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha1-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha1-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha256-mb-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-mb-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-x86_64.s)
-    perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-x86_64.s)
+    perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-x86_64.s) # This is not a mistake
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/whrlpool/asm/wp-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/whrlpool/wp-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/x86_64cpuid.pl ${OPENSSL_BINARY_DIR}/crypto/x86_64cpuid.s)
 
@@ -208,7 +208,6 @@ set(CRYPTO_SRCS
     ${OPENSSL_SOURCE_DIR}/crypto/blake2/blake2s.c
     ${OPENSSL_SOURCE_DIR}/crypto/blake2/m_blake2b.c
     ${OPENSSL_SOURCE_DIR}/crypto/blake2/m_blake2s.c
-    ${OPENSSL_SOURCE_DIR}/crypto/bn/asm/x86_64-gcc.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_add.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_blind.c
     ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_const.c
@@ -727,10 +726,12 @@ set(CRYPTO_SRCS
     ${OPENSSL_SOURCE_DIR}/crypto/x509v3/v3_tlsf.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509v3/v3_utl.c
     ${OPENSSL_SOURCE_DIR}/crypto/x509v3/v3err.c
+    ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_dgst.c
 )
 
 if (ARCH_AMD64)
     set (CRYPTO_SRCS ${CRYPTO_SRCS}
+        ${OPENSSL_SOURCE_DIR}/crypto/bn/asm/x86_64-gcc.c
         ${OPENSSL_BINARY_DIR}/crypto/bn/rsaz-avx2.s
         ${OPENSSL_BINARY_DIR}/crypto/bn/rsaz-x86_64.s
         ${OPENSSL_BINARY_DIR}/crypto/aes/aesni-mb-x86_64.s
@@ -758,7 +759,6 @@ if (ARCH_AMD64)
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-x86_64.s
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-x86_64.s
         ${OPENSSL_BINARY_DIR}/crypto/whrlpool/wp-x86_64.s
-        ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_dgst.c
         ${OPENSSL_BINARY_DIR}/crypto/x86_64cpuid.s
     )
 elseif (ARCH_AARCH64)
@@ -771,7 +771,6 @@ elseif (ARCH_AARCH64)
         ${OPENSSL_SOURCE_DIR}/crypto/armcap.c
         ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_enc.c
         ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_skey.c
-        ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_block.c
         ${OPENSSL_BINARY_DIR}/crypto/aes/aesv8-armx.S
         ${OPENSSL_BINARY_DIR}/crypto/aes/vpaes-armv8.S
         ${OPENSSL_BINARY_DIR}/crypto/bn/armv8-mont.S
@@ -783,7 +782,9 @@ elseif (ARCH_AARCH64)
         ${OPENSSL_BINARY_DIR}/crypto/sha/keccak1600-armv8.S
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha1-armv8.S
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-armv8.S
-        ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-armv8.S)
+        ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-armv8.S
+        ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_block.c
+    )
 endif ()
 
 
