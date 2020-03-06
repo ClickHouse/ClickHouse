@@ -51,7 +51,10 @@ class BlockMissingValues
 public:
     using RowsBitMask = std::vector<bool>; /// a bit per row for a column
 
+    /// Get mask for column, column_idx is index inside corresponding block
     const RowsBitMask & getDefaultsBitmask(size_t column_idx) const;
+    /// Check that we have to replace default value at least in one of columns
+    bool hasDefaultBits(size_t column_idx) const;
     void setBit(size_t column_idx, size_t row_idx);
     bool empty() const { return rows_mask_by_column_id.empty(); }
     size_t size() const { return rows_mask_by_column_id.size(); }
