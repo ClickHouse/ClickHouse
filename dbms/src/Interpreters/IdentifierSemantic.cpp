@@ -44,7 +44,7 @@ std::optional<size_t> tryChooseTable(const ASTIdentifier & identifier, const std
         if (!allow_ambiguous)
             throw Exception("Ambiguous column '" + identifier.name + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
         best_match = ColumnMatch::Ambiguous;
-        return best_table_pos;
+        return {};
     }
 
     if (best_match != ColumnMatch::NoMatch)
