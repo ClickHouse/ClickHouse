@@ -226,7 +226,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns)
     catch (Exception & e)
     {
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + path + ")");
+        e.addMessage("(while reading from part " + data_part->getFullPath() + ")");
         throw;
     }
 }
