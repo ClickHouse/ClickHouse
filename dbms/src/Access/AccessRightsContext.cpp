@@ -436,7 +436,7 @@ boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess
         | AccessType::DROP_ROLE | AccessType::DROP_POLICY | AccessType::DROP_QUOTA | AccessType::ROLE_ADMIN;
 
     if (readonly_)
-        result.revoke(write_table_access | all_dcl | AccessType::SYSTEM | AccessType::KILL);
+        result.revoke(write_table_access | all_dcl | AccessType::SYSTEM | AccessType::KILL_QUERY);
 
     if (readonly_ || !allow_ddl_)
         result.revoke(table_and_dictionary_ddl);

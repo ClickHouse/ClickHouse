@@ -6,6 +6,10 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/CancellationCode.h>
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ParserAlterQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Access/AccessRightsContext.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
@@ -55,7 +59,7 @@ struct QueryDescriptor
     size_t source_num;
     bool processed = false;
 
-    QueryDescriptor(String && query_id_, String && user_, size_t source_num_, bool processed_ = false)
+    QueryDescriptor(String query_id_, String user_, size_t source_num_, bool processed_ = false)
         : query_id(std::move(query_id_)), user(std::move(user_)), source_num(source_num_), processed(processed_) {}
 };
 
@@ -81,6 +85,7 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
     const ClientInfo & my_client = context.getProcessListElement()->getClientInfo();
     std::optional<bool> can_kill_query_started_by_another_user;
     String query_user;
+    bool access_denied = false;
 
     for (size_t i = 0; i < num_processes; ++i)
     {
@@ -95,14 +100,17 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
         {
             if (!can_kill_query_started_by_another_user)
                 can_kill_query_started_by_another_user = context.getAccessRights()->isGranted(&Poco::Logger::get("InterpreterKillQueryQuery"), AccessType::KILL_QUERY);
-            if (!can_kill_query_started_by_another_user.value())
+            if (!*can_kill_query_started_by_another_user)
+            {
+                access_denied = true;
                 continue;
+            }
         }
 
-        res.emplace_back(std::move(query_id), std::move(query_user), i, false);
+        res.emplace_back(std::move(query_id), query_user, i, false);
     }
 
-    if (res.empty() && !query_user.empty()) // NOLINT
+    if (res.empty() && access_denied)
         throw Exception("User " + my_client.current_user + " attempts to kill query created by " + query_user, ErrorCodes::ACCESS_DENIED);
 
     return res;
@@ -221,19 +229,22 @@ BlockIO InterpreterKillQueryQuery::execute()
     }
     case ASTKillQueryQuery::Type::Mutation:
     {
-        Block mutations_block = getSelectResult("database, table, mutation_id", "system.mutations");
+        Block mutations_block = getSelectResult("database, table, mutation_id, command", "system.mutations");
         if (!mutations_block)
             return res_io;
 
         const ColumnString & database_col = typeid_cast<const ColumnString &>(*mutations_block.getByName("database").column);
         const ColumnString & table_col = typeid_cast<const ColumnString &>(*mutations_block.getByName("table").column);
         const ColumnString & mutation_id_col = typeid_cast<const ColumnString &>(*mutations_block.getByName("mutation_id").column);
+        const ColumnString & command_col = typeid_cast<const ColumnString &>(*mutations_block.getByName("command").column);
 
         auto header = mutations_block.cloneEmpty();
         header.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});
 
         MutableColumns res_columns = header.cloneEmptyColumns();
         auto table_id = StorageID::createEmpty();
+        AccessRightsElements required_access_rights;
+        bool access_denied = false;
 
         for (size_t i = 0; i < mutations_block.rows(); ++i)
         {
@@ -248,8 +259,14 @@ BlockIO InterpreterKillQueryQuery::execute()
                     code = CancellationCode::NotFound;
                 else
                 {
-                    if (!context.getAccessRights()->isGranted(&Poco::Logger::get("InterpreterKillQueryQuery"), AccessType::KILL_MUTATION, table_id.database_name, table_id.table_name))
+                    ParserAlterCommand parser;
+                    auto command_ast = parseQuery(parser, command_col.getDataAt(i).toString(), 0);
+                    required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(command_ast->as<const ASTAlterCommand &>(), table_id.database_name, table_id.table_name);
+                    if (!context.getAccessRights()->isGranted(&Poco::Logger::get("InterpreterKillQueryQuery"), required_access_rights))
+                    {
+                        access_denied = true;
                         continue;
+                    }
                     code = storage->killMutation(mutation_id);
                 }
             }
@@ -257,9 +274,9 @@ BlockIO InterpreterKillQueryQuery::execute()
             insertResultRow(i, code, mutations_block, header, res_columns);
         }
 
-        if (res_columns[0]->empty() && table_id)
+        if (res_columns[0]->empty() && access_denied)
             throw Exception(
-                "Not allowed to kill mutation on " + table_id.getNameForLogs(),
+                "Not allowed to kill mutation. To execute this query it's necessary to have the grant " + required_access_rights.toString(),
                 ErrorCodes::ACCESS_DENIED);
 
         res_io.in = std::make_shared<OneBlockInputStream>(header.cloneWithColumns(std::move(res_columns)));
@@ -295,7 +312,7 @@ AccessRightsElements InterpreterKillQueryQuery::getRequiredAccessForDDLOnCluster
     if (query.type == ASTKillQueryQuery::Type::Query)
         required_access.emplace_back(AccessType::KILL_QUERY);
     else if (query.type == ASTKillQueryQuery::Type::Mutation)
-        required_access.emplace_back(AccessType::KILL_MUTATION);
+        required_access.emplace_back(AccessType::UPDATE | AccessType::DELETE | AccessType::MATERIALIZE_INDEX | AccessType::MATERIALIZE_TTL);
     return required_access;
 }
 

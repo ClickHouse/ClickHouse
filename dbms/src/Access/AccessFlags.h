@@ -349,9 +349,7 @@ private:
         ext::push_back(all, std::move(optimize));
 
         auto kill_query = std::make_unique<Node>("KILL QUERY", next_flag++, GLOBAL);
-        auto kill_mutation = std::make_unique<Node>("KILL MUTATION", next_flag++, TABLE);
-        auto kill = std::make_unique<Node>("KILL", std::move(kill_query), std::move(kill_mutation));
-        ext::push_back(all, std::move(kill));
+        ext::push_back(all, std::move(kill_query));
 
         auto create_user = std::make_unique<Node>("CREATE USER", next_flag++, GLOBAL);
         auto alter_user = std::make_unique<Node>("ALTER USER", next_flag++, GLOBAL);
