@@ -2,7 +2,7 @@
 #include <Common/Exception.h>
 
 #include <Core/Block.h>
-#include <Storages/StorageGenerate.h>
+#include <Storages/StorageGenerateRandom.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
@@ -10,7 +10,7 @@
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/TableFunctionGenerate.h>
+#include <TableFunctions/TableFunctionGenerateRandom.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 
 #include "registerTableFunctions.h"
@@ -25,7 +25,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-StoragePtr TableFunctionGenerate::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     ASTs & args_func = ast_function->children;
 
@@ -63,14 +63,14 @@ StoragePtr TableFunctionGenerate::executeImpl(const ASTPtr & ast_function, const
 
     ColumnsDescription columns = parseColumnsListFromString(structure, context);
 
-    auto res = StorageGenerate::create(StorageID(getDatabaseName(), table_name), columns, max_array_length, max_string_length, random_seed);
+    auto res = StorageGenerateRandom::create(StorageID(getDatabaseName(), table_name), columns, max_array_length, max_string_length, random_seed);
     res->startup();
     return res;
 }
 
 void registerTableFunctionGenerate(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionGenerate>(TableFunctionFactory::CaseInsensitive);
+    factory.registerFunction<TableFunctionGenerateRandom>();
 }
 
 }
