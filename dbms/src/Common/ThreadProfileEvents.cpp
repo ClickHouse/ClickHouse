@@ -105,8 +105,12 @@ namespace DB {
             return false;
 
         str[MAX_LENGTH - 1] = '\0';
-        // todo: change to `strtol`
-        result = atoi(str);
+        long value = strtol(str, nullptr, 10);
+        // the only way to be incorrect is to not be a number
+        if (value == 0 && errno != 0)
+            return false;
+
+        result = static_cast<int>(value);
         return true;
     }
 
