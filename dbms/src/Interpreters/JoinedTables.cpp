@@ -82,7 +82,8 @@ StoragePtr JoinedTables::getLeftTableStorage(Context & context)
     if (!storage)
     {
         /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
-        storage = context.getTable(database_name, table_name);
+        auto table_id = context.resolveStorageID({database_name, table_name});
+        storage = DatabaseCatalog::instance().getTable(table_id);
     }
 
     return storage;

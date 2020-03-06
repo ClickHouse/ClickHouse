@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -14,6 +15,14 @@ StorageID::StorageID(const ASTQueryWithTableAndOutput & query, const Context & l
     table_name = query.table;
     uuid = query.uuid;
     assertNotEmpty();
+}
+
+String StorageID::getDatabaseName() const
+{
+    assertNotEmpty();
+    if (database_name.empty())
+        throw Exception("Database name is empty", ErrorCodes::UNKNOWN_DATABASE);
+    return database_name;
 }
 
 String StorageID::getNameForLogs() const
@@ -52,6 +61,11 @@ StorageID StorageID::resolveFromAST(const ASTPtr & table_identifier_node, const 
 {
     DatabaseAndTableWithAlias database_table(table_identifier_node);
     return context.tryResolveStorageID({database_table.database, database_table.table});
+}
+
+String StorageID::getFullTableName() const
+{
+    return backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name);
 }
 
 }
