@@ -1,5 +1,4 @@
 <test>
-    <type>loop</type>
 
     <preconditions>
         <table_exists>test.hits</table_exists>
