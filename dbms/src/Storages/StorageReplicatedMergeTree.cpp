@@ -3174,7 +3174,6 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
 
     auto columns_from_entry = ColumnsDescription::parse(entry.columns_str);
     auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parse(entry.metadata_str);
-    auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this).checkAndFindDiff(metadata_from_entry);
 
     MergeTreeData::DataParts parts;
 
@@ -3182,7 +3181,6 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     Coordination::Requests requests;
     requests.emplace_back(zkutil::makeSetRequest(replica_path + "/columns", entry.columns_str, -1));
     requests.emplace_back(zkutil::makeSetRequest(replica_path + "/metadata", entry.metadata_str, -1));
-
 
     zookeeper->multi(requests);
 
@@ -3192,6 +3190,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
 
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
+        auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this).checkAndFindDiff(metadata_from_entry);
         setTableStructure(std::move(columns_from_entry), metadata_diff);
         metadata_version = entry.alter_version;
 
