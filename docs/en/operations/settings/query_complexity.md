@@ -108,10 +108,10 @@ Limit on the number of bytes in the result. The same as the previous setting.
 
 What to do if the volume of the result exceeds one of the limits: 'throw' or 'break'. By default, throw.
 
+Using 'break' is similar to using LIMIT. `Break` interrupts execution only at the block level. This means that amount of returned rows is greater than [max_result_rows](#setting-max_result_rows), multiple of [max_block_size](settings.md#setting-max_block_size) and depends on [max_threads](settings.md#settings-max_threads).
 
-Using 'break' is similar to using LIMIT. Break interrupts execution only at the block level. This means that amount of returned rows is greater than  [max_result_rows](#setting-max_result_rows), multiple of [max_block_size](settings.md#setting-max_block_size) and depends on [max_threads](settings.md#settings-max_threads).
+Example:
 
-Пример:
 ```sql
 SET max_threads = 3, max_block_size = 3333; 
 SET max_result_rows = 3334, result_overflow_mode = 'break';
@@ -121,13 +121,11 @@ FROM numbers_mt(100000)
 FORMAT Null;
 ```
 
-Результат:
+Result:
 
 ```text
 6666 rows in set. ...
 ```
-
-
 
 ## max_execution_time
 
