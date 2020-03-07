@@ -144,7 +144,8 @@ nav:
     - 'hdfs': 'query_language/table_functions/hdfs.md'
     - 'input': 'query_language/table_functions/input.md'
     - 'generateRandom': 'query_language/table_functions/generate.md'
-- 'Dictionaries':
+
+  - 'Dictionaries':
     - 'Introduction': 'query_language/dicts/index.md'
     - 'External Dictionaries':
       - 'General Description': 'query_language/dicts/external_dicts.md'

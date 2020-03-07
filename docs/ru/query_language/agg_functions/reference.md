@@ -860,7 +860,7 @@ FROM t
 quantile(level)(expr)
 ```
 
-Альяс: `median`.
+Алиас: `median`.
 
 **Параметры** 
 
@@ -870,7 +870,7 @@ quantile(level)(expr)
 
 **Возвращаемое значение** 
 
-- Приблизительную квантиль заданного уровня.
+- Приблизительный квантиль заданного уровня.
 
 Тип:
 
@@ -926,7 +926,7 @@ SELECT quantile(val) FROM t
 quantileDeterministic(level)(expr, determinator)
 ```
 
-Альяс: `medianDeterministic`.
+Алиас: `medianDeterministic`.
 
 **Параметры** 
 
@@ -936,7 +936,7 @@ quantileDeterministic(level)(expr, determinator)
 
 **Возвращаемое значение**
 
-- Приблизительную квантиль заданного уровня.
+- Приблизительный квантиль заданного уровня.
 
 
 Тип:
@@ -993,7 +993,7 @@ SELECT quantileDeterministic(val, 1) FROM t
 quantileExact(level)(expr)
 ```
 
-Альяс: `medianExact`.
+Алиас: `medianExact`.
 
 **Параметры** 
 
@@ -1046,7 +1046,7 @@ SELECT quantileExact(number) FROM numbers(10)
 quantileExactWeighted(level)(expr, weight)
 ```
 
-Альяс: `medianExactWeighted`.
+Алиас: `medianExactWeighted`.
 
 **Параметры** 
 
@@ -1110,7 +1110,7 @@ SELECT quantileExactWeighted(n, val) FROM t
 quantileTiming(level)(expr)
 ```
 
-Альяс: `medianTiming`.
+Алиас: `medianTiming`.
 
 **Параметры**
 
@@ -1192,7 +1192,7 @@ SELECT quantileTiming(response_time) FROM t
 quantileTimingWeighted(level)(expr, weight)
 ```
 
-Альяс: `medianTimingWeighted`.
+Алиас: `medianTimingWeighted`.
 
 **Параметры**
 
@@ -1276,7 +1276,7 @@ SELECT quantileTimingWeighted(response_time, weight) FROM t
 quantileTDigest(level)(expr)
 ```
 
-Альяс: `medianTDigest`.
+Алиас: `medianTDigest`.
 
 **Параметры** 
 
@@ -1333,7 +1333,7 @@ SELECT quantileTDigest(number) FROM numbers(10)
 quantileTDigestWeighted(level)(expr, weight)
 ```
 
-Альяс: `medianTDigest`.
+Алиас: `medianTDigest`.
 
 **Параметры** 
 
@@ -1343,7 +1343,7 @@ quantileTDigestWeighted(level)(expr, weight)
 
 **Возвращаемое значение**
 
-- Приблизительную квантиль заданного уровня.
+- Приблизительный квантиль заданного уровня.
 
 
 Тип:
