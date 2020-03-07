@@ -27,8 +27,8 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Core/Settings.h>
 #include <Access/AccessControlManager.h>
-#include <Access/AccessRightsContext.h>
-#include <Access/RowPolicyContext.h>
+#include <Access/ContextAccess.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Access/User.h>
 #include <Access/SettingsConstraints.h>
 #include <Interpreters/ExpressionJIT.h>
@@ -444,8 +444,6 @@ Context & Context::operator=(const Context &) = default;
 Context Context::createGlobal()
 {
     Context res;
-    res.access_rights = std::make_shared<AccessRightsContext>();
-    res.initial_row_policy = std::make_shared<RowPolicyContext>();
     res.shared = std::make_shared<ContextShared>();
     return res;
 }
@@ -632,22 +630,22 @@ void Context::setUser(const String & name, const String & password, const Poco::
         client_info.quota_key = quota_key;
 
     auto new_user_id = getAccessControlManager().find<User>(name);
-    AccessRightsContextPtr new_access_rights;
+    std::shared_ptr<const ContextAccess> new_access;
     if (new_user_id)
     {
-        new_access_rights = getAccessControlManager().getAccessRightsContext(*new_user_id, {}, true, settings, current_database, client_info);
-        if (!new_access_rights->isClientHostAllowed() || !new_access_rights->isCorrectPassword(password))
+        new_access = getAccessControlManager().getContextAccess(*new_user_id, {}, true, settings, current_database, client_info);
+        if (!new_access->isClientHostAllowed() || !new_access->isCorrectPassword(password))
         {
             new_user_id = {};
-            new_access_rights = nullptr;
+            new_access = nullptr;
         }
     }
 
-    if (!new_user_id || !new_access_rights)
+    if (!new_user_id || !new_access)
         throw Exception(name + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
 
     user_id = new_user_id;
-    access_rights = std::move(new_access_rights);
+    access = std::move(new_access);
     current_roles.clear();
     use_default_roles = true;
 
@@ -657,13 +655,13 @@ void Context::setUser(const String & name, const String & password, const Poco::
 std::shared_ptr<const User> Context::getUser() const
 {
     auto lock = getLock();
-    return access_rights->getUser();
+    return access->getUser();
 }
 
 String Context::getUserName() const
 {
     auto lock = getLock();
-    return access_rights->getUserName();
+    return access->getUserName();
 }
 
 UUID Context::getUserID() const
@@ -697,22 +695,22 @@ void Context::setCurrentRolesDefault()
 
 std::vector<UUID> Context::getCurrentRoles() const
 {
-    return getAccessRights()->getCurrentRoles();
+    return getAccess()->getCurrentRoles();
 }
 
 Strings Context::getCurrentRolesNames() const
 {
-    return getAccessRights()->getCurrentRolesNames();
+    return getAccess()->getCurrentRolesNames();
 }
 
 std::vector<UUID> Context::getEnabledRoles() const
 {
-    return getAccessRights()->getEnabledRoles();
+    return getAccess()->getEnabledRoles();
 }
 
 Strings Context::getEnabledRolesNames() const
 {
-    return getAccessRights()->getEnabledRolesNames();
+    return getAccess()->getEnabledRolesNames();
 }
 
 
@@ -720,59 +718,61 @@ void Context::calculateAccessRights()
 {
     auto lock = getLock();
     if (user_id)
-        access_rights = getAccessControlManager().getAccessRightsContext(*user_id, current_roles, use_default_roles, settings, current_database, client_info);
+        access = getAccessControlManager().getContextAccess(*user_id, current_roles, use_default_roles, settings, current_database, client_info);
 }
 
 
 template <typename... Args>
 void Context::checkAccessImpl(const Args &... args) const
 {
-    getAccessRights()->checkAccess(args...);
+    return getAccess()->checkAccess(args...);
 }
 
-void Context::checkAccess(const AccessFlags & access) const { return checkAccessImpl(access); }
-void Context::checkAccess(const AccessFlags & access, const std::string_view & database) const { return checkAccessImpl(access, database); }
-void Context::checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table) const { return checkAccessImpl(access, database, table); }
-void Context::checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column) const { return checkAccessImpl(access, database, table, column); }
-void Context::checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const { return checkAccessImpl(access, database, table, columns); }
-void Context::checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns) const { return checkAccessImpl(access, database, table, columns); }
-void Context::checkAccess(const AccessRightsElement & access) const { return checkAccessImpl(access); }
-void Context::checkAccess(const AccessRightsElements & access) const { return checkAccessImpl(access); }
+void Context::checkAccess(const AccessFlags & flags) const { return checkAccessImpl(flags); }
+void Context::checkAccess(const AccessFlags & flags, const std::string_view & database) const { return checkAccessImpl(flags, database); }
+void Context::checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const { return checkAccessImpl(flags, database, table); }
+void Context::checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const { return checkAccessImpl(flags, database, table, column); }
+void Context::checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const { return checkAccessImpl(flags, database, table, columns); }
+void Context::checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const { return checkAccessImpl(flags, database, table, columns); }
+void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName()); }
+void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::string_view & column) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), column); }
+void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::vector<std::string_view> & columns) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), columns); }
+void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, const Strings & columns) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), columns); }
+void Context::checkAccess(const AccessRightsElement & element) const { return checkAccessImpl(element); }
+void Context::checkAccess(const AccessRightsElements & elements) const { return checkAccessImpl(elements); }
 
-void Context::checkAccess(const AccessFlags & access, const StorageID & table_id) const { checkAccessImpl(access, table_id.getDatabaseName(), table_id.getTableName()); }
-void Context::checkAccess(const AccessFlags & access, const StorageID & table_id, const std::string_view & column) const { checkAccessImpl(access, table_id.getDatabaseName(), table_id.getTableName(), column); }
-void Context::checkAccess(const AccessFlags & access, const StorageID & table_id, const std::vector<std::string_view> & columns) const { checkAccessImpl(access, table_id.getDatabaseName(), table_id.getTableName(), columns); }
-void Context::checkAccess(const AccessFlags & access, const StorageID & table_id, const Strings & columns) const { checkAccessImpl(access, table_id.getDatabaseName(), table_id.getTableName(), columns); }
 
-AccessRightsContextPtr Context::getAccessRights() const
+std::shared_ptr<const ContextAccess> Context::getAccess() const
 {
     auto lock = getLock();
-    return access_rights;
+    return access ? access : ContextAccess::getFullAccess();
 }
 
-RowPolicyContextPtr Context::getRowPolicy() const
+ASTPtr Context::getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType type) const
 {
-    return getAccessRights()->getRowPolicy();
+    auto lock = getLock();
+    auto initial_condition = initial_row_policy ? initial_row_policy->getCondition(database, table_name, type) : nullptr;
+    return getAccess()->getRowPolicyCondition(database, table_name, type, initial_condition);
+}
+
+std::shared_ptr<const EnabledRowPolicies> Context::getRowPolicies() const
+{
+    return getAccess()->getRowPolicies();
 }
 
 void Context::setInitialRowPolicy()
 {
     auto lock = getLock();
     auto initial_user_id = getAccessControlManager().find<User>(client_info.initial_user);
+    initial_row_policy = nullptr;
     if (initial_user_id)
-        initial_row_policy = getAccessControlManager().getRowPolicyContext(*initial_user_id, {});
-}
-
-RowPolicyContextPtr Context::getInitialRowPolicy() const
-{
-    auto lock = getLock();
-    return initial_row_policy;
+        initial_row_policy = getAccessControlManager().getEnabledRowPolicies(*initial_user_id, {});
 }
 
 
-QuotaContextPtr Context::getQuota() const
+std::shared_ptr<const EnabledQuota> Context::getQuota() const
 {
-    return getAccessRights()->getQuota();
+    return getAccess()->getQuota();
 }
 
 

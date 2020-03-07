@@ -1,7 +1,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/System/StorageSystemMerges.h>
-#include <Access/AccessRightsContext.h>
+#include <Access/ContextAccess.h>
 
 
 namespace DB
@@ -36,12 +36,12 @@ NamesAndTypesList StorageSystemMerges::getNamesAndTypes()
 
 void StorageSystemMerges::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    const auto access_rights = context.getAccessRights();
-    const bool check_access_for_tables = !access_rights->isGranted(AccessType::SHOW_TABLES);
+    const auto access = context.getAccess();
+    const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
 
     for (const auto & merge : context.getMergeList().get())
     {
-        if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW_TABLES, merge.database, merge.table))
+        if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, merge.database, merge.table))
             continue;
 
         size_t i = 0;

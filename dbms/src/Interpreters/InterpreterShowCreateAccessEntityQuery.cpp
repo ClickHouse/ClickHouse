@@ -5,12 +5,13 @@
 #include <Parsers/ASTCreateQuotaQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
-#include <Parsers/ASTGenericRoleSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Access/AccessControlManager.h>
-#include <Access/QuotaContext.h>
+#include <Access/EnabledQuota.h>
+#include <Access/QuotaUsageInfo.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 #include <Columns/ColumnString.h>
@@ -45,12 +46,12 @@ namespace
         if (!user.profile.empty())
             query->profile = user.profile;
 
-        if (user.default_roles != GenericRoleSet::AllTag{})
+        if (user.default_roles != ExtendedRoleSet::AllTag{})
         {
             if (attach_mode)
-                query->default_roles = GenericRoleSet{user.default_roles}.toAST();
+                query->default_roles = ExtendedRoleSet{user.default_roles}.toAST();
             else
-                query->default_roles = GenericRoleSet{user.default_roles}.toASTWithNames(*manager);
+                query->default_roles = ExtendedRoleSet{user.default_roles}.toASTWithNames(*manager);
         }
 
         if (attach_mode && (user.authentication.getType() != Authentication::NO_PASSWORD))
@@ -94,12 +95,12 @@ namespace
             query->all_limits.push_back(create_query_limits);
         }
 
-        if (!quota.roles.empty())
+        if (!quota.to_roles.empty())
         {
             if (attach_mode)
-                query->roles = quota.roles.toAST();
+                query->roles = quota.to_roles.toAST();
             else
-                query->roles = quota.roles.toASTWithNames(*manager);
+                query->roles = quota.to_roles.toASTWithNames(*manager);
         }
 
         return query;
@@ -118,7 +119,7 @@ namespace
         if (policy.isRestrictive())
             query->is_restrictive = policy.isRestrictive();
 
-        for (auto index : ext::range_with_static_cast<RowPolicy::ConditionIndex>(RowPolicy::MAX_CONDITION_INDEX))
+        for (auto index : ext::range_with_static_cast<RowPolicy::ConditionType>(RowPolicy::MAX_CONDITION_TYPE))
         {
             const auto & condition = policy.conditions[index];
             if (!condition.empty())
@@ -129,12 +130,12 @@ namespace
             }
         }
 
-        if (!policy.roles.empty())
+        if (!policy.to_roles.empty())
         {
             if (attach_mode)
-                query->roles = policy.roles.toAST();
+                query->roles = policy.to_roles.toAST();
             else
-                query->roles = policy.roles.toASTWithNames(*manager);
+                query->roles = policy.to_roles.toASTWithNames(*manager);
         }
 
         return query;

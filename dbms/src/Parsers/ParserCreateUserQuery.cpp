@@ -5,8 +5,8 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTGenericRoleSet.h>
-#include <Parsers/ParserGenericRoleSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ParserExtendedRoleSet.h>
 #include <ext/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -208,7 +208,7 @@ namespace
     }
 
 
-    bool parseDefaultRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTGenericRoleSet> & default_roles)
+    bool parseDefaultRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTExtendedRoleSet> & default_roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -216,10 +216,10 @@ namespace
                 return false;
 
             ASTPtr ast;
-            if (!ParserGenericRoleSet{}.enableCurrentUserKeyword(false).enableIDMode(id_mode).parse(pos, ast, expected))
+            if (!ParserExtendedRoleSet{}.enableCurrentUserKeyword(false).useIDMode(id_mode).parse(pos, ast, expected))
                 return false;
 
-            default_roles = typeid_cast<std::shared_ptr<ASTGenericRoleSet>>(ast);
+            default_roles = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
             return true;
         });
     }
@@ -289,7 +289,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
-    std::shared_ptr<ASTGenericRoleSet> default_roles;
+    std::shared_ptr<ASTExtendedRoleSet> default_roles;
     std::optional<String> profile;
 
     while (true)

@@ -1,8 +1,8 @@
-#include <Parsers/ParserGenericRoleSet.h>
+#include <Parsers/ParserExtendedRoleSet.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTGenericRoleSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/parseUserName.h>
 #include <boost/range/algorithm/find.hpp>
 
@@ -109,7 +109,7 @@ namespace
 }
 
 
-bool ParserGenericRoleSet::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserExtendedRoleSet::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Strings names;
     bool current_user = false;
@@ -125,7 +125,7 @@ bool ParserGenericRoleSet::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     if (all)
         names.clear();
 
-    auto result = std::make_shared<ASTGenericRoleSet>();
+    auto result = std::make_shared<ASTExtendedRoleSet>();
     result->names = std::move(names);
     result->current_user = current_user;
     result->all = all;

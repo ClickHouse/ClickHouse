@@ -4,7 +4,7 @@
 #include <Access/Authentication.h>
 #include <Access/AllowedClientHosts.h>
 #include <Access/AccessRights.h>
-#include <Access/GenericRoleSet.h>
+#include <Access/ExtendedRoleSet.h>
 #include <Core/UUID.h>
 #include <boost/container/flat_set.hpp>
 
@@ -21,7 +21,7 @@ struct User : public IAccessEntity
     AccessRights access_with_grant_option;
     boost::container::flat_set<UUID> granted_roles;
     boost::container::flat_set<UUID> granted_roles_with_admin_option;
-    GenericRoleSet default_roles = GenericRoleSet::AllTag{};
+    ExtendedRoleSet default_roles = ExtendedRoleSet::AllTag{};
     String profile;
 
     bool equal(const IAccessEntity & other) const override;

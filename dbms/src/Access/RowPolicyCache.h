@@ -1,8 +1,9 @@
 #pragma once
 
-#include <Access/RowPolicyContext.h>
+#include <Access/EnabledRowPolicies.h>
 #include <ext/scope_guard.h>
 #include <mutex>
+#include <map>
 #include <unordered_map>
 
 
@@ -11,39 +12,38 @@ namespace DB
 class AccessControlManager;
 
 /// Stores read and parsed row policies.
-class RowPolicyContextFactory
+class RowPolicyCache
 {
 public:
-    RowPolicyContextFactory(const AccessControlManager & access_control_manager_);
-    ~RowPolicyContextFactory();
+    RowPolicyCache(const AccessControlManager & access_control_manager_);
+    ~RowPolicyCache();
 
-    RowPolicyContextPtr createContext(const UUID & user_id, const std::vector<UUID> & enabled_roles);
+    std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies(const UUID & user_id, const std::vector<UUID> & enabled_roles);
 
 private:
-    using ParsedConditions = RowPolicyContext::ParsedConditions;
+    using ParsedConditions = EnabledRowPolicies::ParsedConditions;
 
     struct PolicyInfo
     {
         PolicyInfo(const RowPolicyPtr & policy_) { setPolicy(policy_); }
         void setPolicy(const RowPolicyPtr & policy_);
-        bool canUseWithContext(const RowPolicyContext & context) const;
 
         RowPolicyPtr policy;
-        const GenericRoleSet * roles = nullptr;
+        const ExtendedRoleSet * roles = nullptr;
         ParsedConditions parsed_conditions;
     };
 
     void ensureAllRowPoliciesRead();
     void rowPolicyAddedOrChanged(const UUID & policy_id, const RowPolicyPtr & new_policy);
     void rowPolicyRemoved(const UUID & policy_id);
-    void mixConditionsForAllContexts();
-    void mixConditionsForContext(RowPolicyContext & context);
+    void mixConditions();
+    void mixConditionsFor(EnabledRowPolicies & enabled);
 
     const AccessControlManager & access_control_manager;
     std::unordered_map<UUID, PolicyInfo> all_policies;
     bool all_policies_read = false;
     ext::scope_guard subscription;
-    std::vector<std::weak_ptr<RowPolicyContext>> contexts;
+    std::map<EnabledRowPolicies::Params, std::weak_ptr<EnabledRowPolicies>> enabled_row_policies;
     std::mutex mutex;
 };
 

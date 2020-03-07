@@ -7,7 +7,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Access/AccessRightsContext.h>
+#include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 
 
@@ -37,8 +37,8 @@ NamesAndTypesList StorageSystemMutations::getNamesAndTypes()
 
 void StorageSystemMutations::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const
 {
-    const auto access_rights = context.getAccessRights();
-    const bool check_access_for_databases = !access_rights->isGranted(AccessType::SHOW_TABLES);
+    const auto access = context.getAccess();
+    const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
     /// Collect a set of *MergeTree tables.
     std::map<String, std::map<String, StoragePtr>> merge_tree_tables;
@@ -48,14 +48,14 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, const Contex
         if (db.second->getEngineName() == "Lazy")
             continue;
 
-        const bool check_access_for_tables = check_access_for_databases && !access_rights->isGranted(AccessType::SHOW_TABLES, db.first);
+        const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
             if (!dynamic_cast<const MergeTreeData *>(iterator->table().get()))
                 continue;
 
-            if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
+            if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
                 continue;
 
             merge_tree_tables[db.first][iterator->name()] = iterator->table();
