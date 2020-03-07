@@ -45,20 +45,24 @@ StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & ast_function,
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     /// Parsing first argument as table structure and creating a sample block
-    std::string structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    std::string structure = args[0]->as<const ASTLiteral &>().value.safeGet<String>();
 
     UInt64 max_string_length = 10;
     UInt64 max_array_length = 10;
     std::optional<UInt64> random_seed = 0; // zero for random
 
     if (args.size() >= 2)
-        random_seed = args[1]->as<ASTLiteral &>().value.safeGet<UInt64>();
+    {
+        const Field & value = args[1]->as<const ASTLiteral &>().value;
+        if (!value.isNull())
+            random_seed = value.safeGet<UInt64>();
+    }
 
     if (args.size() >= 3)
-        max_string_length = args[2]->as<ASTLiteral &>().value.safeGet<UInt64>();
+        max_string_length = args[2]->as<const ASTLiteral &>().value.safeGet<UInt64>();
 
     if (args.size() == 4)
-        max_array_length = args[3]->as<ASTLiteral &>().value.safeGet<UInt64>();
+        max_array_length = args[3]->as<const ASTLiteral &>().value.safeGet<UInt64>();
 
 
     ColumnsDescription columns = parseColumnsListFromString(structure, context);
