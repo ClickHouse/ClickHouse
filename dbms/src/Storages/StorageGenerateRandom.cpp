@@ -12,6 +12,8 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -293,6 +295,14 @@ ColumnPtr fillColumnWithRandomData(
             auto & column_concrete = typeid_cast<ColumnDecimal<Decimal128> &>(*column);
             column_concrete.getData().resize(limit);
             fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit * sizeof(Decimal128), rng);
+            return column;
+        }
+        case TypeIndex::FixedString:
+        {
+            size_t n = typeid_cast<const DataTypeFixedString &>(*type).getN();
+            auto column = ColumnFixedString::create(n);
+            column->getChars().resize(limit * n);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getChars().data()), limit * n, rng);
             return column;
         }
         case TypeIndex::DateTime64:
