@@ -93,20 +93,21 @@ struct StorageID;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;
+using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 class StoragePolicySelector;
+using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
-
 class Volume;
 using VolumePtr = std::shared_ptr<Volume>;
+struct NamedSession;
+
 
 #if USE_EMBEDDED_COMPILER
-
 class CompiledExpressionCache;
-
 #endif
 
 /// Table -> set of table-views that make SELECT from it.
@@ -135,6 +136,7 @@ struct IHostContext
 };
 
 using IHostContextPtr = std::shared_ptr<IHostContext>;
+
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
@@ -178,8 +180,7 @@ private:
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
 
-    UInt64 session_close_cycle = 0;
-    bool session_is_used = false;
+    friend class NamedSessions;
 
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
@@ -365,8 +366,10 @@ public:
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
-    void checkSettingsConstraints(const SettingChange & change);
-    void checkSettingsConstraints(const SettingsChanges & changes);
+    void checkSettingsConstraints(const SettingChange & change) const;
+    void checkSettingsConstraints(const SettingsChanges & changes) const;
+    void clampToSettingsConstraints(SettingChange & change) const;
+    void clampToSettingsConstraints(SettingsChanges & changes) const;
 
     /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const { return settings_constraints; }
@@ -419,11 +422,11 @@ public:
     const Databases getDatabases() const;
     Databases getDatabases();
 
-    std::shared_ptr<Context> acquireSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check) const;
-    void releaseSession(const String & session_id, std::chrono::steady_clock::duration timeout);
+    /// Allow to use named sessions. The thread will be run to cleanup sessions after timeout has expired.
+    /// The method must be called at the server startup.
+    void enableNamedSessions();
 
-    /// Close sessions, that has been expired. Returns how long to wait for next session to be expired, if no new sessions will be added.
-    std::chrono::steady_clock::duration closeSessions() const;
+    std::shared_ptr<NamedSession> acquireNamedSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check);
 
     /// For methods below you may need to acquire a lock by yourself.
     std::unique_lock<std::recursive_mutex> getLock() const;
@@ -514,8 +517,10 @@ public:
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
 
+    /// Call after initialization before using trace collector.
     void initializeTraceCollector();
-    bool hasTraceCollector();
+
+    bool hasTraceCollector() const;
 
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog();
@@ -541,16 +546,18 @@ public:
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
-    DiskSelector & getDiskSelector() const;
+    DiskSelectorPtr getDiskSelector() const;
 
     /// Provides storage disks
-    const DiskPtr & getDisk(const String & name) const;
-    const DiskPtr & getDefaultDisk() const { return getDisk("default"); }
+    DiskPtr getDisk(const String & name) const;
+    DiskPtr getDefaultDisk() const { return getDisk("default"); }
 
-    StoragePolicySelector & getStoragePolicySelector() const;
+    StoragePolicySelectorPtr getStoragePolicySelector() const;
+
+    void updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     /// Provides storage politics schemes
-    const StoragePolicyPtr & getStoragePolicy(const String &name) const;
+    StoragePolicyPtr getStoragePolicy(const String & name) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;
@@ -581,9 +588,6 @@ public:
     /// Base path for format schemas
     String getFormatSchemaPath() const;
     void setFormatSchemaPath(const String & path);
-
-    /// User name and session identifier. Named sessions are local to users.
-    using SessionKey = std::pair<String, String>;
 
     SampleBlockCache & getSampleBlockCache() const;
 
@@ -627,11 +631,6 @@ private:
 
     StoragePtr getTableImpl(const StorageID & table_id, std::optional<Exception> * exception) const;
 
-    SessionKey getSessionKey(const String & session_id) const;
-
-    /// Session will be closed after specified timeout.
-    void scheduleCloseSession(const SessionKey & key, std::chrono::steady_clock::duration timeout);
-
     void checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const;
 };
 
@@ -664,24 +663,26 @@ private:
 };
 
 
-class SessionCleaner
+class NamedSessions;
+
+/// User name and session identifier. Named sessions are local to users.
+using NamedSessionKey = std::pair<String, String>;
+
+/// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
+struct NamedSession
 {
-public:
-    SessionCleaner(Context & context_)
-        : context{context_}
+    NamedSessionKey key;
+    UInt64 close_cycle = 0;
+    Context context;
+    std::chrono::steady_clock::duration timeout;
+    NamedSessions & parent;
+
+    NamedSession(NamedSessionKey key_, Context & context_, std::chrono::steady_clock::duration timeout_, NamedSessions & parent_)
+        : key(key_), context(context_), timeout(timeout_), parent(parent_)
     {
     }
-    ~SessionCleaner();
 
-private:
-    void run();
-
-    Context & context;
-
-    std::mutex mutex;
-    std::condition_variable cond;
-    std::atomic<bool> quit{false};
-    ThreadFromGlobalPool thread{&SessionCleaner::run, this};
+    void release();
 };
 
 }

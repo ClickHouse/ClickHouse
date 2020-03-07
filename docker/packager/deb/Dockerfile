@@ -65,8 +65,6 @@ RUN apt-get --allow-unauthenticated update -y \
             pigz \
             moreutils
 
-
-
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
 # Significantly increase deb packaging speed and compatible with old systems
@@ -74,9 +72,8 @@ RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/dpkg-deb
 RUN chmod +x dpkg-deb
 RUN cp dpkg-deb /usr/bin
 
-# This symlink required by gcc to find lld compiler but currently we have
-# problems with query profiler when gcc use lld as linker
-# RUN ln -s /usr/bin/lld-8 /usr/bin/ld.lld
+# This symlink required by gcc to find lld compiler
+RUN ln -s /usr/bin/lld-8 /usr/bin/ld.lld
 
 COPY build.sh /
 

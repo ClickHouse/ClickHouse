@@ -3,6 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Core/Types.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
 {
@@ -59,10 +60,16 @@ struct ReplicatedMergeTreeTableMetadata
         }
     };
 
-    Diff checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk, bool allow_alter) const;
+    void checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk) const;
+
+    Diff checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk) const;
 
 private:
+
+    void checkImmutableFieldsEquals(const ReplicatedMergeTreeTableMetadata & from_zk) const;
+
     bool index_granularity_bytes_found_in_zk = false;
 };
+
 
 }

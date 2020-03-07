@@ -88,10 +88,14 @@ using signal_function = void(int, siginfo_t*, void*);
 
 static void writeSignalIDtoSignalPipe(int sig)
 {
+    auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+
     char buf[buf_size];
     DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
     DB::writeBinary(sig, out);
     out.next();
+
+    errno = saved_errno;
 }
 
 /** Signal handler for HUP / USR1 */
@@ -110,6 +114,8 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * co
   */
 static void signalHandler(int sig, siginfo_t * info, void * context)
 {
+    auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+
     char buf[buf_size];
     DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], buf_size, buf);
 
@@ -134,6 +140,8 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
         ::sleep(10);
         call_default_signal_handler(sig);
     }
+
+    errno = saved_errno;
 }
 
 

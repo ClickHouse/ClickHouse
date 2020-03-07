@@ -62,9 +62,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int STORAGE_REQUIRES_PARAMETER;
     extern const int BAD_ARGUMENTS;
-    extern const int READONLY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INFINITE_LOOP;
@@ -286,7 +286,7 @@ void StorageDistributed::createStorage()
     }
     else
     {
-        auto policy = global_context.getStoragePolicySelector()[storage_policy];
+        auto policy = global_context.getStoragePolicySelector()->get(storage_policy);
         if (policy->getVolumes().size() != 1)
              throw Exception("Policy for Distributed table, should have exactly one volume", ErrorCodes::BAD_ARGUMENTS);
         volume = policy->getVolume(0);

@@ -76,6 +76,41 @@ git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 After successfully running this command you will be able to pull updates from the main ClickHouse repo by running `git pull upstream master`.
 
 
+## Working with submodules
+
+Working with submodules in git could be painful. Next commands will help to manage it:
+
+```
+# ! each command accepts --recursive
+# Update remote URLs for submodules. Barely rare case
+git submodule sync
+# Add new submodules
+git submodule init
+# Update existing submodules to the current state
+git submodule update
+# Two last commands could be merged together
+git submodule update --init
+```
+
+The next commands would help you to reset all submodules to the initial state (!WARING! - any chenges inside will be deleted):
+
+```
+# Synchronizes submodules' remote URL with .gitmodules
+git submodule sync --recursive
+# Update the registered submodules with initialize not yet initialized
+git submodule update --init --recursive
+# Reset all changes done after HEAD
+git submodule foreach git reset --hard
+# Clean files from .gitignore
+git submodule foreach git clean -xfd
+# Repeat last 4 commands for all submodule
+git submodule foreach git submodule sync --recursive
+git submodule foreach git submodule update --init --recursive
+git submodule foreach git submodule foreach git reset --hard
+git submodule foreach git submodule foreach git clean -xfd
+```
+
+
 # Build System
 
 ClickHouse uses CMake and Ninja for building.

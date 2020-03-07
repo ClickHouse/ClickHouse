@@ -10,8 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
-    extern const int NO_SUCH_DATA_PART;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -100,7 +98,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         return false;
 
     std::unordered_map<DiskPtr, LargestPartsWithRequiredSize> need_to_move;
-    const auto & policy = data->getStoragePolicy();
+    const auto policy = data->getStoragePolicy();
     const auto & volumes = policy->getVolumes();
 
     if (volumes.size() > 0)

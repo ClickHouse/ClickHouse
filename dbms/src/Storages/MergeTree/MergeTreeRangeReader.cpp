@@ -10,6 +10,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 MergeTreeRangeReader::DelayedStream::DelayedStream(
         size_t from_mark, IMergeTreeReader * merge_tree_reader_)
@@ -636,6 +640,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             }
 
             merge_tree_reader->evaluateMissingDefaults(block, columns);
+            merge_tree_reader->performRequiredConversions(columns);
         }
 
         read_result.columns.reserve(read_result.columns.size() + columns.size());
@@ -655,6 +660,8 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
             if (should_evaluate_missing_defaults)
                 merge_tree_reader->evaluateMissingDefaults({}, read_result.columns);
+
+            merge_tree_reader->performRequiredConversions(read_result.columns);
         }
         else
             read_result.columns.clear();

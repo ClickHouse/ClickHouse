@@ -20,7 +20,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
 }
 
 /// Conditions like "x = N" are considered good if abs(N) > threshold.

@@ -16,17 +16,9 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int NOT_ENOUGH_SPACE;
-    extern const int NOT_IMPLEMENTED;
-    extern const int SYSTEM_ERROR;
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int UNKNOWN_POLICY;
-    extern const int UNKNOWN_DISK;
-}
+
+class DiskSelector;
+using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 
 /// Parse .xml configuration and store information about disks
 /// Mostly used for introspection.
@@ -34,9 +26,12 @@ class DiskSelector
 {
 public:
     DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context);
+    DiskSelector(const DiskSelector & from): disks(from.disks) {}
+
+    DiskSelectorPtr updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context) const;
 
     /// Get disk by name
-    const DiskPtr & operator[](const String & name) const;
+    DiskPtr get(const String & name) const;
 
     /// Get all disks with names
     const auto & getDisksMap() const { return disks; }
@@ -65,7 +60,7 @@ public:
         String name_,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        const DiskSelector & disk_selector);
+        DiskSelectorPtr disk_selector);
 
     /// Next disk (round-robin)
     ///
@@ -98,6 +93,8 @@ private:
 using VolumePtr = std::shared_ptr<Volume>;
 using Volumes = std::vector<VolumePtr>;
 
+class StoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 
 /**
  * Contains all information about volumes configuration for Storage.
@@ -106,7 +103,7 @@ using Volumes = std::vector<VolumePtr>;
 class StoragePolicy
 {
 public:
-    StoragePolicy(String name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const DiskSelector & disks);
+    StoragePolicy(String name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks);
 
     StoragePolicy(String name_, Volumes volumes_, double move_factor_);
 
@@ -157,6 +154,9 @@ public:
         return getVolume(it->second);
     }
 
+    /// Checks if storage policy can be replaced by another one.
+    void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const;
+
 private:
     Volumes volumes;
     const String name;
@@ -169,17 +169,20 @@ private:
 };
 
 
-using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
+class StoragePolicySelector;
+using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 
 /// Parse .xml configuration and store information about policies
 /// Mostly used for introspection.
 class StoragePolicySelector
 {
 public:
-    StoragePolicySelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const DiskSelector & disks);
+    StoragePolicySelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks);
+
+    StoragePolicySelectorPtr updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks) const;
 
     /// Policy by name
-    const StoragePolicyPtr & operator[](const String & name) const;
+    StoragePolicyPtr get(const String & name) const;
 
     /// All policies
     const std::map<String, StoragePolicyPtr> & getPoliciesMap() const { return policies; }

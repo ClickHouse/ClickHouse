@@ -21,6 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TABLE_IS_DROPPED;
 }
 

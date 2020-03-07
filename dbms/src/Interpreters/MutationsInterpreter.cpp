@@ -27,6 +27,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_MUTATION_COMMAND;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_UPDATE_COLUMN;
@@ -282,6 +284,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     if (commands.empty())
         throw Exception("Empty mutation commands list", ErrorCodes::LOGICAL_ERROR);
 
+
     const ColumnsDescription & columns_desc = storage->getColumns();
     const IndicesDescription & indices_desc = storage->getIndices();
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
@@ -290,7 +293,9 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     for (const MutationCommand & command : commands)
     {
         for (const auto & kv : command.column_to_update_expression)
+        {
             updated_columns.insert(kv.first);
+        }
     }
 
     /// We need to know which columns affect which MATERIALIZED columns and data skipping indices
@@ -434,6 +439,15 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 }
             }
         }
+        else if (command.type == MutationCommand::READ_COLUMN)
+        {
+            if (stages.empty() || !stages.back().column_to_updated.empty())
+                stages.emplace_back(context);
+            if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
+                stages.emplace_back(context);
+
+            stages.back().column_to_updated.emplace(command.column_name, std::make_shared<ASTIdentifier>(command.column_name));
+        }
         else
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
     }
@@ -504,6 +518,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
 {
     NamesAndTypesList all_columns = storage->getColumns().getAllPhysical();
 
+
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)
     {
@@ -516,8 +531,6 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
 
         if (i > 0)
             prepared_stages[i].output_columns = prepared_stages[i - 1].output_columns;
-        else if (!commands.additional_columns.empty())
-            prepared_stages[i].output_columns.insert(commands.additional_columns.begin(), commands.additional_columns.end());
 
         if (prepared_stages[i].output_columns.size() < all_columns.size())
         {

@@ -32,3 +32,19 @@ find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symli
 
 # Double whitespaces
 find $ROOT_PATH/{dbms,base} -name '*.h' -or -name '*.cpp' 2>/dev/null | while read i; do $ROOT_PATH/utils/check-style/double-whitespaces.pl < $i || echo -e "^ File $i contains double whitespaces\n"; done
+
+# Unused ErrorCodes
+# NOTE: to fix automatically, replace echo with:
+# sed -i "/extern const int $code/d" $file
+find $ROOT_PATH/{dbms,base} -name '*.h' -or -name '*.cpp' | xargs grep -l -P 'extern const int [_A-Z]+' | while read file; do grep -P 'extern const int [_A-Z]+;' $file | sed -r -e 's/^.*?extern const int ([_A-Z]+);.*?$/\1/' | while read code; do grep -q "ErrorCodes::$code" $file || echo "ErrorCode $code is defined but not used in file $file"; done; done
+
+# Undefined ErrorCodes
+# NOTE: to fix automatically, replace echo with:
+# ( grep -q -F 'namespace ErrorCodes' $file && sed -i -r "0,/(\s*)extern const int [_A-Z]+/s//\1extern const int $code;\n&/" $file || awk '{ print; if (ns == 1) { ns = 2 }; if (ns == 2) { ns = 0; print "namespace ErrorCodes\n{\n    extern const int '$code';\n}" } }; /namespace DB/ { ns = 1; };' < $file > ${file}.tmp && mv ${file}.tmp $file )
+find $ROOT_PATH/{dbms,base} -name '*.h' -or -name '*.cpp' | xargs grep -l -P 'ErrorCodes::[_A-Z]+' | while read file; do grep -P 'ErrorCodes::[_A-Z]+' $file | sed -r -e 's/^.*?ErrorCodes::([_A-Z]+).*?$/\1/' | while read code; do grep -q "extern const int $code" $file || echo "ErrorCode $code is used in file $file but not defined"; done; done
+
+# Duplicate ErrorCodes
+find $ROOT_PATH/{dbms,base} -name '*.h' -or -name '*.cpp' | xargs grep -l -P 'ErrorCodes::[_A-Z]+' | while read file; do grep -P 'extern const int [_A-Z]+;' $file | sort | uniq -c | grep -v -P ' +1 ' && echo "Duplicate ErrorCode in file $file"; done
+
+# Three or more consecutive empty lines
+find $ROOT_PATH/{dbms,base} -name '*.h' -or -name '*.cpp' | while read file; do awk '/^$/ { ++i; if (i > 2) { print "More than two consecutive empty lines in file '$file'" } } /./ { i = 0 }' $file; done
