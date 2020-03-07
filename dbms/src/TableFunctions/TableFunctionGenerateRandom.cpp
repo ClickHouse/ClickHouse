@@ -52,13 +52,13 @@ StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & ast_function,
     std::optional<UInt64> random_seed = 0; // zero for random
 
     if (args.size() >= 2)
-        random_seed = args[3]->as<ASTLiteral &>().value.safeGet<UInt64>();
+        random_seed = args[1]->as<ASTLiteral &>().value.safeGet<UInt64>();
 
     if (args.size() >= 3)
-        max_string_length = args[1]->as<ASTLiteral &>().value.safeGet<UInt64>();
+        max_string_length = args[2]->as<ASTLiteral &>().value.safeGet<UInt64>();
 
     if (args.size() == 4)
-        max_array_length = args[2]->as<ASTLiteral &>().value.safeGet<UInt64>();
+        max_array_length = args[3]->as<ASTLiteral &>().value.safeGet<UInt64>();
 
 
     ColumnsDescription columns = parseColumnsListFromString(structure, context);

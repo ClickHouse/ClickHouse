@@ -376,13 +376,13 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         UInt64 max_array_length = 10;
 
         if (engine_args.size() >= 1)
-            random_seed = engine_args[2]->as<ASTLiteral &>().value.safeGet<UInt64>();
+            random_seed = engine_args[0]->as<ASTLiteral &>().value.safeGet<UInt64>();
 
         if (engine_args.size() >= 2)
-            max_string_length = engine_args[0]->as<ASTLiteral &>().value.safeGet<UInt64>();
+            max_string_length = engine_args[1]->as<ASTLiteral &>().value.safeGet<UInt64>();
 
         if (engine_args.size() == 3)
-            max_array_length = engine_args[1]->as<ASTLiteral &>().value.safeGet<UInt64>();
+            max_array_length = engine_args[2]->as<ASTLiteral &>().value.safeGet<UInt64>();
 
 
         return StorageGenerateRandom::create(args.table_id, args.columns, max_array_length, max_string_length, random_seed);
