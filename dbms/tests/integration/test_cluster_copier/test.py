@@ -92,6 +92,16 @@ class Task1:
 
     def check(self):
         assert TSV(self.cluster.instances['s0_0_0'].query("SELECT count() FROM hits_all")) == TSV("1002\n")
+        for anime in ['s1_0_0', 's1_0_1', 's1_1_0']:
+            a = self.cluster.instances[anime].query("SELECT count() FROM hits_piece_0")
+            b = self.cluster.instances[anime].query("SELECT count() FROM hits_piece_1")
+            c = self.cluster.instances[anime].query("SELECT count() FROM hits")
+            print(anime, a, b, int(a) + int(b), c)
+            print(self.cluster.instances[anime].query("select partition, name, database, table, hash_of_all_files, hash_of_uncompressed_files, uncompressed_hash_of_compressed_files from system.parts where table like '%hits%' format TSV"))
+
+        assert TSV(self.cluster.instances['s1_0_0'].query("SELECT DISTINCT d % 2 FROM hits")) == TSV("1\n")
+        assert TSV(self.cluster.instances['s1_1_0'].query("SELECT DISTINCT d % 2 FROM hits")) == TSV("0\n")
+
         assert TSV(self.cluster.instances['s1_0_0'].query("SELECT count() FROM hits_all")) == TSV("1002\n")
 
         assert TSV(self.cluster.instances['s1_0_0'].query("SELECT DISTINCT d % 2 FROM hits")) == TSV("1\n")

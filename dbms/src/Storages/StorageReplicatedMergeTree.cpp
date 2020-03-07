@@ -4877,6 +4877,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
                 ErrorCodes::LOGICAL_ERROR);
 
         String hash_hex = src_part->checksums.getTotalChecksumHex();
+
+        LOG_INFO(log, "Trying to attach " << src_part->name << "with hash_hex " << hash_hex);
+
         String block_id_path = replace ? "" : (zookeeper_path + "/blocks/" + partition_id + "_replace_from_" + hash_hex);
 
         auto lock = allocateBlockNumber(partition_id, zookeeper, block_id_path);
