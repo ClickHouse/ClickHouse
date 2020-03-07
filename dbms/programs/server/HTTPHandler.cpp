@@ -273,7 +273,7 @@ void HTTPHandler::processQuery(
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
 
-    std::shared_ptr<Context> session;
+    std::shared_ptr<NamedSession> session;
     String session_id;
     std::chrono::steady_clock::duration session_timeout;
     bool session_is_set = params.has("session_id");
@@ -285,15 +285,15 @@ void HTTPHandler::processQuery(
         session_timeout = parseSessionTimeout(config, params);
         std::string session_check = params.get("session_check", "");
 
-        session = context.acquireSession(session_id, session_timeout, session_check == "1");
+        session = context.acquireNamedSession(session_id, session_timeout, session_check == "1");
 
-        context = *session;
-        context.setSessionContext(*session);
+        context = session->context;
+        context.setSessionContext(session->context);
     }
 
     SCOPE_EXIT({
-        if (session_is_set)
-            session->releaseSession(session_id, session_timeout);
+        if (session)
+            session->release();
     });
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
