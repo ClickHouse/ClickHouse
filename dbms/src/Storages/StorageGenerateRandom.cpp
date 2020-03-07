@@ -352,10 +352,10 @@ private:
 
 
 StorageGenerateRandom::StorageGenerateRandom(const StorageID & table_id_, const ColumnsDescription & columns_,
-    UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_)
+    UInt64 max_array_length_, UInt64 max_string_length_, std::optional<UInt64> random_seed_)
     : IStorage(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_)
 {
-    random_seed = random_seed_ ? random_seed_ : randomSeed();
+    random_seed = random_seed_ ? *random_seed_ : randomSeed();
     setColumns(columns_);
 }
 
@@ -367,25 +367,25 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() > 3)
-            throw Exception("Storage GenerateRandom requires at most three arguments: "\
-                        "max_array_length, max_string_length, random_seed.",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception("Storage GenerateRandom requires at most three arguments: "
+                "random_seed, max_string_length, max_array_length.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        UInt64 max_array_length_ = 10;
-        UInt64 max_string_length_ = 10;
-        UInt64 random_seed_ = 0; // zero for random
+        std::optional<UInt64> random_seed;
+        UInt64 max_string_length = 10;
+        UInt64 max_array_length = 10;
 
-        /// Parsing second argument if present
         if (engine_args.size() >= 1)
-            max_array_length_ = engine_args[0]->as<ASTLiteral &>().value.safeGet<UInt64>();
+            random_seed = engine_args[2]->as<ASTLiteral &>().value.safeGet<UInt64>();
 
         if (engine_args.size() >= 2)
-            max_string_length_ = engine_args[1]->as<ASTLiteral &>().value.safeGet<UInt64>();
+            max_string_length = engine_args[0]->as<ASTLiteral &>().value.safeGet<UInt64>();
 
         if (engine_args.size() == 3)
-            random_seed_ = engine_args[2]->as<ASTLiteral &>().value.safeGet<UInt64>();
+            max_array_length = engine_args[1]->as<ASTLiteral &>().value.safeGet<UInt64>();
 
-        return StorageGenerateRandom::create(args.table_id, args.columns, max_array_length_, max_string_length_, random_seed_);
+
+        return StorageGenerateRandom::create(args.table_id, args.columns, max_array_length, max_string_length, random_seed);
     });
 }
 
