@@ -49,7 +49,7 @@ void fillBufferWithRandomData(char * __restrict data, size_t size, pcg64_fast & 
         /// The loop can be further optimized.
         UInt64 number = rng();
         unalignedStore<UInt64>(data, number);
-        data += sizeof(UInt64); /// We assume that data has 15-byte padding (see PaddedPODArray)
+        data += sizeof(UInt64); /// We assume that data has at least 7-byte padding (see PaddedPODArray)
     }
 }
 
@@ -63,23 +63,50 @@ ColumnPtr fillColumnWithRandomData(
     {
         case TypeIndex::String:
         {
-            auto size_column = ColumnUInt32::create();
-            auto & sizes = size_column->getData();
+            /// Mostly the same as the implementation of randomPrintableASCII function.
 
-            sizes.resize(limit);
-            for (UInt64 i = 0; i < limit; ++i)
-                sizes[i] = static_cast<UInt32>(rng()) % max_string_length;  /// Slow
+            auto column = ColumnString::create();
+            ColumnString::Chars & data_to = column->getChars();
+            ColumnString::Offsets & offsets_to = column->getOffsets();
+            offsets_to.resize(limit);
 
-            ColumnWithTypeAndName argument{std::move(size_column), std::make_shared<DataTypeUInt32>(), "size"};
-
-            Block block
+            IColumn::Offset offset = 0;
+            for (size_t row_num = 0; row_num < limit; ++row_num)
             {
-                argument,
-                {nullptr, type, "result"}
-            };
+                size_t length = rng() % (max_string_length + 1);    /// Slow
 
-            FunctionFactory::instance().get("randomPrintableASCII", context)->build({argument})->execute(block, {0}, 1, limit);
-            return block.getByPosition(1).column;
+                IColumn::Offset next_offset = offset + length + 1;
+                data_to.resize(next_offset);
+                offsets_to[row_num] = next_offset;
+
+                auto * data_to_ptr = data_to.data();    /// avoid assert on array indexing after end
+                for (size_t pos = offset, end = offset + length; pos < end; pos += 4)    /// We have padding in column buffers that we can overwrite.
+                {
+                    UInt64 rand = rng();
+
+                    UInt16 rand1 = rand;
+                    UInt16 rand2 = rand >> 16;
+                    UInt16 rand3 = rand >> 32;
+                    UInt16 rand4 = rand >> 48;
+
+                    /// Printable characters are from range [32; 126].
+                    /// https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
+
+                    data_to_ptr[pos + 0] = 32 + ((rand1 * 95) >> 16);
+                    data_to_ptr[pos + 1] = 32 + ((rand2 * 95) >> 16);
+                    data_to_ptr[pos + 2] = 32 + ((rand3 * 95) >> 16);
+                    data_to_ptr[pos + 3] = 32 + ((rand4 * 95) >> 16);
+
+                    /// NOTE gcc failed to vectorize this code (aliasing of char?)
+                    /// TODO Implement SIMD optimizations from Danila Kutenin.
+                }
+
+                data_to[offset + length] = 0;
+
+                offset = next_offset;
+            }
+
+            return column;
         }
 
         case TypeIndex::Enum8:
@@ -129,7 +156,7 @@ ColumnPtr fillColumnWithRandomData(
             offsets.resize(limit);
             for (UInt64 i = 0; i < limit; ++i)
             {
-                offset += static_cast<UInt64>(rng()) % max_array_length;
+                offset += static_cast<UInt64>(rng()) % (max_array_length + 1);
                 offsets[i] = offset;
             }
 
@@ -252,7 +279,7 @@ ColumnPtr fillColumnWithRandomData(
             fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit * sizeof(Decimal32), rng);
             return column;
         }
-        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal64:  /// TODO Decimal may be generated out of range.
         {
             auto column = type->createColumn();
             auto & column_concrete = typeid_cast<ColumnDecimal<Decimal64> &>(*column);
