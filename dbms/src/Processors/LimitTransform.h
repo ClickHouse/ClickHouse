@@ -12,7 +12,6 @@ private:
     InputPort & input;
     OutputPort & output;
 
-
     size_t limit;
     size_t offset;
     size_t rows_read = 0; /// including the last read block
