@@ -44,6 +44,10 @@ public:
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns);
 
+    /// If part metadata is not equal to storage metadata, than
+    /// try to perform conversions of columns.
+    void performRequiredConversions(Columns & res_columns);
+
     const NamesAndTypesList & getColumns() const { return columns; }
     size_t numColumnsInResult() const { return columns.size(); }
 
@@ -64,6 +68,8 @@ protected:
 
     /// Columns that are read.
     NamesAndTypesList columns;
+
+    std::unordered_map<String, DataTypePtr> columns_from_part;
 
     UncompressedCache * uncompressed_cache;
     MarkCache * mark_cache;

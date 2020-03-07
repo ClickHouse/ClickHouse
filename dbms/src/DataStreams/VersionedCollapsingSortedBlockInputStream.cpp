@@ -9,7 +9,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -24,7 +23,6 @@ VersionedCollapsingSortedBlockInputStream::VersionedCollapsingSortedBlockInputSt
 {
     sign_column_number = header.getPositionByName(sign_column_);
 }
-
 
 
 inline ALWAYS_INLINE static void writeRowSourcePart(WriteBuffer & buffer, RowSourcePart row_source)

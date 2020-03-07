@@ -39,12 +39,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CLIENT_HAS_CONNECTED_TO_WRONG_PORT;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_EXCEPTION;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
     extern const int POCO_EXCEPTION;
-    extern const int STD_EXCEPTION;
     extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 }
@@ -502,7 +503,7 @@ void TCPHandler::processOrdinaryQuery()
 
             if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
             {
-                /// Some time passed and there is a progress.
+                /// Some time passed.
                 after_send_progress.restart();
                 sendProgress();
             }
@@ -538,6 +539,8 @@ void TCPHandler::processOrdinaryQuery()
     }
 
     state.io.onFinish();
+
+    sendProgress();
 }
 
 
@@ -545,8 +548,8 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
 {
     auto & pipeline = state.io.pipeline;
 
-    if (pipeline.getMaxThreads())
-        num_threads = std::min(num_threads, pipeline.getMaxThreads());
+    /// Reduce the number of threads to recommended value.
+    num_threads = std::min(num_threads, pipeline.getNumThreads());
 
     /// Send header-block, to allow client to prepare output format for data to send.
     {
@@ -657,6 +660,8 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
     }
 
     state.io.onFinish();
+
+    sendProgress();
 }
 
 
@@ -874,48 +879,55 @@ void TCPHandler::receiveQuery()
     query_context->setCurrentQueryId(state.query_id);
 
     /// Client info
+    ClientInfo & client_info = query_context->getClientInfo();
+    if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
+        client_info.read(*in, client_revision);
+
+    /// For better support of old clients, that does not send ClientInfo.
+    if (client_info.query_kind == ClientInfo::QueryKind::NO_QUERY)
     {
-        ClientInfo & client_info = query_context->getClientInfo();
-        if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
-            client_info.read(*in, client_revision);
-
-        /// For better support of old clients, that does not send ClientInfo.
-        if (client_info.query_kind == ClientInfo::QueryKind::NO_QUERY)
-        {
-            client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
-            client_info.client_name = client_name;
-            client_info.client_version_major = client_version_major;
-            client_info.client_version_minor = client_version_minor;
-            client_info.client_version_patch = client_version_patch;
-            client_info.client_revision = client_revision;
-        }
-
-        /// Set fields, that are known apriori.
-        client_info.interface = ClientInfo::Interface::TCP;
-
-        if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-        {
-            /// 'Current' fields was set at receiveHello.
-            client_info.initial_user = client_info.current_user;
-            client_info.initial_query_id = client_info.current_query_id;
-            client_info.initial_address = client_info.current_address;
-        }
-        else
-        {
-            query_context->setInitialRowPolicy();
-        }
+        client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+        client_info.client_name = client_name;
+        client_info.client_version_major = client_version_major;
+        client_info.client_version_minor = client_version_minor;
+        client_info.client_version_patch = client_version_patch;
+        client_info.client_revision = client_revision;
     }
 
-    /// Per query settings.
-    Settings custom_settings{};
+    /// Set fields, that are known apriori.
+    client_info.interface = ClientInfo::Interface::TCP;
+
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        /// 'Current' fields was set at receiveHello.
+        client_info.initial_user = client_info.current_user;
+        client_info.initial_query_id = client_info.current_query_id;
+        client_info.initial_address = client_info.current_address;
+    }
+    else
+    {
+        query_context->setInitialRowPolicy();
+    }
+
+    /// Per query settings are also passed via TCP.
+    /// We need to check them before applying due to they can violate the settings constraints.
     auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
                                                                                                       : SettingsBinaryFormat::OLD;
-    custom_settings.deserialize(*in, settings_format);
-    auto settings_changes = custom_settings.changes();
-    query_context->checkSettingsConstraints(settings_changes);
+    Settings passed_settings;
+    passed_settings.deserialize(*in, settings_format);
+    auto settings_changes = passed_settings.changes();
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        /// Throw an exception if the passed settings violate the constraints.
+        query_context->checkSettingsConstraints(settings_changes);
+    }
+    else
+    {
+        /// Quietly clamp to the constraints if it's not an initial query.
+        query_context->clampToSettingsConstraints(settings_changes);
+    }
     query_context->applySettingsChanges(settings_changes);
-
-    Settings & settings = query_context->getSettingsRef();
+    const Settings & settings = query_context->getSettingsRef();
 
     /// Sync timeouts on client and server during current query to avoid dangling queries on server
     /// NOTE: We use settings.send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),

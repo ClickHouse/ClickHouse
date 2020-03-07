@@ -696,6 +696,7 @@ private:
                 result.object = object;
                 result.exception = exception;
                 result.loading_start_time = loading_start_time;
+                result.last_successful_update_time = last_successful_update_time;
                 result.loading_duration = loadingDuration();
                 result.origin = object_config.path;
                 result.repository_name = object_config.repository_name;
@@ -713,6 +714,7 @@ private:
         ObjectConfig object_config;
         TimePoint loading_start_time;
         TimePoint loading_end_time;
+        TimePoint last_successful_update_time;
         size_t state_id = 0; /// Index of the current state of this `info`, this index is incremented every loading.
         size_t loading_id = 0; /// The value which will be stored in `state_id` after finishing the current loading.
         size_t error_count = 0; /// Numbers of errors since last successful loading.
@@ -1010,7 +1012,10 @@ private:
 
         info->exception = new_exception;
         info->error_count = error_count;
-        info->loading_end_time = std::chrono::system_clock::now();
+        const auto current_time = std::chrono::system_clock::now();
+        info->loading_end_time = current_time;
+        if (!info->exception)
+            info->last_successful_update_time = current_time;
         info->state_id = info->loading_id;
         info->next_update_time = next_update_time;
     }

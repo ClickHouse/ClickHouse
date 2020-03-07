@@ -88,8 +88,7 @@ endif()
 
 include (cmake/sanitize.cmake)
 
-
-if (CMAKE_GENERATOR STREQUAL "Ninja")
+if (CMAKE_GENERATOR STREQUAL "Ninja" AND NOT DISABLE_COLORED_BUILD)
     # Turn on colored output. https://github.com/ninja-build/ninja/wiki/FAQ
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-color=always")
@@ -215,6 +214,10 @@ if (COMPILER_CLANG)
     # TODO investigate that
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
+    if (OS_DARWIN)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,-U,_inside_main")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-U,_inside_main")
+    endif()
 endif ()
 
 option (ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)

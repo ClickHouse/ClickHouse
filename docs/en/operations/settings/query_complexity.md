@@ -96,7 +96,7 @@ Maximum number of bytes before sorting.
 
 What to do if the number of rows received before sorting exceeds one of the limits: 'throw' or 'break'. By default, throw.
 
-## max_result_rows
+## max_result_rows {#setting-max_result_rows}
 
 Limit on the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
 

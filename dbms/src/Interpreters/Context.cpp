@@ -56,7 +56,7 @@
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
-#include <ext/singleton.h>
+
 
 namespace ProfileEvents
 {
@@ -78,25 +78,197 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int DATABASE_ACCESS_DENIED;
+    extern const int BAD_ARGUMENTS;
+    extern const int BAD_GET;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
-    extern const int TABLE_WAS_NOT_DROPPED;
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int THERE_IS_NO_SESSION;
     extern const int THERE_IS_NO_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int DDL_GUARD_IS_ACTIVE;
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
-    extern const int PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
-    extern const int SCALAR_ALREADY_EXISTS;
     extern const int UNKNOWN_SCALAR;
-    extern const int ACCESS_DENIED;
+    extern const int AUTHENTICATION_FAILED;
+    extern const int NOT_IMPLEMENTED;
+}
+
+
+class NamedSessions
+{
+public:
+    using Key = NamedSessionKey;
+
+    ~NamedSessions()
+    {
+        try
+        {
+            {
+                std::lock_guard lock{mutex};
+                quit = true;
+            }
+
+            cond.notify_one();
+            thread.join();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    /// Find existing session or create a new.
+    std::shared_ptr<NamedSession> acquireSession(
+        const String & session_id,
+        Context & context,
+        std::chrono::steady_clock::duration timeout,
+        bool throw_if_not_found)
+    {
+        std::unique_lock lock(mutex);
+
+        auto & user_name = context.client_info.current_user;
+
+        if (user_name.empty())
+            throw Exception("Empty user name.", ErrorCodes::LOGICAL_ERROR);
+
+        Key key(user_name, session_id);
+
+        auto it = sessions.find(key);
+        if (it == sessions.end())
+        {
+            if (throw_if_not_found)
+                throw Exception("Session not found.", ErrorCodes::SESSION_NOT_FOUND);
+
+            /// Create a new session from current context.
+            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSession>(key, context, timeout, *this))).first;
+        }
+        else if (it->second->key.first != context.client_info.current_user)
+        {
+            throw Exception("Session belongs to a different user", ErrorCodes::LOGICAL_ERROR);
+        }
+
+        /// Use existing session.
+        const auto & session = it->second;
+
+        if (!session.unique())
+            throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
+
+        return session;
+    }
+
+    void releaseSession(NamedSession & session)
+    {
+        std::unique_lock lock(mutex);
+        scheduleCloseSession(session, lock);
+    }
+
+private:
+    class SessionKeyHash
+    {
+    public:
+        size_t operator()(const Key & key) const
+        {
+            SipHash hash;
+            hash.update(key.first);
+            hash.update(key.second);
+            return hash.get64();
+        }
+    };
+
+    /// TODO it's very complicated. Make simple std::map with time_t or boost::multi_index.
+    using Container = std::unordered_map<Key, std::shared_ptr<NamedSession>, SessionKeyHash>;
+    using CloseTimes = std::deque<std::vector<Key>>;
+    Container sessions;
+    CloseTimes close_times;
+    std::chrono::steady_clock::duration close_interval = std::chrono::seconds(1);
+    std::chrono::steady_clock::time_point close_cycle_time = std::chrono::steady_clock::now();
+    UInt64 close_cycle = 0;
+
+    void scheduleCloseSession(NamedSession & session, std::unique_lock<std::mutex> &)
+    {
+        /// Push it on a queue of sessions to close, on a position corresponding to the timeout.
+        /// (timeout is measured from current moment of time)
+
+        const UInt64 close_index = session.timeout / close_interval + 1;
+        const auto new_close_cycle = close_cycle + close_index;
+
+        if (session.close_cycle != new_close_cycle)
+        {
+            session.close_cycle = new_close_cycle;
+            if (close_times.size() < close_index + 1)
+                close_times.resize(close_index + 1);
+            close_times[close_index].emplace_back(session.key);
+        }
+    }
+
+    void cleanThread()
+    {
+        setThreadName("SessionCleaner");
+
+        std::unique_lock lock{mutex};
+
+        while (true)
+        {
+            auto interval = closeSessions(lock);
+
+            if (cond.wait_for(lock, interval, [this]() -> bool { return quit; }))
+                break;
+        }
+    }
+
+    /// Close sessions, that has been expired. Returns how long to wait for next session to be expired, if no new sessions will be added.
+    std::chrono::steady_clock::duration closeSessions(std::unique_lock<std::mutex> & lock)
+    {
+        const auto now = std::chrono::steady_clock::now();
+
+        /// The time to close the next session did not come
+        if (now < close_cycle_time)
+            return close_cycle_time - now;  /// Will sleep until it comes.
+
+        const auto current_cycle = close_cycle;
+
+        ++close_cycle;
+        close_cycle_time = now + close_interval;
+
+        if (close_times.empty())
+            return close_interval;
+
+        auto & sessions_to_close = close_times.front();
+
+        for (const auto & key : sessions_to_close)
+        {
+            const auto session = sessions.find(key);
+
+            if (session != sessions.end() && session->second->close_cycle <= current_cycle)
+            {
+                if (!session->second.unique())
+                {
+                    /// Skip but move it to close on the next cycle.
+                    session->second->timeout = std::chrono::steady_clock::duration{0};
+                    scheduleCloseSession(*session->second, lock);
+                }
+                else
+                    sessions.erase(session);
+            }
+        }
+
+        close_times.pop_front();
+        return close_interval;
+    }
+
+    std::mutex mutex;
+    std::condition_variable cond;
+    std::atomic<bool> quit{false};
+    ThreadFromGlobalPool thread{&NamedSessions::cleanThread, this};
+};
+
+
+void NamedSession::release()
+{
+    parent.releaseSession(*this);
 }
 
 
@@ -155,9 +327,9 @@ struct ContextShared
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     /// Storage disk chooser for MergeTree engines
-    mutable std::unique_ptr<DiskSelector> merge_tree_disk_selector;
+    mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector;
     /// Storage policy chooser for MergeTree engines
-    mutable std::unique_ptr<StoragePolicySelector> merge_tree_storage_policy_selector;
+    mutable std::shared_ptr<const StoragePolicySelector> merge_tree_storage_policy_selector;
 
     std::optional<MergeTreeSettings> merge_tree_settings;   /// Settings of MergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
@@ -168,27 +340,8 @@ struct ContextShared
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
-    /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
-
-    class SessionKeyHash
-    {
-    public:
-        size_t operator()(const Context::SessionKey & key) const
-        {
-            SipHash hash;
-            hash.update(key.first);
-            hash.update(key.second);
-            return hash.get64();
-        }
-    };
-
-    using Sessions = std::unordered_map<Context::SessionKey, std::shared_ptr<Context>, SessionKeyHash>;
-    using CloseTimes = std::deque<std::vector<Context::SessionKey>>;
-    mutable Sessions sessions;
-    mutable CloseTimes close_times;
-    std::chrono::steady_clock::duration close_interval = std::chrono::seconds(1);
-    std::chrono::steady_clock::time_point close_cycle_time = std::chrono::steady_clock::now();
-    UInt64 close_cycle = 0;
+    std::optional<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
+    std::optional<NamedSessions> named_sessions;        /// Controls named HTTP sessions.
 
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
@@ -298,15 +451,21 @@ struct ContextShared
         schedule_pool.reset();
         ddl_worker.reset();
 
-        ext::Singleton<TraceCollector>::reset();
+        /// Stop trace collector if any
+        trace_collector.reset();
+    }
+
+    bool hasTraceCollector() const
+    {
+        return trace_collector.has_value();
     }
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
     {
-        if (trace_log == nullptr)
+        if (hasTraceCollector())
             return;
 
-        ext::Singleton<TraceCollector>()->setTraceLog(trace_log);
+        trace_collector.emplace(std::move(trace_log));
     }
 };
 
@@ -356,111 +515,17 @@ Databases Context::getDatabases()
 }
 
 
-Context::SessionKey Context::getSessionKey(const String & session_id) const
+void Context::enableNamedSessions()
 {
-    auto & user_name = client_info.current_user;
-
-    if (user_name.empty())
-        throw Exception("Empty user name.", ErrorCodes::LOGICAL_ERROR);
-
-    return SessionKey(user_name, session_id);
+    shared->named_sessions.emplace();
 }
 
-
-void Context::scheduleCloseSession(const Context::SessionKey & key, std::chrono::steady_clock::duration timeout)
+std::shared_ptr<NamedSession> Context::acquireNamedSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check)
 {
-    const UInt64 close_index = timeout / shared->close_interval + 1;
-    const auto new_close_cycle = shared->close_cycle + close_index;
+    if (!shared->named_sessions)
+        throw Exception("Support for named sessions is not enabled", ErrorCodes::NOT_IMPLEMENTED);
 
-    if (session_close_cycle != new_close_cycle)
-    {
-        session_close_cycle = new_close_cycle;
-        if (shared->close_times.size() < close_index + 1)
-            shared->close_times.resize(close_index + 1);
-        shared->close_times[close_index].emplace_back(key);
-    }
-}
-
-
-std::shared_ptr<Context> Context::acquireSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check) const
-{
-    auto lock = getLock();
-
-    const auto & key = getSessionKey(session_id);
-    auto it = shared->sessions.find(key);
-
-    if (it == shared->sessions.end())
-    {
-        if (session_check)
-            throw Exception("Session not found.", ErrorCodes::SESSION_NOT_FOUND);
-
-        auto new_session = std::make_shared<Context>(*this);
-
-        new_session->scheduleCloseSession(key, timeout);
-
-        it = shared->sessions.insert(std::make_pair(key, std::move(new_session))).first;
-    }
-    else if (it->second->client_info.current_user != client_info.current_user)
-    {
-        throw Exception("Session belongs to a different user", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    const auto & session = it->second;
-
-    if (session->session_is_used)
-        throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
-    session->session_is_used = true;
-
-    session->client_info = client_info;
-
-    return session;
-}
-
-
-void Context::releaseSession(const String & session_id, std::chrono::steady_clock::duration timeout)
-{
-    auto lock = getLock();
-
-    session_is_used = false;
-    scheduleCloseSession(getSessionKey(session_id), timeout);
-}
-
-
-std::chrono::steady_clock::duration Context::closeSessions() const
-{
-    auto lock = getLock();
-
-    const auto now = std::chrono::steady_clock::now();
-
-    if (now < shared->close_cycle_time)
-        return shared->close_cycle_time - now;
-
-    const auto current_cycle = shared->close_cycle;
-
-    ++shared->close_cycle;
-    shared->close_cycle_time = now + shared->close_interval;
-
-    if (shared->close_times.empty())
-        return shared->close_interval;
-
-    auto & sessions_to_close = shared->close_times.front();
-
-    for (const auto & key : sessions_to_close)
-    {
-        const auto session = shared->sessions.find(key);
-
-        if (session != shared->sessions.end() && session->second->session_close_cycle <= current_cycle)
-        {
-            if (session->second->session_is_used)
-                session->second->scheduleCloseSession(key, std::chrono::seconds(0));
-            else
-                shared->sessions.erase(session);
-        }
-    }
-
-    shared->close_times.pop_front();
-
-    return shared->close_interval;
+    return shared->named_sessions->acquireSession(session_id, *this, timeout, session_check);
 }
 
 
@@ -573,7 +638,7 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
     }
     else
     {
-        StoragePolicyPtr tmp_policy = getStoragePolicySelector()[policy_name];
+        StoragePolicyPtr tmp_policy = getStoragePolicySelector()->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
              throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
         shared->tmp_volume = tmp_policy->getVolume(0);
@@ -631,7 +696,7 @@ void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->users_config = config;
-    shared->access_control_manager.loadFromConfig(*shared->users_config);
+    shared->access_control_manager.setUsersConfig(*shared->users_config);
 }
 
 ConfigurationPtr Context::getUsersConfig()
@@ -651,10 +716,20 @@ void Context::setUser(const String & name, const String & password, const Poco::
     if (!quota_key.empty())
         client_info.quota_key = quota_key;
 
-    auto new_user_id = getAccessControlManager().getID<User>(name);
-    auto new_access_rights = getAccessControlManager().getAccessRightsContext(new_user_id, {}, true, settings, current_database, client_info);
-    new_access_rights->checkHostIsAllowed();
-    new_access_rights->checkPassword(password);
+    auto new_user_id = getAccessControlManager().find<User>(name);
+    AccessRightsContextPtr new_access_rights;
+    if (new_user_id)
+    {
+        new_access_rights = getAccessControlManager().getAccessRightsContext(*new_user_id, {}, true, settings, current_database, client_info);
+        if (!new_access_rights->isClientHostAllowed() || !new_access_rights->isCorrectPassword(password))
+        {
+            new_user_id = {};
+            new_access_rights = nullptr;
+        }
+    }
+
+    if (!new_user_id || !new_access_rights)
+        throw Exception(name + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
 
     user_id = new_user_id;
     access_rights = std::move(new_access_rights);
@@ -1221,17 +1296,29 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 }
 
 
-void Context::checkSettingsConstraints(const SettingChange & change)
+void Context::checkSettingsConstraints(const SettingChange & change) const
 {
     if (settings_constraints)
         settings_constraints->check(settings, change);
 }
 
-
-void Context::checkSettingsConstraints(const SettingsChanges & changes)
+void Context::checkSettingsConstraints(const SettingsChanges & changes) const
 {
     if (settings_constraints)
         settings_constraints->check(settings, changes);
+}
+
+
+void Context::clampToSettingsConstraints(SettingChange & change) const
+{
+    if (settings_constraints)
+        settings_constraints->clamp(settings, change);
+}
+
+void Context::clampToSettingsConstraints(SettingsChanges & changes) const
+{
+    if (settings_constraints)
+        settings_constraints->clamp(settings, changes);
 }
 
 
@@ -1768,6 +1855,11 @@ void Context::initializeTraceCollector()
     shared->initializeTraceCollector(getTraceLog());
 }
 
+bool Context::hasTraceCollector() const
+{
+    return shared->hasTraceCollector();
+}
+
 
 std::shared_ptr<QueryLog> Context::getQueryLog()
 {
@@ -1861,17 +1953,17 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
 }
 
 
-const DiskPtr & Context::getDisk(const String & name) const
+DiskPtr Context::getDisk(const String & name) const
 {
     auto lock = getLock();
 
-    const auto & disk_selector = getDiskSelector();
+    auto disk_selector = getDiskSelector();
 
-    return disk_selector[name];
+    return disk_selector->get(name);
 }
 
 
-DiskSelector & Context::getDiskSelector() const
+DiskSelectorPtr Context::getDiskSelector() const
 {
     auto lock = getLock();
 
@@ -1880,23 +1972,23 @@ DiskSelector & Context::getDiskSelector() const
         constexpr auto config_name = "storage_configuration.disks";
         auto & config = getConfigRef();
 
-        shared->merge_tree_disk_selector = std::make_unique<DiskSelector>(config, config_name, *this);
+        shared->merge_tree_disk_selector = std::make_shared<DiskSelector>(config, config_name, *this);
     }
-    return *shared->merge_tree_disk_selector;
+    return shared->merge_tree_disk_selector;
 }
 
 
-const StoragePolicyPtr & Context::getStoragePolicy(const String & name) const
+StoragePolicyPtr Context::getStoragePolicy(const String & name) const
 {
     auto lock = getLock();
 
-    auto & policy_selector = getStoragePolicySelector();
+    auto policy_selector = getStoragePolicySelector();
 
-    return policy_selector[name];
+    return policy_selector->get(name);
 }
 
 
-StoragePolicySelector & Context::getStoragePolicySelector() const
+StoragePolicySelectorPtr Context::getStoragePolicySelector() const
 {
     auto lock = getLock();
 
@@ -1905,9 +1997,30 @@ StoragePolicySelector & Context::getStoragePolicySelector() const
         constexpr auto config_name = "storage_configuration.policies";
         auto & config = getConfigRef();
 
-        shared->merge_tree_storage_policy_selector = std::make_unique<StoragePolicySelector>(config, config_name, getDiskSelector());
+        shared->merge_tree_storage_policy_selector = std::make_shared<StoragePolicySelector>(config, config_name, getDiskSelector());
     }
-    return *shared->merge_tree_storage_policy_selector;
+    return shared->merge_tree_storage_policy_selector;
+}
+
+
+void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+
+    if (shared->merge_tree_disk_selector)
+        shared->merge_tree_disk_selector = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", *this);
+
+    if (shared->merge_tree_storage_policy_selector)
+    {
+        try
+        {
+            shared->merge_tree_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(config, "storage_configuration.policies", shared->merge_tree_disk_selector);
+        }
+        catch (Exception & e)
+        {
+            LOG_ERROR(shared->log, "An error has occured while reloading storage policies, storage policies were not applied: " << e.message());
+        }
+    }
 }
 
 
@@ -2227,41 +2340,5 @@ void Context::resetInputCallbacks()
     if (input_blocks_reader)
         input_blocks_reader = {};
 }
-
-
-SessionCleaner::~SessionCleaner()
-{
-    try
-    {
-        {
-            std::lock_guard lock{mutex};
-            quit = true;
-        }
-
-        cond.notify_one();
-
-        thread.join();
-    }
-    catch (...)
-    {
-        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
-void SessionCleaner::run()
-{
-    setThreadName("SessionCleaner");
-
-    std::unique_lock lock{mutex};
-
-    while (true)
-    {
-        auto interval = context.closeSessions();
-
-        if (cond.wait_for(lock, interval, [this]() -> bool { return quit; }))
-            break;
-    }
-}
-
 
 }

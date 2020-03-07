@@ -75,3 +75,6 @@ target_link_libraries (stopwatch PRIVATE clickhouse_common_io)
 
 add_executable (symbol_index symbol_index.cpp)
 target_link_libraries (symbol_index PRIVATE clickhouse_common_io)
+
+add_executable (chaos_sanitizer chaos_sanitizer.cpp)
+target_link_libraries (chaos_sanitizer PRIVATE clickhouse_common_io)

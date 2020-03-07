@@ -10,14 +10,18 @@
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
-#include <h3api.h>
+#if __has_include(<h3/h3api.h>)
+#    include <h3/h3api.h>
+#else
+#    include <h3api.h>
+#endif
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 /// Implements the function geoToH3 which takes 3 arguments (latitude, longitude and h3 resolution)

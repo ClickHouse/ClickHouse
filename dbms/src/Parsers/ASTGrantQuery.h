@@ -24,6 +24,7 @@ public:
         REVOKE,
     };
     Kind kind = Kind::GRANT;
+    bool attach = false;
     AccessRightsElements access_rights_elements;
     std::shared_ptr<ASTGenericRoleSet> roles;
     std::shared_ptr<ASTGenericRoleSet> to_roles;

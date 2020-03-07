@@ -1,6 +1,5 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
-#include <Functions/intDiv.h>
 
 #ifdef __SSE2__
     #define LIBDIVIDE_USE_SSE2 1
@@ -11,6 +10,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_DIVISION;
+}
 
 /// Optimizations for integer division by a constant.
 
@@ -32,7 +35,7 @@ struct DivideIntegralByConstantImpl
         if (unlikely(is_signed_v<B> && b == -1))
         {
             for (size_t i = 0; i < size; ++i)
-                c_pos[i] = -c_pos[i];
+                c_pos[i] = -a_pos[i];
             return;
         }
 
