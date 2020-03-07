@@ -8,7 +8,6 @@
         <table_exists>hashfile</table_exists>
     </preconditions>
 
-    <type>loop</type>
 
     <stop_conditions>
         <all_of>
