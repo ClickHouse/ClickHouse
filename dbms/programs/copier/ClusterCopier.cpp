@@ -904,17 +904,43 @@ PartitionTaskStatus ClusterCopier::iterateThroughAllPiecesInPartition(const Conn
 {
     const size_t total_number_of_pieces = task_partition.task_shard.task_table.number_of_splits;
 
-    PartitionTaskStatus res;
-    PartitionTaskStatus answer = PartitionTaskStatus::Finished;
+    PartitionTaskStatus res{PartitionTaskStatus::Finished};
+
+    bool was_failed_pieces = false;
+    bool was_active_pieces = false;
+    bool was_error = false;
 
     for (size_t piece_number = 0; piece_number < total_number_of_pieces; piece_number++)
     {
-        res = processPartitionPieceTaskImpl(timeouts, task_partition, piece_number, is_unprioritized_task);
-        if (res == PartitionTaskStatus::Error)
-            answer = res;
+        for (UInt64 try_num = 0; try_num < max_shard_partition_tries; ++try_num)
+        {
+            res = processPartitionPieceTaskImpl(timeouts, task_partition, piece_number, is_unprioritized_task);
+
+            /// Exit if success
+            if (res == PartitionTaskStatus::Finished)
+                break;
+
+            was_error = true;
+
+            /// Skip if the task is being processed by someone
+            if (res == PartitionTaskStatus::Active)
+                break;
+
+            /// Repeat on errors
+            std::this_thread::sleep_for(default_sleep_time);
+        }
+
+        was_active_pieces = (res == PartitionTaskStatus::Active);
+        was_failed_pieces = (res == PartitionTaskStatus::Error);
     }
 
-    return answer;
+    if (was_failed_pieces)
+        return PartitionTaskStatus::Error;
+
+    if (was_active_pieces)
+        return PartitionTaskStatus::Active;
+
+    return PartitionTaskStatus::Finished;
 }
 
 
@@ -1266,6 +1292,7 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
 
 
     /// Try create original table (if not exists) on each shard
+    try
     {
         auto create_query_push_ast = rewriteCreateQueryStorage(task_shard.current_pull_table_create_query,
                                                                task_table.table_push, task_table.engine_push_ast);
@@ -1278,6 +1305,10 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
                                               PoolMode::GET_MANY);
         LOG_DEBUG(log, "Destination tables " << getQuotedTable(task_table.table_push)
                                              << " have been created on " << shards << " shards of " << task_table.cluster_push->getShardCount());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Error while creating original table. Maybe we are not first.");
     }
 
     /// Move partition to original destination table.
@@ -1293,16 +1324,25 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         DatabaseAndTableName original_table = task_table.table_push;
         DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(current_piece_number));
 
-        query_alter_ast_string +=  " ALTER TABLE " + getQuotedTable(helping_table) +
-                                   " MOVE PARTITION " + task_partition.name +
-                                   " TO TABLE " + getQuotedTable(original_table);
+        query_alter_ast_string +=  " ALTER TABLE " + getQuotedTable(original_table)  +
+                                   " ATTACH PARTITION " + task_partition.name +
+                                   " FROM " + getQuotedTable(helping_table);
 
         LOG_DEBUG(log, "Executing ALTER query: " << query_alter_ast_string);
 
+//        query_alter_ast_string +=  " INSERT INTO " + getQuotedTable(original_table)  +
+//                                   " SELECT * FROM " + getQuotedTable(helping_table);
+//
+//        query_alter_ast_string += " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = (" + task_partition.name + " AS partition_key))";
+//
+//        LOG_DEBUG(log, "Executing ALTER query: " << query_alter_ast_string);
+
         try
         {
-            UInt64 num_shards = executeQueryOnCluster(task_table.cluster_push, query_alter_ast_string, nullptr, &task_cluster->settings_push, PoolMode::GET_ONE, 1);
+            ///FIXME: We have to be sure that every node in cluster executed this query
+            UInt64 num_shards = executeQueryOnCluster(task_table.cluster_push, query_alter_ast_string, nullptr, &task_cluster->settings_push, PoolMode::GET_MANY);
 
+            assert(num_shards > 0);
             LOG_INFO(log, "Number of shard that executed ALTER query successfully : " << toString(num_shards));
         }
         catch (...)
@@ -1435,6 +1475,8 @@ void ClusterCopier::createShardInternalTables(const ConnectionTimeouts & timeout
                     create_query_ast,
                     task_shard.list_of_split_tables_on_shard[piece_number],
                     storage_piece_split_ast);
+
+            std::cout << "anime" << queryToString(create_table_split_piece_ast) << std::endl;
 
             dropAndCreateLocalTable(create_table_split_piece_ast);
         }
