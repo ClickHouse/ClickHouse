@@ -332,10 +332,6 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr) const
         if ("globalIn" == function_ptr->name
             || "globalNotIn" == function_ptr->name)
             return true;
-
-        /// indexHint is a special function that it does not make sense to transfer to PREWHERE
-        if ("indexHint" == function_ptr->name)
-            return true;
     }
     else if (auto opt_name = IdentifierSemantic::getColumnName(ptr))
     {
