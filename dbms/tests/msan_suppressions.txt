@@ -8,5 +8,8 @@ fun:tolower
 # May be it's not OK, but suppress it to run other tests
 # Some functions in OpenSSL:
 fun:probable_prime
-fun:bn_*
-fun:BN_*
+fun:BN_bin2bn
+fun:BN_add_word
+fun:bn_div_fixed_top
+fun:bn_mul_words
+fun:BN_cmp
