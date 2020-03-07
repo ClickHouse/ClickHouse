@@ -28,23 +28,23 @@ public:
 
     /// Grants access on a specified database/table/column.
     /// Does nothing if the specified access has been already granted.
-    void grant(const AccessFlags & access);
-    void grant(const AccessFlags & access, const std::string_view & database);
-    void grant(const AccessFlags & access, const std::string_view & database, const std::string_view & table);
-    void grant(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column);
-    void grant(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns);
-    void grant(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns);
+    void grant(const AccessFlags & flags);
+    void grant(const AccessFlags & flags, const std::string_view & database);
+    void grant(const AccessFlags & flags, const std::string_view & database, const std::string_view & table);
+    void grant(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column);
+    void grant(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns);
+    void grant(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns);
     void grant(const AccessRightsElement & element, std::string_view current_database = {});
     void grant(const AccessRightsElements & elements, std::string_view current_database = {});
 
     /// Revokes a specified access granted earlier on a specified database/table/column.
     /// For example, revoke(AccessType::ALL) revokes all grants at all, just like clear();
-    void revoke(const AccessFlags & access);
-    void revoke(const AccessFlags & access, const std::string_view & database);
-    void revoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table);
-    void revoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column);
-    void revoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns);
-    void revoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns);
+    void revoke(const AccessFlags & flags);
+    void revoke(const AccessFlags & flags, const std::string_view & database);
+    void revoke(const AccessFlags & flags, const std::string_view & database, const std::string_view & table);
+    void revoke(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column);
+    void revoke(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns);
+    void revoke(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns);
     void revoke(const AccessRightsElement & element, std::string_view current_database = {});
     void revoke(const AccessRightsElements & elements, std::string_view current_database = {});
 

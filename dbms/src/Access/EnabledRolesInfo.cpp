@@ -1,10 +1,10 @@
-#include <Access/CurrentRolesInfo.h>
+#include <Access/EnabledRolesInfo.h>
 
 
 namespace DB
 {
 
-Strings CurrentRolesInfo::getCurrentRolesNames() const
+Strings EnabledRolesInfo::getCurrentRolesNames() const
 {
     Strings result;
     result.reserve(current_roles.size());
@@ -14,7 +14,7 @@ Strings CurrentRolesInfo::getCurrentRolesNames() const
 }
 
 
-Strings CurrentRolesInfo::getEnabledRolesNames() const
+Strings EnabledRolesInfo::getEnabledRolesNames() const
 {
     Strings result;
     result.reserve(enabled_roles.size());
@@ -24,7 +24,7 @@ Strings CurrentRolesInfo::getEnabledRolesNames() const
 }
 
 
-bool operator==(const CurrentRolesInfo & lhs, const CurrentRolesInfo & rhs)
+bool operator==(const EnabledRolesInfo & lhs, const EnabledRolesInfo & rhs)
 {
     return (lhs.current_roles == rhs.current_roles) && (lhs.enabled_roles == rhs.enabled_roles)
         && (lhs.enabled_roles_with_admin_option == rhs.enabled_roles_with_admin_option) && (lhs.names_of_roles == rhs.names_of_roles)

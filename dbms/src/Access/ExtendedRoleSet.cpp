@@ -1,8 +1,8 @@
-#include <Access/GenericRoleSet.h>
+#include <Access/ExtendedRoleSet.h>
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
 #include <Access/Role.h>
-#include <Parsers/ASTGenericRoleSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -17,57 +17,59 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-GenericRoleSet::GenericRoleSet() = default;
-GenericRoleSet::GenericRoleSet(const GenericRoleSet & src) = default;
-GenericRoleSet & GenericRoleSet::operator =(const GenericRoleSet & src) = default;
-GenericRoleSet::GenericRoleSet(GenericRoleSet && src) = default;
-GenericRoleSet & GenericRoleSet::operator =(GenericRoleSet && src) = default;
 
 
-GenericRoleSet::GenericRoleSet(AllTag)
+ExtendedRoleSet::ExtendedRoleSet() = default;
+ExtendedRoleSet::ExtendedRoleSet(const ExtendedRoleSet & src) = default;
+ExtendedRoleSet & ExtendedRoleSet::operator =(const ExtendedRoleSet & src) = default;
+ExtendedRoleSet::ExtendedRoleSet(ExtendedRoleSet && src) = default;
+ExtendedRoleSet & ExtendedRoleSet::operator =(ExtendedRoleSet && src) = default;
+
+
+ExtendedRoleSet::ExtendedRoleSet(AllTag)
 {
     all = true;
 }
 
-GenericRoleSet::GenericRoleSet(const UUID & id)
+ExtendedRoleSet::ExtendedRoleSet(const UUID & id)
 {
     add(id);
 }
 
 
-GenericRoleSet::GenericRoleSet(const std::vector<UUID> & ids_)
+ExtendedRoleSet::ExtendedRoleSet(const std::vector<UUID> & ids_)
 {
     add(ids_);
 }
 
 
-GenericRoleSet::GenericRoleSet(const boost::container::flat_set<UUID> & ids_)
+ExtendedRoleSet::ExtendedRoleSet(const boost::container::flat_set<UUID> & ids_)
 {
     add(ids_);
 }
 
 
-GenericRoleSet::GenericRoleSet(const ASTGenericRoleSet & ast)
+ExtendedRoleSet::ExtendedRoleSet(const ASTExtendedRoleSet & ast)
 {
     init(ast, nullptr, nullptr);
 }
 
-GenericRoleSet::GenericRoleSet(const ASTGenericRoleSet & ast, const UUID & current_user_id)
+ExtendedRoleSet::ExtendedRoleSet(const ASTExtendedRoleSet & ast, const UUID & current_user_id)
 {
     init(ast, nullptr, &current_user_id);
 }
 
-GenericRoleSet::GenericRoleSet(const ASTGenericRoleSet & ast, const AccessControlManager & manager)
+ExtendedRoleSet::ExtendedRoleSet(const ASTExtendedRoleSet & ast, const AccessControlManager & manager)
 {
     init(ast, &manager, nullptr);
 }
 
-GenericRoleSet::GenericRoleSet(const ASTGenericRoleSet & ast, const AccessControlManager & manager, const UUID & current_user_id)
+ExtendedRoleSet::ExtendedRoleSet(const ASTExtendedRoleSet & ast, const AccessControlManager & manager, const UUID & current_user_id)
 {
     init(ast, &manager, &current_user_id);
 }
 
-void GenericRoleSet::init(const ASTGenericRoleSet & ast, const AccessControlManager * manager, const UUID * current_user_id)
+void ExtendedRoleSet::init(const ASTExtendedRoleSet & ast, const AccessControlManager * manager, const UUID * current_user_id)
 {
     all = ast.all;
 
@@ -113,9 +115,9 @@ void GenericRoleSet::init(const ASTGenericRoleSet & ast, const AccessControlMana
 }
 
 
-std::shared_ptr<ASTGenericRoleSet> GenericRoleSet::toAST() const
+std::shared_ptr<ASTExtendedRoleSet> ExtendedRoleSet::toAST() const
 {
-    auto ast = std::make_shared<ASTGenericRoleSet>();
+    auto ast = std::make_shared<ASTExtendedRoleSet>();
     ast->id_mode = true;
     ast->all = all;
 
@@ -137,14 +139,14 @@ std::shared_ptr<ASTGenericRoleSet> GenericRoleSet::toAST() const
 }
 
 
-String GenericRoleSet::toString() const
+String ExtendedRoleSet::toString() const
 {
     auto ast = toAST();
     return serializeAST(*ast);
 }
 
 
-Strings GenericRoleSet::toStrings() const
+Strings ExtendedRoleSet::toStrings() const
 {
     if (all || !except_ids.empty())
         return {toString()};
@@ -157,9 +159,9 @@ Strings GenericRoleSet::toStrings() const
 }
 
 
-std::shared_ptr<ASTGenericRoleSet> GenericRoleSet::toASTWithNames(const AccessControlManager & manager) const
+std::shared_ptr<ASTExtendedRoleSet> ExtendedRoleSet::toASTWithNames(const AccessControlManager & manager) const
 {
-    auto ast = std::make_shared<ASTGenericRoleSet>();
+    auto ast = std::make_shared<ASTExtendedRoleSet>();
     ast->all = all;
 
     if (!ids.empty())
@@ -190,14 +192,14 @@ std::shared_ptr<ASTGenericRoleSet> GenericRoleSet::toASTWithNames(const AccessCo
 }
 
 
-String GenericRoleSet::toStringWithNames(const AccessControlManager & manager) const
+String ExtendedRoleSet::toStringWithNames(const AccessControlManager & manager) const
 {
     auto ast = toASTWithNames(manager);
     return serializeAST(*ast);
 }
 
 
-Strings GenericRoleSet::toStringsWithNames(const AccessControlManager & manager) const
+Strings ExtendedRoleSet::toStringsWithNames(const AccessControlManager & manager) const
 {
     if (all || !except_ids.empty())
         return {toStringWithNames(manager)};
@@ -215,13 +217,13 @@ Strings GenericRoleSet::toStringsWithNames(const AccessControlManager & manager)
 }
 
 
-bool GenericRoleSet::empty() const
+bool ExtendedRoleSet::empty() const
 {
     return ids.empty() && !all;
 }
 
 
-void GenericRoleSet::clear()
+void ExtendedRoleSet::clear()
 {
     ids.clear();
     all = false;
@@ -229,33 +231,33 @@ void GenericRoleSet::clear()
 }
 
 
-void GenericRoleSet::add(const UUID & id)
+void ExtendedRoleSet::add(const UUID & id)
 {
     ids.insert(id);
 }
 
 
-void GenericRoleSet::add(const std::vector<UUID> & ids_)
+void ExtendedRoleSet::add(const std::vector<UUID> & ids_)
 {
     for (const auto & id : ids_)
         add(id);
 }
 
 
-void GenericRoleSet::add(const boost::container::flat_set<UUID> & ids_)
+void ExtendedRoleSet::add(const boost::container::flat_set<UUID> & ids_)
 {
     for (const auto & id : ids_)
         add(id);
 }
 
 
-bool GenericRoleSet::match(const UUID & id) const
+bool ExtendedRoleSet::match(const UUID & id) const
 {
     return (all || ids.contains(id)) && !except_ids.contains(id);
 }
 
 
-bool GenericRoleSet::match(const UUID & user_id, const std::vector<UUID> & enabled_roles) const
+bool ExtendedRoleSet::match(const UUID & user_id, const std::vector<UUID> & enabled_roles) const
 {
     if (!all && !ids.contains(user_id))
     {
@@ -274,7 +276,7 @@ bool GenericRoleSet::match(const UUID & user_id, const std::vector<UUID> & enabl
 }
 
 
-bool GenericRoleSet::match(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles) const
+bool ExtendedRoleSet::match(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles) const
 {
     if (!all && !ids.contains(user_id))
     {
@@ -293,17 +295,17 @@ bool GenericRoleSet::match(const UUID & user_id, const boost::container::flat_se
 }
 
 
-std::vector<UUID> GenericRoleSet::getMatchingIDs() const
+std::vector<UUID> ExtendedRoleSet::getMatchingIDs() const
 {
     if (all)
-        throw Exception("getAllMatchingIDs() can't get ALL ids", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("getAllMatchingIDs() can't get ALL ids without manager", ErrorCodes::LOGICAL_ERROR);
     std::vector<UUID> res;
     boost::range::set_difference(ids, except_ids, std::back_inserter(res));
     return res;
 }
 
 
-std::vector<UUID> GenericRoleSet::getMatchingUsers(const AccessControlManager & manager) const
+std::vector<UUID> ExtendedRoleSet::getMatchingIDs(const AccessControlManager & manager) const
 {
     if (!all)
         return getMatchingIDs();
@@ -314,37 +316,17 @@ std::vector<UUID> GenericRoleSet::getMatchingUsers(const AccessControlManager & 
         if (match(id))
             res.push_back(id);
     }
-    return res;
-}
-
-
-std::vector<UUID> GenericRoleSet::getMatchingRoles(const AccessControlManager & manager) const
-{
-    if (!all)
-        return getMatchingIDs();
-
-    std::vector<UUID> res;
     for (const UUID & id : manager.findAll<Role>())
     {
         if (match(id))
             res.push_back(id);
     }
+
     return res;
 }
 
 
-std::vector<UUID> GenericRoleSet::getMatchingUsersAndRoles(const AccessControlManager & manager) const
-{
-    if (!all)
-        return getMatchingIDs();
-
-    std::vector<UUID> vec = getMatchingUsers(manager);
-    boost::range::push_back(vec, getMatchingRoles(manager));
-    return vec;
-}
-
-
-bool operator ==(const GenericRoleSet & lhs, const GenericRoleSet & rhs)
+bool operator ==(const ExtendedRoleSet & lhs, const ExtendedRoleSet & rhs)
 {
     return (lhs.all == rhs.all) && (lhs.ids == rhs.ids) && (lhs.except_ids == rhs.except_ids);
 }

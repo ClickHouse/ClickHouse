@@ -4,8 +4,8 @@
 #include <Parsers/ASTCreateUserQuery.h>
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
-#include <Access/GenericRoleSet.h>
-#include <Access/AccessRightsContext.h>
+#include <Access/ExtendedRoleSet.h>
+#include <Access/ContextAccess.h>
 #include <boost/range/algorithm/copy.hpp>
 
 
@@ -13,7 +13,7 @@ namespace DB
 {
 namespace
 {
-    void updateUserFromQueryImpl(User & user, const ASTCreateUserQuery & query, const std::optional<GenericRoleSet> & default_roles_from_query = {})
+    void updateUserFromQueryImpl(User & user, const ASTCreateUserQuery & query, const std::optional<ExtendedRoleSet> & default_roles_from_query = {})
     {
         if (query.alter)
         {
@@ -33,8 +33,8 @@ namespace
         if (query.add_hosts)
             user.allowed_client_hosts.add(*query.add_hosts);
 
-        const GenericRoleSet * default_roles = nullptr;
-        std::optional<GenericRoleSet> temp_role_set;
+        const ExtendedRoleSet * default_roles = nullptr;
+        std::optional<ExtendedRoleSet> temp_role_set;
         if (default_roles_from_query)
             default_roles = &*default_roles_from_query;
         else if (query.default_roles)
@@ -58,16 +58,17 @@ BlockIO InterpreterCreateUserQuery::execute()
 {
     const auto & query = query_ptr->as<const ASTCreateUserQuery &>();
     auto & access_control = context.getAccessControlManager();
-    context.checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
+    auto access = context.getAccess();
+    access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
 
-    std::optional<GenericRoleSet> default_roles_from_query;
+    std::optional<ExtendedRoleSet> default_roles_from_query;
     if (query.default_roles)
     {
-        default_roles_from_query = GenericRoleSet{*query.default_roles, access_control};
+        default_roles_from_query = ExtendedRoleSet{*query.default_roles, access_control};
         if (!query.alter && !default_roles_from_query->all)
         {
             for (const UUID & role : default_roles_from_query->getMatchingIDs())
-                context.getAccessRights()->checkAdminOption(role);
+                access->checkAdminOption(role);
         }
     }
 

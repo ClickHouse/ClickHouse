@@ -10,7 +10,7 @@ namespace DB
 {
 
 /// Information about a role.
-struct CurrentRolesInfo
+struct EnabledRolesInfo
 {
     std::vector<UUID> current_roles;
     std::vector<UUID> enabled_roles;
@@ -22,10 +22,8 @@ struct CurrentRolesInfo
     Strings getCurrentRolesNames() const;
     Strings getEnabledRolesNames() const;
 
-    friend bool operator ==(const CurrentRolesInfo & lhs, const CurrentRolesInfo & rhs);
-    friend bool operator !=(const CurrentRolesInfo & lhs, const CurrentRolesInfo & rhs) { return !(lhs == rhs); }
+    friend bool operator ==(const EnabledRolesInfo & lhs, const EnabledRolesInfo & rhs);
+    friend bool operator !=(const EnabledRolesInfo & lhs, const EnabledRolesInfo & rhs) { return !(lhs == rhs); }
 };
-
-using CurrentRolesInfoPtr = std::shared_ptr<const CurrentRolesInfo>;
 
 }

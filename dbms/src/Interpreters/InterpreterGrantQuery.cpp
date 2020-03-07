@@ -2,8 +2,8 @@
 #include <Parsers/ASTGrantQuery.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessControlManager.h>
-#include <Access/AccessRightsContext.h>
-#include <Access/GenericRoleSet.h>
+#include <Access/ContextAccess.h>
+#include <Access/ExtendedRoleSet.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 #include <boost/range/algorithm/copy.hpp>
@@ -61,17 +61,18 @@ BlockIO InterpreterGrantQuery::execute()
 {
     const auto & query = query_ptr->as<const ASTGrantQuery &>();
     auto & access_control = context.getAccessControlManager();
-    context.getAccessRights()->checkGrantOption(query.access_rights_elements);
+    auto access = context.getAccess();
+    access->checkGrantOption(query.access_rights_elements);
 
     std::vector<UUID> roles_from_query;
     if (query.roles)
     {
-        roles_from_query = GenericRoleSet{*query.roles, access_control}.getMatchingRoles(access_control);
+        roles_from_query = ExtendedRoleSet{*query.roles, access_control}.getMatchingIDs(access_control);
         for (const UUID & role_from_query : roles_from_query)
-            context.getAccessRights()->checkAdminOption(role_from_query);
+            access->checkAdminOption(role_from_query);
     }
 
-    std::vector<UUID> to_roles = GenericRoleSet{*query.to_roles, access_control, context.getUserID()}.getMatchingUsersAndRoles(access_control);
+    std::vector<UUID> to_roles = ExtendedRoleSet{*query.to_roles, access_control, context.getUserID()}.getMatchingIDs(access_control);
     String current_database = context.getCurrentDatabase();
 
     auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
@@ -101,7 +102,7 @@ void InterpreterGrantQuery::updateUserFromQuery(User & user, const ASTGrantQuery
 {
     std::vector<UUID> roles_from_query;
     if (query.roles)
-        roles_from_query = GenericRoleSet{*query.roles}.getMatchingIDs();
+        roles_from_query = ExtendedRoleSet{*query.roles}.getMatchingIDs();
     updateFromQueryImpl(user, query, roles_from_query, {});
 }
 
@@ -110,7 +111,7 @@ void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery
 {
     std::vector<UUID> roles_from_query;
     if (query.roles)
-        roles_from_query = GenericRoleSet{*query.roles}.getMatchingIDs();
+        roles_from_query = ExtendedRoleSet{*query.roles}.getMatchingIDs();
     updateFromQueryImpl(role, query, roles_from_query, {});
 }
 

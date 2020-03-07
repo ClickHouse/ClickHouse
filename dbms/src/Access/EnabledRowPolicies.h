@@ -15,23 +15,32 @@ using ASTPtr = std::shared_ptr<IAST>;
 
 
 /// Provides fast access to row policies' conditions for a specific user and tables.
-class RowPolicyContext
+class EnabledRowPolicies
 {
 public:
-    /// Default constructor makes a row policy usage context which restricts nothing.
-    RowPolicyContext();
+    struct Params
+    {
+        UUID user_id;
+        std::vector<UUID> enabled_roles;
 
-    ~RowPolicyContext();
+        auto toTuple() const { return std::tie(user_id, enabled_roles); }
+        friend bool operator ==(const Params & lhs, const Params & rhs) { return lhs.toTuple() == rhs.toTuple(); }
+        friend bool operator !=(const Params & lhs, const Params & rhs) { return !(lhs == rhs); }
+        friend bool operator <(const Params & lhs, const Params & rhs) { return lhs.toTuple() < rhs.toTuple(); }
+        friend bool operator >(const Params & lhs, const Params & rhs) { return rhs < lhs; }
+        friend bool operator <=(const Params & lhs, const Params & rhs) { return !(rhs < lhs); }
+        friend bool operator >=(const Params & lhs, const Params & rhs) { return !(lhs < rhs); }
+    };
 
-    using ConditionIndex = RowPolicy::ConditionIndex;
+    ~EnabledRowPolicies();
+
+    using ConditionType = RowPolicy::ConditionType;
 
     /// Returns prepared filter for a specific table and operations.
     /// The function can return nullptr, that means there is no filters applied.
     /// The returned filter can be a combination of the filters defined by multiple row policies.
-    ASTPtr getCondition(const String & database, const String & table_name, ConditionIndex index) const;
-
-    /// Combines two conditions into one by using the logical AND operator.
-    static ASTPtr combineConditionsUsingAnd(const ASTPtr & lhs, const ASTPtr & rhs);
+    ASTPtr getCondition(const String & database, const String & table_name, ConditionType type) const;
+    ASTPtr getCondition(const String & database, const String & table_name, ConditionType type, const ASTPtr & extra_condition) const;
 
     /// Returns IDs of all the policies used by the current user.
     std::vector<UUID> getCurrentPolicyIDs() const;
@@ -40,9 +49,8 @@ public:
     std::vector<UUID> getCurrentPolicyIDs(const String & database, const String & table_name) const;
 
 private:
-    friend class RowPolicyContextFactory;
-    friend struct ext::shared_ptr_helper<RowPolicyContext>;
-    RowPolicyContext(const UUID & user_id_, const std::vector<UUID> & enabled_roles_); /// RowPolicyContext should be created by RowPolicyContextFactory.
+    friend class RowPolicyCache;
+    EnabledRowPolicies(const Params & params_);
 
     using DatabaseAndTableName = std::pair<String, String>;
     using DatabaseAndTableNameRef = std::pair<std::string_view, std::string_view>;
@@ -50,8 +58,8 @@ private:
     {
         size_t operator()(const DatabaseAndTableNameRef & database_and_table_name) const;
     };
-    static constexpr size_t MAX_CONDITION_INDEX = RowPolicy::MAX_CONDITION_INDEX;
-    using ParsedConditions = std::array<ASTPtr, MAX_CONDITION_INDEX>;
+    static constexpr size_t MAX_CONDITION_TYPE = RowPolicy::MAX_CONDITION_TYPE;
+    using ParsedConditions = std::array<ASTPtr, MAX_CONDITION_TYPE>;
     struct MixedConditions
     {
         std::unique_ptr<DatabaseAndTableName> database_and_table_name_keeper;
@@ -60,11 +68,8 @@ private:
     };
     using MapOfMixedConditions = std::unordered_map<DatabaseAndTableNameRef, MixedConditions, Hash>;
 
-    const UUID user_id;
-    const std::vector<UUID> enabled_roles;
+    const Params params;
     mutable boost::atomic_shared_ptr<const MapOfMixedConditions> map_of_mixed_conditions;
 };
 
-
-using RowPolicyContextPtr = std::shared_ptr<const RowPolicyContext>;
 }

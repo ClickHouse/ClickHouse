@@ -1,5 +1,5 @@
-#include <Access/RowPolicyContextFactory.h>
-#include <Access/RowPolicyContext.h>
+#include <Access/RowPolicyCache.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Access/AccessControlManager.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -92,8 +92,8 @@ namespace
     }
 
 
-    using ConditionIndex = RowPolicy::ConditionIndex;
-    constexpr size_t MAX_CONDITION_INDEX = RowPolicy::MAX_CONDITION_INDEX;
+    using ConditionType = RowPolicy::ConditionType;
+    constexpr size_t MAX_CONDITION_TYPE = RowPolicy::MAX_CONDITION_TYPE;
 
 
     /// Accumulates conditions from multiple row policies and joins them using the AND logical operation.
@@ -124,24 +124,24 @@ namespace
 }
 
 
-void RowPolicyContextFactory::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
+void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
 {
     policy = policy_;
-    roles = &policy->roles;
+    roles = &policy->to_roles;
 
-    for (auto index : ext::range_with_static_cast<ConditionIndex>(0, MAX_CONDITION_INDEX))
+    for (auto type : ext::range_with_static_cast<ConditionType>(0, MAX_CONDITION_TYPE))
     {
-        parsed_conditions[index] = nullptr;
-        const String & condition = policy->conditions[index];
+        parsed_conditions[type] = nullptr;
+        const String & condition = policy->conditions[type];
         if (condition.empty())
             continue;
 
-        auto previous_range = std::pair(std::begin(policy->conditions), std::begin(policy->conditions) + index);
+        auto previous_range = std::pair(std::begin(policy->conditions), std::begin(policy->conditions) + type);
         auto previous_it = std::find(previous_range.first, previous_range.second, condition);
         if (previous_it != previous_range.second)
         {
             /// The condition is already parsed before.
-            parsed_conditions[index] = parsed_conditions[previous_it - previous_range.first];
+            parsed_conditions[type] = parsed_conditions[previous_it - previous_range.first];
             continue;
         }
 
@@ -149,45 +149,52 @@ void RowPolicyContextFactory::PolicyInfo::setPolicy(const RowPolicyPtr & policy_
         try
         {
             ParserExpression parser;
-            parsed_conditions[index] = parseQuery(parser, condition, 0);
+            parsed_conditions[type] = parseQuery(parser, condition, 0);
         }
         catch (...)
         {
             tryLogCurrentException(
                 &Poco::Logger::get("RowPolicy"),
-                String("Could not parse the condition ") + RowPolicy::conditionIndexToString(index) + " of row policy "
+                String("Could not parse the condition ") + RowPolicy::conditionTypeToString(type) + " of row policy "
                     + backQuote(policy->getFullName()));
         }
     }
 }
 
 
-bool RowPolicyContextFactory::PolicyInfo::canUseWithContext(const RowPolicyContext & context) const
-{
-    return roles->match(context.user_id, context.enabled_roles);
-}
-
-
-RowPolicyContextFactory::RowPolicyContextFactory(const AccessControlManager & access_control_manager_)
+RowPolicyCache::RowPolicyCache(const AccessControlManager & access_control_manager_)
     : access_control_manager(access_control_manager_)
 {
 }
 
-RowPolicyContextFactory::~RowPolicyContextFactory() = default;
+RowPolicyCache::~RowPolicyCache() = default;
 
 
-RowPolicyContextPtr RowPolicyContextFactory::createContext(const UUID & user_id, const std::vector<UUID> & enabled_roles)
+std::shared_ptr<const EnabledRowPolicies> RowPolicyCache::getEnabledRowPolicies(const UUID & user_id, const std::vector<UUID> & enabled_roles)
 {
     std::lock_guard lock{mutex};
     ensureAllRowPoliciesRead();
-    auto context = ext::shared_ptr_helper<RowPolicyContext>::create(user_id, enabled_roles);
-    contexts.push_back(context);
-    mixConditionsForContext(*context);
-    return context;
+
+    EnabledRowPolicies::Params params;
+    params.user_id = user_id;
+    params.enabled_roles = enabled_roles;
+    auto it = enabled_row_policies.find(params);
+    if (it != enabled_row_policies.end())
+    {
+        auto from_cache = it->second.lock();
+        if (from_cache)
+            return from_cache;
+        enabled_row_policies.erase(it);
+    }
+
+    auto res = std::shared_ptr<EnabledRowPolicies>(new EnabledRowPolicies(params));
+    enabled_row_policies.emplace(std::move(params), res);
+    mixConditionsFor(*res);
+    return res;
 }
 
 
-void RowPolicyContextFactory::ensureAllRowPoliciesRead()
+void RowPolicyCache::ensureAllRowPoliciesRead()
 {
     /// `mutex` is already locked.
     if (all_policies_read)
@@ -212,7 +219,7 @@ void RowPolicyContextFactory::ensureAllRowPoliciesRead()
 }
 
 
-void RowPolicyContextFactory::rowPolicyAddedOrChanged(const UUID & policy_id, const RowPolicyPtr & new_policy)
+void RowPolicyCache::rowPolicyAddedOrChanged(const UUID & policy_id, const RowPolicyPtr & new_policy)
 {
     std::lock_guard lock{mutex};
     auto it = all_policies.find(policy_id);
@@ -228,46 +235,46 @@ void RowPolicyContextFactory::rowPolicyAddedOrChanged(const UUID & policy_id, co
 
     auto & info = it->second;
     info.setPolicy(new_policy);
-    mixConditionsForAllContexts();
+    mixConditions();
 }
 
 
-void RowPolicyContextFactory::rowPolicyRemoved(const UUID & policy_id)
+void RowPolicyCache::rowPolicyRemoved(const UUID & policy_id)
 {
     std::lock_guard lock{mutex};
     all_policies.erase(policy_id);
-    mixConditionsForAllContexts();
+    mixConditions();
 }
 
 
-void RowPolicyContextFactory::mixConditionsForAllContexts()
+void RowPolicyCache::mixConditions()
 {
     /// `mutex` is already locked.
-    boost::range::remove_erase_if(
-        contexts,
-        [&](const std::weak_ptr<RowPolicyContext> & weak)
+    std::erase_if(
+        enabled_row_policies,
+        [&](const std::pair<EnabledRowPolicies::Params, std::weak_ptr<EnabledRowPolicies>> & pr)
         {
-            auto context = weak.lock();
-            if (!context)
-                return true; // remove from the `contexts` list.
-            mixConditionsForContext(*context);
-            return false; // keep in the `contexts` list.
+            auto elem = pr.second.lock();
+            if (!elem)
+                return true; // remove from the `enabled_row_policies` map.
+            mixConditionsFor(*elem);
+            return false; // keep in the `enabled_row_policies` map.
         });
 }
 
 
-void RowPolicyContextFactory::mixConditionsForContext(RowPolicyContext & context)
+void RowPolicyCache::mixConditionsFor(EnabledRowPolicies & enabled)
 {
     /// `mutex` is already locked.
     struct Mixers
     {
-        ConditionsMixer mixers[MAX_CONDITION_INDEX];
+        ConditionsMixer mixers[MAX_CONDITION_TYPE];
         std::vector<UUID> policy_ids;
     };
-    using MapOfMixedConditions = RowPolicyContext::MapOfMixedConditions;
-    using DatabaseAndTableName = RowPolicyContext::DatabaseAndTableName;
-    using DatabaseAndTableNameRef = RowPolicyContext::DatabaseAndTableNameRef;
-    using Hash = RowPolicyContext::Hash;
+    using MapOfMixedConditions = EnabledRowPolicies::MapOfMixedConditions;
+    using DatabaseAndTableName = EnabledRowPolicies::DatabaseAndTableName;
+    using DatabaseAndTableNameRef = EnabledRowPolicies::DatabaseAndTableNameRef;
+    using Hash = EnabledRowPolicies::Hash;
 
     std::unordered_map<DatabaseAndTableName, Mixers, Hash> map_of_mixers;
 
@@ -275,12 +282,12 @@ void RowPolicyContextFactory::mixConditionsForContext(RowPolicyContext & context
     {
         const auto & policy = *info.policy;
         auto & mixers = map_of_mixers[std::pair{policy.getDatabase(), policy.getTableName()}];
-        if (info.canUseWithContext(context))
+        if (info.roles->match(enabled.params.user_id, enabled.params.enabled_roles))
         {
             mixers.policy_ids.push_back(policy_id);
-            for (auto index : ext::range(0, MAX_CONDITION_INDEX))
-                if (info.parsed_conditions[index])
-                    mixers.mixers[index].add(info.parsed_conditions[index], policy.isRestrictive());
+            for (auto type : ext::range(0, MAX_CONDITION_TYPE))
+                if (info.parsed_conditions[type])
+                    mixers.mixers[type].add(info.parsed_conditions[type], policy.isRestrictive());
         }
     }
 
@@ -294,11 +301,11 @@ void RowPolicyContextFactory::mixConditionsForContext(RowPolicyContext & context
                                                                                      database_and_table_name_keeper->second}];
         mixed_conditions.database_and_table_name_keeper = std::move(database_and_table_name_keeper);
         mixed_conditions.policy_ids = std::move(mixers.policy_ids);
-        for (auto index : ext::range(0, MAX_CONDITION_INDEX))
-            mixed_conditions.mixed_conditions[index] = std::move(mixers.mixers[index]).getResult();
+        for (auto type : ext::range(0, MAX_CONDITION_TYPE))
+            mixed_conditions.mixed_conditions[type] = std::move(mixers.mixers[type]).getResult();
     }
 
-    context.map_of_mixed_conditions.store(map_of_mixed_conditions);
+    enabled.map_of_mixed_conditions.store(map_of_mixed_conditions);
 }
 
 }

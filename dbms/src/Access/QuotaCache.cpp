@@ -1,5 +1,6 @@
-#include <Access/QuotaContext.h>
-#include <Access/QuotaContextFactory.h>
+#include <Access/EnabledQuota.h>
+#include <Access/QuotaCache.h>
+#include <Access/QuotaUsageInfo.h>
 #include <Access/AccessControlManager.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
@@ -8,7 +9,6 @@
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/lower_bound.hpp>
 #include <boost/range/algorithm/stable_sort.hpp>
-#include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/smart_ptr/make_shared.hpp>
 
 
@@ -31,58 +31,53 @@ namespace
 }
 
 
-void QuotaContextFactory::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota_id_)
+void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota_id_)
 {
     quota = quota_;
     quota_id = quota_id_;
-    roles = &quota->roles;
+    roles = &quota->to_roles;
     rebuildAllIntervals();
 }
 
 
-bool QuotaContextFactory::QuotaInfo::canUseWithContext(const QuotaContext & context) const
+String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
 {
-    return roles->match(context.user_id, context.enabled_roles);
-}
-
-
-String QuotaContextFactory::QuotaInfo::calculateKey(const QuotaContext & context) const
-{
+    const auto & params = enabled.params;
     using KeyType = Quota::KeyType;
     switch (quota->key_type)
     {
         case KeyType::NONE:
             return "";
         case KeyType::USER_NAME:
-            return context.user_name;
+            return params.user_name;
         case KeyType::IP_ADDRESS:
-            return context.address.toString();
+            return params.client_address.toString();
         case KeyType::CLIENT_KEY:
         {
-            if (!context.client_key.empty())
-                return context.client_key;
+            if (!params.client_key.empty())
+                return params.client_key;
             throw Exception(
-                "Quota " + quota->getName() + " (for user " + context.user_name + ") requires a client supplied key.",
+                "Quota " + quota->getName() + " (for user " + params.user_name + ") requires a client supplied key.",
                 ErrorCodes::QUOTA_REQUIRES_CLIENT_KEY);
         }
         case KeyType::CLIENT_KEY_OR_USER_NAME:
         {
-            if (!context.client_key.empty())
-                return context.client_key;
-            return context.user_name;
+            if (!params.client_key.empty())
+                return params.client_key;
+            return params.user_name;
         }
         case KeyType::CLIENT_KEY_OR_IP_ADDRESS:
         {
-            if (!context.client_key.empty())
-                return context.client_key;
-            return context.address.toString();
+            if (!params.client_key.empty())
+                return params.client_key;
+            return params.client_address.toString();
         }
     }
     __builtin_unreachable();
 }
 
 
-boost::shared_ptr<const QuotaContext::Intervals> QuotaContextFactory::QuotaInfo::getOrBuildIntervals(const String & key)
+boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::getOrBuildIntervals(const String & key)
 {
     auto it = key_to_intervals.find(key);
     if (it != key_to_intervals.end())
@@ -91,14 +86,14 @@ boost::shared_ptr<const QuotaContext::Intervals> QuotaContextFactory::QuotaInfo:
 }
 
 
-void QuotaContextFactory::QuotaInfo::rebuildAllIntervals()
+void QuotaCache::QuotaInfo::rebuildAllIntervals()
 {
     for (const String & key : key_to_intervals | boost::adaptors::map_keys)
         rebuildIntervals(key);
 }
 
 
-boost::shared_ptr<const QuotaContext::Intervals> QuotaContextFactory::QuotaInfo::rebuildIntervals(const String & key)
+boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildIntervals(const String & key)
 {
     auto new_intervals = boost::make_shared<Intervals>();
     new_intervals->quota_name = quota->getName();
@@ -164,27 +159,42 @@ boost::shared_ptr<const QuotaContext::Intervals> QuotaContextFactory::QuotaInfo:
 }
 
 
-QuotaContextFactory::QuotaContextFactory(const AccessControlManager & access_control_manager_)
+QuotaCache::QuotaCache(const AccessControlManager & access_control_manager_)
     : access_control_manager(access_control_manager_)
 {
 }
 
+QuotaCache::~QuotaCache() = default;
 
-QuotaContextFactory::~QuotaContextFactory() = default;
 
-
-QuotaContextPtr QuotaContextFactory::createContext(const String & user_name, const UUID & user_id, const std::vector<UUID> & enabled_roles, const Poco::Net::IPAddress & address, const String & client_key)
+std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(const UUID & user_id, const String & user_name, const std::vector<UUID> & enabled_roles, const Poco::Net::IPAddress & client_address, const String & client_key)
 {
     std::lock_guard lock{mutex};
     ensureAllQuotasRead();
-    auto context = ext::shared_ptr_helper<QuotaContext>::create(user_name, user_id, enabled_roles, address, client_key);
-    contexts.push_back(context);
-    chooseQuotaForContext(context);
-    return context;
+
+    EnabledQuota::Params params;
+    params.user_id = user_id;
+    params.user_name = user_name;
+    params.enabled_roles = enabled_roles;
+    params.client_address = client_address;
+    params.client_key = client_key;
+    auto it = enabled_quotas.find(params);
+    if (it != enabled_quotas.end())
+    {
+        auto from_cache = it->second.lock();
+        if (from_cache)
+            return from_cache;
+        enabled_quotas.erase(it);
+    }
+
+    auto res = std::shared_ptr<EnabledQuota>(new EnabledQuota(params));
+    enabled_quotas.emplace(std::move(params), res);
+    chooseQuotaToConsumeFor(*res);
+    return res;
 }
 
 
-void QuotaContextFactory::ensureAllQuotasRead()
+void QuotaCache::ensureAllQuotasRead()
 {
     /// `mutex` is already locked.
     if (all_quotas_read)
@@ -209,7 +219,7 @@ void QuotaContextFactory::ensureAllQuotasRead()
 }
 
 
-void QuotaContextFactory::quotaAddedOrChanged(const UUID & quota_id, const std::shared_ptr<const Quota> & new_quota)
+void QuotaCache::quotaAddedOrChanged(const UUID & quota_id, const std::shared_ptr<const Quota> & new_quota)
 {
     std::lock_guard lock{mutex};
     auto it = all_quotas.find(quota_id);
@@ -225,42 +235,42 @@ void QuotaContextFactory::quotaAddedOrChanged(const UUID & quota_id, const std::
 
     auto & info = it->second;
     info.setQuota(new_quota, quota_id);
-    chooseQuotaForAllContexts();
+    chooseQuotaToConsume();
 }
 
 
-void QuotaContextFactory::quotaRemoved(const UUID & quota_id)
+void QuotaCache::quotaRemoved(const UUID & quota_id)
 {
     std::lock_guard lock{mutex};
     all_quotas.erase(quota_id);
-    chooseQuotaForAllContexts();
+    chooseQuotaToConsume();
 }
 
 
-void QuotaContextFactory::chooseQuotaForAllContexts()
+void QuotaCache::chooseQuotaToConsume()
 {
     /// `mutex` is already locked.
-    boost::range::remove_erase_if(
-        contexts,
-        [&](const std::weak_ptr<QuotaContext> & weak)
+    std::erase_if(
+        enabled_quotas,
+        [&](const std::pair<EnabledQuota::Params, std::weak_ptr<EnabledQuota>> & pr)
         {
-            auto context = weak.lock();
-            if (!context)
-                return true; // remove from the `contexts` list.
-            chooseQuotaForContext(context);
-            return false; // keep in the `contexts` list.
+            auto elem = pr.second.lock();
+            if (!elem)
+                return true; // remove from the `enabled_quotas` list.
+            chooseQuotaToConsumeFor(*elem);
+            return false; // keep in the `enabled_quotas` list.
         });
 }
 
-void QuotaContextFactory::chooseQuotaForContext(const std::shared_ptr<QuotaContext> & context)
+void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled)
 {
     /// `mutex` is already locked.
     boost::shared_ptr<const Intervals> intervals;
     for (auto & info : all_quotas | boost::adaptors::map_values)
     {
-        if (info.canUseWithContext(*context))
+        if (info.roles->match(enabled.params.user_id, enabled.params.enabled_roles))
         {
-            String key = info.calculateKey(*context);
+            String key = info.calculateKey(enabled);
             intervals = info.getOrBuildIntervals(key);
             break;
         }
@@ -269,11 +279,11 @@ void QuotaContextFactory::chooseQuotaForContext(const std::shared_ptr<QuotaConte
     if (!intervals)
         intervals = boost::make_shared<Intervals>(); /// No quota == no limits.
 
-    context->intervals.store(intervals);
+    enabled.intervals.store(intervals);
 }
 
 
-std::vector<QuotaUsageInfo> QuotaContextFactory::getUsageInfo() const
+std::vector<QuotaUsageInfo> QuotaCache::getUsageInfo() const
 {
     std::lock_guard lock{mutex};
     std::vector<QuotaUsageInfo> all_infos;

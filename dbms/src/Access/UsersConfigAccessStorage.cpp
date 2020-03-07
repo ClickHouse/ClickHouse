@@ -224,7 +224,7 @@ namespace
             limits.max[ResourceType::EXECUTION_TIME] = Quota::secondsToExecutionTime(config.getUInt64(interval_config + ".execution_time", Quota::UNLIMITED));
         }
 
-        quota->roles.add(user_ids);
+        quota->to_roles.add(user_ids);
 
         return quota;
     }
@@ -324,7 +324,7 @@ namespace
                 auto policy = std::make_shared<RowPolicy>();
                 policy->setFullName(database, table_name, user_name);
                 policy->conditions[RowPolicy::SELECT_FILTER] = filter;
-                policy->roles.add(generateID(typeid(User), user_name));
+                policy->to_roles.add(generateID(typeid(User), user_name));
                 policies.push_back(policy);
             }
         }

@@ -7,7 +7,7 @@
 
 namespace DB
 {
-class ASTGenericRoleSet;
+class ASTExtendedRoleSet;
 
 /** CREATE USER [IF NOT EXISTS | OR REPLACE] name
   *      [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
@@ -41,7 +41,7 @@ public:
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
 
-    std::shared_ptr<ASTGenericRoleSet> default_roles;
+    std::shared_ptr<ASTExtendedRoleSet> default_roles;
 
     std::optional<String> profile;
 
