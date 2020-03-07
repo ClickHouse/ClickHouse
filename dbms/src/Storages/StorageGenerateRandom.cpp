@@ -41,7 +41,7 @@ namespace ErrorCodes
 namespace
 {
 
-void fillBufferWithRandomData(char * __restrict data, size_t size, pcg64_fast & rng)
+void fillBufferWithRandomData(char * __restrict data, size_t size, pcg64 & rng)
 {
     char * __restrict end = data + size;
     while (data < end)
@@ -55,7 +55,7 @@ void fillBufferWithRandomData(char * __restrict data, size_t size, pcg64_fast & 
 
 
 ColumnPtr fillColumnWithRandomData(
-    const DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64_fast & rng, const Context & context)
+    const DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64 & rng, const Context & context)
 {
     TypeIndex idx = type->getTypeId();
 
@@ -343,7 +343,7 @@ private:
     UInt64 max_string_length;
     Block block_header;
 
-    pcg64_fast rng;
+    pcg64 rng;
 
     const Context & context;
 };
@@ -355,7 +355,7 @@ StorageGenerateRandom::StorageGenerateRandom(const StorageID & table_id_, const 
     UInt64 max_array_length_, UInt64 max_string_length_, std::optional<UInt64> random_seed_)
     : IStorage(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_)
 {
-    random_seed = random_seed_ ? *random_seed_ : randomSeed();
+    random_seed = random_seed_ ? sipHash64(*random_seed_) : randomSeed();
     setColumns(columns_);
 }
 
@@ -416,7 +416,7 @@ Pipes StorageGenerateRandom::read(
     }
 
     /// Will create more seed values for each source from initial seed.
-    pcg64_fast generate(random_seed);
+    pcg64 generate(random_seed);
 
     for (UInt64 i = 0; i < num_streams; ++i)
         pipes.emplace_back(std::make_shared<GenerateSource>(max_block_size, max_array_length, max_string_length, generate(), block_header, context));

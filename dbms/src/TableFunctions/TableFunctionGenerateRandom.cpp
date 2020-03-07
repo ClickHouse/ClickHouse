@@ -49,7 +49,7 @@ StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & ast_function,
 
     UInt64 max_string_length = 10;
     UInt64 max_array_length = 10;
-    std::optional<UInt64> random_seed = 0; // zero for random
+    std::optional<UInt64> random_seed;
 
     if (args.size() >= 2)
     {
