@@ -1,10 +1,9 @@
 <test>
-    <type>once</type>
+    <type>loop</type>
 
     <stop_conditions>
         <any_of>
             <!-- This is only for infinite running query. -->
-            <average_speed_not_changing_for_ms>2000</average_speed_not_changing_for_ms>
             <total_time_ms>10000</total_time_ms>
         </any_of>
     </stop_conditions>
@@ -23,5 +22,5 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT bitCount({expr}) FROM system.numbers</query>
+    <query>SELECT bitCount({expr}) FROM numbers(1000000) FORMAT Null</query>
 </test>
