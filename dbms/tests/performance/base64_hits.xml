@@ -1,5 +1,5 @@
 <test>
-    <type>once</type>
+    <type>loop</type>
 
     <preconditions>
         <table_exists>hits_100m_single</table_exists>
