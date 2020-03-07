@@ -12,7 +12,7 @@ namespace DB
   * Mostly the same as Int64.
   * But also tagged with interval kind.
   *
-  * Intended isage is for temporary elements in expressions,
+  * Intended usage is for temporary elements in expressions,
   *  not for storing values in tables.
   */
 class DataTypeInterval final : public DataTypeNumberBase<Int64>

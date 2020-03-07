@@ -47,7 +47,6 @@ def test_startup_without_zookeeper(start_cluster):
         node1.query("INSERT INTO test_table VALUES ('2018-10-01', 1), ('2018-10-02', 2), ('2018-10-03', 3)")
 
     node1.restart_clickhouse()
-    time.sleep(5)
 
     assert node1.query("SELECT COUNT(*) from test_table") == "3\n"
     assert node1.query("SELECT is_readonly from system.replicas where table='test_table'") == "1\n"

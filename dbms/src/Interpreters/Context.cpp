@@ -56,7 +56,7 @@
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
-#include <ext/singleton.h>
+
 
 namespace ProfileEvents
 {
@@ -92,6 +92,7 @@ namespace ErrorCodes
     extern const int SESSION_IS_LOCKED;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_SCALAR;
+    extern const int AUTHENTICATION_FAILED;
 }
 
 
@@ -150,9 +151,9 @@ struct ContextShared
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     /// Storage disk chooser for MergeTree engines
-    mutable std::unique_ptr<DiskSelector> merge_tree_disk_selector;
+    mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector;
     /// Storage policy chooser for MergeTree engines
-    mutable std::unique_ptr<StoragePolicySelector> merge_tree_storage_policy_selector;
+    mutable std::shared_ptr<const StoragePolicySelector> merge_tree_storage_policy_selector;
 
     std::optional<MergeTreeSettings> merge_tree_settings;   /// Settings of MergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
@@ -162,6 +163,8 @@ struct ContextShared
     std::optional<SystemLogs> system_logs;                  /// Used to log queries and operations on parts
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
+
+    std::optional<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
 
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
@@ -293,15 +296,21 @@ struct ContextShared
         schedule_pool.reset();
         ddl_worker.reset();
 
-        ext::Singleton<TraceCollector>::reset();
+        /// Stop trace collector if any
+        trace_collector.reset();
+    }
+
+    bool hasTraceCollector() const
+    {
+        return trace_collector.has_value();
     }
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
     {
-        if (trace_log == nullptr)
+        if (hasTraceCollector())
             return;
 
-        ext::Singleton<TraceCollector>()->setTraceLog(trace_log);
+        trace_collector.emplace(std::move(trace_log));
     }
 };
 
@@ -568,7 +577,7 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
     }
     else
     {
-        StoragePolicyPtr tmp_policy = getStoragePolicySelector()[policy_name];
+        StoragePolicyPtr tmp_policy = getStoragePolicySelector()->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
              throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
         shared->tmp_volume = tmp_policy->getVolume(0);
@@ -626,7 +635,7 @@ void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->users_config = config;
-    shared->access_control_manager.loadFromConfig(*shared->users_config);
+    shared->access_control_manager.setUsersConfig(*shared->users_config);
 }
 
 ConfigurationPtr Context::getUsersConfig()
@@ -646,10 +655,20 @@ void Context::setUser(const String & name, const String & password, const Poco::
     if (!quota_key.empty())
         client_info.quota_key = quota_key;
 
-    auto new_user_id = getAccessControlManager().getID<User>(name);
-    auto new_access_rights = getAccessControlManager().getAccessRightsContext(new_user_id, {}, true, settings, current_database, client_info);
-    new_access_rights->checkHostIsAllowed();
-    new_access_rights->checkPassword(password);
+    auto new_user_id = getAccessControlManager().find<User>(name);
+    AccessRightsContextPtr new_access_rights;
+    if (new_user_id)
+    {
+        new_access_rights = getAccessControlManager().getAccessRightsContext(*new_user_id, {}, true, settings, current_database, client_info);
+        if (!new_access_rights->isClientHostAllowed() || !new_access_rights->isCorrectPassword(password))
+        {
+            new_user_id = {};
+            new_access_rights = nullptr;
+        }
+    }
+
+    if (!new_user_id || !new_access_rights)
+        throw Exception(name + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
 
     user_id = new_user_id;
     access_rights = std::move(new_access_rights);
@@ -1216,17 +1235,29 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 }
 
 
-void Context::checkSettingsConstraints(const SettingChange & change)
+void Context::checkSettingsConstraints(const SettingChange & change) const
 {
     if (settings_constraints)
         settings_constraints->check(settings, change);
 }
 
-
-void Context::checkSettingsConstraints(const SettingsChanges & changes)
+void Context::checkSettingsConstraints(const SettingsChanges & changes) const
 {
     if (settings_constraints)
         settings_constraints->check(settings, changes);
+}
+
+
+void Context::clampToSettingsConstraints(SettingChange & change) const
+{
+    if (settings_constraints)
+        settings_constraints->clamp(settings, change);
+}
+
+void Context::clampToSettingsConstraints(SettingsChanges & changes) const
+{
+    if (settings_constraints)
+        settings_constraints->clamp(settings, changes);
 }
 
 
@@ -1763,6 +1794,11 @@ void Context::initializeTraceCollector()
     shared->initializeTraceCollector(getTraceLog());
 }
 
+bool Context::hasTraceCollector() const
+{
+    return shared->hasTraceCollector();
+}
+
 
 std::shared_ptr<QueryLog> Context::getQueryLog()
 {
@@ -1856,17 +1892,17 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
 }
 
 
-const DiskPtr & Context::getDisk(const String & name) const
+DiskPtr Context::getDisk(const String & name) const
 {
     auto lock = getLock();
 
-    const auto & disk_selector = getDiskSelector();
+    auto disk_selector = getDiskSelector();
 
-    return disk_selector[name];
+    return disk_selector->get(name);
 }
 
 
-DiskSelector & Context::getDiskSelector() const
+DiskSelectorPtr Context::getDiskSelector() const
 {
     auto lock = getLock();
 
@@ -1875,23 +1911,23 @@ DiskSelector & Context::getDiskSelector() const
         constexpr auto config_name = "storage_configuration.disks";
         auto & config = getConfigRef();
 
-        shared->merge_tree_disk_selector = std::make_unique<DiskSelector>(config, config_name, *this);
+        shared->merge_tree_disk_selector = std::make_shared<DiskSelector>(config, config_name, *this);
     }
-    return *shared->merge_tree_disk_selector;
+    return shared->merge_tree_disk_selector;
 }
 
 
-const StoragePolicyPtr & Context::getStoragePolicy(const String & name) const
+StoragePolicyPtr Context::getStoragePolicy(const String & name) const
 {
     auto lock = getLock();
 
-    auto & policy_selector = getStoragePolicySelector();
+    auto policy_selector = getStoragePolicySelector();
 
-    return policy_selector[name];
+    return policy_selector->get(name);
 }
 
 
-StoragePolicySelector & Context::getStoragePolicySelector() const
+StoragePolicySelectorPtr Context::getStoragePolicySelector() const
 {
     auto lock = getLock();
 
@@ -1900,9 +1936,30 @@ StoragePolicySelector & Context::getStoragePolicySelector() const
         constexpr auto config_name = "storage_configuration.policies";
         auto & config = getConfigRef();
 
-        shared->merge_tree_storage_policy_selector = std::make_unique<StoragePolicySelector>(config, config_name, getDiskSelector());
+        shared->merge_tree_storage_policy_selector = std::make_shared<StoragePolicySelector>(config, config_name, getDiskSelector());
     }
-    return *shared->merge_tree_storage_policy_selector;
+    return shared->merge_tree_storage_policy_selector;
+}
+
+
+void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+
+    if (shared->merge_tree_disk_selector)
+        shared->merge_tree_disk_selector = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", *this);
+
+    if (shared->merge_tree_storage_policy_selector)
+    {
+        try
+        {
+            shared->merge_tree_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(config, "storage_configuration.policies", shared->merge_tree_disk_selector);
+        }
+        catch (Exception & e)
+        {
+            LOG_ERROR(shared->log, "An error has occured while reloading storage policies, storage policies were not applied: " << e.message());
+        }
+    }
 }
 
 

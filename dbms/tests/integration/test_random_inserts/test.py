@@ -146,6 +146,12 @@ def test_insert_multithreaded(started_cluster):
             break
 
     assert all_replicated
+    # Now we can be sure that all replicated fetches started, but they may not
+    # be finished yet so we additionaly sync replicas, to be sure, that we have
+    # all data on both replicas
+
+    for node in nodes:
+        node.query("SYSTEM SYNC REPLICA repl_test", timeout=10)
 
     actual_inserted = []
     for i, node in enumerate(nodes):
