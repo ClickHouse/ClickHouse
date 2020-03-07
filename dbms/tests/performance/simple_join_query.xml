@@ -16,7 +16,7 @@
     <fill_query>INSERT INTO join_table SELECT number AS A, toString(arrayMap(x->x, range(100))) S0, S0 AS S1, S0 AS S2, S0 AS S3 from numbers(500000)</fill_query>
 
     <query tag='UsingJoinWithoutSubquery'>SELECT COUNT() FROM join_table LEFT JOIN join_table USING A</query>
-    <query tag='UsingJoinWithSubquery'>SELECT COUNT() FROM join_table LEFT JOIN (SELECT A FROM join_table) right USING A</query>
+    <query tag='UsingJoinWithSubquery'>SELECT COUNT() FROM join_table LEFT JOIN (SELECT A FROM join_table) AS right USING A</query>
     <query tag='OnExpressionJoinWithoutSubquery'>SELECT COUNT() FROM join_table AS left LEFT JOIN join_table AS right ON left.A = right.A</query>
     <query tag='OnExpressionJoinWithoutSubquery'>SELECT COUNT() FROM join_table AS left LEFT JOIN (SELECT A FROM join_table) AS right ON left.A = right.A</query>
 
