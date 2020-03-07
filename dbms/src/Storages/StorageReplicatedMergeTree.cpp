@@ -2902,9 +2902,16 @@ void StorageReplicatedMergeTree::startup()
     /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attmept to do it
     startup_event.wait();
 
-    queue_task_handle = global_context.getBackgroundPool().addTask([this] { return queueTask(); });
+    /// If we don't separate create/start steps, race condition will happen
+    /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
+    queue_task_handle = global_context.getBackgroundPool().createTask([this] { return queueTask(); });
+    queue_task_handle->startTask();
+
     if (areBackgroundMovesNeeded())
-        move_parts_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
+    {
+        move_parts_task_handle = global_context.getBackgroundMovePool().createTask([this] { return movePartsTask(); });
+        move_parts_task_handle->startTask();
+    }
 }
 
 
