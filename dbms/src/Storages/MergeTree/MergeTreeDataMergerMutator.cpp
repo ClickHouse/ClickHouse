@@ -179,7 +179,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_siz
             data_settings->max_bytes_to_merge_at_max_space_in_pool,
             static_cast<double>(free_entries) / data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge);
 
-    return std::min(max_size, static_cast<UInt64>(data.storage_policy->getMaxUnreservedFreeSpace() / DISK_USAGE_COEFFICIENT_TO_SELECT));
+    return std::min(max_size, static_cast<UInt64>(data.getStoragePolicy()->getMaxUnreservedFreeSpace() / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }
 
 
@@ -188,8 +188,8 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation()
     const auto data_settings = data.getSettings();
     size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
 
-    /// DataPart can be store only at one disk. Get Max of free space at all disks
-    UInt64 disk_space = data.storage_policy->getMaxUnreservedFreeSpace();
+    /// DataPart can be store only at one disk. Get maximum reservable free space at all disks.
+    UInt64 disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
 
     /// Allow mutations only if there are enough threads, leave free threads for merges else
     if (background_pool_size - busy_threads_in_pool >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
