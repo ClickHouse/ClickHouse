@@ -301,6 +301,11 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
         }
 
         const auto result_node = makeASTFunction(func->name);
+        
+        if (need_inversion)
+        {
+            result_node->name = (result_node->name == "and") ? "or" : "and";
+        }
 
         if (func->arguments)
         {
