@@ -6,6 +6,7 @@ fun:__gxx_personality_*
 fun:tolower
 
 # May be it's not OK, but suppress it to run other tests
-src:../contrib/openssl/crypto/bn/*
-# For CI
-src:/build/obj-x86_64-linux-gnu/../contrib/openssl/crypto/bn/*
+# Some functions in OpenSSL:
+fun:probable_prime
+fun:bn_*
+fun:BN_*
