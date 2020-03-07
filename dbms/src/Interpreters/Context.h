@@ -93,9 +93,11 @@ struct StorageID;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;
+using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 class StoragePolicySelector;
+using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -545,16 +547,18 @@ public:
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
-    DiskSelector & getDiskSelector() const;
+    DiskSelectorPtr getDiskSelector() const;
 
     /// Provides storage disks
-    const DiskPtr & getDisk(const String & name) const;
-    const DiskPtr & getDefaultDisk() const { return getDisk("default"); }
+    DiskPtr getDisk(const String & name) const;
+    DiskPtr getDefaultDisk() const { return getDisk("default"); }
 
-    StoragePolicySelector & getStoragePolicySelector() const;
+    StoragePolicySelectorPtr getStoragePolicySelector() const;
+
+    void updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     /// Provides storage politics schemes
-    const StoragePolicyPtr & getStoragePolicy(const String &name) const;
+    StoragePolicyPtr getStoragePolicy(const String & name) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;

@@ -151,9 +151,9 @@ struct ContextShared
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     /// Storage disk chooser for MergeTree engines
-    mutable std::unique_ptr<DiskSelector> merge_tree_disk_selector;
+    mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector;
     /// Storage policy chooser for MergeTree engines
-    mutable std::unique_ptr<StoragePolicySelector> merge_tree_storage_policy_selector;
+    mutable std::shared_ptr<const StoragePolicySelector> merge_tree_storage_policy_selector;
 
     std::optional<MergeTreeSettings> merge_tree_settings;   /// Settings of MergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
@@ -577,7 +577,7 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
     }
     else
     {
-        StoragePolicyPtr tmp_policy = getStoragePolicySelector()[policy_name];
+        StoragePolicyPtr tmp_policy = getStoragePolicySelector()->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
              throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
         shared->tmp_volume = tmp_policy->getVolume(0);
@@ -1892,17 +1892,17 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
 }
 
 
-const DiskPtr & Context::getDisk(const String & name) const
+DiskPtr Context::getDisk(const String & name) const
 {
     auto lock = getLock();
 
-    const auto & disk_selector = getDiskSelector();
+    auto disk_selector = getDiskSelector();
 
-    return disk_selector[name];
+    return disk_selector->get(name);
 }
 
 
-DiskSelector & Context::getDiskSelector() const
+DiskSelectorPtr Context::getDiskSelector() const
 {
     auto lock = getLock();
 
@@ -1911,23 +1911,23 @@ DiskSelector & Context::getDiskSelector() const
         constexpr auto config_name = "storage_configuration.disks";
         auto & config = getConfigRef();
 
-        shared->merge_tree_disk_selector = std::make_unique<DiskSelector>(config, config_name, *this);
+        shared->merge_tree_disk_selector = std::make_shared<DiskSelector>(config, config_name, *this);
     }
-    return *shared->merge_tree_disk_selector;
+    return shared->merge_tree_disk_selector;
 }
 
 
-const StoragePolicyPtr & Context::getStoragePolicy(const String & name) const
+StoragePolicyPtr Context::getStoragePolicy(const String & name) const
 {
     auto lock = getLock();
 
-    auto & policy_selector = getStoragePolicySelector();
+    auto policy_selector = getStoragePolicySelector();
 
-    return policy_selector[name];
+    return policy_selector->get(name);
 }
 
 
-StoragePolicySelector & Context::getStoragePolicySelector() const
+StoragePolicySelectorPtr Context::getStoragePolicySelector() const
 {
     auto lock = getLock();
 
@@ -1936,9 +1936,30 @@ StoragePolicySelector & Context::getStoragePolicySelector() const
         constexpr auto config_name = "storage_configuration.policies";
         auto & config = getConfigRef();
 
-        shared->merge_tree_storage_policy_selector = std::make_unique<StoragePolicySelector>(config, config_name, getDiskSelector());
+        shared->merge_tree_storage_policy_selector = std::make_shared<StoragePolicySelector>(config, config_name, getDiskSelector());
     }
-    return *shared->merge_tree_storage_policy_selector;
+    return shared->merge_tree_storage_policy_selector;
+}
+
+
+void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+
+    if (shared->merge_tree_disk_selector)
+        shared->merge_tree_disk_selector = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", *this);
+
+    if (shared->merge_tree_storage_policy_selector)
+    {
+        try
+        {
+            shared->merge_tree_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(config, "storage_configuration.policies", shared->merge_tree_disk_selector);
+        }
+        catch (Exception & e)
+        {
+            LOG_ERROR(shared->log, "An error has occured while reloading storage policies, storage policies were not applied: " << e.message());
+        }
+    }
 }
 
 
