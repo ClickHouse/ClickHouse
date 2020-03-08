@@ -67,10 +67,6 @@ bool ReadBufferFromHDFS::nextImpl()
     return true;
 }
 
-ReadBufferFromHDFS::~ReadBufferFromHDFS()
-{
-}
-
 }
 
 #endif

@@ -12,8 +12,6 @@ ReadBufferFromFileBase::ReadBufferFromFileBase(size_t buf_size, char * existing_
 {
 }
 
-ReadBufferFromFileBase::~ReadBufferFromFileBase()
-{
-}
+ReadBufferFromFileBase::~ReadBufferFromFileBase() = default;
 
 }

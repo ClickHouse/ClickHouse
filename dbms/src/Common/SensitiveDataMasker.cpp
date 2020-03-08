@@ -153,8 +153,6 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
     }
 }
 
-SensitiveDataMasker::~SensitiveDataMasker() {}
-
 void SensitiveDataMasker::addMaskingRule(
     const std::string & name, const std::string & regexp_string, const std::string & replacement_string)
 {

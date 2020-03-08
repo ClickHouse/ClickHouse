@@ -22,8 +22,6 @@ public:
     ReadBufferFromHDFS(ReadBufferFromHDFS &&) = default;
 
     bool nextImpl() override;
-
-    ~ReadBufferFromHDFS() override;
 };
 }
 #endif
