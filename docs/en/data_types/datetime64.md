@@ -9,7 +9,7 @@ Syntax:
 DateTime64(precision, [timezone])
 ```
 
-Internally, stores data as number of 'ticks' since epoch start (1970/1/1 00:00:00 UTC) as Int64
+Internally, stores data as number of 'ticks' since epoch start (1970-01-01 00:00:00 UTC) as Int64
 
 ## Examples
 
@@ -30,14 +30,14 @@ INSERT INTO dt Values (1546300800000, 1), ('2019-01-01 00:00:00', 2)
 SELECT * FROM dt
 ```
 ```text
-┌───────────timestamp─┬─event_id─┐
-│ 2019-01-01 03:00:00 │        1 │
-│ 2019-01-01 00:00:00 │        2 │
-└─────────────────────┴──────────┘
+┌───────────────timestamp─┬─event_id─┐
+│ 2019-01-01 03:00:00.000 │        1 │
+│ 2019-01-01 00:00:00.000 │        2 │
+└─────────────────────────┴──────────┘
 ```
 
 * When inserting datetime as an integer, it is treated as an appropriately scaled Unix Timestamp (UTC). `1546300800000` (with precision 3) represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Europe/Moscow` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
-* When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Europe/Moscow` timezone and saved as `1546290000000`.
+* When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Europe/Moscow` timezone and stored as `1546290000000`.
 
 **2.** Filtering on `DateTime64` values
 
@@ -45,9 +45,9 @@ SELECT * FROM dt
 SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Europe/Moscow')
 ```
 ```text
-┌───────────timestamp─┬─event_id─┐
-│ 2019-01-01 00:00:00 │        2 │
-└─────────────────────┴──────────┘
+┌───────────────timestamp─┬─event_id─┐
+│ 2019-01-01 00:00:00.000 │        2 │
+└─────────────────────────┴──────────┘
 ```
 Unlike `DateTime`, `DateTime64` values are not converted from `String` automatically
 
