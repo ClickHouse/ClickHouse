@@ -49,7 +49,6 @@ private:
 
 public:
     SensitiveDataMasker(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
-    ~SensitiveDataMasker();
 
     /// Returns the number of matched rules.
     size_t wipeSensitiveData(std::string & data) const;
