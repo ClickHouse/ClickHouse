@@ -180,11 +180,8 @@ void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, S
             current_key.swap(next_key);
 
             /// We will write the data for the group. We copy the values of ordinary columns.
-            for (size_t i = 0, size = column_numbers_not_to_aggregate.size(); i < size; ++i)
-            {
-                size_t j = column_numbers_not_to_aggregate[i];
+            for (size_t j : column_numbers_not_to_aggregate)
                 merged_columns[j]->insertFrom(*current->all_columns[j], current->pos);
-            }
 
             /// Add the empty aggregation state to the aggregate columns. The state will be updated in the `addRow` function.
             for (auto & column_to_aggregate : columns_to_aggregate)
