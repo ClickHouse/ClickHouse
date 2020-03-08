@@ -30,7 +30,7 @@ GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::strin
         root_path += hostname_in_path;
     }
 
-    if (sub_path.size())
+    if (!sub_path.empty())
     {
         if (!root_path.empty())
             root_path += ".";

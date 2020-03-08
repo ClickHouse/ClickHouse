@@ -847,7 +847,6 @@ bool Dwarf::LineNumberVM::nextDefineFile(std::string_view & program, FileName & 
         }
 
         program.remove_prefix(length);
-        continue;
     }
 
     return false;
