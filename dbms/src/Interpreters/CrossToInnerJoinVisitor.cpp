@@ -277,10 +277,7 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
     if (num_comma && (num_comma != (joined_tables.size() - 1)))
         throw Exception("Mix of COMMA and other JOINS is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
-    if (num_array_join || num_using)
-        return false;
-
-    return true;
+    return !(num_array_join || num_using);
 }
 
 }
@@ -288,9 +285,7 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
 
 bool CrossToInnerJoinMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
 {
-    if (node->as<ASTSubquery>())
-        return false;
-    return true;
+    return !node->as<ASTSubquery>();
 }
 
 void CrossToInnerJoinMatcher::visit(ASTPtr & ast, Data & data)

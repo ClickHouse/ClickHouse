@@ -502,13 +502,13 @@ MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
 
 
-const Databases Context::getDatabases() const
+const Databases & Context::getDatabases() const
 {
     auto lock = getLock();
     return shared->databases;
 }
 
-Databases Context::getDatabases()
+Databases & Context::getDatabases()
 {
     auto lock = getLock();
     return shared->databases;
@@ -538,7 +538,7 @@ static String resolveDatabase(const String & database_name, const String & curre
 }
 
 
-const DatabasePtr Context::getDatabase(const String & database_name) const
+DatabasePtr Context::getDatabase(const String & database_name) const
 {
     auto lock = getLock();
     String db = resolveDatabase(database_name, current_database);
@@ -546,25 +546,7 @@ const DatabasePtr Context::getDatabase(const String & database_name) const
     return shared->databases[db];
 }
 
-DatabasePtr Context::getDatabase(const String & database_name)
-{
-    auto lock = getLock();
-    String db = resolveDatabase(database_name, current_database);
-    assertDatabaseExists(db);
-    return shared->databases[db];
-}
-
-const DatabasePtr Context::tryGetDatabase(const String & database_name) const
-{
-    auto lock = getLock();
-    String db = resolveDatabase(database_name, current_database);
-    auto it = shared->databases.find(db);
-    if (it == shared->databases.end())
-        return {};
-    return it->second;
-}
-
-DatabasePtr Context::tryGetDatabase(const String & database_name)
+DatabasePtr Context::tryGetDatabase(const String & database_name) const
 {
     auto lock = getLock();
     String db = resolveDatabase(database_name, current_database);
@@ -644,7 +626,7 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
         shared->tmp_volume = tmp_policy->getVolume(0);
     }
 
-    if (!shared->tmp_volume->disks.size())
+    if (shared->tmp_volume->disks.empty())
          throw Exception("No disks volume for temporary files", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     return shared->tmp_volume;
@@ -1053,7 +1035,7 @@ StoragePtr Context::getTable(const StorageID & table_id) const
     std::optional<Exception> exc;
     auto res = getTableImpl(table_id, &exc);
     if (!res)
-        throw *exc;
+        throw Exception(*exc);
     return res;
 }
 

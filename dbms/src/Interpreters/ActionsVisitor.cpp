@@ -222,11 +222,11 @@ void ScopeStack::pushLevel(const NamesAndTypesList & input_columns)
     ColumnsWithTypeAndName all_columns;
     NameSet new_names;
 
-    for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
+    for (const auto & input_column : input_columns)
     {
-        all_columns.emplace_back(nullptr, it->type, it->name);
-        new_names.insert(it->name);
-        stack.back().new_columns.insert(it->name);
+        all_columns.emplace_back(nullptr, input_column.type, input_column.name);
+        new_names.insert(input_column.name);
+        stack.back().new_columns.insert(input_column.name);
     }
 
     const Block & prev_sample_block = prev.actions->getSampleBlock();
@@ -253,17 +253,17 @@ void ScopeStack::addAction(const ExpressionAction & action)
 {
     size_t level = 0;
     Names required = action.getNeededColumns();
-    for (size_t i = 0; i < required.size(); ++i)
-        level = std::max(level, getColumnLevel(required[i]));
+    for (const auto & elem : required)
+        level = std::max(level, getColumnLevel(elem));
 
     Names added;
     stack[level].actions->add(action, added);
 
     stack[level].new_columns.insert(added.begin(), added.end());
 
-    for (size_t i = 0; i < added.size(); ++i)
+    for (const auto & elem : added)
     {
-        const ColumnWithTypeAndName & col = stack[level].actions->getSampleBlock().getByName(added[i]);
+        const ColumnWithTypeAndName & col = stack[level].actions->getSampleBlock().getByName(elem);
         for (size_t j = level + 1; j < stack.size(); ++j)
             stack[j].actions->addInput(col);
     }
