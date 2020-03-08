@@ -49,10 +49,7 @@ Exception::Exception(const int32_t code_, const std::string & path)
 {
 }
 
-Exception::Exception(const Exception & exc)
-    : DB::Exception(exc), code(exc.code)
-{
-}
+Exception::Exception(const Exception & exc) = default;
 
 
 using namespace DB;
