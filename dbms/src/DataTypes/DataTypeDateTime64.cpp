@@ -235,7 +235,7 @@ getArgument(const ASTPtr & arguments, size_t argument_index, const char * argume
 
 static DataTypePtr create64(const String & /*type_name*/, const ASTPtr & arguments)
 {
-    if (!arguments || arguments->size() == 0)
+    if (!arguments || arguments->empty())
         return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale);
 
     const auto scale = getArgument<UInt64, ArgumentKind::Optional>(arguments, 0, "scale", "DateType64");

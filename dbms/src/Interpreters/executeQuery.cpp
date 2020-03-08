@@ -598,7 +598,7 @@ void executeQuery(
     const char * end;
 
     /// If 'istr' is empty now, fetch next data into buffer.
-    if (istr.buffer().size() == 0)
+    if (istr.buffer().empty())
         istr.next();
 
     size_t max_query_size = context.getSettingsRef().max_query_size;

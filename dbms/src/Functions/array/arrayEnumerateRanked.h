@@ -98,7 +98,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() == 0)
+        if (arguments.empty())
             throw Exception(
                 "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(arguments.size())
                     + ", should be at least 1.",

@@ -100,7 +100,7 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
 
 ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    if (offsets.size() == 0)
+    if (offsets.empty())
         return ColumnString::create();
 
     auto res = ColumnString::create();

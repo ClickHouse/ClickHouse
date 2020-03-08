@@ -57,7 +57,7 @@ void extractFunctions(const ASTPtr & expression, const NameSet & columns, std::v
 /// Construct a conjunction from given functions
 ASTPtr buildWhereExpression(const ASTs & functions)
 {
-    if (functions.size() == 0)
+    if (functions.empty())
         return nullptr;
     if (functions.size() == 1)
         return functions[0];

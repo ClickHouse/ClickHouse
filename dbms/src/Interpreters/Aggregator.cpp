@@ -2324,7 +2324,7 @@ void Aggregator::destroyWithoutKey(AggregatedDataVariants & result) const
 
 void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 {
-    if (result.size() == 0)
+    if (result.empty())
         return;
 
     LOG_TRACE(log, "Destroying aggregate states");
