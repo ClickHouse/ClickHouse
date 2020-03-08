@@ -43,11 +43,12 @@ std::unique_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
         throw Exception(
                 "Unknown Index type '" + node->type->name + "'. Available index types: " +
                 std::accumulate(indexes.cbegin(), indexes.cend(), std::string{},
-                        [] (auto && lft, const auto & rht) -> std::string {
-                            if (lft == "")
-                                return rht.first;
+                        [] (auto && left, const auto & right) -> std::string
+                        {
+                            if (left.empty())
+                                return right.first;
                             else
-                                return lft + ", " + rht.first;
+                                return left + ", " + right.first;
                         }),
                 ErrorCodes::INCORRECT_QUERY);
 

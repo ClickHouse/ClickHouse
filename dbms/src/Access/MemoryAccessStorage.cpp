@@ -11,9 +11,6 @@ MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_)
 }
 
 
-MemoryAccessStorage::~MemoryAccessStorage() {}
-
-
 std::optional<UUID> MemoryAccessStorage::findImpl(std::type_index type, const String & name) const
 {
     std::lock_guard lock{mutex};

@@ -37,9 +37,7 @@ AccessControlManager::AccessControlManager()
 }
 
 
-AccessControlManager::~AccessControlManager()
-{
-}
+AccessControlManager::~AccessControlManager() = default;
 
 
 void AccessControlManager::setLocalDirectory(const String & directory_path)

@@ -64,7 +64,7 @@ ExpressionAction ExpressionAction::applyFunction(
     const std::vector<std::string> & argument_names_,
     std::string result_name_)
 {
-    if (result_name_ == "")
+    if (result_name_.empty())
     {
         result_name_ = function_->getName() + "(";
         for (size_t i = 0 ; i < argument_names_.size(); ++i)

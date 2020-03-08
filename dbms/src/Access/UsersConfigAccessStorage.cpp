@@ -339,9 +339,6 @@ UsersConfigAccessStorage::UsersConfigAccessStorage() : IAccessStorage("users.xml
 }
 
 
-UsersConfigAccessStorage::~UsersConfigAccessStorage() {}
-
-
 void UsersConfigAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;

@@ -34,8 +34,8 @@ public:
     void grant(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column);
     void grant(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns);
     void grant(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns);
-    void grant(const AccessRightsElement & access, std::string_view current_database = {});
-    void grant(const AccessRightsElements & access, std::string_view current_database = {});
+    void grant(const AccessRightsElement & element, std::string_view current_database = {});
+    void grant(const AccessRightsElements & elements, std::string_view current_database = {});
 
     /// Revokes a specified access granted earlier on a specified database/table/column.
     /// Does nothing if the specified access is not granted.
@@ -48,8 +48,8 @@ public:
     void revoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column);
     void revoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns);
     void revoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns);
-    void revoke(const AccessRightsElement & access, std::string_view current_database = {});
-    void revoke(const AccessRightsElements & access, std::string_view current_database = {});
+    void revoke(const AccessRightsElement & element, std::string_view current_database = {});
+    void revoke(const AccessRightsElements & elements, std::string_view current_database = {});
 
     /// Revokes a specified access granted earlier on a specified database/table/column or on lower levels.
     /// The function also restricts access if it's granted on upper level.
@@ -61,8 +61,8 @@ public:
     void partialRevoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column);
     void partialRevoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns);
     void partialRevoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns);
-    void partialRevoke(const AccessRightsElement & access, std::string_view current_database = {});
-    void partialRevoke(const AccessRightsElements & access, std::string_view current_database = {});
+    void partialRevoke(const AccessRightsElement & element, std::string_view current_database = {});
+    void partialRevoke(const AccessRightsElements & elements, std::string_view current_database = {});
 
     /// Revokes a specified access granted earlier on a specified database/table/column or on lower levels.
     /// The function also restricts access if it's granted on upper level.
@@ -74,8 +74,8 @@ public:
     void fullRevoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column);
     void fullRevoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns);
     void fullRevoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns);
-    void fullRevoke(const AccessRightsElement & access, std::string_view current_database = {});
-    void fullRevoke(const AccessRightsElements & access, std::string_view current_database = {});
+    void fullRevoke(const AccessRightsElement & element, std::string_view current_database = {});
+    void fullRevoke(const AccessRightsElements & elements, std::string_view current_database = {});
 
     /// Returns the information about all the access granted.
     struct Elements
@@ -95,8 +95,8 @@ public:
     bool isGranted(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
     bool isGranted(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
     bool isGranted(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
-    bool isGranted(const AccessRightsElement & access, std::string_view current_database = {}) const;
-    bool isGranted(const AccessRightsElements & access, std::string_view current_database = {}) const;
+    bool isGranted(const AccessRightsElement & element, std::string_view current_database = {}) const;
+    bool isGranted(const AccessRightsElements & elements, std::string_view current_database = {}) const;
 
     friend bool operator ==(const AccessRights & left, const AccessRights & right);
     friend bool operator !=(const AccessRights & left, const AccessRights & right) { return !(left == right); }
@@ -109,23 +109,23 @@ private:
     template <typename... Args>
     void grantImpl(const AccessFlags & access, const Args &... args);
 
-    void grantImpl(const AccessRightsElement & access, std::string_view current_database);
-    void grantImpl(const AccessRightsElements & access, std::string_view current_database);
+    void grantImpl(const AccessRightsElement & element, std::string_view current_database);
+    void grantImpl(const AccessRightsElements & elements, std::string_view current_database);
 
     template <int mode, typename... Args>
     void revokeImpl(const AccessFlags & access, const Args &... args);
 
     template <int mode>
-    void revokeImpl(const AccessRightsElement & access, std::string_view current_database);
+    void revokeImpl(const AccessRightsElement & element, std::string_view current_database);
 
     template <int mode>
-    void revokeImpl(const AccessRightsElements & access, std::string_view current_database);
+    void revokeImpl(const AccessRightsElements & elements, std::string_view current_database);
 
     template <typename... Args>
     bool isGrantedImpl(const AccessFlags & access, const Args &... args) const;
 
-    bool isGrantedImpl(const AccessRightsElement & access, std::string_view current_database) const;
-    bool isGrantedImpl(const AccessRightsElements & access, std::string_view current_database) const;
+    bool isGrantedImpl(const AccessRightsElement & element, std::string_view current_database) const;
+    bool isGrantedImpl(const AccessRightsElements & elements, std::string_view current_database) const;
 
     template <typename... Args>
     AccessFlags getAccessImpl(const Args &... args) const;
