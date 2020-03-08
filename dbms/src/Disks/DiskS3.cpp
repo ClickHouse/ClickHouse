@@ -144,14 +144,10 @@ namespace
     public:
         ReadIndirectBufferFromS3(
             std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, Metadata metadata_, size_t buf_size_)
-            : ReadBufferFromFileBase()
-            , client_ptr(std::move(client_ptr_))
-            , bucket(bucket_)
-            , metadata(std::move(metadata_))
-            , buf_size(buf_size_)
-            , absolute_position(0)
-            , current_buf_idx(0)
-            , current_buf(nullptr)
+            : client_ptr(std::move(client_ptr_)),
+            bucket(bucket_),
+            metadata(std::move(metadata_)),
+            buf_size(buf_size_)
         {
         }
 
@@ -235,7 +231,7 @@ namespace
         size_t buf_size;
 
         size_t absolute_position = 0;
-        UInt32 current_buf_idx;
+        UInt32 current_buf_idx = 0;
         std::unique_ptr<ReadBufferFromS3> current_buf;
     };
 

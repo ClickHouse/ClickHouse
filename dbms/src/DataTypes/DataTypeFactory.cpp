@@ -180,9 +180,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainSimpleAggregateFunction(*this);
 }
 
-DataTypeFactory::~DataTypeFactory()
-{}
-
 DataTypeFactory & DataTypeFactory::instance()
 {
     static DataTypeFactory ret;
