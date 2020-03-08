@@ -242,7 +242,7 @@ private:
     }
 
     void segmentatorThreadFunction();
-    void parserThreadFunction(size_t bucket_num);
+    void parserThreadFunction(size_t current_ticket_number);
 
     // Save/log a background exception, set termination flag, wake up all
     // threads. This function is used by segmentator and parsed threads.

@@ -44,7 +44,7 @@ class ReadIndirectBuffer : public ReadBufferFromFileBase
 {
 public:
     ReadIndirectBuffer(String path_, const String & data_)
-        : ReadBufferFromFileBase(), impl(ReadBufferFromString(data_)), path(std::move(path_))
+        : impl(ReadBufferFromString(data_)), path(std::move(path_))
     {
         internal_buffer = impl.buffer();
         working_buffer = internal_buffer;
@@ -73,7 +73,7 @@ class WriteIndirectBuffer : public WriteBufferFromFileBase
 {
 public:
     WriteIndirectBuffer(DiskMemory * disk_, String path_, WriteMode mode_, size_t buf_size)
-        : WriteBufferFromFileBase(buf_size, nullptr, 0), impl(), disk(disk_), path(std::move(path_)), mode(mode_)
+        : WriteBufferFromFileBase(buf_size, nullptr, 0), disk(disk_), path(std::move(path_)), mode(mode_)
     {
     }
 

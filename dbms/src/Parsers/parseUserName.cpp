@@ -36,15 +36,15 @@ namespace
 }
 
 
-bool parseUserName(IParser::Pos & pos, Expected & expected, String & result)
+bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name)
 {
-    return parseUserNameImpl(pos, expected, result, nullptr);
+    return parseUserNameImpl(pos, expected, user_name, nullptr);
 }
 
 
-bool parseUserName(IParser::Pos & pos, Expected & expected, String & result, String & host_like_pattern)
+bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name, String & host_like_pattern)
 {
-    return parseUserNameImpl(pos, expected, result, &host_like_pattern);
+    return parseUserNameImpl(pos, expected, user_name, &host_like_pattern);
 }
 
 

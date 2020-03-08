@@ -83,7 +83,7 @@ void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_ticket
 
         // We suppose we will get at least some blocks for a non-empty buffer,
         // except at the end of file. Also see a matching assert in readImpl().
-        assert(unit.is_last || unit.block_ext.block.size() > 0);
+        assert(unit.is_last || !unit.block_ext.block.empty());
 
         std::unique_lock<std::mutex> lock(mutex);
         unit.status = READY_TO_READ;

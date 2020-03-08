@@ -191,11 +191,11 @@ DiskPtr Volume::getNextDisk()
     return disks[index];
 }
 
-ReservationPtr Volume::reserve(UInt64 expected_size)
+ReservationPtr Volume::reserve(UInt64 bytes)
 {
     /// This volume can not store files which size greater than max_data_part_size
 
-    if (max_data_part_size != 0 && expected_size > max_data_part_size)
+    if (max_data_part_size != 0 && bytes > max_data_part_size)
         return {};
 
     size_t start_from = last_used.fetch_add(1u, std::memory_order_relaxed);
@@ -204,7 +204,7 @@ ReservationPtr Volume::reserve(UInt64 expected_size)
     {
         size_t index = (start_from + i) % disks_num;
 
-        auto reservation = disks[index]->reserve(expected_size);
+        auto reservation = disks[index]->reserve(bytes);
 
         if (reservation)
             return reservation;
@@ -354,12 +354,12 @@ UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
 }
 
 
-ReservationPtr StoragePolicy::reserve(UInt64 expected_size, size_t min_volume_index) const
+ReservationPtr StoragePolicy::reserve(UInt64 bytes, size_t min_volume_index) const
 {
     for (size_t i = min_volume_index; i < volumes.size(); ++i)
     {
         const auto & volume = volumes[i];
-        auto reservation = volume->reserve(expected_size);
+        auto reservation = volume->reserve(bytes);
         if (reservation)
             return reservation;
     }
@@ -367,9 +367,9 @@ ReservationPtr StoragePolicy::reserve(UInt64 expected_size, size_t min_volume_in
 }
 
 
-ReservationPtr StoragePolicy::reserve(UInt64 expected_size) const
+ReservationPtr StoragePolicy::reserve(UInt64 bytes) const
 {
-    return reserve(expected_size, 0);
+    return reserve(bytes, 0);
 }
 
 
