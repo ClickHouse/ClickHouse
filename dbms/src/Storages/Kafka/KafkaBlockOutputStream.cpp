@@ -15,10 +15,6 @@ KafkaBlockOutputStream::KafkaBlockOutputStream(StorageKafka & storage_, const Co
 {
 }
 
-KafkaBlockOutputStream::~KafkaBlockOutputStream()
-{
-}
-
 Block KafkaBlockOutputStream::getHeader() const
 {
     return storage.getSampleBlockNonMaterialized();

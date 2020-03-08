@@ -140,7 +140,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
     bool first = true;
 
     auto current_depth = pos.depth;
-    while (1)
+    while (true)
     {
         if (first)
         {

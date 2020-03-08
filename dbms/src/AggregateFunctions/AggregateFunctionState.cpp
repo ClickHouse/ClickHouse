@@ -52,7 +52,7 @@ DataTypePtr AggregateFunctionState::getReturnType() const
 
         return arguments[0];
     }
-    if (arguments.size() > 0)
+    if (!arguments.empty())
     {
         DataTypePtr argument_type_ptr = arguments[0];
         WhichDataType which(*argument_type_ptr);

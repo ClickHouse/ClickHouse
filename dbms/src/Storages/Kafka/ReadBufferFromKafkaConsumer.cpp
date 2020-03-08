@@ -241,7 +241,7 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
             commit();
 
         size_t waited_for_assignment = 0;
-        while (1)
+        while (true)
         {
             /// Don't drop old messages immediately, since we may need them for virtual columns.
             auto new_messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(poll_timeout));

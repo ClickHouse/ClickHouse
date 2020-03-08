@@ -428,7 +428,7 @@ void NO_INLINE decompressImpl(
 #if defined(__clang__)
     #pragma nounroll
 #endif
-    while (1)
+    while (true)
     {
         size_t length;
 
@@ -605,7 +605,7 @@ void statistics(
     const UInt8 * ip = reinterpret_cast<const UInt8 *>(source);
     UInt8 * op = reinterpret_cast<UInt8 *>(dest);
     UInt8 * const output_end = op + dest_size;
-    while (1)
+    while (true)
     {
         size_t length;
 

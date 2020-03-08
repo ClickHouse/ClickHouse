@@ -118,7 +118,7 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
 
     auto read_alpha_month = [&month] (const auto & alpha)
     {
-             if (0 == strncasecmp(alpha, "Jan", 3)) month = 1;
+        if (0 == strncasecmp(alpha, "Jan", 3)) month = 1;
         else if (0 == strncasecmp(alpha, "Feb", 3)) month = 2;
         else if (0 == strncasecmp(alpha, "Mar", 3)) month = 3;
         else if (0 == strncasecmp(alpha, "Apr", 3)) month = 4;

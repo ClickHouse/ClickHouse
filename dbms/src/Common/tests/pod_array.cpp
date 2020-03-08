@@ -12,7 +12,7 @@ do                                    \
         if ((res)) { (res) = false; }                \
     }                                \
 } \
-while (0)
+while (false)
 
 static void test1()
 {
