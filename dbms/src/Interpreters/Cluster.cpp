@@ -28,7 +28,7 @@ namespace
 {
 
 /// Default shard weight.
-static constexpr UInt32 default_weight = 1;
+constexpr UInt32 default_weight = 1;
 
 inline bool isLocalImpl(const Cluster::Address & address, const Poco::Net::SocketAddress & resolved_address, UInt16 clickhouse_port)
 {
@@ -483,7 +483,6 @@ std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(const std::vector
 }
 
 Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Settings & settings)
-    : shards_info{}, addresses_with_failover{}
 {
     if (from.addresses_with_failover.empty())
         throw Exception("Cluster is empty", ErrorCodes::LOGICAL_ERROR);
@@ -525,7 +524,6 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
 
 Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector<size_t> & indices)
-    : shards_info{}
 {
     for (size_t index : indices)
     {
