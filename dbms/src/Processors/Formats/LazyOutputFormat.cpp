@@ -11,7 +11,7 @@ Block LazyOutputFormat::getBlock(UInt64 milliseconds)
 {
     if (finished_processing)
     {
-        if (queue.size() == 0)
+        if (queue.empty())
             return {};
     }
 

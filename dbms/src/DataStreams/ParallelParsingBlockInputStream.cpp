@@ -156,7 +156,7 @@ Block ParallelParsingBlockInputStream::readImpl()
         next_block_in_current_unit = 0;
     }
 
-    if (unit.block_ext.block.size() == 0)
+    if (unit.block_ext.block.empty())
     {
         /*
          * Can we get zero blocks for an entire segment, when the format parser

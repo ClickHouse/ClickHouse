@@ -424,7 +424,7 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
 template <typename T>
 ColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hint) const
 {
-    if (getOffsets().size() == 0)
+    if (getOffsets().empty())
         return ColumnArray::create(data);
 
     auto res = ColumnArray::create(data->cloneEmpty());
@@ -551,7 +551,7 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
 
 ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_hint) const
 {
-    if (getOffsets().size() == 0)
+    if (getOffsets().empty())
         return ColumnArray::create(data);
 
     const ColumnNullable & nullable_elems = assert_cast<const ColumnNullable &>(*data);
@@ -574,7 +574,7 @@ ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_h
 
 ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint) const
 {
-    if (getOffsets().size() == 0)
+    if (getOffsets().empty())
         return ColumnArray::create(data);
 
     const ColumnTuple & tuple = assert_cast<const ColumnTuple &>(*data);

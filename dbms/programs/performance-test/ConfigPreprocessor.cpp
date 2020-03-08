@@ -45,7 +45,7 @@ void ConfigPreprocessor::removeConfigurationsIf(
 {
     auto checker = [&filter_type, &values, &leave] (XMLConfigurationPtr & config)
     {
-        if (values.size() == 0)
+        if (values.empty())
             return false;
 
         bool remove_or_not = false;
