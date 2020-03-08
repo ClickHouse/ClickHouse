@@ -96,50 +96,50 @@ namespace DB
         DB::writeBinary(type, buf);
         DB::writeBinary(size, buf);
 
-        for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
+        for (const auto & elem : x)
         {
             switch (type)
             {
                 case Field::Types::Null: break;
                 case Field::Types::UInt64:
                 {
-                    DB::writeVarUInt(get<UInt64>(*it), buf);
+                    DB::writeVarUInt(get<UInt64>(elem), buf);
                     break;
                 }
                 case Field::Types::UInt128:
                 {
-                    DB::writeBinary(get<UInt128>(*it), buf);
+                    DB::writeBinary(get<UInt128>(elem), buf);
                     break;
                 }
                 case Field::Types::Int64:
                 {
-                    DB::writeVarInt(get<Int64>(*it), buf);
+                    DB::writeVarInt(get<Int64>(elem), buf);
                     break;
                 }
                 case Field::Types::Float64:
                 {
-                    DB::writeFloatBinary(get<Float64>(*it), buf);
+                    DB::writeFloatBinary(get<Float64>(elem), buf);
                     break;
                 }
                 case Field::Types::String:
                 {
-                    DB::writeStringBinary(get<std::string>(*it), buf);
+                    DB::writeStringBinary(get<std::string>(elem), buf);
                     break;
                 }
                 case Field::Types::Array:
                 {
-                    DB::writeBinary(get<Array>(*it), buf);
+                    DB::writeBinary(get<Array>(elem), buf);
                     break;
                 }
                 case Field::Types::Tuple:
                 {
-                    DB::writeBinary(get<Tuple>(*it), buf);
+                    DB::writeBinary(get<Tuple>(elem), buf);
                     break;
                 }
                 case Field::Types::AggregateFunctionState:
                 {
-                    DB::writeStringBinary(it->get<AggregateFunctionStateData>().name, buf);
-                    DB::writeStringBinary(it->get<AggregateFunctionStateData>().data, buf);
+                    DB::writeStringBinary(elem.get<AggregateFunctionStateData>().name, buf);
+                    DB::writeStringBinary(elem.get<AggregateFunctionStateData>().data, buf);
                     break;
                 }
             }
@@ -235,9 +235,9 @@ namespace DB
         const size_t size = x.size();
         DB::writeBinary(size, buf);
 
-        for (auto it = x.begin(); it != x.end(); ++it)
+        for (const auto & elem : x)
         {
-            const UInt8 type = it->getType();
+            const UInt8 type = elem.getType();
             DB::writeBinary(type, buf);
 
             switch (type)
@@ -245,43 +245,43 @@ namespace DB
                 case Field::Types::Null: break;
                 case Field::Types::UInt64:
                 {
-                    DB::writeVarUInt(get<UInt64>(*it), buf);
+                    DB::writeVarUInt(get<UInt64>(elem), buf);
                     break;
                 }
                 case Field::Types::UInt128:
                 {
-                    DB::writeBinary(get<UInt128>(*it), buf);
+                    DB::writeBinary(get<UInt128>(elem), buf);
                     break;
                 }
                 case Field::Types::Int64:
                 {
-                    DB::writeVarInt(get<Int64>(*it), buf);
+                    DB::writeVarInt(get<Int64>(elem), buf);
                     break;
                 }
                 case Field::Types::Float64:
                 {
-                    DB::writeFloatBinary(get<Float64>(*it), buf);
+                    DB::writeFloatBinary(get<Float64>(elem), buf);
                     break;
                 }
                 case Field::Types::String:
                 {
-                    DB::writeStringBinary(get<std::string>(*it), buf);
+                    DB::writeStringBinary(get<std::string>(elem), buf);
                     break;
                 }
                 case Field::Types::Array:
                 {
-                    DB::writeBinary(get<Array>(*it), buf);
+                    DB::writeBinary(get<Array>(elem), buf);
                     break;
                 }
                 case Field::Types::Tuple:
                 {
-                    DB::writeBinary(get<Tuple>(*it), buf);
+                    DB::writeBinary(get<Tuple>(elem), buf);
                     break;
                 }
                 case Field::Types::AggregateFunctionState:
                 {
-                    DB::writeStringBinary(it->get<AggregateFunctionStateData>().name, buf);
-                    DB::writeStringBinary(it->get<AggregateFunctionStateData>().data, buf);
+                    DB::writeStringBinary(elem.get<AggregateFunctionStateData>().name, buf);
+                    DB::writeStringBinary(elem.get<AggregateFunctionStateData>().data, buf);
                     break;
                 }
             }
@@ -321,15 +321,15 @@ namespace DB
         return Comparator::compare(x, y, x_scale, y_scale);
     }
 
-    template <> bool decimalEqual(Decimal32 x, Decimal32 y, UInt32 xs, UInt32 ys) { return decEqual(x, y, xs, ys); }
-    template <> bool decimalLess(Decimal32 x, Decimal32 y, UInt32 xs, UInt32 ys) { return decLess(x, y, xs, ys); }
-    template <> bool decimalLessOrEqual(Decimal32 x, Decimal32 y, UInt32 xs, UInt32 ys) { return decLessOrEqual(x, y, xs, ys); }
+    template <> bool decimalEqual(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale) { return decEqual(x, y, x_scale, y_scale); }
+    template <> bool decimalLess(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale) { return decLess(x, y, x_scale, y_scale); }
+    template <> bool decimalLessOrEqual(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale) { return decLessOrEqual(x, y, x_scale, y_scale); }
 
-    template <> bool decimalEqual(Decimal64 x, Decimal64 y, UInt32 xs, UInt32 ys) { return decEqual(x, y, xs, ys); }
-    template <> bool decimalLess(Decimal64 x, Decimal64 y, UInt32 xs, UInt32 ys) { return decLess(x, y, xs, ys); }
-    template <> bool decimalLessOrEqual(Decimal64 x, Decimal64 y, UInt32 xs, UInt32 ys) { return decLessOrEqual(x, y, xs, ys); }
+    template <> bool decimalEqual(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale) { return decEqual(x, y, x_scale, y_scale); }
+    template <> bool decimalLess(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale) { return decLess(x, y, x_scale, y_scale); }
+    template <> bool decimalLessOrEqual(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale) { return decLessOrEqual(x, y, x_scale, y_scale); }
 
-    template <> bool decimalEqual(Decimal128 x, Decimal128 y, UInt32 xs, UInt32 ys) { return decEqual(x, y, xs, ys); }
-    template <> bool decimalLess(Decimal128 x, Decimal128 y, UInt32 xs, UInt32 ys) { return decLess(x, y, xs, ys); }
-    template <> bool decimalLessOrEqual(Decimal128 x, Decimal128 y, UInt32 xs, UInt32 ys) { return decLessOrEqual(x, y, xs, ys); }
+    template <> bool decimalEqual(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale) { return decEqual(x, y, x_scale, y_scale); }
+    template <> bool decimalLess(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale) { return decLess(x, y, x_scale, y_scale); }
+    template <> bool decimalLessOrEqual(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale) { return decLessOrEqual(x, y, x_scale, y_scale); }
 }

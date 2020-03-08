@@ -39,8 +39,8 @@ public:
     void useInfoAboutType(DataTypePtr data_type) override;
 
 protected:
-    UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    UInt32 doCompressData(const char * src, UInt32 src_size, char * dst) const override;
+    void doDecompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncompressed_size) const override;
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override
     {

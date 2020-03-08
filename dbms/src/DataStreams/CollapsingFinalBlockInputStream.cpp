@@ -21,8 +21,8 @@ CollapsingFinalBlockInputStream::~CollapsingFinalBlockInputStream()
         c.block.cancel();
     }
 
-    for (size_t i = 0; i < output_blocks.size(); ++i)
-        delete output_blocks[i];
+    for (auto & block : output_blocks)
+        delete block;
 }
 
 void CollapsingFinalBlockInputStream::reportBadCounts()

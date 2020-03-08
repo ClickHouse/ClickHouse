@@ -58,10 +58,7 @@ bool ParserIdentifierWithParameters::parseImpl(Pos & pos, ASTPtr & node, Expecte
         return true;
 
     ParserNestedTable nested;
-    if (nested.parse(pos, node, expected))
-        return true;
-
-    return false;
+    return nested.parse(pos, node, expected);
 }
 
 bool ParserNameTypePairList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)

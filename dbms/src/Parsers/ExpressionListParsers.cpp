@@ -110,10 +110,7 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    if (!allow_empty && first)
-        return false;
-
-    return true;
+    return allow_empty || first;
 }
 
 

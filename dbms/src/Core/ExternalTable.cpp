@@ -57,8 +57,8 @@ void BaseExternalTable::write()
     std::cerr << "name " << name << std::endl;
     std::cerr << "format " << format << std::endl;
     std::cerr << "structure: \n";
-    for (size_t i = 0; i < structure.size(); ++i)
-        std::cerr << "\t" << structure[i].first << " " << structure[i].second << std::endl;
+    for (const auto & elem : structure)
+        std::cerr << "\t" << elem.first << " " << elem.second << std::endl;
 }
 
 std::vector<std::string> BaseExternalTable::split(const std::string & s, const std::string & d)
@@ -91,11 +91,11 @@ void BaseExternalTable::initSampleBlock()
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
-    for (size_t i = 0; i < structure.size(); ++i)
+    for (const auto & elem : structure)
     {
         ColumnWithTypeAndName column;
-        column.name = structure[i].first;
-        column.type = data_type_factory.get(structure[i].second);
+        column.name = elem.first;
+        column.type = data_type_factory.get(elem.second);
         column.column = column.type->createColumn();
         sample_block.insert(std::move(column));
     }

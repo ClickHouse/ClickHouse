@@ -61,7 +61,7 @@ bool CachedCompressedReadBuffer::nextImpl()
         cache->set(key, owned_cell);
     }
 
-    if (owned_cell->data.empty())
+    if (owned_cell->data.size() == 0)
         return false;
 
     working_buffer = Buffer(owned_cell->data.data(), owned_cell->data.data() + owned_cell->data.size() - owned_cell->additional_bytes);
