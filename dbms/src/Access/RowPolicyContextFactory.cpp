@@ -93,7 +93,7 @@ namespace
 
 
     using ConditionIndex = RowPolicy::ConditionIndex;
-    static constexpr size_t MAX_CONDITION_INDEX = RowPolicy::MAX_CONDITION_INDEX;
+    constexpr size_t MAX_CONDITION_INDEX = RowPolicy::MAX_CONDITION_INDEX;
 
 
     /// Accumulates conditions from multiple row policies and joins them using the AND logical operation.

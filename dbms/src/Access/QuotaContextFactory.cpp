@@ -170,9 +170,7 @@ QuotaContextFactory::QuotaContextFactory(const AccessControlManager & access_con
 }
 
 
-QuotaContextFactory::~QuotaContextFactory()
-{
-}
+QuotaContextFactory::~QuotaContextFactory() = default;
 
 
 QuotaContextPtr QuotaContextFactory::createContext(const String & user_name, const UUID & user_id, const std::vector<UUID> & enabled_roles, const Poco::Net::IPAddress & address, const String & client_key)

@@ -19,7 +19,6 @@ class UsersConfigAccessStorage : public IAccessStorage
 {
 public:
     UsersConfigAccessStorage();
-    ~UsersConfigAccessStorage() override;
 
     void setConfiguration(const Poco::Util::AbstractConfiguration & config);
 

@@ -311,9 +311,9 @@ NamesToTypeNames buildDictionaryAttributesConfiguration(
 {
     const auto & children = dictionary_attributes->children;
     NamesToTypeNames attributes_names_and_types;
-    for (size_t i = 0; i < children.size(); ++i)
+    for (const auto & child : children)
     {
-        const ASTDictionaryAttributeDeclaration * dict_attr = children[i]->as<const ASTDictionaryAttributeDeclaration>();
+        const ASTDictionaryAttributeDeclaration * dict_attr = child->as<const ASTDictionaryAttributeDeclaration>();
         if (!dict_attr->type)
             throw Exception("Dictionary attribute must has type", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 

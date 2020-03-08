@@ -270,10 +270,7 @@ bool GenericRoleSet::match(const UUID & user_id, const std::vector<UUID> & enabl
 
     bool in_except_list = std::any_of(
         enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return except_ids.contains(enabled_role); });
-    if (in_except_list)
-        return false;
-
-    return true;
+    return !in_except_list;
 }
 
 
@@ -292,10 +289,7 @@ bool GenericRoleSet::match(const UUID & user_id, const boost::container::flat_se
 
     bool in_except_list = std::any_of(
         enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return except_ids.contains(enabled_role); });
-    if (in_except_list)
-        return false;
-
-    return true;
+    return !in_except_list;
 }
 
 

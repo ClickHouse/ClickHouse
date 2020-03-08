@@ -38,11 +38,6 @@ MultipleAccessStorage::MultipleAccessStorage(
 }
 
 
-MultipleAccessStorage::~MultipleAccessStorage()
-{
-}
-
-
 std::vector<UUID> MultipleAccessStorage::findMultiple(std::type_index type, const String & name) const
 {
     std::vector<UUID> ids;

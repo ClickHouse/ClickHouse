@@ -34,10 +34,10 @@ ASTIdentifier::ASTIdentifier(const String & name_, std::vector<String> && name_p
     , name_parts(name_parts_)
     , semantic(std::make_shared<IdentifierSemanticImpl>())
 {
-    if (name_parts.size() && name_parts[0] == "")
+    if (!name_parts.empty() && name_parts[0].empty())
         name_parts.erase(name_parts.begin());
 
-    if (name == "")
+    if (name.empty())
     {
         if (name_parts.size() == 2)
             name = name_parts[0] + '.' + name_parts[1];
