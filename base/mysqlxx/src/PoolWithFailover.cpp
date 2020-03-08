@@ -10,16 +10,16 @@ static bool startsWith(const std::string & s, const char * prefix)
 
 using namespace mysqlxx;
 
-PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & cfg,
+PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_name, const unsigned default_connections,
                                    const unsigned max_connections, const size_t max_tries)
     : max_tries(max_tries)
 {
-    shareable = cfg.getBool(config_name + ".share_connection", false);
-    if (cfg.has(config_name + ".replica"))
+    shareable = config.getBool(config_name + ".share_connection", false);
+    if (config.has(config_name + ".replica"))
     {
         Poco::Util::AbstractConfiguration::Keys replica_keys;
-        cfg.keys(config_name, replica_keys);
+        config.keys(config_name, replica_keys);
         for (const auto & replica_config_key : replica_keys)
         {
             /// There could be another elements in the same level in configuration file, like "password", "port"...
@@ -27,17 +27,17 @@ PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & cfg
             {
                 std::string replica_name = config_name + "." + replica_config_key;
 
-                int priority = cfg.getInt(replica_name + ".priority", 0);
+                int priority = config.getInt(replica_name + ".priority", 0);
 
                 replicas_by_priority[priority].emplace_back(
-                    std::make_shared<Pool>(cfg, replica_name, default_connections, max_connections, config_name.c_str()));
+                    std::make_shared<Pool>(config, replica_name, default_connections, max_connections, config_name.c_str()));
             }
         }
     }
     else
     {
         replicas_by_priority[0].emplace_back(
-            std::make_shared<Pool>(cfg, config_name, default_connections, max_connections));
+            std::make_shared<Pool>(config, config_name, default_connections, max_connections));
     }
 }
 

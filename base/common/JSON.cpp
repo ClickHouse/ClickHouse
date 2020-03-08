@@ -341,7 +341,7 @@ JSON::Pos JSON::skipArray() const
     if (*pos == ']')
         return ++pos;
 
-    while (1)
+    while (true)
     {
         pos = JSON(pos, ptr_end, level + 1).skipElement();
 
@@ -373,7 +373,7 @@ JSON::Pos JSON::skipObject() const
     if (*pos == '}')
         return ++pos;
 
-    while (1)
+    while (true)
     {
         pos = JSON(pos, ptr_end, level + 1).skipNameValuePair();
 

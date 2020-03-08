@@ -361,7 +361,7 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
         {
             match.offset = pos - haystack;
             match.length = required_substring.size();
-            return 1;
+            return true;
         }
     }
     else
