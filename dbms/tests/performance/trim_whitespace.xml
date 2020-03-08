@@ -1,5 +1,4 @@
 <test>
-    <type>loop</type>
 
     <create_query>
         create table if not exists whitespaces
