@@ -385,7 +385,7 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         UInt64 max_string_length = 10;
         UInt64 max_array_length = 10;
 
-        if (engine_args.size() >= 1)
+        if (!engine_args.empty())
         {
             const Field & value = engine_args[0]->as<const ASTLiteral &>().value;
             if (!value.isNull())

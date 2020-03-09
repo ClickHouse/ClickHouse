@@ -89,7 +89,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::DROP_COLUMN && !command_ast->partition)
     {
         if (command_ast->clear_column)
-            throw Exception("\"ALTER TABLE table CLEAR COLUMN column\" queries are not supported yet. Use \"CLEAR COLUMN column IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(R"("ALTER TABLE table CLEAR COLUMN column" queries are not supported yet. Use "CLEAR COLUMN column IN PARTITION".)", ErrorCodes::NOT_IMPLEMENTED);
 
         AlterCommand command;
         command.ast = command_ast->clone();
@@ -189,7 +189,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::DROP_CONSTRAINT && !command_ast->partition)
     {
         if (command_ast->clear_column)
-            throw Exception("\"ALTER TABLE table CLEAR COLUMN column\" queries are not supported yet. Use \"CLEAR COLUMN column IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(R"("ALTER TABLE table CLEAR COLUMN column" queries are not supported yet. Use "CLEAR COLUMN column IN PARTITION".)", ErrorCodes::NOT_IMPLEMENTED);
 
         AlterCommand command;
         command.ast = command_ast->clone();
@@ -202,7 +202,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::DROP_INDEX && !command_ast->partition)
     {
         if (command_ast->clear_column)
-            throw Exception("\"ALTER TABLE table CLEAR INDEX index\" queries are not supported yet. Use \"CLEAR INDEX index IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(R"("ALTER TABLE table CLEAR INDEX index" queries are not supported yet. Use "CLEAR INDEX index IN PARTITION".)", ErrorCodes::NOT_IMPLEMENTED);
 
         AlterCommand command;
         command.ast = command_ast->clone();
