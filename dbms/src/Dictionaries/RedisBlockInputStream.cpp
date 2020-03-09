@@ -152,8 +152,8 @@ namespace DB
                     break;
 
                 Poco::Redis::Command command_for_values("HMGET");
-                for (auto it = keys_array.begin(); it != keys_array.end(); ++it)
-                    command_for_values.addRedisType(*it);
+                for (const auto & elem : keys_array)
+                    command_for_values.addRedisType(elem);
 
                 auto values = client->execute<RedisArray>(command_for_values);
 
