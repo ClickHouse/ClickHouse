@@ -6,7 +6,7 @@ if (ENABLE_CLANG_TIDY)
         message(FATAL_ERROR "clang-tidy requires CMake version at least 3.6.")
     endif()
 
-    find_program (CLANG_TIDY_PATH NAMES "clang-tidy")
+    find_program (CLANG_TIDY_PATH NAMES "clang-tidy-10" "clang-tidy-9" "clang-tidy-8" "clang-tidy")
     if (CLANG_TIDY_PATH)
         message(STATUS "Using clang-tidy: ${CLANG_TIDY_PATH}. The checks will be run during build process. See the .clang-tidy file at the root directory to configure the checks.")
         set (USE_CLANG_TIDY 1)
