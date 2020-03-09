@@ -7,7 +7,7 @@
 
 using namespace DB;
 
-TEST(MergeTreeSetIndex, checkInRange_one)
+TEST(MergeTreeSetIndex, checkInRangeOne)
 {
     DataTypes types = {std::make_shared<const DataTypeInt64>()};
 
@@ -34,7 +34,7 @@ TEST(MergeTreeSetIndex, checkInRange_one)
     ranges = {Range(-1, true, 10, true)};
     ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "(-1, 10)";
 
-    // Left bounded 
+    // Left bounded
     ranges = {Range::createLeftBounded(1, true)};
     ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "(1, +inf)";
 
@@ -55,7 +55,7 @@ TEST(MergeTreeSetIndex, checkInRange_one)
     ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "(-inf, 10)";
 }
 
-TEST(MergeTreeSetIndex, checkInRange_tuple)
+TEST(MergeTreeSetIndex, checkInRangeTuple)
 {
     DataTypes types = {std::make_shared<const DataTypeUInt64>(), std::make_shared<const DataTypeString>()};
 

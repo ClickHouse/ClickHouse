@@ -584,10 +584,10 @@ TEST_P(CodecTestCompatibility, Decoding)
     ASSERT_TRUE(EqualByteContainers(expected.data_type->getSizeOfValueInMemory(), expected.serialized_data, decoded));
 }
 
-class CodecTest_Performance : public ::testing::TestWithParam<std::tuple<Codec, CodecTestSequence>>
+class CodecTestPerformance : public ::testing::TestWithParam<std::tuple<Codec, CodecTestSequence>>
 {};
 
-TEST_P(CodecTest_Performance, TranscodingWithDataType)
+TEST_P(CodecTestPerformance, TranscodingWithDataType)
 {
     const auto & [codec_spec, test_seq] = GetParam();
     const auto codec = ::makeCodec(codec_spec.codec_statement, test_seq.data_type);
@@ -1295,7 +1295,7 @@ INSTANTIATE_TEST_SUITE_P(Gorilla,
 //};
 
 //INSTANTIATE_TEST_SUITE_P(DoubleDelta,
-//    CodecTest_Performance,
+//    CodecTestPerformance,
 //    ::testing::Combine(
 //        ::testing::Values(Codec("DoubleDelta")),
 //        ::testing::Values(
@@ -1312,7 +1312,7 @@ INSTANTIATE_TEST_SUITE_P(Gorilla,
 //);
 
 //INSTANTIATE_TEST_SUITE_P(Gorilla,
-//    CodecTest_Performance,
+//    CodecTestPerformance,
 //    ::testing::Combine(
 //        ::testing::Values(Codec("Gorilla")),
 //        ::testing::Values(
