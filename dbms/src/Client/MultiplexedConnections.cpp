@@ -36,14 +36,13 @@ MultiplexedConnections::MultiplexedConnections(
         return;
 
     replica_states.reserve(connections.size());
-    for (size_t i = 0; i < connections.size(); ++i)
+    for (auto & connection : connections)
     {
-        Connection * connection = &(*connections[i]);
         connection->setThrottler(throttler);
 
         ReplicaState replica_state;
-        replica_state.pool_entry = std::move(connections[i]);
-        replica_state.connection = connection;
+        replica_state.pool_entry = std::move(connection);
+        replica_state.connection = &*connection;
 
         replica_states.push_back(std::move(replica_state));
     }

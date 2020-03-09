@@ -60,8 +60,8 @@ static void fillArrowArrayWithNumericColumnData(
     {
         /// Invert values since Arrow interprets 1 as a non-null value, while CH as a null
         arrow_null_bytemap.reserve(null_bytemap->size());
-        for (size_t i = 0, size = null_bytemap->size(); i < size; ++i)
-            arrow_null_bytemap.emplace_back(1 ^ (*null_bytemap)[i]);
+        for (auto is_null : *null_bytemap)
+            arrow_null_bytemap.emplace_back(!is_null);
 
         arrow_null_bytemap_raw_ptr = arrow_null_bytemap.data();
     }
@@ -255,7 +255,7 @@ class OstreamOutputStream : public arrow::io::OutputStream
 {
 public:
     explicit OstreamOutputStream(WriteBuffer & ostr_) : ostr(ostr_) { is_open = true; }
-    ~OstreamOutputStream() override {}
+    ~OstreamOutputStream() override = default;
 
     // FileInterface
     ::arrow::Status Close() override

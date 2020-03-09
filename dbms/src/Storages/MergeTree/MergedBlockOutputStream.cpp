@@ -80,7 +80,7 @@ void MergedBlockOutputStream::writeSuffix()
 
 void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         MergeTreeData::MutableDataPartPtr & new_part,
-        const NamesAndTypesList * total_column_list,
+        const NamesAndTypesList * total_columns_list,
         MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
     /// Finish write and get checksums.
@@ -94,8 +94,8 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     writer->finishPrimaryIndexSerialization(checksums);
     writer->finishSkipIndicesSerialization(checksums);
 
-    if (!total_column_list)
-        total_column_list = &columns_list;
+    if (!total_columns_list)
+        total_columns_list = &columns_list;
 
     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
     {
@@ -127,7 +127,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     {
         /// Write a file with a description of columns.
         WriteBufferFromFile out(part_path + "columns.txt", 4096);
-        total_column_list->writeText(out);
+        total_columns_list->writeText(out);
     }
 
     {

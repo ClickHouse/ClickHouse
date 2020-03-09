@@ -43,7 +43,7 @@ protected:
     Chunk totals;
 
 private:
-    void addToTotals(const Chunk & block, const IColumn::Filter * filter);
+    void addToTotals(const Chunk & chunk, const IColumn::Filter * filter);
     void prepareTotals();
 
     /// Params

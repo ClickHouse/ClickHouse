@@ -101,7 +101,7 @@ bool MergeTreePartsMover::selectPartsForMove(
     const auto policy = data->getStoragePolicy();
     const auto & volumes = policy->getVolumes();
 
-    if (volumes.size() > 0)
+    if (!volumes.empty())
     {
         /// Do not check last volume
         for (size_t i = 0; i != volumes.size() - 1; ++i)

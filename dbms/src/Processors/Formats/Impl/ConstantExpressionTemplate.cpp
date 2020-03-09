@@ -41,7 +41,7 @@ struct SpecialParserType
 
 struct LiteralInfo
 {
-    typedef std::shared_ptr<ASTLiteral> ASTLiteralPtr;
+    using ASTLiteralPtr = std::shared_ptr<ASTLiteral>;
     LiteralInfo(const ASTLiteralPtr & literal_, const String & column_name_, bool force_nullable_)
             : literal(literal_), dummy_column_name(column_name_), force_nullable(force_nullable_) { }
     ASTLiteralPtr literal;

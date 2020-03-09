@@ -43,7 +43,7 @@ private:
     kj::Array<capnp::word> readMessage();
 
     // Build a traversal plan from a sorted list of fields
-    void createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader);
+    void createActions(const NestedFieldList & sorted_fields, capnp::StructSchema reader);
 
     /* Action for state machine for traversing nested structures. */
     using BlockPositionList = std::vector<size_t>;
