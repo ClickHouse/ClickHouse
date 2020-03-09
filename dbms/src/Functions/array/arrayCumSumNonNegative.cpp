@@ -95,7 +95,7 @@ struct ArrayCumSumNonNegativeImpl
 
     }
 
-    static ColumnPtr execute(const ColumnArray & array, ColumnPtr & mapped)
+    static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
         ColumnPtr res;
 

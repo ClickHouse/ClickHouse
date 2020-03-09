@@ -303,7 +303,6 @@ private:
                31446, 31800, 32155, 32539, 32894, 33248, 33632, 33986, 34369, 34724, 35078, 35462, 35817, 36171, 36555, 36909, 37293, 37647,
                38002, 38386, 38740, 39095, 39479, 39833, 40187, 40571, 40925, 41309, 41664, 42018, 42402, 42757, 43111, 43495, 43849, 44233,
                44587, 44942, 45326, 45680, 46035, 46418, 46772, 47126, 47510, 47865, 48249, 48604, 48958, 49342};
-        static constexpr size_t N = sizeof(chineseNewYearIndicators) / sizeof(chineseNewYearIndicators[0]);
 
         /// All time zone names are acquired from https://www.iana.org/time-zones
         static constexpr const char * chineseNewYearTimeZoneIndicators[] = {
