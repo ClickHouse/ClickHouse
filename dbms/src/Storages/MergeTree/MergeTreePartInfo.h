@@ -78,7 +78,7 @@ struct MergeTreePartInfo
 
     static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);
 
-    static bool tryParsePartName(const String & dir_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version);
+    static bool tryParsePartName(const String & part_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version);
 
     static void parseMinMaxDatesFromPartName(const String & part_name, DayNum & min_date, DayNum & max_date);
 

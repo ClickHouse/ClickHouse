@@ -41,8 +41,8 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Co
                 + "('DSN', schema, table)",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    for (auto i = 0u; i < args.size(); ++i)
-        args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
+    for (auto & arg : args)
+        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
     std::string connection_string;
     std::string schema_name;
