@@ -17,7 +17,7 @@ bool equals(const Field & lhs, const Field & rhs)
 }
 
 
-FillingRow::FillingRow(const SortDescription & description_) : description(description_)
+FillingRow::FillingRow(const SortDescription & sort_description) : description(sort_description)
 {
     row.resize(description.size());
 }
@@ -114,8 +114,8 @@ void insertFromFillingRow(MutableColumns & filling_columns, MutableColumns & oth
             filling_columns[i]->insert(filling_row[i]);
     }
 
-    for (size_t i = 0; i < other_columns.size(); ++i)
-        other_columns[i]->insertDefault();
+    for (const auto & other_column : other_columns)
+        other_column->insertDefault();
 }
 
 void copyRowFromColumns(MutableColumns & dest, const Columns & source, size_t row_num)

@@ -27,7 +27,7 @@ public:
     Poco::Timestamp getUpdateTime(const std::string & definition_entity_name) override;
 
     /// May contain definition about several entities (several dictionaries in one .xml file)
-    LoadablesConfigurationPtr load(const std::string & definition_entity_name) override;
+    LoadablesConfigurationPtr load(const std::string & config_file) override;
 
 private:
     const String name;

@@ -139,9 +139,7 @@ public:
                 return false; /// Processed, process others
 
         /// Descent into all children, but not into subqueries of other kind (scalar subqueries), that are irrelevant to us.
-        if (child->as<ASTSelectQuery>())
-            return false;
-        return true;
+        return !child->as<ASTSelectQuery>();
     }
 
 private:
