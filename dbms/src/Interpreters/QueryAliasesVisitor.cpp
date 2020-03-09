@@ -33,9 +33,7 @@ static String wrongAliasMessage(const ASTPtr & ast, const ASTPtr & prev_ast, con
 bool QueryAliasesMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
 {
     /// Don't descent into table functions and subqueries and special case for ArrayJoin.
-    if (node->as<ASTTableExpression>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTArrayJoin>())
-        return false;
-    return true;
+    return !(node->as<ASTTableExpression>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTArrayJoin>());
 }
 
 void QueryAliasesMatcher::visit(const ASTPtr & ast, Data & data)

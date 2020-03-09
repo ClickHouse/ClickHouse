@@ -638,7 +638,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         bool empty = false;
         /// In all other cases we cannot have empty key
         if (auto key_function = key_expr->as<ASTFunction>())
-            empty = key_function->arguments->children.size() == 0;
+            empty = key_function->arguments->children.empty();
 
         /// Not explicitely spicified empty key
         if (!empty)

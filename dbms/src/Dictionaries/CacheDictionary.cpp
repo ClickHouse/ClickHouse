@@ -748,7 +748,7 @@ void CacheDictionary::updateThreadFunction()
 
         UpdateUnitPtr current_unit_ptr;
 
-        while (update_request.size() && update_queue.tryPop(current_unit_ptr))
+        while (!update_request.empty() && update_queue.tryPop(current_unit_ptr))
             update_request.emplace_back(std::move(current_unit_ptr));
 
         BunchUpdateUnit bunch_update_unit(update_request);
