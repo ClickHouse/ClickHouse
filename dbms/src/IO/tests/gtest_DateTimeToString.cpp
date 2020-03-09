@@ -138,6 +138,8 @@ TEST_P(DateTimeToStringParamTestDateTime64, writeDateText)
     ASSERT_NO_FATAL_FAILURE(Test(GetParam()));
 }
 
+static const Int32 NON_ZERO_TIME_T = 10 * 365 * 3600 * 24 + 123456;
+
 INSTANTIATE_TEST_SUITE_P(DateTimeToString, DateTimeToStringParamTestDayNum,
     ::testing::ValuesIn(std::initializer_list<DateTimeToStringParamTestCase<DayNum>>
     {
@@ -174,8 +176,8 @@ INSTANTIATE_TEST_SUITE_P(DateTimeToString, DateTimeToStringParamTestTimeT,
         },
         {
             "Non-Zero time_t is a valid date/time",
-            time_t(100LL * 365 * 3600 * 24 + 123456),
-            "2069-12-08 10:17:36"
+            time_t{NON_ZERO_TIME_T},
+            "1979-12-31 10:17:36"
         },
 //        { // Negative time_t value produces (expectedly) bogus results,
 //          // and there is no reliable way to verify output values on all platforms and configurations
@@ -194,7 +196,7 @@ INSTANTIATE_TEST_SUITE_P(DateTimeToString, DateTimeToStringParamTestDateTime64,
         {
             "Zero DateTime64 with scale 0 is represented as valid date/time",
             DateTime64WithScale{0, 0},
-            "0000-00-00 00:00:00."
+            "0000-00-00 00:00:00"
         },
         {
             "Zero DateTime64 with scale 3 is repsented as valid data/time",
@@ -203,13 +205,13 @@ INSTANTIATE_TEST_SUITE_P(DateTimeToString, DateTimeToStringParamTestDateTime64,
         },
         {
             "Non-Zero DateTime64 with scale 0",
-            DateTime64WithScale{10 * 365 * 3600 * 24, 0},
-            "1979-12-30 00:00:00"
+            DateTime64WithScale{NON_ZERO_TIME_T, 0},
+            "1979-12-31 10:17:36"
         },
         {
             "Non-Zero DateTime64 with scale 3",
-            DateTime64WithScale{10 * 365 * 3600 * 24 * 1000ULL + 123, 3},
-            "1979-12-30 00:00:00.123"
+            DateTime64WithScale{NON_ZERO_TIME_T * 1000LL + 123, 3},
+            "1979-12-31 10:17:36.123"
         },
 //        {
 //            "Negative time_t value wraps around as if it was UInt32 due to LUT limitations and to maintain compatibility with existing code",
