@@ -305,22 +305,17 @@ void PerformanceTest::runQueries(
         statistics.startWatches();
         try
         {
-            executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context, test_info.settings);
-
-            if (test_info.exec_type == ExecutionType::Loop)
+            LOG_INFO(log, "Will run query in loop");
+            for (size_t iteration = 0; !statistics.got_SIGINT; ++iteration)
             {
-                LOG_INFO(log, "Will run query in loop");
-                for (size_t iteration = 1; !statistics.got_SIGINT; ++iteration)
+                stop_conditions.reportIterations(iteration);
+                if (stop_conditions.areFulfilled())
                 {
-                    stop_conditions.reportIterations(iteration);
-                    if (stop_conditions.areFulfilled())
-                    {
-                        LOG_INFO(log, "Stop conditions fulfilled");
-                        break;
-                    }
-
-                    executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context, test_info.settings);
+                    LOG_INFO(log, "Stop conditions fulfilled");
+                    break;
                 }
+
+                executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context, test_info.settings);
             }
         }
         catch (const Exception & e)

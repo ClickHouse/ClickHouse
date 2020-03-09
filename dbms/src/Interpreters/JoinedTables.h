@@ -2,6 +2,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
@@ -9,6 +10,7 @@ namespace DB
 
 class ASTSelectQuery;
 class Context;
+struct SelectQueryOptions;
 
 /// Joined tables' columns resolver.
 /// We want to get each table structure at most once per table occurance. Or even better once per table.
@@ -16,32 +18,30 @@ class Context;
 class JoinedTables
 {
 public:
-    JoinedTables() = default;
-    JoinedTables(const ASTSelectQuery & select_query);
+    JoinedTables(Context && contex, const ASTSelectQuery & select_query);
 
     void reset(const ASTSelectQuery & select_query)
     {
-        *this = JoinedTables(select_query);
+        *this = JoinedTables(std::move(context), select_query);
     }
 
-    StoragePtr getLeftTableStorage(Context & context);
-
-    /// Resolve columns or get from storage. It assumes storage is not nullptr.
-    void resolveTables(const Context & context, StoragePtr storage);
-    /// Resolve columns or get from source list.
-    void resolveTables(const Context & context, const NamesAndTypesList & source_columns);
+    StoragePtr getLeftTableStorage();
+    bool resolveTables();
+    void makeFakeTable(StoragePtr storage, const Block & source_header);
 
     const std::vector<TableWithColumnNamesAndTypes> & tablesWithColumns() const { return tables_with_columns; }
 
     bool isLeftTableSubquery() const;
     bool isLeftTableFunction() const;
-    bool hasJoins() const { return table_expressions.size() > 1; }
+    size_t tablesCount() const { return table_expressions.size(); }
 
-    const ASTPtr & leftTableExpression() const { return left_table_expression; }
     const String & leftTableDatabase() const { return database_name; }
     const String & leftTableName() const { return table_name; }
 
+    std::unique_ptr<InterpreterSelectWithUnionQuery> makeLeftTableSubquery(const SelectQueryOptions & select_options);
+
 private:
+    Context context;
     std::vector<const ASTTableExpression *> table_expressions;
     std::vector<TableWithColumnNamesAndTypes> tables_with_columns;
 
