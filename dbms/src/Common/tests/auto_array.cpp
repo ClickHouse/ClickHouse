@@ -17,11 +17,11 @@ int main(int argc, char ** argv)
         using T = std::string;
         DB::AutoArray<T> arr(n);
 
-        for (size_t i = 0; i < arr.size(); ++i)
-            arr[i] = "Hello, world! " + DB::toString(i);
+        for (auto & elem : arr)
+            elem = "Hello, world! " + DB::toString(i);
 
-        for (size_t i = 0; i < arr.size(); ++i)
-            std::cerr << arr[i] << std::endl;
+        for (auto & elem : arr)
+            std::cerr << elem << std::endl;
     }
 
     std::cerr << std::endl;
@@ -33,11 +33,11 @@ int main(int argc, char ** argv)
         Arr arr;
 
         arr.resize(n);
-        for (size_t i = 0; i < arr.size(); ++i)
-            arr[i] = "Hello, world! " + DB::toString(i);
+        for (auto & elem : arr)
+            elem = "Hello, world! " + DB::toString(i);
 
-        for (size_t i = 0; i < arr.size(); ++i)
-            std::cerr << arr[i] << std::endl;
+        for (auto & elem : arr)
+            std::cerr << elem << std::endl;
 
         std::cerr << std::endl;
 
@@ -45,8 +45,8 @@ int main(int argc, char ** argv)
 
         std::cerr << arr.size() << ", " << arr2.size() << std::endl;
 
-        for (size_t i = 0; i < arr2.size(); ++i)
-            std::cerr << arr2[i] << std::endl;
+        for (auto & elem : arr2)
+            std::cerr << elem << std::endl;
     }
 
     std::cerr << std::endl;
@@ -68,28 +68,28 @@ int main(int argc, char ** argv)
             map[std::move(key)] = "Hello, world! " + DB::toString(i);
         }
 
-        for (Map::const_iterator it = map.begin(); it != map.end(); ++it)
+        for (const auto & kv : map)
         {
             std::cerr << "[";
             for (size_t j = 0; j < n; ++j)
-                std::cerr << (j == 0 ? "" : ", ") << it->first[j];
+                std::cerr << (j == 0 ? "" : ", ") << kv.first[j];
             std::cerr << "]";
 
-            std::cerr << ":\t" << it->second << std::endl;
+            std::cerr << ":\t" << kv.second << std::endl;
         }
 
         std::cerr << std::endl;
 
         Map map2 = std::move(map);
 
-        for (Map::const_iterator it = map2.begin(); it != map2.end(); ++it)
+        for (const auto & kv : map2)
         {
             std::cerr << "[";
             for (size_t j = 0; j < n; ++j)
-                std::cerr << (j == 0 ? "" : ", ") << it->first[j];
+                std::cerr << (j == 0 ? "" : ", ") << kv.first[j];
             std::cerr << "]";
 
-            std::cerr << ":\t" << it->second << std::endl;
+            std::cerr << ":\t" << kv.second << std::endl;
         }
     }
 
@@ -112,11 +112,11 @@ int main(int argc, char ** argv)
             vec.push_back(std::move(key));
         }
 
-        for (Vec::const_iterator it = vec.begin(); it != vec.end(); ++it)
+        for (const auto & elem : vec)
         {
             std::cerr << "[";
             for (size_t j = 0; j < n; ++j)
-                std::cerr << (j == 0 ? "" : ", ") << (*it)[j];
+                std::cerr << (j == 0 ? "" : ", ") << elem[j];
             std::cerr << "]" << std::endl;
         }
 
@@ -124,11 +124,11 @@ int main(int argc, char ** argv)
 
         Vec vec2 = std::move(vec);
 
-        for (Vec::const_iterator it = vec2.begin(); it != vec2.end(); ++it)
+        for (const auto & elem : vec2)
         {
             std::cerr << "[";
             for (size_t j = 0; j < n; ++j)
-                std::cerr << (j == 0 ? "" : ", ") << (*it)[j];
+                std::cerr << (j == 0 ? "" : ", ") << elem[j];
             std::cerr << "]" << std::endl;
         }
     }

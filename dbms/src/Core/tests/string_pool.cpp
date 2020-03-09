@@ -82,8 +82,8 @@ int main(int argc, char ** argv)
         Set set;
         Stopwatch watch;
 
-        for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
-            set[*it] = 0;
+        for (const auto & elem : vec)
+            set[elem] = 0;
 
         std::cerr << "Inserted into std::unordered_map in " << watch.elapsedSeconds() << " sec, "
             << vec.size() / watch.elapsedSeconds() << " rows/sec., "
@@ -102,8 +102,8 @@ int main(int argc, char ** argv)
         RefsSet set;
         Stopwatch watch;
 
-        for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
-            set[StringRef(*it)] = 0;
+        for (const auto & elem : vec)
+            set[StringRef(elem)] = 0;
 
         std::cerr << "Inserted refs into std::unordered_map in " << watch.elapsedSeconds() << " sec, "
             << vec.size() / watch.elapsedSeconds() << " rows/sec., "
@@ -123,8 +123,8 @@ int main(int argc, char ** argv)
         RefsSet set;
         Stopwatch watch;
 
-        for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
-            set[StringRef(pool.insert(it->data(), it->size()), it->size())] = 0;
+        for (const auto & elem : vec)
+            set[StringRef(pool.insert(elem.data(), elem.size()), elem.size())] = 0;
 
         std::cerr << "Inserted into pool and refs into std::unordered_map in " << watch.elapsedSeconds() << " sec, "
             << vec.size() / watch.elapsedSeconds() << " rows/sec., "
@@ -144,8 +144,8 @@ int main(int argc, char ** argv)
         set.set_empty_key(DenseSet::key_type());
         Stopwatch watch;
 
-        for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
-            set[*it] = 0;
+        for (const auto & elem : vec)
+            set[elem] = 0;
 
         std::cerr << "Inserted into google::dense_hash_map in " << watch.elapsedSeconds() << " sec, "
             << vec.size() / watch.elapsedSeconds() << " rows/sec., "
@@ -165,8 +165,8 @@ int main(int argc, char ** argv)
         set.set_empty_key(RefsDenseSet::key_type());
         Stopwatch watch;
 
-        for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
-            set[StringRef(it->data(), it->size())] = 0;
+        for (const auto & elem : vec)
+            set[StringRef(elem.data(), elem.size())] = 0;
 
         std::cerr << "Inserted refs into google::dense_hash_map in " << watch.elapsedSeconds() << " sec, "
             << vec.size() / watch.elapsedSeconds() << " rows/sec., "
@@ -187,8 +187,8 @@ int main(int argc, char ** argv)
         set.set_empty_key(RefsDenseSet::key_type());
         Stopwatch watch;
 
-        for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
-            set[StringRef(pool.insert(it->data(), it->size()), it->size())] = 0;
+        for (const auto & elem : vec)
+            set[StringRef(pool.insert(elem.data(), elem.size()), elem.size())] = 0;
 
         std::cerr << "Inserted into pool and refs into google::dense_hash_map in " << watch.elapsedSeconds() << " sec, "
             << vec.size() / watch.elapsedSeconds() << " rows/sec., "
@@ -207,11 +207,11 @@ int main(int argc, char ** argv)
         RefsHashMap set;
         Stopwatch watch;
 
-        for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
+        for (const auto & elem : vec)
         {
             RefsHashMap::LookupResult inserted_it;
             bool inserted;
-            set.emplace(StringRef(*it), inserted_it, inserted);
+            set.emplace(StringRef(elem), inserted_it, inserted);
         }
 
         std::cerr << "Inserted refs into HashMap in " << watch.elapsedSeconds() << " sec, "
@@ -234,11 +234,11 @@ int main(int argc, char ** argv)
         RefsHashMap set;
         Stopwatch watch;
 
-        for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
+        for (const auto & elem : vec)
         {
             RefsHashMap::LookupResult inserted_it;
             bool inserted;
-            set.emplace(StringRef(pool.insert(it->data(), it->size()), it->size()), inserted_it, inserted);
+            set.emplace(StringRef(pool.insert(elem.data(), elem.size()), elem.size()), inserted_it, inserted);
         }
 
         std::cerr << "Inserted into pool and refs into HashMap in " << watch.elapsedSeconds() << " sec, "
