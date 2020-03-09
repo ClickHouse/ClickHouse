@@ -72,9 +72,9 @@ struct MergeTreeDataPartChecksums
     bool read(ReadBuffer & in, size_t format_version);
     bool read_v2(ReadBuffer & in);
     bool read_v3(ReadBuffer & in);
-    bool read_v4(ReadBuffer & in);
+    bool read_v4(ReadBuffer & from);
 
-    void write(WriteBuffer & out) const;
+    void write(WriteBuffer & to) const;
 
     /// Checksum from the set of checksums of .bin files (for deduplication).
     void computeTotalChecksumDataOnly(SipHash & hash) const;

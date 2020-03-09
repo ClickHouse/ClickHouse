@@ -68,10 +68,10 @@ int main(int, char **)
             Queries queries;
             queries.push_back(query);
 
-            for (Queries::iterator it = queries.begin(); it != queries.end(); ++it)
+            for (auto & query : queries)
             {
-                std::cerr << it->str() << std::endl;
-                std::cerr << it->store().at(0) << std::endl;
+                std::cerr << query.str() << std::endl;
+                std::cerr << query.store().at(0) << std::endl;
             }
         }
 
@@ -92,10 +92,10 @@ int main(int, char **)
             mysqlxx::Query & qref = queries.back();
             qref << " 1";
 
-            for (Queries::iterator it = queries.begin(); it != queries.end(); ++it)
+            for (auto & query : queries)
             {
-                std::cerr << it->str() << std::endl;
-                std::cerr << it->store().at(0) << std::endl;
+                std::cerr << query.str() << std::endl;
+                std::cerr << query.store().at(0) << std::endl;
             }
         }
 
