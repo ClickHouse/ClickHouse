@@ -186,7 +186,7 @@ void validateFunctionArgumentTypes(const IFunction & func,
                 result += sep;
             }
 
-            if (args.size() != 0)
+            if (!args.empty())
                 result.erase(result.end() - sep.length(), result.end());
 
             return result;

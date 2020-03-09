@@ -31,7 +31,7 @@ void ReplicatedMergeTreeQueue::addVirtualParts(const MergeTreeData::DataParts & 
 {
     std::lock_guard lock(state_mutex);
 
-    for (auto part : parts)
+    for (const auto & part : parts)
     {
         current_parts.add(part->name);
         virtual_parts.add(part->name);
@@ -265,7 +265,7 @@ void ReplicatedMergeTreeQueue::removePartFromMutations(const String & part_name)
         MutationStatus & status = *it->second;
 
         status.parts_to_do.removePartAndCoveredParts(part_name);
-        if (status.parts_to_do.empty())
+        if (status.parts_to_do.size() == 0)
             some_mutations_are_probably_done = true;
 
         if (!status.latest_failed_part.empty() && part_info.contains(status.latest_failed_part_info))
@@ -695,7 +695,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                     }
                 }
 
-                if (mutation.parts_to_do.empty())
+                if (mutation.parts_to_do.size() == 0)
                 {
                     some_mutations_are_probably_done = true;
                 }
@@ -1377,7 +1377,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                     mutation.parts_to_do.clear();
                 }
             }
-            else if (mutation.parts_to_do.empty())
+            else if (mutation.parts_to_do.size() == 0)
             {
                 LOG_TRACE(log, "Will check if mutation " << mutation.entry->znode_name << " is done");
                 candidates.push_back(mutation.entry);

@@ -42,7 +42,7 @@ private:
     void readData(
         const String & name, const IDataType & type, IColumn & column,
         size_t from_mark, bool continue_reading, size_t max_rows_to_read,
-        bool read_offsets = true);
+        bool with_offsets = true);
 };
 
 }
