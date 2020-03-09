@@ -53,8 +53,8 @@
 
 namespace
 {
-static const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
-static const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS           = 2;
+const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
+const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS           = 2;
 }
 
 namespace DB
@@ -663,8 +663,8 @@ void StorageDistributed::flushClusterNodesAllData()
     std::lock_guard lock(cluster_nodes_mutex);
 
     /// TODO: Maybe it should be executed in parallel
-    for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end(); ++it)
-        it->second.flushAllData();
+    for (auto & node : cluster_nodes_data)
+        node.second.flushAllData();
 }
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name,

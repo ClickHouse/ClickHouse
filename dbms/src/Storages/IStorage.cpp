@@ -278,10 +278,10 @@ void IStorage::check(const Block & block, bool need_all) const
 
     if (need_all && names_in_block.size() < columns_map.size())
     {
-        for (auto it = available_columns.begin(); it != available_columns.end(); ++it)
+        for (const auto & available_column : available_columns)
         {
-            if (!names_in_block.count(it->name))
-                throw Exception("Expected column " + it->name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+            if (!names_in_block.count(available_column.name))
+                throw Exception("Expected column " + available_column.name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
     }
 }
