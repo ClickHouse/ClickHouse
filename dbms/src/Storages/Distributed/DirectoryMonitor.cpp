@@ -46,7 +46,7 @@ namespace ErrorCodes
 
 namespace
 {
-    static constexpr const std::chrono::minutes decrease_error_count_period{5};
+    constexpr const std::chrono::minutes decrease_error_count_period{5};
 
     template <typename PoolFactory>
     ConnectionPoolPtrs createPoolsForAddresses(const std::string & name, PoolFactory && factory)
@@ -238,7 +238,7 @@ bool StorageDistributedDirectoryMonitor::processFiles()
         const auto & file_path_str = it->path();
         Poco::Path file_path{file_path_str};
 
-        if (!it->isDirectory() && startsWith(file_path.getExtension().data(), "bin"))
+        if (!it->isDirectory() && startsWith(file_path.getExtension(), "bin"))
             files[parse<UInt64>(file_path.getBaseName())] = file_path_str;
     }
 

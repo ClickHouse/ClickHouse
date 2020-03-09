@@ -253,7 +253,7 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
 }
 
 void StorageMergeTree::alter(
-    const AlterCommands & params,
+    const AlterCommands & commands,
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
@@ -263,7 +263,7 @@ void StorageMergeTree::alter(
 
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
 
-    params.apply(metadata);
+    commands.apply(metadata);
 
     /// Update metdata in memory
     auto update_metadata = [&metadata, &table_lock_holder, this]()
@@ -277,7 +277,7 @@ void StorageMergeTree::alter(
     };
 
     /// This alter can be performed at metadata level only
-    if (!params.isModifyingData())
+    if (!commands.isModifyingData())
     {
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
