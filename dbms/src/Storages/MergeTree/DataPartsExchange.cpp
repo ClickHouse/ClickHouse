@@ -33,8 +33,8 @@ namespace DataPartsExchange
 
 namespace
 {
-static constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = 1;
-static constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS = 2;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = 1;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS = 2;
 
 
 std::string getEndpointId(const std::string & node_id)
