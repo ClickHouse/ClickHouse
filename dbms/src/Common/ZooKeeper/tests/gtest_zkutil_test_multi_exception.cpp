@@ -12,7 +12,7 @@
 
 using namespace DB;
 
-TEST(zkutil, zookeeper_connected)
+TEST(zkutil, ZookeeperConnected)
 {
     try
     {
@@ -26,7 +26,7 @@ TEST(zkutil, zookeeper_connected)
     }
 }
 
-TEST(zkutil, multi_nice_exception_msg)
+TEST(zkutil, MultiNiceExceptionMsg)
 {
     auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
 
@@ -64,7 +64,7 @@ TEST(zkutil, multi_nice_exception_msg)
 }
 
 
-TEST(zkutil, multi_async)
+TEST(zkutil, MultiAsync)
 {
     auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
     Coordination::Requests ops;
@@ -126,7 +126,7 @@ TEST(zkutil, multi_async)
     }
 }
 
-TEST(zkutil, watch_get_children_with_chroot)
+TEST(zkutil, WatchGetChildrenWithChroot)
 {
     try
     {
@@ -163,7 +163,7 @@ TEST(zkutil, watch_get_children_with_chroot)
     }
 }
 
-TEST(zkutil, multi_create_sequential)
+TEST(zkutil, MultiCreateSequential)
 {
     try
     {

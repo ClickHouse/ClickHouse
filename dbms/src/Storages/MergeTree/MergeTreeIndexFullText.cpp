@@ -63,8 +63,7 @@ bool MergeTreeConditionFullText::createFunctionEqualsCondition(RPNElement & out,
 }
 
 MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(const MergeTreeIndexFullText & index_)
-    : IMergeTreeIndexGranule()
-    , index(index_)
+    : index(index_)
     , bloom_filters(
             index.columns.size(), BloomFilter(index.bloom_filter_size, index.bloom_filter_hashes, index.seed))
     , has_elems(false) {}
@@ -524,12 +523,12 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
     std::vector<size_t> key_position;
 
     Columns columns = prepared_set->getSetElements();
-    for (size_t col = 0; col < key_tuple_mapping.size(); ++col)
+    for (const auto & elem : key_tuple_mapping)
     {
         bloom_filters.emplace_back();
-        key_position.push_back(key_tuple_mapping[col].key_index);
+        key_position.push_back(elem.key_index);
 
-        size_t tuple_idx = key_tuple_mapping[col].tuple_index;
+        size_t tuple_idx = elem.tuple_index;
         const auto & column = columns[tuple_idx];
         for (size_t row = 0; row < prepared_set->getTotalRowCount(); ++row)
         {
