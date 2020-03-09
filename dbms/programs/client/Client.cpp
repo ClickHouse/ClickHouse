@@ -112,7 +112,7 @@ namespace ErrorCodes
 class Client : public Poco::Util::Application
 {
 public:
-    Client() {}
+    Client() = default;
 
 private:
     using StringSet = std::unordered_set<String>;
@@ -353,10 +353,8 @@ private:
             return false;
 
         auto days = DateLUT::instance().toDayNum(current_time).toUnderType();
-        for (auto i = 0ul; i < N; ++i)
+        for (auto d : chineseNewYearIndicators)
         {
-            auto d = chineseNewYearIndicators[i];
-
             /// Let's celebrate until Lantern Festival
             if (d <= days && d + 25u >= days)
                 return true;
@@ -645,7 +643,7 @@ private:
     }
 
 
-    inline const String prompt() const
+    inline String prompt() const
     {
         return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
     }
