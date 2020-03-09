@@ -295,12 +295,12 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
         }
     }
 
-    for (auto it = column_streams.begin(); it != column_streams.end(); ++it)
+    for (auto & stream : column_streams)
     {
-        it->second->finalize();
+        stream.second->finalize();
         if (sync)
-            it->second->sync();
-        it->second->addToChecksums(checksums);
+            stream.second->sync();
+        stream.second->addToChecksums(checksums);
     }
 
     column_streams.clear();

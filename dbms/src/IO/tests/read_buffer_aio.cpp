@@ -68,26 +68,26 @@ void run()
 
     const std::vector<std::function<bool()>> tests =
     {
-        std::bind(test1, std::ref(filename)),
-        std::bind(test2, std::ref(filename), std::ref(buf)),
-        std::bind(test3, std::ref(filename), std::ref(buf)),
-        std::bind(test4, std::ref(filename), std::ref(buf)),
-        std::bind(test5, std::ref(filename), std::ref(buf)),
-        std::bind(test6, std::ref(filename), std::ref(buf)),
-        std::bind(test7, std::ref(filename), std::ref(buf)),
-        std::bind(test8, std::ref(filename), std::ref(buf)),
-        std::bind(test9, std::ref(filename), std::ref(buf)),
-        std::bind(test10, std::ref(filename), std::ref(buf)),
-        std::bind(test11, std::ref(filename)),
-        std::bind(test12, std::ref(filename), std::ref(buf)),
-        std::bind(test13, std::ref(filename2), std::ref(buf2)),
-        std::bind(test14, std::ref(filename), std::ref(buf)),
-        std::bind(test15, std::ref(filename3), std::ref(buf3)),
-        std::bind(test16, std::ref(filename3), std::ref(buf3)),
-        std::bind(test17, std::ref(filename4), std::ref(buf4)),
-        std::bind(test18, std::ref(filename5), std::ref(buf5)),
-        std::bind(test19, std::ref(filename), std::ref(buf)),
-        std::bind(test20, std::ref(filename), std::ref(buf))
+        [&]{ return test1(filename); },
+        [&]{ return test2(filename, buf); },
+        [&]{ return test3(filename, buf); },
+        [&]{ return test4(filename, buf); },
+        [&]{ return test5(filename, buf); },
+        [&]{ return test6(filename, buf); },
+        [&]{ return test7(filename, buf); },
+        [&]{ return test8(filename, buf); },
+        [&]{ return test9(filename, buf); },
+        [&]{ return test10(filename, buf); },
+        [&]{ return test11(filename); },
+        [&]{ return test12(filename, buf); },
+        [&]{ return test13(filename2, buf2); },
+        [&]{ return test14(filename, buf); },
+        [&]{ return test15(filename3, buf3); },
+        [&]{ return test16(filename3, buf3); },
+        [&]{ return test17(filename4, buf4); },
+        [&]{ return test18(filename5, buf5); },
+        [&]{ return test19(filename, buf); },
+        [&]{ return test20(filename, buf); }
     };
 
     unsigned int num = 0;
