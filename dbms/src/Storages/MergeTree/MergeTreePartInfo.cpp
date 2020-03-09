@@ -12,18 +12,18 @@ namespace ErrorCodes
 }
 
 
-MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & dir_name, MergeTreeDataFormatVersion format_version)
+MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version)
 {
     MergeTreePartInfo part_info;
-    if (!tryParsePartName(dir_name, &part_info, format_version))
-        throw Exception("Unexpected part name: " + dir_name, ErrorCodes::BAD_DATA_PART_NAME);
+    if (!tryParsePartName(part_name, &part_info, format_version))
+        throw Exception("Unexpected part name: " + part_name, ErrorCodes::BAD_DATA_PART_NAME);
     return part_info;
 }
 
 
-bool MergeTreePartInfo::tryParsePartName(const String & dir_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version)
+bool MergeTreePartInfo::tryParsePartName(const String & part_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version)
 {
-    ReadBufferFromString in(dir_name);
+    ReadBufferFromString in(part_name);
 
     String partition_id;
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -101,18 +101,18 @@ bool MergeTreePartInfo::tryParsePartName(const String & dir_name, MergeTreePartI
 }
 
 
-void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & dir_name, DayNum & min_date, DayNum & max_date)
+void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & part_name, DayNum & min_date, DayNum & max_date)
 {
     UInt32 min_yyyymmdd = 0;
     UInt32 max_yyyymmdd = 0;
 
-    ReadBufferFromString in(dir_name);
+    ReadBufferFromString in(part_name);
 
     if (!tryReadIntText(min_yyyymmdd, in)
         || !checkChar('_', in)
         || !tryReadIntText(max_yyyymmdd, in))
     {
-        throw Exception("Unexpected part name: " + dir_name, ErrorCodes::BAD_DATA_PART_NAME);
+        throw Exception("Unexpected part name: " + part_name, ErrorCodes::BAD_DATA_PART_NAME);
     }
 
     const auto & date_lut = DateLUT::instance();
@@ -124,7 +124,7 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & dir_name, Da
     DayNum max_month = date_lut.toFirstDayNumOfMonth(max_date);
 
     if (min_month != max_month)
-        throw Exception("Part name " + dir_name + " contains different months", ErrorCodes::BAD_DATA_PART_NAME);
+        throw Exception("Part name " + part_name + " contains different months", ErrorCodes::BAD_DATA_PART_NAME);
 }
 
 

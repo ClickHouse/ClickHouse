@@ -17,8 +17,8 @@ int main(int argc, char ** argv)
         using T = std::string;
         DB::AutoArray<T> arr(n);
 
-        for (auto & elem : arr)
-            elem = "Hello, world! " + DB::toString(i);
+        for (size_t i = 0; i < arr.size(); ++i)
+            arr[i] = "Hello, world! " + DB::toString(i);
 
         for (auto & elem : arr)
             std::cerr << elem << std::endl;
@@ -33,8 +33,8 @@ int main(int argc, char ** argv)
         Arr arr;
 
         arr.resize(n);
-        for (auto & elem : arr)
-            elem = "Hello, world! " + DB::toString(i);
+        for (size_t i = 0; i < arr.size(); ++i)
+            arr[i] = "Hello, world! " + DB::toString(i);
 
         for (auto & elem : arr)
             std::cerr << elem << std::endl;
