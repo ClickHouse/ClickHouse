@@ -230,9 +230,6 @@ private:
     template <typename T>
     void has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const;
 
-    template <typename Getter, typename KeyType>
-    void trieTraverse(const btrie_t * trie, Getter && getter) const;
-
     Columns getKeyColumns() const;
 
     const std::string database;
