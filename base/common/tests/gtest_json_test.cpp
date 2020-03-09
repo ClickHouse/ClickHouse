@@ -22,7 +22,7 @@ struct GetStringTestRecord
     std::string result;
 };
 
-TEST(JSON_Suite, SimpleTest)
+TEST(JSONSuite, SimpleTest)
 {
     std::vector<GetStringTestRecord> test_data =
     {

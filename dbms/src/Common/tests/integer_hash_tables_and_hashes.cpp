@@ -272,9 +272,9 @@ namespace Hashes
             };
             size_t res = 0;
 
-            for (size_t i = 0; i < 8; ++i)
+            for (auto & rand : random)
             {
-                res ^= random[i][UInt8(x)];
+                res ^= rand[UInt8(x)];
                 x >>= 8;
             }
 
