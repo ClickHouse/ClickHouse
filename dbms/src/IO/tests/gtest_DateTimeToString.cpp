@@ -88,7 +88,7 @@ class DateTimeToStringParamTestBase : public ::testing::TestWithParam<DateTimeTo
 public:
     void Test(const DateTimeToStringParamTestCase<ValueType> & param)
     {
-        [[maybe_unused]] const auto & [description, input, expected, timezone] = param;
+        [[maybe_unused]] const auto & [description, input, expected, timezone_name] = param;
 
         using namespace DB;
         WriteBufferFromOwnString out;
@@ -99,11 +99,11 @@ public:
         }
         else if constexpr (std::is_same_v<ValueType, time_t>)
         {
-            writeDateTimeText(input, out, DateLUT::instance(timezone));
+            writeDateTimeText(input, out, DateLUT::instance(timezone_name));
         }
         else if constexpr (std::is_same_v<ValueType, DateTime64WithScale>)
         {
-            writeDateTimeText(input.value, input.scale, out, DateLUT::instance(timezone));
+            writeDateTimeText(input.value, input.scale, out, DateLUT::instance(timezone_name));
         }
         else
         {
@@ -194,12 +194,12 @@ INSTANTIATE_TEST_SUITE_P(DateTimeToString, DateTimeToStringParamTestDateTime64,
     {
         /// Inside basic LUT boundaries
         {
-            "Zero DateTime64 with scale 0 is represented as valid date/time",
+            "Zero DateTime64 with scale 0 string representation matches one of zero time_t",
             DateTime64WithScale{0, 0},
             "0000-00-00 00:00:00"
         },
         {
-            "Zero DateTime64 with scale 3 is repsented as valid data/time",
+            "Zero DateTime64 with scale 3 string representation matches one of zero time_t with subsecond part",
             DateTime64WithScale{0, 3},
             "0000-00-00 00:00:00.000"
         },
