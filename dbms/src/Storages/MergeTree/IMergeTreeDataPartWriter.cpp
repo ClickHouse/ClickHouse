@@ -199,19 +199,19 @@ void IMergeTreeDataPartWriter::initSkipIndices()
     skip_indices_initialized = true;
 }
 
-void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & primary_keys_block, size_t rows)
+void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & primary_index_block, size_t rows)
 {
     if (!primary_index_initialized)
         throw Exception("Primary index is not initialized", ErrorCodes::LOGICAL_ERROR);
 
-    size_t primary_columns_num = primary_keys_block.columns();
+    size_t primary_columns_num = primary_index_block.columns();
     if (index_columns.empty())
     {
-        index_types = primary_keys_block.getDataTypes();
+        index_types = primary_index_block.getDataTypes();
         index_columns.resize(primary_columns_num);
         last_index_row.resize(primary_columns_num);
         for (size_t i = 0; i < primary_columns_num; ++i)
-            index_columns[i] = primary_keys_block.getByPosition(i).column->cloneEmpty();
+            index_columns[i] = primary_index_block.getByPosition(i).column->cloneEmpty();
     }
 
     /** While filling index (index_columns), disable memory tracker.
@@ -230,7 +230,7 @@ void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & p
         {
             for (size_t j = 0; j < primary_columns_num; ++j)
             {
-                const auto & primary_column = primary_keys_block.getByPosition(j);
+                const auto & primary_column = primary_index_block.getByPosition(j);
                 index_columns[j]->insertFrom(*primary_column.column, i);
                 primary_column.type->serializeBinary(*primary_column.column, i, *index_stream);
             }
@@ -244,7 +244,7 @@ void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & p
     /// store last index row to write final mark at the end of column
     for (size_t j = 0; j < primary_columns_num; ++j)
     {
-        const IColumn & primary_column = *primary_keys_block.getByPosition(j).column.get();
+        const IColumn & primary_column = *primary_index_block.getByPosition(j).column.get();
         primary_column.get(rows - 1, last_index_row[j]);
     }
 }

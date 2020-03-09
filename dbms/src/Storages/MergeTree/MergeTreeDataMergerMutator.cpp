@@ -378,9 +378,8 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::selectAllPartsFromPar
 
     MergeTreeData::DataParts data_parts = data.getDataParts();
 
-    for (MergeTreeData::DataParts::iterator it = data_parts.cbegin(); it != data_parts.cend(); ++it)
+    for (const auto & current_part : data_parts)
     {
-        const MergeTreeData::DataPartPtr & current_part = *it;
         if (current_part->info.partition_id != partition_id)
             continue;
 
