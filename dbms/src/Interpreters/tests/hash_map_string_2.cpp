@@ -568,10 +568,7 @@ inline bool operator==(StringRef_CompareAlwaysTrue, StringRef_CompareAlwaysTrue)
 
 inline bool operator==(StringRef_CompareAlmostAlwaysTrue lhs, StringRef_CompareAlmostAlwaysTrue rhs)
 {
-    if (lhs.size != rhs.size)
-        return false;
-
-    return true;
+    return lhs.size == rhs.size;
 }
 
 
@@ -589,9 +586,9 @@ void NO_INLINE bench(const std::vector<StringRef> & data, const char * name)
     typename Map::LookupResult it;
     bool inserted;
 
-    for (size_t i = 0, size = data.size(); i < size; ++i)
+    for (const auto & value : data)
     {
-        map.emplace(static_cast<const Key &>(data[i]), it, inserted);
+        map.emplace(static_cast<const Key &>(value), it, inserted);
         if (inserted)
             it->getMapped() = 0;
         ++it->getMapped();

@@ -44,16 +44,14 @@ struct ArraySplitImpl
             out_offsets_2.reserve(in_offsets.size()); // assume the actual size to be equal or larger
             out_offsets_1.reserve(in_offsets.size());
 
-            for (size_t i = 0; i < in_offsets.size(); ++i)
+            for (auto in_offset : in_offsets)
             {
-                if (pos < in_offsets[i])
+                if (pos < in_offset)
                 {
                     pos += !reverse;
-                    for (; pos < in_offsets[i] - reverse; ++pos)
-                    {
+                    for (; pos < in_offset - reverse; ++pos)
                         if (cut[pos])
                             out_offsets_2.push_back(pos + reverse);
-                    }
                     pos += reverse;
 
                     out_offsets_2.push_back(pos);
@@ -76,8 +74,8 @@ struct ArraySplitImpl
 
                 for (size_t i = 0; i < in_offsets.back(); ++i)
                     out_offsets_2.push_back(i + 1);
-                for (size_t i = 0; i < in_offsets.size(); ++i)
-                    out_offsets_1.push_back(in_offsets[i]);
+                for (auto in_offset : in_offsets)
+                    out_offsets_1.push_back(in_offset);
             }
             else
             {
@@ -86,12 +84,11 @@ struct ArraySplitImpl
                 out_offsets_2.reserve(in_offsets.size());
                 out_offsets_1.reserve(in_offsets.size());
 
-                for (size_t i = 0; i < in_offsets.size(); ++i)
+                for (auto in_offset : in_offsets)
                 {
-                    if (pos < in_offsets[i])
+                    if (pos < in_offset)
                     {
-                        pos = in_offsets[i];
-
+                        pos = in_offset;
                         out_offsets_2.push_back(pos);
                     }
 

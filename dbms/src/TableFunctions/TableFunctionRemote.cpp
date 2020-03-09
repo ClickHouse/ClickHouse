@@ -155,8 +155,8 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
         std::vector<String> shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
         std::vector<std::vector<String>> names;
-        for (size_t i = 0; i < shards.size(); ++i)
-            names.push_back(parseRemoteDescription(shards[i], 0, shards[i].size(), '|', max_addresses));
+        for (const auto & shard : shards)
+            names.push_back(parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses));
 
         if (names.empty())
             throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
@@ -164,9 +164,9 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
         auto maybe_secure_port = context.getTCPPortSecure();
 
         /// Check host and port on affiliation allowed hosts.
-        for (auto hosts : names)
+        for (const auto & hosts : names)
         {
-            for (auto host : hosts)
+            for (const auto & host : hosts)
             {
                 size_t colon = host.find(':');
                 if (colon == String::npos)

@@ -95812,6 +95812,6 @@ const char * tldLookupHash::is_valid(const char * str, size_t len)
                 return s;
         }
     }
-    return 0;
+    return nullptr;
 }
 #line 4957 "tldLookup.gperf"

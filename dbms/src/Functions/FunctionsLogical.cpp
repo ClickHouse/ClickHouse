@@ -287,7 +287,7 @@ struct OperationApplier
     {
         if (!use_result_data_as_input)
             doBatchedApply<false>(in, result_data);
-        while (in.size() > 0)
+        while (!in.empty())
             doBatchedApply<true>(in, result_data);
     }
 

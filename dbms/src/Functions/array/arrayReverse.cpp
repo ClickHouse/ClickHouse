@@ -100,15 +100,15 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
 }
 
 
-bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data)
+bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data)
 {
-    size_t size = src_offsets.size();
+    size_t size = src_array_offsets.size();
     res_data.reserve(size);
 
     ColumnArray::Offset src_prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
     {
-        ssize_t src_index = src_offsets[i] - 1;
+        ssize_t src_index = src_array_offsets[i] - 1;
 
         while (src_index >= ssize_t(src_prev_offset))
         {
@@ -116,7 +116,7 @@ bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const Column
             --src_index;
         }
 
-        src_prev_offset = src_offsets[i];
+        src_prev_offset = src_array_offsets[i];
     }
 
     return true;

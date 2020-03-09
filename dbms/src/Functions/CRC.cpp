@@ -45,13 +45,13 @@ struct CRCImpl
     }
 };
 
-static constexpr UInt64 CRC64_ECMA = 0xc96c5795d7870f42ULL;
+constexpr UInt64 CRC64_ECMA = 0xc96c5795d7870f42ULL;
 struct CRC64ECMAImpl : public CRCImpl<UInt64, CRC64_ECMA>
 {
     static constexpr auto name = "CRC64";
 };
 
-static constexpr UInt32 CRC32_IEEE = 0xedb88320;
+constexpr UInt32 CRC32_IEEE = 0xedb88320;
 struct CRC32IEEEImpl : public CRCImpl<UInt32, CRC32_IEEE>
 {
     static constexpr auto name = "CRC32IEEE";

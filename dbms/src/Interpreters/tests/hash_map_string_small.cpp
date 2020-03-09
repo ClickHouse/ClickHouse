@@ -50,7 +50,7 @@ struct SmallStringRef
 
     SmallStringRef(const unsigned char * data_, size_t size_) : SmallStringRef(reinterpret_cast<const char *>(data_), size_) {}
     explicit SmallStringRef(const std::string & s) : SmallStringRef(s.data(), s.size()) {}
-    SmallStringRef() {}
+    SmallStringRef() = default;
 
     std::string toString() const { return std::string(data(), size); }
 };

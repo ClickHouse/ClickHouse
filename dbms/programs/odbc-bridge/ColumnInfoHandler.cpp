@@ -93,7 +93,7 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
         process_error("No 'connection_string' in request URL");
         return;
     }
-    std::string schema_name = "";
+    std::string schema_name;
     std::string table_name = params.get("table");
     std::string connection_string = params.get("connection_string");
 

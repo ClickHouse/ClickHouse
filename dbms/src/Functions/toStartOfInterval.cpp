@@ -23,7 +23,7 @@ namespace ErrorCodes
 
 namespace
 {
-    static constexpr auto function_name = "toStartOfInterval";
+    constexpr auto function_name = "toStartOfInterval";
 
     template <IntervalKind::Kind unit>
     struct Transform;

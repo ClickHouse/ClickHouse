@@ -448,7 +448,7 @@ void HTTPHandler::processQuery(
             settings.readonly = 2;
     }
 
-    bool has_external_data = startsWith(request.getContentType().data(), "multipart/form-data");
+    bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
 
     if (has_external_data)
     {

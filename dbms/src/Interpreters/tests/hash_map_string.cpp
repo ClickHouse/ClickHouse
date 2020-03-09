@@ -41,7 +41,7 @@ struct CompactStringRef
 
     CompactStringRef(const unsigned char * data_, size_t size_) : CompactStringRef(reinterpret_cast<const char *>(data_), size_) {}
     explicit CompactStringRef(const std::string & s) : CompactStringRef(s.data(), s.size()) {}
-    CompactStringRef() {}
+    CompactStringRef() = default;
 
     const char * data() const { return reinterpret_cast<const char *>(reinterpret_cast<intptr_t>(data_mixed) & 0x0000FFFFFFFFFFFFULL); }
 
