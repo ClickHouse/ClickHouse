@@ -43,7 +43,7 @@ void waitQuery(Connection & connection)
                 finished = true;
                 break;
             case Protocol::Server::Exception:
-                throw *packet.exception;
+                throw Exception(*packet.exception);
         }
 
         if (finished)
@@ -117,7 +117,7 @@ bool PerformanceTest::checkPreconditions() const
                 {
                     for (const ColumnWithTypeAndName & column : packet.block)
                     {
-                        if (column.name == "result" && column.column->size() > 0)
+                        if (column.name == "result" && !column.column->empty())
                         {
                             exist = column.column->get64(0);
                             if (exist)

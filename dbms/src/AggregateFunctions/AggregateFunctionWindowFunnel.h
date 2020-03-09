@@ -148,7 +148,7 @@ private:
     // The Algorithm complexity is O(n).
     UInt8 getEventLevel(const Data & data) const
     {
-        if (data.empty())
+        if (data.size() == 0)
             return 0;
         if (events_size == 1)
             return 1;

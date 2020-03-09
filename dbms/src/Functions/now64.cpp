@@ -64,7 +64,7 @@ public:
         UInt32 scale = DataTypeDateTime64::default_scale;
 
         // Type check is similar to the validateArgumentType, trying to keep error codes and messages as close to the said function as possible.
-        if (arguments.size() >= 1)
+        if (!arguments.empty())
         {
             const auto & argument = arguments[0];
             if (!isInteger(argument.type) || !argument.column || !isColumnConst(*argument.column))

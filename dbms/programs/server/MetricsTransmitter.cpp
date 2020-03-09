@@ -127,7 +127,7 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
         }
     }
 
-    if (key_vals.size())
+    if (!key_vals.empty())
         BaseDaemon::instance().writeToGraphite(key_vals, config_name);
 }
 

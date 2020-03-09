@@ -131,8 +131,8 @@ namespace
 void registerAggregateFunctionUniqCombined(AggregateFunctionFactory & factory)
 {
     using namespace std::placeholders;
-    factory.registerFunction("uniqCombined", std::bind(createAggregateFunctionUniqCombined, false, _1, _2, _3));
-    factory.registerFunction("uniqCombined64", std::bind(createAggregateFunctionUniqCombined, true, _1, _2, _3));
+    factory.registerFunction("uniqCombined", std::bind(createAggregateFunctionUniqCombined, false, _1, _2, _3)); // NOLINT
+    factory.registerFunction("uniqCombined64", std::bind(createAggregateFunctionUniqCombined, true, _1, _2, _3)); // NOLINT
 }
 
 }
