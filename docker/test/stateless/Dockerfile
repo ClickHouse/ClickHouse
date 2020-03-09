@@ -29,7 +29,6 @@ RUN apt-get update -y \
             gdb \
             lsof \
             llvm-8 \
-            vim \
             unixodbc \
             wget
 
