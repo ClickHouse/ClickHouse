@@ -1,6 +1,5 @@
 <test>
     <times_to_run>1</times_to_run>
-    <type>loop</type>
 
     <stop_conditions>
         <all_of>

@@ -1,11 +1,11 @@
-# generate
+# generateRandom
 
 Generates random data with given schema.
 Allows to populate test tables with data.
 Supports all data types that can be stored in table except `LowCardinality` and `AggregateFunction`.
 
 ```sql
-generate('name TypeName[, name TypeName]...', 'limit'[, 'max_array_length'[, 'max_string_length'[, 'random_seed']]]);
+generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]);
 ```
 
 **Parameters**
@@ -15,7 +15,7 @@ generate('name TypeName[, name TypeName]...', 'limit'[, 'max_array_length'[, 'ma
 - `limit` — Number of rows to generate.
 - `max_array_length` — Maximum array length for all generated arrays. Defaults to `10`.
 - `max_string_length` — Maximum string length for all generated strings. Defaults to `10`.
-- `random_seed` — Specify random seed manually to produce stable results. Defaults to `0` — seed is randomly generated.
+- `random_seed` — Specify random seed manually to produce stable results. If NULL — seed is randomly generated.
 
 **Returned Value**
 
@@ -25,7 +25,7 @@ A table object with requested schema.
 
 
 ```sql
-SELECT * FROM generate('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 3, 2, 10, 1);
+SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2);
 ```
 ```text
 ┌─a────────┬────────────d─┬─c──────────────────────────────────────────────────────────────────┐
