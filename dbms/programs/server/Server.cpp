@@ -698,7 +698,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             return socket_address;
         };
 
-        auto socket_bind_listen = [&](auto & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = 0)
+        auto socket_bind_listen = [&](auto & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false)
         {
                auto address = make_socket_address(host, port);
 #if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100
