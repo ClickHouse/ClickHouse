@@ -100,8 +100,8 @@ std::vector<ASTs> PredicateExpressionsOptimizer::extractTablesPredicates(const A
                 tables_predicates[*expression_info.unique_reference_tables_pos.begin()].emplace_back(predicate_expression);
             else if (expression_info.unique_reference_tables_pos.empty())
             {
-                for (size_t index = 0; index < tables_predicates.size(); ++index)
-                    tables_predicates[index].emplace_back(predicate_expression);
+                for (auto & predicate : tables_predicates)
+                    predicate.emplace_back(predicate_expression);
             }
         }
     }

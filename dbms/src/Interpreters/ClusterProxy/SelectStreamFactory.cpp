@@ -111,10 +111,10 @@ Pipe createLocalStream(const ASTPtr & query_ast, const Block & header, const Con
     return std::move(pipeline).getPipe();
 }
 
-static String formattedAST(const ASTPtr & ast)
+String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
-        return "";
+        return {};
     std::stringstream ss;
     formatAST(*ast, ss, false, true);
     return ss.str();

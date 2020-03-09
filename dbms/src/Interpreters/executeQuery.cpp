@@ -249,7 +249,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     BlockIO res;
     QueryPipeline & pipeline = res.pipeline;
 
-    String query_for_logging = "";
+    String query_for_logging;
 
     try
     {
@@ -598,7 +598,7 @@ void executeQuery(
     const char * end;
 
     /// If 'istr' is empty now, fetch next data into buffer.
-    if (istr.buffer().empty())
+    if (istr.buffer().size() == 0)
         istr.next();
 
     size_t max_query_size = context.getSettingsRef().max_query_size;

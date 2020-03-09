@@ -92,7 +92,7 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
     if (nullable)
     {
         JoinCommon::convertColumnToNullable(column);
-        if (column.type->isNullable() && negative_null_map.size())
+        if (column.type->isNullable() && !negative_null_map.empty())
         {
             MutableColumnPtr mutable_column = (*std::move(column.column)).mutate();
             assert_cast<ColumnNullable &>(*mutable_column).applyNegatedNullMap(negative_null_map);

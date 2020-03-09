@@ -103,14 +103,14 @@ void NO_INLINE Set::insertFromBlockImplCase(
 }
 
 
-void Set::setHeader(const Block & block)
+void Set::setHeader(const Block & header)
 {
     std::unique_lock lock(rwlock);
 
     if (!empty())
         return;
 
-    keys_size = block.columns();
+    keys_size = header.columns();
     ColumnRawPtrs key_columns;
     key_columns.reserve(keys_size);
     data_types.reserve(keys_size);
@@ -122,10 +122,10 @@ void Set::setHeader(const Block & block)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst());
+        materialized_columns.emplace_back(header.safeGetByPosition(i).column->convertToFullColumnIfConst());
         key_columns.emplace_back(materialized_columns.back().get());
-        data_types.emplace_back(block.safeGetByPosition(i).type);
-        set_elements_types.emplace_back(block.safeGetByPosition(i).type);
+        data_types.emplace_back(header.safeGetByPosition(i).type);
+        set_elements_types.emplace_back(header.safeGetByPosition(i).type);
 
         /// Convert low cardinality column to full.
         if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
