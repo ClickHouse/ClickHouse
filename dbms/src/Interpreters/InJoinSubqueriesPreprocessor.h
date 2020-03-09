@@ -50,7 +50,7 @@ public:
         , checker(std::move(_checker))
     {}
 
-    void visit(ASTPtr & query) const;
+    void visit(ASTPtr & ast) const;
 
 private:
     const Context & context;
