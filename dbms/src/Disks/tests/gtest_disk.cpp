@@ -61,7 +61,7 @@ private:
 };
 
 
-typedef testing::Types<DB::DiskMemory, DB::DiskLocal> DiskImplementations;
+using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
 TYPED_TEST_SUITE(DiskTest, DiskImplementations);
 
 

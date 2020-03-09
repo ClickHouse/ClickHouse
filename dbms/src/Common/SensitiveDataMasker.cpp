@@ -78,6 +78,8 @@ public:
 
 };
 
+SensitiveDataMasker::~SensitiveDataMasker() = default;
+
 std::unique_ptr<SensitiveDataMasker> SensitiveDataMasker::sensitive_data_masker = nullptr;
 
 void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_)

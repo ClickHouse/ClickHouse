@@ -57,62 +57,62 @@ void testGetFractional(const DecimalUtilsSplitAndCombineTestParam & param)
 }
 
 // unfortunatelly typed parametrized tests () are not supported in this version of gtest, so I have to emulate by hand.
-TEST_P(DecimalUtilsSplitAndCombineTest, split_Decimal32)
+TEST_P(DecimalUtilsSplitAndCombineTest, splitDecimal32)
 {
     testSplit<Decimal32>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, split_Decimal64)
+TEST_P(DecimalUtilsSplitAndCombineTest, splitDecimal64)
 {
     testSplit<Decimal64>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, split_Decimal128)
+TEST_P(DecimalUtilsSplitAndCombineTest, splitDecimal128)
 {
     testSplit<Decimal128>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, combine_Decimal32)
+TEST_P(DecimalUtilsSplitAndCombineTest, combineDecimal32)
 {
     testDecimalFromComponents<Decimal32>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, combine_Decimal64)
+TEST_P(DecimalUtilsSplitAndCombineTest, combineDecimal64)
 {
     testDecimalFromComponents<Decimal64>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, combine_Decimal128)
+TEST_P(DecimalUtilsSplitAndCombineTest, combineDecimal128)
 {
     testDecimalFromComponents<Decimal64>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, getWholePart_Decimal32)
+TEST_P(DecimalUtilsSplitAndCombineTest, getWholePartDecimal32)
 {
     testGetWhole<Decimal32>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, getWholePart_Decimal64)
+TEST_P(DecimalUtilsSplitAndCombineTest, getWholePartDecimal64)
 {
     testGetWhole<Decimal64>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, getWholePart_Decimal128)
+TEST_P(DecimalUtilsSplitAndCombineTest, getWholePartDecimal128)
 {
     testGetWhole<Decimal128>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPart_Decimal32)
+TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPartDecimal32)
 {
     testGetFractional<Decimal32>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPart_Decimal64)
+TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPartDecimal64)
 {
     testGetFractional<Decimal64>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPart_Decimal128)
+TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPartDecimal128)
 {
     testGetFractional<Decimal128>(GetParam());
 }
