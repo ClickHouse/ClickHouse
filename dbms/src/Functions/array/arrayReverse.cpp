@@ -75,7 +75,7 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
     const IColumn * src_inner_col = src_nullable_col ? &src_nullable_col->getNestedColumn() : &src_data;
     IColumn * res_inner_col = res_nullable_col ? &res_nullable_col->getNestedColumn() : &res_data;
 
-    false
+    false // NOLINT
         || executeNumber<UInt8>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<UInt16>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<UInt32>(*src_inner_col, offsets, *res_inner_col)
