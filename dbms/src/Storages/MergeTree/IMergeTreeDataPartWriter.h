@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Disks/IDisk.h>
 
 
 namespace DB
@@ -26,6 +27,7 @@ public:
     {
         Stream(
             const String & escaped_column_name_,
+            DiskPtr disk_,
             const String & data_path_,
             const std::string & data_file_extension_,
             const std::string & marks_path_,
@@ -46,7 +48,7 @@ public:
         HashingWriteBuffer compressed;
 
         /// marks -> marks_file
-        WriteBufferFromFile marks_file;
+        std::unique_ptr<WriteBufferFromFileBase> marks_file;
         HashingWriteBuffer marks;
 
         void finalize();
@@ -59,6 +61,7 @@ public:
     using StreamPtr = std::unique_ptr<Stream>;
 
     IMergeTreeDataPartWriter(
+        DiskPtr disk,
         const String & part_path,
         const MergeTreeData & storage,
         const NamesAndTypesList & columns_list,
@@ -113,6 +116,7 @@ protected:
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
 
+    DiskPtr disk;
     String part_path;
     const MergeTreeData & storage;
     NamesAndTypesList columns_list;
@@ -146,7 +150,7 @@ protected:
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_filling;
 
-    std::unique_ptr<WriteBufferFromFile> index_file_stream;
+    std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;
     MutableColumns index_columns;
     DataTypes index_types;
