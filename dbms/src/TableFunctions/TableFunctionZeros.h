@@ -8,7 +8,7 @@ namespace DB
 {
 
 /* zeros(limit), zeros_mt(limit)
- * - the same as SELECT number FROM system.zeros LIMIT limit.
+ * - the same as SELECT zero FROM system.zeros LIMIT limit.
  * Used for testing purposes, as a simple example of table function.
  */
 template <bool multithreaded>
