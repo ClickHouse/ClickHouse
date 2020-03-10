@@ -66,7 +66,7 @@ private:
 
     static Block createHeader()
     {
-        return { ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt64>(), "zero") };
+        return { ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "zero") };
     }
 
     static ColumnPtr createColumn(size_t size)
