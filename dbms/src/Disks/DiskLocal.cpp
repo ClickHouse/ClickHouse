@@ -1,5 +1,6 @@
 #include "DiskLocal.h"
 #include "DiskFactory.h"
+#include <Common/createHardLink.h>
 
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
@@ -17,6 +18,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int PATH_ACCESS_DENIED;
+    extern const int CANNOT_UNLINK;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -254,6 +256,22 @@ Poco::Timestamp DiskLocal::getLastModified(const String & path)
     return Poco::File(disk_path + path).getLastModified();
 }
 
+void DiskLocal::removeDirectory(const String & path)
+{
+	if (0 != rmdir(path.c_str()))
+		throwFromErrnoWithPath("Cannot rmdir file " + path, path, ErrorCodes::CANNOT_UNLINK);
+}
+
+void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
+{
+	DB::createHardLink(src_path, dst_path);
+}
+
+void DiskLocal::unlink(const String & path)
+{
+	if (0 != ::unlink(path.c_str()))
+		throwFromErrnoWithPath("Cannot unlink file " + path, path, ErrorCodes::CANNOT_UNLINK);
+}
 
 void DiskLocalReservation::update(UInt64 new_size)
 {

@@ -83,6 +83,9 @@ public:
     void setLastModified(const String &, const Poco::Timestamp &) override { }
 
     Poco::Timestamp getLastModified(const String &) override { return Poco::Timestamp(); }
+    void removeDirectory(const String & path) override;
+    void createHardLink(const String & src_path, const String & dst_path) override;
+    void unlink(const String & path) override;
 
 private:
     void createDirectoriesImpl(const String & path);

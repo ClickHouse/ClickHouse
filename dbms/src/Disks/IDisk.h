@@ -122,6 +122,9 @@ public:
     /// Copy the file from `from_path` to `to_path`.
     virtual void copyFile(const String & from_path, const String & to_path) = 0;
 
+    /// Recursively copy data containing at `from_path` to `to_path` located at another disk `to_disk`.
+    virtual void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) = 0;
+
     /// List files at `path` and add their names to `file_names`
     virtual void listFiles(const String & path, std::vector<String> & file_names) = 0;
 
@@ -147,11 +150,22 @@ public:
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     virtual void removeRecursive(const String & path) = 0;
 
+    /// Removes directory if it's empty.
+    virtual void removeDirectory(const String & path) = 0;
+
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;
 
+    virtual void setReadOnly(const String & path) = 0;
+
     /// Get last modified time of file or directory at `path`.
     virtual Poco::Timestamp getLastModified(const String & path) = 0;
+
+    /// Create hardlink from `src_path` to `dst_path`.
+    virtual void createHardLink(const String & src_path, const String & dst_path) = 0;
+
+    /// Delete a name and possibly the file it refers to `path`.
+    virtual void unlink(const String & path) = 0;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;

@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int UNKNOWN_FORMAT;
+    extern const int CANNOT_UNLINK;
 }
 
 namespace
@@ -624,6 +625,26 @@ Poco::Timestamp DiskS3::getLastModified(const String & path)
     return Poco::File(metadata_path + path).getLastModified();
 }
 
+void DiskS3::removeDirectory(const String & path)
+{
+    if (0 != rmdir(path.c_str()))
+        throwFromErrnoWithPath("Cannot rmdir file " + path, path, ErrorCodes::CANNOT_UNLINK);
+}
+
+void DiskS3::createHardLink(const String & src_path, const String & dst_path)
+{
+    /**
+     * TODO: Replace with proper implementation:
+     * Store links into a list in metadata file.
+     * Hardlink creation is adding link and metadata file copy.
+     */
+    copyFile(src_path, dst_path);
+}
+
+void DiskS3::unlink(const String & path)
+{
+    remove(path);
+}
 
 DiskS3Reservation::~DiskS3Reservation()
 {

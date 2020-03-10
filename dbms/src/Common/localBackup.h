@@ -2,7 +2,8 @@
 
 #include <optional>
 
-namespace Poco { class Path; }
+class DiskPtr;
+class String;
 
 namespace DB
 {
@@ -20,6 +21,6 @@ namespace DB
   *  If max_level is specified, than only files which depth relative source_path less or equal max_level will be copied.
   *  So, if max_level=0 than only direct file child are copied.
   */
-void localBackup(const Poco::Path & source_path, const Poco::Path & destination_path, std::optional<size_t> max_level = {});
+void localBackup(const DiskPtr & disk, const String & source_path, const String & destination_path, std::optional<size_t> max_level = {});
 
 }
