@@ -71,7 +71,11 @@ start_clickhouse
 
 sleep 5
 
-/s3downloader --dataset-names $DATASETS
+if ! /s3downloader --dataset-names $DATASETS; then
+    echo "Cannot download datatsets"
+    exit 1
+fi
+
 
 chmod 777 -R /var/lib/clickhouse
 

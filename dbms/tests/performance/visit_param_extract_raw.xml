@@ -1,13 +1,9 @@
 <test>
-    <type>once</type>
-
     <stop_conditions>
         <any_of>
-            <average_speed_not_changing_for_ms>4000</average_speed_not_changing_for_ms>
             <total_time_ms>10000</total_time_ms>
         </any_of>
     </stop_conditions>
-
 
     <substitutions>
         <substitution>
@@ -20,5 +16,5 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM system.numbers WHERE NOT ignore(visitParamExtractRaw(materialize({param}), 'myparam'))</query>
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(visitParamExtractRaw(materialize({param}), 'myparam'))</query>
 </test>
