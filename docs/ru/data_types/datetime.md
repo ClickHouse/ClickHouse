@@ -1,6 +1,6 @@
 # DateTime {#data_type-datetime}
 
-Позволяет хранить момент времени, который может быть представлен как календарная дата и время. `DateTime` позволяет учесть часовой пояс для хранимых значений.
+Позволяет хранить момент времени, который может быть представлен как календарная дата и время.
 
 Синтаксис:
 
@@ -14,13 +14,13 @@ DateTime([timezone])
 
 ## Использование
 
-Момент времени сохраняется как Unix timestamp, независимо от часового пояса и переходов на летнее/зимнее время. Дополнительно, `DateTime` позволяет хранить часовой пояс, который влияет на то, как будут отображаться значения типа `DateTime` в текстовом виде и как будут парситься входные строки. Список поддерживаемых временных зон можно найти в [IANA Time Zone Database](https://www.iana.org/time-zones).
+Момент времени сохраняется как Unix timestamp, независимо от часового пояса и переходов на летнее/зимнее время. Дополнительно, тип `DateTime` позволяет хранить часовой пояс, единый для всей колонки, который влияет на то, как будут отображаться значения типа `DateTime` в текстовом виде и как будут парситься значения заданные в виде строк ('2020-01-01 05:00:01'). Часовой пояс не хранится в строках таблицы (выборки), а хранится в метаданных колонки. Список поддерживаемых временных зон можно найти в [IANA Time Zone Database](https://www.iana.org/time-zones).
 
 Часовой пояс для столбца типа `DateTime` можно в явном виде установить при создании таблицы. Если часовой пояс не установлен, то ClickHouse использует значение параметра [timezone](../operations/server_settings/settings.md#server_settings-timezone), установленное в конфигурации сервера или в настройках операционной системы на момент запуска сервера.
 
 Консольный клиент ClickHouse по умолчанию использует часовой пояс сервера, если для значения `DateTime` часовой пояс не был задан в явном виде при инициализации типа данных. Чтобы использовать часовой пояс клиента, запустите [clickhouse-client](../interfaces/cli.md) с параметром `--use_client_time_zone`.
 
-ClickHouse по умолчанию выводит значение в формате `YYYY-MM-DD hh:mm:ss`. Формат можно поменять с помощью функции [formatDateTime](../query_language/functions/date_time_functions.md#formatdatetime).
+ClickHouse отображает значения типа `DateTime` в формате `YYYY-MM-DD hh:mm:ss`. Отображение можно поменять с помощью функции [formatDateTime](../query_language/functions/date_time_functions.md#formatdatetime).
 
 При вставке данных в ClickHouse, можно использовать различные форматы даты и времени в зависимости от значения настройки [date_time_input_format](../operations/settings/settings.md#settings-date_time_input_format).
 
@@ -34,13 +34,13 @@ CREATE TABLE dt
     `timestamp` DateTime('Europe/Moscow'), 
     `event_id` UInt8
 )
-ENGINE = TinyLog
+ENGINE = TinyLog;
 ```
 ```sql
-INSERT INTO dt Values (1546300800, 1), ('2019-01-01 00:00:00', 2)
+INSERT INTO dt Values (1546300800, 1), ('2019-01-01 00:00:00', 2);
 ```
 ```sql
-SELECT * FROM dt
+SELECT * FROM dt;
 ```
 ```text
 ┌───────────timestamp─┬─event_id─┐
@@ -72,7 +72,7 @@ SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
 └─────────────────────┴──────────┘
 ```
 
-**3.** Получение часового пояса для значения типа `DateTime`:
+**3.** Получение часового пояса для колонки типа `DateTime`:
 
 ```sql
 SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
