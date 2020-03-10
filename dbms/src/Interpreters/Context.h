@@ -417,8 +417,7 @@ public:
     DatabasePtr getDatabase(const String & database_name) const;
     DatabasePtr tryGetDatabase(const String & database_name) const;
 
-    const Databases & getDatabases() const;
-    Databases & getDatabases();
+    Databases getDatabases() const;
 
     /// Allow to use named sessions. The thread will be run to cleanup sessions after timeout has expired.
     /// The method must be called at the server startup.
