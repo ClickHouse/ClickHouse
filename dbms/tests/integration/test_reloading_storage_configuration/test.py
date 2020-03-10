@@ -124,6 +124,26 @@ def test_add_disk(started_cluster):
             """"""
 
 
+def test_add_disk_without_first_check(started_cluster):
+    try:
+        name = "test_add_disk"
+        engine = "MergeTree()"
+
+        start_over()
+        node1.restart_clickhouse(kill=True)
+        time.sleep(2)
+
+        add_disk(node1, "jbod3", "/jbod3/")
+        node1.query("SYSTEM RELOAD CONFIG")
+
+        assert "jbod3" in set(node1.query("SELECT name FROM system.disks").splitlines())
+    finally:
+        try:
+            node1.query("DROP TABLE IF EXISTS {}".format(name))
+        except:
+            """"""
+
+
 def test_add_disk_to_separate_config(started_cluster):
     try:
         name = "test_add_disk"

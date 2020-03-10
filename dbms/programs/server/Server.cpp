@@ -1022,6 +1022,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 global_context->getConfigRef(), graphite_key, async_metrics));
         }
 
+        global_context->getDiskSelector();
+        global_context->getStoragePolicySelector();
+
         waitForTerminationRequest();
     }
 
