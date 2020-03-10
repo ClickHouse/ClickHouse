@@ -84,7 +84,7 @@ private:
 StorageSystemZeros::StorageSystemZeros(const std::string & name_, bool multithreaded_, std::optional<UInt64> limit_)
     : IStorage({"system", name_}), multithreaded(multithreaded_), limit(limit_)
 {
-    setColumns(ColumnsDescription({{"zeros", std::make_shared<DataTypeUInt8>()}}));
+    setColumns(ColumnsDescription({{"zero", std::make_shared<DataTypeUInt8>()}}));
 }
 
 Pipes StorageSystemZeros::read(
