@@ -18,7 +18,7 @@
 7	7
 8	8
 9	9
-SimpleAggregateFunction(sum, Double)
+SimpleAggregateFunction(sum, Float64)
 0	0
 1	2
 2	4
