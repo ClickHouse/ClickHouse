@@ -315,7 +315,7 @@ public:
 
         const DateLUTImpl * time_zone_tmp = nullptr;
         if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
-           time_zone_tmp = &extractTimeZoneFromFunctionArguments(block, arguments, 3, 0);
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(block, arguments, 3, 0);
         else
             time_zone_tmp = &DateLUT::instance();
 
