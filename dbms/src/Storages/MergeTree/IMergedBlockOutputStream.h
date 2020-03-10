@@ -30,6 +30,7 @@ protected:
 protected:
     const MergeTreeData & storage;
 
+    DiskPtr disk;
     String part_path;
 
     static Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);

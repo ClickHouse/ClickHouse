@@ -268,9 +268,9 @@ public:
         {
         }
 
-        void load(const MergeTreeData & storage, const String & part_path);
-        void store(const MergeTreeData & storage, const String & part_path, Checksums & checksums) const;
-        void store(const Names & column_names, const DataTypes & data_types, const String & part_path, Checksums & checksums) const;
+        void load(const MergeTreeData & storage, const DiskPtr & disk_, const String & part_path);
+        void store(const MergeTreeData & storage, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
+        void store(const Names & column_names, const DataTypes & data_types, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
@@ -294,6 +294,7 @@ public:
     UInt64 getMarksCount() const;
 
     size_t getFileSizeOrZero(const String & file_name) const;
+    String getFullRelativePath() const;
     String getFullPath() const;
     void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = false) const;
     void renameToDetached(const String & prefix) const;
@@ -305,7 +306,7 @@ public:
     /// Checks that .bin and .mrk files exist
     virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const{ return false; }
 
-    static UInt64 calculateTotalSizeOnDisk(const String & from);
+    static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
 
 protected:
     /// Columns description.
