@@ -10,6 +10,7 @@
 #include <utility>
 #include <boost/noncopyable.hpp>
 #include <Poco/Path.h>
+#include <Poco/Timestamp.h>
 
 
 namespace CurrentMetrics
@@ -121,6 +122,9 @@ public:
     /// Copy the file from `from_path` to `to_path`.
     virtual void copyFile(const String & from_path, const String & to_path) = 0;
 
+    /// List files at `path` and add their names to `file_names`
+    virtual void listFiles(const String & path, std::vector<String> & file_names) = 0;
+
     /// Open the file for read and return ReadBufferFromFileBase object.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
@@ -142,6 +146,12 @@ public:
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     virtual void removeRecursive(const String & path) = 0;
+
+    /// Set last modified time to file or directory at `path`.
+    virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;
+
+    /// Get last modified time of file or directory at `path`.
+    virtual Poco::Timestamp getLastModified(const String & path) = 0;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;
@@ -161,6 +171,9 @@ public:
 
     /// Path to the file that the iterator currently points to.
     virtual String path() const = 0;
+
+    /// Name of the file that the iterator currently points to.
+    virtual String name() const = 0;
 
     virtual ~IDiskDirectoryIterator() = default;
 };

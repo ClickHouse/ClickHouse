@@ -2902,9 +2902,20 @@ void StorageReplicatedMergeTree::startup()
     /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attmept to do it
     startup_event.wait();
 
-    queue_task_handle = global_context.getBackgroundPool().addTask([this] { return queueTask(); });
+    /// If we don't separate create/start steps, race condition will happen
+    /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
+    {
+        auto & pool = global_context.getBackgroundPool();
+        queue_task_handle = pool.createTask([this] { return queueTask(); });
+        pool.startTask(queue_task_handle);
+    }
+
     if (areBackgroundMovesNeeded())
-        move_parts_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
+    {
+        auto & pool = global_context.getBackgroundMovePool();
+        move_parts_task_handle = pool.createTask([this] { return movePartsTask(); });
+        pool.startTask(move_parts_task_handle);
+    }
 }
 
 
@@ -3174,7 +3185,6 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
 
     auto columns_from_entry = ColumnsDescription::parse(entry.columns_str);
     auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parse(entry.metadata_str);
-    auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this).checkAndFindDiff(metadata_from_entry);
 
     MergeTreeData::DataParts parts;
 
@@ -3182,7 +3192,6 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     Coordination::Requests requests;
     requests.emplace_back(zkutil::makeSetRequest(replica_path + "/columns", entry.columns_str, -1));
     requests.emplace_back(zkutil::makeSetRequest(replica_path + "/metadata", entry.metadata_str, -1));
-
 
     zookeeper->multi(requests);
 
@@ -3192,6 +3201,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
 
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
+        auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this).checkAndFindDiff(metadata_from_entry);
         setTableStructure(std::move(columns_from_entry), metadata_diff);
         metadata_version = entry.alter_version;
 

@@ -33,6 +33,7 @@ ${JEMALLOC_SOURCE_DIR}/src/test_hooks.c
 ${JEMALLOC_SOURCE_DIR}/src/ticker.c
 ${JEMALLOC_SOURCE_DIR}/src/tsd.c
 ${JEMALLOC_SOURCE_DIR}/src/witness.c
+${JEMALLOC_SOURCE_DIR}/src/safety_check.c
 )
 
 if(OS_DARWIN)

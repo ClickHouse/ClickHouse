@@ -1,5 +1,4 @@
 <test>
-    <type>loop</type>
 
     <preconditions>
         <table_exists>hits_100m_single</table_exists>
@@ -10,7 +9,6 @@
             <total_time_ms>10000</total_time_ms>
         </all_of>
         <any_of>
-            <average_speed_not_changing_for_ms>5000</average_speed_not_changing_for_ms>
             <total_time_ms>20000</total_time_ms>
         </any_of>
     </stop_conditions>
