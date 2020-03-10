@@ -122,7 +122,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     {
         /// Write a file with a description of columns.
         auto out = disk->writeFile(part_path + "columns.txt", 4096);
-        total_column_list->writeText(*out);
+        total_columns_list->writeText(*out);
     }
 
     {
