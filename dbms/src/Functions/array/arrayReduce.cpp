@@ -5,12 +5,10 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <IO/WriteHelpers.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
-#include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 
 #include <ext/scope_guard.h>
@@ -108,7 +106,7 @@ DataTypePtr FunctionArrayReduce::getReturnTypeImpl(const ColumnsWithTypeAndName 
 
 void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
 {
-    IAggregateFunction & agg_func = *aggregate_function.get();
+    IAggregateFunction & agg_func = *aggregate_function;
     std::unique_ptr<Arena> arena = std::make_unique<Arena>();
 
     /// Aggregate functions do not support constant columns. Therefore, we materialize them.
@@ -132,7 +130,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
         else if (const ColumnConst * const_arr = checkAndGetColumnConst<ColumnArray>(col))
         {
             materialized_columns.emplace_back(const_arr->convertToFullColumn());
-            const auto & materialized_arr = typeid_cast<const ColumnArray &>(*materialized_columns.back().get());
+            const auto & materialized_arr = typeid_cast<const ColumnArray &>(*materialized_columns.back());
             aggregate_arguments_vec[i] = &materialized_arr.getData();
             offsets_i = &materialized_arr.getOffsets();
         }
