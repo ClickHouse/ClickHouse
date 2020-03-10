@@ -2,7 +2,7 @@
 
 ### ClickHouse release v20.1.6.30, 2020-03-05
 
-### Bug Fix 
+#### Bug Fix 
 
 * Fix data incompatibility when compressed with `T64` codec. 
 [#9016](https://github.com/ClickHouse/ClickHouse/pull/9016) [(4ertus2)](https://github.com/4ertus2)
@@ -475,7 +475,7 @@ next request would interpret this info as the beginning of the next query causin
 
 ## ClickHouse release v19.16
 
-### Clickhouse release v19.16.14.65, 2020-03-05
+#### Clickhouse release v19.16.14.65, 2020-03-05
 
 * Fix distributed subqueries incompatibility with older CH versions. Fixes [#7851](https://github.com/ClickHouse/ClickHouse/issues/7851)
 [(tabplubix)](https://github.com/tavplubix)
