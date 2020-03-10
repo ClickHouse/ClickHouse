@@ -416,7 +416,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
 {
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See loadMutations().
-    auto disk = storage_policy->getAnyDisk();
+    auto disk = getStoragePolicy()->getAnyDisk();
     MergeTreeMutationEntry entry(commands, getFullPathOnDisk(disk), insert_increment.get());
     String file_name;
     Int64 version;
@@ -618,7 +618,7 @@ bool StorageMergeTree::merge(
         }
         else
         {
-            UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
+            UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
             selected = merger_mutator.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
         }
 

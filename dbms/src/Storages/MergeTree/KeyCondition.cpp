@@ -281,11 +281,11 @@ static const std::map<std::string, std::string> inverse_relations = {
 
 bool isLogicalOperator(const String & func_name)
 {
-    return (func_name == "and" || func_name == "or" || func_name == "not" || func_name == "indexHint");
+    return (func_name == "and" || func_name == "or" || func_name == "not");
 }
 
 /// The node can be one of:
-///   - Logical operator (AND, OR, NOT and indexHint() - logical NOOP)
+///   - Logical operator (AND, OR, NOT)
 ///   - An "atom" (relational operator, constant, expression)
 ///   - A logical constant expression
 ///   - Any other function
@@ -302,8 +302,7 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
 
         const auto result_node = makeASTFunction(func->name);
 
-        /// indexHint() is a special case - logical NOOP function
-        if (result_node->name != "indexHint" && need_inversion)
+        if (need_inversion)
         {
             result_node->name = (result_node->name == "and") ? "or" : "and";
         }
@@ -362,7 +361,7 @@ FieldWithInfinity FieldWithInfinity::getMinusInfinity()
     return FieldWithInfinity(Type::MINUS_INFINITY);
 }
 
-FieldWithInfinity FieldWithInfinity::getPlusinfinity()
+FieldWithInfinity FieldWithInfinity::getPlusInfinity()
 {
     return FieldWithInfinity(Type::PLUS_INFINITY);
 }
@@ -887,9 +886,6 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
 bool KeyCondition::tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out)
 {
     /// Functions AND, OR, NOT.
-    /** Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
-      * (or, the same thing - calling the function `and` from one argument).
-      */
     const ASTs & args = func->arguments->children;
 
     if (func->name == "not")
@@ -901,7 +897,7 @@ bool KeyCondition::tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNE
     }
     else
     {
-        if (func->name == "and" || func->name == "indexHint")
+        if (func->name == "and")
             out.function = RPNElement::FUNCTION_AND;
         else if (func->name == "or")
             out.function = RPNElement::FUNCTION_OR;

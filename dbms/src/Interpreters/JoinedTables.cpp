@@ -6,6 +6,7 @@
 #include <Storages/StorageValues.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 namespace DB
 {
@@ -33,8 +34,9 @@ void checkTablesWithColumns(const std::vector<T> & tables_with_columns, const Co
 
 }
 
-JoinedTables::JoinedTables(const ASTSelectQuery & select_query)
-    : table_expressions(getTableExpressions(select_query))
+JoinedTables::JoinedTables(Context && context_, const ASTSelectQuery & select_query)
+    : context(context_)
+    , table_expressions(getTableExpressions(select_query))
     , left_table_expression(extractTableExpression(select_query, 0))
     , left_db_and_table(getDatabaseAndTable(select_query, 0))
 {}
@@ -49,9 +51,20 @@ bool JoinedTables::isLeftTableFunction() const
     return left_table_expression && left_table_expression->as<ASTFunction>();
 }
 
-StoragePtr JoinedTables::getLeftTableStorage(Context & context)
+std::unique_ptr<InterpreterSelectWithUnionQuery> JoinedTables::makeLeftTableSubquery(const SelectQueryOptions & select_options)
 {
-    StoragePtr storage;
+    if (!isLeftTableSubquery())
+        return {};
+    return std::make_unique<InterpreterSelectWithUnionQuery>(left_table_expression, context, select_options);
+}
+
+StoragePtr JoinedTables::getLeftTableStorage()
+{
+    if (isLeftTableSubquery())
+        return {};
+
+    if (isLeftTableFunction())
+        return context.executeTableFunction(left_table_expression);
 
     if (left_db_and_table)
     {
@@ -75,43 +88,37 @@ StoragePtr JoinedTables::getLeftTableStorage(Context & context)
         if (tmp_table_id.database_name == database_name && tmp_table_id.table_name == table_name)
         {
             /// Read from view source.
-            storage = context.getViewSource();
+            return context.getViewSource();
         }
     }
 
-    if (!storage)
-    {
-        /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
-        auto table_id = context.resolveStorageID({database_name, table_name});
-        storage = DatabaseCatalog::instance().getTable(table_id);
-    }
-
-    return storage;
+    /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
+    auto table_id = context.resolveStorageID({database_name, table_name});
+    return DatabaseCatalog::instance().getTable(table_id);
 }
 
-void JoinedTables::resolveTables(const Context & context, StoragePtr storage)
+bool JoinedTables::resolveTables()
 {
     tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context);
     checkTablesWithColumns(tables_with_columns, context);
 
-    if (tables_with_columns.empty())
+    return !tables_with_columns.empty();
+}
+
+void JoinedTables::makeFakeTable(StoragePtr storage, const Block & source_header)
+{
+    if (storage)
     {
         const ColumnsDescription & storage_columns = storage->getColumns();
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, storage_columns.getOrdinary());
+
         auto & table = tables_with_columns.back();
         table.addHiddenColumns(storage_columns.getMaterialized());
         table.addHiddenColumns(storage_columns.getAliases());
         table.addHiddenColumns(storage_columns.getVirtuals());
     }
-}
-
-void JoinedTables::resolveTables(const Context & context, const NamesAndTypesList & source_columns)
-{
-    tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context);
-    checkTablesWithColumns(tables_with_columns, context);
-
-    if (tables_with_columns.empty())
-        tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, source_columns);
+    else
+        tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, source_header.getNamesAndTypesList());
 }
 
 }

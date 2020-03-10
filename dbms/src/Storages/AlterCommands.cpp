@@ -9,6 +9,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -664,6 +665,8 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Context & context) const
 {
     auto all_columns = metadata.columns;
+    /// Default expression for all added/modified columns
+    ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
@@ -684,9 +687,6 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                 throw Exception{"Data type have to be specified for column " + backQuote(column_name) + " to add",
                                 ErrorCodes::BAD_ARGUMENTS};
 
-            if (command.default_expression)
-                validateDefaultExpressionForColumn(command.default_expression, column_name, command.data_type, all_columns, context);
-
             all_columns.add(ColumnDescription(column_name, command.data_type, false));
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
@@ -698,22 +698,6 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                                     ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
                 else
                     continue;
-            }
-
-            auto column_in_table = metadata.columns.get(column_name);
-            if (command.default_expression)
-            {
-                if (!command.data_type)
-                    validateDefaultExpressionForColumn(
-                        command.default_expression, column_name, column_in_table.type, all_columns, context);
-                else
-                    validateDefaultExpressionForColumn(
-                        command.default_expression, column_name, command.data_type, all_columns, context);
-            }
-            else if (column_in_table.default_desc.expression && command.data_type)
-            {
-                validateDefaultExpressionForColumn(
-                    column_in_table.default_desc.expression, column_name, command.data_type, all_columns, context);
             }
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
@@ -756,31 +740,52 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
             if (metadata.settings_ast == nullptr)
                 throw Exception{"Cannot alter settings, because table engine doesn't support settings changes", ErrorCodes::BAD_ARGUMENTS};
         }
-    }
-}
 
-void AlterCommands::validateDefaultExpressionForColumn(
-    const ASTPtr default_expression,
-    const String & column_name,
-    const DataTypePtr column_type,
-    const ColumnsDescription & all_columns,
-    const Context & context) const
-{
+        /// Collect default expressions for MODIFY and ADD comands
+        if (command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::ADD_COLUMN)
+        {
+            if (command.default_expression)
+            {
+                /// If we modify default, but not type
+                if (!command.data_type)
+                {
+                    default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), column_name));
+                }
+                else
+                {
+                    const auto & final_column_name = column_name;
+                    const auto tmp_column_name = final_column_name + "_tmp";
+                    const auto data_type_ptr = command.data_type;
 
-    try
-    {
-        String tmp_column_name = "__tmp" + column_name;
-        auto copy_expression = default_expression->clone();
-        auto default_with_cast = makeASTFunction("CAST", copy_expression, std::make_shared<ASTLiteral>(column_type->getName()));
-        auto query_with_alias = setAlias(default_with_cast, tmp_column_name);
-        auto syntax_result = SyntaxAnalyzer(context).analyze(query_with_alias, all_columns.getAll());
-        ExpressionAnalyzer(query_with_alias, syntax_result, context).getActions(true);
+
+                    default_expr_list->children.emplace_back(setAlias(
+                        addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
+                        final_column_name));
+
+                    default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
+                }
+            } /// if we change data type for column with default
+            else if (metadata.columns.has(column_name) && command.data_type)
+            {
+                auto column_in_table = metadata.columns.get(column_name);
+                /// Column doesn't have a default, nothing to check
+                if (!column_in_table.default_desc.expression)
+                    continue;
+
+                const auto & final_column_name = column_name;
+                const auto tmp_column_name = final_column_name + "_tmp";
+                const auto data_type_ptr = command.data_type;
+
+
+                default_expr_list->children.emplace_back(setAlias(
+                    addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
+
+                default_expr_list->children.emplace_back(setAlias(column_in_table.default_desc.expression->clone(), tmp_column_name));
+            }
+        }
     }
-    catch (Exception & ex)
-    {
-        ex.addMessage("default expression and column type are incompatible. Cannot alter column " + backQuote(column_name));
-        throw;
-    }
+
+    validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
 }
 
 bool AlterCommands::isModifyingData() const
