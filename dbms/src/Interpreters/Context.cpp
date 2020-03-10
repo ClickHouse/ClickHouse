@@ -274,62 +274,6 @@ void NamedSession::release()
     parent.releaseSession(*this);
 }
 
-struct TemporaryTableHolder : boost::noncopyable
-{
-    TemporaryTableHolder(const Context & context_,
-                        IDatabase & external_tables_,
-                        const StoragePtr & table,
-                        const ASTPtr & query = {})
-        : context(context_), external_tables(external_tables_)
-    {
-        ASTCreateQuery * create = dynamic_cast<ASTCreateQuery *>(query.get());
-        if (create)
-        {
-            if (create->uuid == UUIDHelpers::Nil)
-                create->uuid = UUIDHelpers::generateV4();
-            id = create->uuid;
-        }
-        else
-            id = UUIDHelpers::generateV4();
-        String global_name = "_data_" + toString(id);
-        external_tables.createTable(context, global_name, table, query ? query->clone() : query);
-        if (create)
-        {
-            create->database = DatabaseCatalog::TEMPORARY_DATABASE;
-            create->table = global_name;
-            create->uuid = id;
-        }
-    }
-
-    TemporaryTableHolder(TemporaryTableHolder && other)
-        : context(other.context), external_tables(other.external_tables), id(other.id)
-    {
-        other.id = UUIDHelpers::Nil;
-    }
-
-    ~TemporaryTableHolder()
-    {
-        external_tables.removeTable(context, "_data_" + toString(id));
-    }
-
-    StorageID getGlobalTableID() const
-    {
-        return StorageID{DatabaseCatalog::TEMPORARY_DATABASE, "_data_" + toString(id), id};
-    }
-
-    StoragePtr getTable() const
-    {
-        auto table = external_tables.tryGetTable(context, "_data_" + toString(id));
-        if (!table)
-            throw Exception("Temporary table " + getGlobalTableID().getNameForLogs() + " not found", ErrorCodes::LOGICAL_ERROR);
-        return table;
-    }
-
-    const Context & context;
-    IDatabase & external_tables;
-    UUID id;
-};
-
 
 /** Set of known objects (environment), that could be used in query.
   * Shared (global) part. Order of members (especially, order of destruction) is very important.
@@ -915,27 +859,12 @@ Tables Context::getExternalTables() const
 }
 
 
-void Context::addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast)
+void Context::addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
 {
-    auto external_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
-    auto holder = std::make_shared<TemporaryTableHolder>(*this, *external_db, storage, ast);
     auto lock = getLock();
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
         throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-
-    external_tables_mapping.emplace(table_name, std::move(holder));
-}
-
-
-void Context::addScalar(const String & name, const Block & block)
-{
-    scalars[name] = block;
-}
-
-
-bool Context::hasScalar(const String & name) const
-{
-    return scalars.count(name);
+    external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
 }
 
 
@@ -951,6 +880,18 @@ bool Context::removeExternalTable(const String & table_name)
         external_tables_mapping.erase(iter);
     }
     return true;
+}
+
+
+void Context::addScalar(const String & name, const Block & block)
+{
+    scalars[name] = block;
+}
+
+
+bool Context::hasScalar(const String & name) const
+{
+    return scalars.count(name);
 }
 
 

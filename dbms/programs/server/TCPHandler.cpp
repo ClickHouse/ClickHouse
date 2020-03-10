@@ -992,14 +992,15 @@ bool TCPHandler::receiveData(bool scalar)
                 auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
                 StoragePtr storage;
                 /// If such a table does not exist, create it.
-                if (resolved.empty())
+                if (resolved)
+                    storage = DatabaseCatalog::instance().getTable(resolved);
+                else
                 {
                     NamesAndTypesList columns = block.getNamesAndTypesList();
-                    storage = StorageMemory::create(temporary_id, ColumnsDescription{columns}, ConstraintsDescription{});
-                    storage->startup();
-                    query_context->addExternalTable(temporary_id.table_name, storage);
-                } else
-                    storage = DatabaseCatalog::instance().getTable(resolved);
+                    auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns});
+                    storage = temporary_table.getTable();
+                    query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
+                }
                 /// The data will be written directly to the table.
                 state.io.out = storage->write(ASTPtr(), *query_context);
             }

@@ -34,12 +34,12 @@ public:
         size_t subquery_depth;
         bool is_remote;
         size_t external_table_id;
-        Tables & external_tables;
+        TemporaryTablesMapping & external_tables;
         SubqueriesForSets & subqueries_for_sets;
         bool & has_global_subqueries;
 
         Data(const Context & context_, size_t subquery_depth_, bool is_remote_,
-             Tables & tables, SubqueriesForSets & subqueries_for_sets_, bool & has_global_subqueries_)
+             TemporaryTablesMapping & tables, SubqueriesForSets & subqueries_for_sets_, bool & has_global_subqueries_)
         :   context(context_),
             subquery_depth(subquery_depth_),
             is_remote(is_remote_),
@@ -99,8 +99,8 @@ public:
             Block sample = interpreter->getSampleBlock();
             NamesAndTypesList columns = sample.getNamesAndTypesList();
 
-            StoragePtr external_storage = StorageMemory::create(StorageID("_external", external_table_name), ColumnsDescription{columns}, ConstraintsDescription{});
-            external_storage->startup();
+            auto external_storage_holder = std::make_shared<TemporaryTableHolder>(context, ColumnsDescription{columns});
+            StoragePtr external_storage = external_storage_holder->getTable();
 
             /** We replace the subquery with the name of the temporary table.
                 * It is in this form, the request will go to the remote server.
@@ -129,7 +129,7 @@ public:
             else
                 ast = database_and_table_name;
 
-            external_tables[external_table_name] = external_storage;
+            external_tables[external_table_name] = external_storage_holder;
             subqueries_for_sets[external_table_name].source = interpreter->execute().in;
             subqueries_for_sets[external_table_name].table = external_storage;
 

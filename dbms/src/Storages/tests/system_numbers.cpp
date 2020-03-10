@@ -15,7 +15,7 @@ try
 {
     using namespace DB;
 
-    StoragePtr table = StorageSystemNumbers::create("numbers", false);
+    StoragePtr table = StorageSystemNumbers::create(StorageID("test", "numbers"), false);
 
     Names column_names;
     column_names.push_back("number");

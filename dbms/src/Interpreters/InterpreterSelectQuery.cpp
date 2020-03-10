@@ -322,7 +322,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             /// Save the new temporary tables in the query context
             for (const auto & it : query_analyzer->getExternalTables())
                 if (!context->isExternalTableExist(it.first))
-                    context->addExternalTable(it.first, it.second);
+                    context->addExternalTable(it.first, std::move(*it.second));
         }
 
         if (!options.only_analyze || options.modify_inplace)

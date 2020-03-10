@@ -170,9 +170,9 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
 
     /// Create table
     NamesAndTypesList columns = sample_block.getNamesAndTypesList();
-    StoragePtr storage = StorageMemory::create(StorageID("_external", data->table_name), ColumnsDescription{columns}, ConstraintsDescription{});
-    storage->startup();
-    context.addExternalTable(data->table_name, storage);
+    auto temporary_table = TemporaryTableHolder(context, ColumnsDescription{columns});
+    auto storage = temporary_table.getTable();
+    context.addExternalTable(data->table_name, std::move(temporary_table));
     BlockOutputStreamPtr output = storage->write(ASTPtr(), context);
 
     /// Write data

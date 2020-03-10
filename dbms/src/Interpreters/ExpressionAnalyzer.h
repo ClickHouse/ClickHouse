@@ -9,6 +9,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 
 namespace DB
@@ -51,7 +52,7 @@ struct ExpressionAnalyzerData
     bool has_global_subqueries = false;
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
-    Tables external_tables;
+    TemporaryTablesMapping external_tables;
 };
 
 
@@ -247,7 +248,7 @@ public:
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
 
     /// Tables that will need to be sent to remote servers for distributed query processing.
-    const Tables & getExternalTables() const { return external_tables; }
+    const TemporaryTablesMapping & getExternalTables() const { return external_tables; }
 
     ExpressionActionsPtr simpleSelectActions();
 

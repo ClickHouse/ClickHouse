@@ -1,6 +1,7 @@
 #pragma once
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageID.h>
+#include <Parsers/IAST_fwd.h>
 #include <Core/UUID.h>
 #include <Poco/Logger.h>
 #include <boost/noncopyable.hpp>
@@ -54,6 +55,32 @@ private:
     std::unique_lock<std::mutex> table_lock;
 };
 
+class ColumnsDescription;
+
+struct TemporaryTableHolder : boost::noncopyable
+{
+    typedef std::function<StoragePtr(const StorageID &)> Creator;
+
+    TemporaryTableHolder(const Context & context, const Creator & creator, const ASTPtr & query = {});
+
+    /// Creates temporary table with Engine=Memory
+    TemporaryTableHolder(const Context & context, const ColumnsDescription & columns, const ASTPtr & query = {});
+
+    TemporaryTableHolder(TemporaryTableHolder && rhs);
+    TemporaryTableHolder & operator = (TemporaryTableHolder && rhs);
+
+    ~TemporaryTableHolder();
+
+    StorageID getGlobalTableID() const;
+
+    StoragePtr getTable() const;
+
+    const Context & context;
+    IDatabase & temporary_tables;
+    UUID id;
+};
+
+using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
 
 class DatabaseCatalog : boost::noncopyable
 {
