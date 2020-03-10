@@ -60,19 +60,27 @@ BackgroundProcessingPool::BackgroundProcessingPool(int size_,
 }
 
 
-BackgroundProcessingPool::TaskHandle BackgroundProcessingPool::addTask(const Task & task)
+BackgroundProcessingPool::TaskHandle BackgroundProcessingPool::createTask(const Task & task)
 {
-    TaskHandle res = std::make_shared<TaskInfo>(*this, task);
+    return std::make_shared<TaskInfo>(*this, task);
+}
 
+void BackgroundProcessingPool::startTask(const TaskHandle & task)
+{
     Poco::Timestamp current_time;
 
     {
         std::unique_lock lock(tasks_mutex);
-        res->iterator = tasks.emplace(current_time, res);
+        task->iterator = tasks.emplace(current_time, task);
     }
 
     wake_event.notify_all();
+}
 
+BackgroundProcessingPool::TaskHandle BackgroundProcessingPool::addTask(const Task & task)
+{
+    TaskHandle res = createTask(task);
+    startTask(res);
     return res;
 }
 
