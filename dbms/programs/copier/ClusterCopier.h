@@ -149,6 +149,18 @@ protected:
     bool checkPresentPartitionPiecesOnCurrentShard(const ConnectionTimeouts & timeouts,
              TaskShard & task_shard, const String & partition_quoted_name, size_t current_piece_number);
 
+    /*
+     * This class is used in executeQueryOnCluster function
+     * You can execute query on each shard (no sense it is executed on each replica of a shard or not)
+     * or you can execute query on each replica on each shard.
+     * First mode is useful for INSERTS queries.
+     * */
+    enum ClusterExecutionMode
+    {
+        ON_EACH_SHARD,
+        ON_EACH_NODE
+    };
+
     /** Executes simple query (without output streams, for example DDL queries) on each shard of the cluster
       * Returns number of shards for which at least one replica executed query successfully
       */
@@ -158,6 +170,7 @@ protected:
             const ASTPtr & query_ast_ = nullptr,
             const Settings * settings = nullptr,
             PoolMode pool_mode = PoolMode::GET_ALL,
+            ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_SHARD,
             UInt64 max_successful_executions_per_shard = 0) const;
 
 private:
