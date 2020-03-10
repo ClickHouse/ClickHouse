@@ -370,10 +370,4 @@
  */
 #define JEMALLOC_STRERROR_R_RETURNS_CHAR_WITH_GNU_SOURCE
 
-/*
- * popcount*() functions to use for bitmapping.
- */
-#define JEMALLOC_INTERNAL_POPCOUNTL __builtin_popcountl
-#define JEMALLOC_INTERNAL_POPCOUNT __builtin_popcount
-
 #endif /* JEMALLOC_INTERNAL_DEFS_H_ */
