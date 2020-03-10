@@ -4888,7 +4888,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
 
         String hash_hex = src_part->checksums.getTotalChecksumHex();
 
-        LOG_INFO(log, "Trying to attach " << src_part->name << "with hash_hex " << hash_hex);
+        LOG_INFO(log, "Trying to attach " << src_part->name << " with hash_hex " << hash_hex);
 
         String block_id_path = replace ? "" : (zookeeper_path + "/blocks/" + partition_id + "_replace_from_" + hash_hex);
 
@@ -4909,6 +4909,10 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         block_id_paths.emplace_back(block_id_path);
         part_checksums.emplace_back(hash_hex);
     }
+
+    /// We have nothing to do - return
+    if (src_parts.empty())
+        return;
 
     ReplicatedMergeTreeLogEntryData entry;
     {

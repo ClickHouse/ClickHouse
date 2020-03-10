@@ -68,6 +68,13 @@ def started_cluster():
         pass
         cluster.shutdown()
 
+def print_destination_cluster(task):
+    for anime in ['s1_0_0', 's1_0_1', 's1_1_0']:
+        a = task.cluster.instances[anime].query("SELECT count() FROM hits_piece_0")
+        b = task.cluster.instances[anime].query("SELECT count() FROM hits_piece_1")
+        c = task.cluster.instances[anime].query("SELECT count() FROM hits")
+        print(anime, a, b, int(a) + int(b), c)
+        print(task.cluster.instances[anime].query("select partition, name, database, table, hash_of_all_files, hash_of_uncompressed_files, uncompressed_hash_of_compressed_files from system.parts where table like '%hits%' format TSV"))
 
 class Task1:
 
@@ -91,13 +98,8 @@ class Task1:
 
 
     def check(self):
+        print_destination_cluster(self)
         assert TSV(self.cluster.instances['s0_0_0'].query("SELECT count() FROM hits_all")) == TSV("1002\n")
-        for anime in ['s1_0_0', 's1_0_1', 's1_1_0']:
-            a = self.cluster.instances[anime].query("SELECT count() FROM hits_piece_0")
-            b = self.cluster.instances[anime].query("SELECT count() FROM hits_piece_1")
-            c = self.cluster.instances[anime].query("SELECT count() FROM hits")
-            print(anime, a, b, int(a) + int(b), c)
-            print(self.cluster.instances[anime].query("select partition, name, database, table, hash_of_all_files, hash_of_uncompressed_files, uncompressed_hash_of_compressed_files from system.parts where table like '%hits%' format TSV"))
 
         assert TSV(self.cluster.instances['s1_0_0'].query("SELECT DISTINCT d % 2 FROM hits")) == TSV("1\n")
         assert TSV(self.cluster.instances['s1_1_0'].query("SELECT DISTINCT d % 2 FROM hits")) == TSV("0\n")
@@ -136,6 +138,7 @@ class Task2:
 
 
     def check(self):
+        #print_destination_cluster(self)
         assert TSV(self.cluster.instances['s0_0_0'].query("SELECT count() FROM cluster(cluster0, default, a)")) == TSV("85\n")
         assert TSV(self.cluster.instances['s1_0_0'].query("SELECT count(), uniqExact(date) FROM cluster(cluster1, default, b)")) == TSV("85\t85\n")
 
@@ -171,6 +174,8 @@ class Task_test_block_size:
 
 
     def check(self):
+        #print_destination_cluster(self)
+
         assert TSV(self.cluster.instances['s1_0_0'].query("SELECT count() FROM cluster(cluster1, default, test_block_size)")) == TSV("{}\n".format(self.rows))
 
         instance = cluster.instances['s0_0_0']
@@ -194,6 +199,7 @@ class Task_no_index:
 
 
     def check(self):
+        #print_destination_cluster(self)
         assert TSV(self.cluster.instances['s1_1_0'].query("SELECT Year FROM ontime22")) == TSV("2017\n")
         instance = cluster.instances['s0_0_0']
         instance.query("DROP TABLE ontime")
@@ -217,6 +223,7 @@ class Task_no_arg:
 
 
     def check(self):
+        #print_destination_cluster(self)
         assert TSV(self.cluster.instances['s1_1_0'].query("SELECT date FROM copier_test1_1")) == TSV("2016-01-01\n")
         instance = cluster.instances['s0_0_0']
         instance.query("DROP TABLE copier_test1")

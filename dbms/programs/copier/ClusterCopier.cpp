@@ -674,7 +674,13 @@ bool ClusterCopier::tryDropPartitionPiece(
 
         LOG_DEBUG(log, "Execute distributed DROP PARTITION: " << query);
         /// Limit number of max executing replicas to 1
-        UInt64 num_shards = executeQueryOnCluster(cluster_push, query, nullptr, &settings_push, PoolMode::GET_ONE, 1);
+        UInt64 num_shards = executeQueryOnCluster(
+                cluster_push, query,
+                nullptr,
+                &settings_push,
+                PoolMode::GET_ONE,
+                ClusterExecutionMode::ON_EACH_SHARD,
+                1);
 
         if (num_shards < cluster_push->getShardCount())
         {
@@ -1065,26 +1071,6 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         throw;
     }
 
-
-    /// Exit if current piece is absent on this shard. Also mark it as finished, because we will check
-    /// whether each shard have processed each partitition (and its pieces).
-    if (partition_piece.is_absent_piece)
-    {
-        std::cout << "current partition piece is clean?? " << is_clean << std::endl;
-        std::cout << "######" <<  "Partition " << task_partition.name
-                  << " piece " + toString(current_piece_number) + " IS ABSENT ON CURRENT SHARD" << std::endl;
-        std::cout << "current_task_piece_status_path " << current_task_piece_status_path << std::endl;
-        String state_finished = TaskStateWithOwner::getData(TaskState::Finished, host_id);
-        auto res = zookeeper->tryCreate(current_task_piece_status_path, state_finished, zkutil::CreateMode::Persistent);
-        if (res == Coordination::ZNODEEXISTS)
-            LOG_DEBUG(log, "Partition " << task_partition.name << " piece "
-            + toString(current_piece_number) + " is absent on current replica of a shard. But other replica has already marked it as done.");
-        if (res == Coordination::ZOK)
-            LOG_DEBUG(log, "Partition " << task_partition.name << " piece "
-            + toString(current_piece_number) + " is absent on current replica of a shard. Will mark it as done. Other replicas will do the same.");
-        return PartitionTaskStatus::Finished;
-    }
-
     /// Exit if task has been already processed;
     /// create blocking node to signal cleaning up if it is abandoned
     {
@@ -1110,6 +1096,22 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         }
     }
 
+
+    /// Exit if current piece is absent on this shard. Also mark it as finished, because we will check
+    /// whether each shard have processed each partitition (and its pieces).
+    if (partition_piece.is_absent_piece)
+    {
+        String state_finished = TaskStateWithOwner::getData(TaskState::Finished, host_id);
+        auto res = zookeeper->tryCreate(current_task_piece_status_path, state_finished, zkutil::CreateMode::Persistent);
+        if (res == Coordination::ZNODEEXISTS)
+            LOG_DEBUG(log, "Partition " << task_partition.name << " piece "
+            + toString(current_piece_number) + " is absent on current replica of a shard. But other replicas have already marked it as done.");
+        if (res == Coordination::ZOK)
+            LOG_DEBUG(log, "Partition " << task_partition.name << " piece "
+            + toString(current_piece_number) + " is absent on current replica of a shard. Will mark it as done. Other replicas will do the same.");
+        return PartitionTaskStatus::Finished;
+    }
+
     /// Check that destination partition is empty if we are first worker
     /// NOTE: this check is incorrect if pull and push tables have different partition key!
     String clean_start_status;
@@ -1119,7 +1121,7 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         auto checker = zkutil::EphemeralNodeHolder::create(partition_piece.getPartitionPieceCleanStartPath() + "/checker",
                                                            *zookeeper, host_id);
         // Maybe we are the first worker
-        /// TODO: Why table_split_shard???
+        ///TODO: Why table_split_shard???
 
         ASTPtr query_select_ast = get_select_query(split_table_for_current_piece, "count()", /*enable_splitting*/ true);
         UInt64 count;
@@ -1350,20 +1352,20 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
 
         LOG_DEBUG(log, "Executing ALTER query: " << query_alter_ast_string);
 
-//        query_alter_ast_string +=  " INSERT INTO " + getQuotedTable(original_table)  +
-//                                   " SELECT * FROM " + getQuotedTable(helping_table);
-//
-//        query_alter_ast_string += " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = (" + task_partition.name + " AS partition_key))";
-//
-//        LOG_DEBUG(log, "Executing ALTER query: " << query_alter_ast_string);
-
         try
         {
             ///FIXME: We have to be sure that every node in cluster executed this query
-            UInt64 num_shards = executeQueryOnCluster(task_table.cluster_push, query_alter_ast_string, nullptr, &task_cluster->settings_push, PoolMode::GET_MANY);
+            UInt64 num_nodes = executeQueryOnCluster(
+                    task_table.cluster_push,
+                    query_alter_ast_string,
+                    nullptr,
+                    &task_cluster->settings_push,
+                    PoolMode::GET_MANY,
+                    ClusterExecutionMode::ON_EACH_NODE);
 
-            assert(num_shards > 0);
-            LOG_INFO(log, "Number of shard that executed ALTER query successfully : " << toString(num_shards));
+            // TODO: Throw an exception if num nodes is not equal to original number of nodes
+
+            LOG_INFO(log, "Number of shard that executed ALTER query successfully : " << toString(num_nodes));
         }
         catch (...)
         {
@@ -1623,6 +1625,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
         const ASTPtr & query_ast_,
         const Settings * settings,
         PoolMode pool_mode,
+        ClusterExecutionMode execution_mode,
         UInt64 max_successful_executions_per_shard) const
 {
     auto num_shards = cluster->getShardsInfo().size();
@@ -1637,6 +1640,11 @@ UInt64 ClusterCopier::executeQueryOnCluster(
     else
         query_ast = query_ast_;
 
+    /// We will have to execute query on each replica of a shard.
+    if (execution_mode == ClusterExecutionMode::ON_EACH_NODE)
+        max_successful_executions_per_shard = 0;
+
+    std::atomic<size_t> origin_replicas_number;
 
     /// We need to execute query on one replica at least
     auto do_for_shard = [&] (UInt64 shard_index)
@@ -1652,6 +1660,13 @@ UInt64 ClusterCopier::executeQueryOnCluster(
         };
 
         UInt64 num_replicas = cluster->getShardsAddresses().at(shard_index).size();
+
+        for (size_t i = 0; i < num_replicas; ++i)
+        {
+            std::cout << "host_name " << cluster->getShardsAddresses().at(shard_index)[i].host_name
+            << " port " << cluster->getShardsAddresses().at(shard_index)[i].port << std::endl;
+        }
+        origin_replicas_number += num_replicas;
         UInt64 num_local_replicas = shard.getLocalNodeCount();
         UInt64 num_remote_replicas = num_replicas - num_local_replicas;
 
@@ -1706,10 +1721,26 @@ UInt64 ClusterCopier::executeQueryOnCluster(
         thread_pool.wait();
     }
 
-    UInt64 successful_shards = 0;
+    UInt64 successful_nodes = 0;
     for (UInt64 num_replicas : per_shard_num_successful_replicas)
-        successful_shards += (num_replicas > 0);
+    {
+        if (execution_mode == ClusterExecutionMode::ON_EACH_NODE)
+            successful_nodes += num_replicas;
+        else
+            /// Count only successful shards
+            successful_nodes += (num_replicas > 0);
+    }
 
-    return successful_shards;
+    if (execution_mode == ClusterExecutionMode::ON_EACH_NODE && successful_nodes != origin_replicas_number - 1)
+    {
+        LOG_INFO(log, "There was an error while executing ALTER on each node. Query was executed on "
+                << toString(successful_nodes) << " nodes. But had to be executed on " << toString(origin_replicas_number.load()));
+
+        std::cout << "successful_nodes " << successful_nodes << "  origin_replicas_number " << origin_replicas_number << std::endl;
+        throw Exception("There was an error while executing ALTER on each node.", ErrorCodes::LOGICAL_ERROR);
+    }
+
+
+    return successful_nodes;
 }
 }

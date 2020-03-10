@@ -6,8 +6,8 @@ namespace DB {
 
 struct ShardPartitionPiece {
 
-    ShardPartitionPiece(ShardPartition &parent, size_t current_piece_number_, bool is_absent_piece_)
-            : is_absent_piece(is_absent_piece_), current_piece_number(current_piece_number_),
+    ShardPartitionPiece(ShardPartition &parent, size_t current_piece_number_, bool is_present_piece_)
+            : is_absent_piece(!is_present_piece_), current_piece_number(current_piece_number_),
               shard_partition(parent) {}
 
     [[maybe_unused]] String getPartitionPiecePath() const;
