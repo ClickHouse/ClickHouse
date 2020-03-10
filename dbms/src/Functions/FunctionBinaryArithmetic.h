@@ -557,8 +557,8 @@ class FunctionBinaryArithmetic : public IFunction
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         /// We construct another function (example: addMonths) and call it.
 
-        bool function_is_plus = std::is_same_v<Op<UInt8, UInt8>, PlusImpl<UInt8, UInt8>>;
-        bool function_is_minus = std::is_same_v<Op<UInt8, UInt8>, MinusImpl<UInt8, UInt8>>;
+        static constexpr bool function_is_plus = std::is_same_v<Op<UInt8, UInt8>, PlusImpl<UInt8, UInt8>>;
+        static constexpr bool function_is_minus = std::is_same_v<Op<UInt8, UInt8>, MinusImpl<UInt8, UInt8>>;
 
         if (!function_is_plus && !function_is_minus)
             return {};
@@ -581,21 +581,18 @@ class FunctionBinaryArithmetic : public IFunction
             throw Exception("Wrong order of arguments for function " + getName() + ": argument of type Interval cannot be first.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        std::string interval_name;
+        std::string function_name;
         if (interval_data_type)
         {
-            interval_name = interval_data_type->getKind().toString();
+            function_name = (function_is_plus ? "add" : "subtract") + interval_data_type->getKind().toString() + 's';
         }
         else
         {
             if (isDate(type_time))
-                interval_name = "Day";
+                function_name = function_is_plus ? "addDays" : "subtractDays";
             else
-                interval_name = "Second";
+                function_name = function_is_plus ? "addSeconds" : "subtractSeconds";
         }
-
-        std::stringstream function_name;
-        function_name << (function_is_plus ? "add" : "subtract") << interval_name << 's';
 
         return FunctionFactory::instance().get(function_name.str(), context);
     }
@@ -640,7 +637,6 @@ class FunctionBinaryArithmetic : public IFunction
             agg_state_is_const ? assert_cast<const ColumnConst &>(agg_state_column).getDataColumn() : agg_state_column);
 
         AggregateFunctionPtr function = column.getAggregateFunction();
-
 
         size_t size = agg_state_is_const ? 1 : input_rows_count;
 
