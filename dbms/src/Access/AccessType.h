@@ -289,6 +289,7 @@ namespace impl
             ACCESS_TYPE_TO_KEYWORD_CASE(input);
             ACCESS_TYPE_TO_KEYWORD_CASE(values);
             ACCESS_TYPE_TO_KEYWORD_CASE(numbers);
+            ACCESS_TYPE_TO_KEYWORD_CASE(zeros);
             ACCESS_TYPE_TO_KEYWORD_CASE(merge);
             ACCESS_TYPE_TO_KEYWORD_CASE(remote);
             ACCESS_TYPE_TO_KEYWORD_CASE(mysql);
