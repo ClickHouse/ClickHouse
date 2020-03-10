@@ -502,18 +502,11 @@ MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
 
 
-const Databases & Context::getDatabases() const
+Databases Context::getDatabases() const
 {
     auto lock = getLock();
     return shared->databases;
 }
-
-Databases & Context::getDatabases()
-{
-    auto lock = getLock();
-    return shared->databases;
-}
-
 
 void Context::enableNamedSessions()
 {
