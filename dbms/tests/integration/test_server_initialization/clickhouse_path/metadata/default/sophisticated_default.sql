@@ -1,12 +1,6 @@
 ATTACH TABLE sophisticated_default
 (
-    a UInt8 DEFAULT
-    (
-        SELECT number FROM system.numbers LIMIT 3,1
-    ),
-    b UInt8 ALIAS
-    (
-        SELECT dummy+9 FROM system.one
-    ),
+    a UInt8 DEFAULT 3,
+    b UInt8 ALIAS a - 3 + 9,
     c UInt8
 ) ENGINE = Memory
