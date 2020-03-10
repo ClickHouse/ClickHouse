@@ -49,7 +49,7 @@ DataTypeDateTime::DataTypeDateTime(const String & time_zone_name, const String &
 }
 
 DataTypeDateTime::DataTypeDateTime(const TimezoneMixin & time_zone_)
-    : TimezoneMixin(time_zone_)
+    : TimezoneMixin(time_zone_), type_name(family_name)
 {}
 
 String DataTypeDateTime::doGetName() const
