@@ -620,19 +620,19 @@ SELECT DT64 >= N
 ------------------------------------------
 SELECT N +  toUInt8(1)
 "Date","2019-09-17"
-"DateTime","2019-09-16 19:20:12"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
 
 Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and UInt8 of arguments of function plus.
 ------------------------------------------
 SELECT toUInt8(1) +  N
 "Date","2019-09-17"
-"DateTime","2019-09-16 19:20:12"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
 
 Code: 43: Illegal types UInt8 and DateTime64(3, 'Europe/Minsk') of arguments of function plus.
 ------------------------------------------
 SELECT N -  toUInt8(1)
 "Date","2019-09-15"
-"DateTime","2019-09-16 19:20:10"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
 
 Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and UInt8 of arguments of function minus.
 ------------------------------------------
@@ -718,19 +718,19 @@ Code: 43: Illegal types of arguments (UInt8, Date) of function greaterOrEquals.
 ------------------------------------------
 SELECT N +  toInt8(-1)
 "Date","2019-09-15"
-"DateTime","2019-09-16 19:20:10"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
 
 Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and Int8 of arguments of function plus.
 ------------------------------------------
 SELECT toInt8(-1) +  N
 "Date","2019-09-15"
-"DateTime","2019-09-16 19:20:10"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
 
 Code: 43: Illegal types Int8 and DateTime64(3, 'Europe/Minsk') of arguments of function plus.
 ------------------------------------------
 SELECT N -  toInt8(-1)
 "Date","2019-09-17"
-"DateTime","2019-09-16 19:20:12"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
 
 Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and Int8 of arguments of function minus.
 ------------------------------------------
@@ -816,19 +816,19 @@ Code: 43: Illegal types of arguments (Int8, Date) of function greaterOrEquals.
 ------------------------------------------
 SELECT N +  toUInt16(1)
 "Date","2019-09-17"
-"DateTime","2019-09-16 19:20:12"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
 
 Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and UInt16 of arguments of function plus.
 ------------------------------------------
 SELECT toUInt16(1) +  N
 "Date","2019-09-17"
-"DateTime","2019-09-16 19:20:12"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
 
 Code: 43: Illegal types UInt16 and DateTime64(3, 'Europe/Minsk') of arguments of function plus.
 ------------------------------------------
 SELECT N -  toUInt16(1)
 "Date","2019-09-15"
-"DateTime","2019-09-16 19:20:10"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
 
 Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and UInt16 of arguments of function minus.
 ------------------------------------------
@@ -914,19 +914,19 @@ Code: 43: Illegal types of arguments (UInt16, Date) of function greaterOrEquals.
 ------------------------------------------
 SELECT N +  toInt16(-1)
 "Date","2019-09-15"
-"DateTime","2019-09-16 19:20:10"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
 
 Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and Int16 of arguments of function plus.
 ------------------------------------------
 SELECT toInt16(-1) +  N
 "Date","2019-09-15"
-"DateTime","2019-09-16 19:20:10"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
 
 Code: 43: Illegal types Int16 and DateTime64(3, 'Europe/Minsk') of arguments of function plus.
 ------------------------------------------
 SELECT N -  toInt16(-1)
 "Date","2019-09-17"
-"DateTime","2019-09-16 19:20:12"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
 
 Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and Int16 of arguments of function minus.
 ------------------------------------------
@@ -1012,19 +1012,19 @@ Code: 43: Illegal types of arguments (Int16, Date) of function greaterOrEquals.
 ------------------------------------------
 SELECT N +  toUInt32(1)
 "Date","2019-09-17"
-"DateTime","2019-09-16 19:20:12"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
 
 Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and UInt32 of arguments of function plus.
 ------------------------------------------
 SELECT toUInt32(1) +  N
 "Date","2019-09-17"
-"DateTime","2019-09-16 19:20:12"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
 
 Code: 43: Illegal types UInt32 and DateTime64(3, 'Europe/Minsk') of arguments of function plus.
 ------------------------------------------
 SELECT N -  toUInt32(1)
 "Date","2019-09-15"
-"DateTime","2019-09-16 19:20:10"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
 
 Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and UInt32 of arguments of function minus.
 ------------------------------------------
@@ -1110,19 +1110,19 @@ Code: 43: Illegal types of arguments (UInt32, Date) of function greaterOrEquals.
 ------------------------------------------
 SELECT N +  toInt32(-1)
 "Date","2019-09-15"
-"DateTime","2019-09-16 19:20:10"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
 
 Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and Int32 of arguments of function plus.
 ------------------------------------------
 SELECT toInt32(-1) +  N
 "Date","2019-09-15"
-"DateTime","2019-09-16 19:20:10"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
 
 Code: 43: Illegal types Int32 and DateTime64(3, 'Europe/Minsk') of arguments of function plus.
 ------------------------------------------
 SELECT N -  toInt32(-1)
 "Date","2019-09-17"
-"DateTime","2019-09-16 19:20:12"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
 
 Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and Int32 of arguments of function minus.
 ------------------------------------------
@@ -1208,19 +1208,19 @@ Code: 43: Illegal types of arguments (Int32, Date) of function greaterOrEquals.
 ------------------------------------------
 SELECT N +  toUInt64(1)
 "Date","2019-09-17"
-"DateTime","2019-09-16 19:20:12"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
 
 Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and UInt64 of arguments of function plus.
 ------------------------------------------
 SELECT toUInt64(1) +  N
 "Date","2019-09-17"
-"DateTime","2019-09-16 19:20:12"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
 
 Code: 43: Illegal types UInt64 and DateTime64(3, 'Europe/Minsk') of arguments of function plus.
 ------------------------------------------
 SELECT N -  toUInt64(1)
 "Date","2019-09-15"
-"DateTime","2019-09-16 19:20:10"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
 
 Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and UInt64 of arguments of function minus.
 ------------------------------------------
@@ -1306,19 +1306,19 @@ Code: 43: Illegal types of arguments (UInt64, Date) of function greaterOrEquals.
 ------------------------------------------
 SELECT N +  toInt64(-1)
 "Date","2019-09-15"
-"DateTime","2019-09-16 19:20:10"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
 
 Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and Int64 of arguments of function plus.
 ------------------------------------------
 SELECT toInt64(-1) +  N
 "Date","2019-09-15"
-"DateTime","2019-09-16 19:20:10"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
 
 Code: 43: Illegal types Int64 and DateTime64(3, 'Europe/Minsk') of arguments of function plus.
 ------------------------------------------
 SELECT N -  toInt64(-1)
 "Date","2019-09-17"
-"DateTime","2019-09-16 19:20:12"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
 
 Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and Int64 of arguments of function minus.
 ------------------------------------------
