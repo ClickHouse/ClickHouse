@@ -12,11 +12,6 @@
 
 namespace DB
 {
-enum class ExecutionType
-{
-    Loop,
-    Once
-};
 
 using XMLConfiguration = Poco::Util::XMLConfiguration;
 using XMLConfigurationPtr = Poco::AutoPtr<XMLConfiguration>;
@@ -34,7 +29,6 @@ public:
     Strings queries;
 
     Settings settings;
-    ExecutionType exec_type;
     StringToVector substitutions;
     size_t times_to_run;
 
@@ -47,7 +41,6 @@ private:
     void applySettings(XMLConfigurationPtr config);
     void extractQueries(XMLConfigurationPtr config);
     void processSubstitutions(XMLConfigurationPtr config);
-    void getExecutionType(XMLConfigurationPtr config);
     void getStopConditions(XMLConfigurationPtr config);
     void extractAuxiliaryQueries(XMLConfigurationPtr config);
 };

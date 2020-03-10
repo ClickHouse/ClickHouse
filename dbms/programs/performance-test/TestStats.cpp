@@ -67,41 +67,6 @@ void TestStats::update_min_time(UInt64 min_time_candidate)
     }
 }
 
-void TestStats::update_max_speed(
-    size_t max_speed_candidate,
-    Stopwatch & max_speed_watch,
-    UInt64 & max_speed)
-{
-    if (max_speed_candidate > max_speed)
-    {
-        max_speed = max_speed_candidate;
-        max_speed_watch.restart();
-    }
-}
-
-
-void TestStats::update_average_speed(
-    double new_speed_info,
-    Stopwatch & avg_speed_watch,
-    size_t & number_of_info_batches,
-    double precision,
-    double & avg_speed_first,
-    double & avg_speed_value)
-{
-    avg_speed_value = ((avg_speed_value * number_of_info_batches) + new_speed_info);
-    ++number_of_info_batches;
-    avg_speed_value /= number_of_info_batches;
-
-    if (avg_speed_first == 0)
-        avg_speed_first = avg_speed_value;
-
-    auto [min, max] = std::minmax(avg_speed_value, avg_speed_first);
-    if (1 - min / max >= precision)
-    {
-        avg_speed_first = avg_speed_value;
-        avg_speed_watch.restart();
-    }
-}
 
 void TestStats::add(size_t rows_read_inc, size_t bytes_read_inc)
 {
@@ -109,26 +74,6 @@ void TestStats::add(size_t rows_read_inc, size_t bytes_read_inc)
     total_bytes_read += bytes_read_inc;
     last_query_rows_read += rows_read_inc;
     last_query_bytes_read += bytes_read_inc;
-
-    double new_rows_speed = last_query_rows_read / watch_per_query.elapsedSeconds();
-    double new_bytes_speed = last_query_bytes_read / watch_per_query.elapsedSeconds();
-
-    /// Update rows speed
-    update_max_speed(new_rows_speed, max_rows_speed_watch, max_rows_speed);
-    update_average_speed(new_rows_speed,
-        avg_rows_speed_watch,
-        number_of_rows_speed_info_batches,
-        avg_rows_speed_precision,
-        avg_rows_speed_first,
-        avg_rows_speed_value);
-    /// Update bytes speed
-    update_max_speed(new_bytes_speed, max_bytes_speed_watch, max_bytes_speed);
-    update_average_speed(new_bytes_speed,
-        avg_bytes_speed_watch,
-        number_of_bytes_speed_info_batches,
-        avg_bytes_speed_precision,
-        avg_bytes_speed_first,
-        avg_bytes_speed_value);
 }
 
 void TestStats::updateQueryInfo()
@@ -144,10 +89,6 @@ TestStats::TestStats()
     watch.reset();
     watch_per_query.reset();
     min_time_watch.reset();
-    max_rows_speed_watch.reset();
-    max_bytes_speed_watch.reset();
-    avg_rows_speed_watch.reset();
-    avg_bytes_speed_watch.reset();
 }
 
 
@@ -156,10 +97,6 @@ void TestStats::startWatches()
     watch.start();
     watch_per_query.start();
     min_time_watch.start();
-    max_rows_speed_watch.start();
-    max_bytes_speed_watch.start();
-    avg_rows_speed_watch.start();
-    avg_bytes_speed_watch.start();
 }
 
 }

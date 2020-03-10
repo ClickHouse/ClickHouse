@@ -759,7 +759,8 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
             // Exactly MaxScale zeroes
             '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'
         };
-        buf.write(s, sizeof(s) - (MaxScale - scale));
+        buf.write(s, sizeof(s) - (MaxScale - scale)
+                  + (scale == 0 ? -1 : 0)); // if scale is zero, also remove the fractional_time_delimiter.
         return;
     }
     auto c = DecimalUtils::split(datetime64, scale);
