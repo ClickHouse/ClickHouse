@@ -606,8 +606,15 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
                 throw Exception("Table " + create.database + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
         }
     }
-    else if (context.isExternalTableExist(table_name) && create.if_not_exists)
-         return false;
+    else
+    {
+        if (context.isExternalTableExist(table_name) && create.if_not_exists)
+            return false;
+
+        auto temporary_table = TemporaryTableHolder(context, properties.columns, query_ptr);
+        context.getSessionContext().addExternalTable(table_name, std::move(temporary_table));
+        return true;
+    }
 
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
@@ -615,6 +622,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
     {
         const auto & table_function = create.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
+        //FIXME storage will have wrong database name
         res = factory.get(table_function.name, context)->execute(create.as_table_function, context, create.table);
     }
     else
@@ -628,10 +636,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
             false);
     }
 
-    if (need_add_to_database)
-        database->createTable(context, table_name, res, query_ptr);
-    else
-        context.getSessionContext().addExternalTable(table_name, res, query_ptr);
+    database->createTable(context, table_name, res, query_ptr);
 
     /// We must call "startup" and "shutdown" while holding DDLGuard.
     /// Because otherwise method "shutdown" (from InterpreterDropQuery) can be called before startup

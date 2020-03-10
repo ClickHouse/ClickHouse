@@ -59,7 +59,6 @@
 
 #include <Interpreters/ActionsVisitor.h>
 
-#include <Interpreters/ExternalTablesVisitor.h>
 #include <Interpreters/GlobalSubqueriesVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 
@@ -261,10 +260,6 @@ void ExpressionAnalyzer::analyzeAggregation()
 
 void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global)
 {
-    /// Adds existing external tables (not subqueries) to the external_tables dictionary.
-    ExternalTablesVisitor::Data tables_data{context, external_tables};
-    ExternalTablesVisitor(tables_data).visit(query);
-
     if (do_global)
     {
         GlobalSubqueriesVisitor::Data subqueries_data(context, subquery_depth, isRemoteStorage(),

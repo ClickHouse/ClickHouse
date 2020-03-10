@@ -49,9 +49,9 @@ public:
     ~StorageLiveView() override;
     String getName() const override { return "LiveView"; }
     bool isView() const override { return true; }
-    StorageID getBlocksStorageID() const
+    String getBlocksTableName() const
     {
-        return StorageID("", getStorageID().table_name + "_blocks");
+        return getStorageID().table_name + "_blocks";
     }
     StoragePtr getParentStorage() const { return DatabaseCatalog::instance().getTable(select_table_id); }
 

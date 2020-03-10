@@ -1,12 +1,12 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/loadMetadata.h>
-#include <IO/WriteHelpers.h>
-#include <Storages/StorageID.h>
+#include <Storages/IStorage.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseMemory.h>
 #include <Poco/File.h>
 #include <Common/quoteString.h>
+#include <Storages/StorageMemory.h>
 
 namespace DB
 {
@@ -20,6 +20,81 @@ namespace ErrorCodes
     extern const int DDL_GUARD_IS_ACTIVE;
     extern const int DATABASE_NOT_EMPTY;
     extern const int DATABASE_ACCESS_DENIED;
+}
+
+TemporaryTableHolder::TemporaryTableHolder(const Context & context_,
+                                           const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
+    : context(context_.getGlobalContext())
+    , temporary_tables(*DatabaseCatalog::instance().getDatabaseForTemporaryTables())
+{
+    ASTPtr original_create;
+    ASTCreateQuery * create = dynamic_cast<ASTCreateQuery *>(query.get());
+    String global_name;
+    if (query)
+    {
+        original_create = create->clone();
+        if (create->uuid == UUIDHelpers::Nil)
+            create->uuid = UUIDHelpers::generateV4();
+        id = create->uuid;
+        create->table = "_tmp_" + toString(id);
+        global_name = create->table;
+        create->database = DatabaseCatalog::TEMPORARY_DATABASE;
+    }
+    else
+    {
+        id = UUIDHelpers::generateV4();
+        global_name = "_tmp_" + toString(id);
+    }
+    auto table_id = StorageID(DatabaseCatalog::TEMPORARY_DATABASE, global_name, id);
+    auto table = creator(table_id);
+    temporary_tables.createTable(context, global_name, table, original_create);
+    table->startup();
+}
+
+
+TemporaryTableHolder::TemporaryTableHolder(const Context & context_, const ColumnsDescription & columns, const ASTPtr & query)
+    : TemporaryTableHolder
+      (
+          context_,
+          [&](const StorageID & table_id)
+          {
+              return StorageMemory::create(table_id, ColumnsDescription{columns}, ConstraintsDescription{});
+          },
+          query
+      )
+{
+}
+
+TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs)
+        : context(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id)
+{
+    rhs.id = UUIDHelpers::Nil;
+}
+
+TemporaryTableHolder & TemporaryTableHolder::operator = (TemporaryTableHolder && rhs)
+{
+    id = rhs.id;
+    rhs.id = UUIDHelpers::Nil;
+    return *this;
+}
+
+TemporaryTableHolder::~TemporaryTableHolder()
+{
+    if (id != UUIDHelpers::Nil)
+        temporary_tables.removeTable(context, "_tmp_" + toString(id));
+}
+
+StorageID TemporaryTableHolder::getGlobalTableID() const
+{
+    return StorageID{DatabaseCatalog::TEMPORARY_DATABASE, "_tmp_" + toString(id), id};
+}
+
+StoragePtr TemporaryTableHolder::getTable() const
+{
+    auto table = temporary_tables.tryGetTable(context, "_tmp_" + toString(id));
+    if (!table)
+        throw Exception("Temporary table " + getGlobalTableID().getNameForLogs() + " not found", ErrorCodes::LOGICAL_ERROR);
+    return table;
 }
 
 
