@@ -52,6 +52,7 @@ private:
     bool compress = false;
     CompressionMethod compression_method;
     int compression_level = 1;
+    bool send_progress_info = true;
 
     std::ostream * response_body_ostr = nullptr;
 
@@ -92,7 +93,8 @@ public:
         Poco::Net::HTTPServerResponse & response_,
         unsigned keep_alive_timeout_,
         bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
-        CompressionMethod compression_method_ = CompressionMethod::None);
+        CompressionMethod compression_method_ = CompressionMethod::None,
+        bool send_progress_info_ = true);
 
     /// Writes progess in repeating HTTP headers.
     void onProgress(const Progress & progress);

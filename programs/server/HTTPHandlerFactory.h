@@ -11,6 +11,7 @@
 #include "PingRequestHandler.h"
 #include "PrometheusRequestHandler.h"
 #include "ReplicasStatusHandler.h"
+#include "WebTerminalHandler.h"
 #include "RootRequestHandler.h"
 
 
@@ -108,6 +109,13 @@ struct ReplicasStatusEndpoint
     using HandleType = ReplicasStatusHandler;
 };
 
+struct WebConsoleEndpoint
+{
+    static constexpr auto path = "/console";
+    static constexpr auto strict_path = false;
+    using HandleType = HTTPWebTerminalHandler;
+};
+
 using HTTPRootRequestHandlerFactory = HTTPGetRequestHandlerFactory<RootEndpoint>;
 using HTTPPingRequestHandlerFactory = HTTPGetRequestHandlerFactory<PingEndpoint>;
 using HTTPReplicasStatusRequestHandlerFactory = HTTPGetRequestHandlerFactory<ReplicasStatusEndpoint>;
@@ -118,6 +126,7 @@ HTTPRequestHandlerFactoryMain * createDefaultHandlerFatory(IServer & server, con
     auto handlerFactory = new HTTPRequestHandlerFactoryMain(server, name);
     handlerFactory->addHandler<HTTPRootRequestHandlerFactory>()
                   ->addHandler<HTTPPingRequestHandlerFactory>()
+                  ->addHandler<HTTPWebConsoleRequestHandlerFactory>()
                   ->addHandler<HTTPReplicasStatusRequestHandlerFactory>()
                   ->addHandler<HTTPQueryRequestHandlerFactory<HandleType>>();
     return handlerFactory;

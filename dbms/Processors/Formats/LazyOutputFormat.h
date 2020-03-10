@@ -14,8 +14,8 @@ class LazyOutputFormat : public IOutputFormat
 {
 
 public:
-    explicit LazyOutputFormat(const Block & header)
-        : IOutputFormat(header, out), queue(2), finished_processing(false) {}
+    explicit LazyOutputFormat(const Block & header, size_t queue_size = 2)
+        : IOutputFormat(header, out), queue(queue_size), finished_processing(false) {}
 
     String getName() const override { return "LazyOutputFormat"; }
 

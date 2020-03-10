@@ -105,6 +105,9 @@ void PrettyCompactBlockOutputFormat::write(const Chunk & chunk, PortKind port_ki
     if (total_rows >= max_rows)
     {
         total_rows += chunk.getNumRows();
+
+        if (callback)
+            callback(chunk.getColumns(), chunk.getNumRows());
         return;
     }
 
@@ -125,6 +128,8 @@ void PrettyCompactBlockOutputFormat::write(const Chunk & chunk, PortKind port_ki
     writeBottom(max_widths);
 
     total_rows += num_rows;
+    if (callback)
+        callback(chunk.getColumns(), num_rows);
 }
 
 
@@ -133,21 +138,21 @@ void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettyCompact", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, format_settings);
+        return std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, format_settings, std::move(callback));
     });
 
     factory.registerOutputFormatProcessor("PrettyCompactNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & format_settings)
     {
         FormatSettings changed_settings = format_settings;
         changed_settings.pretty.color = false;
-        return std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, changed_settings);
+        return std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, changed_settings, std::move(callback));
     });
 
 /// TODO

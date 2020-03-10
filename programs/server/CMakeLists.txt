@@ -11,7 +11,10 @@ set(CLICKHOUSE_SERVER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/RootRequestHandler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Server.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TCPHandler.cpp
-   )
+    ${CMAKE_CURRENT_SOURCE_DIR}/WebTerminalHandler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/WebTerminalSession.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/WebTerminalSessionQuery.cpp
+)
 
 set(CLICKHOUSE_SERVER_SOURCES
     ${CLICKHOUSE_SERVER_SOURCES}
@@ -23,6 +26,9 @@ set(CLICKHOUSE_SERVER_LINK PRIVATE clickhouse_dictionaries clickhouse_common_io 
 if (USE_POCO_NETSSL)
     set(CLICKHOUSE_SERVER_LINK ${CLICKHOUSE_SERVER_LINK} PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
 endif ()
+
+add_subdirectory(resource)
+list(APPEND CLICKHOUSE_SERVER_LINK PRIVATE server_resource)
 
 clickhouse_program_add(server)
 

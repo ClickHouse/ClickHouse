@@ -306,6 +306,11 @@ inline bool operator==(StringRef lhs, const char * rhs)
     return true;
 }
 
+inline bool operator!=(StringRef lhs, const char * rhs)
+{
+    return !operator==(lhs, rhs);
+}
+
 inline std::ostream & operator<<(std::ostream & os, const StringRef & str)
 {
     if (str.data)

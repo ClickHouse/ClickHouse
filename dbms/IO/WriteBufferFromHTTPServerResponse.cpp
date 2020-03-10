@@ -68,7 +68,9 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 {
     if (!headers_finished_sending)
     {
-        writeHeaderSummary();
+        if (send_progress_info)
+            writeHeaderSummary();
+
         headers_finished_sending = true;
 
         if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
@@ -150,13 +152,15 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     Poco::Net::HTTPServerResponse & response_,
     unsigned keep_alive_timeout_,
     bool compress_,
-    CompressionMethod compression_method_)
+    CompressionMethod compression_method_,
+    bool send_progress_info_)
     : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE)
     , request(request_)
     , response(response_)
     , keep_alive_timeout(keep_alive_timeout_)
     , compress(compress_)
     , compression_method(compression_method_)
+    , send_progress_info(send_progress_info_)
 {
 }
 
@@ -177,7 +181,9 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
 
         /// Send all common headers before our special progress headers.
         startSendHeaders();
-        writeHeaderProgress();
+
+        if (send_progress_info)
+            writeHeaderProgress();
     }
 }
 
