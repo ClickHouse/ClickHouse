@@ -154,7 +154,7 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
             storage.reportBrokenPart(data_part->name);
 
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + path + " "
+        e.addMessage("(while reading from part " + data_part->getFullPath() + " "
                      "from mark " + toString(from_mark) + " "
                      "with max_rows_to_read = " + toString(max_rows_to_read) + ")");
         throw;
@@ -188,8 +188,8 @@ void MergeTreeReaderWide::addStreams(const String & name, const IDataType & type
             return;
 
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            path + stream_name, DATA_FILE_EXTENSION, data_part->getMarksCount(),
-            all_mark_ranges, settings, mark_cache,
+            data_part->disk, data_part->getFullRelativePath() + stream_name, DATA_FILE_EXTENSION,
+            data_part->getMarksCount(), all_mark_ranges, settings, mark_cache,
             uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             &data_part->index_granularity_info,
             profile_callback, clock_type));
