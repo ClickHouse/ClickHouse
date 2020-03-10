@@ -6,6 +6,7 @@ namespace DB
 
 
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
+    DiskPtr disk_,
     const String & part_path_,
     const MergeTreeData & storage_,
     const NamesAndTypesList & columns_list_,
@@ -14,7 +15,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-: IMergeTreeDataPartWriter(part_path_,
+: IMergeTreeDataPartWriter(disk_, part_path_,
     storage_, columns_list_,
     indices_to_recalc_, marks_file_extension_,
     default_codec_, settings_, index_granularity_, true)
@@ -26,6 +27,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
     stream = std::make_unique<Stream>(
         data_file_name,
+        disk_,
         part_path + data_file_name, DataPart::DATA_FILE_EXTENSION,
         part_path + data_file_name, marks_file_extension,
         default_codec,
