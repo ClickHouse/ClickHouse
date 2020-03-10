@@ -129,6 +129,7 @@ enum class AccessType
     input,
     values,
     numbers,
+    zeros,
     merge,
     remote,
     mysql,
