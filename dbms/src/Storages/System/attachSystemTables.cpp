@@ -39,6 +39,7 @@
 #include <Storages/System/StorageSystemContributors.h>
 #include <Storages/System/StorageSystemDisks.h>
 #include <Storages/System/StorageSystemStoragePolicies.h>
+#include <Storages/System/StorageSystemZeros.h>
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -53,6 +54,8 @@ void attachSystemTablesLocal(IDatabase & system_database)
     system_database.attachTable("one", StorageSystemOne::create("one"));
     system_database.attachTable("numbers", StorageSystemNumbers::create("numbers", false));
     system_database.attachTable("numbers_mt", StorageSystemNumbers::create("numbers_mt", true));
+    system_database.attachTable("zeros", StorageSystemZeros::create("zeros", false));
+    system_database.attachTable("zeros_mt", StorageSystemZeros::create("zeros_mt", true));
     system_database.attachTable("databases", StorageSystemDatabases::create("databases"));
     system_database.attachTable("tables", StorageSystemTables::create("tables"));
     system_database.attachTable("columns", StorageSystemColumns::create("columns"));
