@@ -570,7 +570,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         return true;
     };
 
-    /** Because each parallelogram maps to a contiguous sequence of elements
+    /** Because each hyperrectangle maps to a contiguous sequence of elements
      * layed out in the lexicographically increasing order, the set intersects the range
      * if and only if either bound coincides with an element or at least one element
      * is between the lower bounds

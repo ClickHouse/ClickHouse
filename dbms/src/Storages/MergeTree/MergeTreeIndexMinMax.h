@@ -16,16 +16,16 @@ class MergeTreeIndexMinMax;
 struct MergeTreeIndexGranuleMinMax : public IMergeTreeIndexGranule
 {
     explicit MergeTreeIndexGranuleMinMax(const MergeTreeIndexMinMax & index_);
-    MergeTreeIndexGranuleMinMax(const MergeTreeIndexMinMax & index_, std::vector<Range> && parallelogram_);
+    MergeTreeIndexGranuleMinMax(const MergeTreeIndexMinMax & index_, std::vector<Range> && hyperrectangle_);
     ~MergeTreeIndexGranuleMinMax() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr) override;
 
-    bool empty() const override { return parallelogram.empty(); }
+    bool empty() const override { return hyperrectangle.empty(); }
 
     const MergeTreeIndexMinMax & index;
-    std::vector<Range> parallelogram;
+    std::vector<Range> hyperrectangle;
 };
 
 
@@ -34,12 +34,12 @@ struct MergeTreeIndexAggregatorMinMax : IMergeTreeIndexAggregator
     explicit MergeTreeIndexAggregatorMinMax(const MergeTreeIndexMinMax & index);
     ~MergeTreeIndexAggregatorMinMax() override = default;
 
-    bool empty() const override { return parallelogram.empty(); }
+    bool empty() const override { return hyperrectangle.empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
 
     const MergeTreeIndexMinMax & index;
-    std::vector<Range> parallelogram;
+    std::vector<Range> hyperrectangle;
 };
 
 

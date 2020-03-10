@@ -276,8 +276,8 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             if (part->isEmpty())
                 continue;
 
-            if (minmax_idx_condition && !minmax_idx_condition->checkInParallelogram(
-                    part->minmax_idx.parallelogram, data.minmax_idx_column_types).can_be_true)
+            if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
+                    part->minmax_idx.hyperrectangle, data.minmax_idx_column_types).can_be_true)
                 continue;
 
             if (max_block_numbers_to_read)
