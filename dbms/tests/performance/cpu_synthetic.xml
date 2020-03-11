@@ -61,7 +61,6 @@ PageCharset тоже почти всегда непуст, но его сред�
 <query>SELECT SearchEngineID, SearchPhrase, RegionID FROM hits_100m_single GROUP BY SearchEngineID, SearchPhrase, RegionID ORDER BY count() DESC LIMIT 10</query>
 <!-- 36. Функция для работы с датой и временем. -->
 <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(toMonday(EventTime)) SETTINGS max_threads = 1</query>
-<query>SELECT count() FROM hits_100m_single WHERE NOT ignore(toMonday(EventTime))</query>
 <!-- 37. Функция для работы с URL. -->
 <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(cutQueryString(URL)) SETTINGS max_threads = 1</query>
 <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(cutQueryString(URL))</query>
