@@ -12,3 +12,6 @@ ClickHouse is an open-source column-oriented database management system that all
 * [Contacts](https://clickhouse.tech/#contacts) can help to get your questions answered if there are any.
 * You can also [fill this form](https://forms.yandex.com/surveys/meet-yandex-clickhouse-team/) to meet Yandex ClickHouse team in person.
 
+## Upcoming Events		
+
+  * [ClickHouse Workshop in Novosibirsk](https://2020.codefest.ru/lecture/1628) on March 28, 2020.

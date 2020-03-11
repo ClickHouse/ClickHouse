@@ -683,6 +683,7 @@ public:
     using PathWithDisk = std::pair<String, DiskPtr>;
     using PathsWithDisks = std::vector<PathWithDisk>;
     PathsWithDisks getDataPathsWithDisks() const;
+    PathsWithDisks getRelativeDataPathsWithDisks() const;
 
     /// Reserves space at least 1MB.
     ReservationPtr reserveSpace(UInt64 expected_size) const;

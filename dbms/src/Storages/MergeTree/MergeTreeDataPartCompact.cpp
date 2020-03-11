@@ -68,7 +68,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
         { return *getColumnPosition(lhs.name) < *getColumnPosition(rhs.name); });
 
     return std::make_unique<MergeTreeDataPartWriterCompact>(
-        getFullPath(), storage, ordered_columns_list, indices_to_recalc,
+        disk, getFullRelativePath(), storage, ordered_columns_list, indices_to_recalc,
         index_granularity_info.marks_file_extension,
         default_codec, writer_settings, computed_index_granularity);
 }
@@ -92,7 +92,7 @@ ColumnSize MergeTreeDataPartCompact::getTotalColumnsSize() const
 
 void MergeTreeDataPartCompact::loadIndexGranularity()
 {
-    String full_path = getFullPath();
+    String full_path = getFullRelativePath();
 
     if (columns.empty())
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
@@ -100,19 +100,19 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     if (!index_granularity_info.is_adaptive)
         throw Exception("MergeTreeDataPartCompact cannot be created with non-adaptive granulary.", ErrorCodes::NOT_IMPLEMENTED);
 
-    std::string marks_file_path = index_granularity_info.getMarksFilePath(full_path + "data");
-    if (!Poco::File(marks_file_path).exists())
-        throw Exception("Marks file '" + marks_file_path + "' doesn't exist", ErrorCodes::NO_FILE_IN_DATA_PART);
+    auto marks_file_path = index_granularity_info.getMarksFilePath(full_path + "data");
+    if (!disk->exists(marks_file_path))
+        throw Exception("Marks file '" + fullPath(disk, marks_file_path) + "' doesn't exist", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-    size_t marks_file_size = Poco::File(marks_file_path).getSize();
+    size_t marks_file_size = disk->getFileSize(marks_file_path);
 
-    ReadBufferFromFile buffer(marks_file_path, marks_file_size);
-    while (!buffer.eof())
+    auto buffer = disk->readFile(marks_file_path, marks_file_size);
+    while (!buffer->eof())
     {
         /// Skip offsets for columns
-        buffer.seek(columns.size() * sizeof(MarkInCompressedFile), SEEK_CUR);
+        buffer->seek(columns.size() * sizeof(MarkInCompressedFile), SEEK_CUR);
         size_t granularity;
-        readIntBinary(granularity, buffer);
+        readIntBinary(granularity, *buffer);
         index_granularity.appendMark(granularity);
     }
 
@@ -187,7 +187,7 @@ NameToNameMap MergeTreeDataPartCompact::createRenameMapForAlter(
 void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) const
 {
     checkConsistencyBase();
-    String path = getFullPath();
+    String path = getFullRelativePath();
     String mrk_file_name = DATA_FILE_NAME + index_granularity_info.marks_file_extension;
 
     if (!checksums.empty())
@@ -199,34 +199,34 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
         if (require_part_metadata)
         {
             if (!checksums.files.count(mrk_file_name))
-                throw Exception("No marks file checksum for column in part " + path, ErrorCodes::NO_FILE_IN_DATA_PART);
+                throw Exception("No marks file checksum for column in part " + fullPath(disk, path), ErrorCodes::NO_FILE_IN_DATA_PART);
             if (!checksums.files.count(DATA_FILE_NAME_WITH_EXTENSION))
-                throw Exception("No data file checksum for in part " + path, ErrorCodes::NO_FILE_IN_DATA_PART);
+                throw Exception("No data file checksum for in part " + fullPath(disk, path), ErrorCodes::NO_FILE_IN_DATA_PART);
         }
     }
     else
     {
         {
             /// count.txt should be present even in non custom-partitioned parts
-            Poco::File file(path + "count.txt");
-            if (!file.exists() || file.getSize() == 0)
-                throw Exception("Part " + path + " is broken: " + file.path() + " is empty", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+            auto file_path = path + "count.txt";
+            if (!disk->exists(file_path) || disk->getFileSize(file_path) == 0)
+                throw Exception("Part " + path + " is broken: " + fullPath(disk, file_path) + " is empty", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
         }
 
         /// Check that marks are nonempty and have the consistent size with columns number.
-        Poco::File file(path + mrk_file_name);
+        auto mrk_file_path = path + mrk_file_name;
 
-        if (file.exists())
+        if (disk->exists(mrk_file_name))
         {
-            UInt64 file_size = file.getSize();
+            UInt64 file_size = disk->getFileSize(mrk_file_name);
              if (!file_size)
-                throw Exception("Part " + path + " is broken: " + file.path() + " is empty.",
+                throw Exception("Part " + path + " is broken: " + fullPath(disk, mrk_file_name) + " is empty.",
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
 
             UInt64 expected_file_size = index_granularity_info.getMarkSizeInBytes(columns.size()) * index_granularity.getMarksCount();
             if (expected_file_size != file_size)
                 throw Exception(
-                    "Part " + path + " is broken: bad size of marks file '" + file.path() + "': " + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
+                    "Part " + path + " is broken: bad size of marks file '" + fullPath(disk, mrk_file_name) + "': " + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
         }
     }
