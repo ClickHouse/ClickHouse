@@ -14,4 +14,6 @@ GIT_USER=${GIT_USER:-$USER}
 
 GIT_TEST_URI=git@github.com:${GIT_USER}/clickhouse.github.io.git \
  TEST_DOMAIN=${GIT_USER}-test.clickhouse.tech \
- EXTRA_BUILD_ARGS="${@}" ${BASE_DIR}/release.sh
+ EXTRA_BUILD_ARGS="${@}" \
+ CLOUDFLARE_TOKEN="" \
+ ${BASE_DIR}/release.sh

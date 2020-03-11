@@ -35,6 +35,11 @@ then
     git add ".nojekyll"
     git commit -a -m "add new release at $(date)"
     git push origin master
+    if [[ ! -z "${CLOUDFLARE_TOKEN}" ]]
+    then
+        sleep 1m
+        curl -X POST "https://api.cloudflare.com/client/v4/zones/4fc6fb1d46e87851605aa7fa69ca6fe0/purge_cache" -H "Authorization: Bearer ${CLOUDFLARE_TOKEN}" -H "Content-Type:application/json" --data '{"purge_everything":true}'
+    fi
     cd "${BUILD_DIR}"
     DOCKER_HASH=$(head -c 16 < /dev/urandom | xxd -p)
 fi
