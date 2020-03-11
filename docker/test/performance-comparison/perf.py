@@ -105,7 +105,7 @@ tables = [e.text for e in root.findall('preconditions/table_exists')]
 for t in tables:
     for c in connections:
         try:
-            res = c.execute("show create table {}".format(t))
+            res = c.execute("select 1 from {} limit 1".format(t))
         except:
             print('skipped\t' + traceback.format_exception_only(*sys.exc_info()[:2])[-1])
             traceback.print_exc()

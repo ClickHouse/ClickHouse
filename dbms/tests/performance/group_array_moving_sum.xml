@@ -10,6 +10,9 @@
         </any_of>
     </stop_conditions>
 
+    <settings>
+        <max_memory_usage>30000000000</max_memory_usage>
+    </settings>
 
     <create_query>CREATE TABLE moving_sum_100m(k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
     <create_query>CREATE TABLE moving_sum_1000m(k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>

@@ -17,7 +17,7 @@
 
 
     <settings>
-        <max_memory_usage>20000000000</max_memory_usage>
+        <max_memory_usage>30000000000</max_memory_usage>
     </settings>
 
     <substitutions>
