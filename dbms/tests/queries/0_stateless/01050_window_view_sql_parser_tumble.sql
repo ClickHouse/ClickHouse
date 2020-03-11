@@ -1,32 +1,32 @@
 SET allow_experimental_window_view = 1;
 
-DROP TABLE IF EXISTS test.mt;
+DROP TABLE IF EXISTS mt;
 
-CREATE TABLE test.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
+CREATE TABLE mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
 
 SELECT '---WATERMARK---';
-DROP TABLE IF EXISTS test.wv;
-CREATE WINDOW VIEW test.wv WATERMARK=INTERVAL '1' SECOND AS SELECT count(a), TUMBLE_START(wid) AS w_start, TUMBLE_END(wid) AS w_end FROM test.mt GROUP BY TUMBLE(timestamp, INTERVAL '3' SECOND) AS wid;
+DROP TABLE IF EXISTS wv;
+CREATE WINDOW VIEW wv WATERMARK=INTERVAL '1' SECOND AS SELECT count(a), TUMBLE_START(wid) AS w_start, TUMBLE_END(wid) AS w_end FROM mt GROUP BY TUMBLE(timestamp, INTERVAL '3' SECOND) AS wid;
 
 SELECT '---With w_end---';
-DROP TABLE IF EXISTS test.wv;
-CREATE WINDOW VIEW test.wv AS SELECT count(a), TUMBLE_START(wid) AS w_start, TUMBLE_END(wid) AS w_end FROM test.mt GROUP BY TUMBLE(timestamp, INTERVAL '3' SECOND) AS wid;
+DROP TABLE IF EXISTS wv;
+CREATE WINDOW VIEW wv AS SELECT count(a), TUMBLE_START(wid) AS w_start, TUMBLE_END(wid) AS w_end FROM mt GROUP BY TUMBLE(timestamp, INTERVAL '3' SECOND) AS wid;
 
 SELECT '---WithOut w_end---';
-DROP TABLE IF EXISTS test.wv;
-CREATE WINDOW VIEW test.wv AS SELECT count(a), TUMBLE_START(wid) AS w_start FROM test.mt GROUP BY TUMBLE(timestamp, INTERVAL '3' SECOND) AS wid;
+DROP TABLE IF EXISTS wv;
+CREATE WINDOW VIEW wv AS SELECT count(a), TUMBLE_START(wid) AS w_start FROM mt GROUP BY TUMBLE(timestamp, INTERVAL '3' SECOND) AS wid;
 
 SELECT '---WITH---';
-DROP TABLE IF EXISTS test.wv;
-CREATE WINDOW VIEW test.wv AS WITH toDateTime('2018-01-01 00:00:00') AS date_time SELECT count(a), TUMBLE_START(wid) AS w_start, TUMBLE_END(wid) AS w_end, date_time FROM test.mt GROUP BY TUMBLE(timestamp, INTERVAL '3' SECOND) AS wid;
+DROP TABLE IF EXISTS wv;
+CREATE WINDOW VIEW wv AS WITH toDateTime('2018-01-01 00:00:00') AS date_time SELECT count(a), TUMBLE_START(wid) AS w_start, TUMBLE_END(wid) AS w_end, date_time FROM mt GROUP BY TUMBLE(timestamp, INTERVAL '3' SECOND) AS wid;
 
 SELECT '---WHERE---';
-DROP TABLE IF EXISTS test.wv;
-CREATE WINDOW VIEW test.wv AS SELECT count(a), TUMBLE_START(wid) AS w_start FROM test.mt WHERE a != 1 GROUP BY TUMBLE(timestamp, INTERVAL '3' SECOND) AS wid;
+DROP TABLE IF EXISTS wv;
+CREATE WINDOW VIEW wv AS SELECT count(a), TUMBLE_START(wid) AS w_start FROM mt WHERE a != 1 GROUP BY TUMBLE(timestamp, INTERVAL '3' SECOND) AS wid;
 
 SELECT '---ORDER_BY---';
-DROP TABLE IF EXISTS test.wv;
-CREATE WINDOW VIEW test.wv AS SELECT count(a), TUMBLE_START(wid) AS w_start FROM test.mt WHERE a != 1 GROUP BY TUMBLE(timestamp, INTERVAL '3' SECOND) AS wid ORDER BY w_start;
+DROP TABLE IF EXISTS wv;
+CREATE WINDOW VIEW wv AS SELECT count(a), TUMBLE_START(wid) AS w_start FROM mt WHERE a != 1 GROUP BY TUMBLE(timestamp, INTERVAL '3' SECOND) AS wid ORDER BY w_start;
 
-DROP TABLE test.mt;
-DROP TABLE test.wv;
+DROP TABLE mt;
+DROP TABLE wv;
