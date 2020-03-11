@@ -4828,7 +4828,7 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
 void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace,
                                                       const Context & context)
 {
-    auto lock1 = lockStructureForShare(false, context.getCurrentQueryId());
+    auto lock1 = lockStructureForShare(true, context.getCurrentQueryId());
     auto lock2 = source_table->lockStructureForShare(false, context.getCurrentQueryId());
 
     Stopwatch watch;

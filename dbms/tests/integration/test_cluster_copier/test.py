@@ -68,13 +68,32 @@ def started_cluster():
         pass
         cluster.shutdown()
 
-def print_destination_cluster(task):
+def print_destination_cluster(task, pattern):
     for anime in ['s1_0_0', 's1_0_1', 's1_1_0']:
         a = task.cluster.instances[anime].query("SELECT count() FROM hits_piece_0")
         b = task.cluster.instances[anime].query("SELECT count() FROM hits_piece_1")
         c = task.cluster.instances[anime].query("SELECT count() FROM hits")
         print(anime, a, b, int(a) + int(b), c)
-        print(task.cluster.instances[anime].query("select partition, name, database, table, hash_of_all_files, hash_of_uncompressed_files, uncompressed_hash_of_compressed_files from system.parts where table like '%hits%' format TSV"))
+        print(task.cluster.instances[anime].query("select partition, "
+                                                  "name, database, table, "
+                                                  "rows, hash_of_all_files, "
+                                                  "hash_of_uncompressed_files, "
+                                                  "uncompressed_hash_of_compressed_files "
+                                                  "from system.parts "
+                                                  "where database='default'"
+                                                  "format PrettyCompact".format(pattern)))
+
+
+def print_source_cluster(task, pattern):
+    for anime in ['s0_0_0', 's0_0_1', 's0_1_0']:
+        print(task.cluster.instances[anime].query("select partition, "
+                                                  "name, database, table, "
+                                                  "rows, min_date, min_time, hash_of_all_files, "
+                                                  "hash_of_uncompressed_files, "
+                                                  "uncompressed_hash_of_compressed_files "
+                                                  "from system.parts "
+                                                  "where table like '%{}%' "
+                                                  "format PrettyCompact".format(pattern)))
 
 class Task1:
 
@@ -98,7 +117,7 @@ class Task1:
 
 
     def check(self):
-        print_destination_cluster(self)
+        print_destination_cluster(self, "hits")
         assert TSV(self.cluster.instances['s0_0_0'].query("SELECT count() FROM hits_all")) == TSV("1002\n")
 
         assert TSV(self.cluster.instances['s1_0_0'].query("SELECT DISTINCT d % 2 FROM hits")) == TSV("1\n")
@@ -136,9 +155,11 @@ class Task2:
 
         instance.query("INSERT INTO a_all SELECT toDate(17581 + number) AS date, number AS d FROM system.numbers LIMIT 85", settings={"insert_distributed_sync": 1})
 
+        print_source_cluster(self, "a")
+
 
     def check(self):
-        #print_destination_cluster(self)
+        print_destination_cluster(self, "a")
         assert TSV(self.cluster.instances['s0_0_0'].query("SELECT count() FROM cluster(cluster0, default, a)")) == TSV("85\n")
         assert TSV(self.cluster.instances['s1_0_0'].query("SELECT count(), uniqExact(date) FROM cluster(cluster1, default, b)")) == TSV("85\t85\n")
 
@@ -174,7 +195,7 @@ class Task_test_block_size:
 
 
     def check(self):
-        #print_destination_cluster(self)
+        print_destination_cluster(self, "test_block_size")
 
         assert TSV(self.cluster.instances['s1_0_0'].query("SELECT count() FROM cluster(cluster1, default, test_block_size)")) == TSV("{}\n".format(self.rows))
 
@@ -199,7 +220,7 @@ class Task_no_index:
 
 
     def check(self):
-        #print_destination_cluster(self)
+        print_destination_cluster(self, "ontime")
         assert TSV(self.cluster.instances['s1_1_0'].query("SELECT Year FROM ontime22")) == TSV("2017\n")
         instance = cluster.instances['s0_0_0']
         instance.query("DROP TABLE ontime")
@@ -223,7 +244,7 @@ class Task_no_arg:
 
 
     def check(self):
-        #print_destination_cluster(self)
+        print_destination_cluster(self, "copier_test1")
         assert TSV(self.cluster.instances['s1_1_0'].query("SELECT date FROM copier_test1_1")) == TSV("2016-01-01\n")
         instance = cluster.instances['s0_0_0']
         instance.query("DROP TABLE copier_test1")
