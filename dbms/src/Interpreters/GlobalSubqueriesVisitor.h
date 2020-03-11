@@ -78,7 +78,10 @@ public:
             if (is_table)
             {
                 /// If this is already an external table, you do not need to add anything. Just remember its presence.
-                if (external_tables.end() != external_tables.find(getIdentifierName(subquery_or_table_name)))
+                auto temporary_table_name = getIdentifierName(subquery_or_table_name);
+                bool exists_in_local_map = external_tables.end() != external_tables.find(temporary_table_name);
+                bool exists_in_context = !context.tryResolveStorageID(StorageID("", temporary_table_name), Context::ResolveExternal).empty();
+                if (exists_in_local_map || exists_in_context)
                     return;
             }
 

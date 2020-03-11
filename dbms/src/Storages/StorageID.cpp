@@ -4,10 +4,15 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Common/quoteString.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_DATABASE;
+}
 
 StorageID::StorageID(const ASTQueryWithTableAndOutput & query, const Context & local_context)
 {
