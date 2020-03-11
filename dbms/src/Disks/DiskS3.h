@@ -19,6 +19,11 @@ namespace DB
 class DiskS3 : public IDisk
 {
 public:
+    void createFile(const String & path) override;
+    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
+    void setReadOnly(const String & path) override;
+
+public:
     friend class DiskS3Reservation;
 
     DiskS3(

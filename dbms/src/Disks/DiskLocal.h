@@ -86,7 +86,9 @@ public:
     void remove(const String & path) override;
 
     void removeRecursive(const String & path) override;
-
+    void createFile(const String & path) override;
+    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
+    void setReadOnly(const String & path) override;
     void removeDirectory(const String & path) override;
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;

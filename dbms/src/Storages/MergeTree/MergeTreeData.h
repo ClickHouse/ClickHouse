@@ -682,7 +682,6 @@ public:
     Strings getDataPaths() const override;
 
     using PathsWithDisks = std::vector<PathWithDisk>;
-    PathsWithDisks getDataPathsWithDisks() const;
     PathsWithDisks getRelativeDataPathsWithDisks() const;
 
     /// Reserves space at least 1MB.

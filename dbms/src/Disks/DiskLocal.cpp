@@ -272,6 +272,15 @@ void DiskLocal::unlink(const String & path)
 	if (0 != ::unlink(path.c_str()))
 		throwFromErrnoWithPath("Cannot unlink file " + path, path, ErrorCodes::CANNOT_UNLINK);
 }
+void DiskLocal::createFile(const String & )
+{
+}
+void DiskLocal::copy(const String & , const std::shared_ptr<IDisk> & , const String & )
+{
+}
+void DiskLocal::setReadOnly(const String & )
+{
+}
 
 void DiskLocalReservation::update(UInt64 new_size)
 {

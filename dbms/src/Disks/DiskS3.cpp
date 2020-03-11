@@ -645,6 +645,15 @@ void DiskS3::unlink(const String & path)
 {
     remove(path);
 }
+void DiskS3::createFile(const String &)
+{
+}
+void DiskS3::copy(const String & , const std::shared_ptr<IDisk> & , const String & )
+{
+}
+void DiskS3::setReadOnly(const String & )
+{
+}
 
 DiskS3Reservation::~DiskS3Reservation()
 {

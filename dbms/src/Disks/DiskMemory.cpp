@@ -404,6 +404,15 @@ void DiskMemory::unlink(const String &)
 {
     throw Exception("Method unlink is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
+void DiskMemory::createFile(const String & )
+{
+}
+void DiskMemory::copy(const String & , const std::shared_ptr<IDisk> & , const String & )
+{
+}
+void DiskMemory::setReadOnly(const String & )
+{
+}
 
 
 using DiskMemoryPtr = std::shared_ptr<DiskMemory>;

@@ -3635,15 +3635,6 @@ Strings MergeTreeData::getDataPaths() const
     return res;
 }
 
-MergeTreeData::PathsWithDisks MergeTreeData::getDataPathsWithDisks() const
-{
-    PathsWithDisks res;
-    auto disks = getStoragePolicy()->getDisks();
-    for (const auto & disk : disks)
-        res.emplace_back(getFullPathOnDisk(disk), disk);
-    return res;
-}
-
 MergeTreeData::PathsWithDisks MergeTreeData::getRelativeDataPathsWithDisks() const
 {
     PathsWithDisks res;
@@ -3672,6 +3663,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
             continue;
 
         part->disk->createDirectories(shadow_path);
+
         String backup_path = shadow_path
             + (!with_name.empty()
                 ? escapeForFileName(with_name)

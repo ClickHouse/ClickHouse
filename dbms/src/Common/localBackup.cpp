@@ -44,7 +44,7 @@ static void localBackupImpl(const DiskPtr & disk, const String & source_path, co
     }
 }
 
-void localBackup(const DiskPtr & disk, const String & source_path, const String & destination_path, std::optional<size_t> max_level)
+void localBackup(const DiskPtr & disk, const std::string & source_path, const std::string & destination_path, std::optional<size_t> max_level)
 {
     if (disk->exists(destination_path) && !disk->isDirectoryEmpty(destination_path))
     {
