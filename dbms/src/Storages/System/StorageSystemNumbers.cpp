@@ -29,7 +29,10 @@ void generateImpl(UInt64 * begin, const UInt64 * end, UInt64 start)
     __m128i values_2 = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_values_2));
     __m128i values_3 = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_values_3));
 
-    __m128i counter = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_counter));
+    __m128i counter_0 = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_counter));
+    __m128i counter_1 = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_counter));
+    __m128i counter_2 = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_counter));
+    __m128i counter_3 = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_counter));
 
     size_t count = end - begin;
 
@@ -39,7 +42,7 @@ void generateImpl(UInt64 * begin, const UInt64 * end, UInt64 start)
     if (count & 2u)
     {
         _mm_storeu_si128(reinterpret_cast<__m128i *>(begin), values_0);
-        values_0 = _mm_add_epi64(values_0, counter);
+        values_0 = _mm_add_epi64(values_0, counter_0);
 
         begin += 2;
     }
@@ -47,10 +50,10 @@ void generateImpl(UInt64 * begin, const UInt64 * end, UInt64 start)
     if (count & 4u)
     {
         _mm_storeu_si128(reinterpret_cast<__m128i *>(begin), values_0);
-        values_0 = _mm_add_epi64(values_0, counter);
+        values_0 = _mm_add_epi64(values_0, counter_0);
 
         _mm_storeu_si128(reinterpret_cast<__m128i *>(begin + 2), values_1);
-        values_1 = _mm_add_epi64(values_1, counter);
+        values_1 = _mm_add_epi64(values_1, counter_1);
 
         begin += 4;
     }
@@ -58,16 +61,16 @@ void generateImpl(UInt64 * begin, const UInt64 * end, UInt64 start)
     while (begin < end)
     {
         _mm_storeu_si128(reinterpret_cast<__m128i *>(begin), values_0);
-        values_0 = _mm_add_epi64(values_0, counter);
+        values_0 = _mm_add_epi64(values_0, counter_0);
 
         _mm_storeu_si128(reinterpret_cast<__m128i *>(begin + 2), values_1);
-        values_1 = _mm_add_epi64(values_1, counter);
+        values_1 = _mm_add_epi64(values_1, counter_1);
 
         _mm_storeu_si128(reinterpret_cast<__m128i *>(begin + 4), values_2);
-        values_2 = _mm_add_epi64(values_2, counter);
+        values_2 = _mm_add_epi64(values_2, counter_2);
 
         _mm_storeu_si128(reinterpret_cast<__m128i *>(begin + 6), values_3);
-        values_3 = _mm_add_epi64(values_3, counter);
+        values_3 = _mm_add_epi64(values_3, counter_3);
 
         begin += 8;
     }
