@@ -1,18 +1,18 @@
 SET allow_experimental_window_view = 1;
 SET allow_experimental_window_view = 1;
 
-DROP TABLE IF EXISTS test.mt;
-DROP TABLE IF EXISTS test.dst;
-DROP TABLE IF EXISTS test.wv;
+DROP TABLE IF EXISTS mt;
+DROP TABLE IF EXISTS dst;
+DROP TABLE IF EXISTS wv;
 
-CREATE TABLE test.dst(count UInt64) Engine=MergeTree ORDER BY tuple();
-CREATE TABLE test.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
-CREATE WINDOW VIEW test.wv TO test.dst AS SELECT count(a) AS count FROM test.mt GROUP BY HOP(timestamp, INTERVAL '1' SECOND, INTERVAL '1' SECOND) AS wid;
+CREATE TABLE dst(count UInt64) Engine=MergeTree ORDER BY tuple();
+CREATE TABLE mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
+CREATE WINDOW VIEW wv TO dst AS SELECT count(a) AS count FROM mt GROUP BY HOP(timestamp, INTERVAL '1' SECOND, INTERVAL '1' SECOND) AS wid;
 
-INSERT INTO test.mt VALUES (1, now());
+INSERT INTO mt VALUES (1, now());
 SELECT sleep(2);
-SELECT count from test.dst;
+SELECT count from dst;
 
-DROP TABLE test.wv;
-DROP TABLE test.mt;
-DROP TABLE test.dst;
+DROP TABLE wv;
+DROP TABLE mt;
+DROP TABLE dst;
