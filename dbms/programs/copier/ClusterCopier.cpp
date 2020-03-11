@@ -914,7 +914,6 @@ PartitionTaskStatus ClusterCopier::iterateThroughAllPiecesInPartition(const Conn
 
     bool was_failed_pieces = false;
     bool was_active_pieces = false;
-    bool was_error = false;
 
     for (size_t piece_number = 0; piece_number < total_number_of_pieces; piece_number++)
     {
@@ -925,8 +924,6 @@ PartitionTaskStatus ClusterCopier::iterateThroughAllPiecesInPartition(const Conn
             /// Exit if success
             if (res == PartitionTaskStatus::Finished)
                 break;
-
-            was_error = true;
 
             /// Skip if the task is being processed by someone
             if (res == PartitionTaskStatus::Active)
