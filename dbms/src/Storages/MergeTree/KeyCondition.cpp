@@ -484,9 +484,13 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
 static void applyFunction(
     const FunctionBasePtr & func,
     const DataTypePtr & arg_type, const Field & arg_value,
-    DataTypePtr & res_type, Field & res_value)
+    const DataTypePtr & res_type, Field & res_value)
 {
-    res_type = func->getReturnType();
+    if (!func || arg_value.isNull())
+    {
+        res_value = {};
+        return;
+    }
 
     Block block
     {
@@ -570,10 +574,8 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
                 return false;
 
             // Apply the next transformation step
-            DataTypePtr new_type;
+            DataTypePtr new_type = a.function_base->getReturnType();
             applyFunction(a.function_base, out_type, out_value, new_type, out_value);
-            if (!new_type)
-                return false;
 
             out_type.swap(new_type);
             expr_name = a.result_name;
@@ -1092,37 +1094,42 @@ BoolMask KeyCondition::checkInRange(
 
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
+    size_t column_index,
     MonotonicFunctionsChain & functions,
-    DataTypePtr current_type)
+    DataTypePtr current_type,
+    const FunctionCachePtr & cache)
 {
     for (auto & func : functions)
     {
+        if (key_range.left.isNull() && key_range.right.isNull())
+            return {};
+
         /// We check the monotonicity of each function on a specific range.
         IFunction::Monotonicity monotonicity = func->getMonotonicityForRange(
             *current_type.get(), key_range.left, key_range.right);
 
         if (!monotonicity.is_monotonic)
-        {
             return {};
-        }
+
+        auto new_type = func->getReturnType();
 
         /// Apply the function.
-        DataTypePtr new_type;
-        if (!key_range.left.isNull())
-            applyFunction(func, current_type, key_range.left, new_type, key_range.left);
-        if (!key_range.right.isNull())
-            applyFunction(func, current_type, key_range.right, new_type, key_range.right);
-
-        if (!new_type)
+        if (cache)
         {
-            return {};
+            cache->get(func, column_index, key_range.left, key_range.left);
+            cache->get(func, column_index, key_range.right, key_range.right);
+        }
+        else
+        {
+            applyFunction(func, current_type, key_range.left, new_type, key_range.left);
+            applyFunction(func, current_type, key_range.right, new_type, key_range.right);
         }
 
         current_type.swap(new_type);
-
         if (!monotonicity.is_positive)
             key_range.swapLeftAndRight();
     }
+
     return key_range;
 }
 
@@ -1149,8 +1156,10 @@ BoolMask KeyCondition::checkInParallelogram(
             {
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                     *key_range,
+                    element.key_column,
                     element.monotonic_functions_chain,
-                    data_types[element.key_column]
+                    data_types[element.key_column],
+                    function_cache
                 );
 
                 if (!new_range)
@@ -1176,7 +1185,7 @@ BoolMask KeyCondition::checkInParallelogram(
             if (!element.set_index)
                 throw Exception("Set for IN is not created yet", ErrorCodes::LOGICAL_ERROR);
 
-            rpn_stack.emplace_back(element.set_index->checkInRange(parallelogram, data_types));
+            rpn_stack.emplace_back(element.set_index->checkInRange(parallelogram, data_types, function_cache));
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();
         }
@@ -1385,6 +1394,25 @@ size_t KeyCondition::getMaxKeyColumn() const
         }
     }
     return res;
+}
+
+void KeyCondition::addToFunctionCache(Block && block, bool reset_old) const
+{
+    if (reset_old)
+        function_cache.reset();
+    if (!function_cache)
+        function_cache = std::make_shared<FunctionCache>(getMaxKeyColumn() + 1); // FIXME: Don't cache unused columns.
+
+    function_cache->addBlock(std::move(block));
+}
+
+bool KeyCondition::isFunctionCacheUseful() const
+{
+    for (const auto & element : rpn)
+        if (!element.monotonic_functions_chain.empty()
+            || (element.set_index && element.set_index->isFunctionCacheUseful()))
+            return true;
+    return false;
 }
 
 }

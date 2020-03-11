@@ -490,7 +490,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types)
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, const FunctionCachePtr & cache)
 {
     size_t tuple_size = indexes_mapping.size();
 
@@ -499,10 +499,13 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
 
     for (size_t i = 0; i < tuple_size; ++i)
     {
+        size_t key_index = indexes_mapping[i].key_index;
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
-            key_ranges[indexes_mapping[i].key_index],
+            key_ranges[key_index],
+            key_index,
             indexes_mapping[i].functions,
-            data_types[indexes_mapping[i].key_index]);
+            data_types[key_index],
+            cache);
 
         if (!new_range)
             return {true, true};
@@ -586,6 +589,14 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
             || (right_lower != indices.end() && equals(*right_lower, right_point)),
         true
     };
+}
+
+bool MergeTreeSetIndex::isFunctionCacheUseful() const
+{
+    for (const auto & mapping : indexes_mapping)
+        if (!mapping.functions.empty())
+            return true;
+    return false;
 }
 
 void ValueWithInfinity::update(const Field & x)

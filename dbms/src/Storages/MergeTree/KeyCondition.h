@@ -10,6 +10,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Common/FunctionCache.h>
 
 
 namespace DB
@@ -301,6 +302,8 @@ public:
 
     String toString() const;
 
+    bool isFunctionCacheUseful() const;
+    void addToFunctionCache(Block && block, bool reset_old = false) const;
 
     /** A chain of possibly monotone functions.
       * If the key column is wrapped in functions that can be monotonous in some value ranges
@@ -319,8 +322,10 @@ public:
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
-        MonotonicFunctionsChain & functions,
-        DataTypePtr current_type);
+        size_t column_index,
+        MonotonicFunctionsChain & function,
+        DataTypePtr current_type,
+        const FunctionCachePtr & cache);
 
 private:
     /// The expression is stored as Reverse Polish Notation.
@@ -424,6 +429,8 @@ private:
     ColumnIndices key_columns;
     ExpressionActionsPtr key_expr;
     PreparedSets prepared_sets;
+
+    mutable FunctionCachePtr function_cache;
 };
 
 }

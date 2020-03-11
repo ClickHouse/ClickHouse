@@ -1199,6 +1199,24 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         Row index_left(used_key_size);
         Row index_right(used_key_size);
 
+        Block cache_block;
+        bool is_cache_useful = key_condition.isFunctionCacheUseful();
+        if (is_cache_useful)
+        {
+            for (size_t i = 0; i < used_key_size; ++i)
+                cache_block.insert({nullptr, data.primary_key_data_types[i], data.primary_key_columns[i]});
+
+            MutableColumns columns(used_key_size);
+            for (size_t i = 0; i < used_key_size; ++i)
+            {
+                columns[i] = index[i]->cloneEmpty();
+                columns[i]->insertFrom(*index[i], ranges_stack.back().begin);
+                columns[i]->insertFrom(*index[i], ranges_stack.back().end - 1);
+            }
+
+            key_condition.addToFunctionCache(cache_block.cloneWithColumns(std::move(columns)), /* reset_old = */ true);
+        }
+
         while (!ranges_stack.empty())
         {
             MarkRange range = ranges_stack.back();
@@ -1245,10 +1263,40 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 size_t step = (range.end - range.begin - 1) / settings.merge_tree_coarse_index_granularity + 1;
                 size_t end;
 
-                for (end = range.end; end > range.begin + step; end -= step)
-                    ranges_stack.push_back(MarkRange(end - step, end));
+                if (is_cache_useful)
+                {
+                    MutableColumns columns(used_key_size);
+                    for (size_t i = 0; i < used_key_size; ++i)
+                        columns[i] = index[i]->cloneEmpty();
 
-                ranges_stack.push_back(MarkRange(range.begin, end));
+                    auto insert_to_columns = [&](const auto & new_range)
+                    {
+                        for (size_t i = 0; i < used_key_size; ++i)
+                        {
+                            columns[i]->insertFrom(*index[i], new_range.begin);
+                            if (new_range.end != marks_count)
+                                columns[i]->insertFrom(*index[i], new_range.end);
+                        }
+                    };
+
+                    for (end = range.end; end > range.begin + step; end -= step)
+                    {
+                        ranges_stack.push_back(MarkRange(end - step, end));
+                        insert_to_columns(ranges_stack.back());
+                    }
+
+                    ranges_stack.push_back(MarkRange(range.begin, end));
+                    insert_to_columns(ranges_stack.back());
+
+                    key_condition.addToFunctionCache(cache_block.cloneWithColumns(std::move(columns)));
+                }
+                else
+                {
+                    for (end = range.end; end > range.begin + step; end -= step)
+                        ranges_stack.push_back(MarkRange(end - step, end));
+
+                    ranges_stack.push_back(MarkRange(range.begin, end));
+                }
             }
         }
     }

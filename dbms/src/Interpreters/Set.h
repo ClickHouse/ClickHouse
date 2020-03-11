@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
+#include <Common/FunctionCache.h>
 
 #include <common/logger_useful.h>
 
@@ -227,7 +228,9 @@ public:
 
     size_t size() const { return ordered_set.at(0)->size(); }
 
-    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
+    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, const FunctionCachePtr & cache);
+
+    bool isFunctionCacheUseful() const;
 
 private:
     Columns ordered_set;
