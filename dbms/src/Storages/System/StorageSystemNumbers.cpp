@@ -20,10 +20,14 @@ void generateImpl(UInt64 * begin, const UInt64 * end, UInt64 start)
 #if defined(__SSE2__)
     UInt64 init_values_0[] = {start, start + 1};
     UInt64 init_values_1[] = {start + 2, start + 3};
-    UInt64 init_counter[] = {4, 4};
+    UInt64 init_values_2[] = {start + 4, start + 5};
+    UInt64 init_values_3[] = {start + 6, start + 7};
+    UInt64 init_counter[] = {8, 8};
 
     __m128i values_0 = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_values_0));
     __m128i values_1 = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_values_1));
+    __m128i values_2 = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_values_2));
+    __m128i values_3 = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_values_3));
 
     __m128i counter = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_counter));
 
@@ -40,6 +44,17 @@ void generateImpl(UInt64 * begin, const UInt64 * end, UInt64 start)
         begin += 2;
     }
 
+    if (count & 4u)
+    {
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(begin), values_0);
+        values_0 = _mm_add_epi64(values_0, counter);
+
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(begin + 2), values_1);
+        values_1 = _mm_add_epi64(values_1, counter);
+
+        begin += 4;
+    }
+
     while (begin < end)
     {
         _mm_storeu_si128(reinterpret_cast<__m128i *>(begin), values_0);
@@ -47,6 +62,12 @@ void generateImpl(UInt64 * begin, const UInt64 * end, UInt64 start)
 
         _mm_storeu_si128(reinterpret_cast<__m128i *>(begin + 2), values_1);
         values_1 = _mm_add_epi64(values_1, counter);
+
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(begin + 3), values_2);
+        values_2 = _mm_add_epi64(values_2, counter);
+
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(begin + 4), values_3);
+        values_3 = _mm_add_epi64(values_3, counter);
 
         begin += 4;
     }
