@@ -279,7 +279,7 @@ ClickHouse的架构描述可以在此处查看：https://clickhouse.tech/docs/en
 
 编写测试用例：https://clickhouse.tech/docs/en/development/tests/
 
-任务列表：https://github.com/yandex/ClickHouse/blob/master/dbms/tests/instructions/easy_tasks_sorted_en.md
+任务列表：https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/instructions/easy_tasks_sorted_en.md
 
 
 # 测试数据
