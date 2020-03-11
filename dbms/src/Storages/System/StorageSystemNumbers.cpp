@@ -15,20 +15,40 @@ namespace DB
 namespace
 {
 
-static void generateImpl(UInt64 * begin, const UInt64 * end, UInt64 start)
+void generateImpl(UInt64 * begin, const UInt64 * end, UInt64 start)
 {
 #if defined(__SSE2__)
-    UInt64 init_values[] = {start, start + 1};
-    UInt64 init_counter[] = {2, 2};
+    UInt64 init_values_0[] = {start, start + 1};
+    UInt64 init_values_1[] = {start + 2, start + 3};
+    UInt64 init_counter[] = {4, 4};
 
-    __m128i values = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_values));
+    __m128i values_0 = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_values_0));
+    __m128i values_1 = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_values_1));
+
     __m128i counter = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_counter));
+
+    size_t count = end - begin;
+
+    if (count & 1u)
+        ++count;
+
+    if (count & 2u)
+    {
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(begin), values_0);
+        values_0 = _mm_add_epi64(values_0, counter);
+
+        begin += 2;
+    }
 
     while (begin < end)
     {
-        _mm_storeu_si128(reinterpret_cast<__m128i *>(begin), values);
-        values = _mm_add_epi64(values, counter);
-        begin += 2;
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(begin), values_0);
+        values_0 = _mm_add_epi64(values_0, counter);
+
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(begin), values_1);
+        values_1 = _mm_add_epi64(values_1, counter);
+
+        begin += 4;
     }
 
 #elif
