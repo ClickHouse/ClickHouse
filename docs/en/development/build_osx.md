@@ -26,8 +26,6 @@ $ git clone --recursive https://github.com/yandex/ClickHouse.git
 $ cd ClickHouse
 ```
 
-For the latest stable version, switch to the `stable` branch.
-
 ## Build ClickHouse
 
 ```bash
