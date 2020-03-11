@@ -23,36 +23,36 @@ TEST(MergeTreeSetIndex, checkInRange_one)
 
     // Left and right bounded
     std::vector<Range> ranges = {Range(1, true, 4, true)};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "(1, 4)";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, true) << "(1, 4)";
 
     ranges = {Range(2, true, 4, true)};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, false) << "(2, 4)";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, false) << "(2, 4)";
 
     ranges = {Range(-1, true, 0, true)};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, false) << "(-1, 0)";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, false) << "(-1, 0)";
 
     ranges = {Range(-1, true, 10, true)};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "(-1, 10)";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, true) << "(-1, 10)";
 
     // Left bounded 
     ranges = {Range::createLeftBounded(1, true)};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "(1, +inf)";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, true) << "(1, +inf)";
 
     ranges = {Range::createLeftBounded(-1, true)};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "(-1, +inf)";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, true) << "(-1, +inf)";
 
     ranges = {Range::createLeftBounded(10, true)};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, false) << "(10, +inf)";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, false) << "(10, +inf)";
 
     // Right bounded
     ranges = {Range::createRightBounded(1, true)};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "(-inf, 1)";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, true) << "(-inf, 1)";
 
     ranges = {Range::createRightBounded(-1, true)};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, false) << "(-inf, -1)";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, false) << "(-inf, -1)";
 
     ranges = {Range::createRightBounded(10, true)};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "(-inf, 10)";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, true) << "(-inf, 10)";
 }
 
 TEST(MergeTreeSetIndex, checkInRange_tuple)
@@ -80,35 +80,35 @@ TEST(MergeTreeSetIndex, checkInRange_tuple)
     auto set = std::make_unique<MergeTreeSetIndex>(columns, std::move(mapping));
 
     std::vector<Range> ranges = {Range(1), Range("a", true, "c", true)};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "Range(1), Range('a', true, 'c', true)";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, true) << "Range(1), Range('a', true, 'c', true)";
 
     ranges = {Range(1, false, 3, false), Range()};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, false) << "Range(1, false, 3, false), Range()";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, false) << "Range(1, false, 3, false), Range()";
 
     ranges = {Range(2, false, 5, false), Range()};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "Range(2, false, 5, false), Range()";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, true) << "Range(2, false, 5, false), Range()";
 
     ranges = {Range(3), Range::createLeftBounded("a", true)};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "Range(3), Range::createLeftBounded('a', true)";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, true) << "Range(3), Range::createLeftBounded('a', true)";
 
     ranges = {Range(3), Range::createLeftBounded("f", true)};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, false) << "Range(3), Range::createLeftBounded('f', true)";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, false) << "Range(3), Range::createLeftBounded('f', true)";
 
     ranges = {Range(3), Range::createRightBounded("a", true)};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "Range(3), Range::createRightBounded('a', true)";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, true) << "Range(3), Range::createRightBounded('a', true)";
 
     ranges = {Range(3), Range::createRightBounded("b", true)};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "Range(3), Range::createRightBounded('b', true)";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, true) << "Range(3), Range::createRightBounded('b', true)";
 
     ranges = {Range(1), Range("b")};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "Range(1), Range('b')";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, true) << "Range(1), Range('b')";
 
     ranges = {Range(1), Range("c")};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, false) << "Range(1), Range('c')";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, false) << "Range(1), Range('c')";
 
     ranges = {Range(2, true, 3, true), Range()};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "Range(2, true, 3, true), Range('x', true, 'z', true)";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, true) << "Range(2, true, 3, true), Range('x', true, 'z', true)";
 
     ranges = {Range(2), Range("a", true, "z", true)};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, false) << "Range(2, true, 3, true), Range('c', true, 'z', true)";
+    ASSERT_EQ(set->checkInRange(ranges, types, nullptr).can_be_true, false) << "Range(2, true, 3, true), Range('c', true, 'z', true)";
 }
