@@ -25,6 +25,7 @@ for i in {0..10}; do
     if [ $? -eq 0 ]; then
         break
     fi
+    sleep 0.1
 done
 
 $CLICKHOUSE_CLIENT -q "SELECT count(), sum(marks) FROM system.parts WHERE table = 'mt_compact' AND database = currentDatabase() AND active"
