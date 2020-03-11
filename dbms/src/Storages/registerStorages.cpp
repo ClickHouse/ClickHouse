@@ -30,7 +30,6 @@ void registerStorages()
     registerStorageMaterializedView(factory);
     registerStorageLiveView(factory);
     registerStorageGenerateRandom(factory);
-    registerStorageGenerate(factory);
     registerStorageWindowView(factory);
 
 #if USE_AWS_S3
