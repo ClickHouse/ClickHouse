@@ -49,9 +49,12 @@ public:
         settings.getter = [&out](IDataType::SubstreamPath) -> WriteBuffer * { return &out; };
 
         IDataType::SerializeBinaryBulkStatePtr state;
+
+        elem.type->serializeBinaryBulkStatePrefix(settings, state);
         elem.type->serializeBinaryBulkWithMultipleStreams(*full_column,
             0 /** offset */, 0 /** limit */,
             settings, state);
+        elem.type->serializeBinaryBulkStateSuffix(settings, state);
 
         return out.count();
     }
