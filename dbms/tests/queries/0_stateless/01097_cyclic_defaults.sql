@@ -10,6 +10,12 @@ CREATE TABLE table_with_cyclic_defaults (a DEFAULT b, b DEFAULT c, c DEFAULT a *
 
 CREATE TABLE table_with_cyclic_defaults (a String DEFAULT b, b String DEFAULT a) ENGINE = Memory; --{serverError 174}
 
+CREATE TABLE table_with_cyclic_defaults (a String) ENGINE = Memory;
+
+ALTER TABLE table_with_cyclic_defaults ADD COLUMN c String DEFAULT b, ADD COLUMN b String DEFAULT c; --{serverError 174}
+
+ALTER TABLE table_with_cyclic_defaults ADD COLUMN b String DEFAULT a, MODIFY COLUMN a DEFAULT b; --{serverError 174}
+
 SELECT 1;
 
 DROP TABLE IF EXISTS table_with_cyclic_defaults;
