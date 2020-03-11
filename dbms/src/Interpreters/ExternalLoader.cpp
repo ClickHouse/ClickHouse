@@ -8,11 +8,18 @@
 #include <Common/ThreadPool.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
+#include <Common/CurrentStatusInfo.h>
 #include <ext/chrono_io.h>
 #include <ext/scope_guard.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>
+
+
+namespace CurrentStatusInfo
+{
+    extern const Metric DictionaryStatus;
+}
 
 
 namespace DB
@@ -1035,6 +1042,7 @@ private:
             it->second.detach();
             loading_threads.erase(it);
         }
+        CurrentStatusInfo::set(CurrentStatusInfo::DictionaryStatus, name, toString(info->status()));
     }
 
     /// Calculate next update time for loaded_object. Can be called without mutex locking,
