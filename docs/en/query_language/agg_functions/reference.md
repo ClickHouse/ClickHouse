@@ -1034,7 +1034,7 @@ Alias: `medianExactWeighted`.
 
 - `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
 - `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
-- `weight` — Column with weights of sequence elements. Weight is a number of value occurrences.
+- `weight` — Column with weights of sequence members. Weight is a number of value occurrences.
 
 **Returned value**
 
@@ -1300,7 +1300,7 @@ Result:
 
 ## quantileTDigestWeighted {#quantiletdigestweighted}
 
-Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm. The function takes into account the weight of each sequence number. The maximum error is 1%.  Memory consumption is `log(n)`, where `n` is a number of values.
+Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm. The function takes into account the weight of each sequence member. The maximum error is 1%.  Memory consumption is `log(n)`, where `n` is a number of values.
 
 The performance of the function is lower than performance of [quantile](#quantile) or [quantileTiming](#quantiletiming). In terms of the ratio of State size to precision, this function is much better than `quantile`.
 

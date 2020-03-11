@@ -13,6 +13,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     std::function<bool()> is_cancelled = []{ return false; });
 
 IMergeTreeDataPart::Checksums checkDataPart(
+    const DiskPtr & disk,
     const String & full_path,
     const NamesAndTypesList & columns_list,
     const MergeTreeDataPartType & part_type,

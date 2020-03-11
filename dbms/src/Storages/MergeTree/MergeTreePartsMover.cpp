@@ -98,7 +98,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         return false;
 
     std::unordered_map<DiskPtr, LargestPartsWithRequiredSize> need_to_move;
-    const auto & policy = data->getStoragePolicy();
+    const auto policy = data->getStoragePolicy();
     const auto & volumes = policy->getVolumes();
 
     if (volumes.size() > 0)

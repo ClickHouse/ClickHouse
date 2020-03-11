@@ -60,6 +60,8 @@ public:
 
     void copyFile(const String & from_path, const String & to_path) override;
 
+    void listFiles(const String & path, std::vector<String> & file_names) override;
+
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
@@ -77,6 +79,10 @@ public:
     void remove(const String & path) override;
 
     void removeRecursive(const String & path) override;
+
+    void setLastModified(const String &, const Poco::Timestamp &) override { }
+
+    Poco::Timestamp getLastModified(const String &) override { return Poco::Timestamp(); }
 
 private:
     void createDirectoriesImpl(const String & path);

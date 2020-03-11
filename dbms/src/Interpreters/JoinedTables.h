@@ -2,6 +2,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
@@ -9,6 +10,7 @@ namespace DB
 
 class ASTSelectQuery;
 class Context;
+struct SelectQueryOptions;
 
 /// Joined tables' columns resolver.
 /// We want to get each table structure at most once per table occurance. Or even better once per table.
@@ -16,15 +18,40 @@ class Context;
 class JoinedTables
 {
 public:
-    void resolveTables(const ASTSelectQuery & select_query, StoragePtr storage, const Context & context,
-                       const NamesAndTypesList & source_columns);
+    JoinedTables(Context && contex, const ASTSelectQuery & select_query);
 
-    const std::vector<TableWithColumnNames> & tablesWithColumns() const { return tables_with_columns; }
-    const NamesAndTypesList & secondTableColumns() const { return columns_from_joined_table; }
+    void reset(const ASTSelectQuery & select_query)
+    {
+        *this = JoinedTables(std::move(context), select_query);
+    }
+
+    StoragePtr getLeftTableStorage();
+    bool resolveTables();
+    void makeFakeTable(StoragePtr storage, const Block & source_header);
+
+    const std::vector<TableWithColumnNamesAndTypes> & tablesWithColumns() const { return tables_with_columns; }
+
+    bool isLeftTableSubquery() const;
+    bool isLeftTableFunction() const;
+    size_t tablesCount() const { return table_expressions.size(); }
+
+    const String & leftTableDatabase() const { return database_name; }
+    const String & leftTableName() const { return table_name; }
+
+    std::unique_ptr<InterpreterSelectWithUnionQuery> makeLeftTableSubquery(const SelectQueryOptions & select_options);
 
 private:
-    std::vector<TableWithColumnNames> tables_with_columns;
-    NamesAndTypesList columns_from_joined_table;
+    Context context;
+    std::vector<const ASTTableExpression *> table_expressions;
+    std::vector<TableWithColumnNamesAndTypes> tables_with_columns;
+
+    /// Legacy (duplicated left table values)
+    ASTPtr left_table_expression;
+    std::optional<DatabaseAndTableWithAlias> left_db_and_table;
+
+    /// left_db_and_table or 'system.one'
+    String database_name;
+    String table_name;
 };
 
 }

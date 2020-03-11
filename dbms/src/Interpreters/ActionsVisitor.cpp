@@ -400,16 +400,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
     }
 
-    /// A special function `indexHint`. Everything that is inside it is not calculated
-    /// (and is used only for index analysis, see KeyCondition).
-    if (node.name == "indexHint")
-    {
-        data.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
-            ColumnConst::create(ColumnUInt8::create(1, 1), 1), std::make_shared<DataTypeUInt8>(),
-                column_name.get(ast))));
-        return;
-    }
-
     if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
         return;
 

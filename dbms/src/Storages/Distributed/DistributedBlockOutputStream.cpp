@@ -37,7 +37,6 @@
 #include <mutex>
 
 
-
 namespace CurrentMetrics
 {
     extern const Metric DistributedSend;

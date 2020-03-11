@@ -82,24 +82,6 @@ using CustomizeFunctionsMatcher = OneTypeMatcher<CustomizeFunctionsData>;
 using CustomizeFunctionsVisitor = InDepthNodeVisitor<CustomizeFunctionsMatcher, true>;
 
 
-/// Add columns from storage to source_columns list.
-void collectSourceColumns(const ColumnsDescription & columns, NamesAndTypesList & source_columns, bool add_virtuals)
-{
-    auto physical_columns = columns.getAllPhysical();
-    if (source_columns.empty())
-        source_columns.swap(physical_columns);
-    else
-        source_columns.insert(source_columns.end(), physical_columns.begin(), physical_columns.end());
-
-    if (add_virtuals)
-    {
-        const auto & storage_aliases = columns.getAliases();
-        const auto & storage_virtuals = columns.getVirtuals();
-        source_columns.insert(source_columns.end(), storage_aliases.begin(), storage_aliases.end());
-        source_columns.insert(source_columns.end(), storage_virtuals.begin(), storage_virtuals.end());
-    }
-}
-
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
 /// Expand asterisks and qualified asterisks with column names.
 /// There would be columns in normal form & column aliases after translation. Column & column alias would be normalized in QueryNormalizer.
@@ -616,19 +598,31 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 
 }
 
+/// Add columns from storage to source_columns list. Deduplicate resulted list.
+void SyntaxAnalyzerResult::collectSourceColumns(bool add_virtuals)
+{
+    if (storage)
+    {
+        const ColumnsDescription & columns = storage->getColumns();
+
+        auto columns_from_storage = add_virtuals ? columns.getAll() : columns.getAllPhysical();
+        if (source_columns.empty())
+            source_columns.swap(columns_from_storage);
+        else
+            source_columns.insert(source_columns.end(), columns_from_storage.begin(), columns_from_storage.end());
+    }
+
+    source_columns_set = removeDuplicateColumns(source_columns);
+}
+
+
 /// Calculate which columns are required to execute the expression.
 /// Then, delete all other columns from the list of available columns.
 /// After execution, columns will only contain the list of columns needed to read from the table.
-void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, const NamesAndTypesList & additional_source_columns)
+void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
 {
     /// We calculate required_source_columns with source_columns modifications and swap them on exit
     required_source_columns = source_columns;
-
-    if (!additional_source_columns.empty())
-    {
-        source_columns.insert(source_columns.end(), additional_source_columns.begin(), additional_source_columns.end());
-        removeDuplicateColumns(source_columns);
-    }
 
     RequiredSourceColumnsVisitor::Data columns_context;
     RequiredSourceColumnsVisitor(columns_context).visit(query);
@@ -787,10 +781,9 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, const NamesA
 
 SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     ASTPtr & query,
-    const NamesAndTypesList & source_columns,
-    StoragePtr storage,
+    SyntaxAnalyzerResult && result,
     const SelectQueryOptions & select_options,
-    const JoinedTables & joined_tables,
+    const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
     const Names & required_result_columns) const
 {
     auto * select_query = query->as<ASTSelectQuery>();
@@ -802,14 +795,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
     const auto & settings = context.getSettingsRef();
 
-    SyntaxAnalyzerResult result;
-    result.storage = storage;
-    result.source_columns = source_columns;
+    const NameSet & source_columns_set = result.source_columns_set;
     result.analyzed_join = std::make_shared<AnalyzedJoin>(settings, context.getTemporaryVolume());
-
-    if (storage)
-        collectSourceColumns(storage->getColumns(), result.source_columns, true);
-    NameSet source_columns_set = removeDuplicateColumns(result.source_columns);
 
     if (remove_duplicates)
         renameDuplicatedColumns(select_query);
@@ -817,16 +804,19 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     if (settings.enable_optimize_predicate_expression)
         replaceJoinedTable(*select_query);
 
-    const std::vector<TableWithColumnNames> & tables_with_columns = joined_tables.tablesWithColumns();
-    result.analyzed_join->columns_from_joined_table = joined_tables.secondTableColumns();
+    /// TODO: Remove unneeded conversion
+    std::vector<TableWithColumnNames> tables_with_column_names;
+    for (const auto & table : tables_with_columns)
+        tables_with_column_names.emplace_back(table.removeTypes());
 
-    if (result.analyzed_join->columns_from_joined_table.size())
+    if (tables_with_columns.size() > 1)
     {
+        result.analyzed_join->columns_from_joined_table = tables_with_columns[1].columns;
         result.analyzed_join->deduplicateAndQualifyColumnNames(
             source_columns_set, tables_with_columns[1].table.getQualifiedNamePrefix());
     }
 
-    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
+    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_column_names);
 
     /// Rewrite IN and/or JOIN for distributed tables according to distributed_product_mode setting.
     InJoinSubqueriesPreprocessor(context).visit(query);
@@ -849,7 +839,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
         /// Push the predicate expression down to the subqueries.
-        result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
+        result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_column_names, settings).optimize(*select_query);
 
         /// GROUP BY injective function elimination.
         optimizeGroupBy(select_query, source_columns_set, context);
@@ -868,11 +858,11 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
         setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
                           result.analyzed_join->table_join);
-        collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
+        collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_column_names, result.aliases);
     }
 
     result.aggregates = getAggregates(query, *select_query);
-    result.collectUsedColumns(query, {});
+    result.collectUsedColumns(query);
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
@@ -883,13 +873,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
 
     const auto & settings = context.getSettingsRef();
 
-    SyntaxAnalyzerResult result;
-    result.storage = storage;
-    result.source_columns = source_columns;
-
-    if (storage)
-        collectSourceColumns(storage->getColumns(), result.source_columns, false);
-    removeDuplicateColumns(result.source_columns);
+    SyntaxAnalyzerResult result(source_columns, storage, false);
 
     normalize(query, result.aliases, settings);
 
@@ -899,7 +883,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
     optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
     assertNoAggregates(query, "in wrong place");
-    result.collectUsedColumns(query, {});
+    result.collectUsedColumns(query);
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 

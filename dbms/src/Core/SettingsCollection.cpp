@@ -391,7 +391,6 @@ void SettingEnum<EnumType, Tag>::set(const Field & x)
 }
 
 
-
 String SettingURI::toString() const
 {
     return value.toString();

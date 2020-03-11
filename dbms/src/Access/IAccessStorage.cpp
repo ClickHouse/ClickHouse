@@ -72,7 +72,6 @@ bool IAccessStorage::exists(const UUID & id) const
 }
 
 
-
 AccessEntityPtr IAccessStorage::tryReadBase(const UUID & id) const
 {
     try

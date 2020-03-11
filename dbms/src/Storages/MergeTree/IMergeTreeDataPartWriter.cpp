@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
-#include <IO/createWriteBufferFromFileBase.h>
-#include <Poco/File.h>
+
+#include <utility>
 
 namespace DB
 {
@@ -24,11 +24,12 @@ void IMergeTreeDataPartWriter::Stream::finalize()
 void IMergeTreeDataPartWriter::Stream::sync()
 {
     plain_file->sync();
-    marks_file.sync();
+    marks_file->sync();
 }
 
 IMergeTreeDataPartWriter::Stream::Stream(
     const String & escaped_column_name_,
+    DiskPtr disk_,
     const String & data_path_,
     const std::string & data_file_extension_,
     const std::string & marks_path_,
@@ -40,9 +41,9 @@ IMergeTreeDataPartWriter::Stream::Stream(
     escaped_column_name(escaped_column_name_),
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
-    plain_file(createWriteBufferFromFileBase(data_path_ + data_file_extension, estimated_size_, aio_threshold_, max_compress_block_size_)),
+    plain_file(disk_->writeFile(data_path_ + data_file_extension, max_compress_block_size_, WriteMode::Rewrite, estimated_size_, aio_threshold_)),
     plain_hashing(*plain_file), compressed_buf(plain_hashing, compression_codec_), compressed(compressed_buf),
-    marks_file(marks_path_ + marks_file_extension, 4096, O_TRUNC | O_CREAT | O_WRONLY), marks(marks_file)
+    marks_file(disk_->writeFile(marks_path_ + marks_file_extension, 4096, WriteMode::Rewrite)), marks(*marks_file)
 {
 }
 
@@ -62,6 +63,7 @@ void IMergeTreeDataPartWriter::Stream::addToChecksums(MergeTreeData::DataPart::C
 
 
 IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
+    DiskPtr disk_,
     const String & part_path_,
     const MergeTreeData & storage_,
     const NamesAndTypesList & columns_list_,
@@ -71,7 +73,8 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_,
     bool need_finish_last_granule_)
-    : part_path(part_path_)
+    : disk(std::move(disk_))
+    , part_path(part_path_)
     , storage(storage_)
     , columns_list(columns_list_)
     , marks_file_extension(marks_file_extension_)
@@ -86,10 +89,8 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     if (settings.blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
 
-    Poco::File part_dir(part_path);
-    if (!part_dir.exists())
-        part_dir.createDirectories();
-
+    if (!disk->exists(part_path))
+        disk->createDirectories(part_path);
 }
 
 IMergeTreeDataPartWriter::~IMergeTreeDataPartWriter() = default;
@@ -172,8 +173,7 @@ void IMergeTreeDataPartWriter::initPrimaryIndex()
 {
     if (storage.hasPrimaryKey())
     {
-        index_file_stream = std::make_unique<WriteBufferFromFile>(
-            part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+        index_file_stream = disk->writeFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
     }
 
@@ -188,6 +188,7 @@ void IMergeTreeDataPartWriter::initSkipIndices()
         skip_indices_streams.emplace_back(
                 std::make_unique<IMergeTreeDataPartWriter::Stream>(
                         stream_name,
+                        disk,
                         part_path + stream_name, INDEX_FILE_EXTENSION,
                         part_path + stream_name, marks_file_extension,
                         default_codec, settings.max_compress_block_size,

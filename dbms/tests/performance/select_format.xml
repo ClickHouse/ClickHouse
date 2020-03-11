@@ -1,5 +1,4 @@
 <test>
-    <type>loop</type>
 
     <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}, '/dev/null') AS test.hits</create_query>
 

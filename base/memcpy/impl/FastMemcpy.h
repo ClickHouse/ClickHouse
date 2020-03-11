@@ -39,7 +39,6 @@ typedef __attribute__((__aligned__(1))) uint32_t uint32_unaligned_t;
 typedef __attribute__((__aligned__(1))) uint64_t uint64_unaligned_t;
 
 
-
 //---------------------------------------------------------------------
 // fast copy for different sizes
 //---------------------------------------------------------------------
@@ -692,6 +691,5 @@ static INLINE void* memcpy_fast(void *destination, const void *source, size_t si
 
 
 #endif
-
 
 

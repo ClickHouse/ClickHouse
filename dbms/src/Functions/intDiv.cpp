@@ -1,6 +1,5 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
-#include <Functions/intDiv.h>
 
 #ifdef __SSE2__
     #define LIBDIVIDE_USE_SSE2 1

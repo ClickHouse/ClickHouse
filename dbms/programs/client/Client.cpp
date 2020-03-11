@@ -105,6 +105,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int INVALID_USAGE_OF_INPUT;
+    extern const int DEADLOCK_AVOIDED;
 }
 
 
@@ -906,9 +907,34 @@ private:
             query = serializeAST(*parsed_query);
         }
 
-        connection->sendQuery(connection_parameters.timeouts, query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
-        sendExternalTables();
-        receiveResult();
+        static constexpr size_t max_retries = 10;
+        for (size_t retry = 0; retry < max_retries; ++retry)
+        {
+            try
+            {
+                connection->sendQuery(
+                    connection_parameters.timeouts,
+                    query,
+                    query_id,
+                    QueryProcessingStage::Complete,
+                    &context.getSettingsRef(),
+                    nullptr,
+                    true);
+
+                sendExternalTables();
+                receiveResult();
+
+                break;
+            }
+            catch (const Exception & e)
+            {
+                /// Retry when the server said "Client should retry" and no rows has been received yet.
+                if (processed_rows == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && retry + 1 < max_retries)
+                    continue;
+
+                throw;
+            }
+        }
     }
 
 

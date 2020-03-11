@@ -370,12 +370,7 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
 
 StorageInMemoryMetadata IStorage::getInMemoryMetadata() const
 {
-    return
-    {
-        .columns = getColumns(),
-        .indices = getIndices(),
-        .constraints = getConstraints(),
-    };
+    return StorageInMemoryMetadata(getColumns(), getIndices(), getConstraints());
 }
 
 void IStorage::alter(

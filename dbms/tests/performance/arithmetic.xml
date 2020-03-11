@@ -1,5 +1,4 @@
 <test>
-    <type>loop</type>
     <stop_conditions>
         <all_of>
             <iterations>10</iterations>
@@ -35,6 +34,8 @@
                 <value>multiply</value>
                 <value>divide</value>
                 <value>intDivOrZero</value>
+                <value>modulo</value>
+                <value>moduloOrZero</value>
             </values>
         </substitution>
     </substitutions>

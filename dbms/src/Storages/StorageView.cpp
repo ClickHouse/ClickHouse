@@ -91,7 +91,6 @@ ASTPtr StorageView::getRuntimeViewQuery(const ASTSelectQuery & outer_query, cons
 }
 
 
-
 ASTPtr StorageView::getRuntimeViewQuery(ASTSelectQuery * outer_query, const Context & context, bool normalize)
 {
     auto runtime_view_query = inner_query->clone();

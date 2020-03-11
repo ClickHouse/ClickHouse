@@ -22,7 +22,6 @@ using Key = UInt64;
 using Value = UInt64;
 
 
-
 /// Various hash functions to test
 
 namespace Hashes
@@ -334,7 +333,6 @@ static void NO_INLINE testForEachMapAndHash(const Key * data, size_t size)
     testForEachHash<::google::dense_hash_map>(data, size, [](auto & map){ map.set_empty_key(-1); });
     testForEachHash<::google::sparse_hash_map>(data, size, nothing);
 }
-
 
 
 int main(int argc, char ** argv)

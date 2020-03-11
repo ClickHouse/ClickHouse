@@ -25,7 +25,6 @@ VersionedCollapsingSortedBlockInputStream::VersionedCollapsingSortedBlockInputSt
 }
 
 
-
 inline ALWAYS_INLINE static void writeRowSourcePart(WriteBuffer & buffer, RowSourcePart row_source)
 {
     if constexpr (sizeof(RowSourcePart) == 1)

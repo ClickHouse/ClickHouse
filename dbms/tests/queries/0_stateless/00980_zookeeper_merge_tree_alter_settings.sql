@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS replicated_table_for_alter1;
 DROP TABLE IF EXISTS replicated_table_for_alter2;
 
+SET replication_alter_partitions_sync = 2;
+
 CREATE TABLE replicated_table_for_alter1 (
   id UInt64,
   Data String

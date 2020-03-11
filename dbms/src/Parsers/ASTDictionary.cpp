@@ -32,7 +32,6 @@ void ASTDictionaryRange::formatImpl(const FormatSettings & settings,
 }
 
 
-
 ASTPtr ASTDictionaryLifetime::clone() const
 {
     auto res = std::make_shared<ASTDictionaryLifetime>(*this);

@@ -553,7 +553,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
         current_context = std::make_unique<Context>(context);
         current_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         current_context->setCurrentQueryId(""); // generate random query_id
-        executeQuery(istr, ostr, false, *current_context, {}, {});
+        executeQuery(istr, ostr, false, *current_context, {});
     }
     catch (...)
     {

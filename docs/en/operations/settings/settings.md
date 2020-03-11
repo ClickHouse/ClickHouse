@@ -406,7 +406,7 @@ Possible values:
 Default value: 1.
 
 
-## max_block_size
+## max_block_size {#setting-max_block_size}
 
 In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. The `max_block_size` setting is a recommendation for what size of block (in number of rows) to load from tables. The block size shouldn't be too small, so that the expenditures on each block are still noticeable, but not too large, so that the query with LIMIT that is completed after the first block is processed quickly. The goal is to avoid consuming too much memory when extracting a large number of columns in multiple threads, and to preserve at least some cache locality.
 
@@ -568,6 +568,20 @@ If less than one SELECT query is normally run on a server at a time, set this pa
 For queries that are completed quickly because of a LIMIT, you can set a lower 'max_threads'. For example, if the necessary number of entries are located in every block and max_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
 
 The smaller the `max_threads` value, the less memory is consumed.
+
+## max_insert_threads {#settings-max_insert_threads}
+
+The maximum number of threads to execute the `INSERT SELECT` query.
+
+Possible values:
+
+- 0 (or 1) — `INSERT SELECT` no parallel execution.
+- Positive integer. Bigger than 1.
+
+Default value: 0.
+
+Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [max_threads](#settings-max_threads) setting.
+Higher values will lead to higher memory usage.
 
 ## max_compress_block_size
 

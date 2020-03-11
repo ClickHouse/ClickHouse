@@ -86,7 +86,6 @@ struct MovingAvgData
 };
 
 
-
 template <typename T, typename Tlimit_num_elems, typename Data>
 class MovingImpl final
     : public IAggregateFunctionDataHelper<Data, MovingImpl<T, Tlimit_num_elems, Data>>

@@ -208,7 +208,6 @@ private:
 };
 
 
-
 /// Expression template is a sequence of tokens and data types of literals.
 /// E.g. template of "position('some string', 'other string') != 0" is
 /// ["position", "(", DataTypeString, ",", DataTypeString, ")", "!=", DataTypeUInt64]
@@ -286,7 +285,6 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     boost::hash_combine(res, res128.second);
     return res;
 }
-
 
 
 ConstantExpressionTemplate::TemplateStructurePtr

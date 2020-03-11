@@ -206,6 +206,9 @@ function run_tests
         # the grep is to filter out set -x output and keep only time output
         { time "$script_dir/perf.py" "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; } 2>&1 >/dev/null | grep -v ^+ >> "wall-clock-times.tsv" || continue
 
+        # The test completed with zero status, so we treat stderr as warnings
+        mv "$test_name-err.log" "$test_name-warn.log"
+
         grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
         grep ^client-time "$test_name-raw.tsv" | cut -f2- > "$test_name-client-time.tsv"
         skipped=$(grep ^skipped "$test_name-raw.tsv" | cut -f2-)
@@ -218,16 +221,6 @@ function run_tests
     unset TIMEFORMAT
 
     wait
-}
-
-function analyze_queries
-{
-    # Build and analyze randomization distribution for all queries.
-    ls ./*-queries.tsv | xargs -n1 -I% basename % -queries.tsv | \
-        parallel --verbose right/clickhouse local --file "{}-queries.tsv" \
-            --structure "\"query text, run int, version UInt32, time float\"" \
-            --query "\"$(cat "$script_dir/eqmed.sql")\"" \
-            ">" {}-report.tsv
 }
 
 function get_profiles
@@ -249,6 +242,16 @@ function get_profiles
     right/clickhouse client --port 9002 --query "select * from system.metric_log format TSVWithNamesAndTypes" > right-metric-log.tsv ||: &
 
     wait
+}
+
+# Build and analyze randomization distribution for all queries.
+function analyze_queries
+{
+    ls ./*-queries.tsv | xargs -n1 -I% basename % -queries.tsv | \
+        parallel --verbose right/clickhouse local --file "{}-queries.tsv" \
+            --structure "\"query text, run int, version UInt32, time float\"" \
+            --query "\"$(cat "$script_dir/eqmed.sql")\"" \
+            ">" {}-report.tsv
 }
 
 # Analyze results
@@ -347,8 +350,8 @@ create table right_addresses_join engine Join(any, left, address) as
 
 create table unstable_query_runs engine File(TSVWithNamesAndTypes, 'unstable-query-runs.rep') as
     select query_id, query from right_query_log
-    join unstable_queries_tsv using query
-    where query_id not like 'prewarm %'
+    join queries using query
+    where query_id not like 'prewarm %' and (unstable or changed)
     ;
 
 create table unstable_query_log engine File(Vertical, 'unstable-query-log.rep') as
@@ -423,8 +426,8 @@ wait
 unset IFS
 
 # Remember that grep sets error code when nothing is found, hence the bayan
-# operator
-grep -m2 'Exception:[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
+# operator.
+grep -H -m2 'Exception:[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
 
 "$script_dir/report.py" > report.html
 }
@@ -450,6 +453,10 @@ case "$stage" in
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data.
     time get_profiles || restart || get_profiles
+
+    # Stop the servers to free memory for the subsequent query analysis.
+    while killall clickhouse; do echo . ; sleep 1 ; done
+    echo Servers stopped.
     ;&
 "analyze_queries")
     time analyze_queries

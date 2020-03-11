@@ -124,5 +124,3 @@ void registerFunctionCaseWithExpression(FunctionFactory & factory)
 }
 
 
-
-

@@ -6,7 +6,6 @@
 #include <map>
 
 
-
 namespace Poco
 {
     namespace Util

@@ -56,7 +56,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageValues.h>
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -152,7 +151,7 @@ String InterpreterSelectQuery::generateFilterActions(ExpressionActionsPtr & acti
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
-    auto syntax_result = SyntaxAnalyzer(*context).analyzeSelect(query_ast, storage->getColumns().getAll());
+    auto syntax_result = SyntaxAnalyzer(*context).analyzeSelect(query_ast, SyntaxAnalyzerResult({}, storage));
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context);
     actions = analyzer.simpleSelectActions();
 
@@ -236,26 +235,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         throw Exception("Too deep subqueries. Maximum: " + settings.max_subquery_depth.toString(),
             ErrorCodes::TOO_DEEP_SUBQUERIES);
 
-    CrossToInnerJoinVisitor::Data cross_to_inner;
-    CrossToInnerJoinVisitor(cross_to_inner).visit(query_ptr);
-
-    JoinToSubqueryTransformVisitor::Data join_to_subs_data{*context};
-    JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query_ptr);
-
-    max_streams = settings.max_threads;
-    auto & query = getSelectQuery();
-
-    ASTPtr table_expression = extractTableExpression(query, 0);
-    String database_name, table_name;
-
-    bool is_table_func = false;
-    bool is_subquery = false;
-    if (table_expression)
-    {
-        is_table_func = table_expression->as<ASTFunction>();
-        is_subquery = table_expression->as<ASTSelectWithUnionQuery>();
-    }
-
+    bool has_input = input || input_pipe;
     if (input)
     {
         /// Read from prepared input.
@@ -266,44 +246,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// Read from prepared input.
         source_header = input_pipe->getHeader();
     }
-    else if (is_subquery)
-    {
-        /// Read from subquery.
-        interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-            table_expression, getSubqueryContext(*context), options.subquery(), required_columns);
 
-        source_header = interpreter_subquery->getSampleBlock();
-    }
-    else if (!storage)
-    {
-        if (is_table_func)
-        {
-            /// Read from table function. propagate all settings from initSettings(),
-            /// alternative is to call on current `context`, but that can potentially pollute it.
-            storage = getSubqueryContext(*context).executeTableFunction(table_expression);
-        }
-        else
-        {
-            getDatabaseAndTableNames(query, database_name, table_name, *context);
+    JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
 
-            if (auto view_source = context->getViewSource())
-            {
-                auto & storage_values = static_cast<const StorageValues &>(*view_source);
-                auto tmp_table_id = storage_values.getStorageID();
-                if (tmp_table_id.database_name == database_name && tmp_table_id.table_name == table_name)
-                {
-                    /// Read from view source.
-                    storage = context->getViewSource();
-                }
-            }
-
-            if (!storage)
-            {
-                /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
-                storage = context->getTable(database_name, table_name);
-            }
-        }
-    }
+    if (!has_input && !storage)
+        storage = joined_tables.getLeftTableStorage();
 
     if (storage)
     {
@@ -311,15 +258,45 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         table_id = storage->getStorageID();
     }
 
-    /// Extract joined tables colunms if any.
-    /// It could get storage from context without lockStructureForShare(). TODO: add lock there or rewrite this logic.
-    JoinedTables joined_tables;
-    joined_tables.resolveTables(*query_ptr->as<ASTSelectQuery>(), storage, *context, source_header.getNamesAndTypesList());
+    if (has_input || !joined_tables.resolveTables())
+        joined_tables.makeFakeTable(storage, source_header);
+
+    /// Rewrite JOINs
+    if (!has_input && joined_tables.tablesCount() > 1)
+    {
+        CrossToInnerJoinVisitor::Data cross_to_inner{joined_tables.tablesWithColumns(), context->getCurrentDatabase()};
+        CrossToInnerJoinVisitor(cross_to_inner).visit(query_ptr);
+
+        JoinToSubqueryTransformVisitor::Data join_to_subs_data{*context};
+        JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query_ptr);
+
+        joined_tables.reset(getSelectQuery());
+        joined_tables.resolveTables();
+
+        if (storage && joined_tables.isLeftTableSubquery())
+        {
+            /// Rewritten with subquery. Free storage here locks here.
+            storage = {};
+            table_lock.release();
+            table_id = StorageID::createEmpty();
+        }
+    }
+
+    if (!has_input)
+    {
+        interpreter_subquery = joined_tables.makeLeftTableSubquery(options.subquery());
+        if (interpreter_subquery)
+            source_header = interpreter_subquery->getSampleBlock();
+    }
+
+    max_streams = settings.max_threads;
+    ASTSelectQuery & query = getSelectQuery();
 
     auto analyze = [&] (bool try_move_to_prewhere = true)
     {
         syntax_analyzer_result = SyntaxAnalyzer(*context).analyzeSelect(
-                query_ptr, source_header.getNamesAndTypesList(), storage, options, joined_tables, required_result_column_names);
+                query_ptr, SyntaxAnalyzerResult(source_header.getNamesAndTypesList(), storage),
+                options, joined_tables.tablesWithColumns(), required_result_column_names);
 
         /// Save scalar sub queries's results in the query context
         if (context->hasQueryContext())
@@ -353,12 +330,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (syntax_analyzer_result->rewrite_subqueries)
             {
                 /// remake interpreter_subquery when PredicateOptimizer rewrites subqueries and main table is subquery
-                if (is_subquery)
-                    interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-                            table_expression,
-                            getSubqueryContext(*context),
-                            options.subquery(),
-                            required_columns);
+                interpreter_subquery = joined_tables.makeLeftTableSubquery(options.subquery());
             }
         }
 
@@ -430,6 +402,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (query.prewhere() && !query.where())
         analysis_result.prewhere_info->need_filter = true;
 
+    const String & database_name = joined_tables.leftTableDatabase();
+    const String & table_name = joined_tables.leftTableName();
+
     if (!table_name.empty() && !database_name.empty() /* always allow access to temporary tables */)
         context->checkAccess(AccessType::SELECT, database_name, table_name, required_columns);
 
@@ -444,25 +419,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     ///  null non-const columns to avoid useless memory allocations. However, a valid block sample
     ///  requires all columns to be of size 0, thus we need to sanitize the block here.
     sanitizeBlock(result_header);
-}
-
-
-void InterpreterSelectQuery::getDatabaseAndTableNames(const ASTSelectQuery & query, String & database_name, String & table_name, const Context & context)
-{
-    if (auto db_and_table = getDatabaseAndTable(query, 0))
-    {
-        table_name = db_and_table->table;
-        database_name = db_and_table->database;
-
-        /// If the database is not specified - use the current database.
-        if (database_name.empty() && !context.isExternalTableExist(table_name))
-            database_name = context.getCurrentDatabase();
-    }
-    else /// If the table is not specified - use the table `system.one`.
-    {
-        database_name = "system";
-        table_name = "one";
-    }
 }
 
 

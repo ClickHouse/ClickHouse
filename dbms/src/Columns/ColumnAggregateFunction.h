@@ -204,6 +204,8 @@ public:
     }
 
     void getExtremes(Field & min, Field & max) const override;
+
+    bool structureEquals(const IColumn &) const override;
 };
 
 

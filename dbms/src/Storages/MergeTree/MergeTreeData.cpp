@@ -147,7 +147,6 @@ MergeTreeData::MergeTreeData(
     , log_name(table_id_.getNameForLogs())
     , log(&Logger::get(log_name))
     , storage_settings(std::move(storage_settings_))
-    , storage_policy(context_.getStoragePolicy(getSettings()->storage_policy))
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
     , parts_mover(this)
@@ -200,48 +199,47 @@ MergeTreeData::MergeTreeData(
 
     setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast);
 
-    // format_file always contained on any data path
-    String version_file_path;
-
+    /// format_file always contained on any data path
+    PathWithDisk version_file;
     /// Creating directories, if not exist.
-    auto paths = getDataPaths();
-    for (const String & path : paths)
+    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
     {
-        Poco::File(path).createDirectories();
-        Poco::File(path + "detached").createDirectory();
+        disk->createDirectories(path);
+        disk->createDirectories(path + "detached");
         auto current_version_file_path = path + "format_version.txt";
-        if (Poco::File{current_version_file_path}.exists())
+        if (disk->exists(current_version_file_path))
         {
-            if (!version_file_path.empty())
+            if (!version_file.first.empty())
             {
-                LOG_ERROR(log, "Duplication of version file " << version_file_path << " and " << current_version_file_path);
+                LOG_ERROR(log, "Duplication of version file " <<
+                fullPath(version_file.second, version_file.first) << " and " << current_version_file_path);
                 throw Exception("Multiple format_version.txt file", ErrorCodes::CORRUPTED_DATA);
             }
-            version_file_path = current_version_file_path;
+            version_file = {current_version_file_path, disk};
         }
     }
 
     /// If not choose any
-    if (version_file_path.empty())
-        version_file_path = getFullPathOnDisk(storage_policy->getAnyDisk()) + "format_version.txt";
+    if (version_file.first.empty())
+        version_file = {relative_data_path + "format_version.txt", getStoragePolicy()->getAnyDisk()};
 
-    bool version_file_exists = Poco::File(version_file_path).exists();
+    bool version_file_exists = version_file.second->exists(version_file.first);
 
     // When data path or file not exists, ignore the format_version check
     if (!attach || !version_file_exists)
     {
         format_version = min_format_version;
-        WriteBufferFromFile buf(version_file_path);
-        writeIntText(format_version.toUnderType(), buf);
+        auto buf = version_file.second->writeFile(version_file.first);
+        writeIntText(format_version.toUnderType(), *buf);
     }
     else
     {
-        ReadBufferFromFile buf(version_file_path);
+        auto buf = version_file.second->readFile(version_file.first);
         UInt32 read_format_version;
-        readIntText(read_format_version, buf);
+        readIntText(read_format_version, *buf);
         format_version = read_format_version;
-        if (!buf.eof())
-            throw Exception("Bad version file: " + version_file_path, ErrorCodes::CORRUPTED_DATA);
+        if (!buf->eof())
+            throw Exception("Bad version file: " + fullPath(version_file.second, version_file.first), ErrorCodes::CORRUPTED_DATA);
     }
 
     if (format_version < min_format_version)
@@ -260,11 +258,7 @@ MergeTreeData::MergeTreeData(
 
 StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
 {
-    StorageInMemoryMetadata metadata{
-        .columns = getColumns(),
-        .indices = getIndices(),
-        .constraints = getConstraints(),
-    };
+    StorageInMemoryMetadata metadata(getColumns(), getIndices(), getConstraints());
 
     if (partition_by_ast)
         metadata.partition_by_ast = partition_by_ast->clone();
@@ -285,6 +279,11 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
         metadata.settings_ast = settings_ast->clone();
 
     return metadata;
+}
+
+StoragePolicyPtr MergeTreeData::getStoragePolicy() const
+{
+    return global_context.getStoragePolicy(getSettings()->storage_policy);
 }
 
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name)
@@ -716,54 +715,10 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
 }
 
 
-void MergeTreeData::setStoragePolicy(const String & new_storage_policy_name, bool only_check)
+void MergeTreeData::checkStoragePolicy(const StoragePolicyPtr & new_storage_policy)
 {
     const auto old_storage_policy = getStoragePolicy();
-    const auto & new_storage_policy = global_context.getStoragePolicySelector()[new_storage_policy_name];
-
-    std::unordered_set<String> new_volume_names;
-    for (const auto & volume : new_storage_policy->getVolumes())
-        new_volume_names.insert(volume->getName());
-
-    for (const auto & volume : old_storage_policy->getVolumes())
-    {
-        if (new_volume_names.count(volume->getName()) == 0)
-            throw Exception("New storage policy shall contain volumes of old one", ErrorCodes::LOGICAL_ERROR);
-
-        std::unordered_set<String> new_disk_names;
-        for (const auto & disk : new_storage_policy->getVolumeByName(volume->getName())->disks)
-            new_disk_names.insert(disk->getName());
-
-        for (const auto & disk : volume->disks)
-            if (new_disk_names.count(disk->getName()) == 0)
-                throw Exception("New storage policy shall contain disks of old one", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    std::unordered_set<String> all_diff_disk_names;
-    for (const auto & disk : new_storage_policy->getDisks())
-        all_diff_disk_names.insert(disk->getName());
-    for (const auto & disk : old_storage_policy->getDisks())
-        all_diff_disk_names.erase(disk->getName());
-
-    for (const String & disk_name : all_diff_disk_names)
-    {
-        const auto & path = getFullPathOnDisk(new_storage_policy->getDiskByName(disk_name));
-        if (Poco::File(path).exists())
-            throw Exception("New storage policy contain disks which already contain data of a table with the same name", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    if (!only_check)
-    {
-        for (const String & disk_name : all_diff_disk_names)
-        {
-            const auto & path = getFullPathOnDisk(new_storage_policy->getDiskByName(disk_name));
-            Poco::File(path).createDirectories();
-            Poco::File(path + "detached").createDirectory();
-        }
-
-        storage_policy = new_storage_policy;
-        /// TODO: Query lock is fine but what about background moves??? And downloading of parts?
-    }
+    old_storage_policy->checkCompatibleWith(new_storage_policy);
 }
 
 
@@ -906,7 +861,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     Strings part_file_names;
     Poco::DirectoryIterator end;
 
-    auto disks = storage_policy->getDisks();
+    auto disks = getStoragePolicy()->getDisks();
 
     /// Only check if user did touch storage configuration for this table.
     if (!getStoragePolicy()->isDefaultPolicy() && !skip_sanity_checks)
@@ -916,15 +871,15 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         for (const auto & disk_ptr : disks)
             defined_disk_names.insert(disk_ptr->getName());
 
-        for (auto & [disk_name, disk_ptr] : global_context.getDiskSelector().getDisksMap())
+        for (auto & [disk_name, disk] : global_context.getDiskSelector()->getDisksMap())
         {
-            if (defined_disk_names.count(disk_name) == 0 && Poco::File(getFullPathOnDisk(disk_ptr)).exists())
+            if (defined_disk_names.count(disk_name) == 0 && disk->exists(relative_data_path))
             {
-                for (Poco::DirectoryIterator it(getFullPathOnDisk(disk_ptr)); it != end; ++it)
+                for (const auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
                 {
                     MergeTreePartInfo part_info;
-                    if (MergeTreePartInfo::tryParsePartName(it.name(), &part_info, format_version))
-                        throw Exception("Part " + backQuote(it.name()) + " was found on disk " + backQuote(disk_name) + " which is not defined in the storage policy", ErrorCodes::UNKNOWN_DISK);
+                    if (MergeTreePartInfo::tryParsePartName(it->name(), &part_info, format_version))
+                        throw Exception("Part " + backQuote(it->name()) + " was found on disk " + backQuote(disk_name) + " which is not defined in the storage policy", ErrorCodes::UNKNOWN_DISK);
                 }
             }
         }
@@ -935,13 +890,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     for (auto disk_it = disks.rbegin(); disk_it != disks.rend(); ++disk_it)
     {
         auto disk_ptr = *disk_it;
-        for (Poco::DirectoryIterator it(getFullPathOnDisk(disk_ptr)); it != end; ++it)
+        for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
             /// Skip temporary directories.
-            if (startsWith(it.name(), "tmp"))
+            if (startsWith(it->name(), "tmp"))
                 continue;
 
-            part_names_with_disks.emplace_back(it.name(), disk_ptr);
+            part_names_with_disks.emplace_back(it->name(), disk_ptr);
         }
     }
 
@@ -982,9 +937,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             auto part = createPart(part_name, part_info, part_disk_ptr, part_name);
             bool broken = false;
 
-            Poco::Path part_path(getFullPathOnDisk(part_disk_ptr), part_name);
-            Poco::Path marker_path(part_path, DELETE_ON_DESTROY_MARKER_PATH);
-            if (Poco::File(marker_path).exists())
+            String part_path = relative_data_path + "/" + part_name;
+            String marker_path = part_path + "/" + DELETE_ON_DESTROY_MARKER_PATH;
+            if (part_disk_ptr->exists(marker_path))
             {
                 LOG_WARNING(log, "Detaching stale part " << getFullPathOnDisk(part_disk_ptr) << part_name << ", which should have been deleted after a move. That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.");
                 std::lock_guard loading_lock(mutex);
@@ -1075,7 +1030,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             else
                 has_adaptive_parts.store(true, std::memory_order_relaxed);
 
-            part->modification_time = Poco::File(getFullPathOnDisk(part_disk_ptr) + part_name).getLastModified().epochTime();
+            part->modification_time = part_disk_ptr->getLastModified(relative_data_path + part_name).epochTime();
             /// Assume that all parts are Committed, covered parts will be detected and marked as Outdated later
             part->state = DataPartState::Committed;
 
@@ -1158,14 +1113,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 /// Is the part directory old.
 /// True if its modification time and the modification time of all files inside it is less then threshold.
 /// (Only files on the first level of nesting are considered).
-static bool isOldPartDirectory(Poco::File & directory, time_t threshold)
+static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_path, time_t threshold)
 {
-    if (directory.getLastModified().epochTime() >= threshold)
+    if (disk->getLastModified(directory_path).epochTime() >= threshold)
         return false;
 
-    Poco::DirectoryIterator end;
-    for (Poco::DirectoryIterator it(directory); it != end; ++it)
-        if (it->getLastModified().epochTime() >= threshold)
+    for (auto it = disk->iterateDirectory(directory_path); it->isValid(); it->next())
+        if (disk->getLastModified(it->path()).epochTime() >= threshold)
             return false;
 
     return true;
@@ -1185,24 +1139,19 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
         ? current_time - custom_directories_lifetime_seconds
         : current_time - settings->temporary_directories_lifetime.totalSeconds();
 
-    const auto full_paths = getDataPaths();
-
     /// Delete temporary directories older than a day.
-    Poco::DirectoryIterator end;
-    for (auto && full_data_path : full_paths)
+    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
     {
-        for (Poco::DirectoryIterator it{full_data_path}; it != end; ++it)
+        for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
         {
-            if (startsWith(it.name(), "tmp_"))
+            if (startsWith(it->name(), "tmp_"))
             {
-                Poco::File tmp_dir(full_data_path + it.name());
-
                 try
                 {
-                    if (tmp_dir.isDirectory() && isOldPartDirectory(tmp_dir, deadline))
+                    if (disk->isDirectory(it->path()) && isOldPartDirectory(disk, it->path(), deadline))
                     {
-                        LOG_WARNING(log, "Removing temporary directory " << full_data_path << it.name());
-                        Poco::File(full_data_path + it.name()).remove(true);
+                        LOG_WARNING(log, "Removing temporary directory " << fullPath(disk, it->path()));
+                        disk->removeRecursive(it->path());
                     }
                 }
                 catch (const Poco::FileNotFoundException &)
@@ -1359,7 +1308,7 @@ void MergeTreeData::rename(
     const String & new_table_path, const String & new_database_name,
     const String & new_table_name, TableStructureWriteLockHolder &)
 {
-    auto disks = storage_policy->getDisks();
+    auto disks = getStoragePolicy()->getDisks();
 
     for (const auto & disk : disks)
     {
@@ -1400,10 +1349,8 @@ void MergeTreeData::dropAllData()
     /// Removing of each data part before recursive removal of directory is to speed-up removal, because there will be less number of syscalls.
     clearPartsFromFilesystem(all_parts);
 
-    auto full_paths = getDataPaths();
-
-    for (auto && full_data_path : full_paths)
-        Poco::File(full_data_path).remove(true);
+    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+        disk->removeRecursive(path);
 
     LOG_TRACE(log, "dropAllData: done.");
 }
@@ -1584,7 +1531,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             }
 
             if (changed_setting.name == "storage_policy")
-                setStoragePolicy(changed_setting.value.safeGet<String>(), /* only_check = */ true);
+                checkStoragePolicy(global_context.getStoragePolicy(changed_setting.value.safeGet<String>()));
         }
     }
 
@@ -1713,8 +1660,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     const DiskPtr & disk, const String & relative_path) const
 {
     MergeTreeDataPartType type;
-    auto full_path = getFullPathOnDisk(disk) + relative_path + "/";
-    auto mrk_ext = MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(full_path);
+    auto full_path = relative_data_path + relative_path + "/";
+    auto mrk_ext = MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(disk, full_path);
 
     if (mrk_ext)
         type = getPartTypeFromMarkExtension(*mrk_ext);
@@ -1727,6 +1674,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     return createPart(name, type, part_info, disk, relative_path);
 }
 
+/// This code is not used anymore in StorageReplicatedMergeTree
+/// soon it will be removed from StorageMergeTree as well
+/// TODO(alesap)
 void MergeTreeData::alterDataPart(
     const NamesAndTypesList & new_columns,
     const IndicesASTs & new_indices,
@@ -1898,14 +1848,41 @@ void MergeTreeData::changeSettings(
     if (new_settings)
     {
         const auto & new_changes = new_settings->as<const ASTSetQuery &>().changes;
+
+        for (const auto & change : new_changes)
+            if (change.name == "storage_policy")
+            {
+                StoragePolicyPtr new_storage_policy = global_context.getStoragePolicy(change.value.safeGet<String>());
+                StoragePolicyPtr old_storage_policy = getStoragePolicy();
+
+                checkStoragePolicy(new_storage_policy);
+
+                std::unordered_set<String> all_diff_disk_names;
+                for (const auto & disk : new_storage_policy->getDisks())
+                    all_diff_disk_names.insert(disk->getName());
+                for (const auto & disk : old_storage_policy->getDisks())
+                    all_diff_disk_names.erase(disk->getName());
+
+                for (const String & disk_name : all_diff_disk_names)
+                {
+                    const auto & path = getFullPathOnDisk(new_storage_policy->getDiskByName(disk_name));
+                    if (Poco::File(path).exists())
+                        throw Exception("New storage policy contain disks which already contain data of a table with the same name", ErrorCodes::LOGICAL_ERROR);
+                }
+
+                for (const String & disk_name : all_diff_disk_names)
+                {
+                    const auto & path = getFullPathOnDisk(new_storage_policy->getDiskByName(disk_name));
+                    Poco::File(path).createDirectories();
+                    Poco::File(path + "detached").createDirectory();
+                }
+                /// FIXME how would that be done while reloading configuration???
+            }
+
         MergeTreeSettings copy = *getSettings();
         copy.applyChanges(new_changes);
         storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
         settings_ast = new_settings;
-
-        for (const auto & change : new_changes)
-            if (change.name == "storage_policy")
-                setStoragePolicy(change.value.safeGet<String>());
     }
 }
 
@@ -2917,9 +2894,9 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     else
         parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
-    auto disk = storage_policy->getDiskByName(name);
+    auto disk = getStoragePolicy()->getDiskByName(name);
     if (!disk)
-        throw Exception("Disk " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
+        throw Exception("Disk " + name + " does not exists on policy " + getStoragePolicy()->getName(), ErrorCodes::UNKNOWN_DISK);
 
     parts.erase(std::remove_if(parts.begin(), parts.end(), [&](auto part_ptr)
         {
@@ -2965,9 +2942,9 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     else
         parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
-    auto volume = storage_policy->getVolumeByName(name);
+    auto volume = getStoragePolicy()->getVolumeByName(name);
     if (!volume)
-        throw Exception("Volume " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
+        throw Exception("Volume " + name + " does not exists on policy " + getStoragePolicy()->getName(), ErrorCodes::UNKNOWN_DISK);
 
     if (parts.empty())
         throw Exception("Nothing to move", ErrorCodes::NO_SUCH_DATA_PART);
@@ -3209,7 +3186,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
         ActiveDataPartSet active_parts(format_version);
 
-        const auto disks = storage_policy->getDisks();
+        const auto disks = getStoragePolicy()->getDisks();
         for (const DiskPtr & disk : disks)
         {
             const auto full_path = getFullPathOnDisk(disk);
@@ -3283,7 +3260,7 @@ ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    auto reservation = storage_policy->reserve(expected_size);
+    auto reservation = getStoragePolicy()->reserve(expected_size);
 
     return checkAndReturnReservation(expected_size, std::move(reservation));
 }
@@ -3328,7 +3305,7 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
     auto ttl_entry = selectTTLEntryForTTLInfos(ttl_infos, time_of_move);
     if (ttl_entry)
     {
-        SpacePtr destination_ptr = ttl_entry->getDestination(storage_policy);
+        SpacePtr destination_ptr = ttl_entry->getDestination(getStoragePolicy());
         if (!destination_ptr)
         {
             if (ttl_entry->destination_type == PartDestinationType::VOLUME)
@@ -3357,12 +3334,12 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
         }
     }
 
-    reservation = storage_policy->reserve(expected_size, min_volume_index);
+    reservation = getStoragePolicy()->reserve(expected_size, min_volume_index);
 
     return reservation;
 }
 
-SpacePtr MergeTreeData::TTLEntry::getDestination(const StoragePolicyPtr & policy) const
+SpacePtr MergeTreeData::TTLEntry::getDestination(StoragePolicyPtr policy) const
 {
     if (destination_type == PartDestinationType::VOLUME)
         return policy->getVolumeByName(destination_name);
@@ -3372,7 +3349,7 @@ SpacePtr MergeTreeData::TTLEntry::getDestination(const StoragePolicyPtr & policy
         return {};
 }
 
-bool MergeTreeData::TTLEntry::isPartInDestination(const StoragePolicyPtr & policy, const IMergeTreeDataPart & part) const
+bool MergeTreeData::TTLEntry::isPartInDestination(StoragePolicyPtr policy, const IMergeTreeDataPart & part) const
 {
     if (destination_type == PartDestinationType::VOLUME)
     {
@@ -3636,7 +3613,7 @@ String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
 
 DiskPtr MergeTreeData::getDiskForPart(const String & part_name, const String & relative_path) const
 {
-    const auto disks = storage_policy->getDisks();
+    const auto disks = getStoragePolicy()->getDisks();
     for (const DiskPtr & disk : disks)
     {
         const auto disk_path = getFullPathOnDisk(disk);
@@ -3659,7 +3636,7 @@ String MergeTreeData::getFullPathForPart(const String & part_name, const String 
 Strings MergeTreeData::getDataPaths() const
 {
     Strings res;
-    auto disks = storage_policy->getDisks();
+    auto disks = getStoragePolicy()->getDisks();
     for (const auto & disk : disks)
         res.push_back(getFullPathOnDisk(disk));
     return res;
@@ -3668,9 +3645,18 @@ Strings MergeTreeData::getDataPaths() const
 MergeTreeData::PathsWithDisks MergeTreeData::getDataPathsWithDisks() const
 {
     PathsWithDisks res;
-    auto disks = storage_policy->getDisks();
+    auto disks = getStoragePolicy()->getDisks();
     for (const auto & disk : disks)
         res.emplace_back(getFullPathOnDisk(disk), disk);
+    return res;
+}
+
+MergeTreeData::PathsWithDisks MergeTreeData::getRelativeDataPathsWithDisks() const
+{
+    PathsWithDisks res;
+    auto disks = getStoragePolicy()->getDisks();
+    for (const auto & disk : disks)
+        res.emplace_back(relative_data_path, disk);
     return res;
 }
 
@@ -3819,7 +3805,7 @@ bool MergeTreeData::selectPartsAndMove()
 
 bool MergeTreeData::areBackgroundMovesNeeded() const
 {
-    auto policy = storage_policy;
+    auto policy = getStoragePolicy();
 
     if (policy->getVolumes().size() > 1)
         return true;

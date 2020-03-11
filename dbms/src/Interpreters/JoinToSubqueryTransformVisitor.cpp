@@ -147,9 +147,8 @@ struct ColumnAliasesMatcher
                 {
                     bool last_table = false;
                     {
-                        size_t best_table_pos = 0;
-                        if (IdentifierSemantic::chooseTable(*identifier, tables, best_table_pos))
-                            last_table = (best_table_pos + 1 == tables.size());
+                        if (auto best_table_pos = IdentifierSemantic::chooseTable(*identifier, tables))
+                            last_table = (*best_table_pos + 1 == tables.size());
                     }
 
                     if (!last_table)
@@ -207,10 +206,9 @@ struct ColumnAliasesMatcher
         bool last_table = false;
         String long_name;
 
-        size_t table_pos = 0;
-        if (IdentifierSemantic::chooseTable(node, data.tables, table_pos))
+        if (auto table_pos = IdentifierSemantic::chooseTable(node, data.tables))
         {
-            auto & table = data.tables[table_pos];
+            auto & table = data.tables[*table_pos];
             IdentifierSemantic::setColumnLongName(node, table); /// table_name.column_name -> table_alias.column_name
             long_name = node.name;
             if (&table == &data.tables.back())

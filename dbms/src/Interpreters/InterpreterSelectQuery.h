@@ -152,10 +152,6 @@ private:
     template <typename TPipeline>
     void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe, QueryPipeline & save_context_and_storage);
 
-    /** From which table to read. With JOIN, the "left" table is returned.
-     */
-    static void getDatabaseAndTableNames(const ASTSelectQuery & query, String & database_name, String & table_name, const Context & context);
-
     /// Different stages of query execution.
 
     /// dry_run - don't read from table, use empty header block instead.
