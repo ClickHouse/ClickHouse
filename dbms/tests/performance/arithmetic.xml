@@ -34,7 +34,6 @@
                 <value>multiply</value>
                 <value>divide</value>
                 <value>intDivOrZero</value>
-                <value>modulo</value>
                 <value>moduloOrZero</value>
             </values>
         </substitution>
