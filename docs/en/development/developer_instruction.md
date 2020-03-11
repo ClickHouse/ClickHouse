@@ -267,7 +267,7 @@ The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
 
 Writing tests: https://clickhouse.tech/docs/en/development/tests/
 
-List of tasks: https://github.com/yandex/ClickHouse/blob/master/dbms/tests/instructions/easy_tasks_sorted_en.md
+List of tasks: https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/instructions/easy_tasks_sorted_en.md
 
 
 # Test Data
