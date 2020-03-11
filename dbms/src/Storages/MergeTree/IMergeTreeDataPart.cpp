@@ -43,7 +43,7 @@ static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & di
 void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path)
 {
     size_t minmax_idx_size = data.minmax_idx_column_types.size();
-    parallelogram.reserve(minmax_idx_size);
+    hyperrectangle.reserve(minmax_idx_size);
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
         String file_name = part_path + "minmax_" + escapeForFileName(data.minmax_idx_columns[i]) + ".idx";
@@ -55,7 +55,7 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Dis
         Field max_val;
         data_type->deserializeBinary(max_val, *file);
 
-        parallelogram.emplace_back(min_val, true, max_val, true);
+        hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
     initialized = true;
 }
@@ -84,8 +84,8 @@ void IMergeTreeDataPart::MinMaxIndex::store(
 
         auto out = disk_->writeFile(part_path + file_name);
         HashingWriteBuffer out_hashing(*out);
-        data_type->serializeBinary(parallelogram[i].left, out_hashing);
-        data_type->serializeBinary(parallelogram[i].right, out_hashing);
+        data_type->serializeBinary(hyperrectangle[i].left, out_hashing);
+        data_type->serializeBinary(hyperrectangle[i].right, out_hashing);
         out_hashing.next();
         out_checksums.files[file_name].file_size = out_hashing.count();
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
@@ -95,7 +95,7 @@ void IMergeTreeDataPart::MinMaxIndex::store(
 void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & column_names)
 {
     if (!initialized)
-        parallelogram.reserve(column_names.size());
+        hyperrectangle.reserve(column_names.size());
 
     for (size_t i = 0; i < column_names.size(); ++i)
     {
@@ -105,11 +105,11 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & 
         column.column->getExtremes(min_value, max_value);
 
         if (!initialized)
-            parallelogram.emplace_back(min_value, true, max_value, true);
+            hyperrectangle.emplace_back(min_value, true, max_value, true);
         else
         {
-            parallelogram[i].left = std::min(parallelogram[i].left, min_value);
-            parallelogram[i].right = std::max(parallelogram[i].right, max_value);
+            hyperrectangle[i].left = std::min(hyperrectangle[i].left, min_value);
+            hyperrectangle[i].right = std::max(hyperrectangle[i].right, max_value);
         }
     }
 
@@ -123,15 +123,15 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 
     if (!initialized)
     {
-        parallelogram = other.parallelogram;
+        hyperrectangle = other.hyperrectangle;
         initialized = true;
     }
     else
     {
-        for (size_t i = 0; i < parallelogram.size(); ++i)
+        for (size_t i = 0; i < hyperrectangle.size(); ++i)
         {
-            parallelogram[i].left = std::min(parallelogram[i].left, other.parallelogram[i].left);
-            parallelogram[i].right = std::max(parallelogram[i].right, other.parallelogram[i].right);
+            hyperrectangle[i].left = std::min(hyperrectangle[i].left, other.hyperrectangle[i].left);
+            hyperrectangle[i].right = std::max(hyperrectangle[i].right, other.hyperrectangle[i].right);
         }
     }
 }
@@ -195,7 +195,7 @@ std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & colum
 DayNum IMergeTreeDataPart::getMinDate() const
 {
     if (storage.minmax_idx_date_column_pos != -1 && minmax_idx.initialized)
-        return DayNum(minmax_idx.parallelogram[storage.minmax_idx_date_column_pos].left.get<UInt64>());
+        return DayNum(minmax_idx.hyperrectangle[storage.minmax_idx_date_column_pos].left.get<UInt64>());
     else
         return DayNum();
 }
@@ -204,7 +204,7 @@ DayNum IMergeTreeDataPart::getMinDate() const
 DayNum IMergeTreeDataPart::getMaxDate() const
 {
     if (storage.minmax_idx_date_column_pos != -1 && minmax_idx.initialized)
-        return DayNum(minmax_idx.parallelogram[storage.minmax_idx_date_column_pos].right.get<UInt64>());
+        return DayNum(minmax_idx.hyperrectangle[storage.minmax_idx_date_column_pos].right.get<UInt64>());
     else
         return DayNum();
 }
@@ -212,7 +212,7 @@ DayNum IMergeTreeDataPart::getMaxDate() const
 time_t IMergeTreeDataPart::getMinTime() const
 {
     if (storage.minmax_idx_time_column_pos != -1 && minmax_idx.initialized)
-        return minmax_idx.parallelogram[storage.minmax_idx_time_column_pos].left.get<UInt64>();
+        return minmax_idx.hyperrectangle[storage.minmax_idx_time_column_pos].left.get<UInt64>();
     else
         return 0;
 }
@@ -221,7 +221,7 @@ time_t IMergeTreeDataPart::getMinTime() const
 time_t IMergeTreeDataPart::getMaxTime() const
 {
     if (storage.minmax_idx_time_column_pos != -1 && minmax_idx.initialized)
-        return minmax_idx.parallelogram[storage.minmax_idx_time_column_pos].right.get<UInt64>();
+        return minmax_idx.hyperrectangle[storage.minmax_idx_time_column_pos].right.get<UInt64>();
     else
         return 0;
 }
