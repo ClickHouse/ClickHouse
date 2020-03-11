@@ -5,14 +5,14 @@ namespace DB
 {
 
 LimitTransform::LimitTransform(
-    const Block & header_, size_t limit_, size_t offset_,
+    const Block & header_, size_t limit_, size_t offset_, LimitStatePtr limit_state_,
     bool always_read_till_end_, bool with_ties_,
-    const SortDescription & description_)
+    SortDescription description_)
     : IProcessor({header_}, {header_})
     , input(inputs.front()), output(outputs.front())
-    , limit(limit_), offset(offset_)
+    , limit(limit_), offset(offset_), limit_state(std::move(limit_state_))
     , always_read_till_end(always_read_till_end_)
-    , with_ties(with_ties_), description(description_)
+    , with_ties(with_ties_), description(std::move(description_))
 {
     for (const auto & desc : description)
     {
@@ -113,8 +113,11 @@ LimitTransform::Status LimitTransform::prepare()
     }
 
     /// Process block.
-
-    rows_read += rows;
+    if (limit_state)
+        /// Note: maybe memory_order_relaxed is enough. It is needed to be proven.
+        rows_read = limit_state->total_read_rows.fetch_add(rows, std::memory_order_acq_rel) + rows;
+    else
+        rows_read += rows;
 
     if (rows_read <= offset)
     {

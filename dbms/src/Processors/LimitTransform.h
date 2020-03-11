@@ -8,12 +8,21 @@ namespace DB
 
 class LimitTransform : public IProcessor
 {
+public:
+    struct LimitState
+    {
+        std::atomic<size_t> total_read_rows = 0;
+    };
+
+    using LimitStatePtr = std::shared_ptr<LimitState>;
+
 private:
     InputPort & input;
     OutputPort & output;
 
     size_t limit;
     size_t offset;
+    LimitStatePtr limit_state;
     size_t rows_read = 0; /// including the last read block
     bool always_read_till_end;
 
@@ -35,9 +44,9 @@ private:
 
 public:
     LimitTransform(
-        const Block & header_, size_t limit_, size_t offset_,
+        const Block & header_, size_t limit_, size_t offset_, LimitStatePtr limit_state_ = nullptr,
         bool always_read_till_end_ = false, bool with_ties_ = false,
-        const SortDescription & description_ = {});
+        SortDescription description_ = {});
 
     String getName() const override { return "Limit"; }
 
