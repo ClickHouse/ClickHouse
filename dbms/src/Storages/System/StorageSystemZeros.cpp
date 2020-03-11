@@ -118,7 +118,7 @@ Pipes StorageSystemZeros::read(
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto source = std::make_shared<ZerosSource>(max_block_size, *limit, state);
+        auto source = std::make_shared<ZerosSource>(max_block_size, limit ? *limit : 0, state);
 
         if (limit && i == 0)
             source->addTotalRowsApprox(*limit);
