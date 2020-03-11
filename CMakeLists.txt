@@ -229,7 +229,7 @@ else ()
     set(NOT_UNBUNDLED 1)
 endif ()
 
-if (UNBUNDLED OR NOT (OS_LINUX OR OS_DARWIN) OR ARCH_32)
+if (UNBUNDLED OR NOT (OS_LINUX OR OS_DARWIN))
     # Using system libs can cause a lot of warnings in includes (on macro expansion).
     option (WERROR "Enable -Werror compiler option" OFF)
 else ()

@@ -1,6 +1,6 @@
 option (USE_UNWIND "Enable libunwind (better stacktraces)" ${ENABLE_LIBRARIES})
 
-if (NOT CMAKE_SYSTEM MATCHES "Linux" OR ARCH_ARM OR ARCH_32)
+if (NOT OS_LINUX OR ARCH_ARM)
     set (USE_UNWIND OFF)
 endif ()
 
