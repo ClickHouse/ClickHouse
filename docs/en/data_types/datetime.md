@@ -15,7 +15,7 @@ Resolution: 1 second.
 ## Usage Remarks
 
 The point in time is saved as a [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), regardless of the time zone or daylight saving time. Additionally, the `DateTime` type can store time zone that is the same for the entire column, that affects how the values of the `DateTime` type values are displayed in text format and how the values specified as strings are parsed ('2020-01-01 05:00:01'). The time zone is not stored in the rows of the table (or in resultset), but is stored in the column metadata. 
-A list of supported time zones can be found in the [IANA Time Zone Database] (https://www.iana.org/time-zones).
+A list of supported time zones can be found in the [IANA Time Zone Database](https://www.iana.org/time-zones).
 The `tzdata` package, containing [IANA Time Zone Database](https://www.iana.org/time-zones), should be installed in the system. Use the `timedatectl list-timezones` command to list timezones known by a local system.
 
 You can explicitly set a time zone for `DateTime`-type columns when creating a table. If the time zone isn't set, ClickHouse uses the value of the [timezone](../operations/server_settings/settings.md#server_settings-timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
