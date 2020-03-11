@@ -1,0 +1,141 @@
+var queries =
+[
+    {
+        "comment": "",
+        "query": "SELECT count() FROM dt where not ignore(x)"
+    },
+    {
+        "comment": "",
+        "query": "SELECT count() FROM dt64 where not ignore(x)"
+    },
+    {
+        "comment": "",
+        "query": "SELECT max(x) FROM dt"
+    },
+    {
+        "comment": "",
+        "query": "SELECT max(x) FROM dt64"
+    },
+    {
+        "comment": "",
+        "query": "SELECT count() from dt where not ignore(toString(x))"
+    },
+    {
+        "comment": "",
+        "query": "SELECT count() from dt64 where not ignore(toString(x))"
+    },
+    {
+        "comment": "",
+        "query": "SELECT count() from dt where not ignore(toStartOfDay(x))"
+    },
+    {
+        "comment": "",
+        "query": "SELECT count() from dt64 where not ignore(toStartOfDay(x))"
+    },
+    {
+        "comment": "",
+        "query": "SELECT count() from dt where not ignore(toStartOfWeek(x))"
+    },
+    {
+        "comment": "",
+        "query": "SELECT count() from dt64 where not ignore(toStartOfWeek(x))"
+    },
+    {
+        "comment": "",
+        "query": "SELECT count() from dt where not ignore(toRelativeMinuteNum(x))"
+    },
+    {
+        "comment": "",
+        "query": "SELECT count() from dt64 where not ignore(toRelativeMinuteNum(x))"
+    },
+    {
+        "comment": "",
+        "query": "SELECT count() from dt where not ignore(addDays(x, 1))"
+    },
+    {
+        "comment": "",
+        "query": "SELECT count() from dt64 where not ignore(addDays(x, 1))"
+    },
+    {
+        "comment": "",
+        "query": "SELECT sum(x = x) FROM dt"
+    },
+    {
+        "comment": "",
+        "query": "SELECT sum(x = x) FROM dt64"
+    },
+    {
+        "comment": "",
+        "query": "SELECT sum(toDateTime(toString(x)) != x) FROM dt"
+    },
+    {
+        "comment": "",
+        "query": "SELECT sum(toDateTime64(toString(x), 3) != x) FROM dt64"
+    }
+] ;
+var results =
+[
+    {
+        "system": "ClickHouse",
+        "comments": "",
+        "version": "19.18.1",
+        "result": [
+            [
+                0.039
+            ],
+            [
+                0.073
+            ],
+            [
+                0.043
+            ],
+            [
+                0.215
+            ],
+            [
+                0.272
+            ],
+            [
+                0.504
+            ],
+            [
+                0.056
+            ],
+            [
+                0.16
+            ],
+            [
+                0.058
+            ],
+            [
+                0.164
+            ],
+            [
+                0.046
+            ],
+            [
+                0.146
+            ],
+            [
+                0.117
+            ],
+            [
+                0.295
+            ],
+            [
+                0.047
+            ],
+            [
+                0.085
+            ],
+            [
+                0.376
+            ],
+            [
+                0.734
+            ]
+        ],
+        "time": "2019-12-11 15:23:16",
+        "data_size": 100000000
+    }
+] ;
