@@ -1210,7 +1210,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         new_data_part->partition.assign(source_part->partition);
         new_data_part->minmax_idx = source_part->minmax_idx;
         new_data_part->modification_time = time(nullptr);
-        new_data_part->bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->getFullPath());
+        new_data_part->bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->disk, new_data_part->getFullRelativePath());
     }
 
     return new_data_part;
