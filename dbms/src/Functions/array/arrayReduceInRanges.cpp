@@ -153,7 +153,7 @@ void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers
         lengths_data = &arr->getData();
         lengths_offsets = &arr->getOffsets();
     }
-    else if (const ColumnConst * const_arr = checkAndGetColumnConst<ColumnArray>(indices_col))
+    else if (const ColumnConst * const_arr = checkAndGetColumnConst<ColumnArray>(lengths_col))
     {
         materialized_columns.emplace_back(const_arr->convertToFullColumn());
         const auto & materialized_arr = typeid_cast<const ColumnArray &>(*materialized_columns.back());
@@ -305,8 +305,8 @@ void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers
 
         for (size_t j = ranges_begin; j < ranges_end; ++j)
         {
-            size_t local_begin = std::max(indices_data->getUInt(j) - 1, begin);
-            size_t local_end = std::min(local_begin + lengths_data->getUInt(j), end);
+            size_t local_begin = std::max(indices_data->getUInt(j) - 1, size_t(0));
+            size_t local_end = std::min(local_begin + lengths_data->getUInt(j), end - begin);
             size_t place_begin = (local_begin + minimum_step - 1) / minimum_step;
             size_t place_end = local_end / minimum_step;
 
