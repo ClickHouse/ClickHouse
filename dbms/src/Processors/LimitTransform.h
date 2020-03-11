@@ -9,6 +9,8 @@ namespace DB
 class LimitTransform : public IProcessor
 {
 public:
+    /// Common counter of read rows. It is shared between several streams.
+    /// Is used for pre-limit. Needed to skip main limit phase and avoid the resizing pipeline to single stream.
     struct LimitState
     {
         std::atomic<size_t> total_read_rows = 0;
