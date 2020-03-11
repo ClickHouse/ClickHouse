@@ -8,12 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_DATABASE;
-}
-
 static constexpr char const * TABLE_WITH_UUID_NAME_PLACEHOLDER = "_";
 
 class ASTQueryWithTableAndOutput;
@@ -70,7 +64,7 @@ struct StorageID
     /// Avoid implicit construction of empty StorageID. However, it's needed for deferred initialization.
     static StorageID createEmpty() { return {}; }
 
-    QualifiedTableName getQualifiedName() const { return {getDatabaseName(), getTableName()}; }
+    QualifiedTableName getQualifiedName() const { return {database_name, getTableName()}; }
 
 private:
     StorageID() = default;

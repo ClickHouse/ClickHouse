@@ -138,7 +138,7 @@ public:
     Dependencies getDependencies(const StorageID & from) const;
 
     /// For Materialized and Live View
-    void updateDependency(const StorageID & old_from, const StorageID & old_where,const StorageID & new_from,  const StorageID & new_where);
+    void updateDependency(const StorageID & old_from, const StorageID & old_where,const StorageID & new_from, const StorageID & new_where);
 
 private:
     DatabaseCatalog(const Context * global_context_);

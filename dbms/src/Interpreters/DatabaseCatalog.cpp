@@ -17,7 +17,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int DATABASE_ALREADY_EXISTS;
-    extern const int DDL_GUARD_IS_ACTIVE;
     extern const int DATABASE_NOT_EMPTY;
     extern const int DATABASE_ACCESS_DENIED;
 }
