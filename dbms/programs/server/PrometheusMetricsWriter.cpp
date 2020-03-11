@@ -88,7 +88,7 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
         auto async_metrics_values = async_metrics.getValues();
         for (const auto & name_value : async_metrics_values)
         {
-            std::string key{current_status_prefix + name_value.first};
+            std::string key{asynchronous_metrics_prefix + name_value.first};
 
             replaceInvalidChars(key);
             auto value = name_value.second;
