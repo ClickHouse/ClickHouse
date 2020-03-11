@@ -70,8 +70,8 @@ LimitTransform::Status LimitTransform::prepare()
         rows_read = limit_state->total_read_rows.load(std::memory_order_acquire);
 
     /// Check if we are done with pushing.
-    bool pushing_is_finished = (rows_read >= offset + limit) && !previous_row_chunk;
-    if (pushing_is_finished)
+    bool is_limit_reached = (rows_read >= offset + limit) && !previous_row_chunk;
+    if (is_limit_reached)
     {
         if (!always_read_till_end)
         {
@@ -105,11 +105,11 @@ LimitTransform::Status LimitTransform::prepare()
     else
         rows_read += rows;
 
-    /// rows_read could be updated after previous load. Recheck flag again.
-    pushing_is_finished = (rows_read >= offset + limit) && !previous_row_chunk;
+    /// rows_read could be updated after previous load. Recalculate flag again.
+    is_limit_reached = (rows_read >= offset + limit + rows) && !previous_row_chunk;
 
     /// Skip block (for 'always_read_till_end' case).
-    if (pushing_is_finished)
+    if (is_limit_reached)
     {
         current_chunk.clear();
         has_block = false;
