@@ -26,8 +26,9 @@ static ALWAYS_INLINE void generateImpl(UInt64 * begin, const UInt64 * end, UInt6
 
     while (begin < end)
     {
-        _mm_store_si128(reinterpret_cast<__m128i *>(begin), values);
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(begin), values);
         values = _mm_add_epi64(values, counter);
+        begin += 2;
     }
 
 #elif
