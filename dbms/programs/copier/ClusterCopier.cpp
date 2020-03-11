@@ -43,6 +43,13 @@ void ClusterCopier::init()
     for (auto & task_table : task_cluster->table_tasks)
     {
         task_table.cluster_pull = context.getCluster(task_table.cluster_pull_name);
+        auto pull_shards_info = task_table.cluster_pull->getShardsInfo();
+        for (auto & shard_info : pull_shards_info)
+        {
+            std::cout << "current_shard " << toString(shard_info.shard_num) << "has remote connections "
+            << toString(shard_info.hasRemoteConnections()) << std::endl;
+        }
+        std::cout << "CLUSTER PULL " << std::endl;
         task_table.cluster_push = context.getCluster(task_table.cluster_push_name);
         task_table.initShards(task_cluster->random_engine);
     }
@@ -1212,7 +1219,7 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         }
 
         // Select all fields
-        ASTPtr query_select_ast = get_select_query(task_shard.table_read_shard, "*", /*enable_splitting*/ inject_fault ? "1" : "");
+        ASTPtr query_select_ast = get_select_query(task_shard.table_read_shard, "*", /*enable_splitting*/ true, inject_fault ? "1" : "");
 
         LOG_DEBUG(log, "Executing SELECT query and pull from " << task_shard.getDescription()
                                                                << " : " << queryToString(query_select_ast));
@@ -1345,23 +1352,27 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
 
         query_alter_ast_string +=  " ALTER TABLE " + getQuotedTable(original_table)  +
                                    " ATTACH PARTITION " + task_partition.name +
-                                   " FROM " + getQuotedTable(helping_table);
+                                   " FROM " + getQuotedTable(helping_table) +
+                                   " SETTINGS replication_alter_partitions_sync=2;";
 
         LOG_DEBUG(log, "Executing ALTER query: " << query_alter_ast_string);
 
         try
         {
-            ///FIXME: We have to be sure that every node in cluster executed this query
-            UInt64 num_nodes = executeQueryOnCluster(
-                    task_table.cluster_push,
-                    query_alter_ast_string,
-                    nullptr,
-                    &task_cluster->settings_push,
-                    PoolMode::GET_MANY,
-                    ClusterExecutionMode::ON_EACH_NODE);
+            size_t num_nodes = 0;
+            for (UInt64 try_num = 0; try_num < max_shard_partition_piece_tries_for_alter; ++try_num)
+            {
+                ///FIXME: We have to be sure that every node in cluster executed this query
+                UInt64 current_num_nodes = executeQueryOnCluster(
+                        task_table.cluster_push,
+                        query_alter_ast_string,
+                        nullptr,
+                        &task_cluster->settings_push,
+                        PoolMode::GET_MANY,
+                        ClusterExecutionMode::ON_EACH_NODE);
 
-            // TODO: Throw an exception if num nodes is not equal to original number of nodes
-
+                num_nodes = std::max(current_num_nodes, num_nodes);
+            }
             LOG_INFO(log, "Number of shard that executed ALTER query successfully : " << toString(num_nodes));
         }
         catch (...)
@@ -1728,13 +1739,10 @@ UInt64 ClusterCopier::executeQueryOnCluster(
             successful_nodes += (num_replicas > 0);
     }
 
-    if (execution_mode == ClusterExecutionMode::ON_EACH_NODE && successful_nodes != origin_replicas_number - 1)
+    if (execution_mode == ClusterExecutionMode::ON_EACH_NODE && successful_nodes != origin_replicas_number)
     {
         LOG_INFO(log, "There was an error while executing ALTER on each node. Query was executed on "
                 << toString(successful_nodes) << " nodes. But had to be executed on " << toString(origin_replicas_number.load()));
-
-        std::cout << "successful_nodes " << successful_nodes << "  origin_replicas_number " << origin_replicas_number << std::endl;
-        throw Exception("There was an error while executing ALTER on each node.", ErrorCodes::LOGICAL_ERROR);
     }
 
 

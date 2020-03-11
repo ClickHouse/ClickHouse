@@ -75,6 +75,8 @@ bool Cluster::Address::isLocal(UInt16 clickhouse_port) const
 Cluster::Address::Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, UInt32 shard_index_, UInt32 replica_index_) :
     shard_index(shard_index_), replica_index(replica_index_)
 {
+
+    std::cout << "FROM Address constructor " << " shard index " << shard_index_ << " replica index " << replica_index_ << std::endl;
     host_name = config.getString(config_prefix + ".host");
     port = static_cast<UInt16>(config.getInt(config_prefix + ".port"));
     if (config.has(config_prefix + ".user"))
@@ -327,6 +329,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
                 if (startsWith(replica_key, "replica"))
                 {
                     replica_addresses.emplace_back(config, partial_prefix + replica_key, current_shard_num, current_replica_num);
+
+                    std::cout << "replica num " << current_replica_num << " is a replica of shard number " << current_shard_num << std::endl;
                     ++current_replica_num;
 
                     if (!replica_addresses.back().is_local)
