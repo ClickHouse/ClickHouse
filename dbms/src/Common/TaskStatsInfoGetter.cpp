@@ -309,17 +309,10 @@ bool TaskStatsInfoGetter::checkPermissions()
     return false;
 }
 
-
-TaskStatsInfoGetter::TaskStatsInfoGetter()
-{
-    // TODO: throw Exception("TaskStats are not implemented for this OS.", ErrorCodes::NOT_IMPLEMENTED);
-}
+TaskStatsInfoGetter::TaskStatsInfoGetter() = default;
+TaskStatsInfoGetter::~TaskStatsInfoGetter() = default;
 
 void TaskStatsInfoGetter::getStat(::taskstats &, pid_t)
-{
-}
-
-TaskStatsInfoGetter::~TaskStatsInfoGetter()
 {
 }
 
