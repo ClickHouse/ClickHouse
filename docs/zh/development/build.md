@@ -10,7 +10,7 @@ sudo apt-get install git pbuilder debhelper lsb-release fakeroot sudo debian-arc
 ## 拉取 ClickHouse 源码
 
 ```bash
-git clone --recursive --branch stable https://github.com/yandex/ClickHouse.git
+git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 cd ClickHouse
 ```
 
@@ -50,7 +50,7 @@ sudo apt-get install gcc-9 g++-9
 
 ### 源码安装 gcc
 
-请查看 [utils/ci/build-gcc-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
+请查看 [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
 ## 使用 GCC 9 来编译
 
@@ -62,13 +62,11 @@ export CXX=g++-9
 ## 拉取 ClickHouse 源码
 
 ```bash
-git clone --recursive git@github.com:yandex/ClickHouse.git
-# or: git clone --recursive https://github.com/yandex/ClickHouse.git
+git clone --recursive git@github.com:ClickHouse/ClickHouse.git
+# or: git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 
 cd ClickHouse
 ```
-
-For the latest stable version, switch to the `stable` branch.
 
 ## 编译 ClickHouse
 
