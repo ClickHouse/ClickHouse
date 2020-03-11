@@ -799,7 +799,6 @@ protected:
 
     friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;
-    friend class ReplicatedMergeTreeAlterThread;
     friend struct ReplicatedMergeTreeTableMetadata;
     friend class StorageReplicatedMergeTree;
 
