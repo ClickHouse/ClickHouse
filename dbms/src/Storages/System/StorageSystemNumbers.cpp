@@ -63,13 +63,13 @@ void generateImpl(UInt64 * begin, const UInt64 * end, UInt64 start)
         _mm_storeu_si128(reinterpret_cast<__m128i *>(begin + 2), values_1);
         values_1 = _mm_add_epi64(values_1, counter);
 
-        _mm_storeu_si128(reinterpret_cast<__m128i *>(begin + 3), values_2);
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(begin + 4), values_2);
         values_2 = _mm_add_epi64(values_2, counter);
 
-        _mm_storeu_si128(reinterpret_cast<__m128i *>(begin + 4), values_3);
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(begin + 6), values_3);
         values_3 = _mm_add_epi64(values_3, counter);
 
-        begin += 4;
+        begin += 8;
     }
 
 #elif
