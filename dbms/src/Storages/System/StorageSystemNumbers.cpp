@@ -15,6 +15,27 @@ namespace DB
 namespace
 {
 
+static ALWAYS_INLINE void generateImpl(UInt64 * begin, const UInt64 * end, UInt64 start)
+{
+#if defined(__SSE2__)
+    UInt64 init_values[] = {start, start + 1};
+    UInt64 init_counter[] = {2, 2};
+
+    __m128i values = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_values));
+    __m128i counter = _mm_loadu_si128(reinterpret_cast<const __m128i_u *>(init_counter));
+
+    while (begin < end)
+    {
+        _mm_store_si128(reinterpret_cast<__m128i *>(begin), values);
+        values = _mm_add_epi64(values, counter);
+    }
+
+#elif
+    while (begin < end)
+        *begin++ = start++;
+#endif
+}
+
 class NumbersSource : public SourceWithProgress
 {
 public:
@@ -32,8 +53,8 @@ protected:
         size_t curr = next;     /// The local variable for some reason works faster (>20%) than member of class.
         UInt64 * pos = vec.data(); /// This also accelerates the code.
         UInt64 * end = &vec[block_size];
-        while (pos < end)
-            *pos++ = curr++;
+
+        generateImpl(pos, end, curr);
 
         next += step;
 
@@ -92,8 +113,8 @@ protected:
 
         UInt64 * pos = vec.data();
         UInt64 * end = &vec[block_size];
-        while (pos < end)
-            *pos++ = curr++;
+
+        generateImpl(pos, end, curr);
 
         progress({column->size(), column->byteSize()});
 
