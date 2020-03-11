@@ -1,6 +1,6 @@
 # This file configures static analysis tools that can be integrated to the build process
 
-option (ENABLE_CLANG_TIDY "Use 'clang-tidy' static analyzer if present" ${COMPILER_CLANG})
+option (ENABLE_CLANG_TIDY "Use 'clang-tidy' static analyzer if present" OFF)
 if (ENABLE_CLANG_TIDY)
     if (${CMAKE_VERSION} VERSION_LESS "3.6.0")
         message(FATAL_ERROR "clang-tidy requires CMake version at least 3.6.")
