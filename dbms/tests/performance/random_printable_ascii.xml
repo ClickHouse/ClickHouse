@@ -9,8 +9,8 @@
 
     <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(randomPrintableASCII(10))</query>
     <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(randomPrintableASCII(100))</query>
-    <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(randomPrintableASCII(1000))</query>
-    <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(randomPrintableASCII(10000))</query>
+    <query>SELECT count() FROM numbers(100000) WHERE NOT ignore(randomPrintableASCII(1000))</query>
+    <query>SELECT count() FROM numbers(10000) WHERE NOT ignore(randomPrintableASCII(10000))</query>
     <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(randomPrintableASCII(rand() % 10))</query>
     <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(randomPrintableASCII(rand() % 100))</query>
     <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(randomPrintableASCII(rand() % 1000))</query>
