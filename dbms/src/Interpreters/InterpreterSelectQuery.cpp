@@ -982,7 +982,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 executePreLimit(pipeline);
             }
 
-            bool need_merge_streams = need_second_distinct_pass || query.limitLength() || query.limitBy();
+            bool need_merge_streams = need_second_distinct_pass || query.limitBy()
+                || (!pipeline_with_processors && query.limitLength()); /// Don't merge streams for pre-limit more.
 
             if constexpr (!pipeline_with_processors)
                 if (pipeline.hasDelayedStream())
@@ -2265,13 +2266,17 @@ void InterpreterSelectQuery::executePreLimit(QueryPipeline & pipeline)
     /// If there is LIMIT
     if (query.limitLength())
     {
+        LimitTransform::LimitStatePtr state;
+        if (pipeline.getNumStreams() > 1)
+            state = std::make_shared<LimitTransform::LimitState>();
+
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, *context);
         pipeline.addSimpleTransform([&, limit = limit_length + limit_offset](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
         {
             if (stream_type == QueryPipeline::StreamType::Totals)
                 return nullptr;
 
-            return std::make_shared<LimitTransform>(header, limit, 0);
+            return std::make_shared<LimitTransform>(header, limit, 0, state);
         });
     }
 }
@@ -2474,7 +2479,7 @@ void InterpreterSelectQuery::executeLimit(QueryPipeline & pipeline)
                 return nullptr;
 
             return std::make_shared<LimitTransform>(
-                    header, limit_length, limit_offset, always_read_till_end, query.limit_with_ties, order_descr);
+                    header, limit_length, limit_offset, nullptr, always_read_till_end, query.limit_with_ties, order_descr);
         });
     }
 }
