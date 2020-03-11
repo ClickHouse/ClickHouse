@@ -111,6 +111,9 @@ public:
     /// Return `true` if the specified directory is empty.
     bool isDirectoryEmpty(const String & path);
 
+    /// Create empty file at `path`.
+    virtual void createFile(const String & path) = 0;
+
     /// Move the file from `from_path` to `to_path`.
     /// If a file with `to_path` path already exists, an exception will be thrown .
     virtual void moveFile(const String & from_path, const String & to_path) = 0;
@@ -152,6 +155,13 @@ public:
 
     /// Removes directory if it's empty.
     virtual void removeDirectory(const String & path) = 0;
+
+    /// Remove file or directory if it exists.
+    void removeIfExists(const String & path)
+    {
+        if (exists(path))
+            remove(path);
+    }
 
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;

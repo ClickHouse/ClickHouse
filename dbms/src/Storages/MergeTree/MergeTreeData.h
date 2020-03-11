@@ -263,6 +263,7 @@ public:
     };
 
     using AlterDataPartTransactionPtr = std::unique_ptr<AlterDataPartTransaction>;
+    using PathWithDisk = std::pair<String, DiskPtr>;
 
     struct PartsTemporaryRename : private boost::noncopyable
     {
@@ -285,7 +286,7 @@ public:
         const MergeTreeData & storage;
         const String source_dir;
         std::vector<std::pair<String, String>> old_and_new_names;
-        std::unordered_map<String, String> old_part_name_to_full_path;
+        std::unordered_map<String, PathWithDisk> old_part_name_to_path_and_disk;
         bool renamed = false;
     };
 
@@ -675,12 +676,11 @@ public:
     /// active dataparts set (detached)
     DiskPtr getDiskForPart(const String & part_name, const String & relative_path = "") const;
 
-    /// Get full path for part. Uses getDiskForPart and returns the full path
-    String getFullPathForPart(const String & part_name, const String & relative_path = "") const;
+    /// Get full path for part. Uses getDiskForPart and returns the full relative path
+    std::optional<String> getFullRelativePathForPart(const String & part_name, const String & relative_path = "") const;
 
     Strings getDataPaths() const override;
 
-    using PathWithDisk = std::pair<String, DiskPtr>;
     using PathsWithDisks = std::vector<PathWithDisk>;
     PathsWithDisks getDataPathsWithDisks() const;
     PathsWithDisks getRelativeDataPathsWithDisks() const;

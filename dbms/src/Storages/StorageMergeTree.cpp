@@ -21,8 +21,6 @@
 #include <Disks/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Poco/DirectoryIterator.h>
-#include <Poco/File.h>
 #include <optional>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Processors/Pipe.h>
