@@ -299,11 +299,6 @@ TaskStatsInfoGetter::~TaskStatsInfoGetter()
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 bool TaskStatsInfoGetter::checkPermissions()
 {
     return false;
