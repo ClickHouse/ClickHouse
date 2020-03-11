@@ -67,7 +67,7 @@ inline bool operator==(SmallStringRef lhs, SmallStringRef rhs)
 #ifdef __SSE2__
     return memequalSSE2Wide(lhs.data(), rhs.data(), lhs.size);
 #else
-    return false;
+    return 0 == memcmp(lhs.data(), rhs.data(), lhs.size);
 #endif
 }
 
