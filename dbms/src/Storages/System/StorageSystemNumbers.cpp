@@ -69,15 +69,13 @@ void generateImpl(UInt64 * begin, const UInt64 * end, UInt64 start)
     while (begin < end)
     {
         _mm_store_si128(reinterpret_cast<__m128i *>(begin), values_0);
-        values_0 = _mm_add_epi64(values_0, counter_0);
-
         _mm_store_si128(reinterpret_cast<__m128i *>(begin + 2), values_1);
-        values_1 = _mm_add_epi64(values_1, counter_1);
-
         _mm_store_si128(reinterpret_cast<__m128i *>(begin + 4), values_2);
-        values_2 = _mm_add_epi64(values_2, counter_2);
-
         _mm_store_si128(reinterpret_cast<__m128i *>(begin + 6), values_3);
+
+        values_0 = _mm_add_epi64(values_0, counter_0);
+        values_1 = _mm_add_epi64(values_1, counter_1);
+        values_2 = _mm_add_epi64(values_2, counter_2);
         values_3 = _mm_add_epi64(values_3, counter_3);
 
         begin += 8;
