@@ -1042,7 +1042,7 @@ private:
             it->second.detach();
             loading_threads.erase(it);
         }
-        CurrentStatusInfo::set(CurrentStatusInfo::DictionaryStatus, name, toString(info->status()));
+        CurrentStatusInfo::set(CurrentStatusInfo::DictionaryStatus, name, static_cast<Int8>(info->status()));
     }
 
     /// Calculate next update time for loaded_object. Can be called without mutex locking,

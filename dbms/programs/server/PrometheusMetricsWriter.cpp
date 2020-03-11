@@ -124,7 +124,7 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
                     DB::writeText("\",name=\"", wb);
                     DB::writeText(value.first, wb);
                     DB::writeText("\"} ", wb);
-                    DB::writeText(value.second == enum_value.first, wb);
+                    DB::writeText(value.second == enum_value.second, wb);
                     DB::writeChar('\n', wb);
                 }
             }
