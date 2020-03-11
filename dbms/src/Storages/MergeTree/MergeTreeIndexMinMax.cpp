@@ -21,7 +21,7 @@ MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const MergeTreeIndexMin
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
     const MergeTreeIndexMinMax & index_, std::vector<Range> && hyperrectangle_)
-    : index(index_), parallelogram(std::move(parallelogram_)) {}
+    : index(index_), hyperrectangle(std::move(hyperrectangle_)) {}
 
 void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
 {
