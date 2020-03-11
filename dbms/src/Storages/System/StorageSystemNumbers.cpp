@@ -15,7 +15,7 @@ namespace DB
 namespace
 {
 
-static ALWAYS_INLINE void generateImpl(UInt64 * begin, const UInt64 * end, UInt64 start)
+static void generateImpl(UInt64 * begin, const UInt64 * end, UInt64 start)
 {
 #if defined(__SSE2__)
     UInt64 init_values[] = {start, start + 1};
