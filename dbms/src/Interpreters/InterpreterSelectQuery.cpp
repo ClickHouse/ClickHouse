@@ -976,10 +976,12 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
               * limiting the number of rows in each up to `offset + limit`.
               */
+            bool has_prelimit = false;
             if (query.limitLength() && !query.limit_with_ties && pipeline.hasMoreThanOneStream() &&
                 !query.distinct && !expressions.hasLimitBy() && !settings.extremes)
             {
                 executePreLimit(pipeline);
+                has_prelimit = true;
             }
 
             bool need_merge_streams = need_second_distinct_pass || query.limitBy()
@@ -1019,7 +1021,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
               */
             executeExtremes(pipeline);
 
-            executeLimit(pipeline);
+            if (!(pipeline_with_processors && has_prelimit))  /// Limit is no longer needed if there is prelimit.
+                executeLimit(pipeline);
         }
     }
 
