@@ -36,12 +36,17 @@ ${CLICKHOUSE_CLIENT} --query="KILL MUTATION WHERE database = 'test' AND table = 
 
 wait
 
-${CLICKHOUSE_CLIENT} --query="SELECT mutation_id FROM system.mutations WHERE database = 'test' AND table = 'kill_mutation_r1'"
-
+# No active mutations exists
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.mutations WHERE database = 'test' AND table = 'kill_mutation_r1'"
 
 ${CLICKHOUSE_CLIENT} --query="SELECT '*** Create and kill invalid mutation that blocks another mutation ***'"
 
 ${CLICKHOUSE_CLIENT} --query="SYSTEM SYNC REPLICA test.kill_mutation_r1"
+${CLICKHOUSE_CLIENT} --query="SYSTEM SYNC REPLICA test.kill_mutation_r2"
+
+# Should be empty, but in case of problems we will see some diagnostics
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM system.replication_queue WHERE table like 'kill_mutation_r%'"
+
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.kill_mutation_r1 DELETE WHERE toUInt32(s) = 1"
 
 # good mutation, but blocked with wrong mutation
@@ -63,7 +68,12 @@ ${CLICKHOUSE_CLIENT} --query="KILL MUTATION WHERE database = 'test' AND table = 
 
 wait
 
+${CLICKHOUSE_CLIENT} --query="SYSTEM SYNC REPLICA test.kill_mutation_r1"
+${CLICKHOUSE_CLIENT} --query="SYSTEM SYNC REPLICA test.kill_mutation_r2"
+
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.kill_mutation_r2"
+# must be empty
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM system.mutations WHERE table = 'kill_mutation' AND database = 'test' AND is_done = 0"
 
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE test.kill_mutation_r1"
