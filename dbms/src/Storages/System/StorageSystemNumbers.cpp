@@ -45,7 +45,7 @@ void generateImpl(UInt64 * begin, const UInt64 * end, UInt64 start)
         _mm_storeu_si128(reinterpret_cast<__m128i *>(begin), values_0);
         values_0 = _mm_add_epi64(values_0, counter);
 
-        _mm_storeu_si128(reinterpret_cast<__m128i *>(begin), values_1);
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(begin + 2), values_1);
         values_1 = _mm_add_epi64(values_1, counter);
 
         begin += 4;
