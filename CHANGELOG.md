@@ -487,7 +487,7 @@ next request would interpret this info as the beginning of the next query causin
 [#9513](https://github.com/ClickHouse/ClickHouse/pull/9513) [(filimonov)](https://github.com/filimonov)
 * Allow using `MaterializedView` with subqueries above `Kafka` tables.
 [#8197](https://github.com/ClickHouse/ClickHouse/pull/8197) ([filimonov](https://github.com/filimonov))
-* Add `force_deduplicate_childrens` option to reduce dataloss chance on insert into table with `Materialized View`.
+* Add `deduplicate_blocks_in_dependent_materialized_views` option to reduce dataloss chance on insert into table with `Materialized View`.
 [#9070](https://github.com/ClickHouse/ClickHouse/pull/9070) [(urykhy)](https://github.com/urykhy)
 
 ### ClickHouse release v19.16.2.2, 2019-10-30
