@@ -16,7 +16,7 @@
         <substitution>
             <name>millions</name>
             <values>
-                <value>50</value>
+                <value>200</value>
                 <value>100</value>
             </values>
         </substitution>
