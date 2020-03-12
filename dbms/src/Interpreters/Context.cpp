@@ -815,13 +815,6 @@ void Context::setProfile(const String & profile)
 }
 
 
-bool Context::isExternalTableExist(const String & table_name) const
-{
-    assert(global_context != this);
-    auto lock = getLock();
-    return external_tables_mapping.count(table_name);
-}
-
 const Scalars & Context::getScalars() const
 {
     return scalars;
@@ -839,20 +832,21 @@ const Block & Context::getScalar(const String & name) const
 
 Tables Context::getExternalTables() const
 {
+    assert(global_context != this);
     auto lock = getLock();
 
     Tables res;
     for (auto & table : external_tables_mapping)
         res[table.first] = table.second->getTable();
 
-    if (session_context && session_context != this)
+    if (query_context && query_context != this)
     {
-        Tables buf = session_context->getExternalTables();
+        Tables buf = query_context->getExternalTables();
         res.insert(buf.begin(), buf.end());
     }
-    else if (global_context && global_context != this)
+    else if (session_context && session_context != this)
     {
-        Tables buf = global_context->getExternalTables();
+        Tables buf = session_context->getExternalTables();
         res.insert(buf.begin(), buf.end());
     }
     return res;

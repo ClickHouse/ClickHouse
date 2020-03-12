@@ -288,8 +288,6 @@ public:
     ClientInfo & getClientInfo() { return client_info; }
     const ClientInfo & getClientInfo() const { return client_info; }
 
-    bool isExternalTableExist(const String & table_name) const;
-
     enum StorageNamespace
     {
          ResolveGlobal = 1u,                                           /// Database name must be specified

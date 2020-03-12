@@ -92,9 +92,6 @@ public:
 
     static DatabaseCatalog & instance();
 
-    //DatabaseCatalog(/*Context & global_context_, String default_database_*/) {}
-    //: global_context(global_context_)/*, default_database(std::move(default_database_))*/ {}
-
     void loadDatabases();
     void shutdown();
 

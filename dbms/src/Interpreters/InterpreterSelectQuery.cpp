@@ -321,7 +321,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
             /// Save the new temporary tables in the query context
             for (const auto & it : query_analyzer->getExternalTables())
-                if (!context->isExternalTableExist(it.first))
+                if (!context->tryResolveStorageID({"", it.first}, Context::ResolveExternal))
                     context->addExternalTable(it.first, std::move(*it.second));
         }
 
@@ -402,14 +402,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (query.prewhere() && !query.where())
         analysis_result.prewhere_info->need_filter = true;
 
-    const String & database_name = joined_tables.leftTableDatabase();
-    const String & table_name = joined_tables.leftTableName();
+    const StorageID & left_table_id = joined_tables.leftTableID();
 
-    if (!table_name.empty() && !database_name.empty() /* always allow access to temporary tables */)
-        context->checkAccess(AccessType::SELECT, database_name, table_name, required_columns);
+    if (left_table_id)
+        context->checkAccess(AccessType::SELECT, left_table_id.getDatabaseName(), left_table_id.getTableName(), required_columns);
 
     /// Remove limits for some tables in the `system` database.
-    if (database_name == "system" && ((table_name == "quotas") || (table_name == "quota_usage") || (table_name == "one")))
+    if (left_table_id.database_name == "system" &&
+        ((left_table_id.table_name == "quotas") || (left_table_id.table_name == "quota_usage") || (left_table_id.table_name == "one")))
     {
         options.ignore_quota = true;
         options.ignore_limits = true;

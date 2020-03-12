@@ -608,7 +608,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
     }
     else
     {
-        if (context.isExternalTableExist(table_name) && create.if_not_exists)
+        if (context.tryResolveStorageID({"", table_name}, Context::ResolveExternal) && create.if_not_exists)
             return false;
 
         auto temporary_table = TemporaryTableHolder(context, properties.columns, query_ptr);
