@@ -414,6 +414,9 @@ bool ClusterCopier::checkPartitionPieceIsClean(
         task_start_clock = LogicalClock(stat.mzxid);
 
     /// If statement for readability.
+
+    LOG_INFO(log, "clean_state_clock.is_stale() " << clean_state_clock.is_stale());
+    LOG_INFO(log, "clean_state_clock.is_clean() " << clean_state_clock.is_clean());
     if (clean_state_clock.is_clean() && (!task_start_clock.hasHappened() || clean_state_clock.discovery_zxid <= task_start_clock))
     {
         return true;
@@ -680,20 +683,20 @@ bool ClusterCopier::tryDropPartitionPiece(
         settings_push.replication_alter_partitions_sync = 2;
 
         LOG_DEBUG(log, "Execute distributed DROP PARTITION: " << query);
-        /// Limit number of max executing replicas to 1
+        /// We have to drop partition_piece on each replica
         UInt64 num_shards = executeQueryOnCluster(
                 cluster_push, query,
                 nullptr,
                 &settings_push,
-                PoolMode::GET_ONE,
-                ClusterExecutionMode::ON_EACH_SHARD,
-                1);
+                PoolMode::GET_MANY,
+                ClusterExecutionMode::ON_EACH_NODE);
 
-        if (num_shards < cluster_push->getShardCount())
-        {
-            LOG_INFO(log, "DROP PARTITION wasn't successfully executed on " << cluster_push->getShardCount() - num_shards << " shards");
-            return false;
-        }
+        UNUSED(num_shards);
+//        if (num_shards < cluster_push->getShardCount())
+//        {
+//            LOG_INFO(log, "DROP PARTITION wasn't successfully executed on " << cluster_push->getShardCount() - num_shards << " shards");
+//            return false;
+//        }
 
         /// Update the locking node
         if (!my_clock.is_stale())
@@ -717,7 +720,7 @@ bool ClusterCopier::tryDropPartitionPiece(
             zookeeper->set(current_shards_path, host_id);
     }
 
-    LOG_INFO(log, "Partition " << task_partition.name << " is safe for work now.");
+    LOG_INFO(log, "Partition " << task_partition.name <<  " piece " << toString(current_piece_number) << " is safe for work now.");
     return true;
 }
 
@@ -926,6 +929,9 @@ PartitionTaskStatus ClusterCopier::iterateThroughAllPiecesInPartition(const Conn
     {
         for (UInt64 try_num = 0; try_num < max_shard_partition_tries; ++try_num)
         {
+            LOG_INFO(log, "Attempt number " << try_num << " to process partition " << task_partition.name
+                          << " piece number " << piece_number << " on shard number " << task_partition.task_shard.numberInCluster()
+                          << " with index " << task_partition.task_shard.indexInCluster());
             res = processPartitionPieceTaskImpl(timeouts, task_partition, piece_number, is_unprioritized_task);
 
             /// Exit if success
@@ -1141,6 +1147,8 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
 
         if (count != 0)
         {
+            LOG_INFO(log, "Partition " << task_partition.name << " piece "
+                          << current_piece_number << "is not empty. In contains " << count << " rows.");
             Coordination::Stat stat_shards{};
             zookeeper->get(partition_piece.getPartitionPieceShardsPath(), &stat_shards);
 
@@ -1309,6 +1317,7 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         catch (...)
         {
             tryLogCurrentException(log, "An error occurred during copying, partition will be marked as dirty");
+            create_is_dirty_node(clean_state_clock);
             return PartitionTaskStatus::Error;
         }
     }
@@ -1379,6 +1388,33 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         {
             LOG_DEBUG(log, "Error while moving partition " << task_partition.name
                            << " piece " << toString(current_piece_number) << "to original table");
+            throw;
+        }
+
+
+        try
+        {
+            String query_deduplicate_ast_string;
+            if (!task_table.isReplicatedTable())
+            {
+                query_deduplicate_ast_string +=  " OPTIMIZE TABLE " + getQuotedTable(original_table) +
+                                                 " PARTITION " + task_partition.name + " DEDUPLICATE;";
+
+                LOG_DEBUG(log, "Executing OPTIMIZE DEDUPLICATE query: " << query_alter_ast_string);
+
+                UInt64 num_nodes = executeQueryOnCluster(
+                        task_table.cluster_push,
+                        query_deduplicate_ast_string,
+                        nullptr,
+                        &task_cluster->settings_push,
+                        PoolMode::GET_MANY);
+
+                LOG_INFO(log, "Number of shard that executed OPTIMIZE DEDUPLICATE query successfully : " << toString(num_nodes));
+            }
+        }
+        catch(...)
+        {
+            LOG_DEBUG(log, "Error while executing OPTIMIZE DEDUPLICATE partition " << task_partition.name << "in the original table");
             throw;
         }
 

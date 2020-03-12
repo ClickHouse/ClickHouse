@@ -70,10 +70,6 @@ def started_cluster():
 
 def print_destination_cluster(task, pattern):
     for anime in ['s1_0_0', 's1_0_1', 's1_1_0']:
-        a = task.cluster.instances[anime].query("SELECT count() FROM hits_piece_0")
-        b = task.cluster.instances[anime].query("SELECT count() FROM hits_piece_1")
-        c = task.cluster.instances[anime].query("SELECT count() FROM hits")
-        print(anime, a, b, int(a) + int(b), c)
         print(task.cluster.instances[anime].query("select partition, "
                                                   "name, database, table, "
                                                   "rows, hash_of_all_files, "
@@ -117,6 +113,12 @@ class Task1:
 
 
     def check(self):
+        for anime in ['s1_0_0', 's1_0_1', 's1_1_0']:
+            a = self.cluster.instances[anime].query("SELECT count() FROM hits_piece_0")
+            b = self.cluster.instances[anime].query("SELECT count() FROM hits_piece_1")
+            c = self.cluster.instances[anime].query("SELECT count() FROM hits")
+            print(anime, a, b, int(a) + int(b), c)
+
         print_destination_cluster(self, "hits")
         assert TSV(self.cluster.instances['s0_0_0'].query("SELECT count() FROM hits_all")) == TSV("1002\n")
 
