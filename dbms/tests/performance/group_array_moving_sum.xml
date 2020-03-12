@@ -1,6 +1,4 @@
 <test>
-
-
     <stop_conditions>
         <all_of>
             <total_time_ms>30000</total_time_ms>
@@ -14,26 +12,29 @@
         <max_memory_usage>30000000000</max_memory_usage>
     </settings>
 
-    <create_query>CREATE TABLE moving_sum_100m(k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
-    <create_query>CREATE TABLE moving_sum_1000m(k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <substitutions>
+        <substitution>
+            <name>millions</name>
+            <values>
+                <value>10</value>
+                <value>50</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>window</name>
+            <values>
+                <value>10</value>
+                <value>1000</value>
+                <value>10000</value>
+            </values>
+        </substitution>
+    </substitutions>
 
-    <fill_query>INSERT INTO moving_sum_100m SELECT number%100, rand() from numbers(100000000)</fill_query>
-    <fill_query>INSERT INTO moving_sum_1000m SELECT number%100, rand() from numbers(1000000000)</fill_query>
+    <create_query>create table moving_sum_{millions}m engine MergeTree order by k as select number % 100 k, rand() v from numbers_mt(1000000 * {millions})</create_query>
+    <create_query>optimize table moving_sum_{millions}m final</create_query>
 
-    <query tag='MovingSumSize10_1M'>SELECT k,groupArrayMovingSum(10)(v) FROM moving_sum_100m GROUP BY k FORMAT Null</query>
-    <query tag='MovingSumSize10WithKey_1M'>SELECT k,groupArrayMovingSum(10)(v) FROM moving_sum_100m WHERE k in (49, 50, 51) GROUP BY k FORMAT Null</query>
-    <query tag='MovingSumSize1000_1M'>SELECT k,groupArrayMovingSum(1000)(v) FROM moving_sum_100m GROUP BY k FORMAT Null</query>
-    <query tag='MovingSumSize1000WithKey_1M'>SELECT k,groupArrayMovingSum(1000)(v) FROM moving_sum_100m WHERE k in (49, 50, 51) GROUP BY k FORMAT Null</query>
-    <query tag='MovingSumSize10000_1M'>SELECT k,groupArrayMovingSum(10000)(v) FROM moving_sum_100m GROUP BY k FORMAT Null</query>
-    <query tag='MovingSumSize10000WithKey_1M'>SELECT k,groupArrayMovingSum(10000)(v) FROM moving_sum_100m WHERE k in (49, 50, 51) GROUP BY k FORMAT Null</query>
+    <query>select k, groupArrayMovingSum({window})(v) from moving_sum_{millions}m group by k format Null</query>
+    <query>select k, groupArrayMovingSum({window})(v) from moving_sum_{millions}m where k &lt; 10 group by k format Null</query>
 
-    <query tag='MovingSumSize10_10M'>SELECT k,groupArrayMovingSum(10)(v) FROM moving_sum_1000m GROUP BY k FORMAT Null</query>
-    <query tag='MovingSumSize10WithKey_10M'>SELECT k,groupArrayMovingSum(10)(v) FROM moving_sum_1000m WHERE k in (49, 50, 51) GROUP BY k FORMAT Null</query>
-    <query tag='MovingSumSize1000_10M'>SELECT k,groupArrayMovingSum(1000)(v) FROM moving_sum_1000m GROUP BY k FORMAT Null</query>
-    <query tag='MovingSumSize1000WithKey_10M'>SELECT k,groupArrayMovingSum(1000)(v) FROM moving_sum_1000m WHERE k in (49, 50, 51) GROUP BY k FORMAT Null</query>
-    <query tag='MovingSumSize10000_10M'>SELECT k,groupArrayMovingSum(10000)(v) FROM moving_sum_1000m GROUP BY k FORMAT Null</query>
-    <query tag='MovingSumSize10000WithKey_10M'>SELECT k,groupArrayMovingSum(10000)(v) FROM moving_sum_1000m WHERE k in (49, 50, 51) GROUP BY k FORMAT Null</query>
-
-    <drop_query>DROP TABLE IF EXISTS moving_sum_1000m</drop_query>
-    <drop_query>DROP TABLE IF EXISTS moving_sum_100m</drop_query>
+    <drop_query>drop table if exists moving_sum_{millions}m</drop_query>
 </test>

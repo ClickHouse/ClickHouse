@@ -69,7 +69,7 @@ SELECT
     toInt64(x),
     toFloat32(x),
     toFloat64(x)
-FROM numbers(100000000);
+FROM numbers_mt(1000000000);
     </fill_query>
 
     <query>SELECT count() FROM nums WHERE NOT ignore({op}({arg}, {arg}))</query>
