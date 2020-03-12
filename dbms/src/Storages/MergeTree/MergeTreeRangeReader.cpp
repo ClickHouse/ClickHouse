@@ -631,7 +631,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                 if (read_result.need_filter)
                 {
                     auto old_columns = block_before_prewhere.getColumns();
-                    filterColumns(old_columns, read_result.getFilter()->getData());
+                    filterColumns(old_columns, read_result.getFilterOriginal()->getData());
                     block_before_prewhere.setColumns(std::move(old_columns));
                 }
 
@@ -875,7 +875,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         if (result.getFilter())
         {
             /// filter might be shrinked while columns not
-            auto result_filter = result.getFilterOriginal() ? result.getFilterOriginal() : result.getFilter();
+            auto result_filter = result.getFilterOriginal();
             filterColumns(result.columns, result_filter->getData());
             result.need_filter = true;
 
