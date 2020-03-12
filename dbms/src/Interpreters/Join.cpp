@@ -377,10 +377,14 @@ void Join::setSampleBlock(const Block & block)
     if (!empty())
         return;
 
-    ColumnRawPtrs key_columns = JoinCommon::extractKeysForJoin(key_names_right, block, right_table_keys, sample_block_with_columns_to_add);
+    JoinCommon::splitAdditionalColumns(block, key_names_right, right_table_keys, sample_block_with_columns_to_add);
 
-    initRightBlockStructure(data->sample_block);
     initRequiredRightKeys();
+
+    JoinCommon::removeLowCardinalityInplace(right_table_keys);
+    initRightBlockStructure(data->sample_block);
+
+    ColumnRawPtrs key_columns = JoinCommon::extractKeysForJoin(right_table_keys, key_names_right);
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
     if (nullable_right_side)
