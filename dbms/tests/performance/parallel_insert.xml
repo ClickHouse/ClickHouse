@@ -1,5 +1,4 @@
 <test>
-
     <stop_conditions>
         <any_of>
             <iterations>2</iterations>
@@ -10,19 +9,28 @@
         <table_exists>default.hits_10m_single</table_exists>
     </preconditions>
 
-    <create_query>CREATE TABLE hits2 AS hits</create_query>
-    <create_query>ALTER TABLE hits2 MODIFY SETTING parts_to_delay_insert = 5000</create_query>
-    <create_query>ALTER TABLE hits2 MODIFY SETTING parts_to_throw_insert = 5000</create_query>
-    <fill_query>set max_insert_threads=8</fill_query>
-    <fill_query>system stop merges</fill_query>
+    <create_query>
+        CREATE TABLE hits2 ENGINE MergeTree
+        PARTITION BY toYYYYMM(EventDate)
+        ORDER BY (CounterID, EventDate, intHash32(UserID))
+        SAMPLE BY intHash32(UserID)
+        SETTINGS
+            parts_to_delay_insert = 5000,
+            parts_to_throw_insert = 5000
+        AS
+            -- don't select all columns to keep the run time down
+            SELECT CounterID, EventDate, UserID, Referer, WatchID
+            FROM hits_10m_single
+    </create_query>
+    <fill_query>SET max_insert_threads=8</fill_query>
+    <fill_query>SYSTEM STOP MERGES</fill_query>
 
-    <!--
-        The inserted data is not deterministic because of multi-threaded limit
-        without order by, but we assume it is uniform enough for the purpose of
-        this test.
-     -->
-    <query>INSERT INTO hits2 SELECT * FROM hits_10m_single LIMIT 2 * 1000 * 1000</query>
+    <query>
+        INSERT INTO hits2
+        SELECT CounterID, EventDate, UserID, Referer, WatchID
+        FROM hits_10m_single
+    </query>
 
-    <drop_query>system start merges</drop_query>
+    <drop_query>SYSTEM START MERGES</drop_query>
     <drop_query>DROP TABLE IF EXISTS hits2</drop_query>
 </test>
