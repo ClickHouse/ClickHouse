@@ -12,6 +12,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageDistributed.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
@@ -683,6 +684,12 @@ void DDLWorker::checkShardConfig(const String & table, const DDLTask & task, Sto
 {
     const auto & shard_info = task.cluster->getShardsInfo().at(task.host_shard_num);
     bool config_is_replicated_shard = shard_info.hasInternalReplication();
+
+    if (dynamic_cast<StorageDistributed *>(storage.get()))
+    {
+        LOG_TRACE(log, "Table '" + table + "' is distributed, skip checking config.");
+        return;
+    }
 
     if (storage->supportsReplication() && !config_is_replicated_shard)
     {
