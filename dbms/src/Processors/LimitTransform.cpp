@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 LimitTransform::LimitTransform(
     const Block & header_, size_t limit_, size_t offset_, size_t num_streams,
     bool always_read_till_end_, bool with_ties_,
