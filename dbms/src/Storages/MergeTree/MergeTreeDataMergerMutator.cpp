@@ -378,9 +378,8 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::selectAllPartsFromPar
 
     MergeTreeData::DataParts data_parts = data.getDataParts();
 
-    for (MergeTreeData::DataParts::iterator it = data_parts.cbegin(); it != data_parts.cend(); ++it)
+    for (const auto & current_part : data_parts)
     {
-        const MergeTreeData::DataPartPtr & current_part = *it;
         if (current_part->info.partition_id != partition_id)
             continue;
 
@@ -1211,7 +1210,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         new_data_part->partition.assign(source_part->partition);
         new_data_part->minmax_idx = source_part->minmax_idx;
         new_data_part->modification_time = time(nullptr);
-        new_data_part->bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->getFullPath());
+        new_data_part->bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->disk, new_data_part->getFullRelativePath());
     }
 
     return new_data_part;

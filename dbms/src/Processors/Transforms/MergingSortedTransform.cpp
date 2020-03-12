@@ -226,13 +226,7 @@ void MergingSortedTransform::merge(TSortingHeap & queue)
             return false;
         }
 
-        if (merged_data.mergedRows() >= max_block_size)
-        {
-            //std::cerr << "max_block_size reached\n";
-            return false;
-        }
-
-        return true;
+        return merged_data.mergedRows() < max_block_size;
     };
 
     /// Take rows in required order and put them into `merged_data`, while the rows are no more than `max_block_size`

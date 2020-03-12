@@ -261,18 +261,18 @@ void MergeTreeRangeReader::ReadResult::clear()
 
 void MergeTreeRangeReader::ReadResult::shrink(Columns & old_columns)
 {
-    for (size_t i = 0; i < old_columns.size(); ++i)
+    for (auto & column : old_columns)
     {
-        if (!old_columns[i])
+        if (!column)
             continue;
-        auto new_column = old_columns[i]->cloneEmpty();
+        auto new_column = column->cloneEmpty();
         new_column->reserve(total_rows_per_granule);
         for (size_t j = 0, pos = 0; j < rows_per_granule_original.size(); pos += rows_per_granule_original[j++])
         {
             if (rows_per_granule[j])
-                new_column->insertRangeFrom(*old_columns[i], pos, rows_per_granule[j]);
+                new_column->insertRangeFrom(*column, pos, rows_per_granule[j]);
         }
-        old_columns[i] = std::move(new_column);
+        column = std::move(new_column);
     }
 }
 
@@ -896,7 +896,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         }
 
         /// Check if the PREWHERE column is needed
-        if (result.columns.size())
+        if (!result.columns.empty())
         {
             if (prewhere->remove_prewhere_column)
                 result.columns.erase(result.columns.begin() + prewhere_column_pos);

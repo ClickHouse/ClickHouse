@@ -150,7 +150,7 @@ private:
 
     std::unique_ptr<ParallelMergeData> parallel_merge_data;
 
-    void mergeThread(ThreadGroupStatusPtr main_thread);
+    void mergeThread(ThreadGroupStatusPtr thread_group);
 
     void finalize();
 };

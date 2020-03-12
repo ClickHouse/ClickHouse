@@ -58,46 +58,46 @@ static void check(const std::string & query, const std::string & expected, const
 TEST(TransformQueryForExternalDatabase, InWithSingleElement)
 {
     check("SELECT column FROM test.table WHERE 1 IN (1)",
-          "SELECT \"column\" FROM \"test\".\"table\" WHERE 1",
+          R"(SELECT "column" FROM "test"."table" WHERE 1)",
           state().context, state().columns);
     check("SELECT column FROM test.table WHERE column IN (1, 2)",
-          "SELECT \"column\" FROM \"test\".\"table\" WHERE \"column\" IN (1, 2)",
+          R"(SELECT "column" FROM "test"."table" WHERE "column" IN (1, 2))",
           state().context, state().columns);
     check("SELECT column FROM test.table WHERE column NOT IN ('hello', 'world')",
-          "SELECT \"column\" FROM \"test\".\"table\" WHERE \"column\" NOT IN ('hello', 'world')",
+          R"(SELECT "column" FROM "test"."table" WHERE "column" NOT IN ('hello', 'world'))",
           state().context, state().columns);
 }
 
 TEST(TransformQueryForExternalDatabase, Like)
 {
     check("SELECT column FROM test.table WHERE column LIKE '%hello%'",
-          "SELECT \"column\" FROM \"test\".\"table\" WHERE \"column\" LIKE '%hello%'",
+          R"(SELECT "column" FROM "test"."table" WHERE "column" LIKE '%hello%')",
           state().context, state().columns);
     check("SELECT column FROM test.table WHERE column NOT LIKE 'w%rld'",
-          "SELECT \"column\" FROM \"test\".\"table\" WHERE \"column\" NOT LIKE 'w%rld'",
+          R"(SELECT "column" FROM "test"."table" WHERE "column" NOT LIKE 'w%rld')",
           state().context, state().columns);
 }
 
 TEST(TransformQueryForExternalDatabase, Substring)
 {
     check("SELECT column FROM test.table WHERE left(column, 10) = RIGHT(column, 10) AND SUBSTRING(column FROM 1 FOR 2) = 'Hello'",
-          "SELECT \"column\" FROM \"test\".\"table\"",
+          R"(SELECT "column" FROM "test"."table")",
           state().context, state().columns);
 }
 
 TEST(TransformQueryForExternalDatabase, MultipleAndSubqueries)
 {
     check("SELECT column FROM test.table WHERE 1 = 1 AND toString(column) = '42' AND column = 42 AND left(column, 10) = RIGHT(column, 10) AND column IN (1, 42) AND SUBSTRING(column FROM 1 FOR 2) = 'Hello' AND column != 4",
-          "SELECT \"column\" FROM \"test\".\"table\" WHERE 1 AND (\"column\" = 42) AND (\"column\" IN (1, 42)) AND (\"column\" != 4)",
+          R"(SELECT "column" FROM "test"."table" WHERE 1 AND ("column" = 42) AND ("column" IN (1, 42)) AND ("column" != 4))",
           state().context, state().columns);
     check("SELECT column FROM test.table WHERE toString(column) = '42' AND left(column, 10) = RIGHT(column, 10) AND column = 42",
-          "SELECT \"column\" FROM \"test\".\"table\" WHERE (\"column\" = 42)",
+          R"(SELECT "column" FROM "test"."table" WHERE ("column" = 42))",
           state().context, state().columns);
 }
 
 TEST(TransformQueryForExternalDatabase, Issue7245)
 {
     check("select apply_id from test.table where apply_type = 2 and create_time > addDays(toDateTime('2019-01-01 01:02:03'),-7) and apply_status in (3,4)",
-          "SELECT \"apply_id\", \"apply_type\", \"apply_status\", \"create_time\" FROM \"test\".\"table\" WHERE (\"apply_type\" = 2) AND (\"create_time\" > '2018-12-25 01:02:03') AND (\"apply_status\" IN (3, 4))",
+          R"(SELECT "apply_id", "apply_type", "apply_status", "create_time" FROM "test"."table" WHERE ("apply_type" = 2) AND ("create_time" > '2018-12-25 01:02:03') AND ("apply_status" IN (3, 4)))",
           state().context, state().columns);
 }

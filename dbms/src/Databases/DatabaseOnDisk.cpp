@@ -291,14 +291,14 @@ void DatabaseOnDisk::drop(const Context & context)
     Poco::File(getMetadataPath()).remove(false);
 }
 
-String DatabaseOnDisk::getObjectMetadataPath(const String & table_name) const
+String DatabaseOnDisk::getObjectMetadataPath(const String & object_name) const
 {
-    return getMetadataPath() + escapeForFileName(table_name) + ".sql";
+    return getMetadataPath() + escapeForFileName(object_name) + ".sql";
 }
 
-time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & table_name) const
+time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_name) const
 {
-    String table_metadata_path = getObjectMetadataPath(table_name);
+    String table_metadata_path = getObjectMetadataPath(object_name);
     Poco::File meta_file(table_metadata_path);
 
     if (meta_file.exists())

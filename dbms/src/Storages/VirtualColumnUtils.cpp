@@ -29,8 +29,8 @@ namespace
 /// Verifying that the function depends only on the specified columns
 bool isValidFunction(const ASTPtr & expression, const NameSet & columns)
 {
-    for (size_t i = 0; i < expression->children.size(); ++i)
-        if (!isValidFunction(expression->children[i], columns))
+    for (const auto & child : expression->children)
+        if (!isValidFunction(child, columns))
             return false;
 
     if (auto opt_name = IdentifierSemantic::getColumnName(expression))
@@ -45,8 +45,8 @@ void extractFunctions(const ASTPtr & expression, const NameSet & columns, std::v
     const auto * function = expression->as<ASTFunction>();
     if (function && function->name == "and")
     {
-        for (size_t i = 0; i < function->arguments->children.size(); ++i)
-            extractFunctions(function->arguments->children[i], columns, result);
+        for (const auto & child : function->arguments->children)
+            extractFunctions(child, columns, result);
     }
     else if (isValidFunction(expression, columns))
     {
@@ -57,7 +57,7 @@ void extractFunctions(const ASTPtr & expression, const NameSet & columns, std::v
 /// Construct a conjunction from given functions
 ASTPtr buildWhereExpression(const ASTs & functions)
 {
-    if (functions.size() == 0)
+    if (functions.empty())
         return nullptr;
     if (functions.size() == 1)
         return functions[0];

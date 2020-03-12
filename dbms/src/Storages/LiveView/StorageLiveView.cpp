@@ -396,7 +396,7 @@ void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, co
 
     auto table_id = storage->getStorageID();
     {
-        while (1)
+        while (true)
         {
             std::unique_lock lock(storage->no_users_thread_wakeup_mutex);
             if (!storage->no_users_thread_condition.wait_for(lock, std::chrono::seconds(timeout), [&] { return storage->no_users_thread_wakeup; }))

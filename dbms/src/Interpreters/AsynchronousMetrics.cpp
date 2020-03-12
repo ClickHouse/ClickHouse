@@ -237,7 +237,7 @@ void AsynchronousMetrics::update()
             size_t size = sizeof(value); \
             mallctl("stats." NAME, &value, &size, nullptr, 0); \
             set("jemalloc." NAME, value); \
-        } while (0);
+        } while (false);
 
         FOR_EACH_METRIC(GET_METRIC)
 

@@ -241,15 +241,12 @@ void ExpressionAnalyzer::analyzeAggregation()
             if (group_asts.empty())
             {
                 select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
-                has_aggregation = select_query->having() || aggregate_descriptions.size();
+                has_aggregation = select_query->having() || !aggregate_descriptions.empty();
             }
         }
 
-        for (size_t i = 0; i < aggregate_descriptions.size(); ++i)
-        {
-            AggregateDescription & desc = aggregate_descriptions[i];
+        for (const auto & desc : aggregate_descriptions)
             aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
-        }
     }
     else
     {
@@ -712,10 +709,10 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     ExpressionActionsChain::Step & step = chain.steps.back();
 
     ASTs asts = select_query->groupBy()->children;
-    for (size_t i = 0; i < asts.size(); ++i)
+    for (const auto & ast : asts)
     {
-        step.required_output.push_back(asts[i]->getColumnName());
-        getRootActions(asts[i], only_types, step.actions);
+        step.required_output.emplace_back(ast->getColumnName());
+        getRootActions(ast, only_types, step.actions);
     }
 
     return true;
@@ -728,13 +725,9 @@ void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(Expression
     initChain(chain, sourceColumns());
     ExpressionActionsChain::Step & step = chain.steps.back();
 
-    for (size_t i = 0; i < aggregate_descriptions.size(); ++i)
-    {
-        for (size_t j = 0; j < aggregate_descriptions[i].argument_names.size(); ++j)
-        {
-            step.required_output.push_back(aggregate_descriptions[i].argument_names[j]);
-        }
-    }
+    for (const auto & desc : aggregate_descriptions)
+        for (const auto & name : desc.argument_names)
+            step.required_output.emplace_back(name);
 
     /// Collect aggregates removing duplicates by node.getColumnName()
     /// It's not clear why we recollect aggregates (for query parts) while we're able to use previously collected ones (for entire query)
@@ -799,7 +792,7 @@ bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain
     for (auto & child : select_query->orderBy()->children)
     {
         const auto * ast = child->as<ASTOrderByElement>();
-        if (!ast || ast->children.size() < 1)
+        if (!ast || ast->children.empty())
             throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
         ASTPtr order_expression = ast->children.at(0);
         step.required_output.push_back(order_expression->getColumnName());
@@ -857,12 +850,12 @@ void SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain &
     NamesWithAliases result_columns;
 
     ASTs asts = select_query->select()->children;
-    for (size_t i = 0; i < asts.size(); ++i)
+    for (const auto & ast : asts)
     {
-        String result_name = asts[i]->getAliasOrColumnName();
+        String result_name = ast->getAliasOrColumnName();
         if (required_result_columns.empty() || required_result_columns.count(result_name))
         {
-            result_columns.emplace_back(asts[i]->getColumnName(), result_name);
+            result_columns.emplace_back(ast->getColumnName(), result_name);
             step.required_output.push_back(result_columns.back().second);
         }
     }
@@ -893,17 +886,17 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
     else
         asts = ASTs(1, query);
 
-    for (size_t i = 0; i < asts.size(); ++i)
+    for (const auto & ast : asts)
     {
-        std::string name = asts[i]->getColumnName();
+        std::string name = ast->getColumnName();
         std::string alias;
         if (add_aliases)
-            alias = asts[i]->getAliasOrColumnName();
+            alias = ast->getAliasOrColumnName();
         else
             alias = name;
         result_columns.emplace_back(name, alias);
         result_names.push_back(alias);
-        getRootActions(asts[i], false, actions);
+        getRootActions(ast, false, actions);
     }
 
     if (add_aliases)

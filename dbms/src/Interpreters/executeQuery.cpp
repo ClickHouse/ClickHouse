@@ -249,7 +249,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     BlockIO res;
     QueryPipeline & pipeline = res.pipeline;
 
-    String query_for_logging = "";
+    String query_for_logging;
 
     try
     {
