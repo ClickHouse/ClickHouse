@@ -21,7 +21,7 @@ namespace ErrorCodes
 namespace
 {
 
-static constexpr UInt8 uniq_upto_max_threshold = 100;
+constexpr UInt8 uniq_upto_max_threshold = 100;
 
 
 AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, const DataTypes & argument_types, const Array & params)

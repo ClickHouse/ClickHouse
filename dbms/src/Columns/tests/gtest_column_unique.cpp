@@ -13,7 +13,7 @@
 #include <vector>
 using namespace DB;
 
-TEST(column_unique, column_unique_unique_insert_range_Test)
+TEST(ColumnUnique, InsertRange)
 {
     std::unordered_map<String, size_t> ref_map;
     auto data_type = std::make_shared<DataTypeString>();
@@ -52,7 +52,7 @@ TEST(column_unique, column_unique_unique_insert_range_Test)
     }
 }
 
-TEST(column_unique, column_unique_unique_insert_range_with_overflow_Test)
+TEST(ColumnUnique, InsertRangeWithOverflow)
 {
     std::unordered_map<String, size_t> ref_map;
     auto data_type = std::make_shared<DataTypeString>();
@@ -147,7 +147,7 @@ void column_unique_unique_deserialize_from_arena_impl(ColumnType & column, const
     }
 }
 
-TEST(column_unique, column_unique_unique_deserialize_from_arena_String_Test)
+TEST(ColumnUnique, DeserializeFromArenaString)
 {
     auto data_type = std::make_shared<DataTypeString>();
     auto column_string = ColumnString::create();
@@ -165,7 +165,7 @@ TEST(column_unique, column_unique_unique_deserialize_from_arena_String_Test)
     column_unique_unique_deserialize_from_arena_impl(*column_string, *data_type);
 }
 
-TEST(column_unique, column_unique_unique_deserialize_from_arena_Nullable_String_Test)
+TEST(ColumnUnique, DeserializeFromArenaNullableString)
 {
     auto data_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
     auto column_string = ColumnString::create();
@@ -187,7 +187,7 @@ TEST(column_unique, column_unique_unique_deserialize_from_arena_Nullable_String_
     column_unique_unique_deserialize_from_arena_impl(*column, *data_type);
 }
 
-TEST(ColumnVector, correctness_of_replicate)
+TEST(ColumnVector, CorrectnessOfReplicate)
 {
     const auto column = ColumnUInt8::create();
 

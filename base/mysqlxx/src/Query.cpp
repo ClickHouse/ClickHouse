@@ -11,7 +11,7 @@
 namespace mysqlxx
 {
 
-Query::Query(Connection * conn_, const std::string & query_string) : std::ostream(0), conn(conn_)
+Query::Query(Connection * conn_, const std::string & query_string) : std::ostream(nullptr), conn(conn_)
 {
     /// Важно в случае, если Query используется не из того же потока, что Connection.
     mysql_thread_init();
@@ -27,7 +27,7 @@ Query::Query(Connection * conn_, const std::string & query_string) : std::ostrea
     imbue(std::locale::classic());
 }
 
-Query::Query(const Query & other) : std::ostream(0), conn(other.conn)
+Query::Query(const Query & other) : std::ostream(nullptr), conn(other.conn)
 {
     /// Важно в случае, если Query используется не из того же потока, что Connection.
     mysql_thread_init();

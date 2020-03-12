@@ -56,6 +56,6 @@
 <!-- 35. Кэш-промахи, осуществляемые из многих процессорных ядер.  -->
 <!-- <query>SELECT number % (intDiv(100000000, {THREADS})) AS k, count() FROM numbers_mt(1600000000) GROUP BY k</query> -->
 <!-- 46. Запрос, требующий много бесполезных копирований. -->
-<query>SELECT count() FROM zeros(100000000) WHERE NOT ignore(materialize('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx') AS s, concat(s,s,s,s,s,s,s,s,s,s) AS t, concat(t,t,t,t,t,t,t,t,t,t) AS u) SETTINGS max_block_size = 1000</query>
+<query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(materialize('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx') AS s, concat(s,s,s,s,s,s,s,s,s,s) AS t, concat(t,t,t,t,t,t,t,t,t,t) AS u) SETTINGS max_block_size = 1000</query>
 
 </test>
