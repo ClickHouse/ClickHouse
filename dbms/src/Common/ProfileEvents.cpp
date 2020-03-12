@@ -86,10 +86,10 @@
     M(ZooKeeperBytesSent, "") \
     M(ZooKeeperBytesReceived, "") \
     \
-    M(DistributedConnectionFailTry, "") \
+    M(DistributedConnectionFailTry, "Total count when distributed connection fails with retry") \
     M(DistributedConnectionMissingTable, "") \
     M(DistributedConnectionStaleReplica, "") \
-    M(DistributedConnectionFailAtAll, "") \
+    M(DistributedConnectionFailAtAll, "Total count when distributed connection fails after all retries finished") \
     \
     M(CompileAttempt, "Number of times a compilation of generated C++ code was initiated.") \
     M(CompileSuccess, "Number of times a compilation of generated C++ code was successful.") \
