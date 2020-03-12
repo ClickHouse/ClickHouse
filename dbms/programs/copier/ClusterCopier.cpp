@@ -152,13 +152,12 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
 
     for (const String & partition_name : filtered_partitions_names)
     {
-        task_shard->partition_tasks.emplace(partition_name, ShardPartition(*task_shard, partition_name, 10));
+        const size_t number_of_splits = task_table.number_of_splits;
+        task_shard->partition_tasks.emplace(partition_name, ShardPartition(*task_shard, partition_name, number_of_splits));
         task_shard->checked_partitions.emplace(partition_name, true);
 
         auto shard_partition_it = task_shard->partition_tasks.find(partition_name);
         PartitionPieces & shard_partition_pieces = shard_partition_it->second.pieces;
-
-        const size_t number_of_splits = task_table.number_of_splits;
 
         for (size_t piece_number = 0; piece_number < number_of_splits; ++piece_number)
         {
@@ -670,7 +669,11 @@ bool ClusterCopier::tryDropPartitionPiece(
                 }
         }
 
-        String query = "ALTER TABLE " + getQuotedTable(task_table.table_push) + "_piece_" + toString(current_piece_number);
+
+        DatabaseAndTableName original_table = task_table.table_push;
+        DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(current_piece_number));
+
+        String query = "ALTER TABLE " + getQuotedTable(helping_table);
         query += " DROP PARTITION " + task_partition.name + "";
 
         /// TODO: use this statement after servers will be updated up to 1.1.54310
@@ -764,13 +767,12 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
 
                     if (has_partition)
                     {
-                        shard->partition_tasks.emplace(partition_name, ShardPartition(*shard, partition_name, 10));
+                        const size_t number_of_splits = task_table.number_of_splits;
+                        shard->partition_tasks.emplace(partition_name, ShardPartition(*shard, partition_name, number_of_splits));
                         LOG_DEBUG(log, "Discovered partition " << partition_name << " in shard " << shard->getDescription());
                         /// To save references in the future.
                         auto shard_partition_it = shard->partition_tasks.find(partition_name);
                         PartitionPieces & shard_partition_pieces = shard_partition_it->second.pieces;
-
-                        const size_t number_of_splits = task_table.number_of_splits;
 
                         for (size_t piece_number = 0; piece_number < number_of_splits; ++piece_number)
                         {
