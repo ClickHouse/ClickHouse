@@ -80,8 +80,6 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
                 else
                     type->deserializeAsTextJSON(*columns[index], field_buf, format_settings);
                 break;
-            default:
-                __builtin_unreachable();
         }
     }
     catch (Exception & e)
