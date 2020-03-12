@@ -28,6 +28,8 @@ then
     cp -r ../docker/test/performance-comparison/config /output ||:
     rm /output/unit_tests_dbms ||:
     rm /output/clickhouse-odbc-bridge ||:
+
+    cp -r ../docker/test/performance-comparison /output/scripts ||:
 fi
 
 # May be set for split build or for performance test.

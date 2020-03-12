@@ -16,5 +16,5 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(visitParamExtractRaw(materialize({param}), 'myparam'))</query>
+    <query>SELECT count() FROM zeros(2000000) WHERE NOT ignore(visitParamExtractRaw(materialize({param}), 'myparam'))</query>
 </test>
