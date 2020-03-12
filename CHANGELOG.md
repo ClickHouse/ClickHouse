@@ -8,8 +8,6 @@
 [#9039](https://github.com/ClickHouse/ClickHouse/pull/9039) [(abyss7)](https://github.com/abyss7)
 * Fix order of ranges while reading from MergeTree table in one thread. Fixes [#8964](https://github.com/ClickHouse/ClickHouse/issues/8964). 
 [#9050](https://github.com/ClickHouse/ClickHouse/pull/9050) [(CurtizJ)](https://github.com/CurtizJ)
-* Change filetype for `docs/ja/introduction/distinctive_features.md`. 
-[#9104](https://github.com/ClickHouse/ClickHouse/pull/9104)  [(Felixoid)](https://github.com/Felixoid)
 * Fix possible segfault in `MergeTreeRangeReader`, while executing `PREWHERE`. Fixes [#9064](https://github.com/ClickHouse/ClickHouse/issues/9064). 
 [#9106](https://github.com/ClickHouse/ClickHouse/pull/9106) [(CurtizJ)](https://github.com/CurtizJ)
 * Fix `reinterpretAsFixedString` to return `FixedString` instead of `String`. 
@@ -32,11 +30,11 @@
 [#9227](https://github.com/ClickHouse/ClickHouse/pull/9227)  [(alesapin)](https://github.com/alesapin)
 * Fix mutations finalization, when already done mutation can have status is_done=0. 
 [#9217](https://github.com/ClickHouse/ClickHouse/pull/9217) [(alesapin)](https://github.com/alesapin)
-* Support processors pipeline for system.numbers and system.numbers_mt.
+* Support "Processors" pipeline for system.numbers and system.numbers_mt. This also fixes the bug when `max_execution_time` is not respected.
 [#7796](https://github.com/ClickHouse/ClickHouse/pull/7796)  [(KochetovNicolai)](https://github.com/KochetovNicolai)
 * Fix wrong counting of `DictCacheKeysRequestedFound` metric. 
 [#9411](https://github.com/ClickHouse/ClickHouse/pull/9411) [(nikitamikhaylov)](https://github.com/nikitamikhaylov)
-* Added a check for storage policy in `ATTACH PARTITION FROM`, `REPLACE PARTITION`, `MOVE TO TABLE` which could make data of part inaccessible after restart and prevent ClickHouse to start. 
+* Added a check for storage policy in `ATTACH PARTITION FROM`, `REPLACE PARTITION`, `MOVE TO TABLE` which otherwise could make data of part inaccessible after restart and prevent ClickHouse to start. 
 [#9383](https://github.com/ClickHouse/ClickHouse/pull/9383) [(excitoon)](https://github.com/excitoon)
 * Fixed UBSan report in `MergeTreeIndexSet`. This fixes [#9250](https://github.com/ClickHouse/ClickHouse/issues/9250) 
 [#9365](https://github.com/ClickHouse/ClickHouse/pull/9365) [(alexey-milovidov)](https://github.com/alexey-milovidov)
@@ -46,7 +44,7 @@
 [#9344](https://github.com/ClickHouse/ClickHouse/pull/9344) [(alexey-milovidov)](https://github.com/alexey-milovidov)
 * Fix the issue when the amount of free space is not calculated correctly if the data directory is mounted to a separate device. For default disk calculate the free space from data subdirectory. This fixes [#7441](https://github.com/ClickHouse/ClickHouse/issues/7441) 
 [#9257](https://github.com/ClickHouse/ClickHouse/pull/9257) [(millb)](https://github.com/millb)
-* Fix the issue when TLS connections may fail with the message `OpenSSL SSL_read: error:14094438:SSL routines:ssl3_read_bytes:tlsv1 alert internal error and SSL Exception: error:2400006E:random number generator::error retrieving entropy.` Update OpenSSL to upstream master. 
+* Fix the issue when TLS connections may fail with the message `OpenSSL SSL_read: error:14094438:SSL routines:ssl3_read_bytes:tlsv1 alert internal error and SSL Exception: error:2400006E:random number generator::error retrieving entropy.` Update OpenSSL to upstream master.
 [#8956](https://github.com/ClickHouse/ClickHouse/pull/8956) [(alexey-milovidov)](https://github.com/alexey-milovidov)
 * When executing `CREATE` query, fold constant expressions in storage engine arguments. Replace empty database name with current database. Fixes [#6508](https://github.com/ClickHouse/ClickHouse/issues/6508), [#3492](https://github.com/ClickHouse/ClickHouse/issues/3492). Also fix check for local address in ClickHouseDictionarySource. 
 [#9262](https://github.com/ClickHouse/ClickHouse/pull/9262) [(tabplubix)](https://github.com/tavplubix)
@@ -56,7 +54,9 @@
 [#9507](https://github.com/ClickHouse/ClickHouse/pull/9507) [(filimonov)](https://github.com/filimonov)
 * Fix bug leading to server termination when trying to use / drop `Kafka` table created with wrong parameters. Fixes [#9494](https://github.com/ClickHouse/ClickHouse/issues/9494). Incorporates [#9507](https://github.com/ClickHouse/ClickHouse/issues/9507). 
 [#9513](https://github.com/ClickHouse/ClickHouse/pull/9513) [(filimonov)](https://github.com/filimonov)
-* Add `force_deduplicate_childrens` option to reduce dataloss chance on insert into table with Materialized View. 
+
+#### New Feature
+* Add `force_deduplicate_children` option to reduce dataloss chance on insert into table with Materialized View. This new feature was added to the bugfix release by a special request from Altinity.
 [#9070](https://github.com/ClickHouse/ClickHouse/pull/9070) [(urykhy)](https://github.com/urykhy)
 
 
