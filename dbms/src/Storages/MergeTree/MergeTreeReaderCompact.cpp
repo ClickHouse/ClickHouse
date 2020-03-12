@@ -155,7 +155,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
     for (size_t i = 0; i < num_columns; ++i)
     {
         auto & column = mutable_columns[i];
-        if (column && column->size())
+        if (column && !column->empty())
             res_columns[i] = std::move(column);
         else
             res_columns[i] = nullptr;

@@ -18,7 +18,7 @@ public:
         size_t marks_count_,
         const MergeTreeIndexGranularityInfo & index_granularity_info_,
         bool save_marks_in_cache_,
-        size_t columns_num_in_mark_ = 1);
+        size_t columns_in_mark_ = 1);
 
     const MarkInCompressedFile & getMark(size_t row_index, size_t column_index = 0);
 

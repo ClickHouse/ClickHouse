@@ -8,9 +8,9 @@ double maxBias(std::vector<int> & counts, int reps)
 {
     double worst = 0;
 
-    for (int i = 0; i < static_cast<int>(counts.size()); i++)
+    for (auto count : counts)
     {
-        double c = static_cast<double>(counts[i]) / static_cast<double>(reps);
+        double c = static_cast<double>(count) / static_cast<double>(reps);
 
         double d = fabs(c * 2 - 1);
 
