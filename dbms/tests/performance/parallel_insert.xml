@@ -18,7 +18,7 @@
         without order by, but we assume it is uniform enough for the purpose of
         this test.
      -->
-    <query>INSERT INTO hits2 SELECT * FROM hits_10m_single LIMIT 2 * 1000 * 1000</query>
+    <query>INSERT INTO hits2 SELECT * FROM hits_10m_single LIMIT 1 * 1000 * 1000</query>
 
     <drop_query>DROP TABLE IF EXISTS hits2</drop_query>
 </test>
