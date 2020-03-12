@@ -6,32 +6,41 @@
 namespace DB
 {
 
+/// Implementation for LIMIT N OFFSET M
+/// This processor support multiple inputs and outputs (the same number).
+/// Each pair of input and output port works independently.
+/// The reason to have multiple ports is to be able to stop all sources when limit is reached, in a query like:
+///     ELECT * FROM system.numbers_mt WHERE number = 1000000 LIMIT 1
+///
+/// always_read_till_end - read all data from input ports even if limit was reached.
+/// with_ties, description - implementation of LIMIT WITH TIES. It works only for single port.
 class LimitTransform : public IProcessor
 {
 private:
 
     size_t limit;
     size_t offset;
-    size_t rows_read = 0; /// including the last read block
     bool always_read_till_end;
-
-    bool has_block = false;
-    bool block_processed = false;
-    Chunk current_chunk;
-
-    UInt64 rows_before_limit_at_least = 0;
 
     bool with_ties;
     const SortDescription description;
 
     Chunk previous_row_chunk;  /// for WITH TIES, contains only sort columns
-
     std::vector<size_t> sort_column_positions;
 
-    std::vector<InputPort *> input_ports;
-    std::vector<OutputPort *> output_ports;
+    size_t rows_read = 0; /// including the last read block
+    size_t rows_before_limit_at_least = 0;
 
-    std::vector<char> is_port_pair_finished;
+    struct PortsData
+    {
+        Chunk current_chunk;
+
+        InputPort * input_port = nullptr;
+        OutputPort * output_port = nullptr;
+        bool is_finished = false;
+    };
+
+    std::vector<PortsData> ports_data;
     size_t num_finished_port_pairs = 0;
 
     Chunk makeChunkWithPreviousRow(const Chunk & current_chunk, size_t row_num) const;
@@ -47,10 +56,10 @@ public:
     String getName() const override { return "Limit"; }
 
     Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
-    Status preparePair(InputPort &, OutputPort &);
-    void splitChunk();
+    Status preparePair(PortsData & data);
+    void splitChunk(PortsData & data);
 
-    UInt64 getRowsBeforeLimitAtLeast() const { return rows_before_limit_at_least; }
+    size_t getRowsBeforeLimitAtLeast() const { return rows_before_limit_at_least; }
 };
 
 }
