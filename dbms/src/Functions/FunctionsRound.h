@@ -394,8 +394,8 @@ public:
             case 1000000000000000000ULL: return applyImpl<1000000000000000000ULL>(in, out);
             case 10000000000000000000ULL: return applyImpl<10000000000000000000ULL>(in, out);
             default:
-                throw Exception("Logical error: unexpected 'scale' parameter passed to function IntegerRoundingComputation::compute",
-                    ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Unexpected 'scale' parameter passed to function",
+                    ErrorCodes::BAD_ARGUMENTS);
         }
     }
 };
