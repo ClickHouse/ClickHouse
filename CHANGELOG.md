@@ -56,7 +56,7 @@
 [#9513](https://github.com/ClickHouse/ClickHouse/pull/9513) [(filimonov)](https://github.com/filimonov)
 
 #### New Feature
-* Add `force_deduplicate_children` option to reduce dataloss chance on insert into table with Materialized View. This new feature was added to the bugfix release by a special request from Altinity.
+* Add `force_deduplicate_children` option to control the behaviour of idempotent inserts into tables with materialized views. This new feature was added to the bugfix release by a special request from Altinity.
 [#9070](https://github.com/ClickHouse/ClickHouse/pull/9070) [(urykhy)](https://github.com/urykhy)
 
 
