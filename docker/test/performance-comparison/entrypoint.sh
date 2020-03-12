@@ -17,7 +17,7 @@ function find_reference_sha
     # If not master, try to fetch pull/.../{head,merge}
     if [ "$PR_TO_TEST" != "0" ]
     then
-        git -C ch fetch origin "refs/pull/$PR_TO_TEST/*:pr/*"
+        git -C ch fetch origin "refs/pull/$PR_TO_TEST/*:refs/heads/pr/*"
     fi
 
     # Go back from the revision to be tested, trying to find the closest published
