@@ -14,7 +14,7 @@ namespace CurrentStatusInfo
     constexpr Metric END = __COUNTER__;
 
     std::mutex locks[END] {};
-    std::unordered_map<String, String> values[END] {};
+    std::unordered_map<String, Int8> values[END] {};
 
 
     const char * getName(Metric event)
