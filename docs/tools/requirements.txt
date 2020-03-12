@@ -4,7 +4,7 @@ backports-abc==0.5
 beautifulsoup4==4.8.2
 certifi==2019.11.28
 chardet==3.0.4
-click==7.0
+click==7.1.1
 CommonMark==0.9.1
 cssmin==0.2.0
 docutils==0.16
@@ -18,7 +18,6 @@ livereload==2.6.1
 Markdown==2.6.11
 MarkupSafe==1.1.1
 mkdocs==1.0.4
-Pygments==2.5.2
 python-slugify==1.2.6
 pytz==2019.3
 PyYAML==5.3

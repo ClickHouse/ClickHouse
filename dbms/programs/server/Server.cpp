@@ -698,7 +698,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             return socket_address;
         };
 
-        auto socket_bind_listen = [&](auto & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = 0)
+        auto socket_bind_listen = [&](auto & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false)
         {
                auto address = make_socket_address(host, port);
 #if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100
@@ -908,6 +908,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         if (servers.empty())
              throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
+        global_context->enableNamedSessions();
+
         for (auto & server : servers)
             server->start();
 
@@ -1019,8 +1021,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(
                 global_context->getConfigRef(), graphite_key, async_metrics));
         }
-
-        SessionCleaner session_cleaner(*global_context);
 
         waitForTerminationRequest();
     }

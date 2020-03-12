@@ -605,7 +605,7 @@ inline void writeXMLString(const StringRef & s, WriteBuffer & buf)
 template <typename IteratorSrc, typename IteratorDst>
 void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
 void formatUUID(const UInt8 * src16, UInt8 * dst36);
-void formatUUID(std::reverse_iterator<const UInt8 *> dst16, UInt8 * dst36);
+void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36);
 
 inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
 {
@@ -759,7 +759,8 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
             // Exactly MaxScale zeroes
             '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'
         };
-        buf.write(s, sizeof(s) - (MaxScale - scale));
+        buf.write(s, sizeof(s) - (MaxScale - scale)
+                  + (scale == 0 ? -1 : 0)); // if scale is zero, also remove the fractional_time_delimiter.
         return;
     }
     auto c = DecimalUtils::split(datetime64, scale);

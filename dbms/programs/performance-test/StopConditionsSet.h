@@ -30,7 +30,6 @@ struct StopConditionsSet
     StopCondition iterations;
     StopCondition min_time_not_changing_for_ms;
     StopCondition max_speed_not_changing_for_ms;
-    StopCondition average_speed_not_changing_for_ms;
 
     size_t initialized_count = 0;
     size_t fulfilled_count = 0;

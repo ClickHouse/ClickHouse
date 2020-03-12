@@ -73,14 +73,14 @@ struct ArrayCumSumNonNegativeImpl
 
         size_t pos = 0;
         Result accum_sum = 0;
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (auto offset : offsets)
         {
             // skip empty arrays
-            if (pos < offsets[i])
+            if (pos < offset)
             {
                 accum_sum = data[pos] > 0 ? data[pos] : Element(0);
                 res_values[pos] = accum_sum;
-                for (++pos; pos < offsets[i]; ++pos)
+                for (++pos; pos < offset; ++pos)
                 {
                     accum_sum = accum_sum + data[pos];
                     if (accum_sum < 0)

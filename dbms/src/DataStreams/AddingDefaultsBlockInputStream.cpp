@@ -140,7 +140,7 @@ void AddingDefaultsBlockInputStream::checkCalculated(const ColumnWithTypeAndName
         throw Exception("Mismach column types while adding defaults", ErrorCodes::TYPE_MISMATCH);
 }
 
-void AddingDefaultsBlockInputStream::mixNumberColumns(TypeIndex type_idx, MutableColumnPtr & column_mixed, const ColumnPtr & column_defs,
+void AddingDefaultsBlockInputStream::mixNumberColumns(TypeIndex type_idx, MutableColumnPtr & column_mixed, const ColumnPtr & col_defaults,
                                                       const BlockMissingValues::RowsBitMask & defaults_mask) const
 {
     auto call = [&](const auto & types) -> bool
@@ -159,7 +159,7 @@ void AddingDefaultsBlockInputStream::mixNumberColumns(TypeIndex type_idx, Mutabl
 
             typename ColVecType::Container & dst = col_read->getData();
 
-            if (auto const_col_defs = checkAndGetColumnConst<ColVecType>(column_defs.get()))
+            if (auto const_col_defs = checkAndGetColumnConst<ColVecType>(col_defaults.get()))
             {
                 FieldType value = checkAndGetColumn<ColVecType>(const_col_defs->getDataColumnPtr().get())->getData()[0];
 
@@ -169,7 +169,7 @@ void AddingDefaultsBlockInputStream::mixNumberColumns(TypeIndex type_idx, Mutabl
 
                 return true;
             }
-            else if (auto col_defs = checkAndGetColumn<ColVecType>(column_defs.get()))
+            else if (auto col_defs = checkAndGetColumn<ColVecType>(col_defaults.get()))
             {
                 auto & src = col_defs->getData();
                 for (size_t i = 0; i < defaults_mask.size(); ++i)

@@ -204,7 +204,7 @@ static Context getSubqueryContext(const Context & context)
     subquery_settings.max_result_rows = 0;
     subquery_settings.max_result_bytes = 0;
     /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
-    subquery_settings.extremes = 0;
+    subquery_settings.extremes = false;
     subquery_context.setSettings(subquery_settings);
     return subquery_context;
 }
@@ -235,23 +235,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         throw Exception("Too deep subqueries. Maximum: " + settings.max_subquery_depth.toString(),
             ErrorCodes::TOO_DEEP_SUBQUERIES);
 
-    JoinedTables joined_tables(getSelectQuery());
-    if (joined_tables.hasJoins())
-    {
-        CrossToInnerJoinVisitor::Data cross_to_inner;
-        CrossToInnerJoinVisitor(cross_to_inner).visit(query_ptr);
-
-        JoinToSubqueryTransformVisitor::Data join_to_subs_data{*context};
-        JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query_ptr);
-
-        joined_tables.reset(getSelectQuery());
-    }
-
-    max_streams = settings.max_threads;
-    ASTSelectQuery & query = getSelectQuery();
-
-    const ASTPtr & left_table_expression = joined_tables.leftTableExpression();
-
+    bool has_input = input || input_pipe;
     if (input)
     {
         /// Read from prepared input.
@@ -262,35 +246,51 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// Read from prepared input.
         source_header = input_pipe->getHeader();
     }
-    else if (joined_tables.isLeftTableSubquery())
-    {
-        /// Read from subquery.
-        interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-            left_table_expression, getSubqueryContext(*context), options.subquery());
 
-        source_header = interpreter_subquery->getSampleBlock();
-    }
-    else if (!storage)
-    {
-        if (joined_tables.isLeftTableFunction())
-        {
-            /// Read from table function. propagate all settings from initSettings(),
-            /// alternative is to call on current `context`, but that can potentially pollute it.
-            storage = getSubqueryContext(*context).executeTableFunction(left_table_expression);
-        }
-        else
-            storage = joined_tables.getLeftTableStorage(*context);
-    }
+    JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
+
+    if (!has_input && !storage)
+        storage = joined_tables.getLeftTableStorage();
 
     if (storage)
     {
         table_lock = storage->lockStructureForShare(false, context->getInitialQueryId());
         table_id = storage->getStorageID();
-
-        joined_tables.resolveTables(getSubqueryContext(*context), storage);
     }
-    else
-        joined_tables.resolveTables(getSubqueryContext(*context), source_header.getNamesAndTypesList());
+
+    if (has_input || !joined_tables.resolveTables())
+        joined_tables.makeFakeTable(storage, source_header);
+
+    /// Rewrite JOINs
+    if (!has_input && joined_tables.tablesCount() > 1)
+    {
+        CrossToInnerJoinVisitor::Data cross_to_inner{joined_tables.tablesWithColumns(), context->getCurrentDatabase()};
+        CrossToInnerJoinVisitor(cross_to_inner).visit(query_ptr);
+
+        JoinToSubqueryTransformVisitor::Data join_to_subs_data{*context};
+        JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query_ptr);
+
+        joined_tables.reset(getSelectQuery());
+        joined_tables.resolveTables();
+
+        if (storage && joined_tables.isLeftTableSubquery())
+        {
+            /// Rewritten with subquery. Free storage here locks here.
+            storage = {};
+            table_lock.release();
+            table_id = StorageID::createEmpty();
+        }
+    }
+
+    if (!has_input)
+    {
+        interpreter_subquery = joined_tables.makeLeftTableSubquery(options.subquery());
+        if (interpreter_subquery)
+            source_header = interpreter_subquery->getSampleBlock();
+    }
+
+    max_streams = settings.max_threads;
+    ASTSelectQuery & query = getSelectQuery();
 
     auto analyze = [&] (bool try_move_to_prewhere = true)
     {
@@ -330,11 +330,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (syntax_analyzer_result->rewrite_subqueries)
             {
                 /// remake interpreter_subquery when PredicateOptimizer rewrites subqueries and main table is subquery
-                if (joined_tables.isLeftTableSubquery())
-                    interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-                            left_table_expression,
-                            getSubqueryContext(*context),
-                            options.subquery());
+                interpreter_subquery = joined_tables.makeLeftTableSubquery(options.subquery());
             }
         }
 
@@ -1522,14 +1518,6 @@ void InterpreterSelectQuery::executeFetchColumns(
                 pipes.emplace_back(std::move(source));
             }
 
-            /// Pin sources for merge tree tables.
-//            bool pin_sources = dynamic_cast<const MergeTreeData *>(storage.get()) != nullptr;
-//            if (pin_sources)
-//            {
-//                for (size_t i = 0; i < pipes.size(); ++i)
-//                    pipes[i].pinSources(i);
-//            }
-
             for (auto & pipe : pipes)
                 pipe.enableQuota();
 
@@ -1562,19 +1550,19 @@ void InterpreterSelectQuery::executeFetchColumns(
 }
 
 
-void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter)
+void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter)
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<FilterBlockInputStream>(stream, expression, getSelectQuery().where()->getColumnName(), remove_fiter);
+        stream = std::make_shared<FilterBlockInputStream>(stream, expression, getSelectQuery().where()->getColumnName(), remove_filter);
     });
 }
 
-void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter)
+void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter)
 {
     pipeline.addSimpleTransform([&](const Block & block)
     {
-        return std::make_shared<FilterTransform>(block, expression, getSelectQuery().where()->getColumnName(), remove_fiter);
+        return std::make_shared<FilterTransform>(block, expression, getSelectQuery().where()->getColumnName(), remove_filter);
     });
 }
 
@@ -2545,9 +2533,8 @@ void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline, Block header)
     if (header.columns() > 1 && header.has("_dummy"))
         header.erase("_dummy");
 
-    for (size_t i = 0; i < pipeline.streams.size(); ++i)
+    for (auto & stream : pipeline.streams)
     {
-        auto & stream = pipeline.streams[i];
         auto stream_header = stream->getHeader();
         auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
 

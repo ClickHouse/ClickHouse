@@ -302,11 +302,8 @@ bool MergeTreeWhereOptimizer::isConstant(const ASTPtr & expr) const
 {
     const auto column_name = expr->getColumnName();
 
-    if (expr->as<ASTLiteral>()
-        || (block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column)))
-        return true;
-
-    return false;
+    return expr->as<ASTLiteral>()
+        || (block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column));
 }
 
 
@@ -331,10 +328,6 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr) const
         /// disallow GLOBAL IN, GLOBAL NOT IN
         if ("globalIn" == function_ptr->name
             || "globalNotIn" == function_ptr->name)
-            return true;
-
-        /// indexHint is a special function that it does not make sense to transfer to PREWHERE
-        if ("indexHint" == function_ptr->name)
             return true;
     }
     else if (auto opt_name = IdentifierSemantic::getColumnName(ptr))

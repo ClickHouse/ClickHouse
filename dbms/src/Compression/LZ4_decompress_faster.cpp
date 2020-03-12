@@ -30,7 +30,7 @@ namespace
 
 template <size_t N> [[maybe_unused]] void copy(UInt8 * dst, const UInt8 * src);
 template <size_t N> [[maybe_unused]] void wildCopy(UInt8 * dst, const UInt8 * src, UInt8 * dst_end);
-template <size_t N, bool USE_SHUFFLE> [[maybe_unused]] void copyOverlap(UInt8 * op, const UInt8 *& match, const size_t offset);
+template <size_t N, bool USE_SHUFFLE> [[maybe_unused]] void copyOverlap(UInt8 * op, const UInt8 *& match, size_t offset);
 
 
 inline void copy8(UInt8 * dst, const UInt8 * src)
@@ -38,7 +38,7 @@ inline void copy8(UInt8 * dst, const UInt8 * src)
     memcpy(dst, src, 8);
 }
 
-inline void wildCopy8(UInt8 * dst, const UInt8 * src, UInt8 * dst_end)
+inline void wildCopy8(UInt8 * dst, const UInt8 * src, const UInt8 * dst_end)
 {
     /// Unrolling with clang is doing >10% performance degrade.
 #if defined(__clang__)
@@ -52,7 +52,7 @@ inline void wildCopy8(UInt8 * dst, const UInt8 * src, UInt8 * dst_end)
     } while (dst < dst_end);
 }
 
-inline void copyOverlap8(UInt8 * op, const UInt8 *& match, const size_t offset)
+inline void copyOverlap8(UInt8 * op, const UInt8 *& match, size_t offset)
 {
     /// 4 % n.
     /// Or if 4 % n is zero, we use n.
@@ -223,7 +223,7 @@ inline void copy16(UInt8 * dst, const UInt8 * src)
 #endif
 }
 
-inline void wildCopy16(UInt8 * dst, const UInt8 * src, UInt8 * dst_end)
+inline void wildCopy16(UInt8 * dst, const UInt8 * src, const UInt8 * dst_end)
 {
     /// Unrolling with clang is doing >10% performance degrade.
 #if defined(__clang__)
@@ -360,7 +360,7 @@ inline void copy32(UInt8 * dst, const UInt8 * src)
 #endif
 }
 
-inline void wildCopy32(UInt8 * dst, const UInt8 * src, UInt8 * dst_end)
+inline void wildCopy32(UInt8 * dst, const UInt8 * src, const UInt8 * dst_end)
 {
     /// Unrolling with clang is doing >10% performance degrade.
 #if defined(__clang__)
@@ -428,7 +428,7 @@ void NO_INLINE decompressImpl(
 #if defined(__clang__)
     #pragma nounroll
 #endif
-    while (1)
+    while (true)
     {
         size_t length;
 
@@ -605,7 +605,7 @@ void statistics(
     const UInt8 * ip = reinterpret_cast<const UInt8 *>(source);
     UInt8 * op = reinterpret_cast<UInt8 *>(dest);
     UInt8 * const output_end = op + dest_size;
-    while (1)
+    while (true)
     {
         size_t length;
 
