@@ -5,7 +5,6 @@
     #include <sys/sysinfo.h>
 #endif
 #include <sched.h>
-#include <dlfcn.h>
 
 #include <random>
 
