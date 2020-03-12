@@ -832,7 +832,7 @@ const Block & Context::getScalar(const String & name) const
 
 Tables Context::getExternalTables() const
 {
-    assert(global_context != this);
+    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
     auto lock = getLock();
 
     Tables res;
@@ -855,7 +855,7 @@ Tables Context::getExternalTables() const
 
 void Context::addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
 {
-    assert(global_context != this);
+    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
     auto lock = getLock();
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
         throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
@@ -865,7 +865,7 @@ void Context::addExternalTable(const String & table_name, TemporaryTableHolder &
 
 bool Context::removeExternalTable(const String & table_name)
 {
-    assert(global_context != this);
+    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
     std::shared_ptr<TemporaryTableHolder> holder;
     {
         auto iter = external_tables_mapping.find(table_name);
@@ -880,14 +880,14 @@ bool Context::removeExternalTable(const String & table_name)
 
 void Context::addScalar(const String & name, const Block & block)
 {
-    assert(global_context != this);
+    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
     scalars[name] = block;
 }
 
 
 bool Context::hasScalar(const String & name) const
 {
-    assert(global_context != this);
+    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
     return scalars.count(name);
 }
 
@@ -2082,7 +2082,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (look_for_external_table)
     {
         /// Global context should not contain temporary tables
-        assert(global_context != this);
+        assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
 
         auto resolved_id = StorageID::createEmpty();
         auto try_resolve = [&](const Context & context) -> bool

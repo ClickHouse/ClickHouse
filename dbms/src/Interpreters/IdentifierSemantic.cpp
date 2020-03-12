@@ -1,6 +1,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/IdentifierSemantic.h>
+#include <Storages/StorageID.h>
 
 namespace DB
 {
@@ -136,14 +137,14 @@ std::optional<size_t> IdentifierSemantic::chooseTable(const ASTIdentifier & iden
     return tryChooseTable<TableWithColumnNamesAndTypes>(identifier, tables, ambiguous);
 }
 
-std::pair<String, String> IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
+StorageID IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
 {
     if (identifier.name_parts.size() > 2)
         throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
 
     if (identifier.name_parts.size() == 2)
-        return { identifier.name_parts[0], identifier.name_parts[1] };
-    return { "", identifier.name };
+        return { identifier.name_parts[0], identifier.name_parts[1], identifier.uuid };
+    return { "", identifier.name, identifier.uuid };
 }
 
 std::optional<String> IdentifierSemantic::extractNestedName(const ASTIdentifier & identifier, const String & table_name)
