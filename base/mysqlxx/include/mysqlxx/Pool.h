@@ -198,7 +198,7 @@ public:
         return description;
     }
 
-    void removeConnection(Connection * data);
+    void removeConnection(Connection * connection);
 
 protected:
     /// Number of MySQL connections which are created at launch.

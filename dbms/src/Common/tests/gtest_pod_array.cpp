@@ -4,7 +4,7 @@
 
 using namespace DB;
 
-TEST(Common, PODArray_Insert)
+TEST(Common, PODArrayInsert)
 {
     std::string str = "test_string_abacaba";
     PODArray<char> chars;

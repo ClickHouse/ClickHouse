@@ -207,7 +207,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const Context &, TableStructureW
 
 
 void StorageMergeTree::alter(
-    const AlterCommands & params,
+    const AlterCommands & commands,
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
@@ -215,32 +215,31 @@ void StorageMergeTree::alter(
 
     lockNewDataStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-    StorageInMemoryMetadata current_metadata = getInMemoryMetadata();
-
-    auto maybe_mutation_commands = params.getMutationCommands(current_metadata);
-    params.apply(current_metadata);
+    StorageInMemoryMetadata metadata = getInMemoryMetadata();
+    auto maybe_mutation_commands = commands.getMutationCommands(metadata);
+    commands.apply(metadata);
 
     /// This alter can be performed at metadata level only
-    if (params.isSettingsAlter())
+    if (commands.isSettingsAlter())
     {
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-        changeSettings(current_metadata.settings_ast, table_lock_holder);
+        changeSettings(metadata.settings_ast, table_lock_holder);
 
-        context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, current_metadata);
+        context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
     }
     else
     {
         {
             lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-            changeSettings(current_metadata.settings_ast, table_lock_holder);
+            changeSettings(metadata.settings_ast, table_lock_holder);
             /// Reinitialize primary key because primary key column types might have changed.
-            setProperties(current_metadata);
+            setProperties(metadata);
 
-            setTTLExpressions(current_metadata.columns.getColumnTTLs(), current_metadata.ttl_for_table_ast);
+            setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast);
 
-            context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, current_metadata);
+            context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
         }
 
         Context copy = context;

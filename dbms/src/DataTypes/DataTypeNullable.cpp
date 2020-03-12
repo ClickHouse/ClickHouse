@@ -207,7 +207,7 @@ static ReturnType safeDeserialize(
 void DataTypeNullable::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
     safeDeserialize(column, *nested_data_type,
-        [&istr] { bool is_null = 0; readBinary(is_null, istr); return is_null; },
+        [&istr] { bool is_null = false; readBinary(is_null, istr); return is_null; },
         [this, &istr] (IColumn & nested) { nested_data_type->deserializeBinary(nested, istr); });
 }
 

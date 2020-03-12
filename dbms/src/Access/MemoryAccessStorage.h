@@ -14,7 +14,6 @@ class MemoryAccessStorage : public IAccessStorage
 {
 public:
     MemoryAccessStorage(const String & storage_name_ = "memory");
-    ~MemoryAccessStorage() override;
 
     /// Sets all entities at once.
     void setAll(const std::vector<AccessEntityPtr> & all_entities);

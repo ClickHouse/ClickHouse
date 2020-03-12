@@ -500,12 +500,12 @@ void StorageLog::loadMarks()
         std::unique_ptr<ReadBuffer> marks_rb = disk->readFile(marks_file_path, 32768);
         while (!marks_rb->eof())
         {
-            for (size_t i = 0; i < files_by_index.size(); ++i)
+            for (auto & file : files_by_index)
             {
                 Mark mark;
                 readIntBinary(mark.rows, *marks_rb);
                 readIntBinary(mark.offset, *marks_rb);
-                files_by_index[i]->second.marks.push_back(mark);
+                file->second.marks.push_back(mark);
             }
         }
     }
