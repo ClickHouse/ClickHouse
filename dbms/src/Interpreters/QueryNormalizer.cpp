@@ -136,9 +136,7 @@ void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &
 
 static bool needVisitChild(const ASTPtr & child)
 {
-    if (child->as<ASTSelectQuery>() || child->as<ASTTableExpression>())
-        return false;
-    return true;
+    return !(child->as<ASTSelectQuery>() || child->as<ASTTableExpression>());
 }
 
 /// special visitChildren() for ASTSelectQuery

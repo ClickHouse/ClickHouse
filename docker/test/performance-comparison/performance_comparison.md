@@ -22,11 +22,18 @@ Should add inline comments there, because who reads the docs anyway. They must
 be collapsible and I am afraid of Javascript, so I'm going to do it later.
 
 ### How to run
-No convenient way -- run the entire docker container, specifying PR number (0 for master)
-and SHA of the commit to test:
+Run the entire docker container, specifying PR number (0 for master)
+and SHA of the commit to test. The reference revision is determined as a nearest
+ancestor testing release tag. It is possible to specify the reference revision and
+pull requests (0 for master) manually.
+
 ```
-docker run --network=host --volume=$(pwd)/workspace:/workspace --volume=$(pwd)/output:/output -e PR_TO_TEST={} -e SHA_TO_TEST={} yandex/clickhouse-performance-comparison
+docker run --network=host --volume=$(pwd)/workspace:/workspace --volume=$(pwd)/output:/output
+    [-e REF_PR={} -e REF_SHA={} -e ]
+    -e PR_TO_TEST={} -e SHA_TO_TEST={}
+    yandex/clickhouse-performance-comparison
 ```
+
 Then see the `report.html` in the `output` directory.
 
 There are some environment variables that influence what the test does:
@@ -43,7 +50,7 @@ More stages are available, e.g. restart servers or run the tests. See the code.
 
 #### Run a single test on the already configured servers
 ```
-docker/test/performance-comparison/perf.py --host localhost --port 9000 --host localhost --port 9000 --runs=1 dbms/tests/performance/logical_functions_small.xml
+docker/test/performance-comparison/perf.py --host=localhost --port=9000 --runs=1 dbms/tests/performance/logical_functions_small.xml
 ```
 
 ### References

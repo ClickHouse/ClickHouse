@@ -412,7 +412,7 @@ void ZooKeeperRequest::write(WriteBuffer & out) const
 
 struct ZooKeeperResponse : virtual Response
 {
-    virtual ~ZooKeeperResponse() {}
+    virtual ~ZooKeeperResponse() = default;
     virtual void readImpl(ReadBuffer &) = 0;
 };
 
@@ -480,7 +480,7 @@ struct ZooKeeperCloseResponse final : ZooKeeperResponse
 
 struct ZooKeeperCreateRequest final : CreateRequest, ZooKeeperRequest
 {
-    ZooKeeperCreateRequest() {}
+    ZooKeeperCreateRequest() = default;
     ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
 
     ZooKeeper::OpNum getOpNum() const override { return 1; }
@@ -512,7 +512,7 @@ struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
 
 struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
 {
-    ZooKeeperRemoveRequest() {}
+    ZooKeeperRemoveRequest() = default;
     ZooKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
 
     ZooKeeper::OpNum getOpNum() const override { return 2; }
@@ -570,7 +570,7 @@ struct ZooKeeperGetResponse final : GetResponse, ZooKeeperResponse
 
 struct ZooKeeperSetRequest final : SetRequest, ZooKeeperRequest
 {
-    ZooKeeperSetRequest() {}
+    ZooKeeperSetRequest() = default;
     ZooKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
 
     ZooKeeper::OpNum getOpNum() const override { return 5; }
@@ -613,7 +613,7 @@ struct ZooKeeperListResponse final : ListResponse, ZooKeeperResponse
 
 struct ZooKeeperCheckRequest final : CheckRequest, ZooKeeperRequest
 {
-    ZooKeeperCheckRequest() {}
+    ZooKeeperCheckRequest() = default;
     ZooKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
 
     ZooKeeper::OpNum getOpNum() const override { return 13; }

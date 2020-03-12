@@ -217,7 +217,7 @@ void ColumnDecimal<T>::gather(ColumnGathererStream & gatherer)
 template <typename T>
 void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 {
-    if (data.size() == 0)
+    if (data.empty())
     {
         min = NearestFieldType<T>(0, scale);
         max = NearestFieldType<T>(0, scale);

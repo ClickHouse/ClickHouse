@@ -186,7 +186,7 @@ private:
     public:
         LineNumberVM(std::string_view data, std::string_view compilationDirectory);
 
-        bool findAddress(uintptr_t address, Path & file, uint64_t & line);
+        bool findAddress(uintptr_t target, Path & file, uint64_t & line);
 
     private:
         void init();
@@ -210,8 +210,8 @@ private:
             // otherwise, 1-based index in the list of include directories
             uint64_t directoryIndex;
         };
-        // Read one FileName object, remove_prefix sp
-        static bool readFileName(std::string_view & sp, FileName & fn);
+        // Read one FileName object, remove_prefix program
+        static bool readFileName(std::string_view & program, FileName & fn);
 
         // Get file name at given index; may be in the initial table
         // (fileNames_) or defined using DW_LNE_define_file (and we reexecute
@@ -259,8 +259,8 @@ private:
         uint64_t discriminator_;
     };
 
-    // Read an abbreviation from a std::string_view, return true if at end; remove_prefix sp
-    static bool readAbbreviation(std::string_view & sp, DIEAbbreviation & abbr);
+    // Read an abbreviation from a std::string_view, return true if at end; remove_prefix section
+    static bool readAbbreviation(std::string_view & section, DIEAbbreviation & abbr);
 
     // Get abbreviation corresponding to a code, in the chunk starting at
     // offset in the .debug_abbrev section

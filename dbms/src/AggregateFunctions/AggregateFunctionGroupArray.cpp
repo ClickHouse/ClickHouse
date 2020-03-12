@@ -49,7 +49,7 @@ inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataType
 }
 
 
-static AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertUnary(name, argument_types);
 
@@ -83,8 +83,7 @@ static AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string 
         return createAggregateFunctionGroupArrayImpl<GroupArrayTrait<true, Sampler::NONE>>(argument_types[0], max_elems);
 }
 
-static AggregateFunctionPtr
-createAggregateFunctionGroupArraySample(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionGroupArraySample(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertUnary(name, argument_types);
 

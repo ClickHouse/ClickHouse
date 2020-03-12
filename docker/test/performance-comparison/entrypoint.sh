@@ -7,42 +7,78 @@ chmod 777 workspace output
 
 cd workspace
 
-# We will compare to the most recent testing tag in master branch, let's find it.
+# Fetch the repository to find and describe the compared revisions.
 rm -rf ch ||:
-git clone --branch master --single-branch --depth 50 --bare https://github.com/ClickHouse/ClickHouse ch
-(cd ch && git fetch origin "$SHA_TO_TEST:to-test")
-start_ref=to-test
-while :
-do
-    ref_tag=$(cd ch && git describe --match='v*-testing' --abbrev=0 --first-parent $start_ref)
-    echo Reference tag is "$ref_tag"
-    # We use annotated tags which have their own shas, so we have to further
-    # dereference the tag to get the commit it points to, hence the '~0' thing.
-    ref_sha=$(cd ch && git rev-parse "$ref_tag~0")
+time git clone --depth 50 --bare https://github.com/ClickHouse/ClickHouse ch
+git -C ch fetch origin "$SHA_TO_TEST"
 
-    # FIXME sometimes we have testing tags on commits without published builds --
-    # normally these are documentation commits. Loop to skip them.
-    if curl --fail --head "https://clickhouse-builds.s3.yandex.net/0/$ref_sha/performance/performance.tgz"
+function find_reference_sha
+{
+    # If not master, try to fetch pull/.../{head,merge}
+    if [ "$PR_TO_TEST" != "0" ]
     then
-        break
+        git -C ch fetch origin "refs/pull/$PR_TO_TEST/*:refs/heads/pr/*"
     fi
 
-    start_ref="$ref_sha~"
-done
+    # Go back from the revision to be tested, trying to find the closest published
+    # testing release.
+    start_ref="$SHA_TO_TEST"
+    # If we are testing a PR, and it merges with master successfully, we are
+    # building and testing not the nominal last SHA specified by pull/.../head
+    # and SHA_TO_TEST, but a revision that is merged with recent master, given
+    # by pull/.../merge ref.
+    if [ git -C ch rev-parse pr/merge &> /dev/null ]
+    then
+        start_ref=pr/merge
+    fi
+
+    while :
+    do
+        ref_tag=$(git -C ch describe --match='v*-testing' --abbrev=0 --first-parent "$start_ref")
+        echo Reference tag is "$ref_tag"
+        # We use annotated tags which have their own shas, so we have to further
+        # dereference the tag to get the commit it points to, hence the '~0' thing.
+        REF_SHA=$(git -C ch rev-parse "$ref_tag~0")
+
+        # FIXME sometimes we have testing tags on commits without published builds --
+        # normally these are documentation commits. Loop to skip them.
+        if curl --fail --head "https://clickhouse-builds.s3.yandex.net/0/$REF_SHA/performance/performance.tgz"
+        then
+            break
+        fi
+
+        start_ref="$REF_SHA~"
+    done
+
+    REF_PR=0
+}
+
+# Find reference revision if not specified explicitly
+if [ "$REF_SHA" == "" ]; then find_reference_sha; fi
+if [ "$REF_SHA" == "" ]; then echo Reference SHA is not specified ; exit 1 ; fi
+if [ "$REF_PR" == "" ]; then echo Reference PR is not specified ; exit 1 ; fi
 
 # Show what we're testing
 (
-    echo Reference SHA is "$ref_sha"
-    (cd ch && git log -1 --decorate "$ref_sha") ||:
+    echo Reference SHA is "$REF_SHA"
+    git -C ch log -1 --decorate "$REF_SHA" ||:
     echo
 ) | tee left-commit.txt
+
 (
     echo SHA to test is "$SHA_TO_TEST"
-    (cd ch && git log -1 --decorate "$SHA_TO_TEST") ||:
-    echo
+    git -C ch log -1 --decorate "$SHA_TO_TEST" ||:
+    if [ git -C ch rev-parse pr/merge &> /dev/null ]
+    then
+        echo
+        echo
+        echo Real tested commit is $(git -C ch rev-parse pr/merge)
+        git -C ch log -1 --decorate pr/merge
+    fi
 ) | tee right-commit.txt
 
-(cd ch && git diff --name-only "$SHA_TO_TEST" "$(git merge-base "$SHA_TO_TEST" master)" -- dbms/tests/performance) | tee changed-tests.txt
+# Prepare the list of changed tests for use by compare.sh
+git -C ch diff --name-only "$SHA_TO_TEST" "$(git -C ch merge-base "$SHA_TO_TEST"~ master)" -- dbms/tests/performance | tee changed-tests.txt
 
 # Set python output encoding so that we can print queries with Russian letters.
 export PYTHONIOENCODING=utf-8
@@ -56,7 +92,7 @@ set +e
 # It's probably at fault for using `kill 0` as an error handling mechanism,
 # but I can't be bothered to change this now.
 set -m
-time ../compare.sh 0 "$ref_sha" "$PR_TO_TEST" "$SHA_TO_TEST" 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
+time ../compare.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
 set +m
 
 # Stop the servers to free memory. Normally they are restarted before getting
