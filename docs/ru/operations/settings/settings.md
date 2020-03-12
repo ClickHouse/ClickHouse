@@ -552,7 +552,7 @@ log_query_threads=1
 
 ## max_insert_threads {#settings-max_insert_threads}
 
-Максимальное количество потоков для выполнения запроса `INSERT SELECT`. 
+Максимальное количество потоков для выполнения запроса `INSERT SELECT`.
 
 Возможные значения:
 

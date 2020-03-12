@@ -127,7 +127,7 @@ void TCPHandler::runImpl()
 
     connection_context.setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
 
-    while (1)
+    while (true)
     {
         /// We are waiting for a packet from the client. Thus, every `poll_interval` seconds check whether we need to shut down.
         {

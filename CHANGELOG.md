@@ -1,5 +1,65 @@
 ## ClickHouse release v20.1
 
+### ClickHouse release v20.1.6.30, 2020-03-05
+
+#### Bug Fix
+
+* Fix data incompatibility when compressed with `T64` codec.
+[#9039](https://github.com/ClickHouse/ClickHouse/pull/9039) [(abyss7)](https://github.com/abyss7)
+* Fix order of ranges while reading from MergeTree table in one thread. Fixes [#8964](https://github.com/ClickHouse/ClickHouse/issues/8964).
+[#9050](https://github.com/ClickHouse/ClickHouse/pull/9050) [(CurtizJ)](https://github.com/CurtizJ)
+* Fix possible segfault in `MergeTreeRangeReader`, while executing `PREWHERE`. Fixes [#9064](https://github.com/ClickHouse/ClickHouse/issues/9064).
+[#9106](https://github.com/ClickHouse/ClickHouse/pull/9106) [(CurtizJ)](https://github.com/CurtizJ)
+* Fix `reinterpretAsFixedString` to return `FixedString` instead of `String`.
+[#9052](https://github.com/ClickHouse/ClickHouse/pull/9052) [(oandrew)](https://github.com/oandrew)
+* Fix `joinGet` with nullable return types. Fixes [#8919](https://github.com/ClickHouse/ClickHouse/issues/8919)
+[#9014](https://github.com/ClickHouse/ClickHouse/pull/9014) [(amosbird)](https://github.com/amosbird)
+* Fix fuzz test and incorrect behaviour of bitTestAll/bitTestAny functions.
+[#9143](https://github.com/ClickHouse/ClickHouse/pull/9143) [(alexey-milovidov)](https://github.com/alexey-milovidov)
+* Fix the behaviour of match and extract functions when haystack has zero bytes. The behaviour was wrong when haystack was constant. Fixes [#9160](https://github.com/ClickHouse/ClickHouse/issues/9160)
+[#9163](https://github.com/ClickHouse/ClickHouse/pull/9163) [(alexey-milovidov)](https://github.com/alexey-milovidov)
+* Fixed execution of inversed predicates when non-strictly monotinic functional index is used. Fixes [#9034](https://github.com/ClickHouse/ClickHouse/issues/9034)
+[#9223](https://github.com/ClickHouse/ClickHouse/pull/9223) [(Akazz)](https://github.com/Akazz)
+* Allow to rewrite `CROSS` to `INNER JOIN` if there's `[NOT] LIKE` operator in `WHERE` section. Fixes [#9191](https://github.com/ClickHouse/ClickHouse/issues/9191)
+[#9229](https://github.com/ClickHouse/ClickHouse/pull/9229) [(4ertus2)](https://github.com/4ertus2)
+* Allow first column(s) in a table with Log engine be an alias.
+[#9231](https://github.com/ClickHouse/ClickHouse/pull/9231) [(abyss7)](https://github.com/abyss7)
+* Allow comma join with `IN()` inside. Fixes [#7314](https://github.com/ClickHouse/ClickHouse/issues/7314).
+[#9251](https://github.com/ClickHouse/ClickHouse/pull/9251) [(4ertus2)](https://github.com/4ertus2)
+* Improve `ALTER MODIFY/ADD` queries logic. Now you cannot `ADD` column without type, `MODIFY` default expression doesn't change type of column and `MODIFY` type doesn't loose default expression value. Fixes [#8669](https://github.com/ClickHouse/ClickHouse/issues/8669).
+[#9227](https://github.com/ClickHouse/ClickHouse/pull/9227)  [(alesapin)](https://github.com/alesapin)
+* Fix mutations finalization, when already done mutation can have status is_done=0.
+[#9217](https://github.com/ClickHouse/ClickHouse/pull/9217) [(alesapin)](https://github.com/alesapin)
+* Support "Processors" pipeline for system.numbers and system.numbers_mt. This also fixes the bug when `max_execution_time` is not respected.
+[#7796](https://github.com/ClickHouse/ClickHouse/pull/7796)  [(KochetovNicolai)](https://github.com/KochetovNicolai)
+* Fix wrong counting of `DictCacheKeysRequestedFound` metric.
+[#9411](https://github.com/ClickHouse/ClickHouse/pull/9411) [(nikitamikhaylov)](https://github.com/nikitamikhaylov)
+* Added a check for storage policy in `ATTACH PARTITION FROM`, `REPLACE PARTITION`, `MOVE TO TABLE` which otherwise could make data of part inaccessible after restart and prevent ClickHouse to start.
+[#9383](https://github.com/ClickHouse/ClickHouse/pull/9383) [(excitoon)](https://github.com/excitoon)
+* Fixed UBSan report in `MergeTreeIndexSet`. This fixes [#9250](https://github.com/ClickHouse/ClickHouse/issues/9250)
+[#9365](https://github.com/ClickHouse/ClickHouse/pull/9365) [(alexey-milovidov)](https://github.com/alexey-milovidov)
+* Fix possible datarace in BlockIO.
+[#9356](https://github.com/ClickHouse/ClickHouse/pull/9356) [(KochetovNicolai)](https://github.com/KochetovNicolai)
+* Support for `UInt64` numbers that don't fit in Int64 in JSON-related functions. Update `SIMDJSON` to master. This fixes [#9209](https://github.com/ClickHouse/ClickHouse/issues/9209)
+[#9344](https://github.com/ClickHouse/ClickHouse/pull/9344) [(alexey-milovidov)](https://github.com/alexey-milovidov)
+* Fix the issue when the amount of free space is not calculated correctly if the data directory is mounted to a separate device. For default disk calculate the free space from data subdirectory. This fixes [#7441](https://github.com/ClickHouse/ClickHouse/issues/7441)
+[#9257](https://github.com/ClickHouse/ClickHouse/pull/9257) [(millb)](https://github.com/millb)
+* Fix the issue when TLS connections may fail with the message `OpenSSL SSL_read: error:14094438:SSL routines:ssl3_read_bytes:tlsv1 alert internal error and SSL Exception: error:2400006E:random number generator::error retrieving entropy.` Update OpenSSL to upstream master.
+[#8956](https://github.com/ClickHouse/ClickHouse/pull/8956) [(alexey-milovidov)](https://github.com/alexey-milovidov)
+* When executing `CREATE` query, fold constant expressions in storage engine arguments. Replace empty database name with current database. Fixes [#6508](https://github.com/ClickHouse/ClickHouse/issues/6508), [#3492](https://github.com/ClickHouse/ClickHouse/issues/3492). Also fix check for local address in ClickHouseDictionarySource.
+[#9262](https://github.com/ClickHouse/ClickHouse/pull/9262) [(tabplubix)](https://github.com/tavplubix)
+* Fix segfault in `StorageMerge`, which can happen when reading from StorageFile.
+[#9387](https://github.com/ClickHouse/ClickHouse/pull/9387) [(tabplubix)](https://github.com/tavplubix)
+* Prevent losing data in `Kafka` in rare cases when exception happens after reading suffix but before commit. Fixes [#9378](https://github.com/ClickHouse/ClickHouse/issues/9378). Related: [#7175](https://github.com/ClickHouse/ClickHouse/issues/7175)
+[#9507](https://github.com/ClickHouse/ClickHouse/pull/9507) [(filimonov)](https://github.com/filimonov)
+* Fix bug leading to server termination when trying to use / drop `Kafka` table created with wrong parameters. Fixes [#9494](https://github.com/ClickHouse/ClickHouse/issues/9494). Incorporates [#9507](https://github.com/ClickHouse/ClickHouse/issues/9507).
+[#9513](https://github.com/ClickHouse/ClickHouse/pull/9513) [(filimonov)](https://github.com/filimonov)
+
+#### New Feature
+* Add `deduplicate_blocks_in_dependent_materialized_views` option to control the behaviour of idempotent inserts into tables with materialized views. This new feature was added to the bugfix release by a special request from Altinity.
+[#9070](https://github.com/ClickHouse/ClickHouse/pull/9070) [(urykhy)](https://github.com/urykhy)
+
+
 ### ClickHouse release v20.1.2.4, 2020-01-22
 
 ### Backward Incompatible Change
@@ -412,6 +472,23 @@ next request would interpret this info as the beginning of the next query causin
 * Added ANTLR4 grammar for ClickHouse SQL dialect [#7595](https://github.com/ClickHouse/ClickHouse/issues/7595) [#7596](https://github.com/ClickHouse/ClickHouse/pull/7596) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
 ## ClickHouse release v19.16
+
+#### Clickhouse release v19.16.14.65, 2020-03-05
+
+* Fix distributed subqueries incompatibility with older CH versions. Fixes [#7851](https://github.com/ClickHouse/ClickHouse/issues/7851)
+[(tabplubix)](https://github.com/tavplubix)
+* When executing `CREATE` query, fold constant expressions in storage engine arguments. Replace empty database name with current database. Fixes [#6508](https://github.com/ClickHouse/ClickHouse/issues/6508), [#3492](https://github.com/ClickHouse/ClickHouse/issues/3492). Also fix check for local address in `ClickHouseDictionarySource`.
+[#9262](https://github.com/ClickHouse/ClickHouse/pull/9262) [(tabplubix)](https://github.com/tavplubix)
+* Now background merges in `*MergeTree` table engines family preserve storage policy volume order more accurately.
+[#8549](https://github.com/ClickHouse/ClickHouse/pull/8549) ([Vladimir Chebotarev](https://github.com/excitoon))
+* Prevent losing data in `Kafka` in rare cases when exception happens after reading suffix but before commit. Fixes [#9378](https://github.com/ClickHouse/ClickHouse/issues/9378). Related: [#7175](https://github.com/ClickHouse/ClickHouse/issues/7175)
+[#9507](https://github.com/ClickHouse/ClickHouse/pull/9507) [(filimonov)](https://github.com/filimonov)
+* Fix bug leading to server termination when trying to use / drop `Kafka` table created with wrong parameters. Fixes [#9494](https://github.com/ClickHouse/ClickHouse/issues/9494). Incorporates [#9507](https://github.com/ClickHouse/ClickHouse/issues/9507).
+[#9513](https://github.com/ClickHouse/ClickHouse/pull/9513) [(filimonov)](https://github.com/filimonov)
+* Allow using `MaterializedView` with subqueries above `Kafka` tables.
+[#8197](https://github.com/ClickHouse/ClickHouse/pull/8197) ([filimonov](https://github.com/filimonov))
+* Add `force_deduplicate_childrens` option to reduce dataloss chance on insert into table with `Materialized View`.
+[#9070](https://github.com/ClickHouse/ClickHouse/pull/9070) [(urykhy)](https://github.com/urykhy)
 
 ### ClickHouse release v19.16.2.2, 2019-10-30
 
