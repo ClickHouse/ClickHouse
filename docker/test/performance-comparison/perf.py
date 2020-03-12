@@ -87,7 +87,6 @@ for c in connections:
         try:
             c.execute(q)
         except:
-            traceback.print_exc()
             pass
 
 report_stage_end('drop1')
