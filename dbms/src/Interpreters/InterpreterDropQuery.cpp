@@ -58,8 +58,7 @@ BlockIO InterpreterDropQuery::executeToTable(
 {
     if (is_temporary || database_name_.empty())
     {
-        auto & session_context = context.hasSessionContext() ? context.getSessionContext() : context;
-        if (session_context.isExternalTableExist(table_name))
+        if (context.tryResolveStorageID({"", table_name}, Context::ResolveExternal))
             return executeToTemporaryTable(table_name, kind);
     }
 

@@ -19,6 +19,7 @@ namespace ErrorCodes
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int DATABASE_NOT_EMPTY;
     extern const int DATABASE_ACCESS_DENIED;
+    extern const int LOGICAL_ERROR;
 }
 
 TemporaryTableHolder::TemporaryTableHolder(const Context & context_,

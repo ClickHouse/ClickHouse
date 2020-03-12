@@ -45,7 +45,7 @@ BlockInputStreamPtr InterpreterExistsQuery::executeImpl()
         if (exists_query->temporary)
         {
             context.checkAccess(AccessType::EXISTS, "", exists_query->table);
-            result = context.isExternalTableExist(exists_query->table);
+            result = !context.tryResolveStorageID({"", exists_query->table}, Context::ResolveExternal).empty();
         }
         else
         {
