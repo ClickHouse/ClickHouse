@@ -11,27 +11,27 @@
 
 namespace CurrentStatusInfo
 {
-    using Metric = size_t;
+    using Status = size_t;
     using Key = std::string;
 
-    const char * getName(Metric event);
-    const char * getDocumentation(Metric event);
-    const std::vector<std::pair<String, Int8>> & getAllPossibleValues(Metric event);
+    const char * getName(Status event);
+    const char * getDocumentation(Status event);
+    const std::vector<std::pair<String, Int8>> & getAllPossibleValues(Status event);
 
     extern std::unordered_map<String, Int8> values[];
     extern std::mutex locks[];
 
-    Metric end();
+    Status end();
 
-    inline void set(Metric metric, Key key, Int8 value)
+    inline void set(Status status, Key key, Int8 value)
     {
-        std::lock_guard<std::mutex> lock(locks[metric]);
-        values[metric][key] = value;
+        std::lock_guard<std::mutex> lock(locks[status]);
+        values[status][key] = value;
     }
 
-    inline void unset(Metric metric, Key key)
+    inline void unset(Status status, Key key)
     {
-        std::lock_guard<std::mutex> lock(locks[metric]);
-        values[metric].erase(key);
+        std::lock_guard<std::mutex> lock(locks[status]);
+        values[status].erase(key);
     }
 }

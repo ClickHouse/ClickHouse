@@ -103,8 +103,9 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
     {
         for (size_t i = 0, end = CurrentStatusInfo::end(); i < end; ++i)
         {
-            std::string metric_name{CurrentStatusInfo::getName(static_cast<CurrentStatusInfo::Metric>(i))};
-            std::string metric_doc{CurrentStatusInfo::getDocumentation(static_cast<CurrentStatusInfo::Metric>(i))};
+            std::lock_guard<std::mutex> lock(CurrentStatusInfo::locks[static_cast<CurrentStatusInfo::Status>(i)]);
+            std::string metric_name{CurrentStatusInfo::getName(static_cast<CurrentStatusInfo::Status>(i))};
+            std::string metric_doc{CurrentStatusInfo::getDocumentation(static_cast<CurrentStatusInfo::Status>(i))};
 
             replaceInvalidChars(metric_name);
             std::string key{current_status_prefix + metric_name};
@@ -114,7 +115,7 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
 
             for (const auto & value: CurrentStatusInfo::values[i])
             {
-                for (const auto & enum_value: CurrentStatusInfo::getAllPossibleValues(static_cast<CurrentStatusInfo::Metric>(i)))
+                for (const auto & enum_value: CurrentStatusInfo::getAllPossibleValues(static_cast<CurrentStatusInfo::Status>(i)))
                 {
                     DB::writeText(key, wb);
                     DB::writeChar('{', wb);
