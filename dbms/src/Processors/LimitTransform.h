@@ -61,4 +61,23 @@ public:
     UInt64 getRowsBeforeLimitAtLeast() const { return rows_before_limit_at_least; }
 };
 
+class LimitReachedCheckingTransform : public IProcessor
+{
+public:
+    LimitReachedCheckingTransform(
+            const Block & header_, size_t num_streams,
+            size_t limit, size_t offset, LimitTransform::LimitStatePtr limit_state_);
+
+    String getName() const override { return "Limit"; }
+
+    Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
+
+private:
+    size_t max_total_rows_to_read;
+    LimitTransform::LimitStatePtr limit_state;
+
+    std::vector<InputPort *> input_ports;
+    std::vector<OutputPort *> output_ports;
+};
+
 }
