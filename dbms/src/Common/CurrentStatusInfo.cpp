@@ -8,16 +8,16 @@
 
 namespace CurrentStatusInfo
 {
-    #define M(NAME, DOCUMENTATION, ENUM) extern const Metric NAME = __COUNTER__;
+    #define M(NAME, DOCUMENTATION, ENUM) extern const Status NAME = __COUNTER__;
         APPLY_FOR_STATUS(M)
     #undef M
-    constexpr Metric END = __COUNTER__;
+    constexpr Status END = __COUNTER__;
 
     std::mutex locks[END] {};
     std::unordered_map<String, Int8> values[END] {};
 
 
-    const char * getName(Metric event)
+    const char * getName(Status event)
     {
         static const char * strings[] =
         {
@@ -29,7 +29,7 @@ namespace CurrentStatusInfo
         return strings[event];
     }
 
-    const char * getDocumentation(Metric event)
+    const char * getDocumentation(Status event)
     {
         static const char * strings[] =
         {
@@ -41,7 +41,7 @@ namespace CurrentStatusInfo
         return strings[event];
     }
 
-    const std::vector<std::pair<String, Int8>> & getAllPossibleValues(Metric event)
+    const std::vector<std::pair<String, Int8>> & getAllPossibleValues(Status event)
     {
         static const std::vector<std::pair<String, Int8>> enum_values [] =
         {
@@ -52,7 +52,7 @@ namespace CurrentStatusInfo
         return enum_values[event];
     }
 
-    Metric end() { return END; }
+    Status end() { return END; }
 }
 
 #undef APPLY_FOR_STATUS

@@ -18,7 +18,7 @@
 
 namespace CurrentStatusInfo
 {
-    extern const Metric DictionaryStatus;
+    extern const Status DictionaryStatus;
 }
 
 
