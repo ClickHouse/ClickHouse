@@ -137,7 +137,7 @@ protected:
                 {
                     Tables external_tables = context.getSessionContext().getExternalTables();
 
-                    for (auto table : external_tables)
+                    for (auto & table : external_tables)
                     {
                         size_t src_index = 0;
                         size_t res_index = 0;

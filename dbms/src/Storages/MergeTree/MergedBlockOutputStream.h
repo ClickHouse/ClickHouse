@@ -27,8 +27,6 @@ public:
         size_t aio_threshold,
         bool blocks_are_granules_size = false);
 
-    std::string getPartPath() const;
-
     Block getHeader() const override { return storage.getSampleBlock(); }
 
     /// If the data is pre-sorted.

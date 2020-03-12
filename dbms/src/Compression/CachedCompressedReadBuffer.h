@@ -20,14 +20,11 @@ namespace DB
 class CachedCompressedReadBuffer : public CompressedReadBufferBase, public ReadBuffer
 {
 private:
-    const std::string path;
+    std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator;
     UncompressedCache * cache;
-    size_t buf_size;
-    size_t estimated_size;
-    size_t aio_threshold;
-    size_t mmap_threshold;
-
     std::unique_ptr<ReadBufferFromFileBase> file_in;
+
+    const std::string path;
     size_t file_pos;
 
     /// A piece of data from the cache, or a piece of read data that we put into the cache.
@@ -41,11 +38,7 @@ private:
     clockid_t clock_type {};
 
 public:
-    CachedCompressedReadBuffer(
-        const std::string & path_, UncompressedCache * cache_,
-        size_t estimated_size_, size_t aio_threshold_, size_t mmap_threshold_,
-        size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
-
+    CachedCompressedReadBuffer(const std::string & path, std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator, UncompressedCache * cache_);
 
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block);
 

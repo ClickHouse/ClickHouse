@@ -183,9 +183,7 @@ struct ColumnAliasesMatcher
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
     {
-        if (node->as<ASTQualifiedAsterisk>())
-            return false;
-        return true;
+        return !node->as<ASTQualifiedAsterisk>();
     }
 
     static void visit(const ASTPtr & ast, Data & data)

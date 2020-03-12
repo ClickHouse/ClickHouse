@@ -17,16 +17,14 @@ $ brew install cmake ninja libtool gettext
 ## Checkout ClickHouse Sources
 
 ```bash
-$ git clone --recursive git@github.com:yandex/ClickHouse.git
+$ git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 ```
 or
 ```bash
-$ git clone --recursive https://github.com/yandex/ClickHouse.git
+$ git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 
 $ cd ClickHouse
 ```
-
-For the latest stable version, switch to the `stable` branch.
 
 ## Build ClickHouse
 

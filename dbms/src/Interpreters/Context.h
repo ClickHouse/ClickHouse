@@ -296,7 +296,6 @@ public:
          ResolveCurrentDatabase = 2u,                                  /// Use current database
          ResolveOrdinary = ResolveGlobal | ResolveCurrentDatabase,     /// If database name is not specified, use current database
          ResolveExternal = 4u,                                         /// Try get external table
-         //ResolveExternalOrGlobal = ResolveGlobal | ResolveExternal,    /// If external table doesn't exist, database name must be specifies
          ResolveAll = ResolveExternal | ResolveOrdinary                /// If database name is not specified, try get external table,
                                                                        ///    if external table not found use current database.
     };

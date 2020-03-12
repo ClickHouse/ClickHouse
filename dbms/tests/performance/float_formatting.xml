@@ -17,9 +17,6 @@
        <substitution>
            <name>expr</name>
            <values>
-               <value>1 / rand()</value>
-               <value>rand() / 0xFFFFFFFF</value>
-               <value>0xFFFFFFFF / rand()</value>
                <value>toFloat64(number)</value>
                <value>toFloat64(number % 2)</value>
                <value>toFloat64(number % 10)</value>
@@ -33,8 +30,6 @@
                <value>number / 3</value>
                <value>number / 7</value>
                <value>number / 16</value>
-               <value>toFloat64(rand())</value>
-               <value>toFloat64(rand64())</value>
                <value>toFloat32(number)</value>
                <value>toFloat32(number % 2)</value>
                <value>toFloat32(number % 10)</value>
@@ -44,13 +39,24 @@
                <value>toFloat32(number % 100 + 0.5)</value>
                <value>toFloat32(number % 100 + 0.123)</value>
                <value>toFloat32(number % 1000 + 0.123456)</value>
-               <value>toFloat32(rand())</value>
-               <value>toFloat32(rand64())</value>
-               <value>reinterpretAsFloat32(reinterpretAsString(rand()))</value>
-               <value>reinterpretAsFloat64(reinterpretAsString(rand64()))</value>
            </values>
        </substitution>
+        <substitution>
+            <name>expr_zero</name>
+            <values>
+                <value>1 / rand()</value>
+                <value>rand() / 0xFFFFFFFF</value>
+                <value>0xFFFFFFFF / rand()</value>
+                <value>toFloat64(rand())</value>
+                <value>toFloat64(rand64())</value>
+                <value>toFloat32(rand())</value>
+                <value>toFloat32(rand64())</value>
+                <value>reinterpretAsFloat32(reinterpretAsString(rand()))</value>
+                <value>reinterpretAsFloat64(reinterpretAsString(rand64()))</value>
+            </values>
+        </substitution>
     </substitutions>
 
     <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(toString({expr}))</query>
+    <query>SELECT count() FROM zeros(1000000) WHERE NOT ignore(toString({expr_zero}))</query>
 </test>

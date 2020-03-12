@@ -287,7 +287,7 @@ bool StorageKafka::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
     auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
-    if (dependencies.size() == 0)
+    if (dependencies.empty())
         return true;
 
     // Check the dependencies are ready?
@@ -539,7 +539,7 @@ void registerStorageKafka(StorageFactory & factory)
             {
                 throw Exception("Row delimiter must be a char", ErrorCodes::BAD_ARGUMENTS);
             }
-            else if (arg.size() == 0)
+            else if (arg.empty())
             {
                 row_delimiter = '\0';
             }

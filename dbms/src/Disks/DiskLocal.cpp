@@ -67,6 +67,8 @@ public:
             return dir_path + iter.name();
     }
 
+    String name() const override { return iter.name(); }
+
 private:
     String dir_path;
     Poco::DirectoryIterator iter;
@@ -235,6 +237,21 @@ void DiskLocal::remove(const String & path)
 void DiskLocal::removeRecursive(const String & path)
 {
     Poco::File(disk_path + path).remove(true);
+}
+
+void DiskLocal::listFiles(const String & path, std::vector<String> & file_names)
+{
+    Poco::File(disk_path + path).list(file_names);
+}
+
+void DiskLocal::setLastModified(const String & path, const Poco::Timestamp & timestamp)
+{
+    Poco::File(disk_path + path).setLastModified(timestamp);
+}
+
+Poco::Timestamp DiskLocal::getLastModified(const String & path)
+{
+    return Poco::File(disk_path + path).getLastModified();
 }
 
 

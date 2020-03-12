@@ -111,7 +111,7 @@ public:
     /// Deterministically change seed to some other value. This can be used to generate more values than were in source.
     virtual void updateSeed();
 
-    virtual ~IModel() {}
+    virtual ~IModel() = default;
 };
 
 using ModelPtr = std::unique_ptr<IModel>;
@@ -550,7 +550,7 @@ private:
         return res;
     }
 
-    bool writeCodePoint(CodePoint code, char *& pos, char * end)
+    bool writeCodePoint(CodePoint code, char *& pos, const char * end)
     {
         size_t length
             = (code & 0xFF000000) ? 4
