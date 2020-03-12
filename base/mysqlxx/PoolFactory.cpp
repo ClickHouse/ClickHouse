@@ -38,7 +38,7 @@ static std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & co
     if (!shared)
         return "";
 
-    std::string entry_name = "";
+    std::string entry_name;
     std::string host = config.getString(config_name + ".host", "");
     std::string port = config.getString(config_name + ".port", "");
     std::string user = config.getString(config_name + ".user", "");

@@ -31,6 +31,7 @@ RUN apt-get update -y \
             lld-8 \
             libclang-8-dev \
             liblld-8-dev \
+            clang-tidy-8 \
             libicu-dev \
             libreadline-dev \
             ninja-build \

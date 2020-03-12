@@ -702,7 +702,7 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
                 columns.emplace_back(ColumnSizeTuple{c->second.data_compressed, type_size, c->second.data_uncompressed, source_column.name});
             }
         }
-        if (columns.size())
+        if (!columns.empty())
             required.insert(std::min_element(columns.begin(), columns.end())->name);
         else
             /// If we have no information about columns sizes, choose a column of minimum size of its data type.

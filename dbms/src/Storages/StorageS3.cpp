@@ -321,8 +321,8 @@ void registerStorageS3(StorageFactory & factory)
             throw Exception(
                 "Storage S3 requires 2 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        for (size_t i = 0; i < engine_args.size(); ++i)
-            engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.local_context);
 
         String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         Poco::URI uri (url);

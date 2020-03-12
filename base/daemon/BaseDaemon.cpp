@@ -593,7 +593,7 @@ void debugIncreaseOOMScore() {}
 void BaseDaemon::initialize(Application & self)
 {
     closeFDs();
-    task_manager.reset(new Poco::TaskManager);
+    task_manager = std::make_unique<Poco::TaskManager>();
     ServerApplication::initialize(self);
 
     /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!
@@ -778,7 +778,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     signal_pipe.setNonBlocking();
     signal_pipe.tryIncreaseSize(1 << 20);
 
-    signal_listener.reset(new SignalListener(*this));
+    signal_listener = std::make_unique<SignalListener>(*this);
     signal_listener_thread.start(*signal_listener);
 }
 
@@ -839,9 +839,7 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet& _options)
 
 bool isPidRunning(pid_t pid)
 {
-    if (getpgid(pid) >= 0)
-        return 1;
-    return 0;
+    return getpgid(pid) >= 0;
 }
 
 BaseDaemon::PID::PID(const std::string & file_)

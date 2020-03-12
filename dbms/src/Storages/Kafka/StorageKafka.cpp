@@ -292,7 +292,7 @@ bool StorageKafka::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
     auto dependencies = global_context.getDependencies(table_id);
-    if (dependencies.size() == 0)
+    if (dependencies.empty())
         return true;
 
     // Check the dependencies are ready?
@@ -324,7 +324,7 @@ void StorageKafka::threadFunc()
         auto dependencies = global_context.getDependencies(table_id);
 
         // Keep streaming as long as there are attached views and streaming is not cancelled
-        while (!stream_cancelled && num_created_consumers > 0 && dependencies.size() > 0)
+        while (!stream_cancelled && num_created_consumers > 0 && !dependencies.empty())
         {
             if (!checkDependencies(table_id))
                 break;
@@ -543,7 +543,7 @@ void registerStorageKafka(StorageFactory & factory)
             {
                 throw Exception("Row delimiter must be a char", ErrorCodes::BAD_ARGUMENTS);
             }
-            else if (arg.size() == 0)
+            else if (arg.empty())
             {
                 row_delimiter = '\0';
             }
