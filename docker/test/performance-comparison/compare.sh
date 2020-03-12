@@ -151,13 +151,22 @@ function restart
     echo right ok
 
     left/clickhouse client --port 9001 --query "select * from system.tables where database != 'system'"
+    left/clickhouse client --port 9001 --query "select * from system.build_options"
     right/clickhouse client --port 9002 --query "select * from system.tables where database != 'system'"
+    right/clickhouse client --port 9002 --query "select * from system.build_options"
 }
 
 function run_tests
 {
     # Just check that the script runs at all
     "$script_dir/perf.py" --help > /dev/null
+
+    # When testing commits from master, use the older test files. This allows the
+    # tests to pass even when we add new functions and tests for them, that are
+    # not supported in the old revision.
+    # When testing a PR, use the test files from the PR so that we can test their
+    # changes.
+    test_prefix=$(["$PR_TO_TEST" == "0"] && echo left || echo right)/performance
 
     for x in {test-times,skipped-tests}.tsv
     do
@@ -166,15 +175,20 @@ function run_tests
     done
 
     # FIXME remove some broken long tests
-    rm right/performance/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
+    rm "$test_prefix"/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
 
-    test_files=$(ls right/performance/*.xml)
+    test_files=$(ls "$test_prefix"*.xml)
 
-    # FIXME a quick crutch to bring the run time down for the flappy tests --
+    # FIXME a quick crutch to bring the run time down for the unstable tests --
     # if some performance tests xmls were changed in a PR, run only these ones.
     if [ "$PR_TO_TEST" != "0" ]
     then
-        test_files_override=$(sed 's/dbms\/tests/right/' changed-tests.txt)
+        # changed-test.txt prepared in entrypoint.sh from git diffs, because it
+        # has the cloned repo. Used to use rsync for that but it was really ugly
+        # and not always correct (e.g. when the reference SHA is really old and
+        # has some other differences to the tested SHA, besides the one introduced
+        # by the PR).
+        test_files_override=$(sed "s/dbms\/tests/$test_prefix/" changed-tests.txt)
         if [ "$test_files_override" != "" ]
         then
             test_files=$test_files_override
@@ -186,7 +200,7 @@ function run_tests
     then
         # I do want to expand the globs in the variable.
         # shellcheck disable=SC2086
-        test_files=$(ls right/performance/$CHPC_TEST_GLOB.xml)
+        test_files=$(ls "$test_prefix"/$CHPC_TEST_GLOB.xml)
     fi
 
     # Run the tests.
