@@ -286,7 +286,8 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
     }
 
     where_condition_str = config.getString(table_prefix + "where_condition", "");
-    if (!where_condition_str.empty()) {
+    if (!where_condition_str.empty())
+    {
         ParserExpressionWithOptionalAlias parser_expression(false);
         where_condition_ast = parseQuery(parser_expression, where_condition_str, 0);
 
@@ -297,28 +298,31 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
     String enabled_partitions_prefix = table_prefix + "enabled_partitions";
     has_enabled_partitions = config.has(enabled_partitions_prefix);
 
-    if (has_enabled_partitions) {
+    if (has_enabled_partitions)
+    {
         Strings keys;
         config.keys(enabled_partitions_prefix, keys);
 
-        if (keys.empty()) {
+        if (keys.empty())
+        {
             /// Parse list of partition from space-separated string
             String partitions_str = config.getString(table_prefix + "enabled_partitions");
             boost::trim_if(partitions_str, isWhitespaceASCII);
             boost::split(enabled_partitions, partitions_str, isWhitespaceASCII, boost::token_compress_on);
-        } else {
+        }
+        else
+        {
             /// Parse sequence of <partition>...</partition>
-            for (const String &key : keys) {
+            for (const String &key : keys)
+            {
                 if (!startsWith(key, "partition"))
-                    throw Exception("Unknown key " + key + " in " + enabled_partitions_prefix,
-                                    ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+                    throw Exception("Unknown key " + key + " in " + enabled_partitions_prefix, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 
                 enabled_partitions.emplace_back(config.getString(enabled_partitions_prefix + "." + key));
             }
         }
 
-        std::copy(enabled_partitions.begin(), enabled_partitions.end(),
-                  std::inserter(enabled_partitions_set, enabled_partitions_set.begin()));
+        std::copy(enabled_partitions.begin(), enabled_partitions.end(), std::inserter(enabled_partitions_set, enabled_partitions_set.begin()));
     }
 }
 
