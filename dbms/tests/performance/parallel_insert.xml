@@ -13,7 +13,12 @@
     <create_query>CREATE TABLE hits2 AS hits_10m_single</create_query>
     <fill_query>set max_insert_threads=8</fill_query>
 
-    <query>INSERT INTO hits2 SELECT * FROM hits_10m_single</query>
+    <!--
+        The inserted data is not deterministic because of multi-threaded limit
+        without order by, but we assume it is uniform enough for the purpose of
+        this test.
+     -->
+    <query>INSERT INTO hits2 SELECT * FROM hits_10m_single LIMIT 2 * 1000 * 1000</query>
 
     <drop_query>DROP TABLE IF EXISTS hits2</drop_query>
 </test>

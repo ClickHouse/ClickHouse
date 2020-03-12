@@ -40,8 +40,8 @@
     <query tag='FULL ON'>SELECT COUNT() FROM ints l FULL JOIN ints r ON l.i64 = r.i64 WHERE i32 = 200042</query>
     <query tag='FULL IN'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64 WHERE i32 IN(42, 100042, 200042, 300042, 400042)</query>
 
-    <query tag='CROSS'>SELECT COUNT() FROM ints l CROSS JOIN (SELECT number as i64 FROM numbers(4)) WHERE i32 = 42</query>
-    <query tag='CROSS KEY'>SELECT COUNT() FROM ints l CROSS JOIN (SELECT number as i64 FROM numbers(4)) WHERE i32 = 42</query>
+    <query tag='CROSS'>SELECT COUNT() FROM ints l CROSS JOIN (SELECT number as i64 FROM numbers(4)) r WHERE i32 = 42</query>
+    <query tag='CROSS KEY'>SELECT COUNT() FROM ints l CROSS JOIN (SELECT number as i64 FROM numbers(4)) r WHERE i32 = 42</query>
 
     <drop_query>DROP TABLE IF EXISTS ints</drop_query>
 </test>
