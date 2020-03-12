@@ -5,8 +5,6 @@
 #### Bug Fix 
 
 * Fix data incompatibility when compressed with `T64` codec. 
-[#9016](https://github.com/ClickHouse/ClickHouse/pull/9016) [(4ertus2)](https://github.com/4ertus2)
-* Enable OpenSSL support in Curl. 
 [#9039](https://github.com/ClickHouse/ClickHouse/pull/9039) [(abyss7)](https://github.com/abyss7)
 * Fix order of ranges while reading from MergeTree table in one thread. Fixes [#8964](https://github.com/ClickHouse/ClickHouse/issues/8964). 
 [#9050](https://github.com/ClickHouse/ClickHouse/pull/9050) [(CurtizJ)](https://github.com/CurtizJ)
