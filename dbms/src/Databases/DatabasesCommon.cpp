@@ -79,6 +79,14 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     res = it->second;
     tables.erase(it);
 
+    auto table_id = res->getStorageID();
+    if (table_id.hasUUID())
+    {
+        /// For now it's the only database, which contains storages with UUID
+        assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE);
+        DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
+    }
+
     return res;
 }
 
@@ -92,6 +100,13 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
 {
     if (!tables.emplace(table_name, table).second)
         throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+    auto table_id = table->getStorageID();
+    if (table_id.hasUUID())
+    {
+        /// For now it's the only database, which contains storages with UUID
+        assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE);
+        DatabaseCatalog::instance().addUUIDMapping(table_id.uuid, shared_from_this(), table);
+    }
 }
 
 void DatabaseWithOwnTablesBase::shutdown()

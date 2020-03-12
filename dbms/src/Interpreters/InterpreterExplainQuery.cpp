@@ -74,8 +74,8 @@ namespace
             {
                 if (const auto * identifier = expression.database_and_table_name->as<ASTIdentifier>())
                 {
-                    const auto & [database, table] = IdentifierSemantic::extractDatabaseAndTable(*identifier);
-                    auto table_id = data.context.resolveStorageID({database, table});
+                    auto table_id = IdentifierSemantic::extractDatabaseAndTable(*identifier);
+                    table_id = data.context.resolveStorageID(table_id);
                     const auto & storage = DatabaseCatalog::instance().getTable(table_id);
 
                     if (auto * storage_view = dynamic_cast<StorageView *>(storage.get()))

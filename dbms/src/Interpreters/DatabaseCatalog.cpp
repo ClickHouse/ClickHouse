@@ -156,26 +156,25 @@ DatabaseAndTable  DatabaseCatalog::getTableImpl(const StorageID & table_id, cons
         return {};
     }
 
-    //if (table_id.database_name == TEMPORARY_DATABASE && !table_id.hasUUID())
-    //{
-    //    if (exception)
-    //        exception->emplace("Direct access to `" + String(TEMPORARY_DATABASE) + "` database is not allowed.", ErrorCodes::DATABASE_ACCESS_DENIED);
-    //    return {};
-    //}
+    if (table_id.database_name == TEMPORARY_DATABASE && !table_id.hasUUID())
+    {
+        if (exception)
+            exception->emplace("Direct access to `" + String(TEMPORARY_DATABASE) + "` database is not allowed.", ErrorCodes::DATABASE_ACCESS_DENIED);
+        return {};
+    }
 
-    //if (table_id.hasUUID())
-    //{
-    //    auto db_and_table = tryGetByUUID(table_id.uuid);
-    //    if (!db_and_table.first || !db_and_table.second)
-    //    {
-    //        assert(!db_and_table.first && !db_and_table.second);
-    //        if (exception)
-    //            exception->emplace("Table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
-    //        return {};
-//
-    //    }
-    //    return db_and_table.second;
-    //}
+    if (table_id.hasUUID())
+    {
+        auto db_and_table = tryGetByUUID(table_id.uuid);
+        if (!db_and_table.first || !db_and_table.second)
+        {
+            assert(!db_and_table.first && !db_and_table.second);
+            if (exception)
+                exception->emplace("Table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            return {};
+        }
+        return db_and_table;
+    }
 
     DatabasePtr database;
     {
@@ -293,19 +292,17 @@ Databases DatabaseCatalog::getDatabases() const
 
 bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, const DB::Context & context) const
 {
-    //if (table_id.hasUUID())
-    //    return tryGetByUUID(table_id.uuid).second != nullptr;
-    //else
-    //{
-        DatabasePtr db;
-        {
-            std::lock_guard lock{databases_mutex};
-            auto iter = databases.find(table_id.database_name);
-            if (iter != databases.end())
-                db = iter->second;
-        }
-        return db && db->isTableExist(context, table_id.table_name);
-    //}
+    if (table_id.hasUUID())
+        return tryGetByUUID(table_id.uuid).second != nullptr;
+
+    DatabasePtr db;
+    {
+        std::lock_guard lock{databases_mutex};
+        auto iter = databases.find(table_id.database_name);
+        if (iter != databases.end())
+            db = iter->second;
+    }
+    return db && db->isTableExist(context, table_id.table_name);
 }
 
 void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id, const Context & context) const

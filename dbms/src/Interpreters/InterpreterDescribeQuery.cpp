@@ -86,8 +86,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         {
             const auto & identifier = table_expression.database_and_table_name->as<ASTIdentifier &>();
 
-            StorageID table_id = StorageID::createEmpty();
-            std::tie(table_id.database_name, table_id.table_name) = IdentifierSemantic::extractDatabaseAndTable(identifier);
+            StorageID table_id = IdentifierSemantic::extractDatabaseAndTable(identifier);
 
             table_id = context.resolveStorageID(table_id);
             context.checkAccess(AccessType::SHOW, table_id);

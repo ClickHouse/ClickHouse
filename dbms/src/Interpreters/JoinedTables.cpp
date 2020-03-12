@@ -68,7 +68,7 @@ StoragePtr JoinedTables::getLeftTableStorage()
 
     if (left_db_and_table)
     {
-        table_id = context.resolveStorageID(StorageID(left_db_and_table->database, left_db_and_table->table));
+        table_id = context.resolveStorageID(StorageID(left_db_and_table->database, left_db_and_table->table, left_db_and_table->uuid));
     }
     else /// If the table is not specified - use the table `system.one`.
     {

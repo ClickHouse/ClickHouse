@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <optional>
+#include <Core/UUID.h>
 
 
 namespace DB
@@ -24,6 +25,7 @@ struct DatabaseAndTableWithAlias
     String database;
     String table;
     String alias;
+    UUID uuid = UUIDHelpers::Nil;
 
     DatabaseAndTableWithAlias() = default;
     DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
@@ -39,7 +41,7 @@ struct DatabaseAndTableWithAlias
     /// Exactly the same table name
     bool same(const DatabaseAndTableWithAlias & db_table) const
     {
-        return database == db_table.database && table == db_table.table && alias == db_table.alias;
+        return database == db_table.database && table == db_table.table && alias == db_table.alias && uuid == db_table.uuid;
     }
 };
 

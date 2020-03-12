@@ -98,7 +98,6 @@ public:
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table);
 
-    //static String resolveDatabase(const String & database_name, const String & current_database);
     void assertDatabaseExists(const String & database_name) const;
     void assertDatabaseDoesntExist(const String & database_name) const;
 
@@ -148,7 +147,7 @@ private:
         mutable std::mutex mutex;
     };
 
-    static constexpr UInt64 bits_for_first_level = 8;
+    static constexpr UInt64 bits_for_first_level = 4;
     using UUIDToStorageMap = std::array<UUIDToStorageMapPart, 1ull << bits_for_first_level>;
 
     inline size_t getFirstLevelIdx(const UUID & uuid) const
@@ -162,7 +161,6 @@ private:
 
     ViewDependencies view_dependencies;                     /// Current dependencies
 
-    //const String default_database;
     Databases databases;
     UUIDToStorageMap uuid_map;
 

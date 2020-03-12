@@ -65,7 +65,7 @@ void StorageID::assertNotEmpty() const
 StorageID StorageID::resolveFromAST(const ASTPtr & table_identifier_node, const Context & context)
 {
     DatabaseAndTableWithAlias database_table(table_identifier_node);
-    return context.tryResolveStorageID({database_table.database, database_table.table});
+    return context.tryResolveStorageID({database_table.database, database_table.table, database_table.uuid});
 }
 
 String StorageID::getFullTableName() const
