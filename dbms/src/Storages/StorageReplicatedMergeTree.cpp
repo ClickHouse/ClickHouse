@@ -3246,6 +3246,8 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     /// This transaction may not happen, but it's OK, because on the next retry we will eventually create/update this node
     zookeeper->createOrUpdate(replica_path + "/metadata_version", std::to_string(metadata_version), zkutil::CreateMode::Persistent);
 
+    recalculateColumnSizes();
+
     return true;
 }
 
