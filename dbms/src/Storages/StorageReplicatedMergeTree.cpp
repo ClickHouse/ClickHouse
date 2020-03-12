@@ -4910,6 +4910,10 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         part_checksums.emplace_back(hash_hex);
     }
 
+    /// We have nothing to do - return
+    if (src_parts.empty())
+        return;
+
     ReplicatedMergeTreeLogEntryData entry;
     {
         auto src_table_id = src_data.getStorageID();
