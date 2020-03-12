@@ -29,7 +29,14 @@ Comments in C-style: from `/*` to `*/`. These comments can be multiline. Spaces 
 
 ## Keywords {#syntax-keywords}
 
-Keywords (such as `SELECT`) are not case-sensitive. Everything else (column names, functions, and so on), in contrast to standard SQL, is case-sensitive.
+Keywords are not case-sensitive when they correspond to:
+
+- SQL standard. For example, `SELECT = select`, `AS = as`.
+- Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime = datetime`.
+
+Case-sensitivity of data type names you can check in the `system.data_type_families` table.
+
+All other keywords (column names, functions, and so on), in contrast to standard SQL, are case-sensitive.
 
 Keywords are not reserved (they are just parsed as keywords in the corresponding context). If you use [identifiers](#syntax-identifiers) the same as the keywords, enclose them into quotes. For example, the query `SELECT "FROM" FROM table_name` is valid if the table `table_name` has column with the name `"FROM"`.
 
