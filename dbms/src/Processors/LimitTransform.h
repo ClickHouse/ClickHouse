@@ -31,6 +31,8 @@ private:
     size_t rows_read = 0; /// including the last read block
     size_t rows_before_limit_at_least = 0;
 
+    /// State of port's pair.
+    /// Chunks from different port pairs are not mixed for berret cache locality.
     struct PortsData
     {
         Chunk current_chunk;
