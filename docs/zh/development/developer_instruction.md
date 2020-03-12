@@ -78,6 +78,40 @@ git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 命令执行成功后，可以通过执行`git pull upstream master`，从ClickHouse的主分支中拉去更新。
 
 
+## Working with submodules
+
+Working with submodules in git could be painful. Next commands will help to manage it:
+
+```
+# ! each command accepts --recursive
+# Update remote URLs for submodules. Barely rare case
+git submodule sync
+# Add new submodules
+git submodule init
+# Update existing submodules to the current state
+git submodule update
+# Two last commands could be merged together
+git submodule update --init
+```
+
+The next commands would help you to reset all submodules to the initial state (!WARING! - any chenges inside will be deleted):
+
+```
+# Synchronizes submodules' remote URL with .gitmodules
+git submodule sync --recursive
+# Update the registered submodules with initialize not yet initialized
+git submodule update --init --recursive
+# Reset all changes done after HEAD
+git submodule foreach git reset --hard
+# Clean files from .gitignore
+git submodule foreach git clean -xfd
+# Repeat last 4 commands for all submodule
+git submodule foreach git submodule sync --recursive
+git submodule foreach git submodule update --init --recursive
+git submodule foreach git submodule foreach git reset --hard
+git submodule foreach git submodule foreach git clean -xfd
+```
+
 # 构建系统
 
 ClickHouse使用 CMake 和 Ninja 来构建系统。
@@ -245,7 +279,7 @@ ClickHouse的架构描述可以在此处查看：https://clickhouse.tech/docs/en
 
 编写测试用例：https://clickhouse.tech/docs/en/development/tests/
 
-任务列表：https://github.com/yandex/ClickHouse/blob/master/dbms/tests/instructions/easy_tasks_sorted_en.md
+任务列表：https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/instructions/easy_tasks_sorted_en.md
 
 
 # 测试数据

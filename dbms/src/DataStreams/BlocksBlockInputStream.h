@@ -12,6 +12,7 @@ limitations under the License. */
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
+#include <Processors/Sources/SourceWithProgress.h>
 
 
 namespace DB

@@ -14,6 +14,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -357,7 +362,7 @@ private:
     #define M(NAME) \
                 else if (first->type == AggregatedDataVariants::Type::NAME) \
                     params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data);
-        if (false) {}
+        if (false) {} // NOLINT
         APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
     #undef M
         else
@@ -539,7 +544,7 @@ void AggregatingTransform::initGenerate()
             variants.convertToTwoLevel();
 
         /// Flush data in the RAM to disk also. It's easier than merging on-disk and RAM data.
-        if (variants.size())
+        if (!variants.empty())
             params->aggregator.writeToTemporaryFile(variants);
     }
 
@@ -568,7 +573,7 @@ void AggregatingTransform::initGenerate()
                 if (cur_variants->isConvertibleToTwoLevel())
                     cur_variants->convertToTwoLevel();
 
-                if (cur_variants->size())
+                if (!cur_variants->empty())
                     params->aggregator.writeToTemporaryFile(*cur_variants);
             }
         }

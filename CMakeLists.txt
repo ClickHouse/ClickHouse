@@ -17,6 +17,7 @@ project(ClickHouse)
 include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
+include (cmake/analysis.cmake)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
@@ -88,8 +89,7 @@ endif()
 
 include (cmake/sanitize.cmake)
 
-
-if (CMAKE_GENERATOR STREQUAL "Ninja")
+if (CMAKE_GENERATOR STREQUAL "Ninja" AND NOT DISABLE_COLORED_BUILD)
     # Turn on colored output. https://github.com/ninja-build/ninja/wiki/FAQ
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-color=always")
@@ -215,6 +215,10 @@ if (COMPILER_CLANG)
     # TODO investigate that
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
+    if (OS_DARWIN)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,-U,_inside_main")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-U,_inside_main")
+    endif()
 endif ()
 
 option (ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
@@ -226,13 +230,15 @@ else ()
     set(NOT_UNBUNDLED 1)
 endif ()
 
-# Using system libs can cause a lot of warnings in includes (on macro expansion).
 if (UNBUNDLED OR NOT (OS_LINUX OR OS_DARWIN) OR ARCH_32)
-    option (NO_WERROR "Disable -Werror compiler option" ON)
+    # Using system libs can cause a lot of warnings in includes (on macro expansion).
+    option (WERROR "Enable -Werror compiler option" OFF)
+else ()
+    option (WERROR "Enable -Werror compiler option" ON)
+endif ()
 
-    if (NOT NO_WERROR)
-        add_warning(error)
-    endif ()
+if (WERROR)
+    add_warning(error)
 endif ()
 
 # Make this extra-checks for correct library dependencies.
@@ -278,24 +284,6 @@ if (USE_INCLUDE_WHAT_YOU_USE)
     if (${CMAKE_VERSION} VERSION_LESS "3.3.0")
         message(FATAL_ERROR "include-what-you-use requires CMake version at least 3.3.")
     endif()
-endif ()
-
-# Using clang-tidy static analyzer http://mariobadr.com/using-clang-tidy-with-cmake-36.html https://cmake.org/cmake/help/v3.6/prop_tgt/LANG_CLANG_TIDY.html
-option (ENABLE_CLANG_TIDY "Use 'clang-tidy' static analyzer" OFF)
-if (ENABLE_CLANG_TIDY)
-    if (${CMAKE_VERSION} VERSION_LESS "3.6.0")
-        message(FATAL_ERROR "clang-tidy requires CMake version at least 3.6.")
-    endif()
-    find_program (CLANG_TIDY_EXE NAMES "clang-tidy" DOC "Path to clang-tidy executable")
-    if (NOT CLANG_TIDY_EXE)
-        set (USE_CLANG_TIDY 0)
-        message (STATUS "clang-tidy not found.")
-    else ()
-        set (USE_CLANG_TIDY 1)
-        message (STATUS "clang-tidy found: ${CLANG_TIDY_EXE}")
-        set (DO_CLANG_TIDY "${CLANG_TIDY_EXE}" "-checks=*,-clang-analyzer-alpha.*")
-        # You can enable it within a directory by: set (CMAKE_CXX_CLANG_TIDY "${DO_CLANG_TIDY}")
-    endif ()
 endif ()
 
 if (ENABLE_TESTS)

@@ -12,7 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 class ColumnLowCardinality final : public COWHelper<IColumn, ColumnLowCardinality>
@@ -266,7 +266,7 @@ private:
 
         /// Dictionary may be shared for several mutable columns.
         /// Immutable columns may have the same column unique, which isn't necessarily shared dictionary.
-        void setShared(const ColumnPtr & dictionary);
+        void setShared(const ColumnPtr & column_unique_);
         bool isShared() const { return shared; }
 
         /// Create new dictionary with only keys that are mentioned in positions.
@@ -285,7 +285,6 @@ private:
     void compactInplace();
     void compactIfSharedDictionary();
 };
-
 
 
 }

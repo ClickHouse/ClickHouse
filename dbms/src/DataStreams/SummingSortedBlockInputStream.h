@@ -15,7 +15,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -148,7 +147,7 @@ private:
     void insertCurrentRowIfNeeded(MutableColumns & merged_columns);
 
     /// Returns true if merge result is not empty
-    bool mergeMap(const MapDescription & map, Row & row, SortCursor & cursor);
+    bool mergeMap(const MapDescription & desc, Row & row, SortCursor & cursor);
 
     // Add the row under the cursor to the `row`.
     void addRow(SortCursor & cursor);

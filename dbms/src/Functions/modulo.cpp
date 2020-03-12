@@ -16,23 +16,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_DIVISION;
 }
 
-template <typename A, typename B>
-struct ModuloImpl
-{
-    using ResultType = typename NumberTraits::ResultOfModulo<A, B>::Type;
-    static const constexpr bool allow_fixed_string = false;
-
-    template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
-    {
-        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
-        return typename NumberTraits::ToInteger<A>::Type(a) % typename NumberTraits::ToInteger<B>::Type(b);
-    }
-
-#if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
-#endif
-};
+/// Optimizations for integer modulo by a constant.
 
 template <typename A, typename B>
 struct ModuloByConstantImpl
@@ -41,7 +25,7 @@ struct ModuloByConstantImpl
     using ResultType = typename ModuloImpl<A, B>::ResultType;
     static const constexpr bool allow_fixed_string = false;
 
-    static void vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
+    static NO_INLINE void vector_constant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
         if (unlikely(b == 0))
             throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
@@ -51,9 +35,8 @@ struct ModuloByConstantImpl
 
         if (unlikely((std::is_signed_v<B> && b == -1) || b == 1))
         {
-            size_t size = a.size();
             for (size_t i = 0; i < size; ++i)
-                c[i] = 0;
+                dst[i] = 0;
             return;
         }
 
@@ -62,11 +45,6 @@ struct ModuloByConstantImpl
         libdivide::divider<A> divider(b);
 
         /// Here we failed to make the SSE variant from libdivide give an advantage.
-        size_t size = a.size();
-
-        /// strict aliasing optimization for char like arrays
-        auto * __restrict src = a.data();
-        auto * __restrict dst = c.data();
 
         if (b & (b - 1))
         {

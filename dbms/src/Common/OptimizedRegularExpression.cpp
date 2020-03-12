@@ -361,7 +361,7 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
         {
             match.offset = pos - haystack;
             match.length = required_substring.size();
-            return 1;
+            return true;
         }
     }
     else
@@ -409,7 +409,10 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
     if (is_trivial)
     {
         if (required_substring.empty())
+        {
+            matches.emplace_back(Match{0, 0});
             return 1;
+        }
 
         const UInt8 * pos;
         if (is_case_insensitive)

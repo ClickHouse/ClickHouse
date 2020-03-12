@@ -15,19 +15,19 @@ struct ASTArrayJoin;
 class QueryAliasesMatcher
 {
 public:
-    using Visitor = InDepthNodeVisitor<QueryAliasesMatcher, false>;
+    using Visitor = ConstInDepthNodeVisitor<QueryAliasesMatcher, false>;
 
     struct Data
     {
         Aliases & aliases;
     };
 
-    static void visit(ASTPtr & ast, Data & data);
-    static bool needChildVisit(ASTPtr & node, const ASTPtr & child);
+    static void visit(const ASTPtr & ast, Data & data);
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
 
 private:
     static void visit(const ASTSelectQuery & select, const ASTPtr & ast, Data & data);
-    static void visit(ASTSubquery & subquery, const ASTPtr & ast, Data & data);
+    static void visit(const ASTSubquery & subquery, const ASTPtr & ast, Data & data);
     static void visit(const ASTArrayJoin &, const ASTPtr & ast, Data & data);
     static void visitOther(const ASTPtr & ast, Data & data);
 };

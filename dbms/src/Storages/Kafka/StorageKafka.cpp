@@ -39,16 +39,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
-    extern const int UNKNOWN_EXCEPTION;
-    extern const int CANNOT_READ_FROM_ISTREAM;
-    extern const int INVALID_CONFIG_PARAMETER;
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNSUPPORTED_METHOD;
-    extern const int UNKNOWN_SETTING;
-    extern const int READONLY_SETTING;
 }
 
 namespace
@@ -298,7 +292,7 @@ bool StorageKafka::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
     auto dependencies = global_context.getDependencies(table_id);
-    if (dependencies.size() == 0)
+    if (dependencies.empty())
         return true;
 
     // Check the dependencies are ready?
@@ -330,7 +324,7 @@ void StorageKafka::threadFunc()
         auto dependencies = global_context.getDependencies(table_id);
 
         // Keep streaming as long as there are attached views and streaming is not cancelled
-        while (!stream_cancelled && num_created_consumers > 0 && dependencies.size() > 0)
+        while (!stream_cancelled && num_created_consumers > 0 && !dependencies.empty())
         {
             if (!checkDependencies(table_id))
                 break;
@@ -549,7 +543,7 @@ void registerStorageKafka(StorageFactory & factory)
             {
                 throw Exception("Row delimiter must be a char", ErrorCodes::BAD_ARGUMENTS);
             }
-            else if (arg.size() == 0)
+            else if (arg.empty())
             {
                 row_delimiter = '\0';
             }

@@ -14,8 +14,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_COMPRESS;
-    extern const int UNKNOWN_COMPRESSION_METHOD;
 }
 
 static constexpr auto CHECKSUM_SIZE{sizeof(CityHash_v1_0_2::uint128)};

@@ -28,10 +28,10 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
-    extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW;
 }
 
 static inline String generateInnerTableName(const String & table_name)
@@ -166,13 +166,9 @@ bool StorageMaterializedView::hasColumn(const String & column_name) const
 
 StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
 {
-    return
-        {
-            .columns = getColumns(),
-            .indices = getIndices(),
-            .constraints = getConstraints(),
-            .select = getSelectQuery(),
-        };
+    StorageInMemoryMetadata result(getColumns(), getIndices(), getConstraints());
+    result.select = getSelectQuery();
+    return result;
 }
 
 QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context) const

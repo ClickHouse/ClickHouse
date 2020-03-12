@@ -51,7 +51,7 @@ struct PartLogElement
     void appendToBlock(Block & block) const;
 };
 
-struct MergeTreeDataPart;
+class IMergeTreeDataPart;
 
 
 /// Instead of typedef - to allow forward declaration.
@@ -59,7 +59,7 @@ class PartLog : public SystemLog<PartLogElement>
 {
     using SystemLog<PartLogElement>::SystemLog;
 
-    using MutableDataPartPtr = std::shared_ptr<MergeTreeDataPart>;
+    using MutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
     using MutableDataPartsVector = std::vector<MutableDataPartPtr>;
 
 public:

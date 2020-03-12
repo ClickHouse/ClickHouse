@@ -2,6 +2,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 ConfigurationPtr getConfigurationFromXMLString(const std::string & xml_data)
 {

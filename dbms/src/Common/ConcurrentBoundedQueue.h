@@ -138,6 +138,12 @@ public:
         return queue.size();
     }
 
+    size_t empty()
+    {
+        Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+        return queue.empty();
+    }
+
     void clear()
     {
         while (fill_count.tryWait(0))

@@ -9,12 +9,12 @@ namespace
 /// NOTE: Trailing return type is explicitly specified for SFINAE.
 
 /// google::sparse_hash_map
-template <typename T> auto first(const T & value) -> decltype(value.first) { return value.first; }
-template <typename T> auto second(const T & value) -> decltype(value.second) { return value.second; }
+template <typename T> auto first(const T & value) -> decltype(value.first) { return value.first; } // NOLINT
+template <typename T> auto second(const T & value) -> decltype(value.second) { return value.second; } // NOLINT
 
 /// HashMap
-template <typename T> auto first(const T & value) -> decltype(value.getKey()) { return value.getKey(); }
-template <typename T> auto second(const T & value) -> decltype(value.getMapped()) { return value.getMapped(); }
+template <typename T> auto first(const T & value) -> decltype(value.getKey()) { return value.getKey(); } // NOLINT
+template <typename T> auto second(const T & value) -> decltype(value.getMapped()) { return value.getMapped(); } // NOLINT
 
 }
 
@@ -23,7 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
     extern const int UNSUPPORTED_METHOD;

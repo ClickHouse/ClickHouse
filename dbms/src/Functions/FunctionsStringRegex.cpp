@@ -35,6 +35,9 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_MANY_BYTES;
@@ -515,7 +518,7 @@ struct ReplaceRegexpImpl
     {
         Instructions instructions;
 
-        String now = "";
+        String now;
         for (size_t i = 0; i < s.size(); ++i)
         {
             if (s[i] == '\\' && i + 1 < s.size())
@@ -895,7 +898,7 @@ public:
         String needle = c1_const->getValue<String>();
         String replacement = c2_const->getValue<String>();
 
-        if (needle.size() == 0)
+        if (needle.empty())
             throw Exception("Length of the second argument of function replace must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))

@@ -53,8 +53,8 @@
 
 namespace
 {
-static const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
-static const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS           = 2;
+const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
+const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS           = 2;
 }
 
 namespace DB
@@ -62,9 +62,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int STORAGE_REQUIRES_PARAMETER;
     extern const int BAD_ARGUMENTS;
-    extern const int READONLY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INFINITE_LOOP;
@@ -286,7 +286,7 @@ void StorageDistributed::createStorage()
     }
     else
     {
-        auto policy = global_context.getStoragePolicySelector()[storage_policy];
+        auto policy = global_context.getStoragePolicySelector()->get(storage_policy);
         if (policy->getVolumes().size() != 1)
              throw Exception("Policy for Distributed table, should have exactly one volume", ErrorCodes::BAD_ARGUMENTS);
         volume = policy->getVolume(0);
@@ -476,6 +476,9 @@ void StorageDistributed::alter(const AlterCommands & params, const Context & con
 
 void StorageDistributed::startup()
 {
+    if (remote_database.empty() && !remote_table_function_ptr)
+        LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
+
     if (!volume)
         return;
 
@@ -660,8 +663,8 @@ void StorageDistributed::flushClusterNodesAllData()
     std::lock_guard lock(cluster_nodes_mutex);
 
     /// TODO: Maybe it should be executed in parallel
-    for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end(); ++it)
-        it->second.flushAllData();
+    for (auto & node : cluster_nodes_data)
+        node.second.flushAllData();
 }
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name,
@@ -719,7 +722,7 @@ void registerStorageDistributed(StorageFactory & factory)
                 "policy to store data in (optional).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        String cluster_name = getClusterName(*engine_args[0]);
+        String cluster_name = getClusterNameAndMakeLiteral(engine_args[0]);
 
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
         engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);

@@ -198,6 +198,8 @@ public:
         return description;
     }
 
+    void removeConnection(Connection * connection);
+
 protected:
     /// Number of MySQL connections which are created at launch.
     unsigned default_connections;

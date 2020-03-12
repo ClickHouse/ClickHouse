@@ -6,25 +6,25 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Poco/Path.h>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int FILE_DOESNT_EXIST;
     extern const int FILE_ALREADY_EXISTS;
     extern const int DIRECTORY_DOESNT_EXIST;
     extern const int CANNOT_DELETE_DIRECTORY;
-    extern const int CANNOT_SEEK_THROUGH_FILE;
-    extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
 
 
 class DiskMemoryDirectoryIterator : public IDiskDirectoryIterator
 {
 public:
-    explicit DiskMemoryDirectoryIterator(std::vector<String> && dir_file_paths_)
+    explicit DiskMemoryDirectoryIterator(std::vector<Poco::Path> && dir_file_paths_)
         : dir_file_paths(std::move(dir_file_paths_)), iter(dir_file_paths.begin())
     {
     }
@@ -33,11 +33,13 @@ public:
 
     bool isValid() const override { return iter != dir_file_paths.end(); }
 
-    String path() const override { return *iter; }
+    String path() const override { return (*iter).toString(); }
+
+    String name() const override { return (*iter).getFileName(); }
 
 private:
-    std::vector<String> dir_file_paths;
-    std::vector<String>::iterator iter;
+    std::vector<Poco::Path> dir_file_paths;
+    std::vector<Poco::Path>::iterator iter;
 };
 
 /// Adapter with actual behaviour as ReadBufferFromString.
@@ -45,7 +47,7 @@ class ReadIndirectBuffer : public ReadBufferFromFileBase
 {
 public:
     ReadIndirectBuffer(String path_, const String & data_)
-        : ReadBufferFromFileBase(), impl(ReadBufferFromString(data_)), path(std::move(path_))
+        : impl(ReadBufferFromString(data_)), path(std::move(path_))
     {
         internal_buffer = impl.buffer();
         working_buffer = internal_buffer;
@@ -74,7 +76,7 @@ class WriteIndirectBuffer : public WriteBufferFromFileBase
 {
 public:
     WriteIndirectBuffer(DiskMemory * disk_, String path_, WriteMode mode_, size_t buf_size)
-        : WriteBufferFromFileBase(buf_size, nullptr, 0), impl(), disk(disk_), path(std::move(path_)), mode(mode_)
+        : WriteBufferFromFileBase(buf_size, nullptr, 0), disk(disk_), path(std::move(path_)), mode(mode_)
     {
     }
 
@@ -265,10 +267,10 @@ DiskDirectoryIteratorPtr DiskMemory::iterateDirectory(const String & path)
     if (!path.empty() && files.find(path) == files.end())
         throw Exception("Directory '" + path + "' does not exist", ErrorCodes::DIRECTORY_DOESNT_EXIST);
 
-    std::vector<String> dir_file_paths;
+    std::vector<Poco::Path> dir_file_paths;
     for (const auto & file : files)
         if (parentPath(file.first) == path)
-            dir_file_paths.push_back(file.first);
+            dir_file_paths.emplace_back(file.first);
 
     return std::make_unique<DiskMemoryDirectoryIterator>(std::move(dir_file_paths));
 }
@@ -380,6 +382,12 @@ void DiskMemory::removeRecursive(const String & path)
         else
             ++iter;
     }
+}
+
+void DiskMemory::listFiles(const String & path, std::vector<String> & file_names)
+{
+    for (auto it = iterateDirectory(path); it->isValid(); it->next())
+        file_names.push_back(it->name());
 }
 
 

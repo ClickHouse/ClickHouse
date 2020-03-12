@@ -12,8 +12,6 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-Macros::Macros() {}
-
 Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & root_key)
 {
     Poco::Util::AbstractConfiguration::Keys keys;

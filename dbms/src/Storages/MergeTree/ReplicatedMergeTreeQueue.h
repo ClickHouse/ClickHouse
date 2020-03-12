@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeAltersSequence.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -67,7 +68,8 @@ private:
     ActiveDataPartSet current_parts;
 
     /** The queue of what you need to do on this line to catch up. It is taken from ZooKeeper (/replicas/me/queue/).
-      * In ZK records in chronological order. Here it is not necessary.
+      * In ZK records in chronological order. Here they are executed in parallel and reorder after entry execution.
+      * Order of execution is not "queue" at all. Look at selectEntryToProcess.
       */
     Queue queue;
 
@@ -120,15 +122,19 @@ private:
         String latest_fail_reason;
     };
 
+    /// Mapping from znode path to Mutations Status
     std::map<String, MutationStatus> mutations_by_znode;
+    /// Partition -> (block_number -> MutationStatus)
     std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
     /// Znode ID of the latest mutation that is done.
     String mutation_pointer;
 
-
     /// Provides only one simultaneous call to pullLogsToQueue.
     std::mutex pull_logs_to_queue_mutex;
 
+    /// This sequence control ALTERs execution in replication queue.
+    /// We need it because alters have to be executed sequentially (one by one).
+    ReplicatedMergeTreeAltersSequence alter_sequence;
 
     /// List of subscribers
     /// A subscriber callback is called when an entry queue is deleted
@@ -163,6 +169,7 @@ private:
     /// Put a set of (already existing) parts in virtual_parts.
     void addVirtualParts(const MergeTreeData::DataParts & parts);
 
+    /// Insert new entry from log into queue
     void insertUnlocked(
         const LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed,
         std::lock_guard<std::mutex> & state_lock);
@@ -272,7 +279,7 @@ public:
     void updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
 
     /// Remove a mutation from ZooKeeper and from the local set. Returns the removed entry or nullptr
-    /// if it could not be found.
+    /// if it could not be found. Called during KILL MUTATION query execution.
     ReplicatedMergeTreeMutationEntryPtr removeMutation(zkutil::ZooKeeperPtr zookeeper, const String & mutation_id);
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
@@ -375,6 +382,8 @@ public:
     void getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const;
 
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
+
+    void removeCurrentPartsFromMutations();
 };
 
 class ReplicatedMergeTreeMergePredicate
@@ -389,9 +398,12 @@ public:
         const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right,
         String * out_reason = nullptr) const;
 
-    /// Return nonempty optional if the part can and should be mutated.
-    /// Returned mutation version number is always the biggest possible.
-    std::optional<Int64> getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const;
+    /// Return nonempty optional of desired mutation version and alter version.
+    /// If we have no alter (modify/drop) mutations in mutations queue, than we return biggest possible
+    /// mutation version (and -1 as alter version). In other case, we return biggest mutation version with
+    /// smallest alter version. This required, because we have to execute alter mutations sequentially and
+    /// don't glue them together. Alter is rare operation, so it shouldn't affect performance.
+    std::optional<std::pair<Int64, int>> getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const;
 
     bool isMutationFinished(const ReplicatedMergeTreeMutationEntry & mutation) const;
 
@@ -405,7 +417,6 @@ private:
     std::unordered_map<String, std::set<Int64>> committing_blocks;
 
     /// Quorum state taken at some later time than prev_virtual_parts.
-    std::set<std::string> last_quorum_parts;
     String inprogress_quorum_part;
 };
 

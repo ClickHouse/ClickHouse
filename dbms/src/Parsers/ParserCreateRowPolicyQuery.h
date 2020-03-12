@@ -23,8 +23,14 @@ namespace DB
   */
 class ParserCreateRowPolicyQuery : public IParserBase
 {
+public:
+    ParserCreateRowPolicyQuery & enableAttachMode(bool enable_) { attach_mode = enable_; return *this; }
+
 protected:
     const char * getName() const override { return "CREATE ROW POLICY or ALTER ROW POLICY query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+private:
+    bool attach_mode = false;
 };
 }

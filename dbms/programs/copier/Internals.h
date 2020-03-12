@@ -74,11 +74,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NO_ZOOKEEPER;
-    extern const int BAD_ARGUMENTS;
-    extern const int UNKNOWN_TABLE;
-    extern const int UNFINISHED;
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -133,7 +129,6 @@ struct TaskStateWithOwner
         return res;
     }
 };
-
 
 
 struct ShardPriority

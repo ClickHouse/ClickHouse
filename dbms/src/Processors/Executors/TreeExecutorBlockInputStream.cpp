@@ -9,6 +9,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int LOGICAL_ERROR;
+}
 
 static void checkProcessorHasSingleOutput(IProcessor * processor)
 {
@@ -312,7 +317,7 @@ void TreeExecutorBlockInputStream::setLimits(const IBlockInputStream::LocalLimit
         source->setLimits(limits_);
 }
 
-void TreeExecutorBlockInputStream::setQuota(const std::shared_ptr<QuotaContext> & quota_)
+void TreeExecutorBlockInputStream::setQuota(const QuotaContextPtr & quota_)
 {
     for (auto & source : sources_with_progress)
         source->setQuota(quota_);

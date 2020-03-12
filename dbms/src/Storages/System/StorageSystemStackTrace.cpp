@@ -39,7 +39,7 @@ namespace
 
     std::optional<StackTrace> stack_trace;
 
-    static constexpr size_t max_query_id_size = 128;
+    constexpr size_t max_query_id_size = 128;
     char query_id_data[max_query_id_size];
     size_t query_id_size = 0;
 
@@ -47,6 +47,8 @@ namespace
 
     void signalHandler(int, siginfo_t * info, void * context)
     {
+        auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+
         /// In case malicious user is sending signals manually (for unknown reason).
         /// If we don't check - it may break our synchronization.
         if (info->si_pid != expected_pid)
@@ -69,6 +71,8 @@ namespace
 
         /// We cannot do anything if write failed.
         (void)res;
+
+        errno = saved_errno;
     }
 
     /// Wait for data in pipe and read it.

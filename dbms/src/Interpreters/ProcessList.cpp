@@ -28,8 +28,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING;
     extern const int LOGICAL_ERROR;
-    extern const int TOO_MANY_ROWS;
-    extern const int TOO_MANY_BYTES;
 }
 
 
@@ -199,8 +197,14 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
                 /// Set query-level memory trackers
                 thread_group->memory_tracker.setOrRaiseHardLimit(process_it->max_memory_usage);
-                thread_group->memory_tracker.setOrRaiseProfilerLimit(settings.memory_profiler_step);
-                thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
+
+                if (query_context.hasTraceCollector())
+                {
+                    /// Set up memory profiling
+                    thread_group->memory_tracker.setOrRaiseProfilerLimit(settings.memory_profiler_step);
+                    thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
+                }
+
                 thread_group->memory_tracker.setDescription("(for query)");
                 if (process_it->memory_tracker_fault_probability)
                     thread_group->memory_tracker.setFaultProbability(process_it->memory_tracker_fault_probability);
@@ -277,7 +281,7 @@ ProcessListEntry::~ProcessListEntry()
         user_process_list.resetTrackers();
 
     /// This removes memory_tracker for all requests. At this time, no other memory_trackers live.
-    if (parent.processes.size() == 0)
+    if (parent.processes.empty())
     {
         /// Reset MemoryTracker, similarly (see above).
         parent.total_memory_tracker.logPeakMemoryUsage();

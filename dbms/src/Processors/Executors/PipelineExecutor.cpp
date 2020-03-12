@@ -18,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_ROWS_OR_BYTES;
     extern const int QUOTA_EXPIRED;
     extern const int QUERY_WAS_CANCELLED;
@@ -658,11 +659,12 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
     total_time_ns = total_time_watch.elapsed();
     wait_time_ns = total_time_ns - execution_time_ns - processing_time_ns;
 
-    LOG_TRACE(log, "Thread finished."
-                     << " Total time: " << (total_time_ns / 1e9) << " sec."
-                     << " Execution time: " << (execution_time_ns / 1e9) << " sec."
-                     << " Processing time: " << (processing_time_ns / 1e9) << " sec."
-                     << " Wait time: " << (wait_time_ns / 1e9) << "sec.");
+    LOG_TRACE(log, std::fixed << std::setprecision(3)
+        << "Thread finished."
+        << " Total time: " << (total_time_ns / 1e9) << " sec."
+        << " Execution time: " << (execution_time_ns / 1e9) << " sec."
+        << " Processing time: " << (processing_time_ns / 1e9) << " sec."
+        << " Wait time: " << (wait_time_ns / 1e9) << " sec.");
 #endif
 }
 
@@ -690,14 +692,14 @@ void PipelineExecutor::executeImpl(size_t num_threads)
     bool finished_flag = false;
 
     SCOPE_EXIT(
-            if (!finished_flag)
-            {
-                finish();
+        if (!finished_flag)
+        {
+            finish();
 
-                for (auto & thread : threads)
-                    if (thread.joinable())
-                        thread.join();
-            }
+            for (auto & thread : threads)
+                if (thread.joinable())
+                    thread.join();
+        }
     );
 
     addChildlessProcessorsToStack(stack);

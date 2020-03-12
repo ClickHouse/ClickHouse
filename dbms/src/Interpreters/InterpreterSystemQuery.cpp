@@ -38,6 +38,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_KILL;
     extern const int NOT_IMPLEMENTED;
@@ -215,6 +216,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RELOAD_DICTIONARY:
             context.checkAccess(AccessType::RELOAD_DICTIONARY);
             system_context.getExternalDictionariesLoader().loadOrReload(query.target_dictionary);
+            ExternalDictionariesLoader::resetAll();
             break;
         case Type::RELOAD_DICTIONARIES:
             context.checkAccess(AccessType::RELOAD_DICTIONARY);
@@ -222,6 +224,7 @@ BlockIO InterpreterSystemQuery::execute()
                     [&] () { system_context.getExternalDictionariesLoader().reloadAllTriedToLoad(); },
                     [&] () { system_context.getEmbeddedDictionaries().reload(); }
             );
+            ExternalDictionariesLoader::resetAll();
             break;
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
             context.checkAccess(AccessType::RELOAD_DICTIONARY);

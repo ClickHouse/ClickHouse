@@ -88,10 +88,14 @@ using signal_function = void(int, siginfo_t*, void*);
 
 static void writeSignalIDtoSignalPipe(int sig)
 {
+    auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+
     char buf[buf_size];
     DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
     DB::writeBinary(sig, out);
     out.next();
+
+    errno = saved_errno;
 }
 
 /** Signal handler for HUP / USR1 */
@@ -110,6 +114,8 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * co
   */
 static void signalHandler(int sig, siginfo_t * info, void * context)
 {
+    auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+
     char buf[buf_size];
     DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], buf_size, buf);
 
@@ -134,6 +140,8 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
         ::sleep(10);
         call_default_signal_handler(sig);
     }
+
+    errno = saved_errno;
 }
 
 
@@ -585,7 +593,7 @@ void debugIncreaseOOMScore() {}
 void BaseDaemon::initialize(Application & self)
 {
     closeFDs();
-    task_manager.reset(new Poco::TaskManager);
+    task_manager = std::make_unique<Poco::TaskManager>();
     ServerApplication::initialize(self);
 
     /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!
@@ -770,7 +778,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     signal_pipe.setNonBlocking();
     signal_pipe.tryIncreaseSize(1 << 20);
 
-    signal_listener.reset(new SignalListener(*this));
+    signal_listener = std::make_unique<SignalListener>(*this);
     signal_listener_thread.start(*signal_listener);
 }
 
@@ -831,9 +839,7 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet& _options)
 
 bool isPidRunning(pid_t pid)
 {
-    if (getpgid(pid) >= 0)
-        return 1;
-    return 0;
+    return getpgid(pid) >= 0;
 }
 
 BaseDaemon::PID::PID(const std::string & file_)

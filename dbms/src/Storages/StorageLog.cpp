@@ -38,8 +38,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int DUPLICATE_COLUMN;
     extern const int SIZES_OF_MARKS_FILES_ARE_INCONSISTENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -502,12 +500,12 @@ void StorageLog::loadMarks()
         std::unique_ptr<ReadBuffer> marks_rb = disk->readFile(marks_file_path, 32768);
         while (!marks_rb->eof())
         {
-            for (size_t i = 0; i < files_by_index.size(); ++i)
+            for (auto & file : files_by_index)
             {
                 Mark mark;
                 readIntBinary(mark.rows, *marks_rb);
                 readIntBinary(mark.offset, *marks_rb);
-                files_by_index[i]->second.marks.push_back(mark);
+                file->second.marks.push_back(mark);
             }
         }
     }

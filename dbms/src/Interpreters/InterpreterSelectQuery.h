@@ -152,10 +152,6 @@ private:
     template <typename TPipeline>
     void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe, QueryPipeline & save_context_and_storage);
 
-    /** From which table to read. With JOIN, the "left" table is returned.
-     */
-    static void getDatabaseAndTableNames(const ASTSelectQuery & query, String & database_name, String & table_name, const Context & context);
-
     /// Different stages of query execution.
 
     /// dry_run - don't read from table, use empty header block instead.
@@ -186,7 +182,7 @@ private:
     void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
-    void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter);
+    void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
     void executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeMergeAggregated(QueryPipeline & pipeline, bool overflow_row, bool final);
     void executeTotalsAndHaving(QueryPipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);

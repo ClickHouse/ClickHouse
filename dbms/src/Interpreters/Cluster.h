@@ -8,6 +8,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /// Cluster contains connection pools to each node
 /// With the local nodes, the connection is not established, but the request is executed directly.

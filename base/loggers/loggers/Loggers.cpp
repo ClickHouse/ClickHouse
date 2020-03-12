@@ -133,12 +133,13 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         split->addChannel(log);
     }
 
-    bool is_tty = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
+    bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
+    bool color_logs_by_default = isatty(STDERR_FILENO);
 
     if (config.getBool("logger.console", false)
-        || (!config.hasProperty("logger.console") && !is_daemon && is_tty))
+        || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
     {
-        bool color_enabled = config.getBool("logger.color_terminal", true) && is_tty;
+        bool color_enabled = config.getBool("logger.color_terminal", color_logs_by_default);
 
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_NOTHING, color_enabled);
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);

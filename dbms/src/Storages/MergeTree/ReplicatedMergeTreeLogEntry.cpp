@@ -1,13 +1,20 @@
 #include <Common/ZooKeeper/Types.h>
 
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_FORMAT_VERSION;
+    extern const int LOGICAL_ERROR;
+}
 
 
 void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
@@ -63,6 +70,22 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 << source_parts.at(0) << "\n"
                 << "to\n"
                 << new_part_name;
+            out << "\nalter_version\n";
+            out << alter_version;
+            break;
+
+        case ALTER_METADATA: /// Just make local /metadata and /columns consistent with global
+            out << "alter\n";
+            out << "alter_version\n";
+            out << alter_version<< "\n";
+            out << "have_mutation\n";
+            out << have_mutation << "\n";
+            out << "columns_str_size:\n";
+            out << columns_str.size() << "\n";
+            out << columns_str << "\n";
+            out << "metadata_str_size:\n";
+            out << metadata_str.size() << "\n";
+            out << metadata_str;
             break;
 
         default:
@@ -70,6 +93,9 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
     }
 
     out << '\n';
+
+    if (new_part_type != MergeTreeDataPartType::WIDE && new_part_type != MergeTreeDataPartType::UNKNOWN)
+        out << "part_type: " << new_part_type.toString() << "\n";
 
     if (quorum)
         out << "quorum: " << quorum << '\n';
@@ -151,9 +177,37 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
            >> "to\n"
            >> new_part_name;
         source_parts.push_back(source_part);
+        in >> "\nalter_version\n" >> alter_version;
+    }
+    else if (type_str == "alter")
+    {
+        type = ALTER_METADATA;
+        in >> "alter_version\n";
+        in >> alter_version;
+        in >> "\nhave_mutation\n";
+        in >> have_mutation;
+        in >> "\ncolumns_str_size:\n";
+        size_t columns_size;
+        in >> columns_size >> "\n";
+        columns_str.resize(columns_size);
+        in.readStrict(&columns_str[0], columns_size);
+        in >> "\nmetadata_str_size:\n";
+        size_t metadata_size;
+        in >> metadata_size >> "\n";
+        metadata_str.resize(metadata_size);
+        in.readStrict(&metadata_str[0], metadata_size);
     }
 
     in >> "\n";
+    if (checkString("part_type: ", in))
+    {
+        String part_type_str;
+        in >> type_str;
+        new_part_type.fromString(type_str);
+        in >> "\n";
+    }
+    else
+        new_part_type = MergeTreeDataPartType::WIDE;
 
     /// Optional field.
     if (!in.eof())

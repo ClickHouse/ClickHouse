@@ -18,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
     extern const int DUPLICATE_COLUMN;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
@@ -25,8 +26,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int TYPE_MISMATCH;
-    extern const int SETTINGS_ARE_NOT_SUPPORTED;
-    extern const int UNKNOWN_SETTING;
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
 }
@@ -279,10 +278,10 @@ void IStorage::check(const Block & block, bool need_all) const
 
     if (need_all && names_in_block.size() < columns_map.size())
     {
-        for (auto it = available_columns.begin(); it != available_columns.end(); ++it)
+        for (const auto & available_column : available_columns)
         {
-            if (!names_in_block.count(it->name))
-                throw Exception("Expected column " + it->name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+            if (!names_in_block.count(available_column.name))
+                throw Exception("Expected column " + available_column.name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
     }
 }
@@ -371,12 +370,7 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
 
 StorageInMemoryMetadata IStorage::getInMemoryMetadata() const
 {
-    return
-    {
-        .columns = getColumns(),
-        .indices = getIndices(),
-        .constraints = getConstraints(),
-    };
+    return StorageInMemoryMetadata(getColumns(), getIndices(), getConstraints());
 }
 
 void IStorage::alter(

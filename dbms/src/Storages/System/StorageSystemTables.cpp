@@ -24,7 +24,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int TABLE_IS_DROPPED;
 }
 
@@ -137,7 +136,7 @@ protected:
                 {
                     Tables external_tables = context.getSessionContext().getExternalTables();
 
-                    for (auto table : external_tables)
+                    for (auto & table : external_tables)
                     {
                         size_t src_index = 0;
                         size_t res_index = 0;

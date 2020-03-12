@@ -13,10 +13,6 @@ struct TestStats
     Stopwatch watch;
     Stopwatch watch_per_query;
     Stopwatch min_time_watch;
-    Stopwatch max_rows_speed_watch;
-    Stopwatch max_bytes_speed_watch;
-    Stopwatch avg_rows_speed_watch;
-    Stopwatch avg_bytes_speed_watch;
 
     bool last_query_was_cancelled = false;
     std::string query_id;
@@ -61,19 +57,6 @@ struct TestStats
     std::string getStatisticByName(const std::string & statistic_name);
 
     void update_min_time(UInt64 min_time_candidate);
-
-    void update_average_speed(
-        double new_speed_info,
-        Stopwatch & avg_speed_watch,
-        size_t & number_of_info_batches,
-        double precision,
-        double & avg_speed_first,
-        double & avg_speed_value);
-
-    void update_max_speed(
-        size_t max_speed_candidate,
-        Stopwatch & max_speed_watch,
-        UInt64 & max_speed);
 
     void add(size_t rows_read_inc, size_t bytes_read_inc);
 

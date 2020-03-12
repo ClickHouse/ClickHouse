@@ -36,9 +36,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA;
-    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
-    extern const int CANNOT_PARSE_TEXT;
 }
 
 
@@ -54,6 +51,7 @@ namespace
         const ASTCreateQuery & query,
         DatabaseOrdinary & database,
         const String & database_name,
+        const String & metadata_path,
         bool has_force_restore_data_flag)
     {
         assert(!query.is_dictionary);
@@ -67,7 +65,9 @@ namespace
         }
         catch (Exception & e)
         {
-            e.addMessage("Cannot attach table '" + backQuote(query.table) + "' from query " + serializeAST(query));
+            e.addMessage("Cannot attach table " + backQuote(database_name) + "." + backQuote(query.table)
+                + " from metadata file " + metadata_path
+                + " from query " + serializeAST(query));
             throw;
         }
     }
@@ -113,7 +113,6 @@ void DatabaseOrdinary::loadStoredObjects(
     Context & context,
     bool has_force_restore_data_flag)
 {
-
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
       *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
@@ -127,7 +126,7 @@ void DatabaseOrdinary::loadStoredObjects(
         String full_path = getMetadataPath() + file_name;
         try
         {
-            auto ast = parseQueryFromMetadata(context, full_path, /*throw_on_error*/ true, /*remove_empty*/false);
+            auto ast = parseQueryFromMetadata(context, full_path, /*throw_on_error*/ true, /*remove_empty*/ false);
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
@@ -160,7 +159,7 @@ void DatabaseOrdinary::loadStoredObjects(
         if (!create_query.is_dictionary)
             pool.scheduleOrThrowOnError([&]()
             {
-                tryAttachTable(context, create_query, *this, getDatabaseName(), has_force_restore_data_flag);
+                tryAttachTable(context, create_query, *this, getDatabaseName(), getMetadataPath() + name_with_query.first, has_force_restore_data_flag);
 
                 /// Messages, so that it's not boring to wait for the server to load for a long time.
                 logAboutProgress(log, ++tables_processed, total_tables, watch);

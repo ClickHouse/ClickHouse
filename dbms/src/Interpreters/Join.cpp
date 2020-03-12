@@ -29,11 +29,12 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_TYPE_OF_FIELD;
+    extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int TYPE_MISMATCH;
-    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -91,7 +92,7 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
     if (nullable)
     {
         JoinCommon::convertColumnToNullable(column);
-        if (column.type->isNullable() && negative_null_map.size())
+        if (column.type->isNullable() && !negative_null_map.empty())
         {
             MutableColumnPtr mutable_column = (*std::move(column.column)).mutate();
             assert_cast<ColumnNullable &>(*mutable_column).applyNegatedNullMap(negative_null_map);

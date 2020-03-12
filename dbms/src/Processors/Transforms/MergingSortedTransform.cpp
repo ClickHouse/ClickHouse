@@ -5,6 +5,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 MergingSortedTransform::MergingSortedTransform(
     const Block & header,
@@ -222,13 +226,7 @@ void MergingSortedTransform::merge(TSortingHeap & queue)
             return false;
         }
 
-        if (merged_data.mergedRows() >= max_block_size)
-        {
-            //std::cerr << "max_block_size reached\n";
-            return false;
-        }
-
-        return true;
+        return merged_data.mergedRows() < max_block_size;
     };
 
     /// Take rows in required order and put them into `merged_data`, while the rows are no more than `max_block_size`
@@ -304,21 +302,22 @@ void MergingSortedTransform::insertFromChunk(size_t source_num)
 
     //std::cerr << "copied columns\n";
 
-    auto num_rows = source_chunks[source_num]->getNumRows();
+    auto num_rows = source_chunks[source_num].getNumRows();
 
     UInt64 total_merged_rows_after_insertion = merged_data.mergedRows() + num_rows;
     if (limit && total_merged_rows_after_insertion > limit)
     {
         num_rows = total_merged_rows_after_insertion - limit;
-        merged_data.insertFromChunk(std::move(*source_chunks[source_num]), num_rows);
+        merged_data.insertFromChunk(std::move(source_chunks[source_num]), num_rows);
         is_finished = true;
     }
     else
     {
-        merged_data.insertFromChunk(std::move(*source_chunks[source_num]), 0);
+        merged_data.insertFromChunk(std::move(source_chunks[source_num]), 0);
         need_data = true;
         next_input_to_read = source_num;
     }
+    source_chunks[source_num] = Chunk();
 
     if (out_row_sources_buf)
     {

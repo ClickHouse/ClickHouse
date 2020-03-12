@@ -29,7 +29,9 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
     /// If the "root" table deduplactes blocks, there are no need to make deduplication for children
     /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
-    bool disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
+    bool disable_deduplication_for_children = false;
+    if (!context.getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
+        disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
 
     auto table_id = storage->getStorageID();
     Dependencies dependencies = context.getDependencies(table_id);
@@ -130,7 +132,7 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     }
 
     /// Don't process materialized views if this block is duplicate
-    if (replicated_output && replicated_output->lastBlockIsDuplicate())
+    if (!context.getSettingsRef().deduplicate_blocks_in_dependent_materialized_views && replicated_output && replicated_output->lastBlockIsDuplicate())
         return;
 
     // Insert data into materialized views only after successful insert into main table
