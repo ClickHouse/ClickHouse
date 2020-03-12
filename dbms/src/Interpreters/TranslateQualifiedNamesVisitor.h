@@ -38,17 +38,17 @@ public:
         bool hasColumn(const String & name) const { return source_columns.count(name); }
         bool hasTable() const { return !tables.empty(); }
         bool processAsterisks() const { return hasTable() && has_columns; }
-        bool unknownColumn(size_t table_pos, const ASTIdentifier & node) const;
+        bool unknownColumn(size_t table_pos, const ASTIdentifier & identifier) const;
     };
 
     static void visit(ASTPtr & ast, Data & data);
     static bool needChildVisit(ASTPtr & node, const ASTPtr & child);
 
 private:
-    static void visit(ASTIdentifier & node, ASTPtr & ast, Data &);
+    static void visit(ASTIdentifier & identifier, ASTPtr & ast, Data &);
     static void visit(const ASTQualifiedAsterisk & node, const ASTPtr & ast, Data &);
-    static void visit(ASTTableJoin & node, const ASTPtr & ast, Data &);
-    static void visit(ASTSelectQuery & node, const ASTPtr & ast, Data &);
+    static void visit(ASTTableJoin & join, const ASTPtr & ast, Data &);
+    static void visit(ASTSelectQuery & select, const ASTPtr & ast, Data &);
     static void visit(ASTExpressionList &, const ASTPtr &, Data &);
     static void visit(ASTFunction &, const ASTPtr &, Data &);
 

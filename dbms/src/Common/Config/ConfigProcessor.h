@@ -127,7 +127,7 @@ private:
 private:
     using NodePtr = Poco::AutoPtr<Poco::XML::Node>;
 
-    void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_node, const Poco::XML::Node * with_node);
+    void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
 
     void merge(XMLDocumentPtr config, XMLDocumentPtr with);
 

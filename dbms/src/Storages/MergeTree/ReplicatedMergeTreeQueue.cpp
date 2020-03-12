@@ -31,7 +31,7 @@ void ReplicatedMergeTreeQueue::addVirtualParts(const MergeTreeData::DataParts & 
 {
     std::lock_guard lock(state_mutex);
 
-    for (auto part : parts)
+    for (const auto & part : parts)
     {
         current_parts.add(part->name);
         virtual_parts.add(part->name);

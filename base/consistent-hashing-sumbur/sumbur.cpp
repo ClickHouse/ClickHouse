@@ -108,6 +108,6 @@ unsigned int sumburConsistentHash(unsigned int hashed_int, unsigned int capacity
                 if (L / i - h < part) return n - 1;
             }
         }
-    } while(0);
+    } while(false);
     return n - 1;
 }

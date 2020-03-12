@@ -114,7 +114,7 @@ bool isCompatible(const IAST & node)
             return false;
 
         for (const auto & expr : function->arguments->children)
-            if (!isCompatible(*expr.get()))
+            if (!isCompatible(*expr))
                 return false;
 
         return true;
@@ -123,16 +123,10 @@ bool isCompatible(const IAST & node)
     if (const auto * literal = node.as<ASTLiteral>())
     {
         /// Foreign databases often have no support for Array. But Tuple literals are passed to support IN clause.
-        if (literal->value.getType() == Field::Types::Array)
-            return false;
-
-        return true;
+        return literal->value.getType() != Field::Types::Array;
     }
 
-    if (node.as<ASTIdentifier>())
-        return true;
-
-    return false;
+    return node.as<ASTIdentifier>();
 }
 
 }

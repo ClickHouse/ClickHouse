@@ -56,7 +56,6 @@ private:
     DataTypesDictionary case_insensitive_data_types;
 
     DataTypeFactory();
-    ~DataTypeFactory() override;
 
     const DataTypesDictionary & getCreatorMap() const override { return data_types; }
 
