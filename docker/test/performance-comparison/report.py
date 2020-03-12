@@ -251,6 +251,7 @@ if len(report_errors):
 print("""
 <p class="links">
 <a href="output.7z">Test output</a>
+<a href="compare.log">Log</a>
 </p>
 </body>
 </html>

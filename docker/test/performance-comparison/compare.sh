@@ -166,7 +166,7 @@ function run_tests
     # not supported in the old revision.
     # When testing a PR, use the test files from the PR so that we can test their
     # changes.
-    test_prefix=$(["$PR_TO_TEST" == "0"] && echo left || echo right)/performance
+    test_prefix=$([ "$PR_TO_TEST" == "0" ] && echo left || echo right)/performance
 
     for x in {test-times,skipped-tests}.tsv
     do
@@ -177,7 +177,7 @@ function run_tests
     # FIXME remove some broken long tests
     rm "$test_prefix"/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
 
-    test_files=$(ls "$test_prefix"*.xml)
+    test_files=$(ls "$test_prefix"/*.xml)
 
     # FIXME a quick crutch to bring the run time down for the unstable tests --
     # if some performance tests xmls were changed in a PR, run only these ones.
