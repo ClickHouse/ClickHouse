@@ -5,15 +5,23 @@ namespace DB
 {
 
 LimitTransform::LimitTransform(
-    const Block & header_, size_t limit_, size_t offset_, LimitStatePtr limit_state_,
+    const Block & header_, size_t limit_, size_t offset_, size_t num_streams,
     bool always_read_till_end_, bool with_ties_,
     SortDescription description_)
     : IProcessor({header_}, {header_})
-    , input(inputs.front()), output(outputs.front())
-    , limit(limit_), offset(offset_), limit_state(std::move(limit_state_))
+    , limit(limit_), offset(offset_)
     , always_read_till_end(always_read_till_end_)
     , with_ties(with_ties_), description(std::move(description_))
 {
+    input_ports.reserve(num_streams);
+    output_ports.reserve(num_streams);
+
+    for (auto & input : inputs)
+        input_ports.emplace_back(&input);
+
+    for (auto & output : outputs)
+        output_ports.emplace_back(&output);
+
     for (const auto & desc : description)
     {
         if (!desc.column_name.empty())
@@ -37,7 +45,61 @@ Chunk LimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, size_t row) 
 }
 
 
-LimitTransform::Status LimitTransform::prepare()
+IProcessor::Status LimitTransform::prepare(
+        const PortNumbers & updated_input_ports,
+        const PortNumbers & updated_output_ports)
+{
+    bool has_full_port = false;
+
+    auto process_pair = [&](size_t pos)
+    {
+        auto status = preparePair(*input_ports[pos], *output_ports[pos]);
+
+        switch (status)
+        {
+            case IProcessor::Status::Finished:
+            {
+                if (!is_port_pair_finished[pos])
+                {
+                    is_port_pair_finished[pos] = true;
+                    ++num_finished_port_pairs;
+                }
+
+                return;
+            }
+            case IProcessor::Status::PortFull:
+            {
+                has_full_port = true;
+                return;
+            }
+            case IProcessor::Status::NeedData:
+                return;
+            default:
+                throw Exception(
+                        "Unexpected status for LimitTransform::preparePair : " + IProcessor::statusToName(status),
+                        ErrorCodes::LOGICAL_ERROR);
+
+        }
+
+        __builtin_unreachable();
+    };
+
+    for (auto pos : updated_input_ports)
+        process_pair(pos);
+
+    for (auto pos : updated_output_ports)
+        process_pair(pos);
+
+    if (num_finished_port_pairs == input_ports.size())
+        return Status::Finished;
+
+    if (has_full_port)
+        return Status::PortFull;
+
+    return Status::NeedData;
+}
+
+LimitTransform::Status LimitTransform::preparePair(InputPort & input, OutputPort & output)
 {
     /// Check can output.
     bool output_finished = false;
@@ -64,10 +126,6 @@ LimitTransform::Status LimitTransform::prepare()
         has_block = false;
         block_processed = false;
     }
-
-    /// Update the number of read rows.
-    if (limit_state)
-        rows_read = limit_state->total_read_rows.load(std::memory_order_acquire);
 
     /// Check if we are done with pushing.
     bool is_limit_reached = (rows_read >= offset + limit) && !previous_row_chunk;
@@ -99,25 +157,15 @@ LimitTransform::Status LimitTransform::prepare()
     auto rows = current_chunk.getNumRows();
     rows_before_limit_at_least += rows;
 
-    if (limit_state)
-        /// Note: maybe memory_order_relaxed is enough. It is needed to be proven.
-        rows_read = limit_state->total_read_rows.fetch_add(rows, std::memory_order_acq_rel) + rows;
-    else
-        rows_read += rows;
-
-    /// rows_read could be updated after previous load. Recalculate flag again.
-    is_limit_reached = (rows_read >= offset + limit + rows) && !previous_row_chunk;
-
     /// Skip block (for 'always_read_till_end' case).
     if (is_limit_reached)
     {
         current_chunk.clear();
         has_block = false;
 
-        if (input.isFinished() || !always_read_till_end)
+        if (input.isFinished())
         {
             output.finish();
-            input.close();
             return Status::Finished;
         }
 
@@ -127,6 +175,9 @@ LimitTransform::Status LimitTransform::prepare()
     }
 
     /// Process block.
+
+    rows_read += rows;
+
     if (rows_read <= offset)
     {
         current_chunk.clear();
@@ -143,32 +194,33 @@ LimitTransform::Status LimitTransform::prepare()
         return Status::NeedData;
     }
 
-    /// Return the whole block.
+    if (output.hasData())
+        return Status::PortFull;
+
     if (rows_read >= offset + rows && rows_read <= offset + limit)
     {
-        if (output.hasData())
-            return Status::PortFull;
+        /// Return the whole chunk.
 
-        /// Save the last row of current block to check if next block begins with the same row (for WITH TIES).
+        /// Save the last row of current chunk to check if next block begins with the same row (for WITH TIES).
         if (with_ties && rows_read == offset + limit)
             previous_row_chunk = makeChunkWithPreviousRow(current_chunk, current_chunk.getNumRows() - 1);
-
-        output.push(std::move(current_chunk));
-        has_block = false;
-
-        return Status::PortFull;
     }
+    else
+        splitChunk();
 
     bool may_need_more_data_for_ties = previous_row_chunk || rows_read - rows <= offset + limit;
     /// No more data is needed.
     if (!always_read_till_end && (rows_read >= offset + limit) && !may_need_more_data_for_ties)
         input.close();
 
-    return Status::Ready;
+    output.push(std::move(current_chunk));
+    has_block = false;
+
+    return Status::PortFull;
 }
 
 
-void LimitTransform::work()
+void LimitTransform::splitChunk()
 {
     auto current_chunk_sort_columns = extractSortColumns(current_chunk.getColumns());
     size_t num_rows = current_chunk.getNumRows();
@@ -261,65 +313,6 @@ bool LimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort
         if (0 != current_chunk_sort_columns[i]->compareAt(current_chunk_row_num, 0, *previous_row_sort_columns[i], 1))
             return false;
     return true;
-}
-
-
-LimitReachedCheckingTransform::LimitReachedCheckingTransform(
-    const Block & header_, size_t num_streams,
-    size_t limit, size_t offset, LimitTransform::LimitStatePtr limit_state_)
-    : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
-    , max_total_rows_to_read(limit + offset), limit_state(std::move(limit_state_))
-{
-    input_ports.reserve(num_streams);
-    output_ports.reserve(num_streams);
-
-    for (auto & input : inputs)
-        input_ports.emplace_back(&input);
-
-    for (auto & output : outputs)
-        output_ports.emplace_back(&output);
-}
-
-
-static IProcessor::Status processPair(InputPort * input, OutputPort * output)
-{
-    /// Check can output.
-    if (output->isFinished())
-    {
-        input->close();
-        return IProcessor::Status::Finished;
-    }
-
-    if (!output->canPush())
-        return IProcessor::Status::PortFull;
-
-    /// Check input has data..
-    if (input->isFinished())
-    {
-        output->finish();
-        return IProcessor::Status::Finished;
-    }
-
-    input->setNeeded();
-
-    if (input->hasData())
-        output->push(input->pull(true));
-
-    /// Input can be finished after pull. check it again.
-    if (input->isFinished())
-    {
-        output->finish();
-        return IProcessor::Status::Finished;
-    }
-
-    return IProcessor::Status::PortFull;
-}
-
-IProcessor::Status LimitReachedCheckingTransform::prepare(
-        const PortNumbers & updated_input_ports,
-        const PortNumbers & updated_output_ports)
-{
-
 }
 
 }

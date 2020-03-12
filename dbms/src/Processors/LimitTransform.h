@@ -8,23 +8,10 @@ namespace DB
 
 class LimitTransform : public IProcessor
 {
-public:
-    /// Common counter of read rows. It is shared between several streams.
-    /// Is used for pre-limit. Needed to skip main limit phase and avoid the resizing pipeline to single stream.
-    struct LimitState
-    {
-        std::atomic<size_t> total_read_rows = 0;
-    };
-
-    using LimitStatePtr = std::shared_ptr<LimitState>;
-
 private:
-    InputPort & input;
-    OutputPort & output;
 
     size_t limit;
     size_t offset;
-    LimitStatePtr limit_state;
     size_t rows_read = 0; /// including the last read block
     bool always_read_till_end;
 
@@ -40,44 +27,30 @@ private:
     Chunk previous_row_chunk;  /// for WITH TIES, contains only sort columns
 
     std::vector<size_t> sort_column_positions;
+
+    std::vector<InputPort *> input_ports;
+    std::vector<OutputPort *> output_ports;
+
+    std::vector<char> is_port_pair_finished;
+    size_t num_finished_port_pairs = 0;
+
     Chunk makeChunkWithPreviousRow(const Chunk & current_chunk, size_t row_num) const;
     ColumnRawPtrs extractSortColumns(const Columns & columns) const;
     bool sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, size_t current_chunk_row_num) const;
 
 public:
     LimitTransform(
-        const Block & header_, size_t limit_, size_t offset_, LimitStatePtr limit_state_ = nullptr,
+        const Block & header_, size_t limit_, size_t offset_, size_t num_streams = 1,
         bool always_read_till_end_ = false, bool with_ties_ = false,
         SortDescription description_ = {});
 
     String getName() const override { return "Limit"; }
 
-    Status prepare() override;
-    void work() override;
-
-    InputPort & getInputPort() { return input; }
-    OutputPort & getOutputPort() { return output; }
+    Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
+    Status preparePair(InputPort &, OutputPort &);
+    void splitChunk();
 
     UInt64 getRowsBeforeLimitAtLeast() const { return rows_before_limit_at_least; }
-};
-
-class LimitReachedCheckingTransform : public IProcessor
-{
-public:
-    LimitReachedCheckingTransform(
-            const Block & header_, size_t num_streams,
-            size_t limit, size_t offset, LimitTransform::LimitStatePtr limit_state_);
-
-    String getName() const override { return "Limit"; }
-
-    Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
-
-private:
-    size_t max_total_rows_to_read;
-    LimitTransform::LimitStatePtr limit_state;
-
-    std::vector<InputPort *> input_ports;
-    std::vector<OutputPort *> output_ports;
 };
 
 }
