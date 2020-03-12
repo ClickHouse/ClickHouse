@@ -8,7 +8,7 @@ LimitTransform::LimitTransform(
     const Block & header_, size_t limit_, size_t offset_, size_t num_streams,
     bool always_read_till_end_, bool with_ties_,
     SortDescription description_)
-    : IProcessor({header_}, {header_})
+    : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
     , limit(limit_), offset(offset_)
     , always_read_till_end(always_read_till_end_)
     , with_ties(with_ties_), description(std::move(description_))
