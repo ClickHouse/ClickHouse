@@ -92,8 +92,22 @@ IProcessor::Status LimitTransform::prepare(
     for (auto pos : updated_output_ports)
         process_pair(pos);
 
+    /// All ports are finished. It may happen even before we reached the limit (has less data then limit).
     if (num_finished_port_pairs == input_ports.size())
         return Status::Finished;
+
+    /// If we reached limit for some port, then close others. Otherwise some sources may infinitely read data.
+    /// Example: SELECT * FROM system.numbers_mt WHERE number = 1000000 LIMIT 1
+    if ((rows_read >= offset + limit) && !previous_row_chunk && !always_read_till_end)
+    {
+        for (auto & input : inputs)
+            input.close();
+
+        for (auto & output : outputs)
+            output.finish();
+
+        return Status::Finished;
+    }
 
     if (has_full_port)
         return Status::PortFull;
