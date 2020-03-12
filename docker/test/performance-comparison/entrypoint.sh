@@ -27,7 +27,7 @@ function find_reference_sha
     # building and testing not the nominal last SHA specified by pull/.../head
     # and SHA_TO_TEST, but a revision that is merged with recent master, given
     # by pull/.../merge ref.
-    if [ git -C ch rev-parse pr/merge &> /dev/null ]
+    if git -C ch rev-parse pr/merge
     then
         start_ref=pr/merge
     fi
@@ -60,19 +60,15 @@ if [ "$REF_PR" == "" ]; then echo Reference PR is not specified ; exit 1 ; fi
 
 # Show what we're testing
 (
-    echo Reference SHA is "$REF_SHA"
     git -C ch log -1 --decorate "$REF_SHA" ||:
-    echo
 ) | tee left-commit.txt
 
 (
-    echo SHA to test is "$SHA_TO_TEST"
     git -C ch log -1 --decorate "$SHA_TO_TEST" ||:
-    if [ git -C ch rev-parse pr/merge &> /dev/null ]
+    if git -C ch rev-parse pr/merge &> /dev/null
     then
         echo
-        echo
-        echo Real tested commit is $(git -C ch rev-parse pr/merge)
+        echo Real tested commit is:
         git -C ch log -1 --decorate pr/merge
     fi
 ) | tee right-commit.txt
