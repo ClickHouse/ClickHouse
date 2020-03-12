@@ -22,6 +22,8 @@ LimitTransform::LimitTransform(
     for (auto & output : outputs)
         output_ports.emplace_back(&output);
 
+    is_port_pair_finished.assign(num_streams, false);
+
     for (const auto & desc : description)
     {
         if (!desc.column_name.empty())
