@@ -10,6 +10,10 @@
         </any_of>
     </stop_conditions>
 
+    <settings>
+        <max_memory_usage>20000000000</max_memory_usage>
+    </settings>
+
     <substitutions>
         <substitution>
             <name>arg</name>
