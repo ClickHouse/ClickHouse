@@ -20,9 +20,13 @@
 
 
 /// We will also wrap some thread synchronization functions to inject sleep/migration before or after.
+#if OS_LINUX
 #define FOR_EACH_WRAPPED_FUNCTION(M) \
     M(int, pthread_mutex_lock, pthread_mutex_t * arg) \
-    M(int, pthread_mutex_unlock, pthread_mutex_t * arg) \
+    M(int, pthread_mutex_unlock, pthread_mutex_t * arg)
+#else
+#define FOR_EACH_WRAPPED_FUNCTION(M)
+#endif
 
 
 namespace DB
