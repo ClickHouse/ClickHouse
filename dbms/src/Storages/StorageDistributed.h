@@ -57,7 +57,6 @@ public:
 
     std::string getName() const override { return "Distributed"; }
 
-    bool isDistributed() const override { return true; }
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
