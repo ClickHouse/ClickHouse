@@ -254,7 +254,7 @@ namespace
     }
 
 
-    static const std::vector<std::type_index> & getAllAccessEntityTypes()
+    const std::vector<std::type_index> & getAllAccessEntityTypes()
     {
         static const std::vector<std::type_index> res = {typeid(User), typeid(Role), typeid(RowPolicy), typeid(Quota)};
         return res;

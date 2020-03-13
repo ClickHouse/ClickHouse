@@ -1308,10 +1308,10 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
 
                 Coordination::Requests ops;
 
-                for (size_t i = 0, size = replicas.size(); i < size; ++i)
+                for (const auto & path_part : replicas)
                 {
                     Coordination::Stat stat;
-                    String path = zookeeper_path + "/replicas/" + replicas[i] + "/host";
+                    String path = zookeeper_path + "/replicas/" + path_part + "/host";
                     zookeeper->get(path, &stat);
                     ops.emplace_back(zkutil::makeCheckRequest(path, stat.version));
                 }
@@ -4114,7 +4114,6 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     NullBlockOutputStream output({});
 
     copyData(stream, output);
-    return;
 }
 
 
@@ -4124,14 +4123,13 @@ std::optional<Cluster::Address> StorageReplicatedMergeTree::findClusterAddress(c
     {
         const auto & shards = iter.second->getShardsAddresses();
 
-        for (size_t shard_num = 0; shard_num < shards.size(); ++shard_num)
+        for (const auto & shard : shards)
         {
-            for (size_t replica_num = 0; replica_num < shards[shard_num].size(); ++replica_num)
+            for (const auto & replica : shard)
             {
-                const Cluster::Address & address = shards[shard_num][replica_num];
                 /// user is actually specified, not default
-                if (address.host_name == leader_address.host && address.port == leader_address.queries_port && address.user_specified)
-                    return address;
+                if (replica.host_name == leader_address.host && replica.port == leader_address.queries_port && replica.user_specified)
+                    return replica;
             }
         }
     }
@@ -4908,13 +4906,11 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         }
     }
 
-    for (size_t i = 0; i < src_all_parts.size(); ++i)
+    for (const auto & src_part : src_all_parts)
     {
         /// We also make some kind of deduplication to avoid duplicated parts in case of ATTACH PARTITION
         /// Assume that merges in the partition are quite rare
         /// Save deduplication block ids with special prefix replace_partition
-
-        auto & src_part = src_all_parts[i];
 
         if (!canReplacePartition(src_part))
             throw Exception(
@@ -5089,17 +5085,15 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
     /// Clone parts into destination table.
 
-    for (size_t i = 0; i < src_all_parts.size(); ++i)
+    for (const auto & src_part : src_all_parts)
     {
-        auto & src_part = src_all_parts[i];
-
         if (!dest_table_storage->canReplacePartition(src_part))
             throw Exception(
                 "Cannot move partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
                 ErrorCodes::LOGICAL_ERROR);
 
         String hash_hex = src_part->checksums.getTotalChecksumHex();
-        String block_id_path = "";
+        String block_id_path;
 
         auto lock = dest_table_storage->allocateBlockNumber(partition_id, zookeeper, block_id_path);
         if (!lock)

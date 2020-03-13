@@ -204,7 +204,7 @@ static Context getSubqueryContext(const Context & context)
     subquery_settings.max_result_rows = 0;
     subquery_settings.max_result_bytes = 0;
     /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
-    subquery_settings.extremes = 0;
+    subquery_settings.extremes = false;
     subquery_context.setSettings(subquery_settings);
     return subquery_context;
 }
@@ -1518,14 +1518,6 @@ void InterpreterSelectQuery::executeFetchColumns(
                 pipes.emplace_back(std::move(source));
             }
 
-            /// Pin sources for merge tree tables.
-//            bool pin_sources = dynamic_cast<const MergeTreeData *>(storage.get()) != nullptr;
-//            if (pin_sources)
-//            {
-//                for (size_t i = 0; i < pipes.size(); ++i)
-//                    pipes[i].pinSources(i);
-//            }
-
             for (auto & pipe : pipes)
                 pipe.enableQuota();
 
@@ -1558,19 +1550,19 @@ void InterpreterSelectQuery::executeFetchColumns(
 }
 
 
-void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter)
+void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter)
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<FilterBlockInputStream>(stream, expression, getSelectQuery().where()->getColumnName(), remove_fiter);
+        stream = std::make_shared<FilterBlockInputStream>(stream, expression, getSelectQuery().where()->getColumnName(), remove_filter);
     });
 }
 
-void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter)
+void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter)
 {
     pipeline.addSimpleTransform([&](const Block & block)
     {
-        return std::make_shared<FilterTransform>(block, expression, getSelectQuery().where()->getColumnName(), remove_fiter);
+        return std::make_shared<FilterTransform>(block, expression, getSelectQuery().where()->getColumnName(), remove_filter);
     });
 }
 
@@ -2541,9 +2533,8 @@ void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline, Block header)
     if (header.columns() > 1 && header.has("_dummy"))
         header.erase("_dummy");
 
-    for (size_t i = 0; i < pipeline.streams.size(); ++i)
+    for (auto & stream : pipeline.streams)
     {
-        auto & stream = pipeline.streams[i];
         auto stream_header = stream->getHeader();
         auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
 

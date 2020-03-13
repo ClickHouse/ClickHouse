@@ -281,7 +281,7 @@ ProcessListEntry::~ProcessListEntry()
         user_process_list.resetTrackers();
 
     /// This removes memory_tracker for all requests. At this time, no other memory_trackers live.
-    if (parent.processes.size() == 0)
+    if (parent.processes.empty())
     {
         /// Reset MemoryTracker, similarly (see above).
         parent.total_memory_tracker.logPeakMemoryUsage();

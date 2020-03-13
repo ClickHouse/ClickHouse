@@ -11,7 +11,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PART_TYPE;
 }
 
-std::optional<std::string> MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(const DiskPtr & disk, const String & path_to_part)
+std::optional<std::string> MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(const DiskPtr & disk, const String & path_to_part)
 {
     if (disk->exists(path_to_part))
     {
@@ -47,7 +47,7 @@ MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData
 
 void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const DiskPtr & disk, const String & path_to_part)
 {
-    auto mrk_ext = getMrkExtensionFromFS(disk, path_to_part);
+    auto mrk_ext = getMarksExtensionFromFilesystem(disk, path_to_part);
     if (mrk_ext && *mrk_ext == getNonAdaptiveMrkExtension())
         setNonAdaptive();
 }
