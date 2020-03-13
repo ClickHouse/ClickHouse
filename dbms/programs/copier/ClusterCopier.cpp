@@ -2,6 +2,8 @@
 
 #include "Internals.h"
 
+#include <algorithm>
+
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 
