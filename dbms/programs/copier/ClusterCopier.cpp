@@ -318,6 +318,9 @@ void ClusterCopier::process(const ConnectionTimeouts & timeouts)
             }
         }
 
+        /// Delete helping tables in both cases (whole table is done or not)
+        dropHelpingTables(task_table);
+
         if (!table_is_done)
         {
             throw Exception("Too many tries to process table " + task_table.table_id + ". Abort remaining execution",
@@ -1562,6 +1565,33 @@ void ClusterCopier::dropLocalTableIfExists(const DatabaseAndTableName & table_na
 
     InterpreterDropQuery interpreter(drop_ast, context);
     interpreter.execute();
+}
+
+
+void ClusterCopier::dropHelpingTables(const TaskTable & task_table)
+{
+    LOG_DEBUG(log, "Removing helping tables");
+    for (size_t current_piece_number = 0; current_piece_number < task_table.number_of_splits; ++current_piece_number)
+    {
+        DatabaseAndTableName original_table = task_table.table_push;
+        DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(current_piece_number));
+
+        String query = "DROP TABLE IF EXISTS " + getQuotedTable(helping_table);
+
+        const ClusterPtr & cluster_push = task_table.cluster_push;
+        Settings settings_push = task_cluster->settings_push;
+
+        LOG_DEBUG(log, "Execute distributed DROP TABLE: " << query);
+        /// We have to drop partition_piece on each replica
+        UInt64 num_nodes = executeQueryOnCluster(
+                cluster_push, query,
+                nullptr,
+                &settings_push,
+                PoolMode::GET_MANY,
+                ClusterExecutionMode::ON_EACH_NODE);
+
+        LOG_DEBUG(log, "DROP TABLE query was successfully executed on " << toString(num_nodes) << " nodes.");
+    }
 }
 
 String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings * settings)
