@@ -1,15 +1,15 @@
 ---
-name: Bug report or unexpected behaviour
+name: Unexpected behaviour
 about: Create a report to help us improve ClickHouse
 title: ''
-labels: bug
+labels: unexpected behaviour
 assignees: ''
 
 ---
 
 (you don't have to strictly follow this form)
 
-**Describe the bug or unexpected behaviour**
+**Describe the unexpected behaviour**
 A clear and concise description of what works not as it is supposed to.
 
 **How to reproduce**
