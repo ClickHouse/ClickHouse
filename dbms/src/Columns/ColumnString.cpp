@@ -85,7 +85,29 @@ void ColumnString::updateWeakHash32(WeakHash32 & hash) const
 
         auto str_size = str_end - str_begin;
 
+        if (str_size < 8)
+        {
+            auto value = unalignedLoad<UInt64>(str_begin);
+            value &= (1ull << UInt64((8 * str_size))) - 1ull;
+            *hash_data = intHashCRC32(value, *hash_data);
+        }
+        else
+        {
+            /// Copy from StringRef.h
+            while (str_begin + 8 < str_end)
+            {
+                auto word = unalignedLoad<UInt64>(str_begin);
+                *hash_data = intHashCRC32(word, *hash_data);
+
+                str_begin += 8;
+            }
+
+            auto word = unalignedLoad<UInt64>(str_end - 8);
+            *hash_data = intHashCRC32(word, *hash_data);
+        }
+
         ++offset_begin;
+        ++hash_data;
         str_begin = str_end;
     }
 }

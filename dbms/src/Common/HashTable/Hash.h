@@ -58,6 +58,18 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x)
 #endif
 }
 
+inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
+{
+#ifdef __SSE4_2__
+    return _mm_crc32_u64(updated_value, x);
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+    return  __crc32cd(updated_value, x);
+#else
+    /// On other platforms we do not have CRC32. NOTE This can be confusing.
+    return intHash64(x) ^ updated_value;
+#endif
+}
+
 
 template <typename T>
 inline size_t DefaultHash64(T key)
