@@ -1808,7 +1808,9 @@ void MergeTreeData::alterDataPart(
             out.write(b);
 
         in.readSuffix();
-        add_checksums = out.writeSuffixAndGetChecksums();
+        /// Ugly but will be removed soon (TODO alesap)
+        MergeTreeData::MutableDataPartPtr mutable_part = std::const_pointer_cast<IMergeTreeDataPart>(part);
+        add_checksums = out.writeSuffixAndGetChecksums(mutable_part, mutable_part->checksums);
     }
 
     /// Update the checksums.
@@ -1882,34 +1884,6 @@ void MergeTreeData::changeSettings(
         storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
         settings_ast = new_settings;
     }
-}
-
-void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part)
-{
-    auto & empty_columns = data_part->expired_columns;
-    if (empty_columns.empty())
-        return;
-
-    NamesAndTypesList new_columns;
-    for (const auto & [name, type] : data_part->getColumns())
-        if (!empty_columns.count(name))
-            new_columns.emplace_back(name, type);
-
-    std::stringstream log_message;
-    for (auto it = empty_columns.begin(); it != empty_columns.end(); ++it)
-    {
-        if (it != empty_columns.begin())
-            log_message << ", ";
-        log_message << *it;
-    }
-
-    LOG_INFO(log, "Removing empty columns: " << log_message.str() << " from part " << data_part->name);
-    AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(data_part));
-    alterDataPart(new_columns, getIndices().indices, false, transaction);
-    if (transaction->isValid())
-        transaction->commit();
-
-    empty_columns.clear();
 }
 
 void MergeTreeData::freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder &)
