@@ -6,7 +6,7 @@
 #include <memory>
 #include <filesystem>
 
-#include <port/unistd.h>
+#include <unistd.h>
 #include <sys/stat.h>
 
 #include <boost/program_options.hpp>
@@ -90,7 +90,7 @@ public:
     {
         global_context.makeGlobalContext();
         global_context.getSettingsRef().copyChangesFrom(cmd_settings);
-        if (input_files.size() < 1)
+        if (input_files.empty())
             throw Exception("No tests were specified", ErrorCodes::BAD_ARGUMENTS);
     }
 
@@ -156,7 +156,7 @@ private:
 
         LOG_INFO(log, "Test configurations prepared");
 
-        if (tests_configurations.size())
+        if (!tests_configurations.empty())
         {
             Strings outputs;
 
@@ -174,7 +174,7 @@ private:
                     break;
             }
 
-            if (!lite_output && outputs.size())
+            if (!lite_output && !outputs.empty())
             {
                 std::cout << "[" << std::endl;
 

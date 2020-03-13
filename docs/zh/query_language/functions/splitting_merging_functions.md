@@ -27,4 +27,4 @@ SELECT alphaTokens('abca1abc')
 │ ['abca','abc']          │
 └─────────────────────────┘
 ```
-[来源文章](https://clickhouse.yandex/docs/en/query_language/functions/splitting_merging_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/splitting_merging_functions/) <!--hide-->

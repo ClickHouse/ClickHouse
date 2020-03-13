@@ -81,4 +81,4 @@
     - [Ecto](https://github.com/elixir-ecto/ecto)
         - [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
 
-[来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party/integrations/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/zh/interfaces/third-party/integrations/) <!--hide-->

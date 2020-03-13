@@ -12,6 +12,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_)
     : bits_per_row(bits_per_row_), hash_functions(hash_functions_)
@@ -71,12 +75,12 @@ void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr)
         throw Exception("Cannot read data to a non-empty bloom filter index.", ErrorCodes::LOGICAL_ERROR);
 
     readVarUInt(total_rows, istr);
-    for (size_t index = 0; index < bloom_filters.size(); ++index)
+    for (auto & filter : bloom_filters)
     {
         static size_t atom_size = 8;
         size_t bytes_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
-        bloom_filters[index] = std::make_shared<BloomFilter>(bytes_size, hash_functions, 0);
-        istr.read(reinterpret_cast<char *>(bloom_filters[index]->getFilter().data()), bytes_size);
+        filter = std::make_shared<BloomFilter>(bytes_size, hash_functions, 0);
+        istr.read(reinterpret_cast<char *>(filter->getFilter().data()), bytes_size);
     }
 }
 
@@ -114,13 +118,9 @@ void MergeTreeIndexGranuleBloomFilter::fillingBloomFilter(BloomFilterPtr & bf, c
     {
         const auto & hash_column_vec = hash_column->getData();
 
-        for (size_t index = 0, size = hash_column_vec.size(); index < size; ++index)
-        {
-            const UInt64 & bf_base_hash = hash_column_vec[index];
-
+        for (const auto & bf_base_hash : hash_column_vec)
             for (size_t i = 0; i < hash_functions; ++i)
                 bf->addHashWithSeed(bf_base_hash, BloomFilterHash::bf_hash_seed[i]);
-        }
     }
 }
 

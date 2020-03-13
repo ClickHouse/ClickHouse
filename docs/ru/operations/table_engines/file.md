@@ -76,4 +76,4 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
     - индексы;
     - репликация.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/file/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/file/) <!--hide-->

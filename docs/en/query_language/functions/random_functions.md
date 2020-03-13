@@ -20,4 +20,4 @@ Uses a linear congruential generator.
 
 Returns a pseudo-random UInt32 number, The value is one for different blocks.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/random_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/random_functions/) <!--hide-->

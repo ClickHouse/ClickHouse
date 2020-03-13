@@ -102,4 +102,4 @@
 
 При перезапуске сервера, квоты сбрасываются.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/quotas/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/quotas/) <!--hide-->

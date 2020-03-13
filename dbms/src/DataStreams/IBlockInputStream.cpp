@@ -17,13 +17,12 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int OUTPUT_IS_NOT_SORTED;
     extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_BYTES;
     extern const int TOO_MANY_ROWS_OR_BYTES;
-    extern const int TIMEOUT_EXCEEDED;
-    extern const int TOO_SLOW;
     extern const int LOGICAL_ERROR;
-    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
     extern const int TOO_DEEP_PIPELINE;
 }
 
@@ -203,30 +202,9 @@ void IBlockInputStream::updateExtremes(Block & block)
 }
 
 
-static bool handleOverflowMode(OverflowMode mode, const String & message, int code)
-{
-    switch (mode)
-    {
-        case OverflowMode::THROW:
-            throw Exception(message, code);
-        case OverflowMode::BREAK:
-            return false;
-        default:
-            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-    }
-}
-
-
 bool IBlockInputStream::checkTimeLimit()
 {
-    if (limits.speed_limits.max_execution_time != 0
-        && info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.speed_limits.max_execution_time.totalMicroseconds()) * 1000)
-        return handleOverflowMode(limits.timeout_overflow_mode,
-            "Timeout exceeded: elapsed " + toString(info.total_stopwatch.elapsedSeconds())
-                + " seconds, maximum: " + toString(limits.speed_limits.max_execution_time.totalMicroseconds() / 1000000.0),
-            ErrorCodes::TIMEOUT_EXCEEDED);
-
-    return true;
+    return limits.speed_limits.checkTimeLimit(info.total_stopwatch.elapsed(), limits.timeout_overflow_mode);
 }
 
 
@@ -358,9 +336,7 @@ Block IBlockInputStream::getTotals()
     forEachChild([&] (IBlockInputStream & child)
     {
         res = child.getTotals();
-        if (res)
-            return true;
-        return false;
+        return bool(res);
     });
     return res;
 }
@@ -375,9 +351,7 @@ Block IBlockInputStream::getExtremes()
     forEachChild([&] (IBlockInputStream & child)
     {
         res = child.getExtremes();
-        if (res)
-            return true;
-        return false;
+        return bool(res);
     });
     return res;
 }
@@ -413,9 +387,9 @@ size_t IBlockInputStream::checkDepthImpl(size_t max_depth, size_t level) const
         throw Exception("Query pipeline is too deep. Maximum: " + toString(max_depth), ErrorCodes::TOO_DEEP_PIPELINE);
 
     size_t res = 0;
-    for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)
+    for (const auto & child : children)
     {
-        size_t child_depth = (*it)->checkDepth(level + 1);
+        size_t child_depth = child->checkDepth(level + 1);
         if (child_depth > res)
             res = child_depth;
     }

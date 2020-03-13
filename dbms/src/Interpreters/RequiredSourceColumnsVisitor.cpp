@@ -51,9 +51,8 @@ bool RequiredSourceColumnsMatcher::needChildVisit(const ASTPtr & node, const AST
 
     if (const auto * f = node->as<ASTFunction>())
     {
-        /// "indexHint" is a special function for index analysis. Everything that is inside it is not calculated. @sa KeyCondition
         /// "lambda" visit children itself.
-        if (f->name == "indexHint" || f->name == "lambda")
+        if (f->name == "lambda")
             return false;
     }
 

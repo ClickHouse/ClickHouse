@@ -5,4 +5,4 @@
 
 Дата хранится без учёта часового пояса.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/date/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/date/) <!--hide-->

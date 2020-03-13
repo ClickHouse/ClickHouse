@@ -2,6 +2,7 @@
 0000000000	1	1	Code: 6,
 waiting	test	kill_mutation_r1	0000000000
 Mutation 0000000000 was killed
+0
 *** Create and kill invalid mutation that blocks another mutation ***
 0000000001	1	1	Code: 6,
 waiting	test	kill_mutation_r1	0000000001

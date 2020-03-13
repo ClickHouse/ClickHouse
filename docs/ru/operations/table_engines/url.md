@@ -73,4 +73,4 @@ SELECT * FROM url_engine_table
     - репликация.
 
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/url/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/url/) <!--hide-->

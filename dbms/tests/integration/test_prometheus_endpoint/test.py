@@ -3,6 +3,7 @@ import pytest
 
 import re
 import requests
+import time
 
 from helpers.cluster import ClickHouseCluster
 
@@ -24,7 +25,7 @@ def parse_response_line(line):
         "# HELP",
         "# TYPE",
     ]
-    assert any(line.startswith(prefix) for prefix in allowed_prefixes), msg
+    assert any(line.startswith(prefix) for prefix in allowed_prefixes)
 
     if line.startswith("#"):
         return {}
@@ -34,12 +35,23 @@ def parse_response_line(line):
     return {name: int(val)}
 
 
-def get_and_check_metrics():
-    response = requests.get("http://{host}:{port}/metrics".format(
-        host=node.ip_address, port=8001), allow_redirects=False)
+def get_and_check_metrics(retries):
+    while True:
+        try:
+            response = requests.get("http://{host}:{port}/metrics".format(
+                host=node.ip_address, port=8001), allow_redirects=False)
 
-    if response.status_code != 200:
-        response.raise_for_status()
+            if response.status_code != 200:
+                response.raise_for_status()
+
+            break
+        except:
+            if retries >= 0:
+                retries -= 1
+                time.sleep(0.5)
+                continue
+            else:
+                raise
 
     assert response.headers['content-type'].startswith('text/plain')
 
@@ -55,13 +67,13 @@ def get_and_check_metrics():
 
 def test_prometheus_endpoint(start_cluster):
 
-    metrics_dict = get_and_check_metrics()
+    metrics_dict = get_and_check_metrics(10)
     assert metrics_dict['ClickHouseProfileEvents_Query'] >= 0
     prev_query_count = metrics_dict['ClickHouseProfileEvents_Query']
 
-    resp = node.query("SELECT 1")
-    resp = node.query("SELECT 2")
-    resp = node.query("SELECT 3")
+    node.query("SELECT 1")
+    node.query("SELECT 2")
+    node.query("SELECT 3")
 
-    metrics_dict = get_and_check_metrics()
+    metrics_dict = get_and_check_metrics(10)
     assert metrics_dict['ClickHouseProfileEvents_Query'] >= prev_query_count + 3

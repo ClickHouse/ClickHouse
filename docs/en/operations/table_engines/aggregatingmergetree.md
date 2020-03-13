@@ -91,4 +91,4 @@ GROUP BY StartDate
 ORDER BY StartDate;
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/aggregatingmergetree/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/aggregatingmergetree/) <!--hide-->

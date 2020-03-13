@@ -74,4 +74,4 @@ example01-{01..02}-{1|2}
 
 `remoteSecure` - аналогично функции `remote`, но с соединением по шифрованному каналу. Порт по умолчанию - `tcp_port_secure` из конфига или 9440.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/table_functions/remote/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/remote/) <!--hide-->

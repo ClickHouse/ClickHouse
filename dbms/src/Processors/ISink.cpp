@@ -15,7 +15,10 @@ ISink::Status ISink::prepare()
         return Status::Ready;
 
     if (input.isFinished())
+    {
+        onFinish();
         return Status::Finished;
+    }
 
     input.setNeeded();
     if (!input.hasData())

@@ -39,4 +39,4 @@ For each config file, the server also generates `file-preprocessed.xml` files wh
 
 The server tracks changes in config files, as well as files and ZooKeeper nodes that were used when performing substitutions and overrides, and reloads the settings for users and clusters on the fly. This means that you can modify the cluster, users, and their settings without restarting the server.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/configuration_files/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/configuration_files/) <!--hide-->

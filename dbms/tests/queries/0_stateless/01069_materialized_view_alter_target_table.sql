@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS mv;
 DROP TABLE IF EXISTS mv_source;
 DROP TABLE IF EXISTS mv_target;
 
@@ -13,3 +14,7 @@ INSERT INTO mv_source VALUES (1),(2),(3);
 
 SELECT * FROM mv ORDER BY a;
 SELECT * FROM mv_target ORDER BY a;
+
+DROP TABLE mv;
+DROP TABLE mv_source;
+DROP TABLE mv_target;

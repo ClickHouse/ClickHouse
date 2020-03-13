@@ -180,4 +180,4 @@ SELECT
 
 与[parseDateTimeBestEffort](#type_conversion_functions-parsedatetimebesteffort)相同，但它遇到无法处理的日期格式时返回零Date或零DateTime。
 
-[来源文章](https://clickhouse.yandex/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

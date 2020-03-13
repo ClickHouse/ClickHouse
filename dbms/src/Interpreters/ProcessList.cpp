@@ -28,8 +28,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING;
     extern const int LOGICAL_ERROR;
-    extern const int TOO_MANY_ROWS;
-    extern const int TOO_MANY_BYTES;
 }
 
 
@@ -181,12 +179,12 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             /// You should specify this value in configuration for default profile,
             ///  not for specific users, sessions or queries,
             ///  because this setting is effectively global.
-            total_memory_tracker.setOrRaiseLimit(settings.max_memory_usage_for_all_queries);
+            total_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_all_queries);
             total_memory_tracker.setDescription("(total)");
 
             /// Track memory usage for all simultaneously running queries from single user.
             user_process_list.user_memory_tracker.setParent(&total_memory_tracker);
-            user_process_list.user_memory_tracker.setOrRaiseLimit(settings.max_memory_usage_for_user);
+            user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_user);
             user_process_list.user_memory_tracker.setDescription("(for user)");
 
             /// Actualize thread group info
@@ -198,7 +196,15 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                 thread_group->query = process_it->query;
 
                 /// Set query-level memory trackers
-                thread_group->memory_tracker.setOrRaiseLimit(process_it->max_memory_usage);
+                thread_group->memory_tracker.setOrRaiseHardLimit(process_it->max_memory_usage);
+
+                if (query_context.hasTraceCollector())
+                {
+                    /// Set up memory profiling
+                    thread_group->memory_tracker.setOrRaiseProfilerLimit(settings.memory_profiler_step);
+                    thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
+                }
+
                 thread_group->memory_tracker.setDescription("(for query)");
                 if (process_it->memory_tracker_fault_probability)
                     thread_group->memory_tracker.setFaultProbability(process_it->memory_tracker_fault_probability);
@@ -275,7 +281,7 @@ ProcessListEntry::~ProcessListEntry()
         user_process_list.resetTrackers();
 
     /// This removes memory_tracker for all requests. At this time, no other memory_trackers live.
-    if (parent.processes.size() == 0)
+    if (parent.processes.empty())
     {
         /// Reset MemoryTracker, similarly (see above).
         parent.total_memory_tracker.logPeakMemoryUsage();
@@ -447,8 +453,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         if (get_thread_list)
         {
             std::lock_guard lock(thread_group->mutex);
-            res.thread_numbers = thread_group->thread_numbers;
-            res.os_thread_ids = thread_group->os_thread_ids;
+            res.thread_ids = thread_group->thread_ids;
         }
 
         if (get_profile_events)

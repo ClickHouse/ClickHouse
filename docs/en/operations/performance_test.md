@@ -38,7 +38,7 @@ wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/benchma
 
 According to the instruction:
 
-[https://clickhouse.yandex/docs/en/getting_started/example_datasets/metrica/](https://clickhouse.yandex/docs/en/getting_started/example_datasets/metrica/)
+[https://clickhouse.tech/docs/en/getting_started/example_datasets/metrica/](https://clickhouse.yandex/docs/en/getting_started/example_datasets/metrica/)
 
 ("hits" table containing 100 million rows)
 
@@ -73,4 +73,4 @@ mcedit benchmark-new.sh
 
 \12. Send the numbers and the info about your hardware configuration to clickhouse-feedback@yandex-team.com
 
-All the results are published here: [https://clickhouse.yandex/benchmark_hardware.html](https://clickhouse.yandex/benchmark_hardware.html)
+All the results are published here: [https://clickhouse.tech/benchmark_hardware.html](https://clickhouse.yandex/benchmark_hardware.html)

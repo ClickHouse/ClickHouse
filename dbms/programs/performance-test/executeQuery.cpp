@@ -21,8 +21,6 @@ void checkFulfilledConditionsAndUpdate(
     stop_conditions.reportBytesReadUncompressed(statistics.total_bytes_read);
     stop_conditions.reportTotalTime(statistics.watch.elapsed() / (1000 * 1000));
     stop_conditions.reportMinTimeNotChangingFor(statistics.min_time_watch.elapsed() / (1000 * 1000));
-    stop_conditions.reportMaxSpeedNotChangingFor(statistics.max_rows_speed_watch.elapsed() / (1000 * 1000));
-    stop_conditions.reportAverageSpeedNotChangingFor(statistics.avg_rows_speed_watch.elapsed() / (1000 * 1000));
 
     if (stop_conditions.areFulfilled())
     {

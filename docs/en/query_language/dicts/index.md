@@ -12,4 +12,4 @@ ClickHouse supports:
 - [Plug-in (external) dictionaries](external_dicts.md) with a [set of functions](../functions/ext_dict_functions.md).
 
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/dicts/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/dicts/) <!--hide-->

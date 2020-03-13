@@ -1,5 +1,4 @@
 <test>
-    <type>loop</type>
 
     <stop_conditions>
         <all_of>
@@ -21,5 +20,5 @@
         <max_threads>1</max_threads>
     </settings>
 
-    <query>SELECT Title, URL FROM hits_10m_single PREWHERE WatchID % 2 = 1 WHERE UserID = 10000 FORMAT Null</query>
+    <query>SELECT Title FROM hits_10m_single PREWHERE WatchID % 2 = 1 WHERE UserID = 10000 FORMAT Null</query>
 </test>

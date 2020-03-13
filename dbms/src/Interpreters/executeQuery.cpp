@@ -51,8 +51,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int QUERY_IS_TOO_LARGE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int QUERY_WAS_CANCELLED;
 }
@@ -251,7 +249,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     BlockIO res;
     QueryPipeline & pipeline = res.pipeline;
 
-    String query_for_logging = "";
+    String query_for_logging;
 
     try
     {
@@ -478,8 +476,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         << formatReadableSizeWithBinarySuffix(elem.read_bytes / elapsed_seconds) << "/sec.");
                 }
 
-                elem.thread_numbers = std::move(info.thread_numbers);
-                elem.os_thread_ids = std::move(info.os_thread_ids);
+                elem.thread_ids = std::move(info.thread_ids);
                 elem.profile_counters = std::move(info.profile_counters);
 
                 if (log_queries)
@@ -517,8 +514,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                     elem.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 
-                    elem.thread_numbers = std::move(info.thread_numbers);
-                    elem.os_thread_ids = std::move(info.os_thread_ids);
+                    elem.thread_ids = std::move(info.thread_ids);
                     elem.profile_counters = std::move(info.profile_counters);
                 }
 
@@ -559,7 +555,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         throw;
     }
 
-    return std::make_tuple(ast, res);
+    return std::make_tuple(ast, std::move(res));
 }
 
 
@@ -595,8 +591,7 @@ void executeQuery(
     WriteBuffer & ostr,
     bool allow_into_outfile,
     Context & context,
-    std::function<void(const String &, const String &)> set_content_type_and_format,
-    std::function<void(const String &)> set_query_id)
+    std::function<void(const String &, const String &, const String &, const String &)> set_result_details)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -685,11 +680,8 @@ void executeQuery(
                 out->onProgress(progress);
             });
 
-            if (set_content_type_and_format)
-                set_content_type_and_format(out->getContentType(), format_name);
-
-            if (set_query_id)
-                set_query_id(context.getClientInfo().current_query_id);
+            if (set_result_details)
+                set_result_details(context.getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
 
             if (ast->as<ASTWatchQuery>())
             {
@@ -747,11 +739,8 @@ void executeQuery(
                 out->onProgress(progress);
             });
 
-            if (set_content_type_and_format)
-                set_content_type_and_format(out->getContentType(), format_name);
-
-            if (set_query_id)
-                set_query_id(context.getClientInfo().current_query_id);
+            if (set_result_details)
+                set_result_details(context.getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
 
             pipeline.setOutput(std::move(out));
 

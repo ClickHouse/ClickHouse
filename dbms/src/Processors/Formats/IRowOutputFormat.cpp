@@ -5,6 +5,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 void IRowOutputFormat::consume(DB::Chunk chunk)
 {
@@ -13,7 +17,7 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
     auto num_rows = chunk.getNumRows();
     auto & columns = chunk.getColumns();
 
-    for (UInt64 row = 0; row < num_rows; ++row)
+    for (size_t row = 0; row < num_rows; ++row)
     {
         if (!first_row)
             writeRowBetweenDelimiter();
@@ -22,7 +26,7 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
         write(columns, row);
 
         if (write_single_row_callback)
-            write_single_row_callback();
+            write_single_row_callback(columns, row);
     }
 }
 

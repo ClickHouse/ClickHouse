@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/WriteBuffer.h>
+#include <Columns/IColumn.h>
 
 #include <cppkafka/cppkafka.h>
 
@@ -8,7 +9,7 @@
 
 namespace DB
 {
-
+class Block;
 using ProducerPtr = std::shared_ptr<cppkafka::Producer>;
 
 class WriteBufferToKafkaProducer : public WriteBuffer
@@ -20,10 +21,11 @@ public:
         std::optional<char> delimiter,
         size_t rows_per_message,
         size_t chunk_size_,
-        std::chrono::milliseconds poll_timeout);
+        std::chrono::milliseconds poll_timeout,
+        const Block & header);
     ~WriteBufferToKafkaProducer() override;
 
-    void count_row();
+    void count_row(const Columns & columns, size_t row);
     void flush();
 
 private:
@@ -38,6 +40,8 @@ private:
 
     size_t rows = 0;
     std::list<std::string> chunks;
+    std::optional<size_t> key_column_index;
+    std::optional<size_t> timestamp_column_index;
 };
 
 }

@@ -78,6 +78,8 @@ public:
 
 };
 
+SensitiveDataMasker::~SensitiveDataMasker() = default;
+
 std::unique_ptr<SensitiveDataMasker> SensitiveDataMasker::sensitive_data_masker = nullptr;
 
 void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_)
@@ -152,8 +154,6 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
         LOG_INFO(logger, rules_count << " query masking rules loaded.");
     }
 }
-
-SensitiveDataMasker::~SensitiveDataMasker() {}
 
 void SensitiveDataMasker::addMaskingRule(
     const std::string & name, const std::string & regexp_string, const std::string & replacement_string)

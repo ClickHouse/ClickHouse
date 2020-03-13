@@ -45,4 +45,12 @@ std::string getClusterName(const IAST & node)
     throw Exception("Illegal expression instead of cluster name.", ErrorCodes::BAD_ARGUMENTS);
 }
 
+
+String getClusterNameAndMakeLiteral(ASTPtr & node)
+{
+    String cluster_name = getClusterName(*node);
+    node = std::make_shared<ASTLiteral>(cluster_name);
+    return cluster_name;
+}
+
 }

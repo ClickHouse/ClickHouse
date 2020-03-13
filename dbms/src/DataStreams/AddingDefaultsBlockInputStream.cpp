@@ -1,7 +1,7 @@
 #include <Common/typeid_cast.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/evaluateMissingDefaults.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -56,11 +56,20 @@ Block AddingDefaultsBlockInputStream::readImpl()
     if (block_missing_values.empty())
         return res;
 
+    /// res block alredy has all columns values, with default value for type
+    /// (not value specified in table). We identify which columns we need to
+    /// recalculate with help of block_missing_values.
     Block evaluate_block{res};
     /// remove columns for recalculation
     for (const auto & column : column_defaults)
+    {
         if (evaluate_block.has(column.first))
-            evaluate_block.erase(column.first);
+        {
+            size_t column_idx = res.getPositionByName(column.first);
+            if (block_missing_values.hasDefaultBits(column_idx))
+                evaluate_block.erase(column.first);
+        }
+    }
 
     if (!evaluate_block.columns())
         evaluate_block.insert({ColumnConst::create(ColumnUInt8::create(1, 0), res.rows()), std::make_shared<DataTypeUInt8>(), "_dummy"});
@@ -131,7 +140,7 @@ void AddingDefaultsBlockInputStream::checkCalculated(const ColumnWithTypeAndName
         throw Exception("Mismach column types while adding defaults", ErrorCodes::TYPE_MISMATCH);
 }
 
-void AddingDefaultsBlockInputStream::mixNumberColumns(TypeIndex type_idx, MutableColumnPtr & column_mixed, const ColumnPtr & column_defs,
+void AddingDefaultsBlockInputStream::mixNumberColumns(TypeIndex type_idx, MutableColumnPtr & column_mixed, const ColumnPtr & col_defaults,
                                                       const BlockMissingValues::RowsBitMask & defaults_mask) const
 {
     auto call = [&](const auto & types) -> bool
@@ -150,7 +159,7 @@ void AddingDefaultsBlockInputStream::mixNumberColumns(TypeIndex type_idx, Mutabl
 
             typename ColVecType::Container & dst = col_read->getData();
 
-            if (auto const_col_defs = checkAndGetColumnConst<ColVecType>(column_defs.get()))
+            if (auto const_col_defs = checkAndGetColumnConst<ColVecType>(col_defaults.get()))
             {
                 FieldType value = checkAndGetColumn<ColVecType>(const_col_defs->getDataColumnPtr().get())->getData()[0];
 
@@ -160,7 +169,7 @@ void AddingDefaultsBlockInputStream::mixNumberColumns(TypeIndex type_idx, Mutabl
 
                 return true;
             }
-            else if (auto col_defs = checkAndGetColumn<ColVecType>(column_defs.get()))
+            else if (auto col_defs = checkAndGetColumn<ColVecType>(col_defaults.get()))
             {
                 auto & src = col_defs->getData();
                 for (size_t i = 0; i < defaults_mask.size(); ++i)

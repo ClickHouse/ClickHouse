@@ -4,4 +4,4 @@
 - [clickhouse-copier](clickhouse-copier.md) — Copies (and reshards) data from one cluster to another cluster.
 - [clickhouse-benchmark](clickhouse-benchmark.md) — Loads server with the custom queries and settings.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/utils/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/utils/) <!--hide-->

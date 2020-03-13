@@ -11,5 +11,5 @@
 在 Yandex.Metrica 中，TinyLog 表用于小批量处理的中间数据。
 
 
-[Original article](https://clickhouse.yandex/docs/zh/operations/table_engines/tinylog/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/zh/operations/table_engines/tinylog/) <!--hide-->
 

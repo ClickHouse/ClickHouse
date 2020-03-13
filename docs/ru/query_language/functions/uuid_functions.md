@@ -111,5 +111,5 @@ SELECT
 - [dictGetUUID](ext_dict_functions.md)
 - [dictGetUUIDOrDefault](ext_dict_functions.md)
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/uuid_function/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/uuid_function/) <!--hide-->
 

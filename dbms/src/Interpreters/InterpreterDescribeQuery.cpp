@@ -10,6 +10,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Access/AccessFlags.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -88,6 +89,9 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
             String database_name;
             String table_name;
             std::tie(database_name, table_name) = IdentifierSemantic::extractDatabaseAndTable(identifier);
+
+            if (!database_name.empty() || !context.isExternalTableExist(table_name))
+                context.checkAccess(AccessType::SHOW, database_name, table_name);
 
             table = context.getTable(database_name, table_name);
         }

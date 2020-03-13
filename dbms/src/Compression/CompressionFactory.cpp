@@ -17,6 +17,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_CODEC;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
@@ -68,7 +69,7 @@ CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, DataTypePtr
     throw Exception("Unknown codec family: " + queryToString(ast), ErrorCodes::UNKNOWN_CODEC);
 }
 
-CompressionCodecPtr CompressionCodecFactory::get(const UInt8 byte_code) const
+CompressionCodecPtr CompressionCodecFactory::get(const uint8_t byte_code) const
 {
     const auto family_code_and_creator = family_code_with_codec.find(byte_code);
 
@@ -94,7 +95,7 @@ CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name,
 
 void CompressionCodecFactory::registerCompressionCodecWithType(
     const String & family_name,
-    std::optional<UInt8> byte_code,
+    std::optional<uint8_t> byte_code,
     CreatorWithType creator)
 {
     if (creator == nullptr)
@@ -109,7 +110,7 @@ void CompressionCodecFactory::registerCompressionCodecWithType(
             throw Exception("CompressionCodecFactory: the codec family name '" + family_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
 }
 
-void CompressionCodecFactory::registerCompressionCodec(const String & family_name, std::optional<UInt8> byte_code, Creator creator)
+void CompressionCodecFactory::registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator)
 {
     registerCompressionCodecWithType(family_name, byte_code, [family_name, creator](const ASTPtr & ast, DataTypePtr /* data_type */)
     {
@@ -119,7 +120,7 @@ void CompressionCodecFactory::registerCompressionCodec(const String & family_nam
 
 void CompressionCodecFactory::registerSimpleCompressionCodec(
     const String & family_name,
-    std::optional<UInt8> byte_code,
+    std::optional<uint8_t> byte_code,
     SimpleCreator creator)
 {
     registerCompressionCodec(family_name, byte_code, [family_name, creator](const ASTPtr & ast)

@@ -1,12 +1,7 @@
 # Third-party libraries may have substandard code.
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
-elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
-endif ()
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
@@ -54,7 +49,6 @@ if (USE_INTERNAL_BTRIE_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
-    unset (BUILD_SHARED_LIBS CACHE)
     set (ZLIB_ENABLE_TESTS 0 CACHE INTERNAL "")
     set (SKIP_INSTALL_ALL 1 CACHE INTERNAL "")
     set (ZLIB_COMPAT 1 CACHE INTERNAL "") # also enables WITH_GZFILEOP
@@ -70,10 +64,14 @@ if (USE_INTERNAL_ZLIB_LIBRARY)
     add_subdirectory (${INTERNAL_ZLIB_NAME})
     # We should use same defines when including zlib.h as used when zlib compiled
     target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
-    target_compile_definitions (zlibstatic PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
+    if (TARGET zlibstatic)
+        target_compile_definitions (zlibstatic PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
+    endif ()
     if (ARCH_AMD64 OR ARCH_AARCH64)
-       target_compile_definitions (zlib PUBLIC X86_64 UNALIGNED_OK)
-       target_compile_definitions (zlibstatic PUBLIC X86_64 UNALIGNED_OK)
+        target_compile_definitions (zlib PUBLIC X86_64 UNALIGNED_OK)
+        if (TARGET zlibstatic)
+            target_compile_definitions (zlibstatic PUBLIC X86_64 UNALIGNED_OK)
+        endif ()
     endif ()
 endif ()
 
@@ -116,7 +114,7 @@ function(mysql_support)
     endif()
     if (USE_INTERNAL_ZLIB_LIBRARY)
         set(ZLIB_FOUND ON)
-        set(ZLIB_LIBRARY zlibstatic)
+        set(ZLIB_LIBRARY ${ZLIB_LIBRARIES})
         set(WITH_EXTERNAL_ZLIB ON)
     endif()
     add_subdirectory (mariadb-connector-c)
@@ -148,9 +146,6 @@ endif ()
 
 if(USE_INTERNAL_SNAPPY_LIBRARY)
     set(SNAPPY_BUILD_TESTS 0 CACHE INTERNAL "")
-    if (NOT MAKE_STATIC_LIBRARIES)
-        set(BUILD_SHARED_LIBS 1) # TODO: set at root dir
-    endif()
 
     add_subdirectory(snappy)
 
@@ -259,6 +254,7 @@ if (USE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
     set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
     set (LLVM_TARGETS_TO_BUILD "X86;AArch64" CACHE STRING "")
     add_subdirectory (llvm/llvm)
+    target_include_directories(LLVMSupport SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
 endif ()
 
 if (USE_INTERNAL_LIBGSASL_LIBRARY)
@@ -306,7 +302,7 @@ if (USE_INTERNAL_AWS_S3_LIBRARY)
     # The library is large - avoid bloat.
     target_compile_options (aws_s3 PRIVATE -g0)
     target_compile_options (aws_s3_checksums PRIVATE -g0)
-    target_compile_options (libcurl PRIVATE -g0)
+    target_compile_options (curl PRIVATE -g0)
 endif ()
 
 if (USE_BASE64)
@@ -336,4 +332,10 @@ if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
 
+add_subdirectory(grpc-cmake)
+
 add_subdirectory(replxx-cmake)
+add_subdirectory(FastMemcpy)
+add_subdirectory(widecharwidth)
+add_subdirectory(consistent-hashing)
+add_subdirectory(consistent-hashing-sumbur)

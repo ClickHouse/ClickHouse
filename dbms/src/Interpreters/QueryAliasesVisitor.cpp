@@ -30,15 +30,13 @@ static String wrongAliasMessage(const ASTPtr & ast, const ASTPtr & prev_ast, con
 }
 
 
-bool QueryAliasesMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
+bool QueryAliasesMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
 {
     /// Don't descent into table functions and subqueries and special case for ArrayJoin.
-    if (node->as<ASTTableExpression>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTArrayJoin>())
-        return false;
-    return true;
+    return !(node->as<ASTTableExpression>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTArrayJoin>());
 }
 
-void QueryAliasesMatcher::visit(ASTPtr & ast, Data & data)
+void QueryAliasesMatcher::visit(const ASTPtr & ast, Data & data)
 {
     if (auto * s = ast->as<ASTSubquery>())
         visit(*s, ast, data);
@@ -81,8 +79,9 @@ void QueryAliasesMatcher::visit(const ASTArrayJoin &, const ASTPtr & ast, Data &
 /// set unique aliases for all subqueries. this is needed, because:
 /// 1) content of subqueries could change after recursive analysis, and auto-generated column names could become incorrect
 /// 2) result of different scalar subqueries can be cached inside expressions compilation cache and must have different names
-void QueryAliasesMatcher::visit(ASTSubquery & subquery, const ASTPtr & ast, Data & data)
+void QueryAliasesMatcher::visit(const ASTSubquery & const_subquery, const ASTPtr & ast, Data & data)
 {
+    ASTSubquery & subquery = const_cast<ASTSubquery &>(const_subquery);
     Aliases & aliases = data.aliases;
 
     static std::atomic_uint64_t subquery_index = 0;

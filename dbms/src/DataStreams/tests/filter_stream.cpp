@@ -22,6 +22,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 
 int main(int argc, char ** argv)
@@ -43,7 +44,7 @@ try
     context.makeGlobalContext();
 
     NamesAndTypesList source_columns = {{"number", std::make_shared<DataTypeUInt64>()}};
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(ast, source_columns);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(ast, source_columns);
     SelectQueryExpressionAnalyzer analyzer(ast, syntax_result, context);
     ExpressionActionsChain chain(context);
     analyzer.appendSelect(chain, false);
@@ -58,7 +59,7 @@ try
 
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
-    BlockInputStreamPtr in = table->read(column_names, {}, context, stage, 8192, 1)[0];
+    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, context, stage, 8192, 1)[0]));
     in = std::make_shared<FilterBlockInputStream>(in, expression, "equals(modulo(number, 3), 1)");
     in = std::make_shared<LimitBlockInputStream>(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
 

@@ -17,11 +17,11 @@ class Client:
         self.command += ['--host', self.host, '--port', str(self.port), '--stacktrace']
 
 
-    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False):
-        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, ignore_error=ignore_error).get_answer()
+    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, ignore_error=False):
+        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, ignore_error=ignore_error).get_answer()
 
 
-    def get_query_request(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False):
+    def get_query_request(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, ignore_error=False):
         command = self.command[:]
 
         if stdin is None:
@@ -37,15 +37,18 @@ class Client:
         if user is not None:
             command += ['--user', user]
 
+        if password is not None:
+            command += ['--password', password]
+
         return CommandRequest(command, stdin, timeout, ignore_error)
 
 
-    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None):
-        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user).get_error()
+    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None):
+        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password).get_error()
 
 
-    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None):
-        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user).get_answer_and_error()
+    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None):
+        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password).get_answer_and_error()
 
 class QueryTimeoutExceedException(Exception):
     pass
@@ -67,7 +70,11 @@ class CommandRequest:
 
         #print " ".join(command)
 
-        self.process = sp.Popen(command, stdin=stdin_file, stdout=self.stdout_file, stderr=self.stderr_file)
+        # we suppress stderror on client becase sometimes thread sanitizer
+        # can print some debug information there
+        env = {}
+        env["TSAN_OPTIONS"] = "verbosity=0"
+        self.process = sp.Popen(command, stdin=stdin_file, stdout=self.stdout_file, stderr=self.stderr_file, env=env)
 
         self.timer = None
         self.process_finished_before_timeout = True

@@ -1,12 +1,16 @@
-#include <cstdlib>
-
 #include "MemoryTracker.h"
-#include <common/likely.h>
-#include <common/logger_useful.h>
+
+#include <IO/WriteHelpers.h>
+#include "Common/TraceCollector.h"
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <Common/CurrentThread.h>
-#include <IO/WriteHelpers.h>
+#include <common/likely.h>
+#include <common/logger_useful.h>
+
+#include <atomic>
+#include <cmath>
+#include <cstdlib>
 
 
 namespace DB
@@ -66,7 +70,6 @@ static void logMemoryUsage(Int64 amount)
 }
 
 
-
 void MemoryTracker::alloc(Int64 size)
 {
     if (blocker.isCancelled())
@@ -81,7 +84,8 @@ void MemoryTracker::alloc(Int64 size)
     if (metric != CurrentMetrics::end())
         CurrentMetrics::add(metric, size);
 
-    Int64 current_limit = limit.load(std::memory_order_relaxed);
+    Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
+    Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
 
     /// Using non-thread-safe random number generator. Joint distribution in different threads would not be uniform.
     /// In this case, it doesn't matter.
@@ -98,12 +102,19 @@ void MemoryTracker::alloc(Int64 size)
             message << " " << description;
         message << ": fault injected. Would use " << formatReadableSizeWithBinarySuffix(will_be)
             << " (attempt to allocate chunk of " << size << " bytes)"
-            << ", maximum: " << formatReadableSizeWithBinarySuffix(current_limit);
+            << ", maximum: " << formatReadableSizeWithBinarySuffix(current_hard_limit);
 
         throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
     }
 
-    if (unlikely(current_limit && will_be > current_limit))
+    if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
+    {
+        auto no_track = blocker.cancel();
+        DB::TraceCollector::collect(DB::TraceType::Memory, StackTrace(), size);
+        setOrRaiseProfilerLimit((will_be + profiler_step - 1) / profiler_step * profiler_step);
+    }
+
+    if (unlikely(current_hard_limit && will_be > current_hard_limit))
     {
         free(size);
 
@@ -116,7 +127,7 @@ void MemoryTracker::alloc(Int64 size)
             message << " " << description;
         message << " exceeded: would use " << formatReadableSizeWithBinarySuffix(will_be)
             << " (attempt to allocate chunk of " << size << " bytes)"
-            << ", maximum: " << formatReadableSizeWithBinarySuffix(current_limit);
+            << ", maximum: " << formatReadableSizeWithBinarySuffix(current_hard_limit);
 
         throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
     }
@@ -174,7 +185,8 @@ void MemoryTracker::resetCounters()
 {
     amount.store(0, std::memory_order_relaxed);
     peak.store(0, std::memory_order_relaxed);
-    limit.store(0, std::memory_order_relaxed);
+    hard_limit.store(0, std::memory_order_relaxed);
+    profiler_limit.store(0, std::memory_order_relaxed);
 }
 
 
@@ -187,11 +199,19 @@ void MemoryTracker::reset()
 }
 
 
-void MemoryTracker::setOrRaiseLimit(Int64 value)
+void MemoryTracker::setOrRaiseHardLimit(Int64 value)
 {
     /// This is just atomic set to maximum.
-    Int64 old_value = limit.load(std::memory_order_relaxed);
-    while (old_value < value && !limit.compare_exchange_weak(old_value, value))
+    Int64 old_value = hard_limit.load(std::memory_order_relaxed);
+    while (old_value < value && !hard_limit.compare_exchange_weak(old_value, value))
+        ;
+}
+
+
+void MemoryTracker::setOrRaiseProfilerLimit(Int64 value)
+{
+    Int64 old_value = profiler_limit.load(std::memory_order_relaxed);
+    while (old_value < value && !profiler_limit.compare_exchange_weak(old_value, value))
         ;
 }
 
@@ -207,7 +227,7 @@ namespace CurrentMemoryTracker
             if (untracked > untracked_memory_limit)
             {
                 /// Zero untracked before track. If tracker throws out-of-limit we would be able to alloc up to untracked_memory_limit bytes
-                /// more. It could be usefull for enlarge Exception message in rethrow logic.
+                /// more. It could be useful to enlarge Exception message in rethrow logic.
                 Int64 tmp = untracked;
                 untracked = 0;
                 memory_tracker->alloc(tmp);
@@ -218,10 +238,7 @@ namespace CurrentMemoryTracker
     void realloc(Int64 old_size, Int64 new_size)
     {
         Int64 addition = new_size - old_size;
-        if (addition > 0)
-            alloc(addition);
-        else
-            free(-addition);
+        addition > 0 ? alloc(addition) : free(-addition);
     }
 
     void free(Int64 size)

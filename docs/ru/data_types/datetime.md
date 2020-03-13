@@ -1,6 +1,6 @@
 # DateTime {#data_type-datetime}
 
-Позволяет хранить момент времени, который может быть представлен как календарная дата и время. `DateTime` позволяет учесть часовой пояс для хранимых значений.
+Позволяет хранить момент времени, который может быть представлен как календарная дата и время.
 
 Синтаксис:
 
@@ -14,13 +14,15 @@ DateTime([timezone])
 
 ## Использование
 
-Момент времени сохраняется как Unix timestamp, независимо от часового пояса и переходов на летнее/зимнее время. Дополнительно, `DateTime` позволяет хранить часовой пояс, который влияет на то, как буду отображаться значения типа `DateTime` в текстовом виде и как будут парситься входные строки. Список поддержанных временных зон можно найти в [IANA Time Zone Database](https://www.iana.org/time-zones).
+Момент времени сохраняется как [Unix timestamp](https://ru.wikipedia.org/wiki/Unix-%D0%B2%D1%80%D0%B5%D0%BC%D1%8F), независимо от часового пояса и переходов на летнее/зимнее время. Дополнительно, тип `DateTime` позволяет хранить часовой пояс, единый для всей колонки, который влияет на то, как будут отображаться значения типа `DateTime` в текстовом виде и как будут парситься значения заданные в виде строк ('2020-01-01 05:00:01'). Часовой пояс не хранится в строках таблицы (выборки), а хранится в метаданных колонки. 
+Список поддерживаемых временных зон можно найти в [IANA Time Zone Database](https://www.iana.org/time-zones).
+Пакет `tzdata`, содержащий [базу данных часовых поясов IANA](https://www.iana.org/time-zones), должен быть установлен в системе. Используйте команду `timedatectl list-timezones` для получения списка часовых поясов, известных локальной системе.
 
 Часовой пояс для столбца типа `DateTime` можно в явном виде установить при создании таблицы. Если часовой пояс не установлен, то ClickHouse использует значение параметра [timezone](../operations/server_settings/settings.md#server_settings-timezone), установленное в конфигурации сервера или в настройках операционной системы на момент запуска сервера.
 
 Консольный клиент ClickHouse по умолчанию использует часовой пояс сервера, если для значения `DateTime` часовой пояс не был задан в явном виде при инициализации типа данных. Чтобы использовать часовой пояс клиента, запустите [clickhouse-client](../interfaces/cli.md) с параметром `--use_client_time_zone`.
 
-ClickHouse по умолчанию выводит значение в формате `YYYY-MM-DD hh:mm:ss`. Формат можно поменять с помощь функции [formatDateTime](../query_language/functions/date_time_functions.md#formatdatetime).
+ClickHouse отображает значения типа `DateTime` в формате `YYYY-MM-DD hh:mm:ss`. Отображение можно поменять с помощью функции [formatDateTime](../query_language/functions/date_time_functions.md#formatdatetime).
 
 При вставке данных в ClickHouse, можно использовать различные форматы даты и времени в зависимости от значения настройки [date_time_input_format](../operations/settings/settings.md#settings-date_time_input_format).
 
@@ -28,18 +30,19 @@ ClickHouse по умолчанию выводит значение в форма
 
 **1.** Создание таблицы с столбцом типа `DateTime` и вставка данных в неё:
 
+```sql
 CREATE TABLE dt
 (
     `timestamp` DateTime('Europe/Moscow'), 
     `event_id` UInt8
 )
-ENGINE = TinyLog
+ENGINE = TinyLog;
 ```
 ```sql
-INSERT INTO dt Values (1546300800, 1), ('2019-01-01 00:00:00', 2)
+INSERT INTO dt Values (1546300800, 1), ('2019-01-01 00:00:00', 2);
 ```
 ```sql
-SELECT * FROM dt
+SELECT * FROM dt;
 ```
 ```text
 ┌───────────timestamp─┬─event_id─┐
@@ -48,7 +51,10 @@ SELECT * FROM dt
 └─────────────────────┴──────────┘
 ```
 
-Unix timestamp `1546300800` в часовом поясе `Europe/London (UTC+0)` представляет время `'2019-01-01 00:00:00'`, однако столбец `timestamp` хранит время в часовом поясе `Europe/Moscow (UTC+3)`, таким образом значение, вставленное в виде Unix timestamp, представляет время `2019-01-01 03:00:00`.
+* При вставке даты-времени как целого числа, оно трактуется как Unix Timestamp (UTC). Unix timestamp `1546300800` в часовом поясе `Europe/London (UTC+0)` представляет время `'2019-01-01 00:00:00'`. Однако, столбец `timestamp` имеет тип `DateTime('Europe/Moscow (UTC+3)')`, так что при выводе в виде строки время отобразится как `2019-01-01 03:00:00`.
+* При вставке даты-времени в виде строки, время трактуется соответственно часовому поясу установленному для колонки. `'2019-01-01 00:00:00'` трактуется как время по Москве (и в базу сохраняется `1546290000`)
+
+**2.** Фильтрация по значениям даты-времени
 
 ```sql
 SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Europe/Moscow')
@@ -58,8 +64,17 @@ SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Europe/Mos
 │ 2019-01-01 00:00:00 │        2 │
 └─────────────────────┴──────────┘
 ```
+Фильтровать по колонке типа `DateTime` можно, указывая строковое значение в фильтре `WHERE`. Конвертация будет выполнена автоматически:
+```sql
+SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
+```
+```text
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 03:00:00 │        1 │
+└─────────────────────┴──────────┘
+```
 
-**2.** Получение часового пояса для значения типа `DateTime`:
+**3.** Получение часового пояса для колонки типа `DateTime`:
 
 ```sql
 SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
@@ -68,6 +83,21 @@ SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
 ┌──────────────column─┬─x─────────────────────────┐
 │ 2019-10-16 04:12:04 │ DateTime('Europe/Moscow') │
 └─────────────────────┴───────────────────────────┘
+```
+
+**4.** Конвертация часовых поясов
+
+```sql
+SELECT 
+toDateTime(timestamp, 'Europe/London') as lon_time, 
+toDateTime(timestamp, 'Europe/Moscow') as mos_time
+FROM dt
+```
+```text
+┌───────────lon_time──┬────────────mos_time─┐
+│ 2019-01-01 00:00:00 │ 2019-01-01 03:00:00 │
+│ 2018-12-31 21:00:00 │ 2019-01-01 00:00:00 │
+└─────────────────────┴─────────────────────┘
 ```
 
 ## See Also
@@ -80,4 +110,4 @@ SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
 - [Операторы для работы с датой и временем](../query_language/operators.md#operators-datetime)
 - [Тип данных `Date`](date.md)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/datetime/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/datetime/) <!--hide-->

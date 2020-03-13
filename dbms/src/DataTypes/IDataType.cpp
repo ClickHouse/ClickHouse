@@ -27,9 +27,7 @@ IDataType::IDataType() : custom_name(nullptr), custom_text_serialization(nullptr
 {
 }
 
-IDataType::~IDataType()
-{
-}
+IDataType::~IDataType() = default;
 
 String IDataType::getName() const
 {

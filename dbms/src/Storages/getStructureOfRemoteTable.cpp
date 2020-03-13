@@ -20,7 +20,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NO_REMOTE_SHARD_FOUND;
 }
 
 

@@ -19,20 +19,23 @@ public:
 
     Chunk generate() override;
 
-    IBlockInputStream & getStream() { return *stream; }
+    BlockInputStreamPtr & getStream() { return stream; }
 
     void addTotalsPort();
 
     /// Implementation for methods from ISourceWithProgress.
     void setLimits(const LocalLimits & limits_) final { stream->setLimits(limits_); }
-    void setQuota(const std::shared_ptr<QuotaContext> & quota_) final { stream->setQuota(quota_); }
+    void setQuota(const QuotaContextPtr & quota_) final { stream->setQuota(quota_); }
     void setProcessListElement(QueryStatus * elem) final { stream->setProcessListElement(elem); }
     void setProgressCallback(const ProgressCallback & callback) final { stream->setProgressCallback(callback); }
     void addTotalRowsApprox(size_t value) final { stream->addTotalRowsApprox(value); }
 
+protected:
+    void onCancel() override { stream->cancel(false); }
+
 private:
     bool has_aggregate_functions = false;
-    bool force_add_aggregating_info;
+    bool force_add_aggregating_info = false;
     BlockInputStreamPtr stream;
 
     Chunk totals;
@@ -42,6 +45,8 @@ private:
     bool is_generating_finished = false;
     bool is_stream_finished = false;
     bool is_stream_started = false;
+
+    void init();
 };
 
 }

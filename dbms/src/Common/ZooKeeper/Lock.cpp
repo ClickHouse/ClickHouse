@@ -11,7 +11,7 @@ bool Lock::tryLock()
     {
         /// проверим, что нода создана и я ее владелец
         if (tryCheck() != Status::LOCKED_BY_ME)
-            locked.reset(nullptr);
+            locked.reset();
     }
     else
     {
@@ -20,11 +20,11 @@ bool Lock::tryLock()
 
         if (code == Coordination::ZNODEEXISTS)
         {
-            locked.reset(nullptr);
+            locked.reset();
         }
         else if (code == Coordination::ZOK)
         {
-            locked.reset(new ZooKeeperHandler(zookeeper));
+            locked = std::make_unique<ZooKeeperHandler>(zookeeper);
         }
         else
         {
@@ -41,7 +41,7 @@ void Lock::unlock()
         auto zookeeper = zookeeper_holder->getZooKeeper();
         if (tryCheck() == Status::LOCKED_BY_ME)
             zookeeper->remove(lock_path, -1);
-        locked.reset(nullptr);
+        locked.reset();
     }
 }
 
@@ -71,6 +71,6 @@ Lock::Status Lock::tryCheck() const
 
 void Lock::unlockAssumeLockNodeRemovedManually()
 {
-    locked.reset(nullptr);
+    locked.reset();
 }
 

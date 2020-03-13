@@ -6,6 +6,7 @@
 #include <Processors/ISource.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 
+
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationMerge;
@@ -13,24 +14,42 @@ namespace ProfileEvents
 
 namespace DB
 {
-
-/// Convert block to chunk.
-/// Adds additional info about aggregation.
-static Chunk convertToChunk(const Block & block)
+namespace ErrorCodes
 {
-    auto info = std::make_shared<AggregatedChunkInfo>();
-    info->bucket_num = block.info.bucket_num;
-    info->is_overflows = block.info.is_overflows;
-
-    UInt64 num_rows = block.rows();
-    Chunk chunk(block.getColumns(), num_rows);
-    chunk.setChunkInfo(std::move(info));
-
-    return chunk;
+    extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
+    /// Convert block to chunk.
+    /// Adds additional info about aggregation.
+    Chunk convertToChunk(const Block & block)
+    {
+        auto info = std::make_shared<AggregatedChunkInfo>();
+        info->bucket_num = block.info.bucket_num;
+        info->is_overflows = block.info.is_overflows;
+
+        UInt64 num_rows = block.rows();
+        Chunk chunk(block.getColumns(), num_rows);
+        chunk.setChunkInfo(std::move(info));
+
+        return chunk;
+    }
+
+    const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
+    {
+        auto & info = chunk.getChunkInfo();
+        if (!info)
+            throw Exception("Chunk info was not set for chunk.", ErrorCodes::LOGICAL_ERROR);
+
+        auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+        if (!agg_info)
+            throw Exception("Chunk should have AggregatedChunkInfo.", ErrorCodes::LOGICAL_ERROR);
+
+        return agg_info;
+    }
+
     /// Reads chunks from file in native format. Provide chunks with aggregation info.
     class SourceFromNativeStream : public ISource
     {
@@ -77,13 +96,13 @@ public:
     struct SharedData
     {
         std::atomic<UInt32> next_bucket_to_merge = 0;
-        std::array<std::atomic<Int32>, NUM_BUCKETS> source_for_bucket;
+        std::array<std::atomic<bool>, NUM_BUCKETS> is_bucket_processed;
         std::atomic<bool> is_cancelled = false;
 
         SharedData()
         {
-            for (auto & source : source_for_bucket)
-                source = -1;
+            for (auto & flag : is_bucket_processed)
+                flag = false;
         }
     };
 
@@ -93,13 +112,11 @@ public:
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataVariantsPtr data_,
         SharedDataPtr shared_data_,
-        Int32 source_number_,
         Arena * arena_)
         : ISource(params_->getHeader())
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))
-        , source_number(source_number_)
         , arena(arena_)
         {}
 
@@ -116,7 +133,7 @@ protected:
         Block block = params->aggregator.mergeAndConvertOneBucketToBlock(*data, arena, params->final, bucket_num, &shared_data->is_cancelled);
         Chunk chunk = convertToChunk(block);
 
-        shared_data->source_for_bucket[bucket_num] = source_number;
+        shared_data->is_bucket_processed[bucket_num] = true;
 
         return chunk;
     }
@@ -125,7 +142,6 @@ private:
     AggregatingTransformParamsPtr params;
     ManyAggregatedDataVariantsPtr data;
     SharedDataPtr shared_data;
-    Int32 source_number;
     Arena * arena;
 };
 
@@ -249,16 +265,23 @@ private:
     {
         auto & output = outputs.front();
 
-        Int32 next_input_num = shared_data->source_for_bucket[current_bucket_num];
-        if (next_input_num < 0)
+        for (auto & input : inputs)
+        {
+            if (!input.isFinished() && input.hasData())
+            {
+                auto chunk = input.pull();
+                auto bucket = getInfoFromChunk(chunk)->bucket_num;
+                chunks[bucket] = std::move(chunk);
+            }
+        }
+
+        if (!shared_data->is_bucket_processed[current_bucket_num])
             return Status::NeedData;
 
-        auto next_input = std::next(inputs.begin(), next_input_num);
-        /// next_input can't be finished till data was not pulled.
-        if (!next_input->hasData())
+        if (!chunks[current_bucket_num])
             return Status::NeedData;
 
-        output.push(next_input->pull());
+        output.push(std::move(chunks[current_bucket_num]));
 
         ++current_bucket_num;
         if (current_bucket_num == NUM_BUCKETS)
@@ -286,6 +309,7 @@ private:
 
     UInt32 current_bucket_num = 0;
     static constexpr Int32 NUM_BUCKETS = 256;
+    std::array<Chunk, NUM_BUCKETS> chunks;
 
     Processors processors;
 
@@ -338,7 +362,7 @@ private:
     #define M(NAME) \
                 else if (first->type == AggregatedDataVariants::Type::NAME) \
                     params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data);
-        if (false) {}
+        if (false) {} // NOLINT
         APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
     #undef M
         else
@@ -359,7 +383,7 @@ private:
         {
             Arena * arena = first->aggregates_pools.at(thread).get();
             auto source = std::make_shared<ConvertingAggregatedToChunksSource>(
-                    params, data, shared_data, thread, arena);
+                    params, data, shared_data, arena);
 
             processors.emplace_back(std::move(source));
         }
@@ -520,7 +544,7 @@ void AggregatingTransform::initGenerate()
             variants.convertToTwoLevel();
 
         /// Flush data in the RAM to disk also. It's easier than merging on-disk and RAM data.
-        if (variants.size())
+        if (!variants.empty())
             params->aggregator.writeToTemporaryFile(variants);
     }
 
@@ -549,7 +573,7 @@ void AggregatingTransform::initGenerate()
                 if (cur_variants->isConvertibleToTwoLevel())
                     cur_variants->convertToTwoLevel();
 
-                if (cur_variants->size())
+                if (!cur_variants->empty())
                     params->aggregator.writeToTemporaryFile(*cur_variants);
             }
         }

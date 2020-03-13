@@ -92,7 +92,7 @@ AsHexStringHelper<T> AsHexString(const T & container)
 template <typename T>
 std::string bin(const T & value, size_t bits = sizeof(T)*8)
 {
-    static const UInt8 MAX_BITS = sizeof(T)*8;
+    static const uint8_t MAX_BITS = sizeof(T)*8;
     assert(bits <= MAX_BITS);
 
     return std::bitset<sizeof(T) * 8>(static_cast<unsigned long long>(value))
@@ -158,8 +158,8 @@ public:
 
     explicit BinaryDataAsSequenceOfValuesIterator(const Container & container_)
         : container(container_),
-          data(&container[0]),
-          data_end(reinterpret_cast<const char *>(data) + container.size()),
+          data(container.data()),
+          data_end(container.data() + container.size()),
           current_value(T{})
     {
         static_assert(sizeof(container[0]) == 1 && std::is_pod<std::decay_t<decltype(container[0])>>::value, "Only works on containers of byte-size PODs.");
@@ -270,7 +270,7 @@ template <typename T, typename ContainerLeft, typename ContainerRight>
 }
 
 template <typename ContainerLeft, typename ContainerRight>
-::testing::AssertionResult EqualByteContainers(UInt8 element_size, const ContainerLeft & left, const ContainerRight & right)
+::testing::AssertionResult EqualByteContainers(uint8_t element_size, const ContainerLeft & left, const ContainerRight & right)
 {
     switch (element_size)
     {
@@ -547,11 +547,11 @@ TEST_P(CodecTest, TranscodingWithoutDataType)
 }
 
 // Param is tuple-of-tuple to simplify instantiating with values, since typically group of cases test only one codec.
-class CodecTest_Compatibility : public ::testing::TestWithParam<std::tuple<Codec, std::tuple<CodecTestSequence, std::string>>>
+class CodecTestCompatibility : public ::testing::TestWithParam<std::tuple<Codec, std::tuple<CodecTestSequence, std::string>>>
 {};
 
 // Check that iput sequence when encoded matches the encoded string binary.
-TEST_P(CodecTest_Compatibility, Encoding)
+TEST_P(CodecTestCompatibility, Encoding)
 {
     const auto & codec_spec = std::get<0>(GetParam());
     const auto & [data_sequence, expected] = std::get<1>(GetParam());
@@ -571,7 +571,7 @@ TEST_P(CodecTest_Compatibility, Encoding)
 }
 
 // Check that binary string is exactly decoded into input sequence.
-TEST_P(CodecTest_Compatibility, Decoding)
+TEST_P(CodecTestCompatibility, Decoding)
 {
     const auto & codec_spec = std::get<0>(GetParam());
     const auto & [expected, encoded_data] = std::get<1>(GetParam());
@@ -584,10 +584,10 @@ TEST_P(CodecTest_Compatibility, Decoding)
     ASSERT_TRUE(EqualByteContainers(expected.data_type->getSizeOfValueInMemory(), expected.serialized_data, decoded));
 }
 
-class CodecTest_Performance : public ::testing::TestWithParam<std::tuple<Codec, CodecTestSequence>>
+class CodecTestPerformance : public ::testing::TestWithParam<std::tuple<Codec, CodecTestSequence>>
 {};
 
-TEST_P(CodecTest_Performance, TranscodingWithDataType)
+TEST_P(CodecTestPerformance, TranscodingWithDataType)
 {
     const auto & [codec_spec, test_seq] = GetParam();
     const auto codec = ::makeCodec(codec_spec.codec_statement, test_seq.data_type);
@@ -789,12 +789,14 @@ auto FFand0Generator = []()
 };
 
 
-// Makes many sequences with generator, first sequence length is 1, second is 2... up to `sequences_count`.
+// Makes many sequences with generator, first sequence length is 0, second is 1..., third is 2 up to `sequences_count`.
 template <typename T, typename Generator>
 std::vector<CodecTestSequence> generatePyramidOfSequences(const size_t sequences_count, Generator && generator, const char* generator_name)
 {
     std::vector<CodecTestSequence> sequences;
     sequences.reserve(sequences_count);
+
+    sequences.push_back(makeSeq<T>()); // sequence of size 0
     for (size_t i = 1; i < sequences_count; ++i)
     {
         std::string name = generator_name + std::string(" from 0 to ") + std::to_string(i);
@@ -1157,7 +1159,7 @@ auto DDCompatibilityTestSequence()
 #define BIN_STR(x) std::string{x, sizeof(x) - 1}
 
 INSTANTIATE_TEST_SUITE_P(DoubleDelta,
-    CodecTest_Compatibility,
+    CodecTestCompatibility,
     ::testing::Combine(
         ::testing::Values(Codec("DoubleDelta")),
         ::testing::ValuesIn(std::initializer_list<std::tuple<CodecTestSequence, std::string>>{
@@ -1231,7 +1233,7 @@ auto GCompatibilityTestSequence()
 }
 
 INSTANTIATE_TEST_SUITE_P(Gorilla,
-    CodecTest_Compatibility,
+    CodecTestCompatibility,
     ::testing::Combine(
         ::testing::Values(Codec("Gorilla")),
         ::testing::ValuesIn(std::initializer_list<std::tuple<CodecTestSequence, std::string>>{
@@ -1293,7 +1295,7 @@ INSTANTIATE_TEST_SUITE_P(Gorilla,
 //};
 
 //INSTANTIATE_TEST_SUITE_P(DoubleDelta,
-//    CodecTest_Performance,
+//    CodecTestPerformance,
 //    ::testing::Combine(
 //        ::testing::Values(Codec("DoubleDelta")),
 //        ::testing::Values(
@@ -1310,7 +1312,7 @@ INSTANTIATE_TEST_SUITE_P(Gorilla,
 //);
 
 //INSTANTIATE_TEST_SUITE_P(Gorilla,
-//    CodecTest_Performance,
+//    CodecTestPerformance,
 //    ::testing::Combine(
 //        ::testing::Values(Codec("Gorilla")),
 //        ::testing::Values(

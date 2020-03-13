@@ -7,6 +7,9 @@
 namespace DB
 {
 
+/// LazyOutputFormat is used to retrieve ready data from executing pipeline.
+/// You can periodically call `getBlock` from separate thread.
+/// Used in TCPHandler.
 class LazyOutputFormat : public IOutputFormat
 {
 

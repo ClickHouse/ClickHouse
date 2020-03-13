@@ -55,6 +55,10 @@ If arguments are floating-point numbers, they are pre-converted to integers by d
 The remainder is taken in the same sense as in C++. Truncated division is used for negative numbers.
 An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
 
+## moduloOrZero(a, b)
+
+Differs from 'modulo' in that it returns zero when the divisor is zero.
+
 ## negate(a), -a operator
 
 Calculates a number with the reverse sign. The result is always signed.
@@ -74,4 +78,4 @@ Returns the least common multiple of the numbers.
 An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
 
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/arithmetic_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/arithmetic_functions/) <!--hide-->

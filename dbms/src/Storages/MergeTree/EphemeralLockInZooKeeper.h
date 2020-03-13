@@ -87,7 +87,7 @@ private:
 
 
 /// Acquires block number locks in all partitions.
-class EphemeralLocksInAllPartitions
+class EphemeralLocksInAllPartitions : private boost::noncopyable
 {
 public:
     EphemeralLocksInAllPartitions(

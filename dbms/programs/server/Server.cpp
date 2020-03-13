@@ -44,6 +44,7 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/SystemLog.cpp>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
+#include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -59,6 +60,7 @@
 #include "TCPHandlerFactory.h"
 #include "Common/config_version.h"
 #include <Common/SensitiveDataMasker.h>
+#include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
 
 #if defined(OS_LINUX)
@@ -116,7 +118,6 @@ namespace ErrorCodes
     extern const int FAILED_TO_GETPWUID;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
-    extern const int PATH_ACCESS_DENIED;
 }
 
 
@@ -218,6 +219,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
+
+    if (ThreadFuzzer::instance().isEffective())
+        LOG_WARNING(log, "ThreadFuzzer is enabled. Application will run slowly and unstable.");
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
@@ -466,6 +470,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
+
+            global_context->updateStorageConfiguration(*config);
         },
         /* already_loaded = */ true);
 
@@ -493,6 +499,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_reloader->reload();
         users_config_reloader->reload();
     });
+
+    /// Sets a local directory storing information about access control.
+    std::string access_control_local_path = config().getString("access_control_path", "");
+    if (!access_control_local_path.empty())
+        global_context->getAccessControlManager().setLocalDirectory(access_control_local_path);
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
@@ -577,6 +588,25 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (hasPHDRCache())
         global_context->initializeTraceCollector();
 #endif
+
+    /// Describe multiple reasons when query profiler cannot work.
+
+#if !USE_UNWIND
+    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work without bundled unwind (stack unwinding) library.");
+#endif
+
+#if WITH_COVERAGE
+    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they work extremely slow with test coverage.");
+#endif
+
+#if defined(SANITIZER)
+    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work under sanitizers"
+        " when two different stack unwinding methods will interfere with each other.");
+#endif
+
+    if (!hasPHDRCache())
+        LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
+            " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 
     global_context->setCurrentDatabase(default_database);
 
@@ -668,7 +698,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             return socket_address;
         };
 
-        auto socket_bind_listen = [&](auto & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = 0)
+        auto socket_bind_listen = [&](auto & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false)
         {
                auto address = make_socket_address(host, port);
 #if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100
@@ -878,10 +908,16 @@ int Server::main(const std::vector<std::string> & /*args*/)
         if (servers.empty())
              throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
+        global_context->enableNamedSessions();
+
         for (auto & server : servers)
             server->start();
 
-        setTextLog(global_context->getTextLog());
+        {
+            String level_str = config().getString("text_log.level", "");
+            int level = level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(level_str);
+            setTextLog(global_context->getTextLog(), level);
+        }
         buildLoggers(config(), logger());
 
         main_config_reloader->start();
@@ -985,8 +1021,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(
                 global_context->getConfigRef(), graphite_key, async_metrics));
         }
-
-        SessionCleaner session_cleaner(*global_context);
 
         waitForTerminationRequest();
     }

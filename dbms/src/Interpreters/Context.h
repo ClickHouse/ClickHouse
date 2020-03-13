@@ -4,9 +4,9 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/Types.h>
+#include <Core/UUID.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
-#include <Interpreters/Users.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
@@ -43,8 +43,17 @@ namespace DB
 
 struct ContextShared;
 class Context;
-class QuotaContext;
+class AccessRightsContext;
+using AccessRightsContextPtr = std::shared_ptr<const AccessRightsContext>;
+struct User;
+using UserPtr = std::shared_ptr<const User>;
 class RowPolicyContext;
+using RowPolicyContextPtr = std::shared_ptr<const RowPolicyContext>;
+class QuotaContext;
+using QuotaContextPtr = std::shared_ptr<const QuotaContext>;
+class AccessFlags;
+struct AccessRightsElement;
+class AccessRightsElements;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
@@ -84,20 +93,21 @@ struct StorageID;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;
+using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 class StoragePolicySelector;
+using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
-
 class Volume;
 using VolumePtr = std::shared_ptr<Volume>;
+struct NamedSession;
+
 
 #if USE_EMBEDDED_COMPILER
-
 class CompiledExpressionCache;
-
 #endif
 
 /// Table -> set of table-views that make SELECT from it.
@@ -127,6 +137,7 @@ struct IHostContext
 
 using IHostContextPtr = std::shared_ptr<IHostContext>;
 
+
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
   *  and copied part (which can be its own for each session or query).
@@ -145,10 +156,11 @@ private:
     InputInitializer input_initializer_callback;
     InputBlocksReader input_blocks_reader;
 
-    std::shared_ptr<QuotaContext> quota;           /// Current quota. By default - empty quota, that have no limits.
-    bool is_quota_management_allowed = false;      /// Whether the current user is allowed to manage quotas via SQL commands.
-    std::shared_ptr<RowPolicyContext> row_policy;
-    bool is_row_policy_management_allowed = false; /// Whether the current user is allowed to manage row policies via SQL commands.
+    std::optional<UUID> user_id;
+    std::vector<UUID> current_roles;
+    bool use_default_roles = false;
+    AccessRightsContextPtr access_rights;
+    RowPolicyContextPtr initial_row_policy;
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     std::shared_ptr<const SettingsConstraints> settings_constraints;
@@ -168,8 +180,7 @@ private:
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
 
-    UInt64 session_close_cycle = 0;
-    bool session_is_used = false;
+    friend class NamedSessions;
 
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
@@ -219,10 +230,6 @@ public:
 
     AccessControlManager & getAccessControlManager();
     const AccessControlManager & getAccessControlManager() const;
-    std::shared_ptr<QuotaContext> getQuota() const { return quota; }
-    void checkQuotaManagementIsAllowed();
-    std::shared_ptr<RowPolicyContext> getRowPolicy() const { return row_policy; }
-    void checkRowPolicyManagementIsAllowed();
 
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
@@ -231,14 +238,43 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
+    /// Sets the current user, checks the password and that the specified host is allowed.
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
 
-    /// Used by MySQL Secure Password Authentication plugin.
-    std::shared_ptr<const User> getUser(const String & user_name);
+    UserPtr getUser() const;
+    String getUserName() const;
+    UUID getUserID() const;
 
-    /// Compute and set actual user settings, client_info.current_user should be set
-    void calculateUserSettings();
+    void setCurrentRoles(const std::vector<UUID> & current_roles_);
+    void setCurrentRolesDefault();
+    std::vector<UUID> getCurrentRoles() const;
+    Strings getCurrentRolesNames() const;
+    std::vector<UUID> getEnabledRoles() const;
+    Strings getEnabledRolesNames() const;
+
+    /// Checks access rights.
+    /// Empty database means the current database.
+    void checkAccess(const AccessFlags & access) const;
+    void checkAccess(const AccessFlags & access, const std::string_view & database) const;
+    void checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table) const;
+    void checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
+    void checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
+    void checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
+    void checkAccess(const AccessRightsElement & access) const;
+    void checkAccess(const AccessRightsElements & access) const;
+
+    AccessRightsContextPtr getAccessRights() const;
+
+    RowPolicyContextPtr getRowPolicy() const;
+
+    /// Sets an extra row policy based on `client_info.initial_user`, if it exists.
+    /// TODO: we need a better solution here. It seems we should pass the initial row policy
+    /// because a shard is allowed to don't have the initial user or it may be another user with the same name.
+    void setInitialRowPolicy();
+    RowPolicyContextPtr getInitialRowPolicy() const;
+
+    QuotaContextPtr getQuota() const;
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
@@ -272,19 +308,9 @@ public:
     bool isDatabaseExist(const String & database_name) const;
     bool isDictionaryExists(const String & database_name, const String & dictionary_name) const;
     bool isExternalTableExist(const String & table_name) const;
-    bool hasDatabaseAccessRights(const String & database_name) const;
-
-    bool hasDictionaryAccessRights(const String & dictionary_name) const;
-
-    /** The parameter check_database_access_rights exists to not check the permissions of the database again,
-      * when assertTableDoesntExist or assertDatabaseExists is called inside another function that already
-      * made this check.
-      */
-    void assertTableDoesntExist(const String & database_name, const String & table_name, bool check_database_acccess_rights = true) const;
-    void assertDatabaseExists(const String & database_name, bool check_database_acccess_rights = true) const;
-
+    void assertTableDoesntExist(const String & database_name, const String & table_name) const;
+    void assertDatabaseExists(const String & database_name) const;
     void assertDatabaseDoesntExist(const String & database_name) const;
-    void checkDatabaseAccessRights(const std::string & database_name) const;
 
     const Scalars & getScalars() const;
     const Block & getScalar(const String & name) const;
@@ -340,8 +366,10 @@ public:
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
-    void checkSettingsConstraints(const SettingChange & change);
-    void checkSettingsConstraints(const SettingsChanges & changes);
+    void checkSettingsConstraints(const SettingChange & change) const;
+    void checkSettingsConstraints(const SettingsChanges & changes) const;
+    void clampToSettingsConstraints(SettingChange & change) const;
+    void clampToSettingsConstraints(SettingsChanges & changes) const;
 
     /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const { return settings_constraints; }
@@ -386,19 +414,16 @@ public:
     /// Get query for the CREATE table.
     ASTPtr getCreateExternalTableQuery(const String & table_name) const;
 
-    const DatabasePtr getDatabase(const String & database_name) const;
-    DatabasePtr getDatabase(const String & database_name);
-    const DatabasePtr tryGetDatabase(const String & database_name) const;
-    DatabasePtr tryGetDatabase(const String & database_name);
+    DatabasePtr getDatabase(const String & database_name) const;
+    DatabasePtr tryGetDatabase(const String & database_name) const;
 
-    const Databases getDatabases() const;
-    Databases getDatabases();
+    Databases getDatabases() const;
 
-    std::shared_ptr<Context> acquireSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check) const;
-    void releaseSession(const String & session_id, std::chrono::steady_clock::duration timeout);
+    /// Allow to use named sessions. The thread will be run to cleanup sessions after timeout has expired.
+    /// The method must be called at the server startup.
+    void enableNamedSessions();
 
-    /// Close sessions, that has been expired. Returns how long to wait for next session to be expired, if no new sessions will be added.
-    std::chrono::steady_clock::duration closeSessions() const;
+    std::shared_ptr<NamedSession> acquireNamedSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check);
 
     /// For methods below you may need to acquire a lock by yourself.
     std::unique_lock<std::recursive_mutex> getLock() const;
@@ -489,8 +514,10 @@ public:
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
 
+    /// Call after initialization before using trace collector.
     void initializeTraceCollector();
-    bool hasTraceCollector();
+
+    bool hasTraceCollector() const;
 
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog();
@@ -516,16 +543,18 @@ public:
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
-    DiskSelector & getDiskSelector() const;
+    DiskSelectorPtr getDiskSelector() const;
 
     /// Provides storage disks
-    const DiskPtr & getDisk(const String & name) const;
-    const DiskPtr & getDefaultDisk() const { return getDisk("default"); }
+    DiskPtr getDisk(const String & name) const;
+    DiskPtr getDefaultDisk() const { return getDisk("default"); }
 
-    StoragePolicySelector & getStoragePolicySelector() const;
+    StoragePolicySelectorPtr getStoragePolicySelector() const;
+
+    void updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     /// Provides storage politics schemes
-    const StoragePolicyPtr & getStoragePolicy(const String &name) const;
+    StoragePolicyPtr getStoragePolicy(const String & name) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;
@@ -557,9 +586,6 @@ public:
     String getFormatSchemaPath() const;
     void setFormatSchemaPath(const String & path);
 
-    /// User name and session identifier. Named sessions are local to users.
-    using SessionKey = std::pair<String, String>;
-
     SampleBlockCache & getSampleBlockCache() const;
 
     /// Query parameters for prepared statements.
@@ -589,22 +615,18 @@ public:
 
     MySQLWireContext mysql;
 private:
-    /** Check if the current client has access to the specified database.
-      * If access is denied, throw an exception.
-      * NOTE: This method should always be called when the `shared->mutex` mutex is acquired.
-      */
-    void checkDatabaseAccessRightsImpl(const std::string & database_name) const;
+    /// Compute and set actual user settings, client_info.current_user should be set
+    void calculateUserSettings();
+    void calculateAccessRights();
+
+    template <typename... Args>
+    void checkAccessImpl(const Args &... args) const;
 
     void setProfile(const String & profile);
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 
     StoragePtr getTableImpl(const StorageID & table_id, std::optional<Exception> * exception) const;
-
-    SessionKey getSessionKey(const String & session_id) const;
-
-    /// Session will be closed after specified timeout.
-    void scheduleCloseSession(const SessionKey & key, std::chrono::steady_clock::duration timeout);
 
     void checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const;
 };
@@ -638,24 +660,26 @@ private:
 };
 
 
-class SessionCleaner
+class NamedSessions;
+
+/// User name and session identifier. Named sessions are local to users.
+using NamedSessionKey = std::pair<String, String>;
+
+/// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
+struct NamedSession
 {
-public:
-    SessionCleaner(Context & context_)
-        : context{context_}
+    NamedSessionKey key;
+    UInt64 close_cycle = 0;
+    Context context;
+    std::chrono::steady_clock::duration timeout;
+    NamedSessions & parent;
+
+    NamedSession(NamedSessionKey key_, Context & context_, std::chrono::steady_clock::duration timeout_, NamedSessions & parent_)
+        : key(key_), context(context_), timeout(timeout_), parent(parent_)
     {
     }
-    ~SessionCleaner();
 
-private:
-    void run();
-
-    Context & context;
-
-    std::mutex mutex;
-    std::condition_variable cond;
-    std::atomic<bool> quit{false};
-    ThreadFromGlobalPool thread{&SessionCleaner::run, this};
+    void release();
 };
 
 }

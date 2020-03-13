@@ -25,6 +25,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
 }
 
@@ -62,8 +63,7 @@ bool MergeTreeConditionFullText::createFunctionEqualsCondition(RPNElement & out,
 }
 
 MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(const MergeTreeIndexFullText & index_)
-    : IMergeTreeIndexGranule()
-    , index(index_)
+    : index(index_)
     , bloom_filters(
             index.columns.size(), BloomFilter(index.bloom_filter_size, index.bloom_filter_hashes, index.seed))
     , has_elems(false) {}
@@ -378,11 +378,11 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
             rpn_stack.emplace_back(true, false);
         }
         else
-            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Unexpected function type in BloomFilterCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::mayBeTrueInRange", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected stack size in BloomFilterCondition::mayBeTrueOnGranule", ErrorCodes::LOGICAL_ERROR);
 
     return rpn_stack[0].can_be_true;
 }
@@ -523,12 +523,12 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
     std::vector<size_t> key_position;
 
     Columns columns = prepared_set->getSetElements();
-    for (size_t col = 0; col < key_tuple_mapping.size(); ++col)
+    for (const auto & elem : key_tuple_mapping)
     {
         bloom_filters.emplace_back();
-        key_position.push_back(key_tuple_mapping[col].key_index);
+        key_position.push_back(elem.key_index);
 
-        size_t tuple_idx = key_tuple_mapping[col].tuple_index;
+        size_t tuple_idx = elem.tuple_index;
         const auto & column = columns[tuple_idx];
         for (size_t row = 0; row < prepared_set->getTotalRowCount(); ++row)
         {
@@ -705,8 +705,7 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
 
     ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
 
-    auto syntax = SyntaxAnalyzer(context, {}).analyze(
-            expr_list, new_columns);
+    auto syntax = SyntaxAnalyzer(context).analyze(expr_list, new_columns);
     auto index_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
 
     auto sample = ExpressionAnalyzer(expr_list, syntax, context)

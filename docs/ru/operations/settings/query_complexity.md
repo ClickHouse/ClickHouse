@@ -19,7 +19,7 @@
 
 ## max_memory_usage {#settings_max_memory_usage}
 
-Максимальный возможный объем оперативной памяти для выполнения запроса на одном сервере.
+Максимальный возможный объём оперативной памяти для выполнения запроса на одном сервере.
 
 В конфигурационном файле по умолчанию, ограничение равно 10 ГБ.
 
@@ -36,7 +36,7 @@
 
 ## max_memory_usage_for_user
 
-Максимальный возможный объем оперативной памяти для запросов пользователя на одном сервере.
+Максимальный возможный объём оперативной памяти для запросов пользователя на одном сервере.
 
 Значения по умолчанию определены в файле [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Core/Settings.h#L288). По умолчанию размер не ограничен (`max_memory_usage_for_user = 0`).
 
@@ -44,7 +44,7 @@
 
 ## max_memory_usage_for_all_queries
 
-Максимальный возможный объем оперативной памяти для всех запросов на одном сервере.
+Максимальный возможный объём оперативной памяти для всех запросов на одном сервере.
 
 Значения по умолчанию определены в файле [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Core/Settings.h#L289). По умолчанию размер не ограничен (`max_memory_usage_for_all_queries = 0`).
 
@@ -80,7 +80,7 @@
 
 Возможные значения:
 
-- Максимальный объем RAM (в байтах), который может использовать отдельная операция [GROUP BY](../../query_language/select.md#select-group-by-clause).
+- Максимальный объём RAM (в байтах), который может использовать отдельная операция [GROUP BY](../../query_language/select.md#select-group-by-clause).
 - 0 — `GROUP BY` во внешней памяти отключен.
 
 Значение по умолчанию — 0.
@@ -97,7 +97,7 @@
 
 Что делать, если количество строк, полученное перед сортировкой, превысило одно из ограничений: throw или break. По умолчанию: throw.
 
-## max_result_rows
+## max_result_rows {#setting-max_result_rows}
 
 Ограничение на количество строк результата. Проверяются также для подзапросов и на удалённых серверах при выполнении части распределённого запроса.
 
@@ -108,7 +108,24 @@
 ## result_overflow_mode
 
 Что делать, если объём результата превысил одно из ограничений: throw или break. По умолчанию: throw.
-Использование break по смыслу похоже на LIMIT.
+
+Использование break по смыслу похоже на LIMIT. Break прерывает выполнение только на уровне блока. Т.е. число строк которые вернет запрос будет больше чем ограничение [max_result_rows](#setting-max_result_rows), кратно [max_block_size](settings.md#setting-max_block_size) и зависит от [max_threads](settings.md#settings-max_threads).
+
+Пример:
+```sql
+SET max_threads = 3, max_block_size = 3333; 
+SET max_result_rows = 3334, result_overflow_mode = 'break';
+
+SELECT *
+FROM numbers_mt(100000)
+FORMAT Null;
+```
+
+Результат:
+
+```text
+6666 rows in set. ...
+```
 
 ## max_execution_time
 
@@ -274,4 +291,4 @@
 
 > "Too many partitions for single INSERT block (more than " + toString(max_parts) + "). The limit is controlled by 'max_partitions_per_insert_block' setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc)."
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/query_complexity/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/query_complexity/) <!--hide-->

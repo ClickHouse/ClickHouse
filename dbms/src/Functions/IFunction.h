@@ -24,9 +24,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 }
 
 class Field;
