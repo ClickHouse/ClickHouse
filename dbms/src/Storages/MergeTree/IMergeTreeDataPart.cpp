@@ -27,7 +27,6 @@ namespace ErrorCodes
     extern const int NOT_FOUND_EXPECTED_DATA_PART;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int BAD_TTL_FILE;
-    extern const int CANNOT_UNLINK;
     extern const int NOT_IMPLEMENTED;
 }
 

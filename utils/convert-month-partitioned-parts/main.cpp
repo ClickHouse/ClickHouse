@@ -73,7 +73,7 @@ void run(String part_path, String date_column, String dest_path)
     {
         /// If the file is already deleted, do nothing.
     }
-    localBackup(old_part_path, new_tmp_part_path, {});
+    localBackup(disk, old_part_path.toString(), new_tmp_part_path.toString(), {});
 
     WriteBufferFromFile count_out(new_tmp_part_path_str + "count.txt", 4096);
     HashingWriteBuffer count_out_hashing(count_out);
