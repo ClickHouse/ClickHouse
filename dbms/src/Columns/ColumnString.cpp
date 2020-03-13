@@ -2,6 +2,8 @@
 #include <Common/Arena.h>
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
+#include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
@@ -61,6 +63,31 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
     }
 
     return res;
+}
+
+void ColumnString::updateWeakHash32(WeakHash32 & hash) const
+{
+    auto s = offsets.size();
+
+    if (hash.getData().size() != s)
+        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
+                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+
+    const UInt8 * begin = &chars[0];
+    const UInt8 * str_begin = begin;
+    const Offset * offset_begin = &offsets[0];
+    const Offset * offset_end = offset_begin + s;
+    UInt32 * hash_data = &hash.getData()[0];
+
+    while (offset_begin < offset_end)
+    {
+        const UInt8 * str_end = begin + *offset_begin;
+
+        auto str_size = str_end - str_begin;
+
+        ++offset_begin;
+        str_begin = str_end;
+    }
 }
 
 

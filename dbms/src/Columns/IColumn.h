@@ -23,6 +23,7 @@ namespace ErrorCodes
 class Arena;
 class ColumnGathererStream;
 class Field;
+class WeakHash32;
 
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
@@ -199,6 +200,11 @@ public:
     /// On subsequent calls of this method for sequence of column values of arbitrary types,
     ///  passed bytes to hash must identify sequence of values unambiguously.
     virtual void updateHashWithValue(size_t n, SipHash & hash) const = 0;
+
+    /// Update hash function value. Hash is calculated for each element.
+    /// It's a fast weak hash function. Mainly need to scatter data between threads.
+    /// WeakHash32 must have the same size as column.
+    virtual void updateWeakHash32(WeakHash32 & hash) const = 0;
 
     /** Removes elements that don't match the filter.
       * Is used in WHERE and HAVING operations.
