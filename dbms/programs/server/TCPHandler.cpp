@@ -950,11 +950,11 @@ void TCPHandler::receiveUnexpectedQuery()
 
     readStringBinary(skip_string, *in);
 
-    ClientInfo & skip_client_info = query_context->getClientInfo();
+    ClientInfo skip_client_info;
     if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
         skip_client_info.read(*in, client_revision);
 
-    Settings & skip_settings = query_context->getSettingsRef();
+    Settings skip_settings;
     auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
                                                                                                       : SettingsBinaryFormat::OLD;
     skip_settings.deserialize(*in, settings_format);
