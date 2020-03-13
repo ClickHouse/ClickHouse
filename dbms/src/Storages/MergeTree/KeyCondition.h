@@ -322,7 +322,6 @@ public:
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
-        size_t column_index,
         MonotonicFunctionsChain & function,
         DataTypePtr current_type,
         const FunctionCachePtr & cache);

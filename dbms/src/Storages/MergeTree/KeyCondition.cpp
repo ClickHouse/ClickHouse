@@ -1094,7 +1094,6 @@ BoolMask KeyCondition::checkInRange(
 
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
-    size_t column_index,
     MonotonicFunctionsChain & functions,
     DataTypePtr current_type,
     const FunctionCachePtr & cache)
@@ -1116,8 +1115,8 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
         /// Apply the function.
         if (cache)
         {
-            cache->get(func, column_index, key_range.left, key_range.left);
-            cache->get(func, column_index, key_range.right, key_range.right);
+            cache->get(func, key_range.left, key_range.left);
+            cache->get(func, key_range.right, key_range.right);
         }
         else
         {
@@ -1156,7 +1155,6 @@ BoolMask KeyCondition::checkInParallelogram(
             {
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                     *key_range,
-                    element.key_column,
                     element.monotonic_functions_chain,
                     data_types[element.key_column],
                     function_cache
@@ -1398,10 +1396,10 @@ size_t KeyCondition::getMaxKeyColumn() const
 
 void KeyCondition::addToFunctionCache(Block && block, bool reset_old) const
 {
-    if (reset_old)
-        function_cache.reset();
     if (!function_cache)
         function_cache = std::make_shared<FunctionCache>(getMaxKeyColumn() + 1); // FIXME: Don't cache unused columns.
+    if (reset_old)
+        function_cache->clear();
 
     function_cache->addBlock(std::move(block));
 }

@@ -502,7 +502,6 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         size_t key_index = indexes_mapping[i].key_index;
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             key_ranges[key_index],
-            key_index,
             indexes_mapping[i].functions,
             data_types[key_index],
             cache);

@@ -5,6 +5,7 @@
 #include <Common/FieldVisitors.h>
 #include <Common/SipHash.h>
 #include <Functions/IFunction.h>
+#include <Common/HashTable/HashMap.h>
 
 #include <mutex>
 
@@ -16,8 +17,13 @@ class FunctionCache
 public:
     FunctionCache(size_t columns_num_) : columns_num(columns_num_) {}
 
-    void get(const FunctionBasePtr & func, size_t column_index, const Field & arg_field, Field & res_field);
+    void get(const FunctionBasePtr & func, const Field & arg_field, Field & res_field);
     void addBlock(Block && block);
+    void clear()
+    {
+        cache.clear();
+        blocks.clear();
+    }
 
 private:
     const size_t columns_num;
@@ -26,20 +32,11 @@ private:
     struct Mapping
     {
         Block * block;
+        size_t column;
         size_t row;
     };
 
-    struct FieldHash
-    {
-        size_t operator()(const Field & field) const
-        {
-            SipHash hash;
-            applyVisitor(FieldVisitorHash(hash), field);
-            return hash.get64();
-        }
-    };
-
-    using Cache = std::unordered_map<Field, Mapping, FieldHash>;
+    using Cache = HashMap<UInt128, Mapping, UInt128TrivialHash>;
     Cache cache;
 };
 

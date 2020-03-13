@@ -11,6 +11,15 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
+static UInt128 hashField(const Field & field)
+{
+    SipHash hash;
+    applyVisitor(FieldVisitorHash(hash), field);
+    UInt128 key;
+    hash.get128(key.low, key.high);
+    return key;
+}
+
 void FunctionCache::addBlock(Block && block)
 {
     if (block.columns() != columns_num)
@@ -23,11 +32,16 @@ void FunctionCache::addBlock(Block && block)
     {
         const auto & column = *blocks.back()->getByPosition(i).column;
         for (size_t j = 0; j < rows; ++j)
-            cache[column[j]] = {blocks.back().get(), j};
+            cache[hashField(column[j])] = {blocks.back().get(), i, j};
     }
 }
 
-void FunctionCache::get(const FunctionBasePtr & func, size_t column_index, const Field & arg_field, Field & res_field)
+static String getResultName(const FunctionBasePtr & func, size_t column_index)
+{
+    return "_" + func->getName() + "_" + toString(column_index);
+}
+
+void FunctionCache::get(const FunctionBasePtr & func, const Field & arg_field, Field & res_field)
 {
     if (!func || arg_field.isNull())
     {
@@ -35,37 +49,33 @@ void FunctionCache::get(const FunctionBasePtr & func, size_t column_index, const
         return;
     }
 
-    if (column_index >= columns_num)
-        throw Exception("Column index: " + DB::toString(column_index)
-            + " is out of range [0" + toString(column_index) + ")", ErrorCodes::LOGICAL_ERROR);
-
     size_t num_arguments = func->getArgumentTypes().size();
     if (num_arguments != 1)
         throw Exception("Function " + func->getName() + " has "
             + toString(num_arguments) + "arguments. Expected 1.", ErrorCodes::LOGICAL_ERROR);
 
-    size_t result_pos;
-    auto result_name = "_" + func->getName() + "_" + toString(column_index);
-
-    auto it = cache.find(arg_field);
+    auto it = cache.find(hashField(arg_field));
     if (it == cache.end())
-    {
-        res_field = {};
-        return;
-    }
+        throw Exception("Field not found in cache. It's a bug: function cache was used in a wrong way.", ErrorCodes::LOGICAL_ERROR);
 
-    auto [block, row] = it->second;
+    size_t result_idx;
+    auto [block, column_idx, row_idx] = it->getMapped();
+    auto result_name = getResultName(func, column_idx);
+
     if (!block->has(result_name))
     {
-        // std::cerr << "executing func: " << func->getName() << "\n";
-        result_pos = block->columns();
+        result_idx = block->columns();
         block->insert({nullptr, func->getReturnType(), result_name});
-        func->execute(*block, {column_index}, result_pos, block->rows());
+        func->execute(*block, {column_idx}, result_idx, block->rows());
+
+        const auto & column = *block->getByPosition(result_idx).column;
+        for (size_t i = 0; i < block->rows(); ++i)
+            cache[hashField(column[i])] = {block, result_idx, i};
     }
     else
-        result_pos = block->getPositionByName(result_name);
+        result_idx = block->getPositionByName(result_name);
 
-    block->getByPosition(result_pos).column->get(row, res_field);
+    block->getByPosition(result_idx).column->get(row_idx, res_field);
 }
 
 }
