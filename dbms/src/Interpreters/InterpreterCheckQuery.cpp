@@ -38,7 +38,7 @@ InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, const Co
 BlockIO InterpreterCheckQuery::execute()
 {
     const auto & check = query_ptr->as<ASTCheckQuery &>();
-    StorageID table_id{check, context};
+    auto table_id = context.resolveStorageID(check, Context::ResolveOrdinary);
 
     context.checkAccess(AccessType::SHOW, table_id.database_name, table_id.table_name);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id);

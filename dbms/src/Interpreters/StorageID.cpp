@@ -1,8 +1,8 @@
-#include <Storages/StorageID.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 
 namespace DB
@@ -10,16 +10,40 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_DATABASE;
 }
 
-StorageID::StorageID(const ASTQueryWithTableAndOutput & query, const Context & local_context)
+StorageID::StorageID(const ASTQueryWithTableAndOutput & query)
 {
-    database_name = local_context.resolveDatabase(query.database);
+    database_name = query.database;
     table_name = query.table;
     uuid = query.uuid;
     assertNotEmpty();
+}
+
+StorageID::StorageID(const ASTIdentifier & table_identifier_node)
+{
+    DatabaseAndTableWithAlias database_table(table_identifier_node);
+    database_name = database_table.database;
+    table_name = database_table.table;
+    uuid = database_table.uuid;
+    assertNotEmpty();
+}
+
+StorageID::StorageID(const ASTPtr & node)
+{
+    if (auto identifier = node->as<ASTIdentifier>())
+        *this = StorageID(*identifier);
+    else if (auto simple_query = node->as<ASTQueryWithTableAndOutput>())
+        *this = StorageID(*simple_query);
+    else
+        throw Exception("Unexpected AST", ErrorCodes::LOGICAL_ERROR);
+}
+
+String StorageID::getTableName() const
+{
+    assertNotEmpty();
+    return table_name;
 }
 
 String StorageID::getDatabaseName() const
@@ -50,22 +74,6 @@ bool StorageID::operator<(const StorageID & rhs) const
     else
         /// All IDs without UUID are less, then all IDs with UUID
         return !hasUUID();
-}
-
-void StorageID::assertNotEmpty() const
-{
-    if (empty())
-        throw Exception("Both table name and UUID are empty", ErrorCodes::LOGICAL_ERROR);
-    if (table_name == TABLE_WITH_UUID_NAME_PLACEHOLDER && !hasUUID())
-        throw Exception("Table name was replaced with placeholder, but UUID is Nil", ErrorCodes::LOGICAL_ERROR);
-    if (table_name.empty() && !database_name.empty())
-        throw Exception("Table name is empty, but database name is not", ErrorCodes::LOGICAL_ERROR);
-}
-
-StorageID StorageID::resolveFromAST(const ASTPtr & table_identifier_node, const Context & context)
-{
-    DatabaseAndTableWithAlias database_table(table_identifier_node);
-    return context.tryResolveStorageID({database_table.database, database_table.table, database_table.uuid});
 }
 
 String StorageID::getFullTableName() const

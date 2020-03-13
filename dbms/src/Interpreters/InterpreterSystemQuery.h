@@ -3,7 +3,7 @@
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/StorageID.h>
+#include <Interpreters/StorageID.h>
 #include <Common/ActionLock.h>
 
 

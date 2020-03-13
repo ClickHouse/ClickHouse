@@ -314,7 +314,7 @@ SetPtr SelectQueryExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr &
     const auto * table = subquery_or_table_name->as<ASTIdentifier>();
     if (!table)
         return nullptr;
-    auto table_id = StorageID::resolveFromAST(subquery_or_table_name, context);
+    auto table_id = context.resolveStorageID(subquery_or_table_name);
     const auto storage = DatabaseCatalog::instance().getTable(table_id);
     if (storage->getName() != "Set")
         return nullptr;
@@ -511,7 +511,7 @@ static JoinPtr tryGetStorageJoin(const ASTTablesInSelectQueryElement & join_elem
     /// TODO This syntax does not support specifying a database name.
     if (table_to_join.database_and_table_name)
     {
-        auto table_id = StorageID::resolveFromAST(table_to_join.database_and_table_name, context);
+        auto table_id = context.resolveStorageID(table_to_join.database_and_table_name);
         StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id);
 
         if (table)

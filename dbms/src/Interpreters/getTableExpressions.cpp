@@ -94,7 +94,7 @@ static NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression 
     }
     else if (table_expression.database_and_table_name)
     {
-        auto table_id = StorageID::resolveFromAST(table_expression.database_and_table_name, context);
+        auto table_id = context.resolveStorageID(table_expression.database_and_table_name);
         const auto & table = DatabaseCatalog::instance().getTable(table_id);
         auto & columns = table->getColumns();
         names_and_type_list = columns.getOrdinary();

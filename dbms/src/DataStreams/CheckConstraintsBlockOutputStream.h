@@ -2,7 +2,7 @@
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <Storages/ConstraintsDescription.h>
-#include <Storages/StorageID.h>
+#include <Interpreters/StorageID.h>
 
 
 namespace DB

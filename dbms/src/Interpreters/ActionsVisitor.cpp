@@ -629,7 +629,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         ///  and the table has the type Set (a previously prepared set).
         if (identifier)
         {
-            auto table_id = StorageID::resolveFromAST(right_in_operand, data.context);
+            auto table_id = data.context.resolveStorageID(right_in_operand);
             StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id);
 
             if (table)
