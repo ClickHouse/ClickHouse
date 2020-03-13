@@ -628,7 +628,7 @@ PartitionTaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const Task
                 for (UInt64 try_num = 0; try_num < max_shard_partition_piece_tries_for_alter; ++try_num)
                 {
                     ///FIXME: We have to be sure that every node in cluster executed this query
-                    UInt64 current_num_nodes = executeQueryOnCluster(
+                    size_t current_num_nodes = executeQueryOnCluster(
                             task_table.cluster_push,
                             query_alter_ast_string,
                             nullptr,
