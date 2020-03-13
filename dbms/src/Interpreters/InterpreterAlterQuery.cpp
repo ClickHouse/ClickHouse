@@ -41,7 +41,7 @@ BlockIO InterpreterAlterQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccess());
 
     context.checkAccess(getRequiredAccess());
-    StorageID table_id{alter, context};
+    auto table_id = context.resolveStorageID(alter, Context::ResolveOrdinary);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id);
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions,

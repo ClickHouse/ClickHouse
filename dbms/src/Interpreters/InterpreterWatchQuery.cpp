@@ -40,7 +40,7 @@ BlockIO InterpreterWatchQuery::execute()
 
     BlockIO res;
     const ASTWatchQuery & query = typeid_cast<const ASTWatchQuery &>(*query_ptr);
-    StorageID table_id{query, context};
+    auto table_id = context.resolveStorageID(query, Context::ResolveOrdinary);
 
     /// Get storage
     storage = DatabaseCatalog::instance().tryGetTable(table_id);

@@ -1,6 +1,6 @@
 #pragma once
 #include <Storages/IStorage_fwd.h>
-#include <Storages/StorageID.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
 #include <Core/UUID.h>
 #include <Poco/Logger.h>

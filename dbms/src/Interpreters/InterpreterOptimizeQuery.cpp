@@ -24,7 +24,8 @@ BlockIO InterpreterOptimizeQuery::execute()
 
     context.checkAccess(getRequiredAccess());
 
-    StoragePtr table = DatabaseCatalog::instance().getTable(StorageID{ast, context});
+    auto table_id = context.resolveStorageID(ast, Context::ResolveOrdinary);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id);
     table->optimize(query_ptr, ast.partition, ast.final, ast.deduplicate, context);
     return {};
 }

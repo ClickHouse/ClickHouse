@@ -11,7 +11,6 @@ namespace DB
 
 struct IdentifierSemantic;
 struct IdentifierSemanticImpl;
-struct DatabaseAndTableWithAlias;
 struct StorageID;
 
 
