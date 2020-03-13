@@ -572,9 +572,6 @@ public:
            const ASTPtr & new_settings,
            TableStructureWriteLockHolder & table_lock_holder);
 
-    /// Remove columns, that have been marked as empty after zeroing values with expired ttl
-    void removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part);
-
     /// Freezes all parts.
     void freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
 

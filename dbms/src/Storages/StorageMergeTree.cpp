@@ -610,7 +610,6 @@ bool StorageMergeTree::merge(
             future_part, *merge_entry, table_lock_holder, time(nullptr),
             merging_tagger->reserved_space, deduplicate, force_ttl);
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
-        removeEmptyColumnsFromPart(new_part);
 
         merging_tagger->is_successful = true;
         write_part_log({});
@@ -758,7 +757,6 @@ bool StorageMergeTree::tryMutatePart()
             time(nullptr), global_context, tagger->reserved_space, table_lock_holder);
 
         renameTempPartAndReplace(new_part);
-        removeEmptyColumnsFromPart(new_part);
 
         tagger->is_successful = true;
         write_part_log({});
