@@ -34,7 +34,7 @@ Keywords are case-insensitive when they correspond to:
 - SQL standard. For example, `SELECT`,  `select` and `SeLeCt` are all valid.
 - Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime` is same as  `datetime`.
 
-Case-sensitivity of data type names you can check in the `system.data_type_families` table.
+Whether data type name is case-sensitive can be checked in the `system.data_type_families` table.
 
 All other keywords (column names, functions, and so on), in contrast to standard SQL, are case-sensitive.
 
