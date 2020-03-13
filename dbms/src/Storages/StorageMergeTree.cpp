@@ -213,8 +213,6 @@ void StorageMergeTree::alter(
 {
     auto table_id = getStorageID();
 
-    lockNewDataStructureExclusively(table_lock_holder, context.getCurrentQueryId());
-
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     auto maybe_mutation_commands = commands.getMutationCommands(metadata);
     commands.apply(metadata);
@@ -227,6 +225,8 @@ void StorageMergeTree::alter(
         changeSettings(metadata.settings_ast, table_lock_holder);
 
         context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+
+        table_lock_holder.release();
     }
     else
     {
@@ -240,10 +240,12 @@ void StorageMergeTree::alter(
             setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast);
 
             context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+
+            table_lock_holder.release();
         }
 
         Context copy = context;
-        copy.getSettings().mutations_sync = 1;
+        copy.getSettingsRef().mutations_sync = 1;
         if (!maybe_mutation_commands.empty())
             mutate(maybe_mutation_commands, copy);
     }
@@ -364,6 +366,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
         file_name = entry.file_name;
         auto insertion = current_mutations_by_id.emplace(file_name, std::move(entry));
         current_mutations_by_version.emplace(version, insertion.first->second);
+        LOG_DEBUG(log, "CUrrent mutations by version size:" << current_mutations_by_version.size());
     }
 
     LOG_INFO(log, "Added mutation: " << file_name);
@@ -376,6 +379,10 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
         auto check = [version, this]() { return isMutationDone(version); };
         std::unique_lock lock(mutation_wait_mutex);
         mutation_wait_event.wait(lock, check);
+    }
+    else
+    {
+        LOG_INFO(log, "DONT WAIT FOR:" << file_name << " SYNC VER:" << query_context.getSettingsRef().mutations_sync);
     }
 }
 
@@ -473,6 +480,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
         {
             to_kill.emplace(std::move(it->second));
             current_mutations_by_id.erase(it);
+            LOG_DEBUG(log, "REMOVING MUTATION BY VERSION");
             current_mutations_by_version.erase(to_kill->block_number);
         }
     }
@@ -503,6 +511,7 @@ void StorageMergeTree::loadMutations()
                 MergeTreeMutationEntry entry(disk, path, it->name());
                 Int64 block_number = entry.block_number;
                 auto insertion = current_mutations_by_id.emplace(it->name(), std::move(entry));
+                LOG_DEBUG(log, "Loading mutation:" << it->name() << " entry commands size " << entry.commands.size());
                 current_mutations_by_version.emplace(block_number, insertion.first->second);
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
@@ -643,22 +652,31 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::movePartsTask()
 
 bool StorageMergeTree::tryMutatePart()
 {
+    //LOG_DEBUG(log, "Mutate part called");
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+    //LOG_DEBUG(log, "Structure locked for share");
     size_t max_ast_elements = global_context.getSettingsRef().max_expanded_ast_elements;
+    //LOG_DEBUG(log, "max ast elements received");
 
     FutureMergedMutatedPart future_part;
     MutationCommands commands;
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMergingPartsTagger> tagger;
     {
+        //LOG_DEBUG(log, "Trying to get the lock");
         std::lock_guard lock(currently_processing_in_background_mutex);
 
         if (current_mutations_by_version.empty())
+        {
+            //LOG_DEBUG(log, "Mutation by version empty");
             return false;
+        }
+        LOG_DEBUG(log, "Looking at parts");
 
         auto mutations_end_it = current_mutations_by_version.end();
         for (const auto & part : getDataPartsVector())
         {
+            LOG_DEBUG(log, "Iterating parts");
             if (currently_merging_mutating_parts.count(part))
                 continue;
 
@@ -699,6 +717,7 @@ bool StorageMergeTree::tryMutatePart()
                 commands.insert(commands.end(), it->second.commands.begin(), it->second.commands.end());
             }
 
+            LOG_DEBUG(log, "TOtal commands size:" << commands.size() << " for part:" << part->name);
             auto new_part_info = part->info;
             new_part_info.mutation = current_mutations_by_version.rbegin()->first;
 
@@ -764,30 +783,44 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
         return BackgroundProcessingPoolTaskResult::ERROR;
 
     if (merger_mutator.merges_blocker.isCancelled())
+    {
         return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
+    }
 
     try
     {
         /// Clear old parts. It is unnecessary to do it more than once a second.
         if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
         {
+            //LOG_DEBUG(log, "LOCKING FOR SHARE");
             {
                 /// TODO: Implement tryLockStructureForShare.
                 auto lock_structure = lockStructureForShare(false, "");
                 clearOldPartsFromFilesystem();
                 clearOldTemporaryDirectories();
             }
+
+            // LOG_DEBUG(log, "CLEARING OLD mUTATIONS");
             clearOldMutations();
         }
 
+        //LOG_DEBUG(log, "Trying to merge");
         ///TODO: read deduplicate option from table config
         if (merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
+        {
+            //LOG_DEBUG(log, "SUccessfuly merged");
             return BackgroundProcessingPoolTaskResult::SUCCESS;
+        }
 
 
+        //LOG_DEBUG(log, "Trying to mutate");
         if (tryMutatePart())
+        {
+            //LOG_DEBUG(log, "SUccessfuly mutated");
             return BackgroundProcessingPoolTaskResult::SUCCESS;
+        }
 
+        //LOG_DEBUG(log, "Got error");
         return BackgroundProcessingPoolTaskResult::ERROR;
     }
     catch (const Exception & e)
@@ -847,6 +880,7 @@ void StorageMergeTree::clearOldMutations(bool truncate)
         {
             mutations_to_delete.push_back(std::move(it->second));
             current_mutations_by_id.erase(mutations_to_delete.back().file_name);
+            LOG_DEBUG(log, "ERASING OLD MUTATION");
             it = current_mutations_by_version.erase(it);
         }
     }
