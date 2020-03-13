@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 {
-    out << "format version: 4\n"
+    out << "format version: 5\n"
         << "create_time: " << LocalDateTime(create_time ? create_time : time(nullptr)) << "\n"
         << "source replica: " << source_replica << '\n'
         << "block_id: " << escape << block_id << '\n';
@@ -108,7 +108,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
     in >> "format version: " >> format_version >> "\n";
 
-    if (format_version < 1 || format_version > 4)
+    if (format_version < 1 || format_version > 5)
         throw Exception("Unknown ReplicatedMergeTreeLogEntry format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT_VERSION);
 
     if (format_version >= 2)
@@ -177,7 +177,9 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
            >> "to\n"
            >> new_part_name;
         source_parts.push_back(source_part);
-        in >> "\nalter_version\n" >> alter_version;
+
+        if (format_version >= 5)
+            in >> "\nalter_version\n" >> alter_version;
     }
     else if (type_str == "alter")
     {
