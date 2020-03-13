@@ -110,7 +110,7 @@
     M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.") \
     \
     M(ReplicaYieldLeadership, "Number of times Replicated table was yielded its leadership due to large replication lag relative to other replicas.") \
-    M(ReplicaPartialShutdown, "") \
+    M(ReplicaPartialShutdown, "Number of times when Replicated table was catch Zookeeper session expired") \
     \
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.") \
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.") \
