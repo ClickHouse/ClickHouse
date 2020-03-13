@@ -16,7 +16,7 @@
         <substitution>
             <name>millions</name>
             <values>
-                <value>200</value>
+                <value>50</value>
                 <value>100</value>
             </values>
         </substitution>
@@ -34,7 +34,7 @@
     <create_query>optimize table moving_sum_{millions}m final</create_query>
 
     <query>select k, groupArrayMovingSum({window})(v) from moving_sum_{millions}m group by k format Null</query>
-    <query>select k, groupArrayMovingSum({window})(v) from moving_sum_{millions}m where k &lt; 20 group by k format Null</query>
+    <query>select k % 10 kk, groupArrayMovingSum({window})(v) from moving_sum_{millions}m group by kk format Null</query>
 
     <drop_query>drop table if exists moving_sum_{millions}m</drop_query>
 </test>
