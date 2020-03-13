@@ -278,7 +278,7 @@ create table queries engine Memory as select
         -- immediately, so for now we pretend they don't exist. We don't want to
         -- remove them altogether because we want to be able to detect regressions,
         -- but the right way to do this is not yet clear.
-        left + right < 0.01 as short,
+        left + right < 0.02 as short,
 
         not short and abs(diff) < 0.10 and rd[3] > 0.10 as unstable,
 

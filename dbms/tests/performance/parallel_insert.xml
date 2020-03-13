@@ -19,7 +19,7 @@
             parts_to_throw_insert = 5000
         AS
             -- don't select all columns to keep the run time down
-            SELECT CounterID, EventDate, UserID, Referer, WatchID
+            SELECT CounterID, EventDate, UserID, Title
             FROM hits_10m_single
             -- do not select anything because we only need column types
             LIMIT 0
@@ -29,7 +29,7 @@
 
     <query>
         INSERT INTO hits2
-        SELECT CounterID, EventDate, UserID, Referer, WatchID
+        SELECT CounterID, EventDate, UserID, Title
         FROM hits_10m_single
     </query>
 
