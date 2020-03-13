@@ -8,6 +8,7 @@ TEST_DOMAIN="${TEST_DOMAIN:-clickhouse.tech}"
 GIT_TEST_URI="${GIT_TEST_URI:-git@github.com:ClickHouse/clickhouse.github.io.git}"
 GIT_PROD_URI="git@github.com:ClickHouse/clickhouse.github.io.git"
 EXTRA_BUILD_ARGS="${EXTRA_BUILD_ARGS:---enable-stable-releases}"
+HISTORY_SIZE="${HISTORY_SIZE:-25}"
 
 if [[ -z "$1" ]]
 then
@@ -34,7 +35,12 @@ then
     git add *
     git add ".nojekyll"
     git commit -a -m "add new release at $(date)"
-    git push origin master
+    NEW_ROOT_COMMIT=$(git rev-parse "HEAD~${HISTORY_SIZE}")
+    git checkout --orphan temp "${NEW_ROOT_COMMIT}"
+    git commit -m "root commit"
+    git rebase --onto temp "${NEW_ROOT_COMMIT}" master
+    git branch -D temp
+    git push -f origin master
     if [[ ! -z "${CLOUDFLARE_TOKEN}" ]]
     then
         sleep 1m

@@ -16,4 +16,5 @@ GIT_TEST_URI=git@github.com:${GIT_USER}/clickhouse.github.io.git \
  TEST_DOMAIN=${GIT_USER}-test.clickhouse.tech \
  EXTRA_BUILD_ARGS="${@}" \
  CLOUDFLARE_TOKEN="" \
+ HISTORY_SIZE=3 \
  ${BASE_DIR}/release.sh
