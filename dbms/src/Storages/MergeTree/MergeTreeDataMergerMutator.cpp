@@ -299,7 +299,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         parts.push_back(part);
     }
 
-    LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
+    //LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
     future_part.assign(std::move(parts));
     return true;
 }
@@ -365,7 +365,7 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
         return false;
     }
 
-    LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
+    //LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
     future_part.assign(std::move(parts));
     available_disk_space -= required_disk_space;
     return true;
@@ -622,7 +622,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     size_t sum_input_rows_upper_bound = merge_entry->total_rows_count;
     MergeAlgorithm merge_alg = chooseMergeAlgorithm(parts, sum_input_rows_upper_bound, gathering_columns, deduplicate, need_remove_expired_values);
 
-    LOG_DEBUG(log, "Selected MergeAlgorithm: " << ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Horizontal"));
+    //LOG_DEBUG(log, "Selected MergeAlgorithm: " << ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Horizontal"));
 
     /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
     /// (which is locked in data.getTotalActiveSizeInBytes()) is locked after part->columns_lock
@@ -675,7 +675,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             total_size += part->bytes_on_disk;
             if (total_size >= data_settings->min_merge_bytes_to_use_direct_io)
             {
-                LOG_DEBUG(log, "Will merge parts reading files in O_DIRECT");
+                //LOG_DEBUG(log, "Will merge parts reading files in O_DIRECT");
                 read_with_direct_io = true;
 
                 break;
@@ -999,14 +999,20 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
 
+    //LOG_DEBUG(log, "All columns:" << all_columns.toString());
+
+    //LOG_DEBUG(log, "Commands for interpreter:" << for_interpreter.size() << " commands for renames:" << for_file_renames.size());
     if (!for_interpreter.empty())
     {
         interpreter.emplace(storage_from_source_part, for_interpreter, context_for_reading, true);
         in = interpreter->execute(table_lock_holder);
         updated_header = interpreter->getUpdatedHeader();
         in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
+
+        //LOG_DEBUG(log, "Interpreter header:" << in->getHeader().dumpStructure());
     }
 
+    //LOG_DEBUG(log, "Interpreter prepared");
 
     auto new_data_part = data.createPart(
         future_part.name, future_part.type, future_part.part_info, space_reservation->getDisk(), "tmp_mut_" + future_part.name);
@@ -1041,7 +1047,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         need_remove_expired_values = true;
 
     /// All columns from part are changed and may be some more that were missing before in part
-    if (source_part->getColumns().isSubsetOf(updated_header.getNamesAndTypesList()))
+    if (source_part->getColumns().isSubsetOf(updated_header.getNamesAndTypesList()) || isCompactPart(source_part))
     {
         /// All columns are modified, proceed to write a new part from scratch.
         if (data.hasPrimaryKey() || data.hasSkipIndices())
@@ -1130,10 +1136,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         for (Poco::DirectoryIterator dir_it(source_part->getFullPath()); dir_it != dir_end; ++dir_it)
         {
             if (files_to_skip.count(dir_it.name()) || files_to_remove.count(dir_it.name()))
+            {
+                //LOG_DEBUG(log, "Skipping file:" << dir_it.path().toString());
                 continue;
+            }
 
             Poco::Path destination(new_part_tmp_path);
             destination.append(dir_it.name());
+
+            //LOG_DEBUG(log, "SRC:" << dir_it.path().toString() << " DEST:" << destination.toString());
 
             createHardLink(dir_it.path().toString(), destination.toString());
         }
@@ -1143,6 +1154,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         new_data_part->checksums = source_part->checksums;
         if (in)
         {
+            //LOG_DEBUG(log, "Starting to read");
             if (need_remove_expired_values)
                 in = std::make_shared<TTLBlockInputStream>(in, data, new_data_part, time_of_mutation, true);
 
@@ -1159,9 +1171,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 &source_part->index_granularity_info
             );
 
+            //try{
             in->readPrefix();
             out.writePrefix();
 
+            ////LOG_DEBUG(log, "PREFIX READED");
             Block block;
             while (check_not_cancelled() && (block = in->read()))
             {
@@ -1170,6 +1184,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 merge_entry->rows_written += block.rows();
                 merge_entry->bytes_written_uncompressed += block.bytes();
             }
+                //}
+                //catch(DB::Exception &)
+                //{
+                //    std::terminate();
+                //}
 
             in->readSuffix();
 
@@ -1436,6 +1455,7 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
         IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
         {
             String stream_name = IDataType::getFileNameForStream(entry.name, substream_path);
+            //LOG_DEBUG(log, "Collect to skip:" << stream_name);
             files_to_skip.insert(stream_name + ".bin");
             files_to_skip.insert(stream_name + mrk_extension);
         };
