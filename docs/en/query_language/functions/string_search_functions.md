@@ -4,16 +4,219 @@ The search is case-sensitive by default in all these functions. There are separa
 
 ## position(haystack, needle), locate(haystack, needle) {#position}
 
-Search for the substring `needle` in the string `haystack`.
-Returns the position (in bytes) of the found substring, starting from 1, or returns 0 if the substring was not found.
+Returns the position (in bytes) of the found substring in the string, starting from 1.
 
-For a case-insensitive search, use the function `positionCaseInsensitive`.
+Works under the assumption that the string contains a set of bytes representing a single-byte encoded text. If this assumption is not met and a character can't be represented using a single byte, the function doesn't throw an exception and returns some unexpected result. If character can be represented using two bytes, it will use two bytes and so on.
 
-## positionUTF8(haystack, needle)
+For a case-insensitive search, use the function [positionCaseInsensitive](#positioncaseinsensitive).
 
-The same as `position`, but the position is returned in Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
+**Syntax**
 
-For a case-insensitive search, use the function `positionCaseInsensitiveUTF8`.
+```sql
+position(haystack, needle)
+```
+
+Alias: `locate(haystack, needle)`.
+
+**Parameters**
+
+- `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
+- `needle` —  substring to be searched. [String](../syntax.md#syntax-string-literal).
+
+**Returned values**
+
+- Starting position in bytes (counting from 1), if substring was found.
+- 0, if the substring was not found.
+
+Type: `Integer`.
+
+**Examples**
+
+The phrase "Hello, world!" contains a set of bytes representing a single-byte encoded text. The function returns some expected result:
+
+Query:
+
+```sql
+SELECT position('Hello, world!', '!')
+```
+
+Result:
+
+```text
+┌─position('Hello, world!', '!')─┐
+│                             13 │
+└────────────────────────────────┘
+```
+
+The same phrase in Russian contains characters which can't be represented using a single byte. The function returns some unexpected result (use [positionUTF8](#positionutf8) function for multi-byte encoded text):
+
+Query:
+
+```sql
+SELECT position('Привет, мир!', '!')
+```
+
+Result:
+
+```text
+┌─position('Привет, мир!', '!')─┐
+│                            21 │
+└───────────────────────────────┘
+```
+
+## positionCaseInsensitive {#positioncaseinsensitive}
+
+The same as [position](#position) returns the position (in bytes) of the found substring in the string, starting from 1. Use the function for a case-insensitive search.
+
+Works under the assumption that the string contains a set of bytes representing a single-byte encoded text. If this assumption is not met and a character can't be represented using a single byte, the function doesn't throw an exception and returns some unexpected result. If character can be represented using two bytes, it will use two bytes and so on.
+
+**Syntax**
+
+```sql
+positionCaseInsensitive(haystack, needle)
+```
+
+**Parameters**
+
+- `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
+- `needle` —  substring to be searched. [String](../syntax.md#syntax-string-literal).
+
+**Returned values**
+
+- Starting position in bytes (counting from 1), if substring was found.
+- 0, if the substring was not found.
+
+Type: `Integer`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT positionCaseInsensitive('Hello, world!', 'hello')
+```
+
+Result:
+
+```text
+┌─positionCaseInsensitive('Hello, world!', 'hello')─┐
+│                                                 1 │
+└───────────────────────────────────────────────────┘
+```
+
+## positionUTF8 {#positionutf8}
+
+Returns the position (in Unicode points) of the found substring in the string, starting from 1.
+
+Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, the function doesn't throw an exception and returns some unexpected result. If character can be represented using two Unicode points, it will use two and so on.
+
+For a case-insensitive search, use the function [positionCaseInsensitiveUTF8](#positioncaseinsensitiveutf8).
+
+**Syntax**
+
+```sql
+positionUTF8(haystack, needle)
+```
+
+**Parameters**
+
+- `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
+- `needle` —  substring to be searched. [String](../syntax.md#syntax-string-literal).
+
+**Returned values**
+
+- Starting position in Unicode points (counting from 1), if substring was found.
+- 0, if the substring was not found.
+
+Type: `Integer`.
+
+**Examples**
+
+The phrase "Hello, world!" in Russian contains a set of Unicode points representing a single-point encoded text. The function returns some expected result:
+
+Query:
+
+```sql
+SELECT positionUTF8('Привет, мир!', '!')
+```
+
+Result:
+
+```text
+┌─positionUTF8('Привет, мир!', '!')─┐
+│                                12 │
+└───────────────────────────────────┘
+```
+
+The phrase "Salut, étudiante!", where character `é` can be represented using a one point (`U+00E9`) or two points (`U+0065U+0301`) the function can be returned some unexpected result:
+
+Query for the letter `é`, which is represented one Unicode point `U+00E9`:
+
+```sql
+SELECT positionUTF8('Salut, étudiante!', '!')
+```
+
+Result:
+
+```text
+┌─positionUTF8('Salut, étudiante!', '!')─┐
+│                                     17 │
+└────────────────────────────────────────┘
+```
+
+Query for the letter `é`, which is represented two Unicode points `U+0065U+0301`:
+
+```sql
+SELECT positionUTF8('Salut, étudiante!', '!')
+```
+
+Result:
+
+```text
+┌─positionUTF8('Salut, étudiante!', '!')─┐
+│                                     18 │
+└────────────────────────────────────────┘
+```
+
+## positionCaseInsensitiveUTF8 {#positioncaseinsensitiveutf8}
+
+The same as [positionUTF8](#positionutf8), but is case-insensitive. Returns the position (in Unicode points) of the found substring in the string, starting from 1.
+
+Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, the function doesn't throw an exception and returns some unexpected result. If character can be represented using two Unicode points, it will use two and so on.
+
+**Syntax**
+
+```sql
+positionCaseInsensitiveUTF8(haystack, needle)
+```
+
+**Parameters**
+
+- `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
+- `needle` —  substring to be searched. [String](../syntax.md#syntax-string-literal).
+
+**Returned value**
+
+- Starting position in Unicode points (counting from 1), if substring was found.
+- 0, if the substring was not found.
+
+Type: `Integer`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT positionCaseInsensitiveUTF8('Привет, мир!', 'Мир')
+```
+
+Result:
+
+```text
+┌─positionCaseInsensitiveUTF8('Привет, мир!', 'Мир')─┐
+│                                                  9 │
+└────────────────────────────────────────────────────┘
+```
 
 ## multiSearchAllPositions {#multiSearchAllPositions}
 
