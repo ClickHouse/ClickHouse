@@ -110,7 +110,7 @@ Returns the position (in Unicode points) of the found substring in the string, s
 
 Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, the function doesn't throw an exception and returns some unexpected result. If character can be represented using two Unicode points, it will use two and so on.
 
-For a case-insensitive search, use the function [positionCaseInsensitiveUTF8](#positionCaseInsensitiveUTF8).
+For a case-insensitive search, use the function [positionCaseInsensitiveUTF8](#positioncaseinsensitiveutf8).
 
 **Syntax**
 
