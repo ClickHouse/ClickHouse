@@ -75,9 +75,9 @@ StoragePtr DatabaseDictionary::tryGetTable(
     return {};
 }
 
-DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_name)
+DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name)
 {
-    return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(context, filter_by_name));
+    return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(context, filter_by_table_name));
 }
 
 bool DatabaseDictionary::empty(const Context & context) const

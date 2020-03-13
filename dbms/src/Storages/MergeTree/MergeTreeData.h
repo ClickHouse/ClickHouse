@@ -547,7 +547,7 @@ public:
     /// Moves the entire data directory.
     /// Flushes the uncompressed blocks cache and the marks cache.
     /// Must be called with locked lockStructureForAlter().
-    void rename(const String & new_path_to_table_data, const String & new_database_name,
+    void rename(const String & new_table_path, const String & new_database_name,
         const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     /// Check if the ALTER can be performed:
@@ -569,7 +569,7 @@ public:
 
     /// Change MergeTreeSettings
     void changeSettings(
-           const ASTPtr & new_changes,
+           const ASTPtr & new_settings,
            TableStructureWriteLockHolder & table_lock_holder);
 
     /// Remove columns, that have been marked as empty after zeroing values with expired ttl
@@ -638,7 +638,7 @@ public:
     }
 
     /// For ATTACH/DETACH/DROP PARTITION.
-    String getPartitionIDFromQuery(const ASTPtr & partition, const Context & context);
+    String getPartitionIDFromQuery(const ASTPtr & ast, const Context & context);
 
     /// Extracts MergeTreeData of other *MergeTree* storage
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM
@@ -958,7 +958,7 @@ protected:
     using MatcherFn = std::function<bool(const DataPartPtr &)>;
     void freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context);
 
-    bool canReplacePartition(const DataPartPtr & data_part) const;
+    bool canReplacePartition(const DataPartPtr & src_part) const;
 
     void writePartLog(
         PartLogElement::Type type,
@@ -997,7 +997,7 @@ private:
     };
 
     /// Move selected parts to corresponding disks
-    bool moveParts(CurrentlyMovingPartsTagger && parts_to_move);
+    bool moveParts(CurrentlyMovingPartsTagger && moving_tagger);
 
     /// Select parts for move and disks for them. Used in background moving processes.
     CurrentlyMovingPartsTagger selectPartsForMove();

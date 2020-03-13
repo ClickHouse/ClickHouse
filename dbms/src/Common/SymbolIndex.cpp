@@ -249,9 +249,7 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
             else if (section.header.sh_type == SHT_STRTAB && 0 == strcmp(section.name(), string_table_name))
                 string_table.emplace(section);
 
-            if (symbol_table && string_table)
-                return true;
-            return false;
+            return (symbol_table && string_table);
         }))
     {
         return false;

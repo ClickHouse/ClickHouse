@@ -283,10 +283,10 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError(std::bind(aggregate1,
+            pool.scheduleOrThrowOnError([&] { aggregate1(
                 std::ref(maps[i]),
                 data.begin() + (data.size() * i) / num_threads,
-                data.begin() + (data.size() * (i + 1)) / num_threads));
+                data.begin() + (data.size() * (i + 1)) / num_threads); });
 
         pool.wait();
 
@@ -337,10 +337,10 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError(std::bind(aggregate12,
+            pool.scheduleOrThrowOnError([&] { aggregate12(
                                     std::ref(maps[i]),
                                     data.begin() + (data.size() * i) / num_threads,
-                                    data.begin() + (data.size() * (i + 1)) / num_threads));
+                                    data.begin() + (data.size() * (i + 1)) / num_threads); });
 
         pool.wait();
 
@@ -396,10 +396,10 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError(std::bind(aggregate1,
+            pool.scheduleOrThrowOnError([&] { aggregate1(
                 std::ref(maps[i]),
                 data.begin() + (data.size() * i) / num_threads,
-                data.begin() + (data.size() * (i + 1)) / num_threads));
+                data.begin() + (data.size() * (i + 1)) / num_threads); });
 
         pool.wait();
 
@@ -472,10 +472,10 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError(std::bind(aggregate2,
+            pool.scheduleOrThrowOnError([&] { aggregate2(
                 std::ref(maps[i]),
                 data.begin() + (data.size() * i) / num_threads,
-                data.begin() + (data.size() * (i + 1)) / num_threads));
+                data.begin() + (data.size() * (i + 1)) / num_threads); });
 
         pool.wait();
 
@@ -498,8 +498,7 @@ int main(int argc, char ** argv)
         watch.restart();
 
         for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
-            pool.scheduleOrThrowOnError(std::bind(merge2,
-                maps.data(), num_threads, i));
+            pool.scheduleOrThrowOnError([&] { merge2(maps.data(), num_threads, i); });
 
         pool.wait();
 
@@ -526,10 +525,10 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError(std::bind(aggregate22,
+            pool.scheduleOrThrowOnError([&] { aggregate22(
                                     std::ref(maps[i]),
                                     data.begin() + (data.size() * i) / num_threads,
-                                    data.begin() + (data.size() * (i + 1)) / num_threads));
+                                    data.begin() + (data.size() * (i + 1)) / num_threads); });
 
         pool.wait();
 
@@ -552,7 +551,7 @@ int main(int argc, char ** argv)
         watch.restart();
 
         for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
-            pool.scheduleOrThrowOnError(std::bind(merge2, maps.data(), num_threads, i));
+            pool.scheduleOrThrowOnError([&] { merge2(maps.data(), num_threads, i); });
 
         pool.wait();
 
@@ -591,12 +590,12 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError(std::bind(aggregate3,
+            pool.scheduleOrThrowOnError([&] { aggregate3(
                 std::ref(local_maps[i]),
                 std::ref(global_map),
                 std::ref(mutex),
                 data.begin() + (data.size() * i) / num_threads,
-                data.begin() + (data.size() * (i + 1)) / num_threads));
+                data.begin() + (data.size() * (i + 1)) / num_threads); });
 
         pool.wait();
 
@@ -657,12 +656,12 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError(std::bind(aggregate33,
+            pool.scheduleOrThrowOnError([&] { aggregate33(
                 std::ref(local_maps[i]),
                 std::ref(global_map),
                 std::ref(mutex),
                 data.begin() + (data.size() * i) / num_threads,
-                data.begin() + (data.size() * (i + 1)) / num_threads));
+                data.begin() + (data.size() * (i + 1)) / num_threads); });
 
         pool.wait();
 
@@ -726,12 +725,12 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError(std::bind(aggregate4,
+            pool.scheduleOrThrowOnError([&] { aggregate4(
                 std::ref(local_maps[i]),
                 std::ref(global_map),
                 mutexes.data(),
                 data.begin() + (data.size() * i) / num_threads,
-                data.begin() + (data.size() * (i + 1)) / num_threads));
+                data.begin() + (data.size() * (i + 1)) / num_threads); });
 
         pool.wait();
 
@@ -796,11 +795,11 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError(std::bind(aggregate5,
+            pool.scheduleOrThrowOnError([&] { aggregate5(
                 std::ref(local_maps[i]),
                 std::ref(global_map),
                 data.begin() + (data.size() * i) / num_threads,
-                data.begin() + (data.size() * (i + 1)) / num_threads));
+                data.begin() + (data.size() * (i + 1)) / num_threads); });
 
         pool.wait();
 
@@ -859,10 +858,10 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError(std::bind(aggregate1,
+            pool.scheduleOrThrowOnError([&] { aggregate1(
                 std::ref(maps[i]),
                 data.begin() + (data.size() * i) / num_threads,
-                data.begin() + (data.size() * (i + 1)) / num_threads));
+                data.begin() + (data.size() * (i + 1)) / num_threads); });
 
         pool.wait();
 

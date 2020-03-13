@@ -135,7 +135,9 @@ def printSimpleTable(caption, columns, rows):
     print(tableEnd())
 
 printSimpleTable('Tested commits', ['Old', 'New'],
-    [[open('left-commit.txt').read(), open('right-commit.txt').read()]])
+    [['<pre>{}</pre>'.format(x) for x in
+        [open('left-commit.txt').read(),
+         open('right-commit.txt').read()]]])
 
 def print_changes():
     rows = tsvRows('changed-perf.tsv')
@@ -251,6 +253,7 @@ if len(report_errors):
 print("""
 <p class="links">
 <a href="output.7z">Test output</a>
+<a href="compare.log">Log</a>
 </p>
 </body>
 </html>
@@ -258,20 +261,20 @@ print("""
 
 if slow_average_tests:
     #status = 'failure'
-    message_array.append(str(slow_average_tests) + ' too long')
+    message_array.append(str(slow_average_tests) + ' 🕐')
 
 if faster_queries:
-    message_array.append(str(faster_queries) + ' faster')
+    message_array.append(str(faster_queries) + ' 🐇')
 
 if slower_queries:
-    message_array.append(str(slower_queries) + ' slower')
+    message_array.append(str(slower_queries) + ' 🐌')
 
 if unstable_queries:
-    message_array.append(str(unstable_queries) + ' unstable')
+    message_array.append(str(unstable_queries) + ' ❓')
 
 error_tests += slow_average_tests
 if error_tests:
-    message_array.append(str(error_tests) + ' errors')
+    message_array.append(str(error_tests) + ' ❌')
 
 if message_array:
     message = ', '.join(message_array)

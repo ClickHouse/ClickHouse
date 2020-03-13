@@ -59,6 +59,8 @@ ${CLICKHOUSE_CLIENT} --query="KILL MUTATION WHERE database = 'test' AND table = 
 wait
 
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.kill_mutation"
+# must always be empty
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM system.mutations WHERE table = 'kill_mutation' AND database = 'test' AND is_done = 0"
 
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE test.kill_mutation"

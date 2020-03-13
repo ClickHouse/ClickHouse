@@ -36,7 +36,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() < 1)
+        if (arguments.empty())
             throw Exception("Function " + getName() + " needs at least one argument; passed " + toString(arguments.size()) + "."
                 , ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 

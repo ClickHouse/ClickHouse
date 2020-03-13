@@ -40,7 +40,7 @@ namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
 
-    static void insertValue(IColumn & column, const ValueType type, const Poco::Dynamic::Var & value)
+    void insertValue(IColumn & column, const ValueType type, const Poco::Dynamic::Var & value)
     {
         switch (type)
         {

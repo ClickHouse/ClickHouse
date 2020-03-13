@@ -6,6 +6,10 @@
         </any_of>
     </stop_conditions>
 
+    <settings>
+        <max_memory_usage>30000000000</max_memory_usage>
+    </settings>
+
 
 <!-- 9. Генератор случайных чисел.
 Функция rand представляет собой linear congruential generator (то есть, целочисленное умножение на константу и сложение с константой), возвращающий 32-битные целые случайные числа.
@@ -15,8 +19,8 @@
 Мы запускаем этот запрос и наблюдаем, с какой скоростью он выполняется. Через несколько секунд, когда скорость стабилизируется, прерываем выполнение.
 В качестве скорости выполнения запроса указывается количество обработанных исходных (прочитанных из таблицы) данных в единицу времени.
 Например, в таблице numbers читаемые нами данные - это числа типа UInt64 (8 байт). Если мы обрабатываем миллиард таких чисел в секунду, то отобразится скорость - 8 GB/sec. -->
-<query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(rand())</query>
-<query>SELECT count() FROM numbers_mt(1600000000) WHERE NOT ignore(rand())</query>
+<query>SELECT count() FROM zeros(100000000) WHERE NOT ignore(rand())</query>
+<query>SELECT count() FROM zeros_mt(1600000000) WHERE NOT ignore(rand())</query>
 <!--  10. Некриптографическая хэш-функция для целых чисел 64bit -> 64bit. -->
 <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(intHash64(number))</query>
 <query>SELECT count() FROM numbers_mt(1600000000) WHERE NOT ignore(intHash64(number))</query>
@@ -56,6 +60,6 @@
 <!-- 35. Кэш-промахи, осуществляемые из многих процессорных ядер.  -->
 <!-- <query>SELECT number % (intDiv(100000000, {THREADS})) AS k, count() FROM numbers_mt(1600000000) GROUP BY k</query> -->
 <!-- 46. Запрос, требующий много бесполезных копирований. -->
-<query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(materialize('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx') AS s, concat(s,s,s,s,s,s,s,s,s,s) AS t, concat(t,t,t,t,t,t,t,t,t,t) AS u) SETTINGS max_block_size = 1000</query>
+<query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(materialize('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx') AS s, concat(s,s,s,s,s,s,s,s,s,s) AS t, concat(t,t,t,t,t,t,t,t,t,t) AS u) SETTINGS max_block_size = 1000</query>
 
 </test>

@@ -37,7 +37,7 @@ public:
 
     size_t getMarkSizeInBytes(size_t columns_num = 1) const;
 
-    static std::optional<std::string> getMrkExtensionFromFS(const DiskPtr & disk, const String & path_to_table);
+    static std::optional<std::string> getMarksExtensionFromFilesystem(const DiskPtr & disk, const String & path_to_part);
 
 private:
     MergeTreeDataPartType type;

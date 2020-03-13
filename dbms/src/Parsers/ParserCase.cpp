@@ -64,10 +64,7 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         args.push_back(expr_else);
 
-        if (!s_end.ignore(pos, expected))
-            return false;
-
-        return true;
+        return s_end.ignore(pos, expected);
     };
 
     if (has_case_expr)

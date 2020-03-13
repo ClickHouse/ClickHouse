@@ -136,7 +136,7 @@ LibraryDictionarySource::LibraryDictionarySource(
     {
         const String dictionaries_lib_path = context.getDictionariesLibPath();
         if (!startsWith(path, dictionaries_lib_path))
-            throw Exception("LibraryDictionarySource: Library path " + dictionaries_lib_path + " is not inside " + dictionaries_lib_path, ErrorCodes::PATH_ACCESS_DENIED);
+            throw Exception("LibraryDictionarySource: Library path " + path + " is not inside " + dictionaries_lib_path, ErrorCodes::PATH_ACCESS_DENIED);
     }
 
     if (!Poco::File(path).exists())
