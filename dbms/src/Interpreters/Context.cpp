@@ -2040,6 +2040,9 @@ void Context::resetInputCallbacks()
 
 StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where) const
 {
+    if (storage_id.uuid != UUIDHelpers::Nil)
+        return storage_id;
+
     auto lock = getLock();
     std::optional<Exception> exc;
     auto resolved = resolveStorageIDImpl(std::move(storage_id), where, &exc);
@@ -2050,6 +2053,9 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
 
 StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace where) const
 {
+    if (storage_id.uuid != UUIDHelpers::Nil)
+        return storage_id;
+
     auto lock = getLock();
     return resolveStorageIDImpl(std::move(storage_id), where, nullptr);
 }

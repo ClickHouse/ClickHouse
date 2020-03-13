@@ -12,5 +12,5 @@ full_tmp_name=`echo "SELECT $name_expr FROM system.tables WHERE database='_tempo
 
 echo "SELECT * FROM $full_tmp_name" | ${CLICKHOUSE_CURL} -sSgk $url -d @- | grep -F "Code: 291" > /dev/null && echo "OK"
 
-echo -ne '0\n1\n' | ${CLICKHOUSE_CURL} -sSkF 'file=@-' "$url&file_format=CSV&file_types=UInt64&query=SELECT+sum((number+GLOBAL+IN+(SELECT+number+AS+n+FROM+remote('localhost',+numbers(5))+WHERE+n+GLOBAL+IN+(SELECT+*+FROM+tmp_table)+AND+n+GLOBAL+NOT+IN+(SELECT+*+FROM+file)+))+AS+res),+sum(number*res)+FROM+remote('localhost',+numbers(10))";
+echo -ne '0\n1\n' | ${CLICKHOUSE_CURL} -sSkF 'file=@-' "$url&file_format=CSV&file_types=UInt64&query=SELECT+sum((number+GLOBAL+IN+(SELECT+number+AS+n+FROM+remote('127.0.0.2',+numbers(5))+WHERE+n+GLOBAL+IN+(SELECT+*+FROM+tmp_table)+AND+n+GLOBAL+NOT+IN+(SELECT+*+FROM+file)+))+AS+res),+sum(number*res)+FROM+remote('127.0.0.2',+numbers(10))";
 
