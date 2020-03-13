@@ -50,8 +50,8 @@ static bool extractPathImpl(const IAST & elem, String & res)
 
     if (function->name == "and")
     {
-        for (size_t i = 0; i < function->arguments->children.size(); ++i)
-            if (extractPathImpl(*function->arguments->children[i], res))
+        for (const auto & child : function->arguments->children)
+            if (extractPathImpl(*child, res))
                 return true;
 
         return false;

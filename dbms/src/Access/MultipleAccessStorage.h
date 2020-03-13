@@ -14,7 +14,6 @@ public:
     using Storage = IAccessStorage;
 
     MultipleAccessStorage(std::vector<std::unique_ptr<Storage>> nested_storages_);
-    ~MultipleAccessStorage() override;
 
     std::vector<UUID> findMultiple(std::type_index type, const String & name) const;
 

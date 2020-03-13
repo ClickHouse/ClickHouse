@@ -13,6 +13,8 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
 }
 
+ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
+
 struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
 {
     std::string hdfs_uri;
@@ -65,10 +67,6 @@ bool ReadBufferFromHDFS::nextImpl()
     else
         return false;
     return true;
-}
-
-ReadBufferFromHDFS::~ReadBufferFromHDFS()
-{
 }
 
 }

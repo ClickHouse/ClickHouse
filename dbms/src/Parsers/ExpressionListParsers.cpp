@@ -110,10 +110,7 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    if (!allow_empty && first)
-        return false;
-
-    return true;
+    return allow_empty || !first;
 }
 
 
@@ -140,7 +137,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
     bool first = true;
 
     auto current_depth = pos.depth;
-    while (1)
+    while (true)
     {
         if (first)
         {

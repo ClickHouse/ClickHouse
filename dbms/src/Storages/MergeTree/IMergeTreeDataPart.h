@@ -255,7 +255,7 @@ public:
     struct MinMaxIndex
     {
         /// A direct product of ranges for each key column. See Storages/MergeTree/KeyCondition.cpp for details.
-        std::vector<Range> parallelogram;
+        std::vector<Range> hyperrectangle;
         bool initialized = false;
 
     public:
@@ -263,13 +263,13 @@ public:
 
         /// For month-based partitioning.
         MinMaxIndex(DayNum min_date, DayNum max_date)
-            : parallelogram(1, Range(min_date, true, max_date, true))
+            : hyperrectangle(1, Range(min_date, true, max_date, true))
             , initialized(true)
         {
         }
 
-        void load(const MergeTreeData & storage, const DiskPtr & disk_, const String & part_path);
-        void store(const MergeTreeData & storage, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
+        void load(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path);
+        void store(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
         void store(const Names & column_names, const DataTypes & data_types, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
