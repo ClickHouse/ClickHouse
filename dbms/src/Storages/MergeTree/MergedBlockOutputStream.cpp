@@ -89,8 +89,11 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     writer->finishPrimaryIndexSerialization(checksums);
     writer->finishSkipIndicesSerialization(checksums);
 
+    NamesAndTypesList part_columns;
     if (!total_columns_list)
-        total_columns_list = &columns_list;
+        part_columns = columns_list;
+    else
+        part_columns = *total_columns_list;
 
     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
     {
@@ -119,10 +122,12 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
     }
 
+    removeEmptyColumnsFromPart(new_part, part_columns, checksums);
+
     {
         /// Write a file with a description of columns.
         auto out = disk->writeFile(part_path + "columns.txt", 4096);
-        total_columns_list->writeText(*out);
+        part_columns.writeText(*out);
     }
 
     {
@@ -131,6 +136,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         checksums.write(*out);
     }
 
+    new_part->setColumns(part_columns);
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
     new_part->index = writer->releaseIndexColumns();

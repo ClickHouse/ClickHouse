@@ -894,7 +894,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
             column_gathered_stream.readSuffix();
-            checksums_gathered_columns.add(column_to.writeSuffixAndGetChecksums());
+            auto changed_checksums = column_to.writeSuffixAndGetChecksums(new_data_part, checksums_gathered_columns);
+            checksums_gathered_columns.add(std::move(changed_checksums));
 
             if (rows_written != column_elems_written)
             {
@@ -1173,7 +1174,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
             in->readSuffix();
 
-            auto changed_checksums = out.writeSuffixAndGetChecksums();
+            auto changed_checksums = out.writeSuffixAndGetChecksums(new_data_part, new_data_part->checksums);
 
             new_data_part->checksums.add(std::move(changed_checksums));
         }
