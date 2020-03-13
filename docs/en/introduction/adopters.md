@@ -36,7 +36,7 @@
 | [Integros](https://integros.com) | Platform for video services | Analytics | —  | — | [Slides in Russian, May 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup22/strategies.pdf) |
 | [Kodiak Data](https://www.kodiakdata.com/) | Clouds | Main product | — | — | [Slides in Engish, April 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup13/kodiak_data.pdf) |
 | [Kontur](https://kontur.ru) | Software Development | Metrics | — | — | [Talk in Russian, November 2018](https://www.youtube.com/watch?v=U4u4Bd0FtrY) |
-| [LifeStreet](https://lifestreet.com/) | Ad network | Main product | 60 servers in 3 replicas | 2-2.5 PiB | [Blog post in Russian, February 2017](https://habr.com/en/post/322620/) |
+| [LifeStreet](https://lifestreet.com/) | Ad network | Main product | 75 servers (3 replicas) | 5.27 PiB | [Blog post in Russian, February 2017](https://habr.com/en/post/322620/) |
 | [Mail.ru Cloud Solutions](https://mcs.mail.ru/) | Cloud services | Main product |  — | —  | [Running ClickHouse Instance, in Russian](https://mcs.mail.ru/help/db-create/clickhouse#) |
 | [MessageBird](https://www.messagebird.com) | Telecommunications | Statistics | — | — | [Slides in English, November 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup20/messagebird.pdf) |
 | [MGID](https://www.mgid.com/) | Ad network | Web-analytics | — | — | [Our experience in implementing analytical DBMS ClickHouse, in Russian](http://gs-studio.com/news-about-it/32777----clickhouse---c) |

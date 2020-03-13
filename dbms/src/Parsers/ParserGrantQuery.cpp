@@ -33,9 +33,7 @@ namespace
             if (pos_->type != TokenType::BareWord)
                 return false;
             std::string_view word{pos_->begin, pos_->size()};
-            if (boost::iequals(word, "ON") || boost::iequals(word, "TO") || boost::iequals(word, "FROM"))
-                return false;
-            return true;
+            return !(boost::iequals(word, "ON") || boost::iequals(word, "TO") || boost::iequals(word, "FROM"));
         };
 
         expected.add(pos, "access type");

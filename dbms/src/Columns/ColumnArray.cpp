@@ -331,7 +331,7 @@ bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
     const Offsets & offsets1 = getOffsets();
     const Offsets & offsets2 = other.getOffsets();
     return offsets1.size() == offsets2.size()
-        && (offsets1.size() == 0 || 0 == memcmp(offsets1.data(), offsets2.data(), sizeof(offsets1[0]) * offsets1.size()));
+        && (offsets1.empty() || 0 == memcmp(offsets1.data(), offsets2.data(), sizeof(offsets1[0]) * offsets1.size()));
 }
 
 
@@ -424,7 +424,7 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
 template <typename T>
 ColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hint) const
 {
-    if (getOffsets().size() == 0)
+    if (getOffsets().empty())
         return ColumnArray::create(data);
 
     auto res = ColumnArray::create(data->cloneEmpty());
@@ -551,7 +551,7 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
 
 ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_hint) const
 {
-    if (getOffsets().size() == 0)
+    if (getOffsets().empty())
         return ColumnArray::create(data);
 
     const ColumnNullable & nullable_elems = assert_cast<const ColumnNullable &>(*data);
@@ -574,7 +574,7 @@ ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_h
 
 ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint) const
 {
-    if (getOffsets().size() == 0)
+    if (getOffsets().empty())
         return ColumnArray::create(data);
 
     const ColumnTuple & tuple = assert_cast<const ColumnTuple &>(*data);

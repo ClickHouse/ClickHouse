@@ -39,7 +39,7 @@ namespace
 
     std::optional<StackTrace> stack_trace;
 
-    static constexpr size_t max_query_id_size = 128;
+    constexpr size_t max_query_id_size = 128;
     char query_id_data[max_query_id_size];
     size_t query_id_size = 0;
 

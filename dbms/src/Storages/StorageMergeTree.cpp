@@ -95,7 +95,8 @@ void StorageMergeTree::startup()
 
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup.restart();
-    merging_mutating_task_handle = global_context.getBackgroundPool().addTask([this] { return mergeMutateTask(); });
+    if (!getSettings()->disable_background_merges)
+        merging_mutating_task_handle = global_context.getBackgroundPool().addTask([this] { return mergeMutateTask(); });
     if (areBackgroundMovesNeeded())
         moving_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
 }
@@ -253,7 +254,7 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
 }
 
 void StorageMergeTree::alter(
-    const AlterCommands & params,
+    const AlterCommands & commands,
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
@@ -263,7 +264,7 @@ void StorageMergeTree::alter(
 
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
 
-    params.apply(metadata);
+    commands.apply(metadata);
 
     /// Update metdata in memory
     auto update_metadata = [&metadata, &table_lock_holder, this]()
@@ -277,7 +278,7 @@ void StorageMergeTree::alter(
     };
 
     /// This alter can be performed at metadata level only
-    if (!params.isModifyingData())
+    if (!commands.isModifyingData())
     {
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
@@ -417,7 +418,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See loadMutations().
     auto disk = getStoragePolicy()->getAnyDisk();
-    MergeTreeMutationEntry entry(commands, getFullPathOnDisk(disk), insert_increment.get());
+    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get());
     String file_name;
     Int64 version;
     {
@@ -558,22 +559,20 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 
 void StorageMergeTree::loadMutations()
 {
-    Poco::DirectoryIterator end;
-    const auto full_paths = getDataPaths();
-    for (const String & full_path : full_paths)
+    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
     {
-        for (auto it = Poco::DirectoryIterator(full_path); it != end; ++it)
+        for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
         {
-            if (startsWith(it.name(), "mutation_"))
+            if (startsWith(it->name(), "mutation_"))
             {
-                MergeTreeMutationEntry entry(full_path, it.name());
+                MergeTreeMutationEntry entry(disk, path, it->name());
                 Int64 block_number = entry.block_number;
-                auto insertion = current_mutations_by_id.emplace(it.name(), std::move(entry));
+                auto insertion = current_mutations_by_id.emplace(it->name(), std::move(entry));
                 current_mutations_by_version.emplace(block_number, insertion.first->second);
             }
-            else if (startsWith(it.name(), "tmp_mutation_"))
+            else if (startsWith(it->name(), "tmp_mutation_"))
             {
-                it->remove();
+                disk->remove(it->path());
             }
         }
     }
@@ -1326,26 +1325,26 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
 
     for (auto & part : data_parts)
     {
-        String full_part_path = part->getFullPath();
+        auto disk = part->disk;
+        String part_path = part->getFullRelativePath();
         /// If the checksums file is not present, calculate the checksums and write them to disk.
-        String checksums_path = full_part_path + "checksums.txt";
-        String tmp_checksums_path = full_part_path + "checksums.txt.tmp";
-        if (!Poco::File(checksums_path).exists())
+        String checksums_path = part_path + "checksums.txt";
+        String tmp_checksums_path = part_path + "checksums.txt.tmp";
+        if (!disk->exists(checksums_path))
         {
             try
             {
                 auto calculated_checksums = checkDataPart(part, false);
                 calculated_checksums.checkEqual(part->checksums, true);
-                WriteBufferFromFile out(tmp_checksums_path, 4096);
-                part->checksums.write(out);
-                Poco::File(tmp_checksums_path).renameTo(checksums_path);
+                auto out = disk->writeFile(tmp_checksums_path, 4096);
+                part->checksums.write(*out);
+                disk->moveFile(tmp_checksums_path, checksums_path);
                 results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
             }
             catch (const Exception & ex)
             {
-                Poco::File tmp_file(tmp_checksums_path);
-                if (tmp_file.exists())
-                    tmp_file.remove();
+                if (disk->exists(tmp_checksums_path))
+                    disk->remove(tmp_checksums_path);
 
                 results.emplace_back(part->name, false,
                     "Check of part finished with error: '" + ex.message() + "'");

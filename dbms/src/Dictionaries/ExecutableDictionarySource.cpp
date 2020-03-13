@@ -201,10 +201,7 @@ bool ExecutableDictionarySource::supportsSelectiveLoad() const
 
 bool ExecutableDictionarySource::hasUpdateField() const
 {
-    if (update_field.empty())
-        return false;
-    else
-        return true;
+    return !update_field.empty();
 }
 
 DictionarySourcePtr ExecutableDictionarySource::clone() const

@@ -38,7 +38,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
     check_columns(check_columns_),
-    path(data_part->getFullPath())
+    path(data_part->getFullRelativePath())
 {
     /// Let's estimate total number of rows for progress bar.
     for (const auto & range : all_mark_ranges)
