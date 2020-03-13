@@ -3156,7 +3156,7 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, const Cont
     for (auto & [old_name, new_name] : renamed_parts.old_and_new_names)
     {
         const auto & [path, disk] = renamed_parts.old_part_name_to_path_and_disk[old_name];
-        disk->removeRecursive(path + "detached/" + new_name);
+        disk->removeRecursive(path + "detached/" + new_name + "/");
         LOG_DEBUG(log, "Dropped detached part " << old_name);
         old_name.clear();
     }

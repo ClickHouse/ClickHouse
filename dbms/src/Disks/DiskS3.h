@@ -19,11 +19,6 @@ namespace DB
 class DiskS3 : public IDisk
 {
 public:
-    void createFile(const String & path) override;
-    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
-    void setReadOnly(const String & path) override;
-
-public:
     friend class DiskS3Reservation;
 
     DiskS3(
@@ -63,7 +58,6 @@ public:
     void clearDirectory(const String & path) override;
 
     void moveDirectory(const String & from_path, const String & to_path) override { moveFile(from_path, to_path); }
-
     DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
 
     void moveFile(const String & from_path, const String & to_path) override;
@@ -97,10 +91,11 @@ public:
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
     Poco::Timestamp getLastModified(const String & path) override;
+    void createFile(const String & path) override;
+    void setReadOnly(const String & path) override;
 
 private:
     String getRandomName() const;
-
     bool tryReserve(UInt64 bytes);
 
 private:

@@ -272,14 +272,28 @@ void DiskLocal::unlink(const String & path)
 	if (0 != ::unlink(path.c_str()))
 		throwFromErrnoWithPath("Cannot unlink file " + path, path, ErrorCodes::CANNOT_UNLINK);
 }
-void DiskLocal::createFile(const String & )
+
+void DiskLocal::createFile(const String & path)
 {
+    Poco::File(disk_path + path).createFile();
 }
-void DiskLocal::copy(const String & , const std::shared_ptr<IDisk> & , const String & )
+
+void DiskLocal::setReadOnly(const String & path)
 {
+    Poco::File(disk_path + path).setReadOnly(true);
 }
-void DiskLocal::setReadOnly(const String & )
+
+bool inline isSameDiskType(const IDisk & one, const IDisk & another)
 {
+    return typeid(one) == typeid(another);
+}
+
+void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
+{
+    if (isSameDiskType(*this, *to_disk))
+        Poco::File(disk_path + from_path).copyTo(to_disk->getPath() + to_path); /// Use more optimal way.
+    else
+        IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
 }
 
 void DiskLocalReservation::update(UInt64 new_size)

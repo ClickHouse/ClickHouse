@@ -87,7 +87,6 @@ public:
     void createHardLink(const String & src_path, const String & dst_path) override;
     void unlink(const String & path) override;
     void createFile(const String & path) override;
-    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
     void setReadOnly(const String & path) override;
 
 private:

@@ -386,6 +386,8 @@ void DiskMemory::removeRecursive(const String & path)
 
 void DiskMemory::listFiles(const String & path, std::vector<String> & file_names)
 {
+    std::lock_guard lock(mutex);
+
     for (auto it = iterateDirectory(path); it->isValid(); it->next())
         file_names.push_back(it->name());
 }
@@ -404,14 +406,15 @@ void DiskMemory::unlink(const String &)
 {
     throw Exception("Method unlink is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
+
 void DiskMemory::createFile(const String & )
 {
+    throw Exception("Method createFile is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
-void DiskMemory::copy(const String & , const std::shared_ptr<IDisk> & , const String & )
-{
-}
+
 void DiskMemory::setReadOnly(const String & )
 {
+    throw Exception("Method setReadOnly is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 

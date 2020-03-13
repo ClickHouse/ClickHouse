@@ -23,7 +23,7 @@ const std::pair<LogsLevel, Message::Priority> & convertLogLevel(Aws::Utils::Logg
         {Aws::Utils::Logging::LogLevel::Error, {LogsLevel::error, Message::PRIO_ERROR}},
         {Aws::Utils::Logging::LogLevel::Warn, {LogsLevel::warning, Message::PRIO_WARNING}},
         {Aws::Utils::Logging::LogLevel::Info, {LogsLevel::information, Message::PRIO_INFORMATION}},
-        {Aws::Utils::Logging::LogLevel::Debug, {LogsLevel::debug, Message::PRIO_DEBUG}},
+        {Aws::Utils::Logging::LogLevel::Debug, {LogsLevel::trace, Message::PRIO_DEBUG}},
         {Aws::Utils::Logging::LogLevel::Trace, {LogsLevel::trace, Message::PRIO_TRACE}},
     };
     return mapping.at(log_level);
@@ -69,12 +69,12 @@ namespace S3
     {
         aws_options = Aws::SDKOptions {};
         Aws::InitAPI(aws_options);
-        Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>());
+        //Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>());
     }
 
     ClientFactory::~ClientFactory()
     {
-        Aws::Utils::Logging::ShutdownAWSLogging();
+        //Aws::Utils::Logging::ShutdownAWSLogging();
         Aws::ShutdownAPI(aws_options);
     }
 
