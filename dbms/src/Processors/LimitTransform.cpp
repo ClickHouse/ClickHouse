@@ -126,6 +126,15 @@ IProcessor::Status LimitTransform::prepare(
     return Status::NeedData;
 }
 
+LimitTransform::Status LimitTransform::prepare()
+{
+    if (ports_data.size() != 1)
+        throw Exception("prepare without arguments is not supported for multi-port LimitTransform.",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    return prepare({0}, {0});
+}
+
 LimitTransform::Status LimitTransform::preparePair(PortsData & data)
 {
     auto & output = *data.output_port;
