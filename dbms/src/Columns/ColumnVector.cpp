@@ -9,6 +9,8 @@
 #include <Common/NaNUtils.h>
 #include <Common/RadixSort.h>
 #include <Common/assert_cast.h>
+#include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsCommon.h>
@@ -49,6 +51,35 @@ template <typename T>
 void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
     hash.update(data[n]);
+}
+
+template <typename T>
+void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
+{
+    auto s = data.size();
+
+    if (hash.getData().size() != s)
+        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
+                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+
+    const T * begin = &data[0];
+    const T * end = begin + s;
+    UInt32 * hash_data = &hash.getData()[0];
+
+    while (begin < end)
+    {
+        /// Note: it's copy-paste form intHashCRC32 adapted for updating previous hash result.
+#ifdef __SSE4_2__
+        *hash_data = _mm_crc32_u64(*hash_data, *begin);
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+        *hash_data = __crc32cd(*hash_data, *begin);
+#else
+        /// On other platforms we do not have CRC32. NOTE This can be confusing.
+        *hash_data = intHash64(*begin) ^ *hash_data;
+#endif
+        ++begin;
+        ++hash_data;
+    }
 }
 
 template <typename T>
