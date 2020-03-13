@@ -427,7 +427,6 @@ public:
     }
 
     const Settings & getSettingsRef() const { return settings; }
-    Settings & getSettingsRef() { return settings; }
 
     void setProgressCallback(ProgressCallback callback);
     /// Used in InterpreterSelectQuery to pass it to the IBlockInputStream.

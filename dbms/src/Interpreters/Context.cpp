@@ -936,9 +936,9 @@ Settings Context::getSettings() const
 void Context::setSettings(const Settings & settings_)
 {
     auto lock = getLock();
-    bool old_readonly = settings.readonly;
-    bool old_allow_ddl = settings.allow_ddl;
-    bool old_allow_introspection_functions = settings.allow_introspection_functions;
+    auto old_readonly = settings.readonly;
+    auto old_allow_ddl = settings.allow_ddl;
+    auto old_allow_introspection_functions = settings.allow_introspection_functions;
 
     settings = settings_;
 

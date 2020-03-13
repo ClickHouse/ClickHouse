@@ -42,7 +42,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         views_context = std::make_unique<Context>(context);
         // Do not deduplicate insertions into MV if the main insertion is Ok
         if (disable_deduplication_for_children)
-            views_context->getSettingsRef().insert_deduplicate = false;
+            views_context->setSetting("insert_deduplicate", false);
     }
 
     for (const auto & database_table : dependencies)
