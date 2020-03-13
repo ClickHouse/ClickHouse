@@ -4,7 +4,9 @@ if (NOT COMPILER_CLANG)
     message (FATAL_ERROR "FreeBSD build is supported only for Clang")
 endif ()
 
-set (DEFAULT_LIBS "${DEFAULT_LIBS} ${COVERAGE_OPTION} -lc -lm -lpthread -ldl")
+execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a OUTPUT_VARIABLE BUILTINS_LIBRARY OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread")
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 
@@ -20,6 +22,7 @@ add_library(global-libs INTERFACE)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+include (cmake/find/unwind.cmake)
 include (cmake/find/cxx.cmake)
 
 add_library(global-group INTERFACE)

@@ -1,8 +1,8 @@
 #include <signal.h>
 #include <time.h>
 #include <sys/time.h>
-#if OS_LINUX
-    #include <sys/sysinfo.h>
+#if defined(OS_LINUX)
+#   include <sys/sysinfo.h>
 #endif
 #include <sched.h>
 
@@ -50,7 +50,7 @@ static void initFromEnv(T & what, const char * name)
 
 void ThreadFuzzer::initConfiguration()
 {
-#if OS_LINUX
+#if defined(OS_LINUX)
     num_cpus = get_nprocs();
 #else
     (void)num_cpus;
@@ -77,7 +77,7 @@ void ThreadFuzzer::signalHandler(int)
         sched_yield();
     }
 
-#if OS_LINUX
+#if defined(OS_LINUX)
     if (fuzzer.num_cpus > 0
         && fuzzer.migrate_probability > 0
         && std::bernoulli_distribution(fuzzer.migrate_probability)(thread_local_rng))
@@ -128,6 +128,5 @@ void ThreadFuzzer::setup()
     if (0 != setitimer(ITIMER_PROF, &timer, nullptr))
         throwFromErrno("Failed to create profiling timer", ErrorCodes::CANNOT_CREATE_TIMER);
 }
-
 
 }

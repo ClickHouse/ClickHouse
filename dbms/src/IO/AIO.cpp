@@ -1,11 +1,11 @@
-#if defined(__linux__)
-
-#include <boost/noncopyable.hpp>
-#include <Common/Exception.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-
 #include <IO/AIO.h>
+
+#if defined(OS_LINUX)
+
+#    include <Common/Exception.h>
+
+#    include <sys/syscall.h>
+#    include <unistd.h>
 
 
 /** Small wrappers for asynchronous I/O.
@@ -53,16 +53,9 @@ AIOContext::~AIOContext()
     io_destroy(ctx);
 }
 
-#elif defined(__FreeBSD__)
+#elif defined(OS_FREEBSD)
 
-#    include <aio.h>
-#    include <boost/noncopyable.hpp>
-#    include <sys/event.h>
-#    include <sys/time.h>
-#    include <sys/types.h>
 #    include <Common/Exception.h>
-
-#    include <IO/AIO.h>
 
 
 /** Small wrappers for asynchronous I/O.
@@ -123,7 +116,7 @@ int io_submit(int ctx, long nr, struct iocb * iocbpp[])
 
 int io_getevents(int ctx, long, long max_nr, struct kevent * events, struct timespec * timeout)
 {
-    return kevent(ctx, NULL, 0, events, max_nr, timeout);
+    return kevent(ctx, nullptr, 0, events, max_nr, timeout);
 }
 
 
