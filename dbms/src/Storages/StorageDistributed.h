@@ -87,7 +87,6 @@ public:
     void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
     void renameOnDisk(const String & new_path_to_table_data);
 
-
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
 
     /// in the sub-tables, you need to manually add and delete columns
