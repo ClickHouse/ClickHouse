@@ -58,16 +58,7 @@ public:
     String getName() const override { return "Limit"; }
 
     Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
-
-    /// Compatibility for TreeExecutor.
-    Status prepare() override
-    {
-        if (ports_data.size() != 1)
-            throw Exception("", ErrorCodes::LOGICAL_ERROR);
-
-        return prepare({0}, {0});
-    }
-
+    Status prepare() override; /// Compatibility for TreeExecutor.
     Status preparePair(PortsData & data);
     void splitChunk(PortsData & data);
 
