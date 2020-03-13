@@ -160,7 +160,7 @@
     M(RWLockAcquiredWriteLocks, "") \
     M(RWLockReadersWaitMilliseconds, "") \
     M(RWLockWritersWaitMilliseconds, "") \
-    M(NetworkErrors, "Total count of errors in Network communication, currently only errors in DNS cache host resolve") \
+    M(DNSError, "Total count of errors in DNS resolution") \
     \
     M(RealTimeMicroseconds, "Total (wall clock) time spent in processing (queries and other tasks) threads (not that this is a sum).") \
     M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
