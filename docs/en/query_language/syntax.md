@@ -29,7 +29,7 @@ Comments in C-style: from `/*` to `*/`. These comments can be multiline. Spaces 
 
 ## Keywords {#syntax-keywords}
 
-Keywords are not case-sensitive when they correspond to:
+Keywords are case-insensitive when they correspond to:
 
 - SQL standard. For example, `SELECT = select`, `AS = as`.
 - Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime = datetime`.
