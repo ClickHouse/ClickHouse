@@ -166,10 +166,11 @@ public:
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;
 
-    virtual void setReadOnly(const String & path) = 0;
-
     /// Get last modified time of file or directory at `path`.
     virtual Poco::Timestamp getLastModified(const String & path) = 0;
+
+    /// Set file at `path` as read-only.
+    virtual void setReadOnly(const String & path) = 0;
 
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const String & src_path, const String & dst_path) = 0;

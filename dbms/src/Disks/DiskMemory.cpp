@@ -407,12 +407,12 @@ void DiskMemory::unlink(const String &)
     throw Exception("Method unlink is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void DiskMemory::createFile(const String & )
+void DiskMemory::createFile(const String &)
 {
     throw Exception("Method createFile is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void DiskMemory::setReadOnly(const String & )
+void DiskMemory::setReadOnly(const String &)
 {
     throw Exception("Method setReadOnly is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }

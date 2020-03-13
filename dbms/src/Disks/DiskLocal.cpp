@@ -1,6 +1,6 @@
 #include "DiskLocal.h"
-#include "DiskFactory.h"
 #include <Common/createHardLink.h>
+#include "DiskFactory.h"
 
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
@@ -12,7 +12,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
@@ -258,19 +257,19 @@ Poco::Timestamp DiskLocal::getLastModified(const String & path)
 
 void DiskLocal::removeDirectory(const String & path)
 {
-	if (0 != rmdir(path.c_str()))
-		throwFromErrnoWithPath("Cannot rmdir file " + path, path, ErrorCodes::CANNOT_UNLINK);
+    if (0 != rmdir(path.c_str()))
+        throwFromErrnoWithPath("Cannot rmdir file " + path, path, ErrorCodes::CANNOT_UNLINK);
 }
 
 void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
 {
-	DB::createHardLink(src_path, dst_path);
+    DB::createHardLink(src_path, dst_path);
 }
 
 void DiskLocal::unlink(const String & path)
 {
-	if (0 != ::unlink(path.c_str()))
-		throwFromErrnoWithPath("Cannot unlink file " + path, path, ErrorCodes::CANNOT_UNLINK);
+    if (0 != ::unlink(path.c_str()))
+        throwFromErrnoWithPath("Cannot unlink file " + path, path, ErrorCodes::CANNOT_UNLINK);
 }
 
 void DiskLocal::createFile(const String & path)
