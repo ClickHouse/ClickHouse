@@ -126,8 +126,6 @@ private:
     /* Saving thread data */
     Context & context;
     const StorageID table_id;
-    //const String database_name;
-    //const String table_name;
     const String storage_def;
     StoragePtr table;
     bool is_prepared = false;
@@ -376,7 +374,7 @@ void SystemLog<LogElement>::prepareTable()
         {
             /// Rename the existing table.
             int suffix = 0;
-            while (DatabaseCatalog::instance().isTableExist({table_id.database_name, table_id.table_name + "_" + toString(suffix)}, context))
+            while (DatabaseCatalog::instance().isTableExist({table_id.database_name, table_id.table_name + "_" + toString(suffix)}))
                 ++suffix;
 
             auto rename = std::make_shared<ASTRenameQuery>();

@@ -45,13 +45,13 @@ BlockInputStreamPtr InterpreterExistsQuery::executeImpl()
         if (exists_query->temporary)
         {
             context.checkAccess(AccessType::EXISTS, "", exists_query->table);
-            result = !context.tryResolveStorageID({"", exists_query->table}, Context::ResolveExternal).empty();
+            result = context.tryResolveStorageID({"", exists_query->table}, Context::ResolveExternal);
         }
         else
         {
             String database = context.resolveDatabase(exists_query->database);
             context.checkAccess(AccessType::EXISTS, database, exists_query->table);
-            result = DatabaseCatalog::instance().isTableExist({database, exists_query->table}, context);
+            result = DatabaseCatalog::instance().isTableExist({database, exists_query->table});
         }
     }
     else if ((exists_query = query_ptr->as<ASTExistsDictionaryQuery>()))
@@ -60,7 +60,7 @@ BlockInputStreamPtr InterpreterExistsQuery::executeImpl()
             throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
         String database = context.resolveDatabase(exists_query->database);
         context.checkAccess(AccessType::EXISTS, database, exists_query->table);
-        result = DatabaseCatalog::instance().isDictionaryExist({database, exists_query->table}, context);
+        result = DatabaseCatalog::instance().isDictionaryExist({database, exists_query->table});
     }
 
     return std::make_shared<OneBlockInputStream>(Block{{

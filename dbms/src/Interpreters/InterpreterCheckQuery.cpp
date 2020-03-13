@@ -40,7 +40,7 @@ BlockIO InterpreterCheckQuery::execute()
     const auto & check = query_ptr->as<ASTCheckQuery &>();
     auto table_id = context.resolveStorageID(check, Context::ResolveOrdinary);
 
-    context.checkAccess(AccessType::SHOW, table_id.database_name, table_id.table_name);
+    context.checkAccess(AccessType::SHOW, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id);
     auto check_results = table->checkData(query_ptr, context);
 

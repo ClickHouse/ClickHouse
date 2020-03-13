@@ -405,7 +405,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const StorageID & left_table_id = joined_tables.leftTableID();
 
     if (left_table_id)
-        context->checkAccess(AccessType::SELECT, left_table_id.getDatabaseName(), left_table_id.getTableName(), required_columns);
+        context->checkAccess(AccessType::SELECT, left_table_id, required_columns);
 
     /// Remove limits for some tables in the `system` database.
     if (left_table_id.database_name == "system" &&

@@ -44,7 +44,7 @@ struct StorageID
 
     String getNameForLogs() const;
 
-    explicit operator bool () const
+    operator bool () const
     {
         return !empty();
     }

@@ -24,8 +24,8 @@ namespace ErrorCodes
 
 TemporaryTableHolder::TemporaryTableHolder(const Context & context_,
                                            const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
-    : context(context_.getGlobalContext())
-    , temporary_tables(*DatabaseCatalog::instance().getDatabaseForTemporaryTables())
+    : global_context(&context_.getGlobalContext())
+    , temporary_tables(DatabaseCatalog::instance().getDatabaseForTemporaryTables().get())
 {
     ASTPtr original_create;
     ASTCreateQuery * create = dynamic_cast<ASTCreateQuery *>(query.get());
@@ -47,7 +47,7 @@ TemporaryTableHolder::TemporaryTableHolder(const Context & context_,
     }
     auto table_id = StorageID(DatabaseCatalog::TEMPORARY_DATABASE, global_name, id);
     auto table = creator(table_id);
-    temporary_tables.createTable(context, global_name, table, original_create);
+    temporary_tables->createTable(*global_context, global_name, table, original_create);
     table->startup();
 }
 
@@ -66,7 +66,7 @@ TemporaryTableHolder::TemporaryTableHolder(const Context & context_, const Colum
 }
 
 TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs)
-        : context(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id)
+        : global_context(rhs.global_context), temporary_tables(rhs.temporary_tables), id(rhs.id)
 {
     rhs.id = UUIDHelpers::Nil;
 }
@@ -81,7 +81,7 @@ TemporaryTableHolder & TemporaryTableHolder::operator = (TemporaryTableHolder &&
 TemporaryTableHolder::~TemporaryTableHolder()
 {
     if (id != UUIDHelpers::Nil)
-        temporary_tables.removeTable(context, "_tmp_" + toString(id));
+        temporary_tables->removeTable(*global_context, "_tmp_" + toString(id));
 }
 
 StorageID TemporaryTableHolder::getGlobalTableID() const
@@ -91,7 +91,7 @@ StorageID TemporaryTableHolder::getGlobalTableID() const
 
 StoragePtr TemporaryTableHolder::getTable() const
 {
-    auto table = temporary_tables.tryGetTable(context, "_tmp_" + toString(id));
+    auto table = temporary_tables->tryGetTable(*global_context, "_tmp_" + toString(id));
     if (!table)
         throw Exception("Temporary table " + getGlobalTableID().getNameForLogs() + " not found", ErrorCodes::LOGICAL_ERROR);
     return table;
@@ -156,15 +156,9 @@ DatabaseAndTable  DatabaseCatalog::getTableImpl(const StorageID & table_id, cons
         return {};
     }
 
-    if (table_id.database_name == TEMPORARY_DATABASE && !table_id.hasUUID())
-    {
-        if (exception)
-            exception->emplace("Direct access to `" + String(TEMPORARY_DATABASE) + "` database is not allowed.", ErrorCodes::DATABASE_ACCESS_DENIED);
-        return {};
-    }
-
     if (table_id.hasUUID())
     {
+        /// Shortcut for tables which have persistent UUID
         auto db_and_table = tryGetByUUID(table_id.uuid);
         if (!db_and_table.first || !db_and_table.second)
         {
@@ -174,6 +168,16 @@ DatabaseAndTable  DatabaseCatalog::getTableImpl(const StorageID & table_id, cons
             return {};
         }
         return db_and_table;
+    }
+
+    if (table_id.database_name == TEMPORARY_DATABASE)
+    {
+        /// For temporary tables UUIDs are set in Context::resolveStorageID(...).
+        /// If table_id has no UUID, then the name of database was specified by user and table_id was not resolved through context.
+        /// Do not allow access to TEMPORARY_DATABASE because it contains all temporary tables of all contexts and users.
+        if (exception)
+            exception->emplace("Direct access to `" + String(TEMPORARY_DATABASE) + "` database is not allowed.", ErrorCodes::DATABASE_ACCESS_DENIED);
+        return {};
     }
 
     DatabasePtr database;
@@ -234,6 +238,9 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
 
 DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool drop, bool check_empty)
 {
+    if (database_name == TEMPORARY_DATABASE)
+        throw Exception("Cannot detach database with temporary tables.", ErrorCodes::DATABASE_ACCESS_DENIED);
+
     std::lock_guard lock{databases_mutex};
     assertDatabaseExistsUnlocked(database_name);
     auto db = databases.find(database_name)->second;
@@ -290,7 +297,7 @@ Databases DatabaseCatalog::getDatabases() const
     return databases;
 }
 
-bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, const DB::Context & context) const
+bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id) const
 {
     if (table_id.hasUUID())
         return tryGetByUUID(table_id.uuid).second != nullptr;
@@ -302,14 +309,13 @@ bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, const DB::Con
         if (iter != databases.end())
             db = iter->second;
     }
-    return db && db->isTableExist(context, table_id.table_name);
+    return db && db->isTableExist(*global_context, table_id.table_name);
 }
 
-void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id, const Context & context) const
+void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id) const
 {
-    if (isTableExist(table_id, context))
+    if (isTableExist(table_id))
         throw Exception("Table " + table_id.getNameForLogs() + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-
 }
 
 DatabasePtr DatabaseCatalog::getDatabaseForTemporaryTables() const
@@ -365,7 +371,6 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, const Con
     return getDatabase(resolved_database);
 }
 
-
 void DatabaseCatalog::addDependency(const StorageID & from, const StorageID & where)
 {
     std::lock_guard lock{databases_mutex};
@@ -407,10 +412,10 @@ std::unique_ptr<DDLGuard> DatabaseCatalog::getDDLGuard(const String & database, 
     return std::make_unique<DDLGuard>(ddl_guards[database], std::move(lock), table);
 }
 
-bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id, const Context & context) const
+bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 {
     auto db = tryGetDatabase(table_id.getDatabaseName());
-    return db && db->isDictionaryExist(context, table_id.getTableName());
+    return db && db->isDictionaryExist(*global_context, table_id.getTableName());
 }
 
 StoragePtr DatabaseCatalog::getTable(const StorageID & table_id) const
@@ -428,7 +433,7 @@ DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table
     std::optional<Exception> exc;
     auto res = getTableImpl(table_id, *global_context, &exc);
     if (!res.second)
-        throw *exc;
+        throw Exception(*exc);
     return res;
 }
 

@@ -45,12 +45,12 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
 {
     ASTPtr create_query;
     ASTQueryWithTableAndOutput * show_query;
+    StorageID table_id(query_ptr);
     if ((show_query = query_ptr->as<ASTShowCreateTableQuery>()))
     {
-        StorageID table_id{show_query->database, show_query->table};
         auto resolve_table_type = show_query->temporary ? Context::ResolveExternal : Context::ResolveOrdinary;
         table_id = context.resolveStorageID(table_id, resolve_table_type);
-        context.checkAccess(AccessType::SHOW, table_id.database_name, table_id.table_name);
+        context.checkAccess(AccessType::SHOW, table_id);
         create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(context, table_id.table_name);
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))

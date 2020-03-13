@@ -117,7 +117,6 @@ protected:
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
                 database_name = databases->getDataAt(database_idx).toString();
-                //FIXME access is not checked
                 database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
                 if (!database)
