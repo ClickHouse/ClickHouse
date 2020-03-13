@@ -943,25 +943,6 @@ ClickHouse генерирует исключение
 Значение по умолчанию: 0.
 
 
-## allow_experimental_cross_to_join_conversion {#settings-allow_experimental_cross_to_join_conversion}
-
-Включает или отключает:
-
-1. Перезапись запросов из синтаксиса с запятыми в синтаксис `JOIN ON/USING`. Если значение параметра равно 0, ClickHouse не обрабатывает запросы с синтаксисом, использующим запятые, и генерирует исключение.
-2. Преобразование `CROSS JOIN` в `INNER JOIN`, если условия объединения таблиц это позволяют.
-
-Возможные значения:
-
-- 0 — выключена.
-- 1 — включена.
-
-Значение по умолчанию: 1.
-
-См. также
-
-- [Множественный JOIN](../../query_language/select.md#select-join)
-
-
 ## skip_unavailable_shards {#settings-skip_unavailable_shards}
 
 Включает или отключает тихий пропуск недоступных шардов.
