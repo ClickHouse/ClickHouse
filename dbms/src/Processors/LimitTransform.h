@@ -61,6 +61,9 @@ public:
     Status preparePair(PortsData & data);
     void splitChunk(PortsData & data);
 
+    InputPort & getInputPort() { return inputs.front(); }
+    OutputPort & getOutputPort() { return outputs.front(); }
+
     size_t getRowsBeforeLimitAtLeast() const { return rows_before_limit_at_least; }
 };
 
