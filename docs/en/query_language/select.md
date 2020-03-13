@@ -542,7 +542,7 @@ We recommend the `JOIN ON` or `JOIN USING` syntax for creating queries. For exam
 SELECT * FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t1.a = t3.a
 ```
 
-You can use comma-separated lists of tables in the `FROM` clause. This works only with the [allow_experimental_cross_to_join_conversion = 1](../operations/settings/settings.md#settings-allow_experimental_cross_to_join_conversion) setting. For example:
+You can use comma-separated lists of tables in the `FROM` clause. For example:
 
 ```sql
 SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a
