@@ -381,6 +381,7 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingUInt64, min_free_disk_space_for_temporary_data, 0, "The minimum disk space to keep while writing temporary data used in external sorting and aggregation.") \
     \
     M(SettingBool, enable_scalar_subquery_optimization, false, "Does nothing, added for compatibility with newer versions.") \
+    M(SettingBool, enable_early_constant_folding, false, "Setting from future versions. Backported fo rolling update.") \
     \
     M(SettingBool, deduplicate_blocks_in_dependent_materialized_views, false, "Should deduplicate blocks for materialized views if the block is not a duplicate for the table. Use true to always deduplicate in dependent tables.") \
     \
