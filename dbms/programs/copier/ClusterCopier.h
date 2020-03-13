@@ -104,6 +104,10 @@ protected:
     bool checkPartitionPieceIsDone(const TaskTable & task_table, const String & partition_name,
                                    size_t piece_number, const TasksShard & shards_with_partition);
 
+
+    /*Alter successful insertion to helping tables it will move all pieces to destination table*/
+    PartitionTaskStatus tryMoveAllPiecesToDestinationTable(const TaskTable & task_table, const String & partition_name);
+
     /// Removes MATERIALIZED and ALIAS columns from create table query
     ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast);
 

@@ -25,6 +25,10 @@ struct TaskTable {
 
     String getPartitionPath(const String & partition_name) const;
 
+    String getPartitionAttachIsActivePath(const String & partition_name) const;
+
+    String getPartitionAttachIsDonePath(const String & partition_name) const;
+
     String getPartitionPiecePath(const String & partition_name, const size_t piece_number) const;
 
     String getCertainPartitionIsDirtyPath(const String & partition_name) const;
@@ -42,7 +46,7 @@ struct TaskTable {
     [[maybe_unused]] String getReplicatedEngineFirstArgumentForCurrentPiece(const size_t piece_number) const;
 
 
-    bool isReplicatedTable() { return engine_push_zk_path != ""; }
+    bool isReplicatedTable() const { return engine_push_zk_path != ""; }
 
     /// Partitions will be splitted into number-of-splits pieces.
     /// Each piece will be copied independently. (10 by default)
@@ -191,10 +195,21 @@ struct TaskShard
 };
 
 
-inline String TaskTable::getPartitionPath(const String &partition_name) const {
+inline String TaskTable::getPartitionPath(const String & partition_name) const
+{
     return task_cluster.task_zookeeper_path             // root
            + "/tables/" + table_id                      // tables/dst_cluster.merge.hits
            + "/" + escapeForFileName(partition_name);   // 201701
+}
+
+inline String TaskTable::getPartitionAttachIsActivePath(const String & partition_name) const
+{
+    return getPartitionPath(partition_name) + "/attach_active";
+}
+
+inline String TaskTable::getPartitionAttachIsDonePath(const String & partition_name) const
+{
+    return getPartitionPath(partition_name) + "/attach_is_done";
 }
 
 inline String TaskTable::getPartitionPiecePath(const String & partition_name, size_t piece_number) const
@@ -241,7 +256,7 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
 
     name_in_config = table_key;
 
-    number_of_splits = config.getUInt64(table_prefix + "number_of_splits", 2);
+    number_of_splits = config.getUInt64(table_prefix + "number_of_splits", 10);
 
     cluster_pull_name = config.getString(table_prefix + "cluster_pull");
     cluster_push_name = config.getString(table_prefix + "cluster_push");
