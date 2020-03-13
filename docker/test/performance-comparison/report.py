@@ -261,20 +261,20 @@ print("""
 
 if slow_average_tests:
     #status = 'failure'
-    message_array.append(str(slow_average_tests) + ' 🕐')
+    message_array.append(str(slow_average_tests) + ' too long')
 
 if faster_queries:
-    message_array.append(str(faster_queries) + ' 🐇')
+    message_array.append(str(faster_queries) + ' faster')
 
 if slower_queries:
-    message_array.append(str(slower_queries) + ' 🐌')
+    message_array.append(str(slower_queries) + ' slower')
 
 if unstable_queries:
-    message_array.append(str(unstable_queries) + ' ❓')
+    message_array.append(str(unstable_queries) + ' unstable')
 
 error_tests += slow_average_tests
 if error_tests:
-    message_array.append(str(error_tests) + ' ❌')
+    message_array.append(str(error_tests) + ' errors')
 
 if message_array:
     message = ', '.join(message_array)
