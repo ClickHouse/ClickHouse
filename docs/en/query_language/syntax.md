@@ -36,7 +36,7 @@ Keywords are case-insensitive when they correspond to:
 
 Whether data type name is case-sensitive can be checked in the `system.data_type_families` table.
 
-All other keywords (column names, functions, and so on), in contrast to standard SQL, are case-sensitive.
+In contrast to standard SQL all other keywords (including functions names)  are **case-sensitive**.
 
 Keywords are not reserved (they are just parsed as keywords in the corresponding context). If you use [identifiers](#syntax-identifiers) the same as the keywords, enclose them into quotes. For example, the query `SELECT "FROM" FROM table_name` is valid if the table `table_name` has column with the name `"FROM"`.
 
