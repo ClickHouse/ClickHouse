@@ -910,7 +910,12 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 }
 
                 if (query.limitLength())
-                    executePreLimit(pipeline);
+                {
+                    if constexpr (pipeline_with_processors)
+                        executePreLimit(pipeline, true);
+                    else
+                        executePreLimit(pipeline);
+                }
             }
 
             // If there is no global subqueries, we can run subqueries only when receive them on server.
@@ -980,7 +985,11 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             if (query.limitLength() && !query.limit_with_ties && pipeline.hasMoreThanOneStream() &&
                 !query.distinct && !expressions.hasLimitBy() && !settings.extremes)
             {
-                executePreLimit(pipeline);
+                if constexpr (pipeline_with_processors)
+                    executePreLimit(pipeline, false);
+                else
+                    executePreLimit(pipeline);
+
                 has_prelimit = true;
             }
 
@@ -2263,13 +2272,20 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
 }
 
 /// Preliminary LIMIT - is used in every source, if there are several sources, before they are combined.
-void InterpreterSelectQuery::executePreLimit(QueryPipeline & pipeline)
+void InterpreterSelectQuery::executePreLimit(QueryPipeline & pipeline, bool do_not_skip_offset)
 {
     auto & query = getSelectQuery();
     /// If there is LIMIT
     if (query.limitLength())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, *context);
+
+        if (do_not_skip_offset)
+        {
+            limit_length += limit_offset;
+            limit_offset = 0;
+        }
+
         auto limit = std::make_shared<LimitTransform>(pipeline.getHeader(), limit_length, limit_offset, pipeline.getNumStreams());
         pipeline.addPipe({std::move(limit)});
     }

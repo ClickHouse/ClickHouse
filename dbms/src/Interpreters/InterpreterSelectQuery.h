@@ -191,7 +191,7 @@ private:
     void executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr sorting_info);
     void executeWithFill(QueryPipeline & pipeline);
     void executeMergeSorted(QueryPipeline & pipeline);
-    void executePreLimit(QueryPipeline & pipeline);
+    void executePreLimit(QueryPipeline & pipeline, bool do_not_skip_offset);
     void executeLimitBy(QueryPipeline & pipeline);
     void executeLimit(QueryPipeline & pipeline);
     void executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
