@@ -68,15 +68,7 @@ void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
 
     while (begin < end)
     {
-        /// Note: it's copy-paste form intHashCRC32 adapted for updating previous hash result.
-#ifdef __SSE4_2__
-        *hash_data = _mm_crc32_u64(*hash_data, *begin);
-#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
-        *hash_data = __crc32cd(*hash_data, *begin);
-#else
-        /// On other platforms we do not have CRC32. NOTE This can be confusing.
-        *hash_data = intHash64(*begin) ^ *hash_data;
-#endif
+        *hash_data = intHashCRC32(*begin, *hash_data);
         ++begin;
         ++hash_data;
     }
