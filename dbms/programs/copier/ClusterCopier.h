@@ -137,6 +137,8 @@ protected:
 
     void dropLocalTableIfExists(const DatabaseAndTableName & table_name) const;
 
+    void dropHelpingTables(const TaskTable & task_table);
+
     String getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings * settings = nullptr);
 
     ASTPtr getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard);
