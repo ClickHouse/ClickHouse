@@ -47,6 +47,7 @@ nav:
   - 'FixedString(N)': 'data_types/fixedstring.md'
   - 'UUID': 'data_types/uuid.md'
   - 'Date': 'data_types/date.md'
+  - 'DateTime64': 'data_types/datetime64.md'
   - 'DateTime': 'data_types/datetime.md'
   - 'Enum': 'data_types/enum.md'
   - 'Array(T)': 'data_types/array.md'
