@@ -26,7 +26,8 @@ public:
     Block getHeader() const override { return header; }
     void write(const Block & block) override;
     void writeSuffix() override;
-    MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums();
+    MergeTreeData::DataPart::Checksums
+    writeSuffixAndGetChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums);
 
 private:
     Block header;

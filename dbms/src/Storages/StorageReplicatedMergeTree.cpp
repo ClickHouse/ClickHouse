@@ -1064,7 +1064,6 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
             future_merged_part, *merge_entry, table_lock, entry.create_time, reserved_space, entry.deduplicate, entry.force_ttl);
 
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
-        removeEmptyColumnsFromPart(part);
 
         try
         {
@@ -1198,7 +1197,6 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     {
         new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, entry.create_time, global_context, reserved_space, table_lock);
         renameTempPartAndReplace(new_part, nullptr, &transaction);
-        removeEmptyColumnsFromPart(new_part);
 
         try
         {
