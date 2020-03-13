@@ -31,7 +31,7 @@ Comments in C-style: from `/*` to `*/`. These comments can be multiline. Spaces 
 
 Keywords are case-insensitive when they correspond to:
 
-- SQL standard. For example, `SELECT = select`, `AS = as`.
+- SQL standard. For example, `SELECT`,  `select` and `SeLeCt` are all valid.
 - Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime = datetime`.
 
 Case-sensitivity of data type names you can check in the `system.data_type_families` table.
