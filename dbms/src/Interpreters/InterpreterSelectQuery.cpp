@@ -824,12 +824,13 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
             if (expressions.hasJoin())
             {
-                Block header_before_join;
+                Block join_result_sample;
                 JoinPtr join = expressions.before_join->getTableJoinAlgo();
 
                 if constexpr (pipeline_with_processors)
                 {
-                    header_before_join = pipeline.getHeader();
+                    join_result_sample = ExpressionBlockInputStream(
+                        std::make_shared<OneBlockInputStream>(pipeline.getHeader()), expressions.before_join).getHeader();
 
                     /// In case joined subquery has totals, and we don't, add default chunk to totals.
                     bool default_totals = false;
@@ -855,17 +856,15 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 }
                 else
                 {
-                    header_before_join = pipeline.firstStream()->getHeader();
                     /// Applies to all sources except stream_with_non_joined_data.
                     for (auto & stream : pipeline.streams)
                         stream = std::make_shared<InflatingExpressionBlockInputStream>(stream, expressions.before_join);
+
+                    join_result_sample = pipeline.firstStream()->getHeader();
                 }
 
                 if (join)
                 {
-                    Block join_result_sample = ExpressionBlockInputStream(
-                        std::make_shared<OneBlockInputStream>(header_before_join), expressions.before_join).getHeader();
-
                     if (auto stream = join->createStreamWithNonJoinedRows(join_result_sample, settings.max_block_size))
                     {
                         if constexpr (pipeline_with_processors)
