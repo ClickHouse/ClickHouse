@@ -51,7 +51,7 @@ BlockIO InterpreterWatchQuery::execute()
 
     /// List of columns to read to execute the query.
     Names required_columns = storage->getColumns().getNamesOfPhysical();
-    context.checkAccess(AccessType::SELECT, table_id.database_name, table_id.table_name, required_columns);
+    context.checkAccess(AccessType::SELECT, table_id, required_columns);
 
     /// Get context settings for this query
     const Settings & settings = context.getSettingsRef();

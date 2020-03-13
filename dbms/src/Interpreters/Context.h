@@ -256,6 +256,9 @@ public:
     void checkAccess(const AccessRightsElements & access) const;
 
     void checkAccess(const AccessFlags & access, const StorageID & table_id) const;
+    void checkAccess(const AccessFlags & access, const StorageID & table_id, const std::string_view & column) const;
+    void checkAccess(const AccessFlags & access, const StorageID & table_id, const std::vector<std::string_view> & columns) const;
+    void checkAccess(const AccessFlags & access, const StorageID & table_id, const Strings & columns) const;
 
     AccessRightsContextPtr getAccessRights() const;
 
@@ -305,7 +308,7 @@ public:
 
     Tables getExternalTables() const;
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
-    bool removeExternalTable(const String & table_name);
+    std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
     const Scalars & getScalars() const;
     const Block & getScalar(const String & name) const;

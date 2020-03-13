@@ -56,9 +56,6 @@
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
-
-
-#include <Databases/DatabaseMemory.h>
 #include <Interpreters/DatabaseCatalog.h>
 
 namespace ProfileEvents
@@ -743,6 +740,9 @@ void Context::checkAccess(const AccessRightsElement & access) const { return che
 void Context::checkAccess(const AccessRightsElements & access) const { return checkAccessImpl(access); }
 
 void Context::checkAccess(const AccessFlags & access, const StorageID & table_id) const { checkAccessImpl(access, table_id.getDatabaseName(), table_id.getTableName()); }
+void Context::checkAccess(const AccessFlags & access, const StorageID & table_id, const std::string_view & column) const { checkAccessImpl(access, table_id.getDatabaseName(), table_id.getTableName(), column); }
+void Context::checkAccess(const AccessFlags & access, const StorageID & table_id, const std::vector<std::string_view> & columns) const { checkAccessImpl(access, table_id.getDatabaseName(), table_id.getTableName(), columns); }
+void Context::checkAccess(const AccessFlags & access, const StorageID & table_id, const Strings & columns) const { checkAccessImpl(access, table_id.getDatabaseName(), table_id.getTableName(), columns); }
 
 AccessRightsContextPtr Context::getAccessRights() const
 {
@@ -863,18 +863,19 @@ void Context::addExternalTable(const String & table_name, TemporaryTableHolder &
 }
 
 
-bool Context::removeExternalTable(const String & table_name)
+std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String & table_name)
 {
     assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
     std::shared_ptr<TemporaryTableHolder> holder;
     {
+        auto lock = getLock();
         auto iter = external_tables_mapping.find(table_name);
         if (iter == external_tables_mapping.end())
-            return false;
+            return {};
         holder = iter->second;
         external_tables_mapping.erase(iter);
     }
-    return true;
+    return holder;
 }
 
 
@@ -2043,7 +2044,7 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     std::optional<Exception> exc;
     auto resolved = resolveStorageIDImpl(std::move(storage_id), where, &exc);
     if (exc)
-        throw *exc;
+        throw Exception(*exc);
     return resolved;
 }
 
@@ -2058,7 +2059,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (storage_id.uuid != UUIDHelpers::Nil)
         return storage_id;
 
-    if (storage_id.empty())
+    if (!storage_id)
     {
         if (exception)
             exception->emplace("Both table name and UUID are empty", ErrorCodes::UNKNOWN_TABLE);
@@ -2072,12 +2073,14 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (!storage_id.database_name.empty())
     {
         if (in_specified_database)
-            return storage_id;
+            return storage_id;     /// NOTE There is no guarantees that table actually exists in database.
         if (exception)
             exception->emplace("External and temporary tables have no database, but " +
                         storage_id.database_name + " is specified", ErrorCodes::UNKNOWN_TABLE);
         return StorageID::createEmpty();
     }
+
+    /// Database name is not specified. It's temporary table or table in current database.
 
     if (look_for_external_table)
     {
@@ -2110,6 +2113,8 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
             return resolved_id;
     }
 
+    /// Temporary table not found. It's table in current database.
+
     if (in_current_database)
     {
         if (current_database.empty())
@@ -2119,6 +2124,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
             return StorageID::createEmpty();
         }
         storage_id.database_name = current_database;
+        /// NOTE There is no guarantees that table actually exists in database.
         return storage_id;
     }
 

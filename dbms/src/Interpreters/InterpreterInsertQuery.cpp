@@ -106,7 +106,7 @@ BlockIO InterpreterInsertQuery::execute()
 
     auto query_sample_block = getSampleBlock(query, table);
     if (!query.table_function)
-        context.checkAccess(AccessType::INSERT, query.table_id.database_name, query.table_id.table_name, query_sample_block.getNames());
+        context.checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
     BlockInputStreams in_streams;
     size_t out_streams_size = 1;

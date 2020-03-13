@@ -92,7 +92,7 @@ BlockIO InterpreterRenameQuery::execute()
 
     for (auto & elem : descriptions)
     {
-        database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), context);
+        database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name));
         auto from_table = database_catalog.getTable({elem.from_database_name, elem.from_table_name});
         auto from_table_lock = from_table->lockExclusively(context.getCurrentQueryId());
 

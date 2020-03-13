@@ -81,8 +81,7 @@ BlockIO InterpreterDropQuery::executeToTable(
         auto table_id = table->getStorageID();
         if (kind == ASTDropQuery::Kind::Detach)
         {
-            context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE,
-                                database_name, table_name);
+            context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
             table->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
             auto table_lock = table->lockExclusively(context.getCurrentQueryId());
@@ -91,8 +90,7 @@ BlockIO InterpreterDropQuery::executeToTable(
         }
         else if (kind == ASTDropQuery::Kind::Truncate)
         {
-            context.checkAccess(table->isView() ? AccessType::TRUNCATE_VIEW : AccessType::TRUNCATE_TABLE,
-                                database_name, table_name);
+            context.checkAccess(table->isView() ? AccessType::TRUNCATE_VIEW : AccessType::TRUNCATE_TABLE, table_id);
             table->checkTableCanBeDropped();
 
             /// If table was already dropped by anyone, an exception will be thrown
@@ -102,8 +100,7 @@ BlockIO InterpreterDropQuery::executeToTable(
         }
         else if (kind == ASTDropQuery::Kind::Drop)
         {
-            context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE,
-                                database_name, table_name);
+            context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
             table->checkTableCanBeDropped();
 
             table->shutdown();

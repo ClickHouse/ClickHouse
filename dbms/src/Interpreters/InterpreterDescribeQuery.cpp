@@ -84,11 +84,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         }
         else
         {
-            const auto & identifier = table_expression.database_and_table_name->as<ASTIdentifier &>();
-
-            StorageID table_id = IdentifierSemantic::extractDatabaseAndTable(identifier);
-
-            table_id = context.resolveStorageID(table_id);
+            auto table_id = context.resolveStorageID(table_expression.database_and_table_name);
             context.checkAccess(AccessType::SHOW, table_id);
 
             table = DatabaseCatalog::instance().getTable(table_id);
