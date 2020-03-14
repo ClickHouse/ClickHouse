@@ -10,8 +10,9 @@ $(document).ready(function () {
         var target_id = target.attr('id');
         var selector = target.attr('href');
         var is_tab = target.attr('role') === 'tab';
+        var navbar_toggle = $('#navbar-toggle');
 
-        $('#navbar-toggle').collapse('hide');
+        navbar_toggle.collapse('hide');
 
         if (target_id && target_id.startsWith('logo-')) {
             selector = '#';
@@ -23,7 +24,7 @@ $(document).ready(function () {
             var offset = 0;
 
             if (selector !== '#') {
-                offset = $(selector).offset().top - $('#navbar-toggle').height() * 1.5;
+                offset = $(selector).offset().top - navbar_toggle.height() * 1.5;
                 dst += selector;
             }
             $('html, body').animate({

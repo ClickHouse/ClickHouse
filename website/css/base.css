@@ -1,3 +1,6 @@
+body {
+    font-family: -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Helvetica Neue",Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";
+}
 a:link, a:visited {
     color: #f14600;
     text-decoration: none;
@@ -14,6 +17,10 @@ a:hover, a:active {
 #logo-text {
     width: 180px;
     margin-left: 12px;
+}
+
+.bg-secondary-alt {
+    background: #444451;
 }
 
 .btn-outline-orange {
