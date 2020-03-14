@@ -91,24 +91,39 @@ struct AggregateFunctionSumKahanData
 };
 
 
+enum AggregateFunctionSumType
+{
+    AggregateFunctionTypeSum,
+    AggregateFunctionTypeSumWithOverflow,
+    AggregateFunctionTypeSumKahan,
+};
 /// Counts the sum of the numbers.
-template <typename T, typename TResult, typename Data>
-class AggregateFunctionSum final : public IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data>>
+template <typename T, typename TResult, typename Data, AggregateFunctionSumType Type>
+class AggregateFunctionSum final : public IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>
 {
 public:
     using ResultDataType = std::conditional_t<IsDecimalNumber<T>, DataTypeDecimal<TResult>, DataTypeNumber<TResult>>;
     using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
     using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<TResult>, ColumnVector<TResult>>;
 
-    String getName() const override { return "sum"; }
+    String getName() const override
+    {
+        if constexpr (Type == AggregateFunctionTypeSum)
+            return "sum";
+        else if constexpr (Type == AggregateFunctionTypeSumWithOverflow)
+            return "sumWithOverflow";
+        else if constexpr (Type == AggregateFunctionTypeSumKahan)
+            return "sumKahan";
+        __builtin_unreachable();
+    }
 
     AggregateFunctionSum(const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data>>(argument_types_, {})
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {})
         , scale(0)
     {}
 
     AggregateFunctionSum(const IDataType & data_type, const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data>>(argument_types_, {})
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {})
         , scale(getDecimalScale(data_type))
     {}
 
