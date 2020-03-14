@@ -18,6 +18,7 @@ TEST(zkutil, ZookeeperConnected)
     {
         auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
         zookeeper->exists("/");
+        zookeeper->createIfNotExists("/clickhouse_test", "Unit tests of ClickHouse");
     }
     catch (...)
     {
