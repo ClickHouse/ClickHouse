@@ -52,8 +52,8 @@ First you need to add the official repository:
 
 ```bash
 sudo yum install yum-utils
-sudo rpm --import https://repo.yandex.ru/clickhouse/CLICKHOUSE-KEY.GPG
-sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/x86_64
+sudo rpm --import https://repo.clickhouse.tech/CLICKHOUSE-KEY.GPG
+sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_64
 ```
 
 If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments). The `prestable` tag is sometimes available too.
@@ -64,7 +64,7 @@ Then run these commands to actually install packages:
 sudo yum install clickhouse-server clickhouse-client
 ```
 
-You can also download and install packages manually from here: <https://repo.yandex.ru/clickhouse/rpm/stable/x86_64>.
+You can also download and install packages manually from here: <https://repo.clickhouse.tech/rpm/stable/x86_64>.
 
 ### From tgz archives {#from-tgz-archives}
 
@@ -74,10 +74,10 @@ Required version can be dowloaded with `curl` or `wget` from repository <https:/
 After that downloaded archives should be unpacked and installed with installation scripts. Example for the latest version:
 ```bash
 export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
-curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
-curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
-curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-server-$LATEST_VERSION.tgz
-curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-client-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.tech/tgz/clickhouse-server-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.tech/tgz/clickhouse-client-$LATEST_VERSION.tgz
 
 tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
 sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
