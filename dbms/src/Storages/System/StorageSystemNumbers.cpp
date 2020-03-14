@@ -167,7 +167,7 @@ Pipes StorageSystemNumbers::read(
         {
             /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
             res.back().addSimpleTransform(std::make_shared<LimitTransform>(
-                    res.back().getHeader(), *limit * (i + 1) / num_streams - *limit * i / num_streams, 0, false));
+                    res.back().getHeader(), *limit * (i + 1) / num_streams - *limit * i / num_streams, 0));
         }
     }
 
