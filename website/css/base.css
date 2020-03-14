@@ -16,6 +16,10 @@ a:hover, a:active {
     margin-left: 12px;
 }
 
+.bg-secondary-alt {
+    background: #444451;
+}
+
 .btn-outline-orange {
     border-color: #f14600;
     color: #f14600;
