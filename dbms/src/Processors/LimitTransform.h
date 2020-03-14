@@ -10,7 +10,7 @@ namespace DB
 /// This processor support multiple inputs and outputs (the same number).
 /// Each pair of input and output port works independently.
 /// The reason to have multiple ports is to be able to stop all sources when limit is reached, in a query like:
-///     ELECT * FROM system.numbers_mt WHERE number = 1000000 LIMIT 1
+///     SELECT * FROM system.numbers_mt WHERE number = 1000000 LIMIT 1
 ///
 /// always_read_till_end - read all data from input ports even if limit was reached.
 /// with_ties, description - implementation of LIMIT WITH TIES. It works only for single port.
