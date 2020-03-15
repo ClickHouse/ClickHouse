@@ -456,7 +456,6 @@ QueryPipeline InterpreterSelectQuery::executeWithProcessors()
 {
     QueryPipeline query_pipeline;
     executeImpl(query_pipeline, input, std::move(input_pipe), query_pipeline);
-    query_pipeline.setMaxThreads(max_streams);
     query_pipeline.addInterpreterContext(context);
     query_pipeline.addStorageHolder(storage);
     return query_pipeline;
@@ -1291,6 +1290,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     {
         is_remote = true;
         max_streams = settings.max_distributed_connections;
+        pipeline.setMaxThreads(max_streams);
     }
 
     UInt64 max_block_size = settings.max_block_size;
@@ -1315,6 +1315,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     {
         max_block_size = std::max(UInt64(1), limit_length + limit_offset);
         max_streams = 1;
+        pipeline.setMaxThreads(max_streams);
     }
 
     if (!max_block_size)
