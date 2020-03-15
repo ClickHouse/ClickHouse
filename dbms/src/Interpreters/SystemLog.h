@@ -183,6 +183,12 @@ SystemLog<LogElement>::SystemLog(Context & context_,
 template <typename LogElement>
 void SystemLog<LogElement>::add(const LogElement & element)
 {
+    /// Memory can be allocated while resizing on queue.push_back.
+    /// The size of allocation can be in order of a few megabytes.
+    /// But this should not be accounted for query memory usage.
+    /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flacky.
+    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
+
     std::unique_lock lock(mutex);
 
     if (is_shutdown)
@@ -197,9 +203,8 @@ void SystemLog<LogElement>::add(const LogElement & element)
         // count increases past half available size.
         const uint64_t queue_end = queue_front_index + queue.size();
         if (requested_flush_before < queue_end)
-        {
             requested_flush_before = queue_end;
-        }
+
         flush_event.notify_all();
         LOG_INFO(log, "Queue is half full for system log '" + demangle(typeid(*this).name()) + "'.");
     }
