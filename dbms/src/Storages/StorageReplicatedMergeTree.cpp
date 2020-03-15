@@ -494,7 +494,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
     }
 
     auto table_id = getStorageID();
-    global_context.getDatabase(table_id.database_name)->alterTable(global_context, table_id.table_name, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(global_context, table_id.table_name, metadata);
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
@@ -1632,14 +1632,14 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
     StoragePtr source_table;
     TableStructureReadLockHolder table_lock_holder_src_table;
-    String source_table_name = entry_replace.from_database + "." + entry_replace.from_table;
+    StorageID source_table_id{entry_replace.from_database, entry_replace.from_table};
 
     auto clone_data_parts_from_source_table = [&] () -> size_t
     {
-        source_table = global_context.tryGetTable(entry_replace.from_database, entry_replace.from_table);
+        source_table = DatabaseCatalog::instance().tryGetTable(source_table_id);
         if (!source_table)
         {
-            LOG_DEBUG(log, "Can't use " << source_table_name << " as source table for REPLACE PARTITION command. It does not exist.");
+            LOG_DEBUG(log, "Can't use " << source_table_id.getNameForLogs() << " as source table for REPLACE PARTITION command. It does not exist.");
             return 0;
         }
 
@@ -1650,7 +1650,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         }
         catch (Exception &)
         {
-            LOG_INFO(log, "Can't use " << source_table_name << " as source table for REPLACE PARTITION command. Will fetch all parts."
+            LOG_INFO(log, "Can't use " << source_table_id.getNameForLogs() << " as source table for REPLACE PARTITION command. Will fetch all parts."
                            << " Reason: " << getCurrentExceptionMessage(false));
             return 0;
         }
@@ -1666,7 +1666,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             auto src_part = src_data->getPartIfExists(part_desc->src_part_info, valid_states);
             if (!src_part)
             {
-                LOG_DEBUG(log, "There is no part " << part_desc->src_part_name << " in " << source_table_name);
+                LOG_DEBUG(log, "There is no part " << part_desc->src_part_name << " in " << source_table_id.getNameForLogs());
                 continue;
             }
 
@@ -1678,7 +1678,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
             if (checksum_hex != part_desc->checksum_hex)
             {
-                LOG_DEBUG(log, "Part " << part_desc->src_part_name << " of " << source_table_name << " has inappropriate checksum");
+                LOG_DEBUG(log, "Part " << part_desc->src_part_name << " of " << source_table_id.getNameForLogs() << " has inappropriate checksum");
                 /// TODO: check version
                 continue;
             }
@@ -3270,7 +3270,7 @@ void StorageReplicatedMergeTree::alter(
 
         changeSettings(metadata.settings_ast, table_lock_holder);
 
-        global_context.getDatabase(table_id.database_name)->alterTable(query_context, table_id.table_name, metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id.table_name, metadata);
         return;
     }
 
@@ -3331,7 +3331,7 @@ void StorageReplicatedMergeTree::alter(
             /// Just change settings
             current_metadata.settings_ast = future_metadata.settings_ast;
             changeSettings(current_metadata.settings_ast, table_lock_holder);
-            global_context.getDatabase(table_id.database_name)->alterTable(query_context, table_id.table_name, current_metadata);
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id.table_name, current_metadata);
         }
 
         /// We can be sure, that in case of successfull commit in zookeeper our
@@ -3473,8 +3473,8 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
 
                     case PartitionCommand::MoveDestinationType::TABLE:
                         checkPartitionCanBeDropped(command.partition);
-                        String dest_database = command.to_database.empty() ? query_context.getCurrentDatabase() : command.to_database;
-                        auto dest_storage = query_context.getTable(dest_database, command.to_table);
+                        String dest_database = query_context.resolveDatabase(command.to_database);
+                        auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table});
                         movePartitionToTable(dest_storage, command.partition, query_context);
                         break;
                 }
@@ -3484,8 +3484,8 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
             case PartitionCommand::REPLACE_PARTITION:
             {
                 checkPartitionCanBeDropped(command.partition);
-                String from_database = command.from_database.empty() ? query_context.getCurrentDatabase() : command.from_database;
-                auto from_storage = query_context.getTable(from_database, command.from_table);
+                String from_database = query_context.resolveDatabase(command.from_database);
+                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table});
                 replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
             }
             break;

@@ -221,7 +221,6 @@ private:
 
         configReadClient(config(), home_path);
 
-        context.makeGlobalContext();
         context.setApplicationType(Context::ApplicationType::CLIENT);
         context.setQueryParameters(query_parameters);
 
@@ -1740,6 +1739,7 @@ public:
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
         ;
 
+        context.makeGlobalContext();
         context.getSettingsRef().addProgramOptions(main_description);
 
         /// Commandline options related to external tables.
