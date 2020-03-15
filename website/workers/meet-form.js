@@ -26,7 +26,7 @@ async function handleRequest(request) {
   }
   for (let key in args) {
     content += key.charAt(0).toUpperCase() + key.slice(1);
-    content += ': ' + args[key] + '\r\n\r\n';
+    content += ':\r\n' + args[key] + '\r\n\r\n';
   }
   let body = {
     "personalizations": [
