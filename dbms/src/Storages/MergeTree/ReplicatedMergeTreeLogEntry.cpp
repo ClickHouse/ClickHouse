@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 {
-    out << "format version: 5\n"
+    out << "format version: 4\n"
         << "create_time: " << LocalDateTime(create_time ? create_time : time(nullptr)) << "\n"
         << "source replica: " << source_replica << '\n'
         << "block_id: " << escape << block_id << '\n';
@@ -70,8 +70,9 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 << source_parts.at(0) << "\n"
                 << "to\n"
                 << new_part_name;
-            out << "\nalter_version\n";
-            out << alter_version;
+
+            if (isAlterMutation())
+                out << "\nalter_version\n" << alter_version;
             break;
 
         case ALTER_METADATA: /// Just make local /metadata and /columns consistent with global
@@ -127,6 +128,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
     in >> type_str >> "\n";
 
+    bool trailing_newline_found = false;
     if (type_str == "get")
     {
         type = GET_PART;
@@ -178,8 +180,12 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
            >> new_part_name;
         source_parts.push_back(source_part);
 
-        if (format_version >= 5)
-            in >> "\nalter_version\n" >> alter_version;
+        in >> "\n";
+
+        if (in.eof())
+            trailing_newline_found = true;
+        else if (checkString("alter_version\n", in))
+            in >> alter_version;
     }
     else if (type_str == "alter")
     {
@@ -200,7 +206,9 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         in.readStrict(&metadata_str[0], metadata_size);
     }
 
-    in >> "\n";
+    if (!trailing_newline_found)
+        in >> "\n";
+
     if (checkString("part_type: ", in))
     {
         String part_type_str;
