@@ -31,7 +31,7 @@ static NamesAndTypesList chooseColumns(const String & source_database, const Str
     StoragePtr any_table;
 
     {
-        auto database = context.getDatabase(source_database);
+        auto database = DatabaseCatalog::instance().getDatabase(source_database);
         auto iterator = database->getTablesIterator(context, table_name_match);
 
         if (iterator->isValid())

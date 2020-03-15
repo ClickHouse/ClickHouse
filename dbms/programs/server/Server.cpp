@@ -41,6 +41,7 @@
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/SystemLog.cpp>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
@@ -559,9 +560,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
-        attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
+        attachSystemTablesServer(*DatabaseCatalog::instance().getSystemDatabase(), has_zookeeper);
         /// Then, load remaining databases
         loadMetadata(*global_context);
+        DatabaseCatalog::instance().loadDatabases();
     }
     catch (...)
     {
@@ -721,7 +723,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         /// This object will periodically calculate some metrics.
         AsynchronousMetrics async_metrics(*global_context);
-        attachSystemTablesAsync(*global_context->getDatabase("system"), async_metrics);
+        attachSystemTablesAsync(*DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
 
         for (const auto & listen_host : listen_hosts)
         {
