@@ -947,7 +947,7 @@ void Context::setSettings(const Settings & settings_)
 }
 
 
-void Context::setSetting(const String & name, const String & value)
+void Context::setSetting(const StringRef & name, const String & value)
 {
     auto lock = getLock();
     if (name == "profile")
@@ -962,7 +962,7 @@ void Context::setSetting(const String & name, const String & value)
 }
 
 
-void Context::setSetting(const String & name, const Field & value)
+void Context::setSetting(const StringRef & name, const Field & value)
 {
     auto lock = getLock();
     if (name == "profile")
