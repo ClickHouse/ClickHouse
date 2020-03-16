@@ -29,9 +29,11 @@ done
 
 ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.mutations WHERE database = 'test' AND table = 'kill_mutation' and is_done = 0"
 
-${CLICKHOUSE_CLIENT} --query="KILL MUTATION WHERE database = 'test' AND table = 'kill_mutation'"
+kill_message=$(${CLICKHOUSE_CLIENT} --query="KILL MUTATION WHERE database = 'test' AND table = 'kill_mutation'")
 
 wait
+
+echo "$kill_message"
 
 ${CLICKHOUSE_CLIENT} --query="SELECT mutation_id FROM system.mutations WHERE database = 'test' AND table = 'kill_mutation'"
 
@@ -54,9 +56,11 @@ done
 ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.mutations WHERE database = 'test' AND table = 'kill_mutation' AND mutation_id = 'mutation_4.txt'"
 
 
-${CLICKHOUSE_CLIENT} --query="KILL MUTATION WHERE database = 'test' AND table = 'kill_mutation' AND mutation_id = 'mutation_4.txt'"
+kill_message=$(${CLICKHOUSE_CLIENT} --query="KILL MUTATION WHERE database = 'test' AND table = 'kill_mutation' AND mutation_id = 'mutation_4.txt'")
 
 wait
+
+echo "$kill_message"
 
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.kill_mutation"
 # must always be empty
