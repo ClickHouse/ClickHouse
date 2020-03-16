@@ -530,7 +530,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
         std::vector<std::string> dir_names;
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
             if (!address.is_local)
-                dir_names.push_back(address.toFullString());
+                dir_names.push_back(address.toFullString(context.getSettingsRef().use_compact_format_in_distributed_parts_names));
 
         if (!dir_names.empty())
             writeToShard(block, dir_names);

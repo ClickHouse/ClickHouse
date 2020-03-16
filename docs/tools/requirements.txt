@@ -4,7 +4,7 @@ backports-abc==0.5
 beautifulsoup4==4.8.2
 certifi==2019.11.28
 chardet==3.0.4
-click==7.0
+click==7.1.1
 CommonMark==0.9.1
 cssmin==0.2.0
 docutils==0.16
@@ -13,6 +13,7 @@ htmlmin==0.1.12
 idna==2.9
 imagesize==1.2.0
 Jinja2==2.11.1
+jinja2-highlight==0.6.1
 jsmin==2.2.2
 livereload==2.6.1
 Markdown==2.6.11

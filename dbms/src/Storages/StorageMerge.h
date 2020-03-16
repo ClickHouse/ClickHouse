@@ -64,7 +64,7 @@ private:
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
-    DatabaseTablesIteratorPtr getDatabaseIterator(const Context & context) const;
+    DatabaseTablesIteratorPtr getDatabaseIterator() const;
 
 protected:
     StorageMerge(

@@ -6,7 +6,7 @@ if (USE_INCLUDE_WHAT_YOU_USE)
 endif ()
 
 if (USE_CLANG_TIDY)
-    set (CMAKE_CXX_CLANG_TIDY "${DO_CLANG_TIDY}")
+    set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
 if(COMPILER_PIPE)
@@ -20,8 +20,6 @@ else()
     set(MAX_LINKER_MEMORY 2500)
 endif()
 include(../cmake/limit_jobs.cmake)
-
-include(cmake/find_vectorclass.cmake)
 
 set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config_version.h)
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config.h)

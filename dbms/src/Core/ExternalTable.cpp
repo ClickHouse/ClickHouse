@@ -57,8 +57,8 @@ void BaseExternalTable::write()
     std::cerr << "name " << name << std::endl;
     std::cerr << "format " << format << std::endl;
     std::cerr << "structure: \n";
-    for (size_t i = 0; i < structure.size(); ++i)
-        std::cerr << "\t" << structure[i].first << " " << structure[i].second << std::endl;
+    for (const auto & elem : structure)
+        std::cerr << "\t" << elem.first << " " << elem.second << std::endl;
 }
 
 std::vector<std::string> BaseExternalTable::split(const std::string & s, const std::string & d)
@@ -91,11 +91,11 @@ void BaseExternalTable::initSampleBlock()
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
-    for (size_t i = 0; i < structure.size(); ++i)
+    for (const auto & elem : structure)
     {
         ColumnWithTypeAndName column;
-        column.name = structure[i].first;
-        column.type = data_type_factory.get(structure[i].second);
+        column.name = elem.first;
+        column.type = data_type_factory.get(elem.second);
         column.column = column.type->createColumn();
         sample_block.insert(std::move(column));
     }
@@ -170,9 +170,9 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
 
     /// Create table
     NamesAndTypesList columns = sample_block.getNamesAndTypesList();
-    StoragePtr storage = StorageMemory::create(StorageID("_external", data->table_name), ColumnsDescription{columns}, ConstraintsDescription{});
-    storage->startup();
-    context.addExternalTable(data->table_name, storage);
+    auto temporary_table = TemporaryTableHolder(context, ColumnsDescription{columns});
+    auto storage = temporary_table.getTable();
+    context.addExternalTable(data->table_name, std::move(temporary_table));
     BlockOutputStreamPtr output = storage->write(ASTPtr(), context);
 
     /// Write data

@@ -191,26 +191,4 @@ static const bool have_background_thread =
 #endif
     ;
 
-#define JEMALLOC_GCC_U8_ATOMIC_ATOMICS 1
-#define JEMALLOC_GCC_U8_SYNC_ATOMICS 1
-
-/*
- * Are extra safety checks enabled; things like checking the size of sized
- * deallocations, double-frees, etc.
- */
-static const bool config_opt_safety_checks =
-#ifdef JEMALLOC_OPT_SAFETY_CHECKS
-    true
-#elif defined(JEMALLOC_DEBUG)
-    /*
-     * This lets us only guard safety checks by one flag instead of two; fast
-     * checks can guard solely by config_opt_safety_checks and run in debug mode
-     * too.
-     */
-    true
-#else
-    false
-#endif
-    ;
-
 #endif /* JEMALLOC_PREAMBLE_H */

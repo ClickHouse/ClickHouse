@@ -662,7 +662,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
         TTLEntry update_rows_ttl_entry;
 
         bool seen_delete_ttl = false;
-        for (auto ttl_element_ptr : new_ttl_table_ast->children)
+        for (const auto & ttl_element_ptr : new_ttl_table_ast->children)
         {
             const auto * ttl_element = ttl_element_ptr->as<ASTTTLElement>();
             if (!ttl_element)
@@ -1661,7 +1661,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
 {
     MergeTreeDataPartType type;
     auto full_path = relative_data_path + relative_path + "/";
-    auto mrk_ext = MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(disk, full_path);
+    auto mrk_ext = MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(disk, full_path);
 
     if (mrk_ext)
         type = getPartTypeFromMarkExtension(*mrk_ext);
@@ -1813,7 +1813,7 @@ void MergeTreeData::alterDataPart(
 
     /// Update the checksums.
     DataPart::Checksums new_checksums = part->checksums;
-    for (auto it : transaction->rename_map)
+    for (const auto & it : transaction->rename_map)
     {
         if (it.second.empty())
             new_checksums.files.erase(it.first);
@@ -1837,8 +1837,6 @@ void MergeTreeData::alterDataPart(
         transaction->new_columns.writeText(columns_file);
         transaction->rename_map["columns.txt.tmp"] = "columns.txt";
     }
-
-    return;
 }
 
 void MergeTreeData::changeSettings(
@@ -2679,7 +2677,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
 void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 {
     auto lock = lockParts();
-    for (auto original_active_part : getDataPartsStateRange(DataPartState::Committed))
+    for (auto original_active_part : getDataPartsStateRange(DataPartState::Committed)) // NOLINT (copy is intended)
     {
         if (part_copy->name == original_active_part->name)
         {
@@ -3810,10 +3808,7 @@ bool MergeTreeData::areBackgroundMovesNeeded() const
     if (policy->getVolumes().size() > 1)
         return true;
 
-    if (policy->getVolumes().size() == 1 && policy->getVolumes()[0]->disks.size() > 1 && move_ttl_entries.size() > 0)
-        return true;
-
-    return false;
+    return policy->getVolumes().size() == 1 && policy->getVolumes()[0]->disks.size() > 1 && !move_ttl_entries.empty();
 }
 
 bool MergeTreeData::movePartsToSpace(const DataPartsVector & parts, SpacePtr space)

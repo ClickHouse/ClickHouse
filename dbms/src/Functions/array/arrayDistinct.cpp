@@ -163,11 +163,10 @@ bool FunctionArrayDistinct::executeNumber(
     ColumnArray::Offset prev_src_offset = 0;
     ColumnArray::Offset res_offset = 0;
 
-    for (ColumnArray::Offset i = 0; i < src_offsets.size(); ++i)
+    for (auto curr_src_offset : src_offsets)
     {
         set.clear();
 
-        ColumnArray::Offset curr_src_offset = src_offsets[i];
         for (ColumnArray::Offset j = prev_src_offset; j < curr_src_offset; ++j)
         {
             if (nullable_col && (*src_null_map)[j])
@@ -217,11 +216,10 @@ bool FunctionArrayDistinct::executeString(
     ColumnArray::Offset prev_src_offset = 0;
     ColumnArray::Offset res_offset = 0;
 
-    for (ColumnArray::Offset i = 0; i < src_offsets.size(); ++i)
+    for (auto curr_src_offset : src_offsets)
     {
         set.clear();
 
-        ColumnArray::Offset curr_src_offset = src_offsets[i];
         for (ColumnArray::Offset j = prev_src_offset; j < curr_src_offset; ++j)
         {
             if (nullable_col && (*src_null_map)[j])
@@ -264,11 +262,10 @@ void FunctionArrayDistinct::executeHashed(
     ColumnArray::Offset prev_src_offset = 0;
     ColumnArray::Offset res_offset = 0;
 
-    for (ColumnArray::Offset i = 0; i < src_offsets.size(); ++i)
+    for (auto curr_src_offset : src_offsets)
     {
         set.clear();
 
-        ColumnArray::Offset curr_src_offset = src_offsets[i];
         for (ColumnArray::Offset j = prev_src_offset; j < curr_src_offset; ++j)
         {
             if (nullable_col && (*src_null_map)[j])
