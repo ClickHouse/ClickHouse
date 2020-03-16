@@ -1,2 +1,7 @@
+base/* @ClickHouse/core
+cmake/* @ClickHouse/core
+contrib/* @ClickHouse/core
+dbms/* @ClickHouse/core
 docs/* @ClickHouse/docs
 docs/zh/* @ClickHouse/docs-zh
+website/* @ClickHouse/docs
