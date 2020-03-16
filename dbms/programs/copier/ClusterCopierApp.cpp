@@ -17,6 +17,8 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
     is_safe_mode = config().has("safe-mode");
     if (config().has("copy-fault-probability"))
         copy_fault_probability = std::max(std::min(config().getDouble("copy-fault-probability"), 1.0), 0.0);
+    if (config().has("move-fault-probability"))
+        move_fault_probability = std::max(std::min(config().getDouble("move-fault-probability"), 1.0), 0.0);
     base_dir = (config().has("base-dir")) ? config().getString("base-dir") : Poco::Path::current();
     // process_id is '<hostname>#<start_timestamp>_<pid>'
     time_t timestamp = Poco::Timestamp().epochTime();
@@ -67,6 +69,8 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
                           .binding("safe-mode"));
     options.addOption(Poco::Util::Option("copy-fault-probability", "", "the copying fails with specified probability (used to test partition state recovering)")
                           .argument("copy-fault-probability").binding("copy-fault-probability"));
+    options.addOption(Poco::Util::Option("move-fault-probability", "", "the moving fails with specified probability (used to test partition state recovering)")
+                              .argument("move-fault-probability").binding("move-fault-probability"));
     options.addOption(Poco::Util::Option("log-level", "", "sets log level")
                           .argument("log-level").binding("log-level"));
     options.addOption(Poco::Util::Option("base-dir", "", "base directory for copiers, consecutive copier launches will populate /base-dir/launch_id/* directories")
@@ -115,6 +119,7 @@ void ClusterCopierApp::mainImpl()
     auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, *context);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
+    copier->setMoveFaultProbability(move_fault_probability);
 
     auto task_file = config().getString("task-file", "");
     if (!task_file.empty())

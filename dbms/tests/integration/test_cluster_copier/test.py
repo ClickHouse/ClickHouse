@@ -15,6 +15,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 COPYING_FAIL_PROBABILITY = 0.33
+MOVING_FAIL_PROBABILITY = 0.33
 cluster = None
 
 
@@ -259,17 +260,23 @@ def execute_task(task, cmd_options):
 
 # Tests
 
-def test_copy1_simple(started_cluster):
+def test_copy_simple(started_cluster):
     execute_task(Task1(started_cluster), [])
 
-def test_copy1_with_recovering(started_cluster):
+def test_copy_with_recovering(started_cluster):
     execute_task(Task1(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
+
+def test_copy_with_recovering_after_move_faults(started_cluster):
+    execute_task(Task1(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
 
 def test_copy_month_to_week_partition(started_cluster):
     execute_task(Task2(started_cluster), [])
 
 def test_copy_month_to_week_partition_with_recovering(started_cluster):
-    execute_task(Task2(started_cluster), ['--copy-fault-probability', str(0.3)])
+    execute_task(Task2(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
+
+def test_copy_month_to_week_partition_with_recovering_after_move_faults(started_cluster):
+    execute_task(Task2(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
 
 def test_block_size(started_cluster):
     execute_task(Task_test_block_size(started_cluster), [])

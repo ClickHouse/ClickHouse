@@ -544,6 +544,13 @@ bool ClusterCopier::checkPartitionPieceIsDone(const TaskTable & task_table, cons
 
 PartitionTaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & task_table, const String & partition_name)
 {
+    bool inject_fault = false;
+    if (move_fault_probability > 0)
+    {
+        double value = std::uniform_real_distribution<>(0, 1)(task_table.task_cluster.random_engine);
+        inject_fault = value < move_fault_probability;
+    }
+
     LOG_DEBUG(log, "Try to move  " << partition_name << " to destionation table");
 
     auto zookeeper = context.getZooKeeper();
@@ -599,83 +606,88 @@ PartitionTaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const Task
         zookeeper->create(current_partition_attach_is_done, start_state, zkutil::CreateMode::Persistent);
     }
 
+    /// Move partition to original destination table.
     for (size_t current_piece_number = 0; current_piece_number < task_table.number_of_splits; ++current_piece_number)
     {
-        /// Move partition to original destination table.
+        /// TODO: Execute alter table move partition.
+
+        LOG_DEBUG(log, "Trying to move partition " << partition_name
+                                                   << " piece " << toString(current_piece_number)
+                                                   << " to original table");
+
+        ASTPtr query_alter_ast;
+        String query_alter_ast_string;
+
+        DatabaseAndTableName original_table = task_table.table_push;
+        DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first,
+                                                                  original_table.second + "_piece_" +
+                                                                  toString(current_piece_number));
+
+        query_alter_ast_string += " ALTER TABLE " + getQuotedTable(original_table) +
+                                  " ATTACH PARTITION " + partition_name +
+                                  " FROM " + getQuotedTable(helping_table) +
+                                  " SETTINGS replication_alter_partitions_sync=2;";
+
+        LOG_DEBUG(log, "Executing ALTER query: " << query_alter_ast_string);
+
+        try
         {
-            /// TODO: Execute alter table move partition.
+            size_t num_nodes = 0;
 
-            LOG_DEBUG(log, "Trying to move partition " << partition_name
-                                                       << " piece " << toString(current_piece_number) << " to original table");
+            ///FIXME: We have to be sure that every node in cluster executed this query
+            size_t current_num_nodes = executeQueryOnCluster(
+                    task_table.cluster_push,
+                    query_alter_ast_string,
+                    nullptr,
+                    &task_cluster->settings_push,
+                    PoolMode::GET_MANY,
+                    ClusterExecutionMode::ON_EACH_NODE);
 
-            ASTPtr query_alter_ast;
-            String query_alter_ast_string;
-
-            DatabaseAndTableName original_table = task_table.table_push;
-            DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(current_piece_number));
-
-            query_alter_ast_string +=  " ALTER TABLE " + getQuotedTable(original_table)  +
-                                       " ATTACH PARTITION " + partition_name +
-                                       " FROM " + getQuotedTable(helping_table) +
-                                       " SETTINGS replication_alter_partitions_sync=2;";
-
-            LOG_DEBUG(log, "Executing ALTER query: " << query_alter_ast_string);
-
-            try
-            {
-                size_t num_nodes = 0;
-
-                for (UInt64 try_num = 0; try_num < max_shard_partition_piece_tries_for_alter; ++try_num)
-                {
-                    ///FIXME: We have to be sure that every node in cluster executed this query
-                    size_t current_num_nodes = executeQueryOnCluster(
-                            task_table.cluster_push,
-                            query_alter_ast_string,
-                            nullptr,
-                            &task_cluster->settings_push,
-                            PoolMode::GET_MANY,
-                            ClusterExecutionMode::ON_EACH_NODE);
-
-                    num_nodes = std::max(current_num_nodes, num_nodes);
-                }
-
-                LOG_INFO(log, "Number of nodes that executed ALTER query successfully : " << toString(num_nodes));
-            }
-            catch (...)
-            {
-                LOG_DEBUG(log, "Error while moving partition " << partition_name
-                                                               << " piece " << toString(current_piece_number) << "to original table");
-                throw;
-            }
+            num_nodes = std::max(current_num_nodes, num_nodes);
 
 
-            try
-            {
-                String query_deduplicate_ast_string;
-                if (!task_table.isReplicatedTable())
-                {
-                    query_deduplicate_ast_string +=  " OPTIMIZE TABLE " + getQuotedTable(original_table) +
-                                                     " PARTITION " + partition_name + " DEDUPLICATE;";
+            LOG_INFO(log, "Number of nodes that executed ALTER query successfully : " << toString(num_nodes));
+        }
+        catch (...)
+        {
+            LOG_DEBUG(log, "Error while moving partition " << partition_name
+                                                           << " piece " << toString(current_piece_number)
+                                                           << "to original table");
+            throw;
+        }
 
-                    LOG_DEBUG(log, "Executing OPTIMIZE DEDUPLICATE query: " << query_alter_ast_string);
+        if (inject_fault)
+            throw Exception("Copy fault injection is activated", ErrorCodes::UNFINISHED);
 
-                    UInt64 num_nodes = executeQueryOnCluster(
-                            task_table.cluster_push,
-                            query_deduplicate_ast_string,
-                            nullptr,
-                            &task_cluster->settings_push,
-                            PoolMode::GET_MANY);
+        try
+        {
+            String query_deduplicate_ast_string;
+            if (!task_table.isReplicatedTable()) {
+                query_deduplicate_ast_string += " OPTIMIZE TABLE " + getQuotedTable(original_table) +
+                                                " PARTITION " + partition_name + " DEDUPLICATE;";
 
-                    LOG_INFO(log, "Number of shard that executed OPTIMIZE DEDUPLICATE query successfully : " << toString(num_nodes));
-                }
-            }
-            catch(...)
-            {
-                LOG_DEBUG(log, "Error while executing OPTIMIZE DEDUPLICATE partition " << partition_name << "in the original table");
-                throw;
+                LOG_DEBUG(log, "Executing OPTIMIZE DEDUPLICATE query: " << query_alter_ast_string);
+
+                UInt64 num_nodes = executeQueryOnCluster(
+                        task_table.cluster_push,
+                        query_deduplicate_ast_string,
+                        nullptr,
+                        &task_cluster->settings_push,
+                        PoolMode::GET_MANY);
+
+                LOG_INFO(log, "Number of shard that executed OPTIMIZE DEDUPLICATE query successfully : "
+                        << toString(num_nodes));
             }
         }
+        catch (...)
+        {
+            LOG_DEBUG(log, "Error while executing OPTIMIZE DEDUPLICATE partition " << partition_name
+                                                                                   << "in the original table");
+            throw;
+        }
     }
+
+
 
 
     /// Create node to signal that we finished moving
@@ -1011,15 +1023,28 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
         /// Try to move only if all pieces were copied.
         if (partition_copying_is_done)
         {
-            try
+            for (UInt64 try_num = 0; try_num < max_shard_partition_piece_tries_for_alter; ++try_num)
             {
-                auto res = tryMoveAllPiecesToDestinationTable(task_table, partition_name);
-                if (res == PartitionTaskStatus::Finished)
-                    partition_moving_is_done = true;
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Some error occured while moving pieces to destination table for partition " + partition_name);
+                try
+                {
+                    auto res = tryMoveAllPiecesToDestinationTable(task_table, partition_name);
+                    if (res == PartitionTaskStatus::Finished)
+                    {
+                        partition_moving_is_done = true;
+                        break;
+                    }
+
+                    /// Sleep if this task is active
+                    if (res == PartitionTaskStatus::Active)
+                        std::this_thread::sleep_for(default_sleep_time);
+
+                    /// Repeat on errors
+                }
+                catch (...) {
+                    tryLogCurrentException(log,
+                                           "Some error occured while moving pieces to destination table for partition " +
+                                           partition_name);
+                }
             }
         }
 
