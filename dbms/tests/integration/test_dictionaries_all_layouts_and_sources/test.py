@@ -407,6 +407,6 @@ def test_key_value_complex_dictionaries(started_cluster, fold):
                     for query in dct.get_select_get_or_default_queries(field, row):
                         queries_with_answers.append((query, field.default_value_for_get))
 
-    for query, answer in queries_with_answers:
-        print query
-        assert node.query(query) == str(answer) + '\n'
+        for query, answer in queries_with_answers:
+            print query
+            assert node.query(query) == str(answer) + '\n'
