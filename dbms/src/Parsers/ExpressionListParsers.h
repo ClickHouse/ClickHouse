@@ -177,7 +177,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// TIMESTAMP operator. "TIMESTAMP '2001-01-01 12:34'" would be parsed as "toDateTime('2001-01-01 12:34')".
+/// TIMESTAMP operator. "TIMESTAMP '2001-01-01 12:34:56'" would be parsed as "toDateTime('2001-01-01 12:34:56')".
 class ParserTimestampOperatorExpression : public IParserBase
 {
 protected:
