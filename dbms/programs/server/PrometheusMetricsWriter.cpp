@@ -4,6 +4,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <Common/CurrentStatusInfo.h>
+#include <boost/algorithm/string/replace.hpp>
 
 namespace
 {
@@ -121,9 +122,9 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
                     DB::writeChar('{', wb);
                     DB::writeText(key, wb);
                     DB::writeText("=\"", wb);
-                    DB::writeText(enum_value.first, wb);
+                    writeDoubleQuotedString(enum_value.first, wb);
                     DB::writeText("\",name=\"", wb);
-                    DB::writeText(value.first, wb);
+                    writeDoubleQuotedString(value.first, wb);
                     DB::writeText("\"} ", wb);
                     DB::writeText(value.second == enum_value.second, wb);
                     DB::writeChar('\n', wb);
