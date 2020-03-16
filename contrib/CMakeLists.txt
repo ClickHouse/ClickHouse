@@ -79,9 +79,7 @@ if (USE_INTERNAL_CCTZ_LIBRARY)
     add_subdirectory (cctz-cmake)
 endif ()
 
-if (ENABLE_JEMALLOC AND USE_INTERNAL_JEMALLOC_LIBRARY)
-    add_subdirectory (jemalloc-cmake)
-endif ()
+add_subdirectory (jemalloc-cmake)
 
 if (USE_INTERNAL_CPUID_LIBRARY)
     add_subdirectory (libcpuid)
