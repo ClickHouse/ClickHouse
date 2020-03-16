@@ -2,6 +2,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -52,7 +53,8 @@ void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
 
     in >> "commands: ";
     commands.readText(in);
-    in >> "\nalter version: " >> alter_version;
+    if (checkString("\nalter version: ", in))
+        in >> alter_version;
 }
 
 String ReplicatedMergeTreeMutationEntry::toString() const

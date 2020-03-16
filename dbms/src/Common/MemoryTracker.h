@@ -130,4 +130,5 @@ namespace CurrentMemoryTracker
 }
 
 
+/// Holding this object will temporarily disable memory tracking.
 DB::SimpleActionLock getCurrentMemoryTrackerActionLock();

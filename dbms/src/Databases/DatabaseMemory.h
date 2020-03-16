@@ -33,6 +33,7 @@ public:
         const Context & context,
         const String & table_name) override;
 
+    ASTPtr getCreateTableQueryImpl(const Context & /*context*/, const String & name, bool throw_on_error) const override;
     ASTPtr getCreateDatabaseQuery(const Context & /*context*/) const override;
 
     /// DatabaseMemory allows to create tables, which store data on disk.
@@ -44,6 +45,8 @@ public:
 
 private:
     String data_path;
+    using NameToASTCreate = std::unordered_map<String, ASTPtr>;
+    NameToASTCreate create_queries;
 };
 
 }

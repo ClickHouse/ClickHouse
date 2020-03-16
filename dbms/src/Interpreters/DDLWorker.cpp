@@ -626,8 +626,8 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
                 if (!query_with_table->table.empty())
                 {
                     /// It's not CREATE DATABASE
-                    String database = query_with_table->database.empty() ? context.getCurrentDatabase() : query_with_table->database;
-                    storage = context.tryGetTable(database, query_with_table->table);
+                    auto table_id = context.resolveStorageID(*query_with_table, Context::ResolveOrdinary);
+                    storage = DatabaseCatalog::instance().tryGetTable(table_id);
                 }
 
                 /// For some reason we check consistency of cluster definition only

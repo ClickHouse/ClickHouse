@@ -346,26 +346,6 @@ Ok.
 - [Движок таблиц Join](../table_engines/join.md)
 - [join_default_strictness](#settings-join_default_strictness)
 
-## join_any_take_last_row {#settings-join_any_take_last_row}
-
-Изменяет поведение операций, выполняемых со строгостью `ANY`.
-
-!!! note "Внимание"
-    Настройка работает только для движка таблиц [Join](../table_engines/join.md).
-
-Возможные значения:
-
-- 0 — если в правой таблице несколько соответствующих строк, то присоединяется только первая найденная.
-- 1 — если в правой таблице несколько соответствующих строк, то присоединяется только последняя найденная строка.
-
-Значение по умолчанию: 0.
-
-См. также:
-
-- [Секция JOIN](../../query_language/select.md#select-join)
-- [Движок таблиц Join](../table_engines/join.md)
-- [join_default_strictness](#settings-join_default_strictness)
-
 ## join_use_nulls {#join_use_nulls}
 
 Устанавливает тип поведения [JOIN](../../query_language/select.md). При объединении таблиц могут появиться пустые ячейки. ClickHouse заполняет их по-разному в зависимости от настроек.
@@ -941,25 +921,6 @@ ClickHouse генерирует исключение
 - 0 — управление скоростью передачи данных отключено.
 
 Значение по умолчанию: 0.
-
-
-## allow_experimental_cross_to_join_conversion {#settings-allow_experimental_cross_to_join_conversion}
-
-Включает или отключает:
-
-1. Перезапись запросов из синтаксиса с запятыми в синтаксис `JOIN ON/USING`. Если значение параметра равно 0, ClickHouse не обрабатывает запросы с синтаксисом, использующим запятые, и генерирует исключение.
-2. Преобразование `CROSS JOIN` в `INNER JOIN`, если условия объединения таблиц это позволяют.
-
-Возможные значения:
-
-- 0 — выключена.
-- 1 — включена.
-
-Значение по умолчанию: 1.
-
-См. также
-
-- [Множественный JOIN](../../query_language/select.md#select-join)
 
 
 ## skip_unavailable_shards {#settings-skip_unavailable_shards}

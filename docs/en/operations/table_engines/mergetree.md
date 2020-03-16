@@ -250,8 +250,6 @@ ClickHouse uses this logic not only for days of the month sequences, but for any
 
 ### Data Skipping Indexes (Experimental) {#table_engine-mergetree-data_skipping-indexes}
 
-You need to set `allow_experimental_data_skipping_indices` to 1 to use indices.  (run `SET allow_experimental_data_skipping_indices = 1`).
-
 The index declaration is in the columns section of the `CREATE` query.
 ```sql
 INDEX index_name expr TYPE type(...) GRANULARITY granularity_value
