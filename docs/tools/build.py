@@ -181,7 +181,8 @@ def build_single_page_version(lang, args, cfg):
                     single_page_pdf = single_page_index_html.replace('index.html', 'clickhouse_%s.pdf' % lang)
                     create_pdf_command = ['wkhtmltopdf', '--print-media-type', single_page_index_html, single_page_pdf]
                     logging.debug(' '.join(create_pdf_command))
-                    subprocess.check_call(' '.join(create_pdf_command), shell=True)
+                    with open(os.devnull, 'w') as devnull:
+                        subprocess.check_call(' '.join(create_pdf_command), shell=True, stderr=devnull)
 
                 with util.temp_dir() as test_dir:
                     cfg.load_dict({
