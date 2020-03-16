@@ -59,8 +59,6 @@ public:
         NOT_EXIST, /// Object with this name wasn't found in the configuration.
     };
 
-    static std::vector<std::pair<String, Int8>> getStatusEnumAllPossibleValues();
-
     using Duration = std::chrono::milliseconds;
     using TimePoint = std::chrono::system_clock::time_point;
 
@@ -229,5 +227,18 @@ private:
 
 String toString(ExternalLoader::Status status);
 std::ostream & operator<<(std::ostream & out, ExternalLoader::Status status);
+
+std::vector<std::pair<String, Int8>> getStatusEnumAllPossibleValues()
+{
+    return std::vector<std::pair<String, Int8>>{
+        {toString(ExternalLoader::Status::NOT_LOADED), static_cast<Int8>(ExternalLoader::Status::NOT_LOADED)},
+        {toString(ExternalLoader::Status::LOADED), static_cast<Int8>(ExternalLoader::Status::LOADED)},
+        {toString(ExternalLoader::Status::FAILED), static_cast<Int8>(ExternalLoader::Status::FAILED)},
+        {toString(ExternalLoader::Status::LOADING), static_cast<Int8>(ExternalLoader::Status::LOADING)},
+        {toString(ExternalLoader::Status::LOADED_AND_RELOADING), static_cast<Int8>(ExternalLoader::Status::LOADED_AND_RELOADING)},
+        {toString(ExternalLoader::Status::FAILED_AND_RELOADING), static_cast<Int8>(ExternalLoader::Status::FAILED_AND_RELOADING)},
+        {toString(ExternalLoader::Status::NOT_EXIST), static_cast<Int8>(ExternalLoader::Status::NOT_EXIST)},
+    };
+};
 
 }
