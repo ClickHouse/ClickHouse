@@ -253,12 +253,15 @@ def test_simple_dictionaries(started_cluster, fold):
         assert node.query(query) == str(answer) + '\n'
 
 
-def test_complex_dictionaries(started_cluster):
+@pytest.mark.parametrize("fold", list(range(10)))
+def test_complex_dictionaries(started_cluster, fold):
     fields = FIELDS["complex"]
     values = VALUES["complex"]
     data = [Row(fields, vals) for vals in values]
 
-    complex_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "complex"]
+    all_complex_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "complex"]
+    complex_dicts = get_dictionaries(fold, 10, all_complex_dicts)
+
     for dct in complex_dicts:
         dct.load_data(data)
 
@@ -283,12 +286,15 @@ def test_complex_dictionaries(started_cluster):
         assert node.query(query) == str(answer) + '\n'
 
 
-def test_ranged_dictionaries(started_cluster):
+@pytest.mark.parametrize("fold", list(range(10)))
+def test_ranged_dictionaries(started_cluster, fold):
     fields = FIELDS["ranged"]
     values = VALUES["ranged"]
     data = [Row(fields, vals) for vals in values]
 
-    ranged_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "ranged"]
+    all_ranged_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "ranged"]
+    ranged_dicts = get_dictionaries(fold, 10, all_ranged_dicts)
+
     for dct in ranged_dicts:
         dct.load_data(data)
 
@@ -364,12 +370,14 @@ def test_key_value_simple_dictionaries(started_cluster, fold):
             assert node.query(query) == str(answer) + '\n'
 
 
-def test_key_value_complex_dictionaries(started_cluster):
+@pytest.mark.parametrize("fold", list(range(10)))
+def test_key_value_complex_dictionaries(started_cluster, fold):
     fields = FIELDS["complex"]
     values = VALUES["complex"]
     data = [Row(fields, vals) for vals in values]
 
-    complex_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "complex"]
+    all_complex_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "complex"]
+    complex_dicts = get_dictionaries(fold, 10, all_complex_dicts)
     for dct in complex_dicts:
         dct.load_data(data)
 
