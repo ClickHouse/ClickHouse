@@ -56,6 +56,11 @@ public:
         copy_fault_probability = copy_fault_probability_;
     }
 
+    void setMoveFaultProbability(double move_fault_probability_)
+    {
+        move_fault_probability = move_fault_probability_;
+    }
+
 protected:
 
     String getWorkersPath() const
@@ -120,7 +125,7 @@ protected:
 
     static constexpr UInt64 max_table_tries = 1000;
     static constexpr UInt64 max_shard_partition_tries = 600;
-    static constexpr UInt64 max_shard_partition_piece_tries_for_alter = 5;
+    static constexpr UInt64 max_shard_partition_piece_tries_for_alter = 10;
 
     bool tryProcessTable(const ConnectionTimeouts & timeouts, TaskTable & task_table);
 
@@ -201,6 +206,7 @@ private:
 
     bool is_safe_mode = false;
     double copy_fault_probability = 0.0;
+    double move_fault_probability = 0.0;
 
     Context & context;
     Poco::Logger * log;
