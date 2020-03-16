@@ -1032,8 +1032,10 @@ private:
     {
         Info * info = getInfo(name);
         if (info && (info->loading_id == loading_id))
+        {
             info->loading_id = info->state_id;
-
+            CurrentStatusInfo::set(CurrentStatusInfo::DictionaryStatus, name, static_cast<Int8>(info->status()));
+        }
         min_id_to_finish_loading_dependencies.erase(std::this_thread::get_id());
 
         auto it = loading_threads.find(loading_id);
@@ -1042,7 +1044,6 @@ private:
             it->second.detach();
             loading_threads.erase(it);
         }
-        CurrentStatusInfo::set(CurrentStatusInfo::DictionaryStatus, name, static_cast<Int8>(info->status()));
     }
 
     /// Calculate next update time for loaded_object. Can be called without mutex locking,
