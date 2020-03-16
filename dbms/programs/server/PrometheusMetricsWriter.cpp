@@ -3,7 +3,7 @@
 #include <algorithm>
 
 #include <IO/WriteHelpers.h>
-#include <Common/CurrentStatusInfo.h>
+#include <Common/StatusInfo.h>
 #include <boost/algorithm/string/replace.hpp>
 
 namespace

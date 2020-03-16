@@ -8,7 +8,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
-#include <Common/CurrentStatusInfo.h>
+#include <Common/StatusInfo.h>
 #include <ext/chrono_io.h>
 #include <ext/scope_guard.h>
 #include <boost/range/adaptor/map.hpp>
