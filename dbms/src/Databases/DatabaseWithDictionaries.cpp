@@ -177,11 +177,12 @@ StoragePtr DatabaseWithDictionaries::tryGetTable(const Context & context, const 
     return {};
 }
 
-DatabaseTablesIteratorPtr DatabaseWithDictionaries::getTablesWithDictionaryTablesIterator(const Context & context, const FilterByNameFunction & filter_by_name)
+DatabaseTablesIteratorPtr DatabaseWithDictionaries::getTablesWithDictionaryTablesIterator(
+    const Context & context, const FilterByNameFunction & filter_by_dictionary_name)
 {
     /// NOTE: it's not atomic
-    auto tables_it = getTablesIterator(context, filter_by_name);
-    auto dictionaries_it = getDictionariesIterator(context, filter_by_name);
+    auto tables_it = getTablesIterator(context, filter_by_dictionary_name);
+    auto dictionaries_it = getDictionariesIterator(context, filter_by_dictionary_name);
 
     Tables result;
     while (tables_it && tables_it->isValid())

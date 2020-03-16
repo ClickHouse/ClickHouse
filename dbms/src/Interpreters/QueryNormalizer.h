@@ -63,7 +63,7 @@ public:
 private:
     Data & visitor_data;
 
-    static void visit(ASTPtr & query, Data & data);
+    static void visit(ASTPtr & ast, Data & data);
 
     static void visit(ASTIdentifier &, ASTPtr &, Data &);
     static void visit(ASTTablesInSelectQueryElement &, const ASTPtr &, Data &);

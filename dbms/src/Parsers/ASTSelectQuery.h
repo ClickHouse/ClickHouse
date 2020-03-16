@@ -8,6 +8,7 @@ namespace DB
 {
 
 struct ASTTablesInSelectQueryElement;
+struct StorageID;
 
 
 /** SELECT query
@@ -85,6 +86,7 @@ public:
     bool final() const;
     bool withFill() const;
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);
+    void replaceDatabaseAndTable(const StorageID & table_id);
     void addTableFunction(ASTPtr & table_function_ptr);
 
 protected:

@@ -135,7 +135,9 @@ def printSimpleTable(caption, columns, rows):
     print(tableEnd())
 
 printSimpleTable('Tested commits', ['Old', 'New'],
-    [[open('left-commit.txt').read(), open('right-commit.txt').read()]])
+    [['<pre>{}</pre>'.format(x) for x in
+        [open('left-commit.txt').read(),
+         open('right-commit.txt').read()]]])
 
 def print_changes():
     rows = tsvRows('changed-perf.tsv')
@@ -251,6 +253,7 @@ if len(report_errors):
 print("""
 <p class="links">
 <a href="output.7z">Test output</a>
+<a href="compare.log">Log</a>
 </p>
 </body>
 </html>

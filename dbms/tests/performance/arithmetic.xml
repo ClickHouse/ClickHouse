@@ -10,6 +10,10 @@
         </any_of>
     </stop_conditions>
 
+    <settings>
+        <max_memory_usage>30000000000</max_memory_usage>
+    </settings>
+
     <substitutions>
         <substitution>
             <name>arg</name>
@@ -34,44 +38,29 @@
                 <value>multiply</value>
                 <value>divide</value>
                 <value>intDivOrZero</value>
-                <value>modulo</value>
                 <value>moduloOrZero</value>
             </values>
         </substitution>
     </substitutions>
 
     <create_query>
-CREATE TABLE nums
-(
-    u8 UInt8,
-    u16 UInt16,
-    u32 UInt32,
-    u64 UInt64,
-    i8 Int8,
-    i16 Int16,
-    i32 Int32,
-    i64 Int64,
-    f32 Float32,
-    f64 Float64
-) ENGINE = Memory;
+        CREATE TABLE nums ENGINE Memory AS
+        WITH number as x
+        SELECT
+            toUInt8(x)   u8,
+            toUInt16(x)  u16,
+            toUInt32(x)  u32,
+            toUInt64(x)  u64,
+            toInt8(x)    i8,
+            toInt16(x)   i16,
+            toInt32(x)   i32,
+            toInt64(x)   i64,
+            toFloat32(x) f32,
+            toFloat64(x) f64
+        FROM numbers_mt(200000000)
+        SETTINGS max_threads = 4
+        ;
     </create_query>
-
-    <fill_query>
-INSERT INTO nums
-WITH cityHash64(number) AS x
-SELECT
-    toUInt8(x),
-    toUInt16(x),
-    toUInt32(x),
-    toUInt64(x),
-    toInt8(x),
-    toInt16(x),
-    toInt32(x),
-    toInt64(x),
-    toFloat32(x),
-    toFloat64(x)
-FROM numbers(100000000);
-    </fill_query>
 
     <query>SELECT count() FROM nums WHERE NOT ignore({op}({arg}, {arg}))</query>
 

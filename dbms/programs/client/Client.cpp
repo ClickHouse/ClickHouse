@@ -112,7 +112,7 @@ namespace ErrorCodes
 class Client : public Poco::Util::Application
 {
 public:
-    Client() {}
+    Client() = default;
 
 private:
     using StringSet = std::unordered_set<String>;
@@ -126,6 +126,7 @@ private:
     };
     bool is_interactive = true;          /// Use either interactive line editing interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
+    bool send_logs    = false;           /// send_logs_level passed, do not use previous cursor position, to avoid overlaps with logs
     bool echo_queries = false;           /// Print queries before execution in batch mode.
     bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
@@ -220,7 +221,6 @@ private:
 
         configReadClient(config(), home_path);
 
-        context.makeGlobalContext();
         context.setApplicationType(Context::ApplicationType::CLIENT);
         context.setQueryParameters(query_parameters);
 
@@ -303,7 +303,6 @@ private:
                31446, 31800, 32155, 32539, 32894, 33248, 33632, 33986, 34369, 34724, 35078, 35462, 35817, 36171, 36555, 36909, 37293, 37647,
                38002, 38386, 38740, 39095, 39479, 39833, 40187, 40571, 40925, 41309, 41664, 42018, 42402, 42757, 43111, 43495, 43849, 44233,
                44587, 44942, 45326, 45680, 46035, 46418, 46772, 47126, 47510, 47865, 48249, 48604, 48958, 49342};
-        static constexpr size_t N = sizeof(chineseNewYearIndicators) / sizeof(chineseNewYearIndicators[0]);
 
         /// All time zone names are acquired from https://www.iana.org/time-zones
         static constexpr const char * chineseNewYearTimeZoneIndicators[] = {
@@ -353,10 +352,8 @@ private:
             return false;
 
         auto days = DateLUT::instance().toDayNum(current_time).toUnderType();
-        for (auto i = 0ul; i < N; ++i)
+        for (auto d : chineseNewYearIndicators)
         {
-            auto d = chineseNewYearIndicators[i];
-
             /// Let's celebrate until Lantern Festival
             if (d <= days && d + 25u >= days)
                 return true;
@@ -645,7 +642,7 @@ private:
     }
 
 
-    inline const String prompt() const
+    inline String prompt() const
     {
         return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
     }
@@ -819,6 +816,8 @@ private:
                 apply_query_settings(*with_output->settings_ast);
 
             connection->forceConnected(connection_parameters.timeouts);
+
+            send_logs = context.getSettingsRef().send_logs_level != LogsLevel::none;
 
             ASTPtr input_function;
             if (insert && insert->select)
@@ -1438,7 +1437,8 @@ private:
     void clearProgress()
     {
         written_progress_chars = 0;
-        std::cerr << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
+        if (!send_logs)
+            std::cerr << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
     }
 
 
@@ -1463,10 +1463,13 @@ private:
             "\033[1m↗\033[0m",
         };
 
-        if (written_progress_chars)
-            message << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
-        else
-            message << SAVE_CURSOR_POSITION;
+        if (!send_logs)
+        {
+            if (written_progress_chars)
+                message << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
+            else
+                message << SAVE_CURSOR_POSITION;
+        }
 
         message << DISABLE_LINE_WRAPPING;
 
@@ -1521,6 +1524,9 @@ private:
         }
 
         message << ENABLE_LINE_WRAPPING;
+        if (send_logs)
+            message << '\n';
+
         ++increment;
 
         message.next();
@@ -1733,6 +1739,7 @@ public:
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
         ;
 
+        context.makeGlobalContext();
         context.getSettingsRef().addProgramOptions(main_description);
 
         /// Commandline options related to external tables.

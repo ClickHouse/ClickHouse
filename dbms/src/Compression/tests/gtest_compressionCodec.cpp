@@ -547,11 +547,11 @@ TEST_P(CodecTest, TranscodingWithoutDataType)
 }
 
 // Param is tuple-of-tuple to simplify instantiating with values, since typically group of cases test only one codec.
-class CodecTest_Compatibility : public ::testing::TestWithParam<std::tuple<Codec, std::tuple<CodecTestSequence, std::string>>>
+class CodecTestCompatibility : public ::testing::TestWithParam<std::tuple<Codec, std::tuple<CodecTestSequence, std::string>>>
 {};
 
 // Check that iput sequence when encoded matches the encoded string binary.
-TEST_P(CodecTest_Compatibility, Encoding)
+TEST_P(CodecTestCompatibility, Encoding)
 {
     const auto & codec_spec = std::get<0>(GetParam());
     const auto & [data_sequence, expected] = std::get<1>(GetParam());
@@ -571,7 +571,7 @@ TEST_P(CodecTest_Compatibility, Encoding)
 }
 
 // Check that binary string is exactly decoded into input sequence.
-TEST_P(CodecTest_Compatibility, Decoding)
+TEST_P(CodecTestCompatibility, Decoding)
 {
     const auto & codec_spec = std::get<0>(GetParam());
     const auto & [expected, encoded_data] = std::get<1>(GetParam());
@@ -584,10 +584,10 @@ TEST_P(CodecTest_Compatibility, Decoding)
     ASSERT_TRUE(EqualByteContainers(expected.data_type->getSizeOfValueInMemory(), expected.serialized_data, decoded));
 }
 
-class CodecTest_Performance : public ::testing::TestWithParam<std::tuple<Codec, CodecTestSequence>>
+class CodecTestPerformance : public ::testing::TestWithParam<std::tuple<Codec, CodecTestSequence>>
 {};
 
-TEST_P(CodecTest_Performance, TranscodingWithDataType)
+TEST_P(CodecTestPerformance, TranscodingWithDataType)
 {
     const auto & [codec_spec, test_seq] = GetParam();
     const auto codec = ::makeCodec(codec_spec.codec_statement, test_seq.data_type);
@@ -1159,7 +1159,7 @@ auto DDCompatibilityTestSequence()
 #define BIN_STR(x) std::string{x, sizeof(x) - 1}
 
 INSTANTIATE_TEST_SUITE_P(DoubleDelta,
-    CodecTest_Compatibility,
+    CodecTestCompatibility,
     ::testing::Combine(
         ::testing::Values(Codec("DoubleDelta")),
         ::testing::ValuesIn(std::initializer_list<std::tuple<CodecTestSequence, std::string>>{
@@ -1233,7 +1233,7 @@ auto GCompatibilityTestSequence()
 }
 
 INSTANTIATE_TEST_SUITE_P(Gorilla,
-    CodecTest_Compatibility,
+    CodecTestCompatibility,
     ::testing::Combine(
         ::testing::Values(Codec("Gorilla")),
         ::testing::ValuesIn(std::initializer_list<std::tuple<CodecTestSequence, std::string>>{
@@ -1295,7 +1295,7 @@ INSTANTIATE_TEST_SUITE_P(Gorilla,
 //};
 
 //INSTANTIATE_TEST_SUITE_P(DoubleDelta,
-//    CodecTest_Performance,
+//    CodecTestPerformance,
 //    ::testing::Combine(
 //        ::testing::Values(Codec("DoubleDelta")),
 //        ::testing::Values(
@@ -1312,7 +1312,7 @@ INSTANTIATE_TEST_SUITE_P(Gorilla,
 //);
 
 //INSTANTIATE_TEST_SUITE_P(Gorilla,
-//    CodecTest_Performance,
+//    CodecTestPerformance,
 //    ::testing::Combine(
 //        ::testing::Values(Codec("Gorilla")),
 //        ::testing::Values(

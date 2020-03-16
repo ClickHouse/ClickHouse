@@ -351,8 +351,7 @@ FieldWithInfinity::FieldWithInfinity(Field && field_)
 }
 
 FieldWithInfinity::FieldWithInfinity(const Type type_)
-    : field(),
-    type(type_)
+    : type(type_)
 {
 }
 
@@ -722,10 +721,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
 
         out_functions_chain.push_back(func);
 
-        if (!isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain))
-            return false;
-
-        return true;
+        return isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
     }
 
     return false;
@@ -1131,9 +1127,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;
-    for (size_t i = 0; i < rpn.size(); ++i)
+    for (const auto & element : rpn)
     {
-        const auto & element = rpn[i];
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
             rpn_stack.emplace_back(true, true);

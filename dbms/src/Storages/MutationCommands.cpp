@@ -87,6 +87,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MATERIALIZE_TTL;
+        res.partition = command->partition;
         return res;
     }
     return {};

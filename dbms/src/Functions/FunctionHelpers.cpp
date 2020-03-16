@@ -112,7 +112,7 @@ void validateArgumentType(const IFunction & func, const DataTypes & arguments,
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const auto & argument = arguments[argument_index];
-    if (validator_func(*argument) == false)
+    if (!validator_func(*argument))
         throw Exception("Illegal type " + argument->getName() +
                         " of " + std::to_string(argument_index) +
                         " argument of function " + func.getName() +
@@ -151,10 +151,10 @@ void validateArgumentsImpl(const IFunction & func,
 
 int FunctionArgumentDescriptor::isValid(const DataTypePtr & data_type, const ColumnPtr & column) const
 {
-    if (type_validator_func && (data_type == nullptr || type_validator_func(*data_type) == false))
+    if (type_validator_func && (data_type == nullptr || !type_validator_func(*data_type)))
         return ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT;
 
-    if (column_validator_func && (column == nullptr || column_validator_func(*column) == false))
+    if (column_validator_func && (column == nullptr || !column_validator_func(*column)))
         return ErrorCodes::ILLEGAL_COLUMN;
 
     return 0;
@@ -186,7 +186,7 @@ void validateFunctionArgumentTypes(const IFunction & func,
                 result += sep;
             }
 
-            if (args.size() != 0)
+            if (!args.empty())
                 result.erase(result.end() - sep.length(), result.end());
 
             return result;
@@ -194,20 +194,18 @@ void validateFunctionArgumentTypes(const IFunction & func,
 
         throw Exception("Incorrect number of arguments for function " + func.getName()
                         + " provided " + std::to_string(arguments.size())
-                        + (arguments.size() ? " (" + joinArgumentTypes(arguments) + ")" : String{})
+                        + (!arguments.empty() ? " (" + joinArgumentTypes(arguments) + ")" : String{})
                         + ", expected " + std::to_string(mandatory_args.size())
-                        + (optional_args.size() ? " to " + std::to_string(mandatory_args.size() + optional_args.size()) : "")
+                        + (!optional_args.empty() ? " to " + std::to_string(mandatory_args.size() + optional_args.size()) : "")
                         + " (" + joinArgumentTypes(mandatory_args)
-                        + (optional_args.size() ? ", [" + joinArgumentTypes(optional_args) + "]" : "")
+                        + (!optional_args.empty() ? ", [" + joinArgumentTypes(optional_args) + "]" : "")
                         + ")",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
 
     validateArgumentsImpl(func, arguments, 0, mandatory_args);
-    if (optional_args.size())
-    {
+    if (!optional_args.empty())
         validateArgumentsImpl(func, arguments, mandatory_args.size(), optional_args);
-    }
 }
 
 std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
