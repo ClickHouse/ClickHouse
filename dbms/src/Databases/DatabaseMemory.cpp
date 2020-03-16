@@ -65,8 +65,13 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const Context &, const String & t
 {
     std::lock_guard lock{mutex};
     auto it = create_queries.find(table_name);
-    if (it == create_queries.end() && throw_on_error)
-        throw Exception("There is no metadata of table " + table_name + " in database " + database_name, ErrorCodes::UNKNOWN_TABLE);
+    if (it == create_queries.end())
+    {
+        if (throw_on_error)
+            throw Exception("There is no metadata of table " + table_name + " in database " + database_name, ErrorCodes::UNKNOWN_TABLE);
+        else
+            return {};
+    }
     return it->second;
 }
 

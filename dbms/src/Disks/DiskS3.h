@@ -21,7 +21,13 @@ class DiskS3 : public IDisk
 public:
     friend class DiskS3Reservation;
 
-    DiskS3(String name_, std::shared_ptr<Aws::S3::S3Client> client_, String bucket_, String s3_root_path_, String metadata_path_);
+    DiskS3(
+        String name_,
+        std::shared_ptr<Aws::S3::S3Client> client_,
+        String bucket_,
+        String s3_root_path_,
+        String metadata_path_,
+        size_t min_upload_part_size_);
 
     const String & getName() const override { return name; }
 
@@ -61,17 +67,31 @@ public:
 
     void copyFile(const String & from_path, const String & to_path) override;
 
-    std::unique_ptr<ReadBuffer> readFile(const String & path, size_t buf_size) const override;
+    void listFiles(const String & path, std::vector<String> & file_names) override;
 
-    std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
+        const String & path,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        size_t estimated_size = 0,
+        size_t aio_threshold = 0,
+        size_t mmap_threshold = 0) const override;
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & path,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        WriteMode mode = WriteMode::Rewrite,
+        size_t estimated_size = 0,
+        size_t aio_threshold = 0) override;
 
     void remove(const String & path) override;
 
     void removeRecursive(const String & path) override;
 
-private:
-    String getS3Path(const String & path) const;
+    void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
+    Poco::Timestamp getLastModified(const String & path) override;
+
+private:
     String getRandomName() const;
 
     bool tryReserve(UInt64 bytes);
@@ -82,6 +102,7 @@ private:
     const String bucket;
     const String s3_root_path;
     const String metadata_path;
+    size_t min_upload_part_size;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;

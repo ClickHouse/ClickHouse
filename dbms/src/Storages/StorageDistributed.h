@@ -8,7 +8,6 @@
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Core/Settings.h>
 #include <Interpreters/Cluster.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTFunction.h>
 #include <common/logger_useful.h>
 #include <Common/ActionBlocker.h>
@@ -23,6 +22,8 @@ class StorageDistributedDirectoryMonitor;
 class Volume;
 using VolumePtr = std::shared_ptr<Volume>;
 
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
@@ -68,7 +69,7 @@ public:
     QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
     QueryProcessingStage::Enum getQueryProcessingStage(const Context & context, const ClusterPtr & cluster) const;
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -84,7 +85,6 @@ public:
 
     void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
     void renameOnDisk(const String & new_path_to_table_data);
-
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
 

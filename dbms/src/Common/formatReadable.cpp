@@ -7,6 +7,13 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
+    }
+}
 
 static void formatReadable(double size, DB::WriteBuffer & out, int precision, const char ** units, size_t units_size, double delimiter)
 {

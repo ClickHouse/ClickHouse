@@ -25,11 +25,11 @@ public:
     struct Data
     {
         const NameSet source_columns;
-        const std::vector<TableWithColumnNames> tables;
+        const std::vector<TableWithColumnNames> & tables;
         std::unordered_set<String> join_using_columns;
         bool has_columns;
 
-        Data(const NameSet & source_columns_, std::vector<TableWithColumnNames> && tables_, bool has_columns_ = true)
+        Data(const NameSet & source_columns_, const std::vector<TableWithColumnNames> & tables_, bool has_columns_ = true)
             : source_columns(source_columns_)
             , tables(tables_)
             , has_columns(has_columns_)
@@ -38,27 +38,17 @@ public:
         bool hasColumn(const String & name) const { return source_columns.count(name); }
         bool hasTable() const { return !tables.empty(); }
         bool processAsterisks() const { return hasTable() && has_columns; }
-        bool unknownColumn(size_t table_pos, const ASTIdentifier & node) const;
-
-        static std::vector<TableWithColumnNames> tablesOnly(const std::vector<DatabaseAndTableWithAlias> & tables)
-        {
-            std::vector<TableWithColumnNames> tables_with_columns;
-            tables_with_columns.reserve(tables.size());
-
-            for (const auto & table : tables)
-                tables_with_columns.emplace_back(TableWithColumnNames{table, {}});
-            return tables_with_columns;
-        }
+        bool unknownColumn(size_t table_pos, const ASTIdentifier & identifier) const;
     };
 
     static void visit(ASTPtr & ast, Data & data);
     static bool needChildVisit(ASTPtr & node, const ASTPtr & child);
 
 private:
-    static void visit(ASTIdentifier & node, ASTPtr & ast, Data &);
+    static void visit(ASTIdentifier & identifier, ASTPtr & ast, Data &);
     static void visit(const ASTQualifiedAsterisk & node, const ASTPtr & ast, Data &);
-    static void visit(ASTTableJoin & node, const ASTPtr & ast, Data &);
-    static void visit(ASTSelectQuery & node, const ASTPtr & ast, Data &);
+    static void visit(ASTTableJoin & join, const ASTPtr & ast, Data &);
+    static void visit(ASTSelectQuery & select, const ASTPtr & ast, Data &);
     static void visit(ASTExpressionList &, const ASTPtr &, Data &);
     static void visit(ASTFunction &, const ASTPtr &, Data &);
 

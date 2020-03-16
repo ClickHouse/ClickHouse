@@ -26,6 +26,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
 }
 
@@ -40,7 +41,7 @@ struct SpecialParserType
 
 struct LiteralInfo
 {
-    typedef std::shared_ptr<ASTLiteral> ASTLiteralPtr;
+    using ASTLiteralPtr = std::shared_ptr<ASTLiteral>;
     LiteralInfo(const ASTLiteralPtr & literal_, const String & column_name_, bool force_nullable_)
             : literal(literal_), dummy_column_name(column_name_), force_nullable(force_nullable_) { }
     ASTLiteralPtr literal;
@@ -207,7 +208,6 @@ private:
 };
 
 
-
 /// Expression template is a sequence of tokens and data types of literals.
 /// E.g. template of "position('some string', 'other string') != 0" is
 /// ["position", "(", DataTypeString, ",", DataTypeString, ")", "!=", DataTypeUInt64]
@@ -285,7 +285,6 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     boost::hash_combine(res, res128.second);
     return res;
 }
-
 
 
 ConstantExpressionTemplate::TemplateStructurePtr

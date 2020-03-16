@@ -77,10 +77,11 @@
 - C#
     - [ADO.NET](https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/ado-net-overview)
         - [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
+        - [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
         - [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
         - [ClickHouse.Net.Migrations](https://github.com/ilyabreev/ClickHouse.Net.Migrations)
 - Elixir
     - [Ecto](https://github.com/elixir-ecto/ecto)
         - [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/third-party/integrations/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/integrations/) <!--hide-->

@@ -1,7 +1,7 @@
 #pragma once
 #include <DataStreams/IBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeReader.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <memory>
 
@@ -58,7 +58,7 @@ private:
     Logger * log = &Logger::get("MergeTreeSequentialBlockInputStream");
 
     std::shared_ptr<MarkCache> mark_cache;
-    using MergeTreeReaderPtr = std::unique_ptr<MergeTreeReader>;
+    using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
     MergeTreeReaderPtr reader;
 
     /// current mark at which we stop reading

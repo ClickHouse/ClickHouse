@@ -1,3 +1,5 @@
+SET joined_subquery_requires_alias = 0;
+
 SYSTEM STOP MERGES;
 
 -- incremental streaming usecase
@@ -123,5 +125,6 @@ DROP TABLE IF EXISTS logins;
 DROP TABLE IF EXISTS mv_logins2target;
 DROP TABLE IF EXISTS checkouts;
 DROP TABLE IF EXISTS mv_checkouts2target;
+DROP TABLE target_table;
 
 SYSTEM START MERGES;

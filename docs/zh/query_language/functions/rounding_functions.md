@@ -90,4 +90,4 @@ round(3.65, 1) = 3.6
 
 接受一个数字，将其向下舍入到指定数组中的元素。如果该值小于数组中的最低边界，则返回最低边界。
 
-[来源文章](https://clickhouse.yandex/docs/en/query_language/functions/rounding_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/rounding_functions/) <!--hide-->

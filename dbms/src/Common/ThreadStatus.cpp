@@ -8,7 +8,7 @@
 #include <Common/ThreadStatus.h>
 
 #include <Poco/Logger.h>
-#include <common/getThreadNumber.h>
+#include <common/getThreadId.h>
 
 
 namespace DB
@@ -18,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int PTHREAD_ERROR;
 }
 
 
@@ -28,14 +27,13 @@ thread_local ThreadStatus * current_thread = nullptr;
 TasksStatsCounters TasksStatsCounters::current()
 {
     TasksStatsCounters res;
-    CurrentThread::get().taskstats_getter->getStat(res.stat, CurrentThread::get().os_thread_id);
+    CurrentThread::get().taskstats_getter->getStat(res.stat, CurrentThread::get().thread_id);
     return res;
 }
 
 ThreadStatus::ThreadStatus()
 {
-    thread_number = getThreadNumber();
-    os_thread_id = TaskStatsInfoGetter::getCurrentTID();
+    thread_id = getThreadId();
 
     last_rusage = std::make_unique<RUsageCounters>();
     last_taskstats = std::make_unique<TasksStatsCounters>();

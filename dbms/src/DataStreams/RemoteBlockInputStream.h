@@ -54,7 +54,7 @@ public:
     /// Specify how we allocate connections on a shard.
     void setPoolMode(PoolMode pool_mode_) { pool_mode = pool_mode_; }
 
-    void setMainTable(QualifiedTableName main_table_) { main_table = std::move(main_table_); }
+    void setMainTable(StorageID main_table_) { main_table = std::move(main_table_); }
 
     /// Sends query (initiates calculation) before read()
     void readPrefix() override;
@@ -148,7 +148,7 @@ private:
     std::atomic<bool> got_unknown_packet_from_replica { false };
 
     PoolMode pool_mode = PoolMode::GET_MANY;
-    std::optional<QualifiedTableName> main_table;
+    StorageID main_table = StorageID::createEmpty();
 
     Logger * log = &Logger::get("RemoteBlockInputStream");
 };

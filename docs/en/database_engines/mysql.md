@@ -1,6 +1,6 @@
 # MySQL
 
-Allows to connect to databases on a remote MySQL server and perform `INSERT` and `SELECT` queries with tables to exchange data between ClickHouse and MySQL.
+Allows to connect to databases on a remote MySQL server and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and MySQL.
 
 The `MySQL` database engine translate queries to the MySQL server so you can perform operations such as `SHOW TABLES` or `SHOW CREATE TABLE`.
 
@@ -119,4 +119,4 @@ SELECT * FROM mysql_db.mysql_table
 └────────┴───────┘
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/database_engines/mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/database_engines/mysql/) <!--hide-->

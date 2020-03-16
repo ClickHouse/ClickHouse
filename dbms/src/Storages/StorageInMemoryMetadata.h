@@ -33,6 +33,14 @@ struct StorageInMemoryMetadata
     ASTPtr sample_by_ast = nullptr;
     /// SETTINGS expression. Supported for MergeTree, Buffer and Kafka.
     ASTPtr settings_ast = nullptr;
+    /// SELECT QUERY. Supported for MaterializedView only.
+    ASTPtr select = nullptr;
+
+    StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
+    StorageInMemoryMetadata() = default;
+    StorageInMemoryMetadata(const ColumnsDescription & columns_, const IndicesDescription & indices_, const ConstraintsDescription & constraints_);
+
+    StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
 };
 
 }

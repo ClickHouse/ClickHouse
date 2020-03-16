@@ -18,13 +18,11 @@ brew install cmake ninja gcc icu4c mariadb-connector-c openssl libtool gettext
 ## 拉取 ClickHouse 源码
 
 ```bash
-git clone --recursive git@github.com:yandex/ClickHouse.git
-# or: git clone --recursive https://github.com/yandex/ClickHouse.git
+git clone --recursive git@github.com:ClickHouse/ClickHouse.git
+# or: git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 
 cd ClickHouse
 ```
-
-For the latest stable version, switch to the `stable` branch.
 
 ## 编译 ClickHouse
 
@@ -80,4 +78,4 @@ $ sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 可以通过 `ulimit -n` 命令来检查是否生效。
 
 
-[来源文章](https://clickhouse.yandex/docs/en/development/build_osx/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->

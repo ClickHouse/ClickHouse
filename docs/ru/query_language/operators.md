@@ -261,4 +261,4 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/operators/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/operators/) <!--hide-->

@@ -1,5 +1,5 @@
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
-#include <sched.h>
+#if defined (OS_LINUX)
+#   include <sched.h>
 #endif
 
 #include <iostream>
@@ -9,7 +9,6 @@
 #include <Common/Stopwatch.h>
 #include <Core/Defines.h>
 #include "AvalancheTest.h"  /// Taken from SMHasher.
-#include <port/clock.h>
 
 
 static void setAffinity()
@@ -180,9 +179,9 @@ static inline size_t tabulation(UInt64 x)
 };
     size_t res = 0;
 
-    for (size_t i = 0; i < 8; ++i)
+    for (const auto & rand : random)
     {
-        res ^= random[i][UInt8(x)];
+        res ^= rand[UInt8(x)];
         x >>= 8;
     }
 

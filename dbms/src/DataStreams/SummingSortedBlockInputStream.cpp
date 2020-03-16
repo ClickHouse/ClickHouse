@@ -156,7 +156,7 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
                 || endsWith(name, "Key")
                 || endsWith(name, "Type"))
             {
-                if (!nested_type.isValueRepresentedByInteger())
+                if (!nested_type.isValueRepresentedByInteger() && !isStringOrFixedString(nested_type))
                     break;
 
                 map_desc.key_col_nums.push_back(*column_num_it);
@@ -363,14 +363,14 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, Sorti
             {
                 /// We have only columns_to_aggregate. The status of current row will be determined
                 /// in 'insertCurrentRowIfNeeded' method on the values of aggregate functions.
-                current_row_is_zero = true;
+                current_row_is_zero = true; // NOLINT
             }
             else
             {
                 /// We have complex maps that will be summed with 'mergeMap' method.
                 /// The single row is considered non zero, and the status after merging with other rows
                 /// will be determined in the branch below (when key_differs == false).
-                current_row_is_zero = false;
+                current_row_is_zero = false; // NOLINT
             }
         }
         else

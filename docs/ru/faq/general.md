@@ -48,10 +48,10 @@ SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 ### Перенаправление в командой строке
 
 ```sql
-$ clickhouse-client --query "SELECT * from table" > result.txt
+$ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
 ```
 
 Смотрите [clickhouse-client](../interfaces/cli.md).
 
 
-[Оригинальная статья ](https://clickhouse.yandex/docs/en/faq/general/) <!--hide-->
+[Оригинальная статья ](https://clickhouse.tech/docs/en/faq/general/) <!--hide-->

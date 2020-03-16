@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Poco/Timespan.h>
+#include <Poco/URI.h>
 #include <DataStreams/SizeLimits.h>
 #include <Formats/FormatSettings.h>
 #include <common/StringRef.h>
@@ -196,6 +197,26 @@ struct SettingEnum
     void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 };
 
+struct SettingURI
+{
+    Poco::URI value;
+    bool changed = false;
+
+    SettingURI(const Poco::URI & x = Poco::URI{}) : value(x) {}
+
+    operator Poco::URI() const { return value; }
+    SettingURI & operator= (const Poco::URI & x) { set(x); return *this; }
+
+    String toString() const;
+    Field toField() const;
+
+    void set(const Poco::URI & x);
+    void set(const Field & x);
+    void set(const String & x);
+
+    void serialize(WriteBuffer & buf, SettingsBinaryFormat format) const;
+    void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
+};
 
 enum class LoadBalancing
 {
@@ -221,6 +242,14 @@ enum class JoinStrictness
 };
 using SettingJoinStrictness = SettingEnum<JoinStrictness>;
 
+enum class JoinAlgorithm
+{
+    AUTO = 0,
+    HASH,
+    PARTIAL_MERGE,
+    PREFER_PARTIAL_MERGE,
+};
+using SettingJoinAlgorithm = SettingEnum<JoinAlgorithm>;
 
 /// Which rows should be included in TOTALS.
 enum class TotalsMode

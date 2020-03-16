@@ -8,6 +8,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 KafkaBlockInputStream::KafkaBlockInputStream(
     StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix_)
     : storage(storage_)
@@ -52,15 +56,20 @@ void KafkaBlockInputStream::readPrefixImpl()
     if (!buffer)
         return;
 
-    buffer->subscribe(storage.getTopics());
+    buffer->subscribe();
 
     broken = true;
 }
 
 Block KafkaBlockInputStream::readImpl()
 {
-    if (!buffer)
+    if (!buffer || finished)
         return Block();
+
+    finished = true;
+    // now it's one-time usage InputStream
+    // one block of the needed size (or with desired flush timeout) is formed in one internal iteration
+    // otherwise external iteration will reuse that and logic will became even more fuzzy
 
     MutableColumns result_columns  = non_virtual_header.cloneEmptyColumns();
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
@@ -126,6 +135,8 @@ Block KafkaBlockInputStream::readImpl()
 
         auto new_rows = read_kafka_message();
 
+        buffer->storeLastReadMessageOffset();
+
         auto _topic         = buffer->currentTopic();
         auto _key           = buffer->currentKey();
         auto _offset        = buffer->currentOffset();
@@ -151,11 +162,18 @@ Block KafkaBlockInputStream::readImpl()
 
         total_rows = total_rows + new_rows;
         buffer->allowNext();
-        if (!new_rows || total_rows >= max_block_size || !checkTimeLimit())
+
+        if (buffer->hasMorePolledMessages())
+        {
+            continue;
+        }
+        if (total_rows >= max_block_size || !checkTimeLimit())
+        {
             break;
+        }
     }
 
-    if (total_rows == 0)
+    if (buffer->rebalanceHappened() || total_rows == 0)
         return Block();
 
     /// MATERIALIZED columns can be added here, but I think
@@ -181,8 +199,6 @@ Block KafkaBlockInputStream::readImpl()
 
 void KafkaBlockInputStream::readSuffixImpl()
 {
-    broken = false;
-
     if (commit_in_suffix)
         commit();
 }
@@ -193,6 +209,8 @@ void KafkaBlockInputStream::commit()
         return;
 
     buffer->commit();
+
+    broken = false;
 }
 
 }

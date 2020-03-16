@@ -9,4 +9,4 @@
 
 Движок Memory используется системой для временных таблиц - внешних данных запроса (смотрите раздел "Внешние данные для обработки запроса"), для реализации `GLOBAL IN` (смотрите раздел "Операторы IN").
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/memory/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/memory/) <!--hide-->

@@ -1,5 +1,6 @@
 #include <Storages/StorageFile.h>
 #include <Storages/ColumnsDescription.h>
+#include <Access/AccessFlags.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionFile.h>
 #include "registerTableFunctions.h"
@@ -13,6 +14,11 @@ StoragePtr TableFunctionFile::getStorage(
                                       columns, ConstraintsDescription{}, global_context};
 
     return StorageFile::create(source, global_context.getUserFilesPath(), args);
+}
+
+AccessType TableFunctionFile::getRequiredAccessType() const
+{
+    return AccessType::file;
 }
 
 void registerTableFunctionFile(TableFunctionFactory & factory)

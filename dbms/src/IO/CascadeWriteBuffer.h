@@ -8,7 +8,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CURRENT_WRITE_BUFFER_IS_EXHAUSTED;
 }
 
 /* The buffer is similar to ConcatReadBuffer, but writes data

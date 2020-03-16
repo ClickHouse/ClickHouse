@@ -250,4 +250,4 @@ SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 
 For more information about the `arrayReverseSort` method, see the [Functions for Working With Arrays](array_functions.md#array_functions-reverse-sort) section.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/higher_order_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/higher_order_functions/) <!--hide-->

@@ -67,4 +67,4 @@ SELECT 0 / 0
 
   Смотрите правила сортировки `NaN` в разделе [Секция ORDER BY](../query_language/select.md).
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/float/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/float/) <!--hide-->

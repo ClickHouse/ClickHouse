@@ -52,7 +52,7 @@ struct WriteSpec
 };
 
 // delta size prefix and data lengths based on few high bits peeked from binary stream
-static const WriteSpec WRITE_SPEC_LUT[32] = {
+const WriteSpec WRITE_SPEC_LUT[32] = {
     // 0b0 - 1-bit prefix, no data to read
     /* 00000 */ {1, 0b0, 0},
     /* 00001 */ {1, 0b0, 0},
@@ -241,30 +241,35 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 
     const char * source_end = source + source_size;
 
+    if (source + sizeof(UInt32) > source_end)
+        return;
+
     const UInt32 items_count = unalignedLoad<UInt32>(source);
     source += sizeof(items_count);
 
     ValueType prev_value{};
     UnsignedDeltaType prev_delta{};
 
-    if (source < source_end)
-    {
-        prev_value = unalignedLoad<ValueType>(source);
-        unalignedStore<ValueType>(dest, prev_value);
+    // decoding first item
+    if (source + sizeof(ValueType) > source_end || items_count < 1)
+        return;
 
-        source += sizeof(prev_value);
-        dest += sizeof(prev_value);
-    }
+    prev_value = unalignedLoad<ValueType>(source);
+    unalignedStore<ValueType>(dest, prev_value);
 
-    if (source < source_end)
-    {
-        prev_delta = unalignedLoad<UnsignedDeltaType>(source);
-        prev_value = prev_value + static_cast<ValueType>(prev_delta);
-        unalignedStore<ValueType>(dest, prev_value);
+    source += sizeof(prev_value);
+    dest += sizeof(prev_value);
 
-        source += sizeof(prev_delta);
-        dest += sizeof(prev_value);
-    }
+    // decoding second item
+    if (source + sizeof(UnsignedDeltaType) > source_end || items_count < 2)
+        return;
+
+    prev_delta = unalignedLoad<UnsignedDeltaType>(source);
+    prev_value = prev_value + static_cast<ValueType>(prev_delta);
+    unalignedStore<ValueType>(dest, prev_value);
+
+    source += sizeof(prev_delta);
+    dest += sizeof(prev_value);
 
     BitReader reader(source, source_size - sizeof(prev_value) - sizeof(prev_delta) - sizeof(items_count));
 
@@ -319,9 +324,9 @@ CompressionCodecDoubleDelta::CompressionCodecDoubleDelta(UInt8 data_bytes_size_)
 {
 }
 
-UInt8 CompressionCodecDoubleDelta::getMethodByte() const
+uint8_t CompressionCodecDoubleDelta::getMethodByte() const
 {
-    return static_cast<UInt8>(CompressionMethodByte::DoubleDelta);
+    return static_cast<uint8_t>(CompressionMethodByte::DoubleDelta);
 }
 
 String CompressionCodecDoubleDelta::getCodecDesc() const

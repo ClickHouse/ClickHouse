@@ -9,7 +9,7 @@ Columns:
 name
 a
 Column types:
-name BINARY
+name CHAR
 a TINYINT
 Result:
 tables 1
@@ -17,7 +17,7 @@ Columns:
 a
 b
 Column types:
-a BINARY
+a CHAR
 b TINYINT
 Result:
 тест 1

@@ -61,4 +61,4 @@ ClickHouse предоставляет различные способы разм
 
 Подробнее смотрите раздел [Репликация данных](../operations/table_engines/replication.md).
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/introduction/distinctive_features/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/introduction/distinctive_features/) <!--hide-->

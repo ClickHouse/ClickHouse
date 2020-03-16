@@ -5,4 +5,4 @@ CREATE DATABASE memory_01069 ENGINE = Memory()
 4
 3
 4
-CREATE TABLE memory_01069.file (`n` UInt8) ENGINE = File(CSV)
+CREATE TABLE memory_01069.file (`n` UInt8) ENGINE = File(\'CSV\')

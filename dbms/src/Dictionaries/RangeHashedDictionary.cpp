@@ -45,6 +45,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
     extern const int TYPE_MISMATCH;
@@ -363,9 +364,7 @@ void RangeHashedDictionary::getItems(
     const PaddedPODArray<RangeStorageType> & dates,
     PaddedPODArray<OutputType> & out) const
 {
-    if (false)
-    {
-    }
+    if (false) {} // NOLINT
 #define DISPATCH(TYPE) else if (attribute.type == AttributeUnderlyingType::ut##TYPE) getItemsImpl<TYPE, OutputType>(attribute, ids, dates, out);
     DISPATCH(UInt8)
     DISPATCH(UInt16)

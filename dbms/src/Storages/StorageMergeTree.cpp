@@ -33,15 +33,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_ENOUGH_SPACE;
     extern const int ABORTED;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
-    extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
-    extern const int INCOMPATIBLE_COLUMNS;
-    extern const int PART_IS_TEMPORARILY_LOCKED;
-    extern const int UNKNOWN_SETTING;
-    extern const int TOO_BIG_AST;
 }
 
 namespace ActionLocks
@@ -97,7 +95,8 @@ void StorageMergeTree::startup()
 
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup.restart();
-    merging_mutating_task_handle = global_context.getBackgroundPool().addTask([this] { return mergeMutateTask(); });
+    if (!getSettings()->disable_background_merges)
+        merging_mutating_task_handle = global_context.getBackgroundPool().addTask([this] { return mergeMutateTask(); });
     if (areBackgroundMovesNeeded())
         moving_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
 }
@@ -108,7 +107,18 @@ void StorageMergeTree::shutdown()
     if (shutdown_called)
         return;
     shutdown_called = true;
-    clearOldPartsFromFilesystem(true);
+
+    try
+    {
+        clearOldPartsFromFilesystem(true);
+    }
+    catch (...)
+    {
+        /// Example: the case of readonly filesystem, we have failure removing old parts.
+        /// Should not prevent table shutdown.
+        tryLogCurrentException(log);
+    }
+
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
 
@@ -125,7 +135,7 @@ StorageMergeTree::~StorageMergeTree()
     shutdown();
 }
 
-Pipes StorageMergeTree::readWithProcessors(
+Pipes StorageMergeTree::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -244,7 +254,7 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
 }
 
 void StorageMergeTree::alter(
-    const AlterCommands & params,
+    const AlterCommands & commands,
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
@@ -254,7 +264,7 @@ void StorageMergeTree::alter(
 
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
 
-    params.apply(metadata);
+    commands.apply(metadata);
 
     /// Update metdata in memory
     auto update_metadata = [&metadata, &table_lock_holder, this]()
@@ -268,11 +278,11 @@ void StorageMergeTree::alter(
     };
 
     /// This alter can be performed at metadata level only
-    if (!params.isModifyingData())
+    if (!commands.isModifyingData())
     {
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-        context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
 
         update_metadata();
     }
@@ -289,7 +299,7 @@ void StorageMergeTree::alter(
 
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-        context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
 
         update_metadata();
 
@@ -327,7 +337,7 @@ public:
             reserved_space = storage.tryReserveSpace(total_size, future_part_.parts[0]->disk);
         else
         {
-            MergeTreeDataPart::TTLInfos ttl_infos;
+            IMergeTreeDataPart::TTLInfos ttl_infos;
             size_t max_volume_index = 0;
             for (auto & part_ptr : future_part_.parts)
             {
@@ -407,8 +417,8 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
 {
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See loadMutations().
-    auto disk = storage_policy->getAnyDisk();
-    MergeTreeMutationEntry entry(commands, getFullPathOnDisk(disk), insert_increment.get());
+    auto disk = getStoragePolicy()->getAnyDisk();
+    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get());
     String file_name;
     Int64 version;
     {
@@ -549,22 +559,20 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 
 void StorageMergeTree::loadMutations()
 {
-    Poco::DirectoryIterator end;
-    const auto full_paths = getDataPaths();
-    for (const String & full_path : full_paths)
+    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
     {
-        for (auto it = Poco::DirectoryIterator(full_path); it != end; ++it)
+        for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
         {
-            if (startsWith(it.name(), "mutation_"))
+            if (startsWith(it->name(), "mutation_"))
             {
-                MergeTreeMutationEntry entry(full_path, it.name());
+                MergeTreeMutationEntry entry(disk, path, it->name());
                 Int64 block_number = entry.block_number;
-                auto insertion = current_mutations_by_id.emplace(it.name(), std::move(entry));
+                auto insertion = current_mutations_by_id.emplace(it->name(), std::move(entry));
                 current_mutations_by_version.emplace(block_number, insertion.first->second);
             }
-            else if (startsWith(it.name(), "tmp_mutation_"))
+            else if (startsWith(it->name(), "tmp_mutation_"))
             {
-                it->remove();
+                disk->remove(it->path());
             }
         }
     }
@@ -609,7 +617,7 @@ bool StorageMergeTree::merge(
         }
         else
         {
-            UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
+            UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
             selected = merger_mutator.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
         }
 
@@ -652,7 +660,7 @@ bool StorageMergeTree::merge(
     {
         /// Force filter by TTL in 'OPTIMIZE ... FINAL' query to remove expired values from old parts
         ///  without TTL infos or with outdated TTL infos, e.g. after 'ALTER ... MODIFY TTL' query.
-        bool force_ttl = (final && (hasRowsTTL() || hasAnyColumnTTL()));
+        bool force_ttl = (final && hasAnyTTL());
 
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part, *merge_entry, table_lock_holder, time(nullptr),
@@ -745,6 +753,7 @@ bool StorageMergeTree::tryMutatePart()
             future_part.parts.push_back(part);
             future_part.part_info = new_part_info;
             future_part.name = part->getNewName(new_part_info);
+            future_part.type = part->getType();
 
             tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, true);
             break;
@@ -774,10 +783,12 @@ bool StorageMergeTree::tryMutatePart()
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, *merge_entry, global_context,
-            tagger->reserved_space, table_lock_holder);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, *merge_entry,
+            time(nullptr), global_context, tagger->reserved_space, table_lock_holder);
 
         renameTempPartAndReplace(new_part);
+        removeEmptyColumnsFromPart(new_part);
+
         tagger->is_successful = true;
         write_part_log({});
 
@@ -1031,10 +1042,11 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
                     case PartitionCommand::MoveDestinationType::VOLUME:
                         movePartitionToVolume(command.partition, command.move_destination_name, command.part, context);
                         break;
+
                     case PartitionCommand::MoveDestinationType::TABLE:
                         checkPartitionCanBeDropped(command.partition);
-                        String dest_database = command.to_database.empty() ? context.getCurrentDatabase() : command.to_database;
-                        auto dest_storage = context.getTable(dest_database, command.to_table);
+                        String dest_database = context.resolveDatabase(command.to_database);
+                        auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table});
                         movePartitionToTable(dest_storage, command.partition, context);
                         break;
                 }
@@ -1045,8 +1057,8 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             case PartitionCommand::REPLACE_PARTITION:
             {
                 checkPartitionCanBeDropped(command.partition);
-                String from_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
-                auto from_storage = context.getTable(from_database, command.from_table);
+                String from_database = context.resolveDatabase(command.from_database);
+                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table});
                 replacePartitionFrom(from_storage, command.partition, command.replace, context);
             }
             break;
@@ -1220,7 +1232,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
     auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(dest_table);
     if (!dest_table_storage)
-        throw Exception("Table " + getStorageID().getNameForLogs() + " supports attachPartitionFrom only for MergeTree family of table engines."
+        throw Exception("Table " + getStorageID().getNameForLogs() + " supports movePartitionToTable only for MergeTree family of table engines."
                         " Got " + dest_table->getName(), ErrorCodes::NOT_IMPLEMENTED);
     if (dest_table_storage->getStoragePolicy() != this->getStoragePolicy())
         throw Exception("Destination table " + dest_table_storage->getStorageID().getNameForLogs() +
@@ -1235,13 +1247,13 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
     MutableDataPartsVector dst_parts;
 
-    static const String TMP_PREFIX = "tmp_replace_from_";
+    static const String TMP_PREFIX = "tmp_move_from_";
 
     for (const DataPartPtr & src_part : src_parts)
     {
         if (!dest_table_storage->canReplacePartition(src_part))
             throw Exception(
-                "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
+                "Cannot move partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
                 ErrorCodes::LOGICAL_ERROR);
 
         /// This will generate unique name in scope of current server process.
@@ -1252,18 +1264,11 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         dst_parts.emplace_back(dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info));
     }
 
-    /// ATTACH empty part set
+    /// empty part set
     if (dst_parts.empty())
         return;
 
-    MergeTreePartInfo drop_range;
-
-    drop_range.partition_id = partition_id;
-    drop_range.min_block = 0;
-    drop_range.max_block = increment.get(); // there will be a "hole" in block numbers
-    drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
-
-    /// Atomically add new parts and remove old ones
+    /// Move new parts to the destination table. NOTE It doesn't look atomic.
     try
     {
         {
@@ -1320,26 +1325,26 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
 
     for (auto & part : data_parts)
     {
-        String full_part_path = part->getFullPath();
+        auto disk = part->disk;
+        String part_path = part->getFullRelativePath();
         /// If the checksums file is not present, calculate the checksums and write them to disk.
-        String checksums_path = full_part_path + "checksums.txt";
-        String tmp_checksums_path = full_part_path + "checksums.txt.tmp";
-        if (!Poco::File(checksums_path).exists())
+        String checksums_path = part_path + "checksums.txt";
+        String tmp_checksums_path = part_path + "checksums.txt.tmp";
+        if (!disk->exists(checksums_path))
         {
             try
             {
-                auto calculated_checksums = checkDataPart(part, false, primary_key_data_types, skip_indices);
+                auto calculated_checksums = checkDataPart(part, false);
                 calculated_checksums.checkEqual(part->checksums, true);
-                WriteBufferFromFile out(tmp_checksums_path, 4096);
-                part->checksums.write(out);
-                Poco::File(tmp_checksums_path).renameTo(checksums_path);
+                auto out = disk->writeFile(tmp_checksums_path, 4096);
+                part->checksums.write(*out);
+                disk->moveFile(tmp_checksums_path, checksums_path);
                 results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
             }
             catch (const Exception & ex)
             {
-                Poco::File tmp_file(tmp_checksums_path);
-                if (tmp_file.exists())
-                    tmp_file.remove();
+                if (disk->exists(tmp_checksums_path))
+                    disk->remove(tmp_checksums_path);
 
                 results.emplace_back(part->name, false,
                     "Check of part finished with error: '" + ex.message() + "'");
@@ -1349,7 +1354,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
         {
             try
             {
-                checkDataPart(part, true, primary_key_data_types, skip_indices);
+                checkDataPart(part, true);
                 results.emplace_back(part->name, true, "");
             }
             catch (const Exception & ex)

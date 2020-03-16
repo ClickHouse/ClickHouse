@@ -2,6 +2,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /// Simple struct which stores threads with numbers [0 .. num_threads - 1].
 /// Allows to push and pop specified thread, or pop any thread if has.

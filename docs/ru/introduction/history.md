@@ -46,4 +46,4 @@ OLAPServer хорошо подходил для неагрегированных
 
 Чтобы снять ограничения OLAPServer-а и решить задачу работы с неагрегированными данными для всех отчётов, разработана СУБД ClickHouse.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/introduction/ya_metrika_task/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/introduction/ya_metrika_task/) <!--hide-->

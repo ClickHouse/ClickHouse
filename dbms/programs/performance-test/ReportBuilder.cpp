@@ -17,13 +17,6 @@ namespace DB
 
 namespace
 {
-std::string getMainMetric(const PerformanceTestInfo & test_info)
-{
-    if (test_info.exec_type == ExecutionType::Loop)
-        return "min_time";
-    else
-        return "rows_per_second";
-}
 
 bool isASCIIString(const std::string & str)
 {
@@ -120,50 +113,40 @@ std::string ReportBuilder::buildFullReport(
                     runJSON.set("exception", "Some exception occurred with non ASCII message. This may produce invalid JSON. Try reproduce locally.");
             }
 
-            if (test_info.exec_type == ExecutionType::Loop)
+            /// in seconds
+            runJSON.set("min_time", statistics.min_time / double(1000));
+
+            if (statistics.sampler.size() != 0)
             {
-                /// in seconds
-                runJSON.set("min_time", statistics.min_time / double(1000));
-
-                if (statistics.sampler.size() != 0)
+                JSONString quantiles(4); /// here, 4 is the size of \t padding
+                for (double percent = 10; percent <= 90; percent += 10)
                 {
-                    JSONString quantiles(4); /// here, 4 is the size of \t padding
-                    for (double percent = 10; percent <= 90; percent += 10)
-                    {
-                        std::string quantile_key = std::to_string(percent / 100.0);
-                        while (quantile_key.back() == '0')
-                            quantile_key.pop_back();
+                    std::string quantile_key = std::to_string(percent / 100.0);
+                    while (quantile_key.back() == '0')
+                        quantile_key.pop_back();
 
-                        quantiles.set(quantile_key,
-                            statistics.sampler.quantileInterpolated(percent / 100.0));
-                    }
-                    quantiles.set("0.95",
-                        statistics.sampler.quantileInterpolated(95 / 100.0));
-                    quantiles.set("0.99",
-                        statistics.sampler.quantileInterpolated(99 / 100.0));
-                    quantiles.set("0.999",
-                        statistics.sampler.quantileInterpolated(99.9 / 100.0));
-                    quantiles.set("0.9999",
-                        statistics.sampler.quantileInterpolated(99.99 / 100.0));
-
-                    runJSON.set("quantiles", quantiles.asString());
+                    quantiles.set(quantile_key,
+                        statistics.sampler.quantileInterpolated(percent / 100.0));
                 }
+                quantiles.set("0.95",
+                    statistics.sampler.quantileInterpolated(95 / 100.0));
+                quantiles.set("0.99",
+                    statistics.sampler.quantileInterpolated(99 / 100.0));
+                quantiles.set("0.999",
+                    statistics.sampler.quantileInterpolated(99.9 / 100.0));
+                quantiles.set("0.9999",
+                    statistics.sampler.quantileInterpolated(99.99 / 100.0));
 
-                runJSON.set("total_time", statistics.total_time);
-
-                if (statistics.total_time != 0)
-                {
-                    runJSON.set("queries_per_second", static_cast<double>(statistics.queries) / statistics.total_time);
-                    runJSON.set("rows_per_second", static_cast<double>(statistics.total_rows_read) / statistics.total_time);
-                    runJSON.set("bytes_per_second", static_cast<double>(statistics.total_bytes_read) / statistics.total_time);
-                }
+                runJSON.set("quantiles", quantiles.asString());
             }
-            else
+
+            runJSON.set("total_time", statistics.total_time);
+
+            if (statistics.total_time != 0)
             {
-                runJSON.set("max_rows_per_second", statistics.max_rows_speed);
-                runJSON.set("max_bytes_per_second", statistics.max_bytes_speed);
-                runJSON.set("avg_rows_per_second", statistics.avg_rows_speed_value);
-                runJSON.set("avg_bytes_per_second", statistics.avg_bytes_speed_value);
+                runJSON.set("queries_per_second", static_cast<double>(statistics.queries) / statistics.total_time);
+                runJSON.set("rows_per_second", static_cast<double>(statistics.total_rows_read) / statistics.total_time);
+                runJSON.set("bytes_per_second", static_cast<double>(statistics.total_bytes_read) / statistics.total_time);
             }
 
             runJSON.set("memory_usage", statistics.memory_usage);
@@ -197,7 +180,7 @@ std::string ReportBuilder::buildCompactReport(
 
             output << "run " << std::to_string(number_of_launch + 1) << ": ";
 
-            std::string main_metric = getMainMetric(test_info);
+            std::string main_metric = "min_time";
 
             output << main_metric << " = ";
             size_t index = number_of_launch * test_info.queries.size() + query_index;

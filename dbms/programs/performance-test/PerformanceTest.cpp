@@ -43,7 +43,7 @@ void waitQuery(Connection & connection)
                 finished = true;
                 break;
             case Protocol::Server::Exception:
-                throw *packet.exception;
+                throw Exception(*packet.exception);
         }
 
         if (finished)
@@ -117,7 +117,7 @@ bool PerformanceTest::checkPreconditions() const
                 {
                     for (const ColumnWithTypeAndName & column : packet.block)
                     {
-                        if (column.name == "result" && column.column->size() > 0)
+                        if (column.name == "result" && !column.column->empty())
                         {
                             exist = column.column->get64(0);
                             if (exist)
@@ -305,22 +305,17 @@ void PerformanceTest::runQueries(
         statistics.startWatches();
         try
         {
-            executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context, test_info.settings);
-
-            if (test_info.exec_type == ExecutionType::Loop)
+            LOG_INFO(log, "Will run query in loop");
+            for (size_t iteration = 0; !statistics.got_SIGINT; ++iteration)
             {
-                LOG_INFO(log, "Will run query in loop");
-                for (size_t iteration = 1; !statistics.got_SIGINT; ++iteration)
+                stop_conditions.reportIterations(iteration);
+                if (stop_conditions.areFulfilled())
                 {
-                    stop_conditions.reportIterations(iteration);
-                    if (stop_conditions.areFulfilled())
-                    {
-                        LOG_INFO(log, "Stop conditions fulfilled");
-                        break;
-                    }
-
-                    executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context, test_info.settings);
+                    LOG_INFO(log, "Stop conditions fulfilled");
+                    break;
                 }
+
+                executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context, test_info.settings);
             }
         }
         catch (const Exception & e)

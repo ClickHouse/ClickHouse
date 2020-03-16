@@ -4,7 +4,9 @@
 
 #include <IO/S3Common.h>
 #include <Storages/StorageS3.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionS3.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
@@ -16,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -33,8 +36,8 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & ast_function, const Conte
         throw Exception("Table function '" + getName() + "' requires 3 to 6 arguments: url, [access_key_id, secret_access_key,] format, structure and [compression_method].",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    for (size_t i = 0; i < args.size(); ++i)
-        args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
+    for (auto & arg : args)
+        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
     String filename = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     String format;
@@ -60,6 +63,8 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & ast_function, const Conte
         compression_method = args.back()->as<ASTLiteral &>().value.safeGet<String>();
     else
         compression_method = "auto";
+
+    context.checkAccess(AccessType::s3);
 
     ColumnsDescription columns = parseColumnsListFromString(structure, context);
 

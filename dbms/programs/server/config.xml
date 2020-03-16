@@ -3,25 +3,6 @@
   NOTE: User and query level settings are set up in "users.xml" file.
 -->
 <yandex>
-    <!-- The list of hosts allowed to use in URL-related storage engines and table functions.
-        If this section is not present in configuration, all hosts are allowed.
-    -->
-    <remote_url_allow_hosts>
-        <!-- Host should be specified exactly as in URL. The name is checked before DNS resolution.
-            Example: "yandex.ru", "yandex.ru." and "www.yandex.ru" are different hosts.
-                    If port is explicitly specified in URL, the host:port is checked as a whole.
-                    If host specified here without port, any port with this host allowed.
-                    "yandex.ru" -> "yandex.ru:443", "yandex.ru:80" etc. is allowed, but "yandex.ru:80" -> only "yandex.ru:80" is allowed.
-            If the host is specified as IP address, it is checked as specified in URL. Example: "[2a02:6b8:a::a]".
-            If there are redirects and support for redirects is enabled, every redirect (the Location field) is checked.
-        -->
-
-        <!-- Regular expression can be specified. RE2 engine is used for regexps.
-            Regexps are not aligned: don't forget to add ^ and $. Also don't forget to escape dot (.) metacharacter
-            (forgetting to do so is a common source of error).
-        -->
-    </remote_url_allow_hosts>
-
     <logger>
         <!-- Possible levels: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105 -->
         <level>trace</level>
@@ -185,7 +166,7 @@
     <mlock_executable>false</mlock_executable>
 
     <!-- Configuration of clusters that could be used in Distributed tables.
-         https://clickhouse.yandex/docs/en/table_engines/distributed/
+         https://clickhouse.tech/docs/en/operations/table_engines/distributed/
       -->
     <remote_servers incl="clickhouse_remote_servers" >
         <!-- Test only shard config for testing distributed storage -->
@@ -250,6 +231,24 @@
         </test_unavailable_shard>
     </remote_servers>
 
+    <!-- The list of hosts allowed to use in URL-related storage engines and table functions.
+        If this section is not present in configuration, all hosts are allowed.
+    -->
+    <remote_url_allow_hosts>
+        <!-- Host should be specified exactly as in URL. The name is checked before DNS resolution.
+            Example: "yandex.ru", "yandex.ru." and "www.yandex.ru" are different hosts.
+                    If port is explicitly specified in URL, the host:port is checked as a whole.
+                    If host specified here without port, any port with this host allowed.
+                    "yandex.ru" -> "yandex.ru:443", "yandex.ru:80" etc. is allowed, but "yandex.ru:80" -> only "yandex.ru:80" is allowed.
+            If the host is specified as IP address, it is checked as specified in URL. Example: "[2a02:6b8:a::a]".
+            If there are redirects and support for redirects is enabled, every redirect (the Location field) is checked.
+        -->
+
+        <!-- Regular expression can be specified. RE2 engine is used for regexps.
+            Regexps are not aligned: don't forget to add ^ and $. Also don't forget to escape dot (.) metacharacter
+            (forgetting to do so is a common source of error).
+        -->
+    </remote_url_allow_hosts>
 
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
          By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.
@@ -403,15 +402,13 @@
     </text_log>
     -->
 
-    <!-- Uncomment to write metric log into table.
-         Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval.
+    <!-- Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval. -->
     <metric_log>
         <database>system</database>
         <table>metric_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
     </metric_log>
-    -->
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
          See https://clickhouse.yandex/docs/en/dicts/internal_dicts/

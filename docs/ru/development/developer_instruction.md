@@ -37,7 +37,7 @@ sudo apt install git
 
 Выполните в терминале:
 ```
-git clone --recursive git@github.com:yandex/ClickHouse.git
+git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 cd ClickHouse
 ```
 Замените *yandex* на имя вашего аккаунта на GitHub.
@@ -71,9 +71,46 @@ git clone https://github.com/ClickHouse/ClickHouse.git
 
 Вы можете также добавить для своего локального репозитория адрес оригинального репозитория Яндекса, чтобы притягивать оттуда обновления:
 ```
-git remote add upstream git@github.com:yandex/ClickHouse.git
+git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 ```
 После этого, вы сможете добавлять в свой репозиторий обновления из репозитория Яндекса с помощью команды `git pull upstream master`.
+
+
+## Работа с сабмодулями git
+
+Работа с сабмодулями git может быть достаточно болезненной. Следующие команды позволят содержать их в порядке:
+
+```
+# ! Каждая команда принимает аргумент --recursive
+# Обновить URLs удалённого репозитория для каждого сабмодуля, используется относительно редко
+git submodule sync
+# Добавить новые сабмодули
+git submodule init
+# Обновить сабмодули до актуального состояния
+git submodule update
+# Две последние команды могут быть объединены вместе:
+git submodule update --init
+```
+
+The next commands would help you to reset all submodules to the initial state (!WARING! - any chenges inside will be deleted):
+Следующие команды помогут сбросить все сабмодули в изначальное состояние (!ВНИМАНИЕ! - все изменения в сабмодулях будут утеряны):
+
+```
+# Synchronizes submodules' remote URL with .gitmodules
+# Обновить URLs удалённого репозитория для каждого сабмодуля
+git submodule sync --recursive
+# Обновить существующие модули и добавить отсутствующие
+git submodule update --init --recursive
+# Удалить все изменения в сабмодуле относительно HEAD
+git submodule foreach git reset --hard
+# Очистить игнорируемые файлы
+git submodule foreach git clean -xfd
+# Повторить последние 4 команды для каждого из сабмодулей
+git submodule foreach git submodule sync --recursive
+git submodule foreach git submodule update --init --recursive
+git submodule foreach git submodule foreach git reset --hard
+git submodule foreach git submodule foreach git clean -xfd
+```
 
 
 # Система сборки
@@ -111,7 +148,7 @@ ClickHouse использует для сборки некоторое коли�
 
 Для установки GCC под Ubuntu, выполните: `sudo apt install gcc g++`.
 
-Проверьте версию gcc: `gcc --version`. Если версия меньше 9, то следуйте инструкции: https://clickhouse.yandex/docs/en/development/build/#install-gcc-9
+Проверьте версию gcc: `gcc --version`. Если версия меньше 9, то следуйте инструкции: https://clickhouse.tech/docs/en/development/build/#install-gcc-9
 
 Сборка под Mac OS X поддерживается только для компилятора Clang. Чтобы установить его выполните `brew install llvm`
 
@@ -226,11 +263,11 @@ sudo -u clickhouse ClickHouse/build/dbms/programs/clickhouse server --config-fil
 
 # Написание кода
 
-Описание архитектуры ClickHouse: https://clickhouse.yandex/docs/ru/development/architecture/
+Описание архитектуры ClickHouse: https://clickhouse.tech/docs/ru/development/architecture/
 
-Стиль кода: https://clickhouse.yandex/docs/ru/development/style/
+Стиль кода: https://clickhouse.tech/docs/ru/development/style/
 
-Разработка тестов: https://clickhouse.yandex/docs/ru/development/tests/
+Разработка тестов: https://clickhouse.tech/docs/ru/development/tests/
 
 Список задач: https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/instructions/easy_tasks_sorted_ru.md
 

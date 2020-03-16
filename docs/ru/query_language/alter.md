@@ -19,7 +19,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 - [DROP COLUMN](#alter_drop-column) — удаляет столбец;
 - [CLEAR COLUMN](#alter_clear-column) — сбрасывает все значения в столбце для заданной партиции;
 - [COMMENT COLUMN](#alter_comment-column) — добавляет комментарий к столбцу;
-- [MODIFY COLUMN](#alter_modify-column) — изменяет тип столбца и/или выражение для значения по умолчанию.
+- [MODIFY COLUMN](#alter_modify-column) — изменяет тип столбца, выражение для значения по умолчанию и TTL.
 
 Подробное описание для каждого действия приведено ниже.
 
@@ -95,10 +95,18 @@ ALTER TABLE visits COMMENT COLUMN browser 'Столбец показывает, 
 #### MODIFY COLUMN {#alter_modify-column}
 
 ```sql
-MODIFY COLUMN [IF EXISTS] name [type] [default_expr]
+MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
 ```
 
-Изменяет тип столбца `name` на `type` и/или выражение для умолчания на `default_expr`. Если указано `IF EXISTS`, запрос не будет возвращать ошибку, если столбца не существует.
+Запрос изменяет следующие свойства столбца `name`:
+
+- Тип
+- Значение по умолчанию
+- TTL
+
+    Примеры изменения TTL столбца смотрите в разделе [TTL столбца](../operations/table_engines/mergetree.md#mergetree-column-ttl).
+
+Если указано `IF EXISTS`, запрос не возвращает ошибку, если столбца не существует.
 
 При изменении типа, значения преобразуются так, как если бы к ним была применена функция [toType](functions/type_conversion_functions.md). Если изменяется только выражение для умолчания, запрос не делает никакой сложной работы и выполняется мгновенно.
 
@@ -190,6 +198,7 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 - [ATTACH PARTITION|PART](#alter_attach-partition) – добавить партицию/кусок в таблицу из директории `detached`;
 - [ATTACH PARTITION FROM](#alter_attach-partition-from) – скопировать партицию из другой таблицы;
 - [REPLACE PARTITION](#alter_replace-partition) – скопировать партицию из другой таблицы с заменой;
+- [MOVE PARTITION TO TABLE] (#alter_move_to_table-partition) - переместить партицию в другую таблицу;
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) – удалить все значения в столбце для заданной партиции;
 - [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - очистить построенные вторичные индексы для заданной партиции;
 - [FREEZE PARTITION](#alter_freeze-partition) – создать резервную копию партиции;
@@ -286,6 +295,20 @@ ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 - Для таблиц должен быть задан одинаковый ключ партиционирования.
 
 Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
+
+#### MOVE PARTITION TO TABLE {#alter_move_to_table-partition}
+
+``` sql
+ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
+```
+
+Перемещает партицию из таблицы `table_source` в таблицу `table_dest` (добавляет к существующим данным в `table_dest`), с удалением данных из таблицы `table_source`.
+
+Следует иметь в виду:
+
+- Таблицы должны иметь одинаковую структуру.
+- Для таблиц должен быть задан одинаковый ключ партиционирования.
+
 
 #### CLEAR COLUMN IN PARTITION {#alter_clear-column-partition}
 
@@ -417,6 +440,14 @@ OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 
 Примеры запросов `ALTER ... PARTITION` можно посмотреть в тестах: [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_local.sql) и [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
 
+### Манипуляции с TTL таблицы
+
+Вы можете изменить [TTL для таблицы](../operations/table_engines/mergetree.md#mergetree-table-ttl) запросом следующего вида:
+
+```sql
+ALTER TABLE table-name MODIFY TTL ttl-expression
+```
+
 ### Синхронность запросов ALTER
 
 Для нереплицируемых таблиц, все запросы `ALTER` выполняются синхронно. Для реплицируемых таблиц, запрос всего лишь добавляет инструкцию по соответствующим действиям в `ZooKeeper`, а сами действия осуществляются при первой возможности. Но при этом, запрос может ждать завершения выполнения этих действий на всех репликах.
@@ -460,4 +491,4 @@ ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
 
 Записи о последних выполненных мутациях удаляются не сразу (количество сохраняемых мутаций определяется параметром движка таблиц `finished_mutations_to_keep`). Более старые записи удаляются.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/alter/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/) <!--hide-->

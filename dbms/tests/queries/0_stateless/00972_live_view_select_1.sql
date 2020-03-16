@@ -1,9 +1,9 @@
 SET allow_experimental_live_view = 1;
 
-DROP TABLE IF EXISTS test.lv;
+DROP TABLE IF EXISTS lv;
 
-CREATE LIVE VIEW test.lv AS SELECT 1;
+CREATE LIVE VIEW lv AS SELECT 1;
 
-SELECT * FROM test.lv;
+SELECT * FROM lv;
 
-DROP TABLE test.lv;
+DROP TABLE lv;

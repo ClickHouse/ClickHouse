@@ -14,14 +14,14 @@ To run ClickHouse on processors that do not support SSE 4.2 or have AArch64 or P
 
 ## Available Installation Options
 
-### From DEB Packages
+### From DEB Packages {#install-from-deb-packages}
 
 It is recommended to use official pre-compiled `deb` packages for Debian or Ubuntu.
 
 To install official packages add the Yandex repository in `/etc/apt/sources.list` or in a separate `/etc/apt/sources.list.d/clickhouse.list` file:
 
 ```
-deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
+deb http://repo.clickhouse.tech/deb/stable/ main/
 ```
 
 If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments).
@@ -29,13 +29,20 @@ If you want to use the most recent version, replace `stable` with `testing` (thi
 Then run these commands to actually install packages:
 
 ```bash
-sudo apt-get install dirmngr    # optional
+sudo apt-get install dirmngr # optional
 sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
 sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server
 ```
 
 You can also download and install packages manually from here: <https://repo.yandex.ru/clickhouse/deb/stable/main/>.
+
+#### Packages
+
+- `clickhouse-common-static` — Installs ClickHouse compiled binary files.
+- `clickhouse-server` — Creates symbolic link for `clickhouse-server`. Installs server configuration.
+- `clickhouse-client` — Creates symbolic link for `clickhouse-client` and other client-related tools. Installs client configurations.
+- `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
 ### From RPM Packages
 
@@ -45,11 +52,11 @@ First you need to add the official repository:
 
 ```bash
 sudo yum install yum-utils
-sudo rpm --import https://repo.yandex.ru/clickhouse/CLICKHOUSE-KEY.GPG
-sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/x86_64
+sudo rpm --import https://repo.clickhouse.tech/CLICKHOUSE-KEY.GPG
+sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_64
 ```
 
-If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments).
+If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments). The `prestable` tag is sometimes available too.
 
 Then run these commands to actually install packages:
 
@@ -57,7 +64,7 @@ Then run these commands to actually install packages:
 sudo yum install clickhouse-server clickhouse-client
 ```
 
-You can also download and install packages manually from here: <https://repo.yandex.ru/clickhouse/rpm/stable/x86_64>.
+You can also download and install packages manually from here: <https://repo.clickhouse.tech/rpm/stable/x86_64>.
 
 ### From tgz archives {#from-tgz-archives}
 
@@ -67,10 +74,10 @@ Required version can be dowloaded with `curl` or `wget` from repository <https:/
 After that downloaded archives should be unpacked and installed with installation scripts. Example for the latest version:
 ```bash
 export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
-curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
-curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
-curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-server-$LATEST_VERSION.tgz
-curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-client-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.tech/tgz/clickhouse-server-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.tech/tgz/clickhouse-client-$LATEST_VERSION.tgz
 
 tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
 sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
@@ -176,7 +183,7 @@ SELECT 1
 
 **Congratulations, the system works!**
 
-To continue experimenting, you can download one of test data sets or go through [tutorial](https://clickhouse.yandex/tutorial.html).
+To continue experimenting, you can download one of test data sets or go through [tutorial](https://clickhouse.tech/tutorial.html).
 
 
-[Original article](https://clickhouse.yandex/docs/en/getting_started/install/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/getting_started/install/) <!--hide-->

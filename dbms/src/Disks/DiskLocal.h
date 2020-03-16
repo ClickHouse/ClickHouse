@@ -2,6 +2,7 @@
 
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
 
 #include <Poco/DirectoryIterator.h>
@@ -66,13 +67,29 @@ public:
 
     void copyFile(const String & from_path, const String & to_path) override;
 
-    std::unique_ptr<ReadBuffer> readFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const override;
+    void listFiles(const String & path, std::vector<String> & file_names) override;
 
-    std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, WriteMode mode = WriteMode::Rewrite) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
+        const String & path,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        size_t estimated_size = 0,
+        size_t aio_threshold = 0,
+        size_t mmap_threshold = 0) const override;
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & path,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        WriteMode mode = WriteMode::Rewrite,
+        size_t estimated_size = 0,
+        size_t aio_threshold = 0) override;
 
     void remove(const String & path) override;
 
     void removeRecursive(const String & path) override;
+
+    void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
+
+    Poco::Timestamp getLastModified(const String & path) override;
 
 private:
     bool tryReserve(UInt64 bytes);

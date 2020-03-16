@@ -117,4 +117,4 @@ Note that on the operating server, you cannot manually change the set of parts o
 
 ClickHouse allows you to perform operations with the partitions: delete them, copy from one table to another, or create a backup. See the list of all operations in the section [Manipulations With Partitions and Parts](../../query_language/alter.md#alter_manipulations-with-partitions).
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->

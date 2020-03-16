@@ -18,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -154,6 +155,21 @@ void ColumnAggregateFunction::ensureOwnership()
         /// Now we own all data.
         src.reset();
     }
+}
+
+
+bool ColumnAggregateFunction::structureEquals(const IColumn & to) const
+{
+    const auto * to_concrete = typeid_cast<const ColumnAggregateFunction *>(&to);
+    if (!to_concrete)
+        return false;
+
+    /// AggregateFunctions must be the same.
+
+    const IAggregateFunction & func_this = *func;
+    const IAggregateFunction & func_to = *to_concrete->func;
+
+    return typeid(func_this) == typeid(func_to);
 }
 
 
@@ -407,9 +423,9 @@ void ColumnAggregateFunction::insertDefault()
     pushBackAndCreateState(data, arena, func.get());
 }
 
-StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & dst, const char *& begin) const
+StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
 {
-    WriteBufferFromArena out(dst, begin);
+    WriteBufferFromArena out(arena, begin);
     func->serialize(data[n], out);
     return out.finish();
 }

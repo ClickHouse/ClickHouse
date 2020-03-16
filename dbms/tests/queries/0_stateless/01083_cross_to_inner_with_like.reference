@@ -1,0 +1,3 @@
+SELECT \n    k, \n    r.k, \n    name\nFROM n\nALL INNER JOIN r ON k = r.k\nWHERE (k = r.k) AND (name = \'A\')
+SELECT \n    k, \n    r.k, \n    name\nFROM n\nALL INNER JOIN r ON k = r.k\nWHERE (k = r.k) AND (name LIKE \'A%\')
+SELECT \n    k, \n    r.k, \n    name\nFROM n\nALL INNER JOIN r ON k = r.k\nWHERE (k = r.k) AND (name NOT LIKE \'A%\')

@@ -7,7 +7,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int LOGICAL_ERROR;
 }
 
@@ -282,11 +281,8 @@ void GraphiteRollupSortedBlockInputStream::startNextGroup(MutableColumns & merge
     const Graphite::AggregationPattern * aggregation_pattern = std::get<1>(next_rule);
 
     /// Copy unmodified column values (including path column).
-    for (size_t i = 0, size = unmodified_column_numbers.size(); i < size; ++i)
-    {
-        size_t j = unmodified_column_numbers[i];
+    for (size_t j : unmodified_column_numbers)
         merged_columns[j]->insertFrom(*cursor->all_columns[j], cursor->pos);
-    }
 
     if (aggregation_pattern)
     {

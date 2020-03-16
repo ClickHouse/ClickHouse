@@ -80,7 +80,7 @@ private:
     bool atomFromAST(ASTPtr & node) const;
     bool operatorFromAST(ASTPtr & node) const;
 
-    bool checkASTUseless(const ASTPtr &node, bool atomic = false) const;
+    bool checkASTUseless(const ASTPtr & node, bool atomic = false) const;
 
     const MergeTreeIndexSet & index;
 

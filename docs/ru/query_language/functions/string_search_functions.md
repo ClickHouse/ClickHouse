@@ -2,21 +2,267 @@
 
 Во всех функциях, поиск регистрозависимый по умолчанию. Существуют варианты функций для регистронезависимого поиска.
 
-## position(haystack, needle)
+## position(haystack, needle) {#position}
 Поиск подстроки `needle` в строке `haystack`.
-Возвращает позицию (в байтах) найденной подстроки, начиная с 1, или 0, если подстрока не найдена.
 
-Для поиска без учета регистра используйте функцию `positionCaseInsensitive`.
+Возвращает позицию (в байтах) найденной подстроки в строке, начиная с 1, или 0, если подстрока не найдена.
 
-## positionUTF8(haystack, needle)
-Так же, как `position`, но позиция возвращается в кодовых точках Unicode. Работает при допущении, что строка содержит набор байт, представляющий текст в кодировке UTF-8. Если допущение не выполнено -- то возвращает какой-нибудь результат (не кидает исключение).
+Работает при допущении, что строка содержит набор байт, представляющий текст в однобайтовой кодировке. Если допущение не выполнено — то возвращает неопределенный результат (не кидает исключение). Если символ может быть представлен с помощью двух байтов, он будет представлен двумя байтами и так далее.
 
-Для поиска без учета регистра используйте функцию `positionCaseInsensitiveUTF8`.
+Для поиска без учета регистра используйте функцию [positionCaseInsensitive](#positioncaseinsensitive).
 
-## multiSearchAllPositions(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
-Так же, как и `position`, только возвращает `Array` первых вхождений.
+**Синтаксис**
 
-Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `multiSearchAllPositionsCaseInsensitive, multiSearchAllPositionsUTF8, multiSearchAllPositionsCaseInsensitiveUTF8`.
+```sql
+position(haystack, needle)
+```
+
+Алиас: `locate(haystack, needle)`.
+
+**Параметры**
+
+- `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
+- `needle` —  подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+
+**Возвращаемые значения**
+
+- Начальная позиция в байтах (начиная с 1), если подстрока найдена.
+- 0, если подстрока не найдена.
+
+Тип: `Integer`.
+
+**Примеры**
+
+Фраза «Hello, world!» содержит набор байт, представляющий текст в однобайтовой кодировке. Функция возвращает ожидаемый результат:
+
+Запрос:
+
+```sql
+SELECT position('Hello, world!', '!')
+```
+
+Ответ:
+
+```text
+┌─position('Hello, world!', '!')─┐
+│                             13 │
+└────────────────────────────────┘
+```
+
+Аналогичная фраза на русском содержит символы, которые не могут быть представлены в однобайтовой кодировке. Функция возвращает неожиданный результат (используйте функцию [positionUTF8](#positionutf8) для символов, которые не могут быть представлены одним байтом):
+
+Запрос:
+
+```sql
+SELECT position('Привет, мир!', '!')
+```
+
+Ответ:
+
+```text
+┌─position('Привет, мир!', '!')─┐
+│                            21 │
+└───────────────────────────────┘
+```
+
+## positionCaseInsensitive {#positioncaseinsensitive}
+
+Такая же, как и [position](#position), но работает без учета регистра. Возвращает позицию в байтах найденной подстроки в строке, начиная с 1.
+
+Работает при допущении, что строка содержит набор байт, представляющий текст в однобайтовой кодировке. Если допущение не выполнено — то возвращает неопределенный результат (не кидает исключение). Если символ может быть представлен с помощью двух байтов, он будет представлен двумя байтами и так далее.
+
+**Синтаксис**
+
+```sql
+positionCaseInsensitive(haystack, needle)
+```
+
+**Параметры**
+
+- `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
+- `needle` —  подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+
+**Возвращаемые значения**
+
+- Начальная позиция в байтах (начиная с 1), если подстрока найдена.
+- 0, если подстрока не найдена.
+
+Тип: `Integer`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT positionCaseInsensitive('Hello, world!', 'hello')
+```
+
+Ответ:
+
+```text
+┌─positionCaseInsensitive('Hello, world!', 'hello')─┐
+│                                                 1 │
+└───────────────────────────────────────────────────┘
+```
+
+## positionUTF8 {#positionutf8}
+
+Возвращает позицию (в кодовых точках Unicode) найденной подстроки в строке, начиная с 1.
+
+Работает при допущении, что строка содержит набор кодовых точек, представляющий текст в кодировке UTF-8. Если допущение не выполнено — то возвращает неопределенный результат (не кидает исключение). Если символ может быть представлен с помощью двух кодовых точек, он будет представлен двумя и так далее.
+
+Для поиска без учета регистра используйте функцию [positionCaseInsensitiveUTF8](#positioncaseinsensitiveutf8).
+
+**Синтаксис**
+
+```sql
+positionUTF8(haystack, needle)
+```
+
+**Параметры**
+
+- `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
+- `needle` —  подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+
+**Возвращаемые значения**
+
+- Начальная позиция в кодовых точках Unicode (начиная с 1), если подстрока найдена.
+- 0, если подстрока не найдена.
+
+Тип: `Integer`.
+
+**Примеры**
+
+Фраза «Привет, мир!» содержит набор символов, каждый из которых можно представить с помощью одной кодовой точки. Функция возвращает ожидаемый результат:
+
+Запрос:
+
+```sql
+SELECT positionUTF8('Привет, мир!', '!')
+```
+
+Ответ:
+
+```text
+┌─positionUTF8('Привет, мир!', '!')─┐
+│                                12 │
+└───────────────────────────────────┘
+```
+
+Фраза «Salut, étudiante!» содержит символ `é`, который может быть представлен одной кодовой точкой (`U+00E9`) или двумя (`U+0065U+0301`). Поэтому функция `positionUTF8()` может вернуть неожиданный результат:
+
+Запрос для символа `é`, который представлен одной кодовой точкой `U+00E9`:
+
+```sql
+SELECT positionUTF8('Salut, étudiante!', '!')
+```
+
+Result:
+
+```text
+┌─positionUTF8('Salut, étudiante!', '!')─┐
+│                                     17 │
+└────────────────────────────────────────┘
+```
+
+Запрос для символа `é`, который представлен двумя кодовыми точками `U+0065U+0301`:
+
+```sql
+SELECT positionUTF8('Salut, étudiante!', '!')
+```
+
+Ответ:
+
+```text
+┌─positionUTF8('Salut, étudiante!', '!')─┐
+│                                     18 │
+└────────────────────────────────────────┘
+```
+
+## positionCaseInsensitiveUTF8 {#positioncaseinsensitiveutf8}
+
+Такая же, как и [positionUTF8](#positionutf8), но работает без учета регистра. Возвращает позицию (в кодовых точках Unicode) найденной подстроки в строке, начиная с 1.
+
+Работает при допущении, что строка содержит набор кодовых точек, представляющий текст в кодировке UTF-8. Если допущение не выполнено — то возвращает неопределенный результат (не кидает исключение). Если символ может быть представлен с помощью двух кодовых точек, он будет представлен двумя и так далее.
+
+**Синтаксис**
+
+```sql
+positionCaseInsensitiveUTF8(haystack, needle)
+```
+
+**Параметры**
+
+- `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
+- `needle` —  подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+
+**Возвращаемые значения**
+
+- Начальная позиция в байтах (начиная с 1), если подстрока найдена.
+- 0, если подстрока не найдена.
+
+Тип: `Integer`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT positionCaseInsensitiveUTF8('Привет, мир!', 'Мир')
+```
+
+Ответ:
+
+```text
+┌─positionCaseInsensitiveUTF8('Привет, мир!', 'Мир')─┐
+│                                                  9 │
+└────────────────────────────────────────────────────┘
+```
+
+## multiSearchAllPositions {#multiSearchAllPositions}
+
+The same as [position](#position) but returns `Array` of positions (in bytes) of the found corresponding substrings in the string. Positions are indexed starting from 1.
+
+The search is performed on sequences of bytes without respect to string encoding and collation.
+
+- For case-insensitive ASCII search, use the function `multiSearchAllPositionsCaseInsensitive`.
+- For search in UTF-8, use the function [multiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
+- For case-insensitive UTF-8 search, use the function multiSearchAllPositionsCaseInsensitiveUTF8.
+
+**Syntax** 
+
+```sql
+multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
+```
+
+**Parameters**
+
+- `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
+- `needle` —  substring to be searched. [String](../syntax.md#syntax-string-literal).
+
+**Returned values**
+
+- Array of starting positions in bytes (counting from 1), if the corresponding substring was found and 0 if not found.
+
+**Example**
+
+Query:
+
+```sql
+SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])
+```
+
+Result:
+
+```text
+┌─multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])─┐
+│ [0,13,0]                                                          │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+## multiSearchAllPositionsUTF8 {#multiSearchAllPositionsUTF8}
+
+Смотрите `multiSearchAllPositions`.
 
 ## multiSearchFirstPosition(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
 
@@ -117,4 +363,4 @@
 !!! note "Примечание"
     Для случая UTF-8 мы используем триграммное расстояние. Вычисление n-граммного расстояния не совсем честное. Мы используем 2-х байтные хэши для хэширования n-грамм, а затем вычисляем (не)симметрическую разность между хэш таблицами -- могут возникнуть коллизии. В формате UTF-8 без учета регистра мы не используем честную функцию `tolower` -- мы обнуляем 5-й бит (нумерация с нуля) каждого байта кодовой точки, а также первый бит нулевого байта, если байтов больше 1 -- это работает для латиницы и почти для всех кириллических букв.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/string_search_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_search_functions/) <!--hide-->

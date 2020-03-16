@@ -22,5 +22,15 @@
                 </mydb>
             </databases>
         </default>
+        <another>
+            <!-- For testing the table filters -->
+            <databases>
+                <mydb>
+                    <local>
+                        <filter>a = 1</filter>
+                    </local>
+                </mydb>
+            </databases>
+        </another>
     </users>
 </yandex>

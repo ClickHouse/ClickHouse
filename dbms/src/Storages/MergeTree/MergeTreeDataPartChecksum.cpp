@@ -44,14 +44,13 @@ void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs
         throw Exception("Checksum mismatch for file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
 }
 
-void MergeTreeDataPartChecksum::checkSize(const String & path) const
+void MergeTreeDataPartChecksum::checkSize(const DiskPtr & disk, const String & path) const
 {
-    Poco::File file(path);
-    if (!file.exists())
-        throw Exception(path + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
-    UInt64 size = file.getSize();
+    if (!disk->exists(path))
+        throw Exception(fullPath(disk, path) + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+    UInt64 size = disk->getFileSize(path);
     if (size != file_size)
-        throw Exception(path + " has unexpected size: " + toString(size) + " instead of " + toString(file_size),
+        throw Exception(fullPath(disk, path) + " has unexpected size: " + toString(size) + " instead of " + toString(file_size),
             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
 }
 
@@ -78,12 +77,12 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
     }
 }
 
-void MergeTreeDataPartChecksums::checkSizes(const String & path) const
+void MergeTreeDataPartChecksums::checkSizes(const DiskPtr & disk, const String & path) const
 {
     for (const auto & it : files)
     {
         const String & name = it.first;
-        it.second.checkSize(path + name);
+        it.second.checkSize(disk, path + name);
     }
 }
 

@@ -30,8 +30,13 @@ void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, Format
                 << backQuoteIfNeed(from);
 
         if (!like.empty())
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " LIKE " << (settings.hilite ? hilite_none : "")
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << (not_like ? " NOT" : "") << " LIKE " << (settings.hilite ? hilite_none : "")
                 << std::quoted(like, '\'');
+        else if (where_expression)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+            where_expression->formatImpl(settings, state, frame);
+        }
 
         if (limit_length)
         {

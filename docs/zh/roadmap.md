@@ -6,4 +6,4 @@
 - 细粒度的授权管理
 - 与外部认证服务集成
 
-[来源文章](https://clickhouse.yandex/docs/en/roadmap/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/roadmap/) <!--hide-->

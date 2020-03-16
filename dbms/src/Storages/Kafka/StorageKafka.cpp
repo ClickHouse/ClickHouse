@@ -31,6 +31,7 @@
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Processors/Sources/SourceFromInputStream.h>
 
 
 namespace DB
@@ -38,16 +39,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
-    extern const int UNKNOWN_EXCEPTION;
-    extern const int CANNOT_READ_FROM_ISTREAM;
-    extern const int INVALID_CONFIG_PARAMETER;
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNSUPPORTED_METHOD;
-    extern const int UNKNOWN_SETTING;
-    extern const int READONLY_SETTING;
 }
 
 namespace
@@ -117,7 +112,7 @@ StorageKafka::StorageKafka(
 }
 
 
-BlockInputStreams StorageKafka::read(
+Pipes StorageKafka::read(
     const Names & column_names,
     const SelectQueryInfo & /* query_info */,
     const Context & context,
@@ -126,11 +121,11 @@ BlockInputStreams StorageKafka::read(
     unsigned /* num_streams */)
 {
     if (num_created_consumers == 0)
-        return BlockInputStreams();
+        return {};
 
     /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
-    BlockInputStreams streams;
-    streams.reserve(num_created_consumers);
+    Pipes pipes;
+    pipes.reserve(num_created_consumers);
 
     // Claim as many consumers as requested, but don't block
     for (size_t i = 0; i < num_created_consumers; ++i)
@@ -138,11 +133,12 @@ BlockInputStreams StorageKafka::read(
         /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
         /// TODO: probably that leads to awful performance.
         /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
-        streams.emplace_back(std::make_shared<KafkaBlockInputStream>(*this, context, column_names, 1));
+        /// TODO: rewrite KafkaBlockInputStream to KafkaSource. Now it is used in other place.
+        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<KafkaBlockInputStream>(*this, context, column_names, 1)));
     }
 
-    LOG_DEBUG(log, "Starting reading " << streams.size() << " streams");
-    return streams;
+    LOG_DEBUG(log, "Starting reading " << pipes.size() << " streams");
+    return pipes;
 }
 
 
@@ -193,12 +189,6 @@ void StorageKafka::shutdown()
 }
 
 
-void StorageKafka::updateDependencies()
-{
-    task->activateAndSchedule();
-}
-
-
 void StorageKafka::pushReadBuffer(ConsumerBufferPtr buffer)
 {
     std::lock_guard lock(mutex);
@@ -232,7 +222,7 @@ ConsumerBufferPtr StorageKafka::popReadBuffer(std::chrono::milliseconds timeout)
 }
 
 
-ProducerBufferPtr StorageKafka::createWriteBuffer()
+ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
 {
     cppkafka::Configuration conf;
     conf.set("metadata.broker.list", brokers);
@@ -246,7 +236,7 @@ ProducerBufferPtr StorageKafka::createWriteBuffer()
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
     return std::make_shared<WriteBufferToKafkaProducer>(
-        producer, topics[0], row_delimiter ? std::optional<char>{row_delimiter} : std::optional<char>(), 1, 1024, std::chrono::milliseconds(poll_timeout));
+        producer, topics[0], row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024, std::chrono::milliseconds(poll_timeout), header);
 }
 
 
@@ -273,7 +263,7 @@ ConsumerBufferPtr StorageKafka::createReadBuffer()
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
     /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
-    return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit, stream_cancelled);
+    return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit, stream_cancelled, getTopics());
 }
 
 
@@ -296,14 +286,14 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 bool StorageKafka::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
-    auto dependencies = global_context.getDependencies(table_id);
-    if (dependencies.size() == 0)
+    auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
+    if (dependencies.empty())
         return true;
 
     // Check the dependencies are ready?
     for (const auto & db_tab : dependencies)
     {
-        auto table = global_context.tryGetTable(db_tab);
+        auto table = DatabaseCatalog::instance().tryGetTable(db_tab);
         if (!table)
             return false;
 
@@ -326,19 +316,21 @@ void StorageKafka::threadFunc()
     {
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
-        auto dependencies = global_context.getDependencies(table_id);
-
-        // Keep streaming as long as there are attached views and streaming is not cancelled
-        while (!stream_cancelled && num_created_consumers > 0 && dependencies.size() > 0)
+        size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
+        if (dependencies_count)
         {
-            if (!checkDependencies(table_id))
-                break;
+            // Keep streaming as long as there are attached views and streaming is not cancelled
+            while (!stream_cancelled && num_created_consumers > 0)
+            {
+                if (!checkDependencies(table_id))
+                    break;
 
-            LOG_DEBUG(log, "Started streaming to " << dependencies.size() << " attached views");
+                LOG_DEBUG(log, "Started streaming to " << dependencies_count << " attached views");
 
-            // Reschedule if not limited
-            if (!streamToViews())
-                break;
+                // Reschedule if not limited
+                if (!streamToViews())
+                    break;
+            }
         }
     }
     catch (...)
@@ -355,14 +347,13 @@ void StorageKafka::threadFunc()
 bool StorageKafka::streamToViews()
 {
     auto table_id = getStorageID();
-    auto table = global_context.getTable(table_id);
+    auto table = DatabaseCatalog::instance().getTable(table_id);
     if (!table)
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
 
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
-    insert->database = table_id.database_name;
-    insert->table = table_id.table_name;
+    insert->table_id = table_id;
 
     const Settings & settings = global_context.getSettingsRef();
     size_t block_size = max_block_size;
@@ -548,7 +539,7 @@ void registerStorageKafka(StorageFactory & factory)
             {
                 throw Exception("Row delimiter must be a char", ErrorCodes::BAD_ARGUMENTS);
             }
-            else if (arg.size() == 0)
+            else if (arg.empty())
             {
                 row_delimiter = '\0';
             }

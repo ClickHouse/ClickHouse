@@ -147,4 +147,4 @@ Example of a config file:
 ```
 
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/cli/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/interfaces/cli/) <!--hide-->

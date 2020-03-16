@@ -293,4 +293,4 @@ Supported unit values:
 |%Y|Year|2018|
 |%%|a % sign|%|
 
-[来源文章](https://clickhouse.yandex/docs/en/query_language/functions/date_time_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->

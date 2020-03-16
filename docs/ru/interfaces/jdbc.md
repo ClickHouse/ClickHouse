@@ -5,4 +5,4 @@
   * [ClickHouse-Native-JDBC](https://github.com/housepower/ClickHouse-Native-JDBC)
   * [clickhouse4j](https://github.com/blynkkk/clickhouse4j)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/jdbc/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/jdbc/) <!--hide-->

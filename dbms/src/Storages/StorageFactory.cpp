@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
-#include <Storages/StorageID.h>
+#include <Interpreters/StorageID.h>
 
 namespace DB
 {
@@ -49,8 +49,9 @@ StoragePtr StorageFactory::get(
     bool has_force_restore_data_flag) const
 {
     String name;
-    ASTs args;
     ASTStorage * storage_def = query.storage;
+
+    bool has_engine_args = false;
 
     if (query.is_view)
     {
@@ -89,7 +90,7 @@ StoragePtr StorageFactory::get(
                     "Engine definition cannot take the form of a parametric function", ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS);
 
             if (engine_def.arguments)
-                args = engine_def.arguments->children;
+                has_engine_args = true;
 
             name = engine_def.name;
 
@@ -162,10 +163,11 @@ StoragePtr StorageFactory::get(
         }
     }
 
+    ASTs empty_engine_args;
     Arguments arguments
     {
         .engine_name = name,
-        .engine_args = args,
+        .engine_args = has_engine_args ? storage_def->engine->arguments->children : empty_engine_args,
         .storage_def = storage_def,
         .query = query,
         .relative_data_path = relative_data_path,

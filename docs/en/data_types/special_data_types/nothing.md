@@ -17,4 +17,4 @@ SELECT toTypeName(array())
 ```
 
 
-[Original article](https://clickhouse.yandex/docs/en/data_types/special_data_types/nothing/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data_types/special_data_types/nothing/) <!--hide-->

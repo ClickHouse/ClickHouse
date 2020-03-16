@@ -78,4 +78,4 @@ FROM jdbc_table
 
 - [Табличная функция JDBC](../../query_language/table_functions/jdbc.md).
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/jdbc/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/jdbc/) <!--hide-->

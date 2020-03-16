@@ -3,6 +3,7 @@ import copy
 import io
 import logging
 import os
+import sys
 import tarfile
 
 import requests
@@ -18,19 +19,24 @@ def choose_latest_releases():
         candidates += requests.get(url).json()
 
     for tag in candidates:
-        name = tag.get('name', '')
-        is_unstable = ('stable' not in name) and ('lts' not in name)
-        is_in_blacklist = ('v18' in name) or ('prestable' in name) or ('v1.1' in name)
-        if is_unstable or is_in_blacklist:
-            continue
-        major_version = '.'.join((name.split('.', 2))[:2])
-        if major_version not in seen:
-            seen[major_version] = (name, tag.get('tarball_url'),)
-            if len(seen) > 10:
-                break
-            
+        if isinstance(tag, dict):
+            name = tag.get('name', '')
+            is_unstable = ('stable' not in name) and ('lts' not in name)
+            is_in_blacklist = ('v18' in name) or ('prestable' in name) or ('v1.1' in name)
+            if is_unstable or is_in_blacklist:
+                continue
+            major_version = '.'.join((name.split('.', 2))[:2])
+            if major_version not in seen:
+                seen[major_version] = (name, tag.get('tarball_url'),)
+                if len(seen) > 10:
+                    break
+        else:
+            logging.fatal('Unexpected GitHub response: %s', str(candidates))
+            sys.exit(1)
+
+    logging.info('Found stable releases: %s', str(seen.keys()))
     return seen.items()
-    
+
 
 def process_release(args, callback, release):
     name, (full_name, tarball_url,) = release
@@ -51,3 +57,23 @@ def build_releases(args, callback):
         process_release(args, callback, release)
 
 
+def get_events(args):
+    events = []
+    skip = True
+    with open(os.path.join(args.docs_dir, '..', 'README.md')) as f:
+        for line in f:
+            if skip:
+                if 'Upcoming Events' in line:
+                    skip = False
+            else:
+                if not line:
+                    continue
+                line = line.strip().split('](')
+                if len(line) == 2:
+                    tail = line[1].split(') ')
+                    events.append({
+                        'signup_link': tail[0],
+                        'event_name':  line[0].replace('* [', ''),
+                        'event_date':  tail[1].replace('on ', '').replace('.', '')
+                    })
+    return events

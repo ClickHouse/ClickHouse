@@ -41,4 +41,4 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 
 Сервер следит за изменениями конфигурационных файлов, а также файлов и ZooKeeper-узлов, которые были использованы при выполнении подстановок и переопределений, и перезагружает настройки пользователей и кластеров на лету. То есть, можно изменять кластера, пользователей и их настройки без перезапуска сервера.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/configuration_files/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/configuration_files/) <!--hide-->

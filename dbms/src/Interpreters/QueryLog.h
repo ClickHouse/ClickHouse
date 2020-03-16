@@ -22,7 +22,7 @@ namespace DB
 /// A struct which will be inserted as row into query_log table
 struct QueryLogElement
 {
-    enum Type : UInt8 // Make it signed for compatibility with DataTypeEnum8
+    enum Type : int8_t // Make it signed for compatibility with DataTypeEnum8
     {
         QUERY_START = 1,
         QUERY_FINISH = 2,
@@ -60,8 +60,7 @@ struct QueryLogElement
 
     ClientInfo client_info;
 
-    std::vector<UInt32> thread_numbers;
-    std::vector<UInt32> os_thread_ids;
+    std::vector<UInt64> thread_ids;
     std::shared_ptr<ProfileEvents::Counters> profile_counters;
     std::shared_ptr<Settings> query_settings;
 

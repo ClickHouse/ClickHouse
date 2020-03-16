@@ -27,4 +27,4 @@ When creating a table, the following settings are applied:
 
 The `Join`-engine tables can't be used in `GLOBAL JOIN` operations.
 
-[来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/join/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/join/) <!--hide-->

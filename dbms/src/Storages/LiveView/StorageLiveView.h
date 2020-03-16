@@ -48,12 +48,12 @@ friend class LiveViewBlockOutputStream;
 public:
     ~StorageLiveView() override;
     String getName() const override { return "LiveView"; }
-    StorageID getSelectTableID() const { return select_table_id; }
-    StorageID getBlocksStorageID() const
+    bool isView() const override { return true; }
+    String getBlocksTableName() const
     {
-        return StorageID("", getStorageID().table_name + "_blocks");
+        return getStorageID().table_name + "_blocks";
     }
-    StoragePtr getParentStorage() const { return global_context.getTable(select_table_id); }
+    StoragePtr getParentStorage() const { return DatabaseCatalog::instance().getTable(select_table_id); }
 
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
@@ -125,7 +125,7 @@ public:
 
     void refresh(const Context & context);
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -147,7 +147,7 @@ public:
     /// Collect mergeable blocks and their sample. Must be called holding mutex
     MergeableBlocksPtr collectMergeableBlocks(const Context & context);
     /// Complete query using input streams from mergeable blocks
-    BlockInputStreamPtr completeQuery(BlockInputStreams from);
+    BlockInputStreamPtr completeQuery(Pipes pipes);
 
     void setMergeableBlocks(MergeableBlocksPtr blocks) { mergeable_blocks = blocks; }
     std::shared_ptr<bool> getActivePtr() { return active_ptr; }
@@ -158,7 +158,7 @@ public:
     Block getHeader() const;
 
     /// convert blocks to input streams
-    static BlockInputStreams blocksToInputStreams(BlocksPtrs blocks, Block & sample_block);
+    static Pipes blocksToPipes(BlocksPtrs blocks, Block & sample_block);
 
     static void writeIntoLiveView(
         StorageLiveView & live_view,

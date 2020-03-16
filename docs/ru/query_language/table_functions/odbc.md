@@ -97,4 +97,4 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 - [Внешние словари ODBC](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
 - [Движок таблиц ODBC](../../operations/table_engines/odbc.md).
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/table_functions/jdbc/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/jdbc/) <!--hide-->

@@ -18,11 +18,9 @@
 #include <common/logger_useful.h>
 #include <Poco/DirectoryIterator.h>
 
-
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>
-#include <boost/uuid/uuid_generators.hpp>
-#include <boost/uuid/uuid_io.hpp>
+
 
 namespace DB
 {
@@ -31,6 +29,9 @@ static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int INCORRECT_FILE_NAME;
     extern const int SYNTAX_ERROR;
@@ -55,6 +56,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     {
         const auto & table_function = ast_create_query.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
+        //FIXME storage will have wrong database name
         StoragePtr storage = factory.get(table_function.name, context)->execute(ast_create_query.as_table_function, context, ast_create_query.table);
         return {ast_create_query.table, storage};
     }
@@ -282,21 +284,20 @@ void DatabaseOnDisk::renameTable(
 ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const
 {
     ASTPtr ast;
-
+    bool has_table = tryGetTable(context, table_name) != nullptr;
     auto table_metadata_path = getObjectMetadataPath(table_name);
-    ast = getCreateQueryFromMetadata(context, table_metadata_path, throw_on_error);
-    if (!ast && throw_on_error)
+    try
     {
-        /// Handle system.* tables for which there are no table.sql files.
-        bool has_table = tryGetTable(context, table_name) != nullptr;
-
-        auto msg = has_table
-                   ? "There is no CREATE TABLE query for table "
-                   : "There is no metadata file for table ";
-
-        throw Exception(msg + backQuote(table_name), ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
+        ast = getCreateQueryFromMetadata(context, table_metadata_path, throw_on_error);
     }
-
+    catch (const Exception & e)
+    {
+        if (!has_table && e.code() == ErrorCodes::FILE_DOESNT_EXIST && throw_on_error)
+            throw Exception{"Table " + backQuote(table_name) + " doesn't exist",
+                            ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
+        else if (throw_on_error)
+            throw;
+    }
     return ast;
 }
 
@@ -326,14 +327,14 @@ void DatabaseOnDisk::drop(const Context & context)
     Poco::File(getMetadataPath()).remove(false);
 }
 
-String DatabaseOnDisk::getObjectMetadataPath(const String & table_name) const
+String DatabaseOnDisk::getObjectMetadataPath(const String & object_name) const
 {
-    return getMetadataPath() + escapeForFileName(table_name) + ".sql";
+    return getMetadataPath() + escapeForFileName(object_name) + ".sql";
 }
 
-time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & table_name) const
+time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_name) const
 {
-    String table_metadata_path = getObjectMetadataPath(table_name);
+    String table_metadata_path = getObjectMetadataPath(object_name);
     Poco::File meta_file(table_metadata_path);
 
     if (meta_file.exists())
