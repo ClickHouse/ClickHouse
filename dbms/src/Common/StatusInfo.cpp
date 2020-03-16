@@ -32,7 +32,7 @@ namespace CurrentStatusInfo
     {
         static const char * strings[] =
         {
-        #define M(NAME, DOCUMENTATION, ENUM) DOCUMENTATION,
+        #define M(NAME, DOCUMENTATION, ENUM) #DOCUMENTATION,
             APPLY_FOR_STATUS(M)
         #undef M
         };
@@ -44,7 +44,7 @@ namespace CurrentStatusInfo
     {
         static const std::vector<std::pair<String, Int8>> enum_values [] =
         {
-        #define M(NAME, DOCUMENTATION, ENUM) ENUM,
+        #define M(NAME, DOCUMENTATION, ENUM) #ENUM,
             APPLY_FOR_STATUS(M)
         #undef M
         };
