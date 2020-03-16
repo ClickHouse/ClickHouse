@@ -49,7 +49,7 @@ parser.add_argument('--token', type=str, required=True,
     help='token for Github access')
 parser.add_argument('--login', type=str,
     help='filter authorship by login')
-parser.add_argument('--auto-label', action='store_true', dest='autolabel',
+parser.add_argument('--auto-label', action='store_true', dest='autolabel', default=True,
     help='try to automatically parse PR description and put labels')
 
 args = parser.parse_args()
@@ -80,6 +80,8 @@ for i in reversed(range(len(stables))):
 
 members = set(github.get_members("ClickHouse", "ClickHouse"))
 def print_responsible(pull_request):
+    if "author" not in pull_request or pull_request["author"] is None:
+        return "No author"
     if pull_request["author"]["login"] in members:
         return colored(pull_request["author"]["login"], 'green')
     elif pull_request["mergedBy"]["login"] in members:
