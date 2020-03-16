@@ -13,7 +13,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableStructureLockHolder.h>
 #include <Storages/ReadInOrderOptimizer.h>
-#include <Storages/StorageID.h>
+#include <Interpreters/StorageID.h>
 
 #include <Processors/QueryPipeline.h>
 #include <Columns/FilterDescription.h>
@@ -182,7 +182,7 @@ private:
     void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
-    void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter);
+    void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
     void executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeMergeAggregated(QueryPipeline & pipeline, bool overflow_row, bool final);
     void executeTotalsAndHaving(QueryPipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
@@ -191,7 +191,7 @@ private:
     void executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr sorting_info);
     void executeWithFill(QueryPipeline & pipeline);
     void executeMergeSorted(QueryPipeline & pipeline);
-    void executePreLimit(QueryPipeline & pipeline);
+    void executePreLimit(QueryPipeline & pipeline, bool do_not_skip_offset);
     void executeLimitBy(QueryPipeline & pipeline);
     void executeLimit(QueryPipeline & pipeline);
     void executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);

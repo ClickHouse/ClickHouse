@@ -21,9 +21,6 @@ static constexpr UInt64 SEED_GEN_B = 217728422;
 BloomFilter::BloomFilter(size_t size_, size_t hashes_, size_t seed_)
     : size(size_), hashes(hashes_), seed(seed_), words((size + sizeof(UnderType) - 1) / sizeof(UnderType)), filter(words, 0) {}
 
-BloomFilter::BloomFilter(const BloomFilter & bloom_filter)
-    : size(bloom_filter.size), hashes(bloom_filter.hashes), seed(bloom_filter.seed), words(bloom_filter.words), filter(bloom_filter.filter) {}
-
 bool BloomFilter::find(const char * data, size_t len)
 {
     size_t hash1 = CityHash_v1_0_2::CityHash64WithSeed(data, len, seed);

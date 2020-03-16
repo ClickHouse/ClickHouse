@@ -16,7 +16,7 @@ public:
     TaskStatsInfoGetter();
     ~TaskStatsInfoGetter();
 
-    void getStat(::taskstats & stat, pid_t tid);
+    void getStat(::taskstats & out_stats, pid_t tid);
 
     /// Whether the current process has permissions (sudo or cap_net_admin capabilties) to get taskstats info
     static bool checkPermissions();

@@ -22,7 +22,7 @@ namespace ActionLocks
 template <typename F>
 inline void forEachTable(Context & context, F && f)
 {
-    for (auto & elem : context.getDatabases())
+    for (auto & elem : DatabaseCatalog::instance().getDatabases())
         for (auto iterator = elem.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             f(iterator->table());
 
@@ -33,9 +33,9 @@ void ActionLocksManager::add(StorageActionBlockType action_type)
     forEachTable(global_context, [&](const StoragePtr & table) { add(table, action_type); });
 }
 
-void ActionLocksManager::add(const String & database_name, const String & table_name, StorageActionBlockType action_type)
+void ActionLocksManager::add(const StorageID & table_id, StorageActionBlockType action_type)
 {
-    if (auto table = global_context.tryGetTable(database_name, table_name))
+    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id))
         add(table, action_type);
 }
 
@@ -58,9 +58,9 @@ void ActionLocksManager::remove(StorageActionBlockType action_type)
         storage_elem.second.erase(action_type);
 }
 
-void ActionLocksManager::remove(const String & database_name, const String & table_name, StorageActionBlockType action_type)
+void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockType action_type)
 {
-    if (auto table = global_context.tryGetTable(database_name, table_name))
+    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id))
         remove(table, action_type);
 }
 

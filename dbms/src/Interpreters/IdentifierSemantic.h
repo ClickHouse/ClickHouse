@@ -37,7 +37,7 @@ struct IdentifierSemantic
     /// @returns name for 'not a column' identifiers
     static std::optional<String> getTableName(const ASTIdentifier & node);
     static std::optional<String> getTableName(const ASTPtr & ast);
-    static std::pair<String, String> extractDatabaseAndTable(const ASTIdentifier & identifier);
+    static StorageID extractDatabaseAndTable(const ASTIdentifier & identifier);
     static std::optional<String> extractNestedName(const ASTIdentifier & identifier, const String & table_name);
 
     static ColumnMatch canReferColumnToTable(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
@@ -47,7 +47,7 @@ struct IdentifierSemantic
     static void setColumnShortName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
     static void setColumnLongName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
     static bool canBeAlias(const ASTIdentifier & identifier);
-    static void setMembership(ASTIdentifier &, size_t table_no);
+    static void setMembership(ASTIdentifier &, size_t table_pos);
     static void coverName(ASTIdentifier &, const String & alias);
     static std::optional<ASTIdentifier> uncover(const ASTIdentifier & identifier);
     static std::optional<size_t> getMembership(const ASTIdentifier & identifier);

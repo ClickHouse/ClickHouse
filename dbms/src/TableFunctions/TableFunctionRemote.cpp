@@ -155,8 +155,8 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
         std::vector<String> shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
         std::vector<std::vector<String>> names;
-        for (size_t i = 0; i < shards.size(); ++i)
-            names.push_back(parseRemoteDescription(shards[i], 0, shards[i].size(), '|', max_addresses));
+        for (const auto & shard : shards)
+            names.push_back(parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses));
 
         if (names.empty())
             throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
@@ -164,9 +164,9 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
         auto maybe_secure_port = context.getTCPPortSecure();
 
         /// Check host and port on affiliation allowed hosts.
-        for (auto hosts : names)
+        for (const auto & hosts : names)
         {
-            for (auto host : hosts)
+            for (const auto & host : hosts)
             {
                 size_t colon = host.find(':');
                 if (colon == String::npos)
@@ -188,17 +188,20 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             secure);
     }
 
-    auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_database, remote_table, context, remote_table_function_ptr);
+    auto remote_table_id = StorageID::createEmpty();
+    remote_table_id.database_name = remote_database;
+    remote_table_id.table_name = remote_table;
+    auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
 
     StoragePtr res = remote_table_function_ptr
         ? StorageDistributed::createWithOwnCluster(
-            StorageID("", table_name),
+            StorageID(getDatabaseName(), table_name),
             structure_remote_table,
             remote_table_function_ptr,
             cluster,
             context)
         : StorageDistributed::createWithOwnCluster(
-            StorageID("", table_name),
+            StorageID(getDatabaseName(), table_name),
             structure_remote_table,
             remote_database,
             remote_table,

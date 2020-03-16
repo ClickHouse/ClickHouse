@@ -462,6 +462,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         else if (s_materialize_ttl.ignore(pos, expected))
         {
             command->type = ASTAlterCommand::MATERIALIZE_TTL;
+
+            if (s_in_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command->partition, expected))
+                    return false;
+            }
         }
         else if (s_modify_setting.ignore(pos, expected))
         {

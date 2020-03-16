@@ -672,13 +672,13 @@ void TrieDictionary::has(const Attribute &, const Columns & key_columns, PaddedP
 }
 
 template <typename Getter, typename KeyType>
-void TrieDictionary::trieTraverse(const btrie_t * tree, Getter && getter) const
+static void trieTraverse(const btrie_t * trie, Getter && getter)
 {
     KeyType key = 0;
     const KeyType high_bit = ~((~key) >> 1);
 
     btrie_node_t * node;
-    node = tree->root;
+    node = trie->root;
 
     std::stack<btrie_node_t *> stack;
     while (node)

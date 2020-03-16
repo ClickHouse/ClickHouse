@@ -117,12 +117,12 @@ try
         }
     }
 
-    for (auto it = nodes_queue.begin(); it != nodes_queue.end(); ++it)
+    for (auto & node : nodes_queue)
     {
-        if (it->set_future.valid())
+        if (node.set_future.valid())
         {
-            it->set_future.get();
-            std::cerr << it->path << " changed!" << std::endl;
+            node.set_future.get();
+            std::cerr << node.path << " changed!" << std::endl;
         }
     }
 }
