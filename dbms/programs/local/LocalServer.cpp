@@ -12,6 +12,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -187,7 +188,7 @@ try
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);
     applyCmdOptions();
 
@@ -200,6 +201,7 @@ try
         loadMetadataSystem(*context);
         attachSystemTables();
         loadMetadata(*context);
+        DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }
     else
@@ -248,12 +250,12 @@ std::string LocalServer::getInitialCreateTableQuery()
 
 void LocalServer::attachSystemTables()
 {
-    DatabasePtr system_database = context->tryGetDatabase("system");
+    DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
     if (!system_database)
     {
         /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
-        system_database = std::make_shared<DatabaseMemory>("system");
-        context->addDatabase("system", system_database);
+        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE);
+        DatabaseCatalog::instance().attachDatabase(DatabaseCatalog::SYSTEM_DATABASE, system_database);
     }
 
     attachSystemTablesLocal(*system_database);

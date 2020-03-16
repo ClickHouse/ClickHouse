@@ -480,13 +480,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
         else if (identifier && node.name == "joinGet" && arg == 0)
         {
-            String database_name;
-            String table_name;
-            std::tie(database_name, table_name) = IdentifierSemantic::extractDatabaseAndTable(*identifier);
-            if (database_name.empty())
-                database_name = data.context.getCurrentDatabase();
+            auto table_id = IdentifierSemantic::extractDatabaseAndTable(*identifier);
+            table_id = data.context.resolveStorageID(table_id, Context::ResolveOrdinary);
             auto column_string = ColumnString::create();
-            column_string->insert(database_name + "." + table_name);
+            column_string->insert(table_id.getDatabaseName() + "." + table_id.getTableName());
             ColumnWithTypeAndName column(
                 ColumnConst::create(std::move(column_string), 1),
                 std::make_shared<DataTypeString>(),
@@ -632,8 +629,8 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         ///  and the table has the type Set (a previously prepared set).
         if (identifier)
         {
-            DatabaseAndTableWithAlias database_table(*identifier);
-            StoragePtr table = data.context.tryGetTable(database_table.database, database_table.table);
+            auto table_id = data.context.resolveStorageID(right_in_operand);
+            StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id);
 
             if (table)
             {

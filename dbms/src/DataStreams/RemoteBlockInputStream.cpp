@@ -71,7 +71,7 @@ RemoteBlockInputStream::RemoteBlockInputStream(
         std::vector<IConnectionPool::Entry> connections;
         if (main_table)
         {
-            auto try_results = pool->getManyChecked(timeouts, &current_settings, pool_mode, *main_table);
+            auto try_results = pool->getManyChecked(timeouts, &current_settings, pool_mode, main_table.getQualifiedName());
             connections.reserve(try_results.size());
             for (auto & try_result : try_results)
                 connections.emplace_back(std::move(try_result.entry));

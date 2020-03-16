@@ -109,7 +109,7 @@ void TCPHandler::runImpl()
     /// When connecting, the default database can be specified.
     if (!default_database.empty())
     {
-        if (!connection_context.isDatabaseExist(default_database))
+        if (!DatabaseCatalog::instance().isDatabaseExist(default_database))
         {
             Exception e("Database " + backQuote(default_database) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
@@ -463,11 +463,11 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
     /// Send ColumnsDescription for insertion table
     if (client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
     {
-        const auto & db_and_table = query_context->getInsertionTable();
+        const auto & table_id = query_context->getInsertionTable();
         if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
         {
-            if (!db_and_table.second.empty())
-                sendTableColumns(query_context->getTable(db_and_table.first, db_and_table.second)->getColumns());
+            if (!table_id.empty())
+                sendTableColumns(DatabaseCatalog::instance().getTable(table_id)->getColumns());
         }
     }
 
@@ -673,7 +673,8 @@ void TCPHandler::processTablesStatusRequest()
     TablesStatusResponse response;
     for (const QualifiedTableName & table_name: request.tables)
     {
-        StoragePtr table = connection_context.tryGetTable(table_name.database, table_name.table);
+        auto resolved_id = connection_context.tryResolveStorageID({table_name.database, table_name.table});
+        StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id);
         if (!table)
             continue;
 
@@ -972,8 +973,8 @@ bool TCPHandler::receiveData(bool scalar)
     initBlockInput();
 
     /// The name of the temporary table for writing data, default to empty string
-    String name;
-    readStringBinary(name, *in);
+    auto temporary_id = StorageID::createEmpty();
+    readStringBinary(temporary_id.table_name, *in);
 
     /// Read one block from the network and write it down
     Block block = state.block_in->read();
@@ -981,21 +982,24 @@ bool TCPHandler::receiveData(bool scalar)
     if (block)
     {
         if (scalar)
-            query_context->addScalar(name, block);
+            query_context->addScalar(temporary_id.table_name, block);
         else
         {
             /// If there is an insert request, then the data should be written directly to `state.io.out`.
             /// Otherwise, we write the blocks in the temporary `external_table_name` table.
             if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
             {
+                auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
                 StoragePtr storage;
                 /// If such a table does not exist, create it.
-                if (!(storage = query_context->tryGetExternalTable(name)))
+                if (resolved)
+                    storage = DatabaseCatalog::instance().getTable(resolved);
+                else
                 {
                     NamesAndTypesList columns = block.getNamesAndTypesList();
-                    storage = StorageMemory::create(StorageID("_external", name), ColumnsDescription{columns}, ConstraintsDescription{});
-                    storage->startup();
-                    query_context->addExternalTable(name, storage);
+                    auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns});
+                    storage = temporary_table.getTable();
+                    query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
                 }
                 /// The data will be written directly to the table.
                 state.io.out = storage->write(ASTPtr(), *query_context);

@@ -126,6 +126,7 @@ private:
     };
     bool is_interactive = true;          /// Use either interactive line editing interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
+    bool send_logs    = false;           /// send_logs_level passed, do not use previous cursor position, to avoid overlaps with logs
     bool echo_queries = false;           /// Print queries before execution in batch mode.
     bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
@@ -220,7 +221,6 @@ private:
 
         configReadClient(config(), home_path);
 
-        context.makeGlobalContext();
         context.setApplicationType(Context::ApplicationType::CLIENT);
         context.setQueryParameters(query_parameters);
 
@@ -816,6 +816,8 @@ private:
                 apply_query_settings(*with_output->settings_ast);
 
             connection->forceConnected(connection_parameters.timeouts);
+
+            send_logs = context.getSettingsRef().send_logs_level != LogsLevel::none;
 
             ASTPtr input_function;
             if (insert && insert->select)
@@ -1435,7 +1437,8 @@ private:
     void clearProgress()
     {
         written_progress_chars = 0;
-        std::cerr << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
+        if (!send_logs)
+            std::cerr << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
     }
 
 
@@ -1460,10 +1463,13 @@ private:
             "\033[1m↗\033[0m",
         };
 
-        if (written_progress_chars)
-            message << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
-        else
-            message << SAVE_CURSOR_POSITION;
+        if (!send_logs)
+        {
+            if (written_progress_chars)
+                message << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
+            else
+                message << SAVE_CURSOR_POSITION;
+        }
 
         message << DISABLE_LINE_WRAPPING;
 
@@ -1518,6 +1524,9 @@ private:
         }
 
         message << ENABLE_LINE_WRAPPING;
+        if (send_logs)
+            message << '\n';
+
         ++increment;
 
         message.next();
@@ -1730,6 +1739,7 @@ public:
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
         ;
 
+        context.makeGlobalContext();
         context.getSettingsRef().addProgramOptions(main_description);
 
         /// Commandline options related to external tables.

@@ -265,6 +265,11 @@ void ASTAlterCommand::formatImpl(
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MATERIALIZE TTL"
                       << (settings.hilite ? hilite_none : "");
+        if (partition)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str<< " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
+        }
     }
     else if (type == ASTAlterCommand::MODIFY_SETTING)
     {
