@@ -26,7 +26,6 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int UNKNOWN_TABLE;
-    extern const int UNKNOWN_PROTOCOL;
     extern const int INSECURE_PATH;
 }
 
@@ -56,18 +55,15 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     if (blocker.isCancelled())
         throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
+    /// We don't check client protocol version, because future versions of clients is able to work with older servers.
     String client_protocol_version = params.get("client_protocol_version", REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE);
 
-
     String part_name = params.get("part");
-
-    if (client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE && client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE)
-        throw Exception("Unsupported fetch protocol version", ErrorCodes::UNKNOWN_PROTOCOL);
 
     StoragePtr owned_storage = storage.lock();
     if (!owned_storage)
         throw Exception("The table was already dropped", ErrorCodes::UNKNOWN_TABLE);
-    
+
     const auto data_settings = data.getSettings();
 
     /// Validation of the input that may come from malicious replica.
@@ -113,7 +109,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
         MergeTreeData::DataPart::Checksums data_checksums;
 
 
-        if (client_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
+        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
             writeBinary(checksums.getTotalSizeOnDisk(), out);
 
         writeBinary(checksums.files.size(), out);
@@ -227,7 +223,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
 
     ReservationPtr reservation;
-    if (server_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
+    if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
     {
         size_t sum_files_size;
         readBinary(sum_files_size, in);
