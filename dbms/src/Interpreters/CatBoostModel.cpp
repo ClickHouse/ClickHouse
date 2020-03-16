@@ -29,7 +29,7 @@ extern const int CANNOT_APPLY_CATBOOST_MODEL;
 /// CatBoost wrapper interface functions.
 struct CatBoostWrapperAPI
 {
-    typedef void ModelCalcerHandle;
+    using ModelCalcerHandle = void;
 
     ModelCalcerHandle * (* ModelCalcerCreate)();
 

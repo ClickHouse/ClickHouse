@@ -737,7 +737,7 @@ GeohashesInBoxPreparedArgs geohashesInBoxPrepare(const Float64 longitude_min,
                                               Float64 latitude_max,
                                               uint8_t precision);
 
-UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & estimation, char * out);
+UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out);
 
 } /// GeoUtils
 

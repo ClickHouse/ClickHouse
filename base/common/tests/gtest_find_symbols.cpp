@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 
 
-TEST(find_symbols, SimpleTest)
+TEST(FindSymbols, SimpleTest)
 {
     std::string s = "Hello, world! Goodbye...";
     const char * begin = s.data();

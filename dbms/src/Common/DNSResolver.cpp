@@ -15,7 +15,7 @@
 
 namespace ProfileEvents
 {
-    extern Event NetworkErrors;
+    extern Event DNSError;
 }
 
 
@@ -189,7 +189,7 @@ bool DNSResolver::updateCache()
         }
         catch (const Poco::Net::NetException &)
         {
-            ProfileEvents::increment(ProfileEvents::NetworkErrors);
+            ProfileEvents::increment(ProfileEvents::DNSError);
 
             if (!lost_hosts.empty())
                 lost_hosts += ", ";

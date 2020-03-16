@@ -41,14 +41,12 @@ BlockIO InterpreterAlterQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccess());
 
     context.checkAccess(getRequiredAccess());
-
-    const String & table_name = alter.table;
-    String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
-    StoragePtr table = context.getTable(database_name, table_name);
+    auto table_id = context.resolveStorageID(alter, Context::ResolveOrdinary);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id);
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions,
     /// mutation expression, etc.
-    AddDefaultDatabaseVisitor visitor(database_name);
+    AddDefaultDatabaseVisitor visitor(table_id.getDatabaseName());
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 

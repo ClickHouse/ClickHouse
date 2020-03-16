@@ -29,6 +29,6 @@ private:
     BlockInputStreamPtr input_stream;
 
 protected:
-    StorageInput(const String & table_name_, const ColumnsDescription & columns_);
+    StorageInput(const StorageID & table_id, const ColumnsDescription & columns_);
 };
 }
