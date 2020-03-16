@@ -5,7 +5,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <common/likely.h>
 #include <common/logger_useful.h>
 
 #include <atomic>

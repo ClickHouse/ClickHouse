@@ -8,7 +8,6 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <common/likely.h>
 #include <common/strong_typedef.h>
 
 #include <Common/Allocator.h>

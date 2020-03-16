@@ -1,7 +1,7 @@
 #include <iostream>
 #include <iomanip>
 
-#include <common/Types.h>
+#include <common/types.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
