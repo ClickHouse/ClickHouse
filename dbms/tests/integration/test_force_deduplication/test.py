@@ -55,3 +55,24 @@ def test_basic(start_cluster):
     assert int(node.query("SELECT count() FROM test_mv_a")) == 21  # first insert was succesfull with disabled dedup..
     assert int(node.query("SELECT count() FROM test_mv_b")) == 11
     assert int(node.query("SELECT count() FROM test_mv_c")) == 11
+
+    with pytest.raises(QueryRuntimeException):
+        node.query(
+            '''
+            SET max_partitions_per_insert_block = 3;
+            SET deduplicate_blocks_in_dependent_materialized_views = 1;
+            INSERT INTO test SELECT number FROM numbers(100,10);
+            '''
+        )
+        
+    node.query(
+        '''
+        SET deduplicate_blocks_in_dependent_materialized_views = 1;
+        INSERT INTO test SELECT number FROM numbers(100,10);
+        '''
+    )
+    
+    assert int(node.query("SELECT count() FROM test")) == 21
+    assert int(node.query("SELECT count() FROM test_mv_a")) == 31
+    assert int(node.query("SELECT count() FROM test_mv_b")) == 21
+    assert int(node.query("SELECT count() FROM test_mv_c")) == 21
