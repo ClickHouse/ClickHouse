@@ -92,6 +92,8 @@ public:
 
     ASTPtr getQuery() const { return query_ptr; }
 
+    size_t getMaxStreams() const { return max_streams; }
+
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
