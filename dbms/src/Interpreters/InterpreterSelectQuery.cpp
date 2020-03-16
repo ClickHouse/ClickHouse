@@ -321,8 +321,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
             /// Save the new temporary tables in the query context
             for (const auto & it : query_analyzer->getExternalTables())
-                if (!context->tryGetExternalTable(it.first))
-                    context->addExternalTable(it.first, it.second);
+                if (!context->tryResolveStorageID({"", it.first}, Context::ResolveExternal))
+                    context->addExternalTable(it.first, std::move(*it.second));
         }
 
         if (!options.only_analyze || options.modify_inplace)
@@ -402,14 +402,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (query.prewhere() && !query.where())
         analysis_result.prewhere_info->need_filter = true;
 
-    const String & database_name = joined_tables.leftTableDatabase();
-    const String & table_name = joined_tables.leftTableName();
+    const StorageID & left_table_id = joined_tables.leftTableID();
 
-    if (!table_name.empty() && !database_name.empty() /* always allow access to temporary tables */)
-        context->checkAccess(AccessType::SELECT, database_name, table_name, required_columns);
+    if (left_table_id)
+        context->checkAccess(AccessType::SELECT, left_table_id, required_columns);
 
     /// Remove limits for some tables in the `system` database.
-    if (database_name == "system" && ((table_name == "quotas") || (table_name == "quota_usage") || (table_name == "one")))
+    if (left_table_id.database_name == "system" &&
+        ((left_table_id.table_name == "quotas") || (left_table_id.table_name == "quota_usage") || (left_table_id.table_name == "one")))
     {
         options.ignore_quota = true;
         options.ignore_limits = true;
@@ -909,7 +909,12 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 }
 
                 if (query.limitLength())
-                    executePreLimit(pipeline);
+                {
+                    if constexpr (pipeline_with_processors)
+                        executePreLimit(pipeline, true);
+                    else
+                        executePreLimit(pipeline);
+                }
             }
 
             // If there is no global subqueries, we can run subqueries only when receive them on server.
@@ -975,13 +980,20 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
               * limiting the number of rows in each up to `offset + limit`.
               */
+            bool has_prelimit = false;
             if (query.limitLength() && !query.limit_with_ties && pipeline.hasMoreThanOneStream() &&
                 !query.distinct && !expressions.hasLimitBy() && !settings.extremes)
             {
-                executePreLimit(pipeline);
+                if constexpr (pipeline_with_processors)
+                    executePreLimit(pipeline, false);
+                else
+                    executePreLimit(pipeline);
+
+                has_prelimit = true;
             }
 
-            bool need_merge_streams = need_second_distinct_pass || query.limitLength() || query.limitBy();
+            bool need_merge_streams = need_second_distinct_pass || query.limitBy()
+                || (!pipeline_with_processors && query.limitLength()); /// Don't merge streams for pre-limit more.
 
             if constexpr (!pipeline_with_processors)
                 if (pipeline.hasDelayedStream())
@@ -1017,7 +1029,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
               */
             executeExtremes(pipeline);
 
-            executeLimit(pipeline);
+            if (!(pipeline_with_processors && has_prelimit))  /// Limit is no longer needed if there is prelimit.
+                executeLimit(pipeline);
         }
     }
 
@@ -2250,20 +2263,22 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
 }
 
 /// Preliminary LIMIT - is used in every source, if there are several sources, before they are combined.
-void InterpreterSelectQuery::executePreLimit(QueryPipeline & pipeline)
+void InterpreterSelectQuery::executePreLimit(QueryPipeline & pipeline, bool do_not_skip_offset)
 {
     auto & query = getSelectQuery();
     /// If there is LIMIT
     if (query.limitLength())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, *context);
-        pipeline.addSimpleTransform([&, limit = limit_length + limit_offset](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
-        {
-            if (stream_type == QueryPipeline::StreamType::Totals)
-                return nullptr;
 
-            return std::make_shared<LimitTransform>(header, limit, 0);
-        });
+        if (do_not_skip_offset)
+        {
+            limit_length += limit_offset;
+            limit_offset = 0;
+        }
+
+        auto limit = std::make_shared<LimitTransform>(pipeline.getHeader(), limit_length, limit_offset, pipeline.getNumStreams());
+        pipeline.addPipe({std::move(limit)});
     }
 }
 
@@ -2465,7 +2480,7 @@ void InterpreterSelectQuery::executeLimit(QueryPipeline & pipeline)
                 return nullptr;
 
             return std::make_shared<LimitTransform>(
-                    header, limit_length, limit_offset, always_read_till_end, query.limit_with_ties, order_descr);
+                    header, limit_length, limit_offset, 1, always_read_till_end, query.limit_with_ties, order_descr);
         });
     }
 }
