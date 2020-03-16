@@ -3,7 +3,7 @@
 
 /// Available status. Add something here as you wish.
 #define APPLY_FOR_STATUS(M) \
-    M(DictionaryStatus, "Dictionary Status.", DB::ExternalLoader::getStatusEnumAllPossibleValues()) \
+    M(DictionaryStatus, "Dictionary Status.", DB::getStatusEnumAllPossibleValues()) \
 
 
 namespace CurrentStatusInfo
@@ -44,7 +44,7 @@ namespace CurrentStatusInfo
     {
         static const std::vector<std::pair<String, Int8>> enum_values [] =
         {
-        #define M(NAME, DOCUMENTATION, ENUM) #ENUM,
+        #define M(NAME, DOCUMENTATION, ENUM) ENUM,
             APPLY_FOR_STATUS(M)
         #undef M
         };

@@ -1362,20 +1362,6 @@ ExternalLoader::LoadablePtr ExternalLoader::createObject(
     return create(name, *config.config, config.key_in_config, config.repository_name);
 }
 
-std::vector<std::pair<String, Int8>> ExternalLoader::getStatusEnumAllPossibleValues()
-{
-    return std::vector<std::pair<String, Int8>>{
-        {toString(Status::NOT_LOADED), static_cast<Int8>(Status::NOT_LOADED)},
-        {toString(Status::LOADED), static_cast<Int8>(Status::LOADED)},
-        {toString(Status::FAILED), static_cast<Int8>(Status::FAILED)},
-        {toString(Status::LOADING), static_cast<Int8>(Status::LOADING)},
-        {toString(Status::LOADED_AND_RELOADING), static_cast<Int8>(Status::LOADED_AND_RELOADING)},
-        {toString(Status::FAILED_AND_RELOADING), static_cast<Int8>(Status::FAILED_AND_RELOADING)},
-        {toString(Status::NOT_EXIST), static_cast<Int8>(Status::NOT_EXIST)},
-    };
-}
-
-
 String toString(ExternalLoader::Status status)
 {
     using Status = ExternalLoader::Status;
