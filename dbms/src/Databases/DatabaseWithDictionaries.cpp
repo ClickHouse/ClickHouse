@@ -1,5 +1,5 @@
 #include <Databases/DatabaseWithDictionaries.h>
-#include <Common/CurrentStatusInfo.h>
+#include <Common/StatusInfo.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalLoaderTempConfigRepository.h>
 #include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>

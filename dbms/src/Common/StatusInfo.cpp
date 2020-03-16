@@ -1,4 +1,4 @@
-#include <Common/CurrentStatusInfo.h>
+#include <Common/StatusInfo.h>
 #include <Interpreters/ExternalLoader.h>
 
 /// Available status. Add something here as you wish.
@@ -15,7 +15,6 @@ namespace CurrentStatusInfo
 
     std::mutex locks[END] {};
     std::unordered_map<String, Int8> values[END] {};
-
 
     const char * getName(Status event)
     {
