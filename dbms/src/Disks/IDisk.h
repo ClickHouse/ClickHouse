@@ -153,9 +153,6 @@ public:
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     virtual void removeRecursive(const String & path) = 0;
 
-    /// Removes directory if it's empty.
-    virtual void removeDirectory(const String & path) = 0;
-
     /// Remove file or directory if it exists.
     void removeIfExists(const String & path)
     {
@@ -174,9 +171,6 @@ public:
 
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const String & src_path, const String & dst_path) = 0;
-
-    /// Delete a name and possibly the file it refers to `path`.
-    virtual void unlink(const String & path) = 0;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;

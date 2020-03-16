@@ -392,19 +392,9 @@ void DiskMemory::listFiles(const String & path, std::vector<String> & file_names
         file_names.push_back(it->name());
 }
 
-void DiskMemory::removeDirectory(const String &)
-{
-    throw Exception("Method removeDirectory is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
 void DiskMemory::createHardLink(const String &, const String &)
 {
     throw Exception("Method createHardLink is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void DiskMemory::unlink(const String &)
-{
-    throw Exception("Method unlink is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void DiskMemory::createFile(const String &)

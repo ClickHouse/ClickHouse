@@ -624,12 +624,6 @@ Poco::Timestamp DiskS3::getLastModified(const String & path)
     return Poco::File(metadata_path + path).getLastModified();
 }
 
-void DiskS3::removeDirectory(const String & path)
-{
-    if (0 != rmdir((metadata_path + path).c_str()))
-        throwFromErrnoWithPath("Cannot rmdir file " + path, path, ErrorCodes::CANNOT_UNLINK);
-}
-
 void DiskS3::createHardLink(const String & src_path, const String & dst_path)
 {
     /**
@@ -638,11 +632,6 @@ void DiskS3::createHardLink(const String & src_path, const String & dst_path)
      * Hardlink creation is adding new link to list and just metadata file copy.
      */
     copyFile(src_path, dst_path);
-}
-
-void DiskS3::unlink(const String & path)
-{
-    remove(path);
 }
 
 void DiskS3::createFile(const String & path)

@@ -738,15 +738,15 @@ void IMergeTreeDataPart::remove() const
         std::shared_lock<std::shared_mutex> lock(columns_lock);
 
         for (const auto & [file, _] : checksums.files)
-            disk->unlink(to + "/" + file);
+            disk->remove(to + "/" + file);
 #if !__clang__
 #    pragma GCC diagnostic pop
 #endif
 
         for (const auto & file : {"checksums.txt", "columns.txt"})
-            disk->unlink(to + "/" + file);
+            disk->remove(to + "/" + file);
 
-        disk->removeDirectory(to);
+        disk->remove(to);
     }
     catch (...)
     {

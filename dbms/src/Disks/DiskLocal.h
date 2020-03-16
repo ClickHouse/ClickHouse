@@ -91,8 +91,6 @@ public:
 
     void removeRecursive(const String & path) override;
 
-    void removeDirectory(const String & path) override;
-
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
     Poco::Timestamp getLastModified(const String & path) override;
@@ -100,8 +98,6 @@ public:
     void setReadOnly(const String & path) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
-
-    void unlink(const String & path) override;
 
 private:
     bool tryReserve(UInt64 bytes);

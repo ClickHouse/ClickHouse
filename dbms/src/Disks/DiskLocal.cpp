@@ -255,21 +255,9 @@ Poco::Timestamp DiskLocal::getLastModified(const String & path)
     return Poco::File(disk_path + path).getLastModified();
 }
 
-void DiskLocal::removeDirectory(const String & path)
-{
-    if (0 != rmdir((disk_path + path).c_str()))
-        throwFromErrnoWithPath("Cannot rmdir file " + path, path, ErrorCodes::CANNOT_UNLINK);
-}
-
 void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
 {
     DB::createHardLink(disk_path + src_path, disk_path + dst_path);
-}
-
-void DiskLocal::unlink(const String & path)
-{
-    if (0 != ::unlink((disk_path + path).c_str()))
-        throwFromErrnoWithPath("Cannot unlink file " + path, path, ErrorCodes::CANNOT_UNLINK);
 }
 
 void DiskLocal::createFile(const String & path)
