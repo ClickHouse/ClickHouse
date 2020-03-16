@@ -25,6 +25,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
 }
 
@@ -62,8 +63,7 @@ bool MergeTreeConditionFullText::createFunctionEqualsCondition(RPNElement & out,
 }
 
 MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(const MergeTreeIndexFullText & index_)
-    : IMergeTreeIndexGranule()
-    , index(index_)
+    : index(index_)
     , bloom_filters(
             index.columns.size(), BloomFilter(index.bloom_filter_size, index.bloom_filter_hashes, index.seed))
     , has_elems(false) {}
@@ -119,121 +119,6 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
     *pos += rows_read;
 }
 
-
-const MergeTreeConditionFullText::AtomMap MergeTreeConditionFullText::atom_map
-{
-        {
-                "notEquals",
-                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
-                {
-                    out.function = RPNElement::FUNCTION_NOT_EQUALS;
-                    out.bloom_filter = std::make_unique<BloomFilter>(
-                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
-
-                    const auto & str = value.get<String>();
-                    stringToBloomFilter(str.c_str(), str.size(), idx.token_extractor_func, *out.bloom_filter);
-                    return true;
-                }
-        },
-        {
-                "equals",
-                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
-                {
-                    return createFunctionEqualsCondition(out, value, idx);
-                }
-        },
-        {
-                "like",
-                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
-                {
-                    out.function = RPNElement::FUNCTION_EQUALS;
-                    out.bloom_filter = std::make_unique<BloomFilter>(
-                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
-
-                    const auto & str = value.get<String>();
-                    likeStringToBloomFilter(str, idx.token_extractor_func, *out.bloom_filter);
-                    return true;
-                }
-        },
-        {
-                "notLike",
-                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
-                {
-                    out.function = RPNElement::FUNCTION_NOT_EQUALS;
-                    out.bloom_filter = std::make_unique<BloomFilter>(
-                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
-
-                    const auto & str = value.get<String>();
-                    likeStringToBloomFilter(str, idx.token_extractor_func, *out.bloom_filter);
-                    return true;
-                }
-        },
-        {
-                "hasToken",
-                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
-                {
-                    out.function = RPNElement::FUNCTION_EQUALS;
-                    out.bloom_filter = std::make_unique<BloomFilter>(
-                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
-
-                    const auto & str = value.get<String>();
-                    stringToBloomFilter(str.c_str(), str.size(), idx.token_extractor_func, *out.bloom_filter);
-                    return true;
-                }
-        },
-        {
-                "startsWith",
-                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
-                {
-                    return createFunctionEqualsCondition(out, value, idx);
-                }
-        },
-        {
-                "endsWith",
-                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
-                {
-                    return createFunctionEqualsCondition(out, value, idx);
-                }
-        },
-        {
-                "multiSearchAny",
-                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
-                {
-                    out.function = RPNElement::FUNCTION_MULTI_SEARCH;
-
-                    /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
-                    std::vector<std::vector<BloomFilter>> bloom_filters;
-                    bloom_filters.emplace_back();
-                    for (const auto & element : value.get<Array>())
-                    {
-                        if (element.getType() != Field::Types::String)
-                            return false;
-
-                        bloom_filters.back().emplace_back(idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
-                        const auto & str = element.get<String>();
-                        stringToBloomFilter(str.c_str(), str.size(), idx.token_extractor_func, bloom_filters.back().back());
-                    }
-                    out.set_bloom_filters = std::move(bloom_filters);
-                    return true;
-                }
-        },
-        {
-                "notIn",
-                [] (RPNElement & out, const Field &, const MergeTreeIndexFullText &)
-                {
-                    out.function = RPNElement::FUNCTION_NOT_IN;
-                    return true;
-                }
-        },
-        {
-                "in",
-                [] (RPNElement & out, const Field &, const MergeTreeIndexFullText &)
-                {
-                    out.function = RPNElement::FUNCTION_IN;
-                    return true;
-                }
-        },
-};
 
 MergeTreeConditionFullText::MergeTreeConditionFullText(
     const SelectQueryInfo & query_info,
@@ -378,11 +263,11 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
             rpn_stack.emplace_back(true, false);
         }
         else
-            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Unexpected function type in BloomFilterCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::mayBeTrueInRange", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected stack size in BloomFilterCondition::mayBeTrueOnGranule", ErrorCodes::LOGICAL_ERROR);
 
     return rpn_stack[0].can_be_true;
 }
@@ -429,21 +314,110 @@ bool MergeTreeConditionFullText::atomFromAST(
             return false;
 
         if (const_type && const_type->getTypeId() != TypeIndex::String
-                        && const_type->getTypeId() != TypeIndex::FixedString
-                        && const_type->getTypeId() != TypeIndex::Array)
+                       && const_type->getTypeId() != TypeIndex::FixedString
+                       && const_type->getTypeId() != TypeIndex::Array)
+        {
             return false;
+        }
 
         if (key_arg_pos == 1 && (func_name != "equals" || func_name != "notEquals"))
             return false;
         else if (!index.token_extractor_func->supportLike() && (func_name == "like" || func_name == "notLike"))
             return false;
 
-        const auto atom_it = atom_map.find(func_name);
-        if (atom_it == std::end(atom_map))
-            return false;
+        if (func_name == "notEquals")
+        {
+            out.key_column = key_column_num;
+            out.function = RPNElement::FUNCTION_NOT_EQUALS;
+            out.bloom_filter = std::make_unique<BloomFilter>(
+                    index.bloom_filter_size, index.bloom_filter_hashes, index.seed);
 
-        out.key_column = key_column_num;
-        return atom_it->second(out, const_value, index);
+            const auto & str = const_value.get<String>();
+            stringToBloomFilter(str.c_str(), str.size(), index.token_extractor_func, *out.bloom_filter);
+            return true;
+        }
+        else if (func_name == "equals")
+        {
+            out.key_column = key_column_num;
+            return createFunctionEqualsCondition(out, const_value, index);
+        }
+        else if (func_name == "like")
+        {
+            out.key_column = key_column_num;
+            out.function = RPNElement::FUNCTION_EQUALS;
+            out.bloom_filter = std::make_unique<BloomFilter>(
+                    index.bloom_filter_size, index.bloom_filter_hashes, index.seed);
+
+            const auto & str = const_value.get<String>();
+            likeStringToBloomFilter(str, index.token_extractor_func, *out.bloom_filter);
+            return true;
+        }
+        else if (func_name == "notLike")
+        {
+            out.key_column = key_column_num;
+            out.function = RPNElement::FUNCTION_NOT_EQUALS;
+            out.bloom_filter = std::make_unique<BloomFilter>(
+                    index.bloom_filter_size, index.bloom_filter_hashes, index.seed);
+
+            const auto & str = const_value.get<String>();
+            likeStringToBloomFilter(str, index.token_extractor_func, *out.bloom_filter);
+            return true;
+        }
+        else if (func_name == "hasToken")
+        {
+            out.key_column = key_column_num;
+            out.function = RPNElement::FUNCTION_EQUALS;
+            out.bloom_filter = std::make_unique<BloomFilter>(
+                    index.bloom_filter_size, index.bloom_filter_hashes, index.seed);
+
+            const auto & str = const_value.get<String>();
+            stringToBloomFilter(str.c_str(), str.size(), index.token_extractor_func, *out.bloom_filter);
+            return true;
+        }
+        else if (func_name == "startsWith")
+        {
+            out.key_column = key_column_num;
+            return createFunctionEqualsCondition(out, const_value, index);
+        }
+        else if (func_name == "endsWith")
+        {
+            out.key_column = key_column_num;
+            return createFunctionEqualsCondition(out, const_value, index);
+        }
+        else if (func_name == "multiSearchAny")
+        {
+            out.key_column = key_column_num;
+            out.function = RPNElement::FUNCTION_MULTI_SEARCH;
+
+            /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
+            std::vector<std::vector<BloomFilter>> bloom_filters;
+            bloom_filters.emplace_back();
+            for (const auto & element : const_value.get<Array>())
+            {
+                if (element.getType() != Field::Types::String)
+                    return false;
+
+                bloom_filters.back().emplace_back(index.bloom_filter_size, index.bloom_filter_hashes, index.seed);
+                const auto & str = element.get<String>();
+                stringToBloomFilter(str.c_str(), str.size(), index.token_extractor_func, bloom_filters.back().back());
+            }
+            out.set_bloom_filters = std::move(bloom_filters);
+            return true;
+        }
+        else if (func_name == "notIn")
+        {
+            out.key_column = key_column_num;
+            out.function = RPNElement::FUNCTION_NOT_IN;
+            return true;
+        }
+        else if (func_name == "in")
+        {
+            out.key_column = key_column_num;
+            out.function = RPNElement::FUNCTION_IN;
+            return true;
+        }
+
+        return false;
     }
     else if (KeyCondition::getConstant(node, block_with_constants, const_value, const_type))
     {
@@ -523,12 +497,12 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
     std::vector<size_t> key_position;
 
     Columns columns = prepared_set->getSetElements();
-    for (size_t col = 0; col < key_tuple_mapping.size(); ++col)
+    for (const auto & elem : key_tuple_mapping)
     {
         bloom_filters.emplace_back();
-        key_position.push_back(key_tuple_mapping[col].key_index);
+        key_position.push_back(elem.key_index);
 
-        size_t tuple_idx = key_tuple_mapping[col].tuple_index;
+        size_t tuple_idx = elem.tuple_index;
         const auto & column = columns[tuple_idx];
         for (size_t row = 0; row < prepared_set->getTotalRowCount(); ++row)
         {
@@ -705,8 +679,7 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
 
     ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
 
-    auto syntax = SyntaxAnalyzer(context, {}).analyze(
-            expr_list, new_columns);
+    auto syntax = SyntaxAnalyzer(context).analyze(expr_list, new_columns);
     auto index_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
 
     auto sample = ExpressionAnalyzer(expr_list, syntax, context)

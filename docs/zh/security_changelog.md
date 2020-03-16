@@ -36,4 +36,4 @@ deb软件包中的错误配置可能导致使用未经授权的数据库。
 
 来源：英国国家网络安全中心（NCSC）
 
-[来源文章](https://clickhouse.yandex/docs/en/security_changelog/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/security_changelog/) <!--hide-->

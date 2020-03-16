@@ -147,9 +147,9 @@ void NO_INLINE bench(const std::vector<StringRef> & data, DB::Arena &, const cha
         typename Map::LookupResult it;
         bool inserted;
 
-        for (size_t i = 0, size = data.size(); i < size; ++i)
+        for (const auto & value : data)
         {
-            map.emplace(DB::ArenaKeyHolder{data[i], pool}, it, inserted);
+            map.emplace(DB::ArenaKeyHolder{value, pool}, it, inserted);
             if (inserted)
                 it->getMapped() = 0;
             ++it->getMapped();

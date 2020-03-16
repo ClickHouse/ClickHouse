@@ -8,4 +8,4 @@ ClickHouse قابلیت ذخیره سازی انواع type های مختلف ب
 
 </div>
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/data_types/) <!--hide-->

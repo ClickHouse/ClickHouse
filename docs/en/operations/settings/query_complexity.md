@@ -96,7 +96,7 @@ Maximum number of bytes before sorting.
 
 What to do if the number of rows received before sorting exceeds one of the limits: 'throw' or 'break'. By default, throw.
 
-## max_result_rows
+## max_result_rows {#setting-max_result_rows}
 
 Limit on the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
 
@@ -107,7 +107,25 @@ Limit on the number of bytes in the result. The same as the previous setting.
 ## result_overflow_mode
 
 What to do if the volume of the result exceeds one of the limits: 'throw' or 'break'. By default, throw.
-Using 'break' is similar to using LIMIT.
+
+Using 'break' is similar to using LIMIT. `Break` interrupts execution only at the block level. This means that amount of returned rows is greater than [max_result_rows](#setting-max_result_rows), multiple of [max_block_size](settings.md#setting-max_block_size) and depends on [max_threads](settings.md#settings-max_threads).
+
+Example:
+
+```sql
+SET max_threads = 3, max_block_size = 3333; 
+SET max_result_rows = 3334, result_overflow_mode = 'break';
+
+SELECT *
+FROM numbers_mt(100000)
+FORMAT Null;
+```
+
+Result:
+
+```text
+6666 rows in set. ...
+```
 
 ## max_execution_time
 
@@ -274,4 +292,4 @@ When inserting data, ClickHouse calculates the number of partitions in the inser
 
 > "Too many partitions for single INSERT block (more than " + toString(max_parts) + "). The limit is controlled by 'max_partitions_per_insert_block' setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc)."
 
-[Original article](https://clickhouse.yandex/docs/en/operations/settings/query_complexity/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/settings/query_complexity/) <!--hide-->

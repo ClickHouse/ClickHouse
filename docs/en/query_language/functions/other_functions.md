@@ -249,7 +249,7 @@ ORDER BY h ASC
 Transforms a value according to the explicitly defined mapping of some elements to other ones.
 There are two variations of this function:
 
-1. `transform(x, array_from, array_to, default)`
+### transform(x, array_from, array_to, default)
 
 `x` – What to transform.
 
@@ -291,7 +291,7 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-2. `transform(x, array_from, array_to)`
+### transform(x, array_from, array_to)
 
 Differs from the first variation in that the 'default' argument is omitted.
 If the 'x' value is equal to one of the elements in the 'array_from' array, it returns the matching element (that is numbered the same) from the 'array_to' array. Otherwise, it returns 'x'.
@@ -603,6 +603,34 @@ SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
 └───┘
 ```
 
+## blockSerializedSize
+
+Returns size on disk (without taking into account compression).
+
+
+```sql
+blockSerializedSize(value[, value[, ...]])
+```
+
+**Parameters:**
+
+- `value` — Any value.
+
+**Returned values**
+
+- The number of bytes that will be written to disk for block of values (without compression).
+
+**Example**
+
+```sql
+SELECT blockSerializedSize(maxState(1)) as x
+```
+```text
+┌─x─┐
+│ 2 │
+└───┘
+```
+
 ## toColumnTypeName
 
 Returns the name of the class that represents the data type of the column in RAM.
@@ -706,84 +734,6 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 └───────────────────────────────────────────────────────┘
 ```
 
-## indexHint
-
-Outputs data in the range selected by the index without filtering by the expression specified as an argument.
-
-The expression passed to the function is not calculated, but ClickHouse applies the index to this expression in the same way as if the expression was in the query without `indexHint`.
-
-**Returned value**
-
-- 1.
-
-**Example**
-
-Here is a table with the test data for [ontime](../../getting_started/example_datasets/ontime.md).
-
-```sql
-SELECT count() FROM ontime
-```
-```text
-┌─count()─┐
-│ 4276457 │
-└─────────┘
-```
-
-The table has indexes for the fields `(FlightDate, (Year, FlightDate))`.
-
-Create a selection by date like this:
-
-```sql
-SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
-```
-```text
-
-┌──────────k─┬─count()─┐
-│ 2017-01-01 │   13970 │
-│ 2017-01-02 │   15882 │
-........................
-│ 2017-09-28 │   16411 │
-│ 2017-09-29 │   16384 │
-│ 2017-09-30 │   12520 │
-└────────────┴─────────┘
-```
-
-In this selection, the index is not used and ClickHouse processed the entire table (`Processed 4.28 million rows`). To apply the index, select a specific date and run the following query:
-
-```sql
-SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
-```
-```text
-┌──────────k─┬─count()─┐
-│ 2017-09-15 │   16428 │
-└────────────┴─────────┘
-```
-
-The last line of output shows that by using the index, ClickHouse processed a significantly smaller number of rows (`Processed 32.74 thousand rows`).
-
-Now pass the expression `k = '2017-09-15'` to the `indexHint` function:
-
-```sql
-SELECT
-    FlightDate AS k,
-    count()
-FROM ontime
-WHERE indexHint(k = '2017-09-15')
-GROUP BY k
-ORDER BY k ASC
-```
-```text
-┌──────────k─┬─count()─┐
-│ 2017-09-14 │    7071 │
-│ 2017-09-15 │   16428 │
-│ 2017-09-16 │    1077 │
-│ 2017-09-30 │    8167 │
-└────────────┴─────────┘
-```
-
-The response to the request shows that ClickHouse applied the index in the same way as the previous time (`Processed 32.74 thousand rows`). However, the resulting set of rows shows that the expression `k = '2017-09-15'` was not used when generating the result.
-
-Because the index is sparse in ClickHouse, "extra" data ends up in the response when reading a range (in this case, the adjacent dates). Use the `indexHint` function to see it.
 
 ## replicate {#other_functions-replicate}
 
@@ -822,34 +772,101 @@ Result:
 └───────────────────────────────┘
 ```
 
-## filesystemAvailable {#function-filesystemavailable}
+## filesystemAvailable {#filesystemavailable}
 
-Returns the amount of remaining space in the filesystem where the files of the databases located. See the [path](../../operations/server_settings/settings.md#server_settings-path) server setting description.
+Returns amount of remaining space on the filesystem where the files of the databases located. It is always smaller than total free space ([filesystemFree](#filesystemfree)) because some space is reserved for OS.
+
+**Syntax**
 
 ```sql
 filesystemAvailable()
 ```
 
-**Returned values**
+**Returned value**
 
-- Amount of remaining space in bytes.
+- The amount of remaining space available in bytes.
 
 Type: [UInt64](../../data_types/int_uint.md).
 
 **Example**
 
+Query:
+
 ```sql
-SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) AS "Type"
+SELECT formatReadableSize(filesystemAvailable()) AS "Available space", toTypeName(filesystemAvailable()) AS "Type";
 ```
+
+Result:
+
 ```text
-┌──Free space─┬─Type───┐
-│ 18152624128 │ UInt64 │
-└─────────────┴────────┘
+┌─Available space─┬─Type───┐
+│ 30.75 GiB       │ UInt64 │
+└─────────────────┴────────┘
 ```
 
-## filesystemCapacity
+## filesystemFree {#filesystemfree}
 
-Returns the capacity information of the disk, in bytes. This information is evaluated using the configured by path.
+Returns total amount of the free space on the filesystem where the files of the databases located. See also `filesystemAvailable`
+
+**Syntax**
+
+```sql
+filesystemFree()
+```
+
+**Returned value**
+
+- Amount of free space in bytes.
+
+Type: [UInt64](../../data_types/int_uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT formatReadableSize(filesystemFree()) AS "Free space", toTypeName(filesystemFree()) AS "Type";
+```
+
+Result:
+
+```text
+┌─Free space─┬─Type───┐
+│ 32.39 GiB  │ UInt64 │
+└────────────┴────────┘
+```
+
+## filesystemCapacity {#filesystemcapacity}
+
+Returns the capacity of the filesystem in bytes. For evaluation, the [path](../../operations/server_settings/settings.md#server_settings-path) to the data directory must be configured.
+
+**Syntax**
+
+```sql
+filesystemCapacity()
+```
+
+**Returned value**
+
+- Capacity information of the filesystem in bytes.
+
+Type: [UInt64](../../data_types/int_uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesystemCapacity()) AS "Type"
+```
+
+Result:
+
+```text
+┌─Capacity──┬─Type───┐
+│ 39.32 GiB │ UInt64 │
+└───────────┴────────┘
+```
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
@@ -861,11 +878,68 @@ Takes the states of the aggregate function and returns a column with values, are
 For example, takes state of aggregate function (example runningAccumulate(uniqState(UserID))), and for each row of block, return result of aggregate function on merge of states of all previous rows and current row.
 So, result of function depends on partition of data to blocks and on order of data in block.
 
-## joinGet('join_storage_table_name', 'get_column', join_key) {#other_functions-joinget}
+## joinGet {#joinget}
 
-Gets data from [Join](../../operations/table_engines/join.md) tables using the specified join key.
+The function lets you extract data from the table the same way as from a [dictionary](../../query_language/dicts/index.md).
+
+Gets data from [Join](../../operations/table_engines/join.md#creating-a-table) tables using the specified join key.
 
 Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
+
+**Syntax**
+
+```sql
+joinGet(join_storage_table_name, `value_column`, join_keys)
+```
+
+**Parameters**
+
+- `join_storage_table_name` — an [identifier](../syntax.md#syntax-identifiers) indicates where search is performed. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE db_name` or specify the database and the table through the separator `db_name.db_table`, see the example.
+- `value_column` — name of the column of the table that contains required data.
+- `join_keys` — list of keys.
+
+**Returned value**
+
+Returns list of values corresponded to list of keys.
+
+If certain doesn't exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
+
+More info about `join_use_nulls` in [Join operation](../../operations/table_engines/join.md).
+
+**Example**
+
+Input table:
+
+```sql
+CREATE DATABASE db_test
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id) SETTINGS join_use_nulls = 1
+INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
+```
+
+```text
+┌─id─┬─val─┐
+│  4 │  13 │
+│  2 │  12 │
+│  1 │  11 │
+└────┴─────┘
+```
+
+Query:
+
+```sql
+SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS join_use_nulls = 1
+```
+
+Result:
+
+```text
+┌─joinGet(db_test.id_val, 'val', toUInt32(number))─┐
+│                                                0 │
+│                                               11 │
+│                                               12 │
+│                                                0 │
+└──────────────────────────────────────────────────┘
+```
 
 ## modelEvaluate(model_name, ...) {#function-modelevaluate}
 Evaluate external model.
@@ -884,19 +958,31 @@ SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
 Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 ```
 
-## identity()
+## identity {#identity}
 
-Returns the same value that was used as its argument.
+Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn't look inside `identity` functions.
+
+**Syntax**
+
+```sql
+identity(x)
+```
+
+**Example**
+
+Query:
 
 ```sql
 SELECT identity(42)
 ```
+
+Result:
+
 ```text
 ┌─identity(42)─┐
 │           42 │
 └──────────────┘
 ```
-Used for debugging and testing, allows to "break" access by index, and get the result and query performance for a full scan.
 
 ## randomPrintableASCII {#randomascii}
 
@@ -933,4 +1019,4 @@ SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers 
 └────────┴────────────────────────────────┴──────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/other_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->

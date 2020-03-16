@@ -41,8 +41,8 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Co
                 + "('DSN', schema, table)",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    for (auto i = 0u; i < args.size(); ++i)
-        args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
+    for (auto & arg : args)
+        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
     std::string connection_string;
     std::string schema_name;
@@ -59,6 +59,8 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Co
         connection_string = args[0]->as<ASTLiteral &>().value.safeGet<String>();
         remote_table_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
     }
+
+    context.checkAccess(getRequiredAccessType());
 
     /* Infer external table structure */
     /// Have to const_cast, because bridges store their commands inside context

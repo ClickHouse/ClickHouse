@@ -165,4 +165,4 @@ $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/pat
 
 `clickhouse-copier` отслеживает изменения `/task/path/description` и применяет их "на лету". Если вы поменяете, например, значение `max_workers`, то количество процессов, выполняющих задания, также изменится.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/utils/clickhouse-copier/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/utils/clickhouse-copier/) <!--hide-->

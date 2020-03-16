@@ -103,5 +103,5 @@ SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
 SYSTEM START MERGES [[db.]merge_tree_family_table_name]
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/system/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/system/) <!--hide-->
 

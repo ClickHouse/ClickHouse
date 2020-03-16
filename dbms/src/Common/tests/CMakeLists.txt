@@ -47,10 +47,6 @@ target_link_libraries (pod_array PRIVATE clickhouse_common_io)
 add_executable (thread_creation_latency thread_creation_latency.cpp)
 target_link_libraries (thread_creation_latency PRIVATE clickhouse_common_io)
 
-add_executable (multi_version multi_version.cpp)
-target_link_libraries (multi_version PRIVATE clickhouse_common_io)
-add_check(multi_version)
-
 add_executable (array_cache array_cache.cpp)
 target_link_libraries (array_cache PRIVATE clickhouse_common_io)
 
@@ -60,9 +56,6 @@ target_link_libraries (space_saving PRIVATE clickhouse_common_io)
 add_executable (integer_hash_tables_and_hashes integer_hash_tables_and_hashes.cpp)
 target_include_directories (integer_hash_tables_and_hashes SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 target_link_libraries (integer_hash_tables_and_hashes PRIVATE dbms)
-
-add_executable (allocator allocator.cpp)
-target_link_libraries (allocator PRIVATE clickhouse_common_io)
 
 add_executable (cow_columns cow_columns.cpp)
 target_link_libraries (cow_columns PRIVATE clickhouse_common_io)
@@ -75,3 +68,6 @@ target_link_libraries (stopwatch PRIVATE clickhouse_common_io)
 
 add_executable (symbol_index symbol_index.cpp)
 target_link_libraries (symbol_index PRIVATE clickhouse_common_io)
+
+add_executable (chaos_sanitizer chaos_sanitizer.cpp)
+target_link_libraries (chaos_sanitizer PRIVATE clickhouse_common_io)

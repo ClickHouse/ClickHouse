@@ -7,11 +7,13 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 from helpers.client import QueryRuntimeException
+from helpers.network import PartitionManager
 
 import json
 import subprocess
 import kafka.errors
 from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer
+from kafka.admin import NewTopic
 from google.protobuf.internal.encoder import _VarintBytes
 
 """
@@ -33,6 +35,7 @@ instance = cluster.add_instance('instance',
                                 config_dir='configs',
                                 main_configs=['configs/kafka.xml', 'configs/log_conf.xml' ],
                                 with_kafka=True,
+                                with_zookeeper=True,
                                 clickhouse_path_dir='clickhouse_path')
 kafka_id = ''
 
@@ -70,7 +73,7 @@ def kafka_produce(topic, messages, timestamp=None):
     for message in messages:
         producer.send(topic=topic, value=message, timestamp_ms=timestamp)
         producer.flush()
-    print ("Produced {} messages for topic {}".format(len(messages), topic))
+#    print ("Produced {} messages for topic {}".format(len(messages), topic))
 
 
 def kafka_consume(topic):
@@ -132,7 +135,7 @@ def kafka_setup_teardown():
     wait_kafka_is_available()
     print("kafka is available - running test")
     yield  # run test
-    instance.query('DROP TABLE test.kafka')
+    instance.query('DROP TABLE IF EXISTS test.kafka')
 
 
 # Tests
@@ -725,6 +728,470 @@ def test_kafka_commit_on_block_write(kafka_cluster):
     kafka_thread.join()
 
     assert result == 1, 'Messages from kafka get duplicated!'
+
+
+@pytest.mark.timeout(180)
+def test_kafka_virtual_columns2(kafka_cluster):
+
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+    topic_list = []
+    topic_list.append(NewTopic(name="virt2_0", num_partitions=2, replication_factor=1))
+    topic_list.append(NewTopic(name="virt2_1", num_partitions=2, replication_factor=1))
+
+    admin_client.create_topics(new_topics=topic_list, validate_only=False)
+
+    instance.query('''
+        CREATE TABLE test.kafka (value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'virt2_0,virt2_1',
+                     kafka_group_name = 'virt2',
+                     kafka_format = 'JSONEachRow';
+
+        CREATE MATERIALIZED VIEW test.view Engine=Log AS
+        SELECT value, _key, _topic, _partition, _offset, toUnixTimestamp(_timestamp) FROM test.kafka;
+        ''')
+
+    producer = KafkaProducer(bootstrap_servers="localhost:9092")
+
+    producer.send(topic='virt2_0', value=json.dumps({'value': 1}), partition=0, key='k1', timestamp_ms=1577836801000)
+    producer.send(topic='virt2_0', value=json.dumps({'value': 2}), partition=0, key='k2', timestamp_ms=1577836802000)
+    producer.flush()
+    time.sleep(1)
+
+    producer.send(topic='virt2_0', value=json.dumps({'value': 3}), partition=1, key='k3', timestamp_ms=1577836803000)
+    producer.send(topic='virt2_0', value=json.dumps({'value': 4}), partition=1, key='k4', timestamp_ms=1577836804000)
+    producer.flush()
+    time.sleep(1)
+
+    producer.send(topic='virt2_1', value=json.dumps({'value': 5}), partition=0, key='k5', timestamp_ms=1577836805000)
+    producer.send(topic='virt2_1', value=json.dumps({'value': 6}), partition=0, key='k6', timestamp_ms=1577836806000)
+    producer.flush()
+    time.sleep(1)
+
+    producer.send(topic='virt2_1', value=json.dumps({'value': 7}), partition=1, key='k7', timestamp_ms=1577836807000)
+    producer.send(topic='virt2_1', value=json.dumps({'value': 8}), partition=1, key='k8', timestamp_ms=1577836808000)
+    producer.flush()
+
+    time.sleep(10)
+
+    result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
+
+    expected = '''\
+1	k1	virt2_0	0	0	1577836801
+2	k2	virt2_0	0	1	1577836802
+3	k3	virt2_0	1	0	1577836803
+4	k4	virt2_0	1	1	1577836804
+5	k5	virt2_1	0	0	1577836805
+6	k6	virt2_1	0	1	1577836806
+7	k7	virt2_1	1	0	1577836807
+8	k8	virt2_1	1	1	1577836808
+'''
+
+    assert TSV(result) == TSV(expected)
+
+
+
+@pytest.mark.timeout(240)
+def test_kafka_produce_key_timestamp(kafka_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.kafka_writer (key UInt64, value UInt64, _key String, _timestamp DateTime)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'insert3',
+                     kafka_group_name = 'insert3',
+                     kafka_format = 'TSV',
+                     kafka_row_delimiter = '\\n';
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64, inserted_key String, inserted_timestamp DateTime)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'insert3',
+                     kafka_group_name = 'insert3',
+                     kafka_format = 'TSV',
+                     kafka_row_delimiter = '\\n';
+
+        CREATE MATERIALIZED VIEW test.view Engine=Log AS
+            SELECT key, value, inserted_key, toUnixTimestamp(inserted_timestamp), _key, _topic, _partition, _offset, toUnixTimestamp(_timestamp) FROM test.kafka;
+    ''')
+
+    instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({}))".format(1,1,'k1',1577836801))
+    instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({}))".format(2,2,'k2',1577836802))
+    instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({})),({},{},'{}',toDateTime({}))".format(3,3,'k3',1577836803,4,4,'k4',1577836804))
+    instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({}))".format(5,5,'k5',1577836805))
+
+    time.sleep(10)
+
+    result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
+
+    # print(result)
+
+    expected = '''\
+1	1	k1	1577836801	k1	insert3	0	0	1577836801
+2	2	k2	1577836802	k2	insert3	0	1	1577836802
+3	3	k3	1577836803	k3	insert3	0	2	1577836803
+4	4	k4	1577836804	k4	insert3	0	3	1577836804
+5	5	k5	1577836805	k5	insert3	0	4	1577836805
+'''
+
+    assert TSV(result) == TSV(expected)
+
+
+
+@pytest.mark.timeout(600)
+def test_kafka_flush_by_time(kafka_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'flush_by_time',
+                     kafka_group_name = 'flush_by_time',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 100,
+                     kafka_row_delimiter = '\\n';
+
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.kafka;
+    ''')
+
+    cancel = threading.Event()
+
+    def produce():
+        while not cancel.is_set():
+            messages = []
+            messages.append(json.dumps({'key': 0, 'value': 0}))
+            kafka_produce('flush_by_time', messages)
+            time.sleep(1)
+
+    kafka_thread = threading.Thread(target=produce)
+    kafka_thread.start()
+
+    time.sleep(18)
+
+    result = instance.query('SELECT count() FROM test.view')
+
+    print(result)
+    cancel.set()
+    kafka_thread.join()
+
+    # kafka_cluster.open_bash_shell('instance')
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    # 40 = 2 flushes (7.5 sec), 15 polls each, about 1 mgs per 1.5 sec
+    assert int(result) > 12, 'Messages from kafka should be flushed at least every stream_flush_interval_ms!'
+
+
+@pytest.mark.timeout(600)
+def test_kafka_flush_by_block_size(kafka_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'flush_by_block_size',
+                     kafka_group_name = 'flush_by_block_size',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 100,
+                     kafka_row_delimiter = '\\n';
+
+        SELECT * FROM test.kafka;
+
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.kafka;
+    ''')
+
+    messages = []
+    for _ in range(101):
+        messages.append(json.dumps({'key': 0, 'value': 0}))
+    kafka_produce('flush_by_block_size', messages)
+
+    time.sleep(1)
+
+    result = instance.query('SELECT count() FROM test.view')
+    # print(result)
+
+    # kafka_cluster.open_bash_shell('instance')
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    # 100 = first poll should return 100 messages (and rows)
+    # not waiting for stream_flush_interval_ms
+    assert int(result) == 100, 'Messages from kafka should be flushed at least every stream_flush_interval_ms!'
+
+
+@pytest.mark.timeout(600)
+def test_kafka_lot_of_partitions_partial_commit_of_bulk(kafka_cluster):
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+
+    topic_list = []
+    topic_list.append(NewTopic(name="topic_with_multiple_partitions2", num_partitions=10, replication_factor=1))
+    admin_client.create_topics(new_topics=topic_list, validate_only=False)
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'topic_with_multiple_partitions2',
+                     kafka_group_name = 'topic_with_multiple_partitions2',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 211;
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.kafka;
+    ''')
+
+    messages = []
+    count = 0
+    for dummy_msg in range(1000):
+        rows = []
+        for dummy_row in range(random.randrange(3,10)):
+            count = count + 1
+            rows.append(json.dumps({'key': count, 'value': count}))
+        messages.append("\n".join(rows))
+    kafka_produce('topic_with_multiple_partitions2', messages)
+
+    time.sleep(30)
+
+    result = instance.query('SELECT count(), uniqExact(key), max(key) FROM test.view')
+    print(result)
+    assert TSV(result) == TSV('{0}\t{0}\t{0}'.format(count) )
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+@pytest.mark.timeout(1200)
+def test_kafka_rebalance(kafka_cluster):
+
+    NUMBER_OF_CONSURRENT_CONSUMERS=11
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.destination;
+        CREATE TABLE test.destination (
+            key UInt64,
+            value UInt64,
+            _topic String,
+            _key String,
+            _offset UInt64,
+            _partition UInt64,
+            _timestamp Nullable(DateTime),
+            _consumed_by LowCardinality(String)
+        )
+        ENGINE = MergeTree()
+        ORDER BY key;
+    ''')
+
+   # kafka_cluster.open_bash_shell('instance')
+
+    #time.sleep(2)
+
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+    topic_list = []
+    topic_list.append(NewTopic(name="topic_with_multiple_partitions", num_partitions=11, replication_factor=1))
+    admin_client.create_topics(new_topics=topic_list, validate_only=False)
+
+    cancel = threading.Event()
+
+    msg_index = [0]
+    def produce():
+        while not cancel.is_set():
+            messages = []
+            for _ in range(59):
+                messages.append(json.dumps({'key': msg_index[0], 'value': msg_index[0]}))
+                msg_index[0] += 1
+            kafka_produce('topic_with_multiple_partitions', messages)
+
+    kafka_thread = threading.Thread(target=produce)
+    kafka_thread.start()
+
+    for consumer_index in range(NUMBER_OF_CONSURRENT_CONSUMERS):
+        table_name = 'kafka_consumer{}'.format(consumer_index)
+        print("Setting up {}".format(table_name))
+
+        instance.query('''
+            DROP TABLE IF EXISTS test.{0};
+            DROP TABLE IF EXISTS test.{0}_mv;
+            CREATE TABLE test.{0} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                        kafka_topic_list = 'topic_with_multiple_partitions',
+                        kafka_group_name = 'rebalance_test_group',
+                        kafka_format = 'JSONEachRow',
+                        kafka_max_block_size = 33;
+            CREATE MATERIALIZED VIEW test.{0}_mv TO test.destination AS
+                SELECT
+                key,
+                value,
+                _topic,
+                _key,
+                _offset,
+                _partition,
+                _timestamp,
+                '{0}' as _consumed_by
+            FROM test.{0};
+        '''.format(table_name))
+        # kafka_cluster.open_bash_shell('instance')
+        while int(instance.query("SELECT count() FROM test.destination WHERE _consumed_by='{}'".format(table_name))) == 0:
+            print("Waiting for test.kafka_consumer{} to start consume".format(consumer_index))
+            time.sleep(1)
+
+    cancel.set()
+
+    # I leave last one working by intent (to finish consuming after all rebalances)
+    for consumer_index in range(NUMBER_OF_CONSURRENT_CONSUMERS-1):
+        print("Dropping test.kafka_consumer{}".format(consumer_index))
+        instance.query('DROP TABLE IF EXISTS test.kafka_consumer{}'.format(consumer_index))
+        while int(instance.query("SELECT count() FROM system.tables WHERE database='test' AND name='kafka_consumer{}'".format(consumer_index))) == 1:
+            time.sleep(1)
+
+    # print(instance.query('SELECT count(), uniqExact(key), max(key) + 1 FROM test.destination'))
+    # kafka_cluster.open_bash_shell('instance')
+
+    while 1:
+        messages_consumed = int(instance.query('SELECT uniqExact(key) FROM test.destination'))
+        if messages_consumed >= msg_index[0]:
+            break
+        time.sleep(1)
+        print("Waiting for finishing consuming (have {}, should be {})".format(messages_consumed,msg_index[0]))
+
+    print(instance.query('SELECT count(), uniqExact(key), max(key) + 1 FROM test.destination'))
+
+    # SELECT * FROM test.destination where key in (SELECT key FROM test.destination group by key having count() <> 1)
+    # select number + 1 as key from numbers(4141) left join test.destination using (key) where  test.destination.key = 0;
+    # SELECT * FROM test.destination WHERE key between 2360 and 2370 order by key;
+    # select _partition from test.destination group by _partition having count() <> max(_offset) + 1;
+    # select toUInt64(0) as _partition, number + 1 as _offset from numbers(400) left join test.destination using (_partition,_offset) where test.destination.key = 0 order by _offset;
+    # SELECT * FROM test.destination WHERE _partition = 0 and _offset between 220 and 240 order by _offset;
+
+    result = int(instance.query('SELECT count() == uniqExact(key) FROM test.destination'))
+
+    for consumer_index in range(NUMBER_OF_CONSURRENT_CONSUMERS):
+        print("kafka_consumer{}".format(consumer_index))
+        table_name = 'kafka_consumer{}'.format(consumer_index)
+        instance.query('''
+            DROP TABLE IF EXISTS test.{0};
+            DROP TABLE IF EXISTS test.{0}_mv;
+        '''.format(table_name))
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.destination;
+    ''')
+
+    kafka_thread.join()
+
+    assert result == 1, 'Messages from kafka get duplicated!'
+
+@pytest.mark.timeout(1200)
+def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster):
+    messages = [json.dumps({'key': j+1, 'value': 'x' * 300}) for j in range(22)]
+    kafka_produce('no_holes_when_write_suffix_failed', messages)
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+
+        CREATE TABLE test.kafka (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'no_holes_when_write_suffix_failed',
+                     kafka_group_name = 'no_holes_when_write_suffix_failed',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 20;
+
+        CREATE TABLE test.view (key UInt64, value String)
+            ENGINE = ReplicatedMergeTree('/clickhouse/kafkatest/tables/no_holes_when_write_suffix_failed', 'node1')
+            ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.kafka
+            WHERE NOT sleepEachRow(1);
+    ''')
+    # the tricky part here is that disconnect should happen after write prefix, but before write suffix
+    # so i use sleepEachRow
+    with PartitionManager() as pm:
+        time.sleep(12)
+        pm.drop_instance_zk_connections(instance)
+        time.sleep(20)
+        pm.heal_all
+
+    # connection restored and it will take a while until next block will be flushed
+    # it takes years on CI :\
+    time.sleep(90)
+
+    # as it's a bit tricky to hit the proper moment - let's check in logs if we did it correctly
+    assert instance.contains_in_log("ZooKeeper session has been expired.: while write prefix to view")
+
+    result = instance.query('SELECT count(), uniqExact(key), max(key) FROM test.view')
+    print(result)
+
+    # kafka_cluster.open_bash_shell('instance')
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    assert TSV(result) == TSV('22\t22\t22')
+
+
+@pytest.mark.timeout(120)
+def test_exception_from_destructor(kafka_cluster):
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'xyz',
+                     kafka_group_name = '',
+                     kafka_format = 'JSONEachRow';
+    ''')
+    instance.query_and_get_error('''
+        SELECT * FROM test.kafka;
+    ''')
+    instance.query('''
+        DROP TABLE test.kafka;
+    ''')
+
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'xyz',
+                     kafka_group_name = '',
+                     kafka_format = 'JSONEachRow';
+    ''')
+    instance.query('''
+        DROP TABLE test.kafka;
+    ''')
+
+    kafka_cluster.open_bash_shell('instance')
+    assert TSV(instance.query('SELECT 1')) == TSV('1')
 
 
 if __name__ == '__main__':

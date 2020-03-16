@@ -60,7 +60,6 @@ public:
     ~MergeTreeConditionFullText() override = default;
 
     bool alwaysUnknownOrTrue() const override;
-
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
 private:
     struct KeyTuplePositionMapping
@@ -109,7 +108,6 @@ private:
         std::vector<size_t> set_key_position;
     };
 
-    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)>;
     using RPN = std::vector<RPNElement>;
 
     bool atomFromAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
@@ -118,8 +116,6 @@ private:
     bool tryPrepareSetBloomFilter(const ASTs & args, RPNElement & out);
 
     static bool createFunctionEqualsCondition(RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx);
-
-    static const AtomMap atom_map;
 
     const MergeTreeIndexFullText & index;
     RPN rpn;

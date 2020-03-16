@@ -24,4 +24,4 @@ MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 
 `MySQL` 引擎不支持 [Nullable](../../data_types/nullable.md) 数据类型，因此，当从MySQL表中读取数据时，`NULL` 将转换为指定列类型的默认值（通常为0或空字符串）。
 
-[Original article](https://clickhouse.yandex/docs/zh/operations/table_engines/mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/zh/operations/table_engines/mysql/) <!--hide-->

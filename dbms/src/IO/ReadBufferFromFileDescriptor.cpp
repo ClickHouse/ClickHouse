@@ -99,7 +99,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 
 
 /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
-off_t ReadBufferFromFileDescriptor::doSeek(off_t offset, int whence)
+off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 {
     off_t new_pos;
     if (whence == SEEK_SET)

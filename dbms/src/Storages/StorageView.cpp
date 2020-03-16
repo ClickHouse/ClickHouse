@@ -16,6 +16,10 @@
 
 #include <Common/typeid_cast.h>
 
+#include <Processors/Pipe.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+
 
 namespace DB
 {
@@ -43,7 +47,7 @@ StorageView::StorageView(
 }
 
 
-BlockInputStreams StorageView::read(
+Pipes StorageView::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -51,47 +55,66 @@ BlockInputStreams StorageView::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    BlockInputStreams res;
+    Pipes pipes;
 
     ASTPtr current_inner_query = inner_query;
 
     if (context.getSettings().enable_optimize_predicate_expression)
-    {
-        auto new_inner_query = inner_query->clone();
-        auto new_outer_query = query_info.query->clone();
-        auto * new_outer_select = new_outer_query->as<ASTSelectQuery>();
-
-        replaceTableNameWithSubquery(new_outer_select, new_inner_query);
-
-        /// TODO: remove getTableExpressions and getTablesWithColumns
-        {
-            const auto & table_expressions = getTableExpressions(*new_outer_select);
-            const auto & tables_with_columns = getDatabaseAndTablesWithColumnNames(table_expressions, context);
-
-            auto & settings = context.getSettingsRef();
-            if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
-            {
-                for (auto & pr : tables_with_columns)
-                    if (pr.table.table.empty() && pr.table.alias.empty())
-                        throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
-                            ErrorCodes::ALIAS_REQUIRED);
-            }
-
-            if (PredicateExpressionsOptimizer(context, tables_with_columns, context.getSettings()).optimize(*new_outer_select))
-                current_inner_query = new_inner_query;
-        }
-    }
+        current_inner_query = getRuntimeViewQuery(*query_info.query->as<const ASTSelectQuery>(), context);
 
     QueryPipeline pipeline;
+    InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
     /// FIXME res may implicitly use some objects owned be pipeline, but them will be destructed after return
-    res = InterpreterSelectWithUnionQuery(current_inner_query, context, {}, column_names).executeWithMultipleStreams(pipeline);
+    if (query_info.force_tree_shaped_pipeline)
+    {
+        BlockInputStreams streams = interpreter.executeWithMultipleStreams(pipeline);
+        for (auto & stream : streams)
+            pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
+    }
+    else
+        /// TODO: support multiple streams here. Need more general interface than pipes.
+        pipes.emplace_back(interpreter.executeWithProcessors().getPipe());
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    for (auto & stream : res)
-        stream = std::make_shared<MaterializingBlockInputStream>(stream);
+    for (auto & pipe : pipes)
+        pipe.addSimpleTransform(std::make_shared<MaterializingTransform>(pipe.getHeader()));
 
-    return res;
+    return pipes;
+}
+
+ASTPtr StorageView::getRuntimeViewQuery(const ASTSelectQuery & outer_query, const Context & context)
+{
+    auto temp_outer_query = outer_query.clone();
+    auto * new_outer_select = temp_outer_query->as<ASTSelectQuery>();
+    return getRuntimeViewQuery(new_outer_select, context, false);
+}
+
+
+ASTPtr StorageView::getRuntimeViewQuery(ASTSelectQuery * outer_query, const Context & context, bool normalize)
+{
+    auto runtime_view_query = inner_query->clone();
+
+    /// TODO: remove getTableExpressions and getTablesWithColumns
+    {
+        const auto & table_expressions = getTableExpressions(*outer_query);
+        const auto & tables_with_columns = getDatabaseAndTablesWithColumnNames(table_expressions, context);
+
+        replaceTableNameWithSubquery(outer_query, runtime_view_query);
+        if (context.getSettingsRef().joined_subquery_requires_alias && tables_with_columns.size() > 1)
+        {
+            for (auto & pr : tables_with_columns)
+                if (pr.table.table.empty() && pr.table.alias.empty())
+                    throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
+                                    ErrorCodes::ALIAS_REQUIRED);
+        }
+
+        if (PredicateExpressionsOptimizer(context, tables_with_columns, context.getSettings()).optimize(*outer_query) && normalize)
+            InterpreterSelectWithUnionQuery(
+                runtime_view_query, context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify(), {});
+    }
+
+    return runtime_view_query;
 }
 
 void StorageView::replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery)
@@ -110,6 +133,7 @@ void StorageView::replaceTableNameWithSubquery(ASTSelectQuery * select_query, AS
     table_expression->database_and_table_name = {};
     table_expression->subquery = std::make_shared<ASTSubquery>();
     table_expression->subquery->children.push_back(subquery);
+    table_expression->children.push_back(table_expression->subquery);
     if (!alias.empty())
         table_expression->subquery->setAlias(alias);
 }

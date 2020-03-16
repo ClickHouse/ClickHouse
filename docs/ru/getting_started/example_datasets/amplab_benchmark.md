@@ -120,4 +120,4 @@ ORDER BY totalRevenue DESC
 LIMIT 1
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/getting_started/example_datasets/amplab_benchmark/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/example_datasets/amplab_benchmark/) <!--hide-->

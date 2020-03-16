@@ -12,6 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
@@ -35,7 +36,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() < 1)
+        if (arguments.empty())
             throw Exception("Function " + getName() + " needs at least one argument; passed " + toString(arguments.size()) + "."
                 , ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 

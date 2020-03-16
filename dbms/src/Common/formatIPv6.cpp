@@ -78,7 +78,7 @@ static void printInteger(char *& out, T value)
     }
 }
 
-void formatIPv6(const unsigned char * src, char *& dst, UInt8 zeroed_tail_bytes_count)
+void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_bytes_count)
 {
     struct { int base, len; } best{-1, 0}, cur{-1, 0};
     std::array<UInt16, IPV6_BINARY_LENGTH / sizeof(UInt16)> words{};
@@ -139,12 +139,12 @@ void formatIPv6(const unsigned char * src, char *& dst, UInt8 zeroed_tail_bytes_
         /// Is this address an encapsulated IPv4?
         if (i == 6 && best.base == 0 && (best.len == 6 || (best.len == 5 && words[5] == 0xffffu)))
         {
-            UInt8 ipv4_buffer[IPV4_BINARY_LENGTH] = {0};
+            uint8_t ipv4_buffer[IPV4_BINARY_LENGTH] = {0};
             memcpy(ipv4_buffer, src + 12, IPV4_BINARY_LENGTH);
             // Due to historical reasons formatIPv4() takes ipv4 in BE format, but inside ipv6 we store it in LE-format.
             std::reverse(std::begin(ipv4_buffer), std::end(ipv4_buffer));
 
-            formatIPv4(ipv4_buffer, dst, std::min(zeroed_tail_bytes_count, static_cast<UInt8>(IPV4_BINARY_LENGTH)), "0");
+            formatIPv4(ipv4_buffer, dst, std::min(zeroed_tail_bytes_count, static_cast<uint8_t>(IPV4_BINARY_LENGTH)), "0");
             // formatIPv4 has already added a null-terminator for us.
             return;
         }

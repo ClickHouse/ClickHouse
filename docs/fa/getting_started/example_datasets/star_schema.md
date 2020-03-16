@@ -97,4 +97,4 @@ cat customer.tbl | sed 's/$/2000-01-01/' | clickhouse-client --query "INSERT INT
 cat lineorder.tbl | clickhouse-client --query "INSERT INTO lineorder FORMAT CSV"
 ```
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/getting_started/example_datasets/star_schema/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/getting_started/example_datasets/star_schema/) <!--hide-->

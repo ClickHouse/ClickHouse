@@ -236,4 +236,4 @@ SELECT
 └───────────────────────────────────┴──────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/ip_address_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/ip_address_functions/) <!--hide-->

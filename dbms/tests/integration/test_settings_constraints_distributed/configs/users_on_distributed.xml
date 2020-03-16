@@ -1,34 +1,36 @@
 <yandex>
     <profiles>
         <default>
-            <max_memory_usage>1000000</max_memory_usage>
-            <use_uncompressed_cache>0</use_uncompressed_cache>
-            <load_balancing>random</load_balancing>
         </default>
-        <remote_profile>
-            <max_memory_usage>2000000000</max_memory_usage>
+        <normal>
+            <max_memory_usage>80000000</max_memory_usage>
             <use_uncompressed_cache>0</use_uncompressed_cache>
             <load_balancing>random</load_balancing>
-        </remote_profile>
+        </normal>
+        <wasteful>
+            <max_memory_usage>2000000000</max_memory_usage>
+        </wasteful>
+        <readonly>
+            <readonly>1</readonly>
+        </readonly>
     </profiles>
+   
     <users>
         <default>
-            <password></password>
             <profile>default</profile>
-            <quota>default</quota>
-        </default>
-        <remote>
             <password></password>
-            <profile>remote_profile</profile>
-            <quota>default</quota>
-            <networks incl="networks" replace="replace">
-                <ip>::/0</ip>
-            </networks>
-        </remote>
-    </users>
-
-    <quotas>
-        <default>
         </default>
-    </quotas>
+        <normal>
+            <profile>normal</profile>
+            <password></password>
+        </normal>
+        <wasteful>
+            <profile>wasteful</profile>
+            <password></password>
+        </wasteful>
+        <readonly>
+            <profile>readonly</profile>
+            <password></password>
+        </readonly>
+    </users>
 </yandex>

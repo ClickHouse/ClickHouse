@@ -20,6 +20,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
@@ -205,7 +207,7 @@ static ReturnType safeDeserialize(
 void DataTypeNullable::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
     safeDeserialize(column, *nested_data_type,
-        [&istr] { bool is_null = 0; readBinary(is_null, istr); return is_null; },
+        [&istr] { bool is_null = false; readBinary(is_null, istr); return is_null; },
         [this, &istr] (IColumn & nested) { nested_data_type->deserializeBinary(nested, istr); });
 }
 
@@ -505,7 +507,7 @@ bool DataTypeNullable::equals(const IDataType & rhs) const
 }
 
 
-static DataTypePtr create(const String & /*type_name*/, const ASTPtr & arguments)
+static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
         throw Exception("Nullable data type family must have exactly one argument - nested type", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);

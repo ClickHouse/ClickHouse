@@ -48,9 +48,9 @@ See [File](../operations/table_engines/file.md).
 ### Using Command-Line Redirection
 
 ```sql
-$ clickhouse-client --query "SELECT * from table" > result.txt
+$ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
 ```
 
 See [clickhouse-client](../interfaces/cli.md).
 
-[Original article](https://clickhouse.yandex/docs/en/faq/general/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/faq/general/) <!--hide-->

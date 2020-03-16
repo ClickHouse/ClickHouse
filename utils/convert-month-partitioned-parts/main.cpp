@@ -1,5 +1,5 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <DataTypes/DataTypeDate.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -14,6 +14,7 @@
 #include <Poco/File.h>
 
 #include <iostream>
+#include <Disks/DiskLocal.h>
 
 namespace DB
 {
@@ -27,6 +28,7 @@ namespace ErrorCodes
 
 void run(String part_path, String date_column, String dest_path)
 {
+    std::shared_ptr<IDisk> disk = std::make_shared<DiskLocal>("local", "/", 0);
     auto old_part_path = Poco::Path::forDirectory(part_path);
     String old_part_name = old_part_path.directory(old_part_path.depth() - 1);
     String old_part_path_str = old_part_path.toString();
@@ -80,15 +82,15 @@ void run(String part_path, String date_column, String dest_path)
     checksums.files["count.txt"].file_size = count_out_hashing.count();
     checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
 
-    MergeTreeDataPart::MinMaxIndex minmax_idx(min_date, max_date);
+    IMergeTreeDataPart::MinMaxIndex minmax_idx(min_date, max_date);
     Names minmax_idx_columns = {date_column};
     DataTypes minmax_idx_column_types = {std::make_shared<DataTypeDate>()};
-    minmax_idx.store(minmax_idx_columns, minmax_idx_column_types, new_tmp_part_path_str, checksums);
+    minmax_idx.store(minmax_idx_columns, minmax_idx_column_types, disk, new_tmp_part_path_str, checksums);
 
     Block partition_key_sample{{nullptr, std::make_shared<DataTypeUInt32>(), makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column))->getColumnName()}};
 
     MergeTreePartition partition(yyyymm);
-    partition.store(partition_key_sample, new_tmp_part_path_str, checksums);
+    partition.store(partition_key_sample, disk, new_tmp_part_path_str, checksums);
     String partition_id = partition.getID(partition_key_sample);
 
     Poco::File(new_tmp_part_path_str + "checksums.txt").setWriteable();

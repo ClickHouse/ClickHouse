@@ -5,6 +5,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Interpreters/StorageID.h>
 
 
 namespace DB
@@ -12,6 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -326,6 +328,12 @@ static String getTableExpressionAlias(const ASTTableExpression * table_expressio
 
 void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const String & table_name)
 {
+    assert(database_name != "_temporary_and_external_tables");
+    replaceDatabaseAndTable(StorageID(database_name, table_name));
+}
+
+void ASTSelectQuery::replaceDatabaseAndTable(const StorageID & table_id)
+{
     ASTTableExpression * table_expression = getFirstTableExpression(*this);
 
     if (!table_expression)
@@ -340,7 +348,7 @@ void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const
     }
 
     String table_alias = getTableExpressionAlias(table_expression);
-    table_expression->database_and_table_name = createTableIdentifier(database_name, table_name);
+    table_expression->database_and_table_name = createTableIdentifier(table_id);
 
     if (!table_alias.empty())
         table_expression->database_and_table_name->setAlias(table_alias);

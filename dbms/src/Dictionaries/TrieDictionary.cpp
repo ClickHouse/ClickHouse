@@ -27,8 +27,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
     extern const int NOT_IMPLEMENTED;
@@ -526,7 +526,7 @@ void TrieDictionary::getItemsImpl(
             if (addr.size != 16)
                 throw Exception("Expected key to be FixedString(16)", ErrorCodes::LOGICAL_ERROR);
 
-            uintptr_t slot = btrie_find_a6(trie, reinterpret_cast<const UInt8 *>(addr.data));
+            uintptr_t slot = btrie_find_a6(trie, reinterpret_cast<const uint8_t *>(addr.data));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic warning "-Wold-style-cast"
             set_value(i, slot != BTRIE_NULL ? static_cast<OutputType>(vec[slot]) : get_default(i));
@@ -660,7 +660,7 @@ void TrieDictionary::has(const Attribute &, const Columns & key_columns, PaddedP
             if (unlikely(addr.size != 16))
                 throw Exception("Expected key to be FixedString(16)", ErrorCodes::LOGICAL_ERROR);
 
-            uintptr_t slot = btrie_find_a6(trie, reinterpret_cast<const UInt8 *>(addr.data));
+            uintptr_t slot = btrie_find_a6(trie, reinterpret_cast<const uint8_t *>(addr.data));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic warning "-Wold-style-cast"
             out[i] = (slot != BTRIE_NULL);
@@ -672,13 +672,13 @@ void TrieDictionary::has(const Attribute &, const Columns & key_columns, PaddedP
 }
 
 template <typename Getter, typename KeyType>
-void TrieDictionary::trieTraverse(const btrie_t * tree, Getter && getter) const
+static void trieTraverse(const btrie_t * trie, Getter && getter)
 {
     KeyType key = 0;
     const KeyType high_bit = ~((~key) >> 1);
 
     btrie_node_t * node;
-    node = tree->root;
+    node = trie->root;
 
     std::stack<btrie_node_t *> stack;
     while (node)

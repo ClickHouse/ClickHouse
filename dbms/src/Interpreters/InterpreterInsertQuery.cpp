@@ -14,6 +14,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Access/AccessFlags.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -28,7 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int READONLY;
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
 }
@@ -46,7 +46,7 @@ InterpreterInsertQuery::InterpreterInsertQuery(
 }
 
 
-StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
+StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 {
     if (query.table_function)
     {
@@ -56,8 +56,8 @@ StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
         return table_function_ptr->execute(query.table_function, context, table_function_ptr->getName());
     }
 
-    /// Into what table to write.
-    return context.getTable(query.database, query.table);
+    query.table_id = context.resolveStorageID(query.table_id);
+    return DatabaseCatalog::instance().getTable(query.table_id);
 }
 
 Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table)
@@ -81,7 +81,7 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
 
         /// The table does not have a column with that name
         if (!table_sample.has(current_name))
-            throw Exception("No such column " + current_name + " in table " + query.table, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+            throw Exception("No such column " + current_name + " in table " + query.table_id.getNameForLogs(), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         if (!allow_materialized && !table_sample_non_materialized.has(current_name))
             throw Exception("Cannot insert column " + current_name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
@@ -97,14 +97,16 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
 BlockIO InterpreterInsertQuery::execute()
 {
     const Settings & settings = context.getSettingsRef();
-
-    const auto & query = query_ptr->as<ASTInsertQuery &>();
-    checkAccess(query);
+    auto & query = query_ptr->as<ASTInsertQuery &>();
 
     BlockIO res;
-    StoragePtr table = getTable(query);
 
+    StoragePtr table = getTable(query);
     auto table_lock = table->lockStructureForShare(true, context.getInitialQueryId());
+
+    auto query_sample_block = getSampleBlock(query, table);
+    if (!query.table_function)
+        context.checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
     BlockInputStreams in_streams;
     size_t out_streams_size = 1;
@@ -113,7 +115,7 @@ BlockIO InterpreterInsertQuery::execute()
         /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
         InterpreterSelectWithUnionQuery interpreter_select{query.select, context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
 
-        if (table->supportsParallelInsert() && settings.max_insert_threads > 0)
+        if (table->supportsParallelInsert() && settings.max_insert_threads > 1)
         {
             in_streams = interpreter_select.executeWithMultipleStreams(res.pipeline);
             out_streams_size = std::min(size_t(settings.max_insert_threads), in_streams.size());
@@ -128,7 +130,6 @@ BlockIO InterpreterInsertQuery::execute()
     }
 
     BlockOutputStreams out_streams;
-    auto query_sample_block = getSampleBlock(query, table);
 
     for (size_t i = 0; i < out_streams_size; i++)
     {
@@ -156,7 +157,7 @@ BlockIO InterpreterInsertQuery::execute()
             out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
 
         if (const auto & constraints = table->getConstraints(); !constraints.empty())
-            out = std::make_shared<CheckConstraintsBlockOutputStream>(query.table,
+            out = std::make_shared<CheckConstraintsBlockOutputStream>(query.table_id,
              out, query_sample_block, table->getConstraints(), context);
 
         auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
@@ -204,23 +205,9 @@ BlockIO InterpreterInsertQuery::execute()
 }
 
 
-void InterpreterInsertQuery::checkAccess(const ASTInsertQuery & query)
+StorageID InterpreterInsertQuery::getDatabaseTable() const
 {
-    const Settings & settings = context.getSettingsRef();
-    auto readonly = settings.readonly;
-
-    if (!readonly || (query.database.empty() && context.isExternalTableExist(query.table) && readonly >= 2))
-    {
-        return;
-    }
-
-    throw Exception("Cannot insert into table in readonly mode", ErrorCodes::READONLY);
-}
-
-std::pair<String, String> InterpreterInsertQuery::getDatabaseTable() const
-{
-    const auto & query = query_ptr->as<ASTInsertQuery &>();
-    return {query.database, query.table};
+    return query_ptr->as<ASTInsertQuery &>().table_id;
 }
 
 }

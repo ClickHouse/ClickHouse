@@ -144,7 +144,7 @@ void loadMetadataSystem(Context & context)
         Poco::File(global_path + "metadata/" SYSTEM_DATABASE).createDirectories();
 
         auto system_database = std::make_shared<DatabaseOrdinary>(SYSTEM_DATABASE, global_path + "metadata/" SYSTEM_DATABASE "/", context);
-        context.addDatabase(SYSTEM_DATABASE, system_database);
+        DatabaseCatalog::instance().attachDatabase(SYSTEM_DATABASE, system_database);
     }
 
 }

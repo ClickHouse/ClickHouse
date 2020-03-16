@@ -1,9 +1,9 @@
 <test>
     <preconditions>
         <table_exists>hits_10m_single</table_exists>
+        <table_exists>hits_100m_single</table_exists>
     </preconditions>
 
-    <type>loop</type>
 
     <stop_conditions>
         <all_of>
@@ -41,10 +41,10 @@
        </substitution>
     </substitutions>
 
-    <query><![CDATA[SELECT {str1} FROM hits_10m_single ORDER BY {str1} LIMIT 10]]></query>
+    <query><![CDATA[SELECT {str1} FROM hits_100m_single ORDER BY {str1} LIMIT 10]]></query>
     <query><![CDATA[SELECT {str1} FROM hits_10m_single ORDER BY {str1} LIMIT 9000000, 10]]></query>
 
-    <query><![CDATA[SELECT {str1}, {str2} FROM hits_10m_single ORDER BY {str1}, {str2} LIMIT 10]]></query>
+    <query><![CDATA[SELECT {str1}, {str2} FROM hits_100m_single ORDER BY {str1}, {str2} LIMIT 10]]></query>
     <query><![CDATA[SELECT {str1}, {str2} FROM hits_10m_single ORDER BY {str1}, {str2} LIMIT 9000000, 10]]></query>
 
 </test>

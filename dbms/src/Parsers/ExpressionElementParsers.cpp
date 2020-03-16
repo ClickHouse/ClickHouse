@@ -33,7 +33,7 @@
 #include <boost/algorithm/string.hpp>
 #include "ASTColumnsMatcher.h"
 
-#include <Storages/StorageID.h>
+#include <Interpreters/StorageID.h>
 
 namespace DB
 {

@@ -2,13 +2,13 @@
 
 #include <Common/SimpleIncrement.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/AlterAnalysisResult.h>
 #include <Storages/MergeTree/PartDestinationType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
@@ -16,7 +16,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Interpreters/PartLog.h>
@@ -35,16 +35,12 @@ class MergeListEntry;
 class AlterCommands;
 class MergeTreePartsMover;
 
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int INVALID_PARTITION_NAME;
-    extern const int NO_SUCH_DATA_PART;
-    extern const int DUPLICATE_DATA_PART;
-    extern const int DIRECTORY_ALREADY_EXISTS;
-    extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int TABLE_DIFFERS_TOO_MUCH;
 }
 
 
@@ -79,7 +75,7 @@ namespace ErrorCodes
 /// The same files as for month-partitioned tables, plus
 /// count.txt - contains total number of rows in this part.
 /// partition.dat - contains the value of the partitioning expression.
-/// minmax_[Column].idx - MinMax indexes (see MergeTreeDataPart::MinMaxIndex class) for the columns required by the partitioning expression.
+/// minmax_[Column].idx - MinMax indexes (see IMergeTreeDataPart::MinMaxIndex class) for the columns required by the partitioning expression.
 ///
 /// Several modes are implemented. Modes determine additional actions during merge:
 /// - Ordinary - don't do anything special
@@ -102,14 +98,14 @@ class MergeTreeData : public IStorage
 public:
     /// Function to call if the part is suspected to contain corrupt data.
     using BrokenPartCallback = std::function<void (const String &)>;
-    using DataPart = MergeTreeDataPart;
+    using DataPart = IMergeTreeDataPart;
 
     using MutableDataPartPtr = std::shared_ptr<DataPart>;
     using MutableDataPartsVector = std::vector<MutableDataPartPtr>;
     /// After the DataPart is added to the working set, it cannot be changed.
     using DataPartPtr = std::shared_ptr<const DataPart>;
 
-    using DataPartState = MergeTreeDataPart::State;
+    using DataPartState = IMergeTreeDataPart::State;
     using DataPartStates = std::initializer_list<DataPartState>;
     using DataPartStateVector = std::vector<DataPartState>;
 
@@ -178,6 +174,20 @@ public:
 
     using DataPartsLock = std::unique_lock<std::mutex>;
     DataPartsLock lockParts() const { return DataPartsLock(data_parts_mutex); }
+
+    MergeTreeDataPartType choosePartType(size_t bytes_uncompressed, size_t rows_count) const;
+
+    /// After this method setColumns must be called
+    MutableDataPartPtr createPart(const String & name,
+        MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
+        const DiskPtr & disk, const String & relative_path) const;
+
+    /// After this methods 'loadColumnsChecksumsIndexes' must be called
+    MutableDataPartPtr createPart(const String & name,
+        const DiskPtr & disk, const String & relative_path) const;
+
+    MutableDataPartPtr createPart(const String & name, const MergeTreePartInfo & part_info,
+        const DiskPtr & disk, const String & relative_path) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreCommitted parts (the parts are ready, but not yet in the active set).
@@ -355,7 +365,9 @@ public:
     Names getColumnsRequiredForFinal() const override { return sorting_key_expr->getRequiredColumns(); }
     Names getSortingKeyColumns() const override { return sorting_key_columns; }
 
-    StoragePolicyPtr getStoragePolicy() const override { return storage_policy; }
+    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override;
+
+    StoragePolicyPtr getStoragePolicy() const override;
 
     bool supportsPrewhere() const override { return true; }
     bool supportsSampling() const override { return sample_by_ast != nullptr; }
@@ -441,6 +453,11 @@ public:
     /// Returns the part with the given name and state or nullptr if no such part.
     DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
     DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states);
+
+    std::vector<MergeTreeIndexPtr> getSkipIndices() const
+    {
+        return std::vector<MergeTreeIndexPtr>(std::begin(skip_indices), std::end(skip_indices));
+    }
 
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
@@ -530,7 +547,7 @@ public:
     /// Moves the entire data directory.
     /// Flushes the uncompressed blocks cache and the marks cache.
     /// Must be called with locked lockStructureForAlter().
-    void rename(const String & new_path_to_table_data, const String & new_database_name,
+    void rename(const String & new_table_path, const String & new_database_name,
         const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     /// Check if the ALTER can be performed:
@@ -552,7 +569,7 @@ public:
 
     /// Change MergeTreeSettings
     void changeSettings(
-           const ASTPtr & new_changes,
+           const ASTPtr & new_settings,
            TableStructureWriteLockHolder & table_lock_holder);
 
     /// Remove columns, that have been marked as empty after zeroing values with expired ttl
@@ -579,7 +596,8 @@ public:
 
     bool hasAnyColumnTTL() const { return !column_ttl_entries_by_name.empty(); }
     bool hasAnyMoveTTL() const { return !move_ttl_entries.empty(); }
-    bool hasRowsTTL() const { return !rows_ttl_entry.isEmpty(); }
+    bool hasRowsTTL() const override { return !rows_ttl_entry.isEmpty(); }
+    bool hasAnyTTL() const override { return hasRowsTTL() || hasAnyMoveTTL() || hasAnyColumnTTL(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path);
@@ -620,7 +638,7 @@ public:
     }
 
     /// For ATTACH/DETACH/DROP PARTITION.
-    String getPartitionIDFromQuery(const ASTPtr & partition, const Context & context);
+    String getPartitionIDFromQuery(const ASTPtr & ast, const Context & context);
 
     /// Extracts MergeTreeData of other *MergeTree* storage
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM
@@ -665,6 +683,7 @@ public:
     using PathWithDisk = std::pair<String, DiskPtr>;
     using PathsWithDisks = std::vector<PathWithDisk>;
     PathsWithDisks getDataPathsWithDisks() const;
+    PathsWithDisks getRelativeDataPathsWithDisks() const;
 
     /// Reserves space at least 1MB.
     ReservationPtr reserveSpace(UInt64 expected_size) const;
@@ -675,16 +694,16 @@ public:
 
     /// Reserves space at least 1MB preferring best destination according to `ttl_infos`.
     ReservationPtr reserveSpacePreferringTTLRules(UInt64 expected_size,
-                                                                const MergeTreeDataPart::TTLInfos & ttl_infos,
+                                                                const IMergeTreeDataPart::TTLInfos & ttl_infos,
                                                                 time_t time_of_move,
                                                                 size_t min_volume_index = 0) const;
     ReservationPtr tryReserveSpacePreferringTTLRules(UInt64 expected_size,
-                                                                const MergeTreeDataPart::TTLInfos & ttl_infos,
+                                                                const IMergeTreeDataPart::TTLInfos & ttl_infos,
                                                                 time_t time_of_move,
                                                                 size_t min_volume_index = 0) const;
     /// Choose disk with max available free space
     /// Reserves 0 bytes
-    ReservationPtr makeEmptyReservationOnLargestDisk() { return storage_policy->makeEmptyReservationOnLargestDisk(); }
+    ReservationPtr makeEmptyReservationOnLargestDisk() { return getStoragePolicy()->makeEmptyReservationOnLargestDisk(); }
 
     MergeTreeDataFormatVersion format_version;
 
@@ -733,15 +752,15 @@ public:
         ASTPtr entry_ast;
 
         /// Returns destination disk or volume for this rule.
-        SpacePtr getDestination(const StoragePolicyPtr & policy) const;
+        SpacePtr getDestination(StoragePolicyPtr policy) const;
 
         /// Checks if given part already belongs destination disk or volume for this rule.
-        bool isPartInDestination(const StoragePolicyPtr & policy, const MergeTreeDataPart & part) const;
+        bool isPartInDestination(StoragePolicyPtr policy, const IMergeTreeDataPart & part) const;
 
         bool isEmpty() const { return expression == nullptr; }
     };
 
-    std::optional<TTLEntry> selectTTLEntryForTTLInfos(const MergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
+    std::optional<TTLEntry> selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
 
     using TTLEntriesByName = std::unordered_map<String, TTLEntry>;
     TTLEntriesByName column_ttl_entries_by_name;
@@ -778,7 +797,7 @@ public:
 
 protected:
 
-    friend struct MergeTreeDataPart;
+    friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;
     friend class ReplicatedMergeTreeAlterThread;
     friend struct ReplicatedMergeTreeTableMetadata;
@@ -808,8 +827,6 @@ protected:
     /// Storage settings.
     /// Use get and set to receive readonly versions.
     MultiVersion<MergeTreeSettings> storage_settings;
-
-    StoragePolicyPtr storage_policy;
 
     /// Work with data parts
 
@@ -907,18 +924,15 @@ protected:
     void setTTLExpressions(const ColumnsDescription::ColumnTTLs & new_column_ttls,
                            const ASTPtr & new_ttl_table_ast, bool only_check = false);
 
-    void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);
+    AlterAnalysisResult analyzeAlterConversions(
+        const NamesAndTypesList & old_columns,
+        const NamesAndTypesList & new_columns,
+        const IndicesASTs & old_indices,
+        const IndicesASTs & new_indices) const;
 
-    /// Expression for column type conversion.
-    /// If no conversions are needed, out_expression=nullptr.
-    /// out_rename_map maps column files for the out_expression onto new table files.
-    /// out_force_update_metadata denotes if metadata must be changed even if out_rename_map is empty (used
-    /// for transformation-free changing of Enum values list).
-    /// Files to be deleted are mapped to an empty string in out_rename_map.
-    /// If part == nullptr, just checks that all type conversions are possible.
-    void createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-                                 const IndicesASTs & old_indices, const IndicesASTs & new_indices,
-                                 ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const;
+    void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy);
+
+    void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);
 
     /// Calculates column sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
     void calculateColumnSizesImpl();
@@ -944,7 +958,7 @@ protected:
     using MatcherFn = std::function<bool(const DataPartPtr &)>;
     void freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context);
 
-    bool canReplacePartition(const DataPartPtr & data_part) const;
+    bool canReplacePartition(const DataPartPtr & src_part) const;
 
     void writePartLog(
         PartLogElement::Type type,
@@ -983,13 +997,15 @@ private:
     };
 
     /// Move selected parts to corresponding disks
-    bool moveParts(CurrentlyMovingPartsTagger && parts_to_move);
+    bool moveParts(CurrentlyMovingPartsTagger && moving_tagger);
 
     /// Select parts for move and disks for them. Used in background moving processes.
     CurrentlyMovingPartsTagger selectPartsForMove();
 
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
     CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
+
+    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason);
 };
 
 }

@@ -1,5 +1,4 @@
 <test>
-    <type>loop</type>
 
     <create_query>CREATE TABLE t (x UInt64, d32 Decimal32(3), d64 Decimal64(4), d128 Decimal128(5)) ENGINE = Memory</create_query>
     <fill_query>INSERT INTO t SELECT number AS x, x AS d32, x AS d64, x d128 FROM numbers(1000000)</fill_query>

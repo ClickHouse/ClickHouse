@@ -100,7 +100,7 @@ $ clickhouse-client --query "INSERT INTO lineorder FORMAT CSV" < lineorder.tbl
 Конвертация схемы-звезда в денормализованную плоскую схему:
 
 ```sql
-SET max_memory_usage = 20000000000, allow_experimental_multiple_joins_emulation = 1;
+SET max_memory_usage = 20000000000;
 CREATE TABLE lineorder_flat
 ENGINE = MergeTree
 PARTITION BY toYear(LO_ORDERDATE)
@@ -337,4 +337,4 @@ ORDER BY
     P_BRAND ASC;
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/getting_started/example_datasets/star_schema/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets/star_schema/) <!--hide-->

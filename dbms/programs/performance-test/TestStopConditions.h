@@ -32,8 +32,6 @@ public:
     DEFINE_REPORT_FUNC(reportBytesReadUncompressed, bytes_read_uncompressed)
     DEFINE_REPORT_FUNC(reportIterations, iterations)
     DEFINE_REPORT_FUNC(reportMinTimeNotChangingFor, min_time_not_changing_for_ms)
-    DEFINE_REPORT_FUNC(reportMaxSpeedNotChangingFor, max_speed_not_changing_for_ms)
-    DEFINE_REPORT_FUNC(reportAverageSpeedNotChangingFor, average_speed_not_changing_for_ms)
 
 #undef REPORT
 

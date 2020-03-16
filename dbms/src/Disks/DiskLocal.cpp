@@ -5,9 +5,13 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
 
+#include <IO/createReadBufferFromFileBase.h>
+#include <IO/createWriteBufferFromFileBase.h>
+
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
@@ -46,8 +50,10 @@ private:
 class DiskLocalDirectoryIterator : public IDiskDirectoryIterator
 {
 public:
-    explicit DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_) :
-        dir_path(dir_path_), iter(disk_path_ + dir_path_) {}
+    explicit DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_)
+        : dir_path(dir_path_), iter(disk_path_ + dir_path_)
+    {
+    }
 
     void next() override { ++iter; }
 
@@ -60,6 +66,8 @@ public:
         else
             return dir_path + iter.name();
     }
+
+    String name() const override { return iter.name(); }
 
 private:
     String dir_path;
@@ -101,7 +109,11 @@ bool DiskLocal::tryReserve(UInt64 bytes)
 
 UInt64 DiskLocal::getTotalSpace() const
 {
-    auto fs = getStatVFS(disk_path);
+    struct statvfs fs;
+    if (name == "default") /// for default disk we get space from path/data/
+        fs = getStatVFS(disk_path + "data/");
+    else
+        fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_blocks * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
@@ -112,7 +124,11 @@ UInt64 DiskLocal::getAvailableSpace() const
 {
     /// we use f_bavail, because part of b_free space is
     /// available for superuser only and for system purposes
-    auto fs = getStatVFS(disk_path);
+    struct statvfs fs;
+    if (name == "default") /// for default disk we get space from path/data/
+        fs = getStatVFS(disk_path + "data/");
+    else
+        fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_bavail * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
@@ -200,15 +216,17 @@ void DiskLocal::copyFile(const String & from_path, const String & to_path)
     Poco::File(disk_path + from_path).copyTo(disk_path + to_path);
 }
 
-std::unique_ptr<ReadBuffer> DiskLocal::readFile(const String & path, size_t buf_size) const
+std::unique_ptr<ReadBufferFromFileBase>
+DiskLocal::readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const
 {
-    return std::make_unique<ReadBufferFromFile>(disk_path + path, buf_size);
+    return createReadBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, mmap_threshold, buf_size);
 }
 
-std::unique_ptr<WriteBuffer> DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
+std::unique_ptr<WriteBufferFromFileBase>
+DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t aio_threshold)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
-    return std::make_unique<WriteBufferFromFile>(disk_path + path, buf_size, flags);
+    return createWriteBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, buf_size, flags);
 }
 
 void DiskLocal::remove(const String & path)
@@ -219,6 +237,21 @@ void DiskLocal::remove(const String & path)
 void DiskLocal::removeRecursive(const String & path)
 {
     Poco::File(disk_path + path).remove(true);
+}
+
+void DiskLocal::listFiles(const String & path, std::vector<String> & file_names)
+{
+    Poco::File(disk_path + path).list(file_names);
+}
+
+void DiskLocal::setLastModified(const String & path, const Poco::Timestamp & timestamp)
+{
+    Poco::File(disk_path + path).setLastModified(timestamp);
+}
+
+Poco::Timestamp DiskLocal::getLastModified(const String & path)
+{
+    return Poco::File(disk_path + path).getLastModified();
 }
 
 

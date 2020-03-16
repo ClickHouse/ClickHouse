@@ -51,4 +51,4 @@ You can't execute `SET allow_ddl = 1` if `allow_ddl = 0` for the current session
 
 Default value: 1
 
-[Original article](https://clickhouse.yandex/docs/en/operations/settings/permissions_for_queries/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/settings/permissions_for_queries/) <!--hide-->

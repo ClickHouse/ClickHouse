@@ -47,7 +47,7 @@ If `enable_optimize_predicate_expression = 0`, then the execution time of the se
 
 ## fallback_to_stale_replicas_for_distributed_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
-Forces a query to an out-of-date replica if updated data is not available. See [Replication](../../operations/table_engines/replication.md).
+Forces a query to an out-of-date replica if updated data is not available. See [Replication](../table_engines/replication.md).
 
 ClickHouse selects the most relevant from the outdated replicas of the table.
 
@@ -61,7 +61,7 @@ Disables query execution if the index can't be used by date.
 
 Works with tables in the MergeTree family.
 
-If `force_index_by_date=1`, ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see [MergeTree](../../operations/table_engines/mergetree.md).
+If `force_index_by_date=1`, ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see [MergeTree](../table_engines/mergetree.md).
 
 
 ## force_primary_key
@@ -70,7 +70,7 @@ Disables query execution if indexing by the primary key is not possible.
 
 Works with tables in the MergeTree family.
 
-If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](../../operations/table_engines/mergetree.md).
+If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](../table_engines/mergetree.md).
 
 ## format_schema
 
@@ -382,7 +382,7 @@ See also:
 - [Join table engine](../table_engines/join.md)
 - [join_default_strictness](#settings-join_default_strictness)
 
-## join_use_nulls {#settings-join_use_nulls}
+## join_use_nulls {#join_use_nulls}
 
 Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
 
@@ -393,20 +393,7 @@ Possible values:
 
 Default value: 0.
 
-
-## join_any_take_last_row {#settings-join_any_take_last_row}
-
-Changes the behavior of `ANY JOIN`. When disabled, `ANY JOIN` takes the first row found for a key. When enabled, `ANY JOIN` takes the last matched row if there are multiple rows for the same key. The setting is used only in [Join table engine](../table_engines/join.md).
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-
-Default value: 1.
-
-
-## max_block_size
+## max_block_size {#setting-max_block_size}
 
 In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. The `max_block_size` setting is a recommendation for what size of block (in number of rows) to load from tables. The block size shouldn't be too small, so that the expenditures on each block are still noticeable, but not too large, so that the query with LIMIT that is completed after the first block is processed quickly. The goal is to avoid consuming too much memory when extracting a large number of columns in multiple threads, and to preserve at least some cache locality.
 
@@ -420,20 +407,9 @@ Used for the same purpose as `max_block_size`, but it sets the recommended block
 However, the block size cannot be more than `max_block_size` rows.
 By default: 1,000,000. It only works when reading from MergeTree engines.
 
-## merge_tree_uniform_read_distribution {#setting-merge_tree_uniform_read_distribution}
-
-ClickHouse uses multiple threads when reading from [MergeTree*](../table_engines/mergetree.md) tables. This setting turns on/off the uniform distribution of reading tasks over the working threads. The algorithm of the uniform distribution aims to make execution time for all the threads approximately equal in a `SELECT` query.
-
-Possible values:
-
-- 0 — Do not use uniform read distribution.
-- 1 — Use uniform read distribution.
-
-Default value: 1.
-
 ## merge_tree_min_rows_for_concurrent_read {#setting-merge_tree_min_rows_for_concurrent_read}
 
-If the number of rows to be read from a file of a [MergeTree*](../table_engines/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
+If the number of rows to be read from a file of a [MergeTree](../table_engines/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
 
 Possible values:
 
@@ -443,7 +419,7 @@ Default value: 163840.
 
 ## merge_tree_min_bytes_for_concurrent_read {#setting-merge_tree_min_bytes_for_concurrent_read}
 
-If the number of bytes to read from one file of a [MergeTree*](../table_engines/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read`, then ClickHouse tries to concurrently read from this file in several threads.
+If the number of bytes to read from one file of a [MergeTree](../table_engines/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read`, then ClickHouse tries to concurrently read from this file in several threads.
 
 Possible value:
 
@@ -580,6 +556,20 @@ For queries that are completed quickly because of a LIMIT, you can set a lower '
 
 The smaller the `max_threads` value, the less memory is consumed.
 
+## max_insert_threads {#settings-max_insert_threads}
+
+The maximum number of threads to execute the `INSERT SELECT` query.
+
+Possible values:
+
+- 0 (or 1) — `INSERT SELECT` no parallel execution.
+- Positive integer. Bigger than 1.
+
+Default value: 0.
+
+Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [max_threads](#settings-max_threads) setting.
+Higher values will lead to higher memory usage.
+
 ## max_compress_block_size
 
 The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). If the size is reduced, the compression rate is significantly reduced, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced. There usually isn't any reason to change this setting.
@@ -588,7 +578,7 @@ Don't confuse blocks for compression (a chunk of memory consisting of bytes) wit
 
 ## min_compress_block_size
 
-For [MergeTree](../../operations/table_engines/mergetree.md)" tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least 'min_compress_block_size'. By default, 65,536.
+For [MergeTree](../table_engines/mergetree.md)" tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least 'min_compress_block_size'. By default, 65,536.
 
 The actual size of the block, if the uncompressed data is less than 'max_compress_block_size', is no less than this value and no less than the volume of data for one mark.
 
@@ -804,6 +794,14 @@ The character interpreted as a delimiter in the CSV data. By default, the delimi
 
 For CSV input format enables or disables parsing of unquoted `NULL` as literal (synonym for `\N`).
 
+## output_format_csv_crlf_end_of_line {#settings-output_format_csv_crlf_end_of_line}
+
+Use DOS/Windows style line separator (CRLF) in CSV instead of Unix style (LF).
+
+## output_format_tsv_crlf_end_of_line {#settings-output_format_tsv_crlf_end_of_line}
+
+Use DOC/Windows style line separator (CRLF) in TSV instead of Unix style (LF).
+
 ## insert_quorum {#settings-insert_quorum}
 
 Enables quorum writes.
@@ -905,24 +903,6 @@ Possible values:
 - 0 — Control of the data speed is disabled.
 
 Default value: 0.
-
-## allow_experimental_cross_to_join_conversion {#settings-allow_experimental_cross_to_join_conversion}
-
-Enables or disables:
-
-1. Rewriting queries for join from the syntax with commas to the `JOIN ON/USING` syntax. If the setting value is 0, ClickHouse doesn't process queries with syntax that uses commas, and throws an exception.
-2. Converting `CROSS JOIN` to `INNER JOIN` if `WHERE` conditions allow it.
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-
-Default value: 1.
-
-See also:
-
-- [Multiple JOIN](../../query_language/select.md#select-join)
 
 ## count_distinct_implementation {#settings-count_distinct_implementation}
 
@@ -1074,7 +1054,7 @@ Default value: 0.
 
 ## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
 
-Sets the period for a real clock timer of the query profiler. Real clock timer counts wall-clock time.
+Sets the period for a real clock timer of the [query profiler](../../operations/performance/sampling_query_profiler.md). Real clock timer counts wall-clock time.
 
 Possible values:
 
@@ -1093,11 +1073,11 @@ Default value: 1000000000 nanoseconds (once a second).
 
 See also:
 
-- [system.trace_log](../system_tables.md#system_tables-trace_log)
+- System table [trace_log](../system_tables.md#system_tables-trace_log)
 
 ## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
-Sets the period for a CPU clock timer of the query profiler. This timer counts only CPU time.
+Sets the period for a CPU clock timer of the [query profiler](../../operations/performance/sampling_query_profiler.md). This timer counts only CPU time.
 
 Possible values:
 
@@ -1116,7 +1096,7 @@ Default value: 1000000000 nanoseconds.
 
 See also:
 
-- [system.trace_log](../system_tables.md#system_tables-trace_log)
+- System table [trace_log](../system_tables.md#system_tables-trace_log)
 
 ## allow_introspection_functions {#settings-allow_introspection_functions}
 
@@ -1128,6 +1108,11 @@ Possible values:
 - 0 — Introspection functions disabled.
 
 Default value: 0.
+
+**See Also**
+
+- [Sampling Query Profiler](../performance/sampling_query_profiler.md)
+- System table [trace_log](../system_tables.md#system_tables-trace_log)
 
 ## input_format_parallel_parsing
 
@@ -1143,4 +1128,37 @@ Enable order-preserving parallel parsing of data formats. Supported only for TSV
 
 The minimum chunk size in bytes, which each thread will parse in parallel.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!-- hide -->
+## output_format_avro_codec {#settings-output_format_avro_codec}
+
+Sets the compression codec used for output Avro file.
+
+Type: string
+
+Possible values:
+
+- `null` — No compression
+- `deflate` — Compress with Deflate (zlib)
+- `snappy` — Compress with [Snappy](https://google.github.io/snappy/)
+
+Default value: `snappy` (if available) or `deflate`.
+
+## output_format_avro_sync_interval {#settings-output_format_avro_sync_interval}
+
+Sets minimum data size (in bytes) between synchronization markers for output Avro file.
+
+Type: unsigned int
+
+Possible values: 32 (32 bytes) - 1073741824 (1 GiB)
+
+Default value: 32768 (32 KiB)
+
+## format_avro_schema_registry_url {#settings-format_avro_schema_registry_url}
+
+Sets Confluent Schema Registry URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format
+
+Type: URL
+
+Default value: Empty
+
+
+[Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

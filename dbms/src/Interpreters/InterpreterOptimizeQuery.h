@@ -6,8 +6,8 @@
 
 namespace DB
 {
-
 class Context;
+class AccessRightsElements;
 
 
 /** Just call method "optimize" for table.
@@ -23,9 +23,10 @@ public:
     BlockIO execute() override;
 
 private:
+    AccessRightsElements getRequiredAccess() const;
+
     ASTPtr query_ptr;
     Context & context;
 };
-
 
 }

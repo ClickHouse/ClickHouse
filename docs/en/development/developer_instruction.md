@@ -76,6 +76,41 @@ git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 After successfully running this command you will be able to pull updates from the main ClickHouse repo by running `git pull upstream master`.
 
 
+## Working with submodules
+
+Working with submodules in git could be painful. Next commands will help to manage it:
+
+```
+# ! each command accepts --recursive
+# Update remote URLs for submodules. Barely rare case
+git submodule sync
+# Add new submodules
+git submodule init
+# Update existing submodules to the current state
+git submodule update
+# Two last commands could be merged together
+git submodule update --init
+```
+
+The next commands would help you to reset all submodules to the initial state (!WARING! - any chenges inside will be deleted):
+
+```
+# Synchronizes submodules' remote URL with .gitmodules
+git submodule sync --recursive
+# Update the registered submodules with initialize not yet initialized
+git submodule update --init --recursive
+# Reset all changes done after HEAD
+git submodule foreach git reset --hard
+# Clean files from .gitignore
+git submodule foreach git clean -xfd
+# Repeat last 4 commands for all submodule
+git submodule foreach git submodule sync --recursive
+git submodule foreach git submodule update --init --recursive
+git submodule foreach git submodule foreach git reset --hard
+git submodule foreach git submodule foreach git clean -xfd
+```
+
+
 # Build System
 
 ClickHouse uses CMake and Ninja for building.
@@ -111,7 +146,7 @@ Official Yandex builds currently use GCC because it generates machine code of sl
 
 To install GCC on Ubuntu run: `sudo apt install gcc g++`
 
-Check the version of gcc: `gcc --version`. If it is below 9, then follow the instruction here: https://clickhouse.yandex/docs/en/development/build/#install-gcc-9.
+Check the version of gcc: `gcc --version`. If it is below 9, then follow the instruction here: https://clickhouse.tech/docs/en/development/build/#install-gcc-9.
 
 Mac OS X build is supported only for Clang. Just run `brew install llvm`
 
@@ -226,13 +261,13 @@ Just in case, it is worth mentioning that CLion creates `build` path on its own,
 
 # Writing Code
 
-The description of ClickHouse architecture can be found here: https://clickhouse.yandex/docs/en/development/architecture/
+The description of ClickHouse architecture can be found here: https://clickhouse.tech/docs/en/development/architecture/
 
-The Code Style Guide: https://clickhouse.yandex/docs/en/development/style/
+The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
 
-Writing tests: https://clickhouse.yandex/docs/en/development/tests/
+Writing tests: https://clickhouse.tech/docs/en/development/tests/
 
-List of tasks: https://github.com/yandex/ClickHouse/blob/master/dbms/tests/instructions/easy_tasks_sorted_en.md
+List of tasks: https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/instructions/easy_tasks_sorted_en.md
 
 
 # Test Data

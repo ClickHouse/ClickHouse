@@ -15,7 +15,7 @@ do \
         res->children.push_back(res->member); \
     } \
 } \
-while (0)
+while (false)
 
 
 ASTPtr ASTTableExpression::clone() const

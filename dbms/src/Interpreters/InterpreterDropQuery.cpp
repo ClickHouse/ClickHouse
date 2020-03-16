@@ -5,6 +5,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Access/AccessRightsElement.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
@@ -18,14 +19,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TABLE_WAS_NOT_DROPPED;
-    extern const int DATABASE_NOT_EMPTY;
-    extern const int UNKNOWN_DATABASE;
-    extern const int READONLY;
     extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_TABLE;
-    extern const int QUERY_IS_PROHIBITED;
     extern const int UNKNOWN_DICTIONARY;
 }
 
@@ -36,11 +32,8 @@ InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, Context & 
 BlockIO InterpreterDropQuery::execute()
 {
     auto & drop = query_ptr->as<ASTDropQuery &>();
-
-    checkAccess(drop);
-
     if (!drop.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, {drop.database});
+        return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccessForDDLOnCluster());
 
     if (!drop.table.empty())
     {
@@ -57,59 +50,68 @@ BlockIO InterpreterDropQuery::execute()
 
 
 BlockIO InterpreterDropQuery::executeToTable(
-    String & database_name_,
-    String & table_name,
+    const String & database_name_,
+    const String & table_name,
     ASTDropQuery::Kind kind,
     bool if_exists,
-    bool if_temporary,
+    bool is_temporary,
     bool no_ddl_lock)
 {
-    if (if_temporary || database_name_.empty())
+    if (is_temporary || database_name_.empty())
     {
-        auto & session_context = context.hasSessionContext() ? context.getSessionContext() : context;
-
-        if (session_context.isExternalTableExist(table_name))
+        if (context.tryResolveStorageID({"", table_name}, Context::ResolveExternal))
             return executeToTemporaryTable(table_name, kind);
     }
 
-    String database_name = database_name_.empty() ? context.getCurrentDatabase() : database_name_;
-
-    auto ddl_guard = (!no_ddl_lock ? context.getDDLGuard(database_name, table_name) : nullptr);
-
-    DatabaseAndTable database_and_table = tryGetDatabaseAndTable(database_name, table_name, if_exists);
-
-    if (database_and_table.first && database_and_table.second)
+    if (is_temporary)
     {
-        auto table_id = database_and_table.second->getStorageID();
+        if (if_exists)
+            return {};
+        throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " doesn't exist.",
+                        ErrorCodes::UNKNOWN_TABLE);
+    }
+
+    String database_name = context.resolveDatabase(database_name_);
+
+    auto ddl_guard = (!no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(database_name, table_name) : nullptr);
+
+    auto [database, table] = tryGetDatabaseAndTable(database_name, table_name, if_exists);
+
+    if (database && table)
+    {
+        auto table_id = table->getStorageID();
         if (kind == ASTDropQuery::Kind::Detach)
         {
-            database_and_table.second->shutdown();
+            context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
+            table->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
+            auto table_lock = table->lockExclusively(context.getCurrentQueryId());
             /// Drop table from memory, don't touch data and metadata
-            database_and_table.first->detachTable(table_id.table_name);
+            database->detachTable(table_name);
         }
         else if (kind == ASTDropQuery::Kind::Truncate)
         {
-            database_and_table.second->checkTableCanBeDropped();
+            context.checkAccess(table->isView() ? AccessType::TRUNCATE_VIEW : AccessType::TRUNCATE_TABLE, table_id);
+            table->checkTableCanBeDropped();
 
             /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
+            auto table_lock = table->lockExclusively(context.getCurrentQueryId());
             /// Drop table data, don't touch metadata
-            database_and_table.second->truncate(query_ptr, context, table_lock);
+            table->truncate(query_ptr, context, table_lock);
         }
         else if (kind == ASTDropQuery::Kind::Drop)
         {
-            database_and_table.second->checkTableCanBeDropped();
+            context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
+            table->checkTableCanBeDropped();
 
-            database_and_table.second->shutdown();
+            table->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
 
             TableStructureWriteLockHolder table_lock;
-            if (database_and_table.first->getEngineName() != "Atomic")
-                table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
+            if (database->getEngineName() != "Atomic")
+                table_lock = table->lockExclusively(context.getCurrentQueryId());
 
-            database_and_table.first->dropTable(context, table_name);
+            database->dropTable(context, table_name);
         }
     }
 
@@ -118,8 +120,8 @@ BlockIO InterpreterDropQuery::executeToTable(
 
 
 BlockIO InterpreterDropQuery::executeToDictionary(
-    String & database_name_,
-    String & dictionary_name,
+    const String & database_name_,
+    const String & dictionary_name,
     ASTDropQuery::Kind kind,
     bool if_exists,
     bool is_temporary,
@@ -128,9 +130,9 @@ BlockIO InterpreterDropQuery::executeToDictionary(
     if (is_temporary)
         throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
 
-    String database_name = database_name_.empty() ? context.getCurrentDatabase() : database_name_;
+    String database_name = context.resolveDatabase(database_name_);
 
-    auto ddl_guard = (!no_ddl_lock ? context.getDDLGuard(database_name, dictionary_name) : nullptr);
+    auto ddl_guard = (!no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(database_name, dictionary_name) : nullptr);
 
     DatabasePtr database = tryGetDatabase(database_name, if_exists);
 
@@ -147,6 +149,7 @@ BlockIO InterpreterDropQuery::executeToDictionary(
     if (kind == ASTDropQuery::Kind::Detach)
     {
         /// Drop dictionary from memory, don't touch data and metadata
+        context.checkAccess(AccessType::DROP_DICTIONARY, database_name, dictionary_name);
         database->detachDictionary(dictionary_name, context);
     }
     else if (kind == ASTDropQuery::Kind::Truncate)
@@ -155,21 +158,23 @@ BlockIO InterpreterDropQuery::executeToDictionary(
     }
     else if (kind == ASTDropQuery::Kind::Drop)
     {
+        context.checkAccess(AccessType::DROP_DICTIONARY, database_name, dictionary_name);
         database->removeDictionary(context, dictionary_name);
     }
     return {};
 }
 
-BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDropQuery::Kind kind)
+BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind)
 {
     if (kind == ASTDropQuery::Kind::Detach)
         throw Exception("Unable to detach temporary table.", ErrorCodes::SYNTAX_ERROR);
     else
     {
         auto & context_handle = context.hasSessionContext() ? context.getSessionContext() : context;
-        StoragePtr table = context_handle.tryGetExternalTable(table_name);
-        if (table)
+        auto resolved_id = context_handle.tryResolveStorageID(StorageID("", table_name), Context::ResolveExternal);
+        if (resolved_id)
         {
+            StoragePtr table = DatabaseCatalog::instance().getTable(resolved_id);
             if (kind == ASTDropQuery::Kind::Truncate)
             {
                 /// If table was already dropped by anyone, an exception will be thrown
@@ -193,9 +198,9 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
     return {};
 }
 
-BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQuery::Kind kind, bool if_exists)
+BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, ASTDropQuery::Kind kind, bool if_exists)
 {
-    auto ddl_guard = context.getDDLGuard(database_name, "");
+    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
     if (auto database = tryGetDatabase(database_name, if_exists))
     {
@@ -203,13 +208,12 @@ BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQ
         {
             throw Exception("Unable to truncate database.", ErrorCodes::SYNTAX_ERROR);
         }
-        else if (kind == ASTDropQuery::Kind::Detach)
+        else if (kind == ASTDropQuery::Kind::Detach || kind == ASTDropQuery::Kind::Drop)
         {
-            context.detachDatabase(database_name);
-            database->shutdown();
-        }
-        else if (kind == ASTDropQuery::Kind::Drop)
-        {
+            bool drop = kind == ASTDropQuery::Kind::Drop;
+            context.checkAccess(AccessType::DROP_DATABASE, database_name);
+
+            /// DETACH or DROP all tables and dictionaries inside database
             for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 String current_table_name = iterator->name();
@@ -222,40 +226,20 @@ BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQ
                 executeToDictionary(database_name, current_dictionary, kind, false, false, false);
             }
 
-            //FIXME get rid of global context lock here
-            auto context_lock = context.getLock();
-
-            /// Someone could have time to delete the database before us.
-            context.assertDatabaseExists(database_name);
-
-            /// Someone could have time to create a table in the database to be deleted while we deleted the tables without the context lock.
-            if (!context.getDatabase(database_name)->empty(context))
-                throw Exception("New table appeared in database being dropped. Try dropping it again.", ErrorCodes::DATABASE_NOT_EMPTY);
-
-            database->shutdown();
-
-            /// Delete the database.
-            database->drop(context);
-
-            /// Delete database information from the RAM
-            context.detachDatabase(database_name);
-
-            /// Old ClickHouse versions did not store database.sql files
-            Poco::File database_metadata_file(context.getPath() + "metadata/" + escapeForFileName(database_name) + ".sql");
-            if (database_metadata_file.exists())
-                database_metadata_file.remove(false);
+            /// DETACH or DROP database itself
+            DatabaseCatalog::instance().detachDatabase(database_name, drop);
         }
     }
 
     return {};
 }
 
-DatabasePtr InterpreterDropQuery::tryGetDatabase(String & database_name, bool if_exists)
+DatabasePtr InterpreterDropQuery::tryGetDatabase(const String & database_name, bool if_exists)
 {
-    return if_exists ? context.tryGetDatabase(database_name) : context.getDatabase(database_name);
+    return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name) : DatabaseCatalog::instance().getDatabase(database_name);
 }
 
-DatabaseAndTable InterpreterDropQuery::tryGetDatabaseAndTable(String & database_name, String & table_name, bool if_exists)
+DatabaseAndTable InterpreterDropQuery::tryGetDatabaseAndTable(const String & database_name, const String & table_name, bool if_exists)
 {
     DatabasePtr database = tryGetDatabase(database_name, if_exists);
 
@@ -271,20 +255,38 @@ DatabaseAndTable InterpreterDropQuery::tryGetDatabaseAndTable(String & database_
     return {};
 }
 
-void InterpreterDropQuery::checkAccess(const ASTDropQuery & drop)
+
+AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() const
 {
-    const Settings & settings = context.getSettingsRef();
-    auto readonly = settings.readonly;
-    bool allow_ddl = settings.allow_ddl;
+    AccessRightsElements required_access;
+    const auto & drop = query_ptr->as<const ASTDropQuery &>();
 
-    /// It's allowed to drop temporary tables.
-    if ((!readonly && allow_ddl) || (drop.database.empty() && context.isExternalTableExist(drop.table) && readonly >= 2))
-        return;
+    if (drop.table.empty())
+    {
+        if (drop.kind == ASTDropQuery::Kind::Detach)
+            required_access.emplace_back(AccessType::DROP_DATABASE, drop.database);
+        else if (drop.kind == ASTDropQuery::Kind::Drop)
+            required_access.emplace_back(AccessType::DROP_DATABASE, drop.database);
+    }
+    else if (drop.is_dictionary)
+    {
+        if (drop.kind == ASTDropQuery::Kind::Detach)
+            required_access.emplace_back(AccessType::DROP_DICTIONARY, drop.database, drop.table);
+        else if (drop.kind == ASTDropQuery::Kind::Drop)
+            required_access.emplace_back(AccessType::DROP_DICTIONARY, drop.database, drop.table);
+    }
+    else if (!drop.temporary)
+    {
+        /// It can be view or table.
+        if (drop.kind == ASTDropQuery::Kind::Drop)
+            required_access.emplace_back(AccessType::DROP_TABLE | AccessType::DROP_VIEW, drop.database, drop.table);
+        else if (drop.kind == ASTDropQuery::Kind::Truncate)
+            required_access.emplace_back(AccessType::TRUNCATE_TABLE | AccessType::TRUNCATE_VIEW, drop.database, drop.table);
+        else if (drop.kind == ASTDropQuery::Kind::Detach)
+            required_access.emplace_back(AccessType::DROP_TABLE | AccessType::DROP_VIEW, drop.database, drop.table);
+    }
 
-    if (readonly)
-        throw Exception("Cannot drop table in readonly mode", ErrorCodes::READONLY);
-
-    throw Exception("Cannot drop table. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
+    return required_access;
 }
 
 }

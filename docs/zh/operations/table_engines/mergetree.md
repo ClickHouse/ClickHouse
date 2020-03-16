@@ -323,7 +323,7 @@ TTL date_time + INTERVAL 1 MONTH
 TTL date_time + INTERVAL 15 HOUR
 ```
 
-**列字段 TTL**
+### 列字段 TTL {#mergetree-column-ttl}
 
 当列字段中的值过期时, ClickHouse会将它们替换成数据类型的默认值。如果分区内，某一列的所有值均已过期，则ClickHouse会从文件系统中删除这个分区目录下的列文件。
 
@@ -362,7 +362,7 @@ ALTER TABLE example_table
     c String TTL d + INTERVAL 1 MONTH;
 ```
 
-**表 TTL**
+### 表 TTL {#mergetree-table-ttl}
 
 当表内的数据过期时, ClickHouse会删除所有对应的行。
 
@@ -402,4 +402,4 @@ ALTER TABLE example_table
 
 ### Configuration {#table_engine-mergetree-multiple-volumes_configure}
 
-[来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/mergetree/) <!--hide-->

@@ -58,6 +58,7 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 
     int open_flags = (flags_ == -1) ? (O_RDWR | O_TRUNC | O_CREAT) : flags_;
     open_flags |= O_DIRECT;
+    open_flags |= O_CLOEXEC;
 
     fd = ::open(filename.c_str(), open_flags, mode_);
     if (fd == -1)
@@ -138,7 +139,7 @@ void WriteBufferAIO::nextImpl()
     is_pending_write = true;
 }
 
-off_t WriteBufferAIO::doSeek(off_t off, int whence)
+off_t WriteBufferAIO::seek(off_t off, int whence)
 {
     flush();
 
@@ -168,7 +169,7 @@ off_t WriteBufferAIO::doSeek(off_t off, int whence)
     return pos_in_file;
 }
 
-void WriteBufferAIO::doTruncate(off_t length)
+void WriteBufferAIO::truncate(off_t length)
 {
     flush();
 

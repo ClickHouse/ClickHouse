@@ -222,10 +222,10 @@ def test_query_parser(start_cluster):
         node1.query("INSERT INTO table_with_normal_policy VALUES (5)")
 
         with pytest.raises(QueryRuntimeException):
-            node1.query("ALTER TABLE table_with_normal_policy MOVE PARTITION 'all' TO VOLUME 'some_volume'")
+            node1.query("ALTER TABLE table_with_normal_policy MOVE PARTITION tuple() TO VOLUME 'some_volume'")
 
         with pytest.raises(QueryRuntimeException):
-            node1.query("ALTER TABLE table_with_normal_policy MOVE PARTITION 'all' TO DISK 'some_volume'")
+            node1.query("ALTER TABLE table_with_normal_policy MOVE PARTITION tuple() TO DISK 'some_volume'")
 
         with pytest.raises(QueryRuntimeException):
             node1.query("ALTER TABLE table_with_normal_policy MOVE PART 'xxxxx' TO DISK 'jbod1'")
@@ -1164,7 +1164,6 @@ def test_kill_while_insert(start_cluster):
         except:
             """"""
 
-        time.sleep(0.5)
         assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["10"]
 
     finally:

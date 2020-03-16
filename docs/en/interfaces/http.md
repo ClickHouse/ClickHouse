@@ -3,12 +3,19 @@
 The HTTP interface lets you use ClickHouse on any platform from any programming language. We use it for working from Java and Perl, as well as shell scripts. In other departments, the HTTP interface is used from Perl, Python, and Go. The HTTP interface is more limited than the native interface, but it has better compatibility.
 
 By default, clickhouse-server listens for HTTP on port 8123 (this can be changed in the config).
-If you make a GET / request without parameters, it returns the string "Ok." (with a line feed at the end). You can use this in health-check scripts.
 
+If you make a GET / request without parameters, it returns 200 response code and the string which defined in [http_server_default_response](../operations/server_settings/settings.md#server_settings-http_server_default_response) default value "Ok." (with a line feed at the end) 
 ```bash
 $ curl 'http://localhost:8123/'
 Ok.
 ```
+
+Use GET /ping request in health-check scripts. This handler always return "Ok." (with a line feed at the end). Available from version 18.12.13.
+```bash
+$ curl 'http://localhost:8123/ping'
+Ok.
+```
+
 
 Send the request as a URL 'query' parameter, or as a POST. Or send the beginning of the query in the 'query' parameter, and the rest in the POST (we'll explain later why this is necessary). The size of the URL is limited to 16 KB, so keep this in mind when sending large queries.
 
@@ -264,4 +271,4 @@ You can create a query with parameters and pass values for them from the corresp
 $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/http_interface/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/interfaces/http_interface/) <!--hide-->

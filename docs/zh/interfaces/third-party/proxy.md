@@ -34,4 +34,4 @@
 
 在Go中实现。
 
-[来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party/proxy/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/zh/interfaces/third-party/proxy/) <!--hide-->

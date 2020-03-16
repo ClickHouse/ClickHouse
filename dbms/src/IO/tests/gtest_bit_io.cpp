@@ -24,12 +24,12 @@ using namespace DB;
 // each prime bit is set to 0.
 //                              v-61     v-53   v-47  v-41 v-37   v-31     v-23  v-17   v-11   v-5
 const UInt64 BIT_PATTERN = 0b11101011'11101111'10111010'11101111'10101111'10111010'11101011'10101001;
-const UInt8 PRIMES[] = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61};
+const uint8_t PRIMES[] = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61};
 
 template <typename T>
-std::string bin(const T & value, size_t bits = sizeof(T)*8)
+std::string bin(const T & value, size_t bits = sizeof(T) * 8)
 {
-    static const UInt8 MAX_BITS = sizeof(T)*8;
+    static const uint8_t MAX_BITS = sizeof(T)*8;
     assert(bits <= MAX_BITS);
 
     return std::bitset<sizeof(T) * 8>(static_cast<unsigned long long>(value))
@@ -38,7 +38,7 @@ std::string bin(const T & value, size_t bits = sizeof(T)*8)
 
 // gets N low bits of value
 template <typename T>
-T getBits(UInt8 bits, const T & value)
+T getBits(uint8_t bits, const T & value)
 {
     return value & maskLowBits<T>(bits);
 }
@@ -109,10 +109,10 @@ template <typename ValueLeft, typename ValueRight>
 
 struct TestCaseParameter
 {
-    std::vector<std::pair<UInt8, UInt64>> bits_and_vals;
+    std::vector<std::pair<uint8_t, UInt64>> bits_and_vals;
     std::string expected_buffer_binary;
 
-    TestCaseParameter(std::vector<std::pair<UInt8, UInt64>> vals, std::string binary = std::string{})
+    TestCaseParameter(std::vector<std::pair<uint8_t, UInt64>> vals, std::string binary = std::string{})
         : bits_and_vals(std::move(vals)),
           expected_buffer_binary(binary)
     {}
@@ -150,7 +150,7 @@ TEST_P(BitIO, WriteAndRead)
         ReadBufferFromMemory read_buffer(data.data(), data.size());
 //        auto memory_read_buffer = memory_write_buffer.tryGetReadBuffer();
 
-        if (expected_buffer_binary != std::string{})
+        if (!expected_buffer_binary.empty())
         {
             const auto actual_buffer_binary = dumpContents(data, " ", " ");
             ASSERT_EQ(expected_buffer_binary, actual_buffer_binary);
@@ -168,7 +168,7 @@ TEST_P(BitIO, WriteAndRead)
                          << ", at bit position: " << std::dec << reader.count()
                          << ".\nBuffer memory:\n" << dumpContents(data));
 
-//            const UInt8 next_byte = getBits(bv.first, bv.second) &
+//            const uint8_t next_byte = getBits(bv.first, bv.second) &
             ASSERT_TRUE(BinaryEqual(getBits(bv.first, bv.second), reader.readBits(bv.first)));
 
             ++item;
@@ -224,12 +224,12 @@ INSTANTIATE_TEST_SUITE_P(Simple,
     })
 );
 
-TestCaseParameter primes_case(UInt8 repeat_times, UInt64 pattern)
+TestCaseParameter primes_case(uint8_t repeat_times, UInt64 pattern)
 {
-    std::vector<std::pair<UInt8, UInt64>> test_data;
+    std::vector<std::pair<uint8_t, UInt64>> test_data;
 
     {
-        for (UInt8 r = 0; r < repeat_times; ++r)
+        for (uint8_t r = 0; r < repeat_times; ++r)
         {
             for (const auto p : PRIMES)
             {
@@ -251,15 +251,15 @@ INSTANTIATE_TEST_SUITE_P(Primes,
 
 TEST(BitHelpers, maskLowBits)
 {
-    EXPECT_EQ(0b00000111, ::maskLowBits<UInt8>(3));
-    EXPECT_EQ(0b01111111, ::maskLowBits<UInt8>(7));
+    EXPECT_EQ(0b00000111, ::maskLowBits<uint8_t>(3));
+    EXPECT_EQ(0b01111111, ::maskLowBits<uint8_t>(7));
     EXPECT_EQ(0b0000000001111111, ::maskLowBits<UInt16>(7));
     EXPECT_EQ(0b0001111111111111, ::maskLowBits<UInt16>(13));
     EXPECT_EQ(0b00000111111111111111111111111111, ::maskLowBits<UInt32>(27));
     EXPECT_EQ(0b111111111111111111111111111111111, ::maskLowBits<UInt64>(33));
     EXPECT_EQ(0b11111111111111111111111111111111111, ::maskLowBits<UInt64>(35));
 
-    EXPECT_EQ(0xFF, ::maskLowBits<UInt8>(8));
+    EXPECT_EQ(0xFF, ::maskLowBits<uint8_t>(8));
     EXPECT_EQ(0xFFFF, ::maskLowBits<UInt16>(16));
     EXPECT_EQ(0xFFFFFFFF, ::maskLowBits<UInt32>(32));
     EXPECT_EQ(0xFFFFFFFFFFFFFFFF, ::maskLowBits<UInt64>(64));

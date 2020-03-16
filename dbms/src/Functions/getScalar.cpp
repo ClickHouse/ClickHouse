@@ -14,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ILLEGAL_COLUMN;
 }
 
 /** Get scalar value of sub queries from query context via IAST::Hash.

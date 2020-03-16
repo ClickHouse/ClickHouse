@@ -27,7 +27,6 @@ namespace ErrorCodes
 }
 
 
-
 DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context_)
     : DatabaseOnDisk(name_, metadata_path_, "DatabaseLazy (" + name_ + ")", context_)
     , expiration_time(expiration_time_)

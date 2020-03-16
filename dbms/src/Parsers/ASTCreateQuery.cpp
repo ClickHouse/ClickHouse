@@ -4,6 +4,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/quoteString.h>
+#include <Interpreters/StorageID.h>
 
 
 namespace DB
@@ -234,9 +235,13 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
                 << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")
             << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+
         if (uuid != UUIDHelpers::Nil)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
                           << quoteString(toString(uuid));
+        if (live_view_timeout)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH TIMEOUT " << (settings.hilite ? hilite_none : "")
+                          << *live_view_timeout;
         formatOnCluster(settings);
     }
     else

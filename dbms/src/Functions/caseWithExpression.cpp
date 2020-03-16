@@ -28,7 +28,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
     {
-        if (!args.size())
+        if (args.empty())
             throw Exception{"Function " + getName() + " expects at least 1 arguments",
                 ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
 
@@ -46,7 +46,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) override
     {
-        if (!args.size())
+        if (args.empty())
             throw Exception{"Function " + getName() + " expects at least 1 argument",
                 ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
 
@@ -122,7 +122,5 @@ void registerFunctionCaseWithExpression(FunctionFactory & factory)
 }
 
 }
-
-
 
 

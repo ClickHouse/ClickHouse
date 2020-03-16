@@ -17,7 +17,7 @@ public:
     SelectStreamFactory(
         const Block & header_,
         QueryProcessingStage::Enum processed_stage_,
-        QualifiedTableName main_table_,
+        StorageID main_table_,
         const Scalars & scalars_,
         bool has_virtual_shard_num_column_,
         const Tables & external_tables);
@@ -35,12 +35,13 @@ public:
         const Cluster::ShardInfo & shard_info,
         const String & query, const ASTPtr & query_ast,
         const Context & context, const ThrottlerPtr & throttler,
-        BlockInputStreams & res) override;
+        const SelectQueryInfo & query_info,
+        Pipes & res) override;
 
 private:
     const Block header;
     QueryProcessingStage::Enum processed_stage;
-    QualifiedTableName main_table;
+    StorageID main_table = StorageID::createEmpty();
     ASTPtr table_func_ptr;
     Scalars scalars;
     bool has_virtual_shard_num_column = false;

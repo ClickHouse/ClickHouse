@@ -7,7 +7,6 @@
 #include <memory>
 
 #include <boost/noncopyable.hpp>
-#include <boost/iterator_adaptors.hpp>
 
 #include <common/likely.h>
 #include <common/strong_typedef.h>
@@ -157,7 +156,7 @@ protected:
     template <typename ... TAllocatorParams>
     void reserveForNextSize(TAllocatorParams &&... allocator_params)
     {
-        if (size() == 0)
+        if (empty())
         {
             // The allocated memory should be multiplication of ELEMENT_SIZE to hold the element, otherwise,
             // memory issue such as corruption could appear in edge case.
@@ -275,18 +274,11 @@ protected:
 public:
     using value_type = T;
 
-    /// You can not just use `typedef`, because there is ambiguity for the constructors and `assign` functions.
-    struct iterator : public boost::iterator_adaptor<iterator, T*>
-    {
-        iterator() {}
-        iterator(T * ptr_) : iterator::iterator_adaptor_(ptr_) {}
-    };
+    /// We cannot use boost::iterator_adaptor, because it defeats loop vectorization,
+    ///  see https://github.com/ClickHouse/ClickHouse/pull/9442
 
-    struct const_iterator : public boost::iterator_adaptor<const_iterator, const T*>
-    {
-        const_iterator() {}
-        const_iterator(const T * ptr_) : const_iterator::iterator_adaptor_(ptr_) {}
-    };
+    using iterator = T *;
+    using const_iterator = const T *;
 
 
     PODArray() {}

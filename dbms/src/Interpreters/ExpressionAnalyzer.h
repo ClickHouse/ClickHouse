@@ -2,11 +2,14 @@
 
 #include <Core/Settings.h>
 #include <DataStreams/IBlockStream_fwd.h>
+#include <Columns/FilterDescription.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 
 namespace DB
@@ -29,6 +32,9 @@ class ASTExpressionList;
 class ASTSelectQuery;
 struct ASTTablesInSelectQueryElement;
 
+/// Create columns in block or return false if not possible
+bool sanitizeBlock(Block & block);
+
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
 {
@@ -46,10 +52,7 @@ struct ExpressionAnalyzerData
     bool has_global_subqueries = false;
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
-    Tables external_tables;
-
-    /// Actions by every element of ORDER BY
-    ManyExpressionActions order_by_elements_actions;
+    TemporaryTablesMapping external_tables;
 };
 
 
@@ -134,6 +137,12 @@ protected:
 
     void getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
 
+    /** Similar to getRootActions but do not make sets when analyzing IN functions. It's used in
+      * analyzeAggregation which happens earlier than analyzing PREWHERE and WHERE. If we did, the
+      * prepared sets would not be applicable for MergeTree index optimization.
+      */
+    void getRootActionsNoMakeSet(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
+
     /** Add aggregation keys to aggregation_keys, aggregate functions to aggregate_descriptions,
       * Create a set of columns aggregated_columns resulting after the aggregation, if any,
       *  or after all the actions that are normally performed before aggregation.
@@ -150,34 +159,127 @@ protected:
     bool isRemoteStorage() const;
 };
 
+class SelectQueryExpressionAnalyzer;
+
+/// Result of SelectQueryExpressionAnalyzer: expressions for InterpreterSelectQuery
+struct ExpressionAnalysisResult
+{
+    /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
+    bool first_stage = false;
+    /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
+    bool second_stage = false;
+
+    bool need_aggregate = false;
+    bool has_order_by   = false;
+
+    bool remove_where_filter = false;
+    bool optimize_read_in_order = false;
+
+    ExpressionActionsPtr before_join;   /// including JOIN
+    ExpressionActionsPtr before_where;
+    ExpressionActionsPtr before_aggregation;
+    ExpressionActionsPtr before_having;
+    ExpressionActionsPtr before_order_and_select;
+    ExpressionActionsPtr before_limit_by;
+    ExpressionActionsPtr final_projection;
+
+    /// Columns from the SELECT list, before renaming them to aliases.
+    Names selected_columns;
+
+    /// Columns will be removed after prewhere actions execution.
+    Names columns_to_remove_after_prewhere;
+
+    PrewhereInfoPtr prewhere_info;
+    FilterInfoPtr filter_info;
+    ConstantFilterDescription prewhere_constant_filter_description;
+    ConstantFilterDescription where_constant_filter_description;
+    /// Actions by every element of ORDER BY
+    ManyExpressionActions order_by_elements_actions;
+
+    ExpressionAnalysisResult() = default;
+
+    ExpressionAnalysisResult(
+        SelectQueryExpressionAnalyzer & query_analyzer,
+        bool first_stage,
+        bool second_stage,
+        bool only_types,
+        const FilterInfoPtr & filter_info,
+        const Block & source_header);
+
+    bool hasFilter() const { return filter_info.get(); }
+    bool hasJoin() const { return before_join.get(); }
+    bool hasPrewhere() const { return prewhere_info.get(); }
+    bool hasWhere() const { return before_where.get(); }
+    bool hasHaving() const { return before_having.get(); }
+    bool hasLimitBy() const { return before_limit_by.get(); }
+
+    void removeExtraColumns();
+    void checkActions();
+    void finalize(const ExpressionActionsChain & chain, const Context & context, size_t where_step_num);
+};
+
 /// SelectQuery specific ExpressionAnalyzer part.
 class SelectQueryExpressionAnalyzer : public ExpressionAnalyzer
 {
 public:
+    friend struct ExpressionAnalysisResult;
+
     SelectQueryExpressionAnalyzer(
         const ASTPtr & query_,
         const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
         const Context & context_,
         const NameSet & required_result_columns_ = {},
-        size_t subquery_depth_ = 0,
-        bool do_global_ = false)
-    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, subquery_depth_, do_global_)
-    ,   required_result_columns(required_result_columns_)
-    {}
+        bool do_global_ = false,
+        const SelectQueryOptions & options_ = {})
+    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_)
+    ,   required_result_columns(required_result_columns_), query_options(options_)
+    {
+    }
 
     /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
     bool hasAggregation() const { return has_aggregation; }
     bool hasGlobalSubqueries() { return has_global_subqueries; }
 
-    /// Get a list of aggregation keys and descriptions of aggregate functions if the query contains GROUP BY.
-    void getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates) const;
+    const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
+    const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
+    /// Create Set-s that we make from IN section to use index on them.
+    void makeSetsForIndex(const ASTPtr & node);
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
 
-    const ManyExpressionActions & getOrderByActions() const { return order_by_elements_actions; }
-
     /// Tables that will need to be sent to remote servers for distributed query processing.
-    const Tables & getExternalTables() const { return external_tables; }
+    const TemporaryTablesMapping & getExternalTables() const { return external_tables; }
+
+    ExpressionActionsPtr simpleSelectActions();
+
+    /// These appends are public only for tests
+    void appendSelect(ExpressionActionsChain & chain, bool only_types);
+    /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
+    void appendProjectResult(ExpressionActionsChain & chain) const;
+
+private:
+    /// If non-empty, ignore all expressions not from this list.
+    NameSet required_result_columns;
+    SelectQueryOptions query_options;
+
+    /**
+      * Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
+      * The set will not be created if its size hits the limit.
+      */
+    void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
+
+    /**
+      * Checks if subquery is not a plain StorageSet.
+      * Because while making set we will read data from StorageSet which is not allowed.
+      * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
+      */
+    SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name);
+
+    JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
+    void makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element, NamesWithAliases && required_columns_with_aliases,
+                             SubqueryForSet & subquery_for_set) const;
+
+    const ASTSelectQuery * getAggregatingQuery() const;
 
     /** These methods allow you to build a chain of transformations over a block, that receives values in the desired sections of the query.
       *
@@ -207,37 +309,10 @@ public:
 
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
-    void appendSelect(ExpressionActionsChain & chain, bool only_types);
-    bool appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order);
+    ///  appendSelect
+    bool appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
-    /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
-    void appendProjectResult(ExpressionActionsChain & chain) const;
-
-    /// Create Set-s that we can from IN section to use the index on them.
-    void makeSetsForIndex(const ASTPtr & node);
-
-private:
-    /// If non-empty, ignore all expressions not from this list.
-    NameSet required_result_columns;
-
-    /**
-      * Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
-      * The set will not be created if its size hits the limit.
-      */
-    void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
-
-    /**
-      * Checks if subquery is not a plain StorageSet.
-      * Because while making set we will read data from StorageSet which is not allowed.
-      * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
-      */
-    SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_of_table_name);
-
-    JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
-    void makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element, NamesWithAliases && required_columns_with_aliases,
-                             SubqueryForSet & subquery_for_set) const;
-
-    const ASTSelectQuery * getAggregatingQuery() const;
+    ///  appendProjectResult
 };
 
 }

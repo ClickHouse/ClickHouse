@@ -37,9 +37,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA;
-    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
-    extern const int CANNOT_PARSE_TEXT;
 }
 
 
@@ -54,6 +51,7 @@ namespace
         const ASTCreateQuery & query,
         DatabaseOrdinary & database,
         const String & database_name,
+        const String & metadata_path,
         bool has_force_restore_data_flag)
     {
         assert(!query.is_dictionary);
@@ -67,7 +65,9 @@ namespace
         }
         catch (Exception & e)
         {
-            e.addMessage("Cannot attach table '" + backQuote(query.table) + "' from query " + serializeAST(query));
+            e.addMessage("Cannot attach table " + backQuote(database_name) + "." + backQuote(query.table)
+                + " from metadata file " + metadata_path
+                + " from query " + serializeAST(query));
             throw;
         }
     }
@@ -125,7 +125,7 @@ void DatabaseOrdinary::loadStoredObjects(
         String full_path = getMetadataPath() + file_name;
         try
         {
-            auto ast = parseQueryFromMetadata(context, full_path, /*throw_on_error*/ true, /*remove_empty*/false);
+            auto ast = parseQueryFromMetadata(context, full_path, /*throw_on_error*/ true, /*remove_empty*/ false);
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
@@ -158,7 +158,7 @@ void DatabaseOrdinary::loadStoredObjects(
         if (!create_query.is_dictionary)
             pool.scheduleOrThrowOnError([&]()
             {
-                tryAttachTable(context, create_query, *this, getDatabaseName(), has_force_restore_data_flag);
+                tryAttachTable(context, create_query, *this, getDatabaseName(), getMetadataPath() + name_with_query.first, has_force_restore_data_flag);
 
                 /// Messages, so that it's not boring to wait for the server to load for a long time.
                 logAboutProgress(log, ++tables_processed, total_tables, watch);
@@ -235,7 +235,7 @@ void DatabaseOrdinary::alterTable(
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path, 0);
 
-    const auto & ast_create_query = ast->as<ASTCreateQuery &>();
+    auto & ast_create_query = ast->as<ASTCreateQuery &>();
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
     ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.indices);
@@ -245,20 +245,28 @@ void DatabaseOrdinary::alterTable(
     ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
     ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
 
-    ASTStorage & storage_ast = *ast_create_query.storage;
-    /// ORDER BY may change, but cannot appear, it's required construction
-    if (metadata.order_by_ast && storage_ast.order_by)
-        storage_ast.set(storage_ast.order_by, metadata.order_by_ast);
+    if (metadata.select)
+    {
+        ast->replace(ast_create_query.select, metadata.select);
+    }
 
-    if (metadata.primary_key_ast)
-        storage_ast.set(storage_ast.primary_key, metadata.primary_key_ast);
+    /// MaterializedView is one type of CREATE query without storage.
+    if (ast_create_query.storage)
+    {
+        ASTStorage & storage_ast = *ast_create_query.storage;
+        /// ORDER BY may change, but cannot appear, it's required construction
+        if (metadata.order_by_ast && storage_ast.order_by)
+            storage_ast.set(storage_ast.order_by, metadata.order_by_ast);
 
-    if (metadata.ttl_for_table_ast)
-        storage_ast.set(storage_ast.ttl_table, metadata.ttl_for_table_ast);
+        if (metadata.primary_key_ast)
+            storage_ast.set(storage_ast.primary_key, metadata.primary_key_ast);
 
-    if (metadata.settings_ast)
-        storage_ast.set(storage_ast.settings, metadata.settings_ast);
+        if (metadata.ttl_for_table_ast)
+            storage_ast.set(storage_ast.ttl_table, metadata.ttl_for_table_ast);
 
+        if (metadata.settings_ast)
+            storage_ast.set(storage_ast.settings, metadata.settings_ast);
+    }
 
     statement = getObjectDefinitionFromCreateQuery(ast);
     {

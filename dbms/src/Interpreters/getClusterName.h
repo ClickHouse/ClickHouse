@@ -1,12 +1,10 @@
 #pragma once
 
 #include <string>
-
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
-
-class IAST;
 
 /// Get the cluster name from AST.
 /** The name of the cluster is the name of the tag in the xml configuration.
@@ -16,6 +14,8 @@ class IAST;
   * This name will be parsed as an expression with an operator minus - not at all what you need.
   * Therefore, consider this case separately.
   */
-std::string getClusterName(const IAST & node);
+String getClusterName(const IAST & node);
+
+String getClusterNameAndMakeLiteral(ASTPtr & node);
 
 }

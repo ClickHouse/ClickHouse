@@ -16,7 +16,6 @@ namespace DB
 {
 
 struct Range;
-class FieldWithInfinity;
 
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
@@ -45,7 +44,6 @@ public:
     /** Create a Set from expression (specified literally in the query).
       * 'types' - types of what are on the left hand side of IN.
       * 'node' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
-      * 'fill_set_elements' - if true, fill vector of elements. For primary key to work.
       */
     void createFromAST(const DataTypes & types, ASTPtr node, const Context & context);
 
@@ -181,7 +179,37 @@ using Sets = std::vector<SetPtr>;
 class IFunction;
 using FunctionPtr = std::shared_ptr<IFunction>;
 
-/// Class for mayBeTrueInRange function.
+/** Class that represents single value with possible infinities.
+  * Single field is stored in column for more optimal inplace comparisons with other regular columns.
+  * Extracting fields from columns and further their comparison is suboptimal and requires extra copying.
+  */
+class ValueWithInfinity
+{
+public:
+    enum Type
+    {
+        MINUS_INFINITY = -1,
+        NORMAL = 0,
+        PLUS_INFINITY = 1
+    };
+
+    ValueWithInfinity(MutableColumnPtr && column_)
+        : column(std::move(column_)), type(NORMAL) {}
+
+    void update(const Field & x);
+    void update(Type type_) { type = type_; }
+
+    const IColumn & getColumnIfFinite() const;
+
+    Type getType() const { return type; }
+
+private:
+    MutableColumnPtr column;
+    Type type;
+};
+
+
+/// Class for checkInRange function.
 class MergeTreeSetIndex
 {
 public:
@@ -195,15 +223,20 @@ public:
         std::vector<FunctionBasePtr> functions;
     };
 
-    MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
+    MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && index_mapping_);
 
     size_t size() const { return ordered_set.at(0)->size(); }
 
-    BoolMask mayBeTrueInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
+    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
 
 private:
     Columns ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
+
+    using ColumnsWithInfinity = std::vector<ValueWithInfinity>;
+
+    ColumnsWithInfinity left_point;
+    ColumnsWithInfinity right_point;
 };
 
 }

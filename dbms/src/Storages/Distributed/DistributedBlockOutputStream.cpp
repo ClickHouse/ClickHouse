@@ -14,6 +14,7 @@
 #include <DataStreams/RemoteBlockOutputStream.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/createBlockSelector.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -36,7 +37,6 @@
 #include <mutex>
 
 
-
 namespace CurrentMetrics
 {
     extern const Metric DistributedSend;
@@ -53,6 +53,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TYPE_MISMATCH;
     extern const int CANNOT_LINK;
@@ -529,7 +530,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
         std::vector<std::string> dir_names;
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
             if (!address.is_local)
-                dir_names.push_back(address.toFullString());
+                dir_names.push_back(address.toFullString(context.getSettingsRef().use_compact_format_in_distributed_parts_names));
 
         if (!dir_names.empty())
             writeToShard(block, dir_names);
