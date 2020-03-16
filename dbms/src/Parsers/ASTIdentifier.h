@@ -3,6 +3,7 @@
 #include <optional>
 
 #include <Parsers/ASTWithAlias.h>
+#include <Core/UUID.h>
 
 
 namespace DB
@@ -10,7 +11,7 @@ namespace DB
 
 struct IdentifierSemantic;
 struct IdentifierSemanticImpl;
-struct DatabaseAndTableWithAlias;
+struct StorageID;
 
 
 /// Identifier (column, table or alias)
@@ -20,6 +21,7 @@ public:
     /// The composite identifier will have a concatenated name (of the form a.b.c),
     /// and individual components will be available inside the name_parts.
     String name;
+    UUID uuid = UUIDHelpers::Nil;
 
     ASTIdentifier(const String & name_, std::vector<String> && name_parts_ = {});
     ASTIdentifier(std::vector<String> && name_parts_);
@@ -60,7 +62,7 @@ private:
     static std::shared_ptr<ASTIdentifier> createSpecial(const String & name, std::vector<String> && name_parts = {});
 
     friend struct IdentifierSemantic;
-    friend ASTPtr createTableIdentifier(const String & database_name, const String & table_name);
+    friend ASTPtr createTableIdentifier(const StorageID & table_id);
     friend void setIdentifierSpecial(ASTPtr & ast);
 };
 
@@ -68,6 +70,7 @@ private:
 /// ASTIdentifier Helpers: hide casts and semantic.
 
 ASTPtr createTableIdentifier(const String & database_name, const String & table_name);
+ASTPtr createTableIdentifier(const StorageID & table_id);
 void setIdentifierSpecial(ASTPtr & ast);
 
 String getIdentifierName(const IAST * ast);

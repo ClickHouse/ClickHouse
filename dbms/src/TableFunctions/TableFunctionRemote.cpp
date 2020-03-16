@@ -188,17 +188,20 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             secure);
     }
 
-    auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_database, remote_table, context, remote_table_function_ptr);
+    auto remote_table_id = StorageID::createEmpty();
+    remote_table_id.database_name = remote_database;
+    remote_table_id.table_name = remote_table;
+    auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
 
     StoragePtr res = remote_table_function_ptr
         ? StorageDistributed::createWithOwnCluster(
-            StorageID("", table_name),
+            StorageID(getDatabaseName(), table_name),
             structure_remote_table,
             remote_table_function_ptr,
             cluster,
             context)
         : StorageDistributed::createWithOwnCluster(
-            StorageID("", table_name),
+            StorageID(getDatabaseName(), table_name),
             structure_remote_table,
             remote_database,
             remote_table,
