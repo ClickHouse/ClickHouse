@@ -672,12 +672,13 @@ public:
     /// Get table path on disk
     String getFullPathOnDisk(const DiskPtr & disk) const;
 
-    /// Get disk for part. Looping through directories on FS because some parts maybe not in
-    /// active dataparts set (detached)
-    DiskPtr getDiskForPart(const String & part_name, const String & relative_path = "") const;
+    /// Get disk where part is located.
+    /// `additional_path` can be set if part is not located directly in table data path (e.g. 'detached/')
+    DiskPtr getDiskForPart(const String & part_name, const String & additional_path = "") const;
 
-    /// Get full path for part. Uses getDiskForPart and returns the full relative path
-    std::optional<String> getFullRelativePathForPart(const String & part_name, const String & relative_path = "") const;
+    /// Get full path for part. Uses getDiskForPart and returns the full relative path.
+    /// `additional_path` can be set if part is not located directly in table data path (e.g. 'detached/')
+    std::optional<String> getFullRelativePathForPart(const String & part_name, const String & additional_path = "") const;
 
     Strings getDataPaths() const override;
 

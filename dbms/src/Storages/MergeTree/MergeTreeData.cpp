@@ -3603,12 +3603,12 @@ String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
 }
 
 
-DiskPtr MergeTreeData::getDiskForPart(const String & part_name, const String & relative_path) const
+DiskPtr MergeTreeData::getDiskForPart(const String & part_name, const String & additional_path) const
 {
     const auto disks = getStoragePolicy()->getDisks();
 
     for (const DiskPtr & disk : disks)
-        for (auto it = disk->iterateDirectory(relative_path); it->isValid(); it->next())
+        for (auto it = disk->iterateDirectory(relative_data_path + additional_path); it->isValid(); it->next())
             if (it->name() == part_name)
                 return disk;
 
@@ -3616,11 +3616,11 @@ DiskPtr MergeTreeData::getDiskForPart(const String & part_name, const String & r
 }
 
 
-std::optional<String> MergeTreeData::getFullRelativePathForPart(const String & part_name, const String & relative_path) const
+std::optional<String> MergeTreeData::getFullRelativePathForPart(const String & part_name, const String & additional_path) const
 {
-    auto disk = getDiskForPart(part_name, relative_path);
+    auto disk = getDiskForPart(part_name, additional_path);
     if (disk)
-        return relative_data_path + relative_path;
+        return relative_data_path + additional_path;
     return {};
 }
 
