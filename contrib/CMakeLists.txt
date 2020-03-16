@@ -75,9 +75,7 @@ if (USE_INTERNAL_ZLIB_LIBRARY)
     endif ()
 endif ()
 
-if (USE_INTERNAL_CCTZ_LIBRARY)
-    add_subdirectory (cctz-cmake)
-endif ()
+add_subdirectory (cctz-cmake)
 
 if (ENABLE_JEMALLOC AND USE_INTERNAL_JEMALLOC_LIBRARY)
     add_subdirectory (jemalloc-cmake)
