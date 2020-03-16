@@ -13,6 +13,7 @@ htmlmin==0.1.12
 idna==2.9
 imagesize==1.2.0
 Jinja2==2.11.1
+jinja2-highlight==0.6.1
 jsmin==2.2.2
 livereload==2.6.1
 Markdown==2.6.11

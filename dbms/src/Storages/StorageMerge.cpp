@@ -93,7 +93,7 @@ bool StorageMerge::hasColumn(const String & column_name) const
 template <typename F>
 StoragePtr StorageMerge::getFirstTable(F && predicate) const
 {
-    auto iterator = getDatabaseIterator(global_context);
+    auto iterator = getDatabaseIterator();
 
     while (iterator->isValid())
     {
@@ -140,7 +140,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
 {
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
 
-    DatabaseTablesIteratorPtr iterator = getDatabaseIterator(context);
+    DatabaseTablesIteratorPtr iterator = getDatabaseIterator();
 
     size_t selected_table_size = 0;
 
@@ -358,7 +358,7 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
 StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String & query_id) const
 {
     StorageListWithLocks selected_tables;
-    auto iterator = getDatabaseIterator(global_context);
+    auto iterator = getDatabaseIterator();
 
     while (iterator->isValid())
     {
@@ -376,7 +376,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
 StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr & query, bool has_virtual_column, const String & query_id) const
 {
     StorageListWithLocks selected_tables;
-    DatabaseTablesIteratorPtr iterator = getDatabaseIterator(global_context);
+    DatabaseTablesIteratorPtr iterator = getDatabaseIterator();
 
     auto virtual_column = ColumnString::create();
 
@@ -410,10 +410,10 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 }
 
 
-DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) const
+DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator() const
 {
     checkStackSize();
-    auto database = context.getDatabase(source_database);
+    auto database = DatabaseCatalog::instance().getDatabase(source_database);
     auto table_name_match = [this](const String & table_name_) { return table_name_regexp.match(table_name_); };
     return database->getTablesIterator(global_context, table_name_match);
 }
@@ -439,7 +439,7 @@ void StorageMerge::alter(
 
     StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();
     params.apply(storage_metadata);
-    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, storage_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, storage_metadata);
     setColumns(storage_metadata.columns);
 }
 
