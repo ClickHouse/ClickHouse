@@ -119,7 +119,9 @@ nav:
   - 'CREATE': 'query_language/create.md'
   - 'ALTER': 'query_language/alter.md'
   - 'SYSTEM': 'query_language/system.md'
-  - 'SYSTEM': 'query_language/show.md'
+  - 'SHOW': 'query_language/show.md'
+  - 'GRANT': 'query_language/grant.md'
+  - 'REVOKE': 'query_language/revoke.md'
   - 'Other Kinds of Queries': 'query_language/misc.md'
   - 'Functions':
     - 'Introduction': 'query_language/functions/index.md'

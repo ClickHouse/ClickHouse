@@ -93,4 +93,6 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 └──────────────┘
 ```
 
+## SHOW GRANTS {#show-grants}
+
 [Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->
