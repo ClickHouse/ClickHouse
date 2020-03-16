@@ -137,7 +137,7 @@ void DatabaseCatalog::shutdown()
 
 DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
 {
-    assert(uuid != UUIDHelpers::Nil && 0 <= getFirstLevelIdx(uuid) && getFirstLevelIdx(uuid) < uuid_map.size());
+    assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
     const UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     auto it = map_part.map.find(uuid);
@@ -330,7 +330,7 @@ DatabasePtr DatabaseCatalog::getSystemDatabase() const
 
 void DatabaseCatalog::addUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table)
 {
-    assert(uuid != UUIDHelpers::Nil && 0 <= getFirstLevelIdx(uuid) && getFirstLevelIdx(uuid) < uuid_map.size());
+    assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     auto [_, inserted] = map_part.map.try_emplace(uuid, std::move(database), std::move(table));
@@ -340,7 +340,7 @@ void DatabaseCatalog::addUUIDMapping(const UUID & uuid, DatabasePtr database, St
 
 void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
 {
-    assert(uuid != UUIDHelpers::Nil && 0 <= getFirstLevelIdx(uuid) && getFirstLevelIdx(uuid) < uuid_map.size());
+    assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     if (!map_part.map.erase(uuid))
