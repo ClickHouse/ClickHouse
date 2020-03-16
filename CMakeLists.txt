@@ -351,18 +351,12 @@ if (ENABLE_TESTS)
 endif ()
 
 # Need to process before "contrib" dir:
-include (cmake/find/jemalloc.cmake)
 include (cmake/find/cctz.cmake)
 include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
-if (USE_JEMALLOC)
-    message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
-    set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
-elseif (SANITIZE)
-    message (STATUS "Will use ${SANITIZE} sanitizer.")
-elseif (OS_LINUX)
+if (OS_LINUX AND NOT ENABLE_JEMALLOC)
     message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
 endif ()
 
