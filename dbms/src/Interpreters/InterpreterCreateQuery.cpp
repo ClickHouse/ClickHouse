@@ -105,12 +105,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         engine->name = old_style_database ? "Ordinary" : "Atomic";
         storage->set(storage->engine, engine);
         create.set(create.storage, storage);
-
-        if (database_name == "datasets")
-        {
-            //FIXME it's just to run stateful and stress tests without updating docker images
-            engine->name = "Ordinary";
-        }
     }
     else if ((create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
     {
@@ -559,7 +553,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (!create.temporary && create.database.empty())
         create.database = current_database;
-    if (!create.to_table_id.empty() && create.to_table_id.database_name.empty())
+    if (create.to_table_id && create.to_table_id.database_name.empty())
         create.to_table_id.database_name = current_database;
 
     if (create.select && (create.is_view || create.is_materialized_view || create.is_live_view))
@@ -587,7 +581,7 @@ bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
     String data_path;
     DatabasePtr database;
 
-    const String & table_name = create.table;
+    const String table_name = create.table;
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
     {
@@ -642,7 +636,7 @@ bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
     }
     else
     {
-        if (context.tryResolveStorageID({"", table_name}, Context::ResolveExternal) && create.if_not_exists)
+        if (create.if_not_exists && context.tryResolveStorageID({"", table_name}, Context::ResolveExternal))
             return false;
 
         auto temporary_table = TemporaryTableHolder(context, properties.columns, query_ptr);
@@ -803,7 +797,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     }
 
     if (create.to_table_id)
-        required_access.emplace_back(AccessType::INSERT, create.to_table_id.getDatabaseName(), create.to_table_id.getTableName());
+        required_access.emplace_back(AccessType::INSERT, create.to_table_id.database_name, create.to_table_id.table_name);
 
     return required_access;
 }

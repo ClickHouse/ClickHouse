@@ -84,18 +84,21 @@ void DatabaseAtomic::drop(const Context &)
                         ", which is used by " + std::to_string(it->table.use_count() - 1) + " queries. "
                         "Client should retry later.", ErrorCodes::DATABASE_NOT_EMPTY);
 
-    for (auto & table : tables_to_drop)
-    {
-        try
-        {
-            dropTableFinally(table);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Cannot drop table. Metadata " + table.data_path + " will be removed forcefully. "
-                                   "Garbage may be left in /store directory and ZooKeeper.");
-        }
-    }
+    //FIXME maybe make `tables_to_drop` global for all Atomic databases?
+
+    //for (auto & table : tables_to_drop)
+    //{
+    //    try
+    //    {
+    //        /// IStorage::drop() may use DatabaseCatalog, so databases mutex will be acquired (possible deadlock here)
+    //        dropTableFinally(table);
+    //    }
+    //    catch (...)
+    //    {
+    //        tryLogCurrentException(log, "Cannot drop table. Metadata " + table.data_path + " will be removed forcefully. "
+    //                               "Garbage may be left in /store directory and ZooKeeper.");
+    //    }
+    //}
     Poco::File(getMetadataPath()).remove(true);
 }
 
@@ -172,9 +175,10 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
     table->renameInMemory(to_database.getDatabaseName(), to_table_name);
 
     /// NOTE Non-atomic.
-    to_database.attachTable(to_table_name, table, getTableDataPath(table_name));
+    auto path = getTableDataPath(table_name);
     detachTable(table_name);
     Poco::File(getObjectMetadataPath(table_name)).renameTo(to_database.getObjectMetadataPath(to_table_name));
+    to_database.attachTable(to_table_name, table, path);
 }
 
 void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore_data_flag)

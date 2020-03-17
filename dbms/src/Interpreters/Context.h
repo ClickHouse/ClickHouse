@@ -88,7 +88,6 @@ class ShellCommand;
 class ICompressionCodec;
 class AccessControlManager;
 class SettingsConstraints;
-struct StorageID;
 class RemoteHostFilter;
 struct StorageID;
 class IDisk;
@@ -130,8 +129,6 @@ struct IHostContext
 };
 
 using IHostContextPtr = std::shared_ptr<IHostContext>;
-
-struct TemporaryTableHolder;
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)

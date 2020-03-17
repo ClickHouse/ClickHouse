@@ -83,8 +83,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     auto table_id = res->getStorageID();
     if (table_id.hasUUID())
     {
-        /// For now it's the only database, which contains storages with UUID
-        assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE);
+        assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
         DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
     }
 
@@ -104,8 +103,7 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     auto table_id = table->getStorageID();
     if (table_id.hasUUID())
     {
-        /// For now it's the only database, which contains storages with UUID
-        assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE);
+        assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
         DatabaseCatalog::instance().addUUIDMapping(table_id.uuid, shared_from_this(), table);
     }
 }
@@ -123,7 +121,13 @@ void DatabaseWithOwnTablesBase::shutdown()
 
     for (const auto & kv : tables_snapshot)
     {
+        auto table_id = kv.second->getStorageID();
         kv.second->shutdown();
+        if (table_id.hasUUID())
+        {
+            assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
+            DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
+        }
     }
 
     std::lock_guard lock(mutex);

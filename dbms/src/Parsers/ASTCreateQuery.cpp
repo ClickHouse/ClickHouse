@@ -258,7 +258,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
         as_table_function->formatImpl(settings, state, frame);
     }
-    if (!to_table_id.empty())
+    if (to_table_id)
     {
         settings.ostr
             << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "")

@@ -77,14 +77,7 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
 
             case Column:
                 column_names.emplace_back();
-                try
-                {
-                    pos = readMayBeQuotedColumnNameInto(pos, end - pos, column_names.back());
-                }
-                catch (const DB::Exception & e)
-                {
-                    throwInvalidFormat(e.message(), columnsCount());
-                }
+                pos = readMayBeQuotedColumnNameInto(pos, end - pos, column_names.back());
 
                 if (*pos == ':')
                     state = Format;
@@ -107,16 +100,7 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
                     errno = 0;
                     column_idx = strtoull(column_names.back().c_str(), &col_idx_end, 10);
                     if (col_idx_end != column_names.back().c_str() + column_names.back().size() || errno)
-                    {
-                        try
-                        {
-                            column_idx = idx_by_name(column_names.back());
-                        }
-                        catch (const DB::Exception & e)
-                        {
-                            throwInvalidFormat(e.message(), columnsCount());
-                        }
-                    }
+                        column_idx = idx_by_name(column_names.back());
                 }
                 format_idx_to_column_idx.emplace_back(column_idx);
                 break;
