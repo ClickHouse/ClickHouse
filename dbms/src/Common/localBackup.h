@@ -2,8 +2,7 @@
 
 #include <optional>
 #include <Core/Types.h>
-
-class DiskPtr;
+#include <Disks/IDisk.h>
 
 namespace DB
 {

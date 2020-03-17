@@ -2,7 +2,6 @@
 
 #include <Common/Exception.h>
 #include <string>
-#include <Disks/IDisk.h>
 #include <cerrno>
 
 

@@ -1869,8 +1869,8 @@ void MergeTreeData::changeSettings(
                 for (const String & disk_name : all_diff_disk_names)
                 {
                     auto disk = new_storage_policy->getDiskByName(disk_name);
-                    disk->createDirectory(relative_data_path);
-                    disk->createDirectory(relative_data_path + "detached");
+                    disk->createDirectories(relative_data_path);
+                    disk->createDirectories(relative_data_path + "detached");
                 }
                 /// FIXME how would that be done while reloading configuration???
             }
