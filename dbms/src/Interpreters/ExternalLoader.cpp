@@ -1362,41 +1362,6 @@ ExternalLoader::LoadablePtr ExternalLoader::createObject(
     return create(name, *config.config, config.key_in_config, config.repository_name);
 }
 
-String toString(ExternalLoader::Status status)
-{
-    using Status = ExternalLoader::Status;
-    switch (status)
-    {
-        case Status::NOT_LOADED: return "NOT_LOADED";
-        case Status::LOADED: return "LOADED";
-        case Status::FAILED: return "FAILED";
-        case Status::LOADING: return "LOADING";
-        case Status::FAILED_AND_RELOADING: return "FAILED_AND_RELOADING";
-        case Status::LOADED_AND_RELOADING: return "LOADED_AND_RELOADING";
-        case Status::NOT_EXIST: return "NOT_EXIST";
-    }
-    __builtin_unreachable();
-}
-
-std::vector<std::pair<String, Int8>> getStatusEnumAllPossibleValues()
-{
-    return std::vector<std::pair<String, Int8>>{
-        {toString(ExternalLoader::Status::NOT_LOADED), static_cast<Int8>(ExternalLoader::Status::NOT_LOADED)},
-        {toString(ExternalLoader::Status::LOADED), static_cast<Int8>(ExternalLoader::Status::LOADED)},
-        {toString(ExternalLoader::Status::FAILED), static_cast<Int8>(ExternalLoader::Status::FAILED)},
-        {toString(ExternalLoader::Status::LOADING), static_cast<Int8>(ExternalLoader::Status::LOADING)},
-        {toString(ExternalLoader::Status::LOADED_AND_RELOADING), static_cast<Int8>(ExternalLoader::Status::LOADED_AND_RELOADING)},
-        {toString(ExternalLoader::Status::FAILED_AND_RELOADING), static_cast<Int8>(ExternalLoader::Status::FAILED_AND_RELOADING)},
-        {toString(ExternalLoader::Status::NOT_EXIST), static_cast<Int8>(ExternalLoader::Status::NOT_EXIST)},
-    };
-};
-
-std::ostream & operator<<(std::ostream & out, ExternalLoader::Status status)
-{
-    return out << toString(status);
-}
-
-
 template ExternalLoader::LoadablePtr ExternalLoader::getCurrentLoadResult<ExternalLoader::LoadablePtr>(const String &) const;
 template ExternalLoader::LoadResult ExternalLoader::getCurrentLoadResult<ExternalLoader::LoadResult>(const String &) const;
 template ExternalLoader::Loadables ExternalLoader::getCurrentLoadResults<ExternalLoader::Loadables>(const FilterByNameFunction &) const;
