@@ -3379,7 +3379,7 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                 break;
             case PartitionCommand::MOVE_PARTITION:
             {
-                switch (command.move_destination_type)
+                switch (*command.move_destination_type)
                 {
                     case PartitionCommand::MoveDestinationType::DISK:
                         movePartitionToDisk(command.partition, command.move_destination_name, command.part, query_context);
