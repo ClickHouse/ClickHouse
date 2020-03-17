@@ -45,13 +45,6 @@ void ClusterCopier::init()
     for (auto & task_table : task_cluster->table_tasks)
     {
         task_table.cluster_pull = context.getCluster(task_table.cluster_pull_name);
-        auto pull_shards_info = task_table.cluster_pull->getShardsInfo();
-        for (auto & shard_info : pull_shards_info)
-        {
-            std::cout << "current_shard " << toString(shard_info.shard_num) << "has remote connections "
-            << toString(shard_info.hasRemoteConnections()) << std::endl;
-        }
-        std::cout << "CLUSTER PULL " << std::endl;
         task_table.cluster_push = context.getCluster(task_table.cluster_push_name);
         task_table.initShards(task_cluster->random_engine);
     }
@@ -417,19 +410,7 @@ bool ClusterCopier::checkPartitionPieceIsClean(
     if (zookeeper->exists(task_status_path, &stat))
         task_start_clock = LogicalClock(stat.mzxid);
 
-    /// If statement for readability.
-
-    LOG_INFO(log, "clean_state_clock.is_stale() " << clean_state_clock.is_stale());
-    LOG_INFO(log, "clean_state_clock.is_clean() " << clean_state_clock.is_clean());
-    if (clean_state_clock.is_clean() && (!task_start_clock.hasHappened() || clean_state_clock.discovery_zxid <= task_start_clock))
-    {
-        return true;
-    }
-    else
-    {
-        return false;
-    }
-
+    return clean_state_clock.is_clean() && (!task_start_clock.hasHappened() || clean_state_clock.discovery_zxid <= task_start_clock);
 }
 
 
