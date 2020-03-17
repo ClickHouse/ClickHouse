@@ -1,5 +1,6 @@
 #include <Databases/DatabaseWithDictionaries.h>
 #include <Common/StatusInfo.h>
+#include <Common/ExternalLoaderStatus.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalLoaderTempConfigRepository.h>
 #include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
@@ -37,7 +38,7 @@ void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, 
             throw Exception("Dictionary " + full_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
     }
 
-    CurrentStatusInfo::set(CurrentStatusInfo::DictionaryStatus, full_name, static_cast<Int8>(ExternalLoader::Status::NOT_LOADED));
+    CurrentStatusInfo::set(CurrentStatusInfo::DictionaryStatus, full_name, static_cast<Int8>(ExternalLoaderStatus::NOT_LOADED));
     /// ExternalLoader::reloadConfig() will find out that the dictionary's config has been added
     /// and in case `dictionaries_lazy_load == false` it will load the dictionary.
     const auto & external_loader = context.getExternalDictionariesLoader();
