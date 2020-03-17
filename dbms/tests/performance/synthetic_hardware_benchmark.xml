@@ -55,8 +55,8 @@
 <query>SELECT number % 10000000 AS k, count() FROM numbers(   10000000) GROUP BY k FORMAT Null</query>
 <query>SELECT number % 10000000 AS k, count() FROM numbers_mt(80000000) GROUP BY k FORMAT Null</query>
 <!-- 33. Хэш-таблица, требующая кучу оперативки. Возможны интересные эффекты. -->
-<query>SELECT number % 500000000 AS k, count() FROM numbers(   100000000) GROUP BY k FORMAT Null</query>
-<query>SELECT number % 500000000 AS k, count() FROM numbers_mt(800000000) GROUP BY k FORMAT Null</query>
+<query>SELECT number % 100000000 AS k, count() FROM numbers(   10000000) GROUP BY k FORMAT Null</query>
+<query>SELECT number % 100000000 AS k, count() FROM numbers_mt(80000000) GROUP BY k FORMAT Null</query>
 <!-- 35. Кэш-промахи, осуществляемые из многих процессорных ядер.  -->
 <!-- <query>SELECT number % (intDiv(100000000, {THREADS})) AS k, count() FROM numbers_mt(1600000000) GROUP BY k</query> -->
 <!-- 46. Запрос, требующий много бесполезных копирований. -->
