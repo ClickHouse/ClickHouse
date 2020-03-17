@@ -8,7 +8,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
-#include <Storages/MergeTree/AlterAnalysisResult.h>
 #include <Storages/MergeTree/PartDestinationType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
@@ -872,13 +871,6 @@ protected:
 
     void setTTLExpressions(const ColumnsDescription::ColumnTTLs & new_column_ttls,
                            const ASTPtr & new_ttl_table_ast, bool only_check = false);
-
-    AlterAnalysisResult analyzeAlterConversions(
-        const NamesAndTypesList & old_columns,
-        const NamesAndTypesList & new_columns,
-        const IndicesASTs & old_indices,
-        const IndicesASTs & new_indices) const;
-
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy);
 
     void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);
