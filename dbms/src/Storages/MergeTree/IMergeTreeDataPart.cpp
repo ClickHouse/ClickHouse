@@ -7,9 +7,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/localBackup.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <Common/localBackup.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
 
