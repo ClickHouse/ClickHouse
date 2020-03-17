@@ -86,6 +86,10 @@ def build_for_lang(lang, args):
         else:
             site_dir = os.path.join(args.docs_output_dir, lang)
 
+        plugins = ['search']
+        if args.htmlproofer:
+            plugins.append('htmlproofer')
+
         cfg = config.load_config(
             config_file=config_path,
             site_name=site_names.get(lang, site_names['en']) % args.version_prefix,
@@ -113,10 +117,7 @@ def build_for_lang(lang, args):
                     }
                 }
             ],
-            plugins=[
-                'search',
-                'htmlproofer'
-            ],
+            plugins=plugins,
             extra={
                 'stable_releases': args.stable_releases,
                 'version_prefix': args.version_prefix,
@@ -305,6 +306,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--skip-pdf', action='store_true')
     arg_parser.add_argument('--skip-website', action='store_true')
     arg_parser.add_argument('--minify', action='store_true')
+    arg_parser.add_argument('--htmlproofer', action='store_true')
     arg_parser.add_argument('--save-raw-single-page', type=str)
     arg_parser.add_argument('--livereload', type=int, default='0')
     arg_parser.add_argument('--verbose', action='store_true')
