@@ -54,7 +54,7 @@ static void loadDatabase(
 
     if (Poco::File(database_metadata_file).exists())
     {
-        /// There are .sql file with database creation statement.
+        /// There is .sql file with database creation statement.
         ReadBufferFromFile in(database_metadata_file, 1024);
         readStringUntilEOF(database_attach_query, in);
     }

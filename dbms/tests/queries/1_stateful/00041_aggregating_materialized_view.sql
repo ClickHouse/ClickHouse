@@ -49,7 +49,7 @@ ORDER BY StartDate;
 
 SELECT
     StartDate,
-    sum(Sign) 	                    AS Visits,
+    sum(Sign)                       AS Visits,
     uniq(UserID)                    AS Users
 FROM test.visits
 WHERE CounterID = 942285

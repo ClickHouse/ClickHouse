@@ -558,7 +558,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*DatabaseCatalog::instance().getSystemDatabase(), has_zookeeper);
         /// Then, load remaining databases
-        loadMetadata(*global_context);
+        loadMetadata(*global_context, default_database);
         DatabaseCatalog::instance().loadDatabases();
     }
     catch (...)

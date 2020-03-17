@@ -126,11 +126,7 @@ void DatabaseCatalog::shutdown()
 
 
     std::lock_guard lock(databases_mutex);
-    for (auto & elem : uuid_map)
-    {
-        std::lock_guard map_lock(elem.mutex);
-        elem.map.clear();
-    }
+    assert(std::find_if_not(uuid_map.begin(), uuid_map.end(), [](const auto & elem) { return elem.map.empty(); }) == uuid_map.end());
     databases.clear();
     view_dependencies.clear();
 }

@@ -58,8 +58,6 @@
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/DatabaseCatalog.h>
 
-#include <Databases/DatabaseMemory.h>
-
 namespace ProfileEvents
 {
     extern const Event ContextLock;
@@ -929,7 +927,6 @@ StoragePtr Context::getViewSource()
 {
     return view_source;
 }
-
 
 Settings Context::getSettings() const
 {
