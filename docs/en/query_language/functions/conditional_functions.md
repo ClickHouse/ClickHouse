@@ -94,7 +94,7 @@ It works same as `if` function.
 
 Syntax: `cond ? then : else`
 
-Returns `then` if the `cond` is truthy (greater than zero), otherwise returns `else`.
+Returns `then` if the `cond` evaluates to be true (greater than zero), otherwise returns `else`.
 
 * `cond` must be of type of `UInt8`, and `then` and `else` must have the lowest common type.
 
