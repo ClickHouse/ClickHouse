@@ -50,8 +50,11 @@ struct MutationCommand
     String column_name;
     DataTypePtr data_type; /// Maybe empty if we just want to drop column
 
-    /// If from_zookeeper, than consider more Alter commands as mutation commands
-    static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool from_zookeeper=false);
+    /// We need just clear column, not drop from metadata.
+    bool clear = false;
+
+    /// If parse_alter_commands, than consider more Alter commands as mutation commands
+    static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands=false);
 };
 
 /// Multiple mutation commands, possible from different ALTER queries

@@ -890,57 +890,6 @@ void StorageMergeTree::clearOldMutations(bool truncate)
     }
 }
 
-
-void StorageMergeTree::clearColumnOrIndexInPartition(const ASTPtr & partition, const AlterCommand & alter_command, const Context & context)
-{
-    /// Asks to complete merges and moves and does not allow them to start.
-    /// This protects against "revival" of data for a removed partition after completion of merge.
-    auto merge_blocker = merger_mutator.merges_blocker.cancel();
-    auto move_blocker = parts_mover.moves_blocker.cancel();
-
-    /// We don't change table structure, only data in some parts, parts are locked inside alterDataPart() function
-    auto lock_read_structure = lockStructureForShare(false, context.getCurrentQueryId());
-
-    String partition_id = getPartitionIDFromQuery(partition, context);
-    auto parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
-
-    std::vector<AlterDataPartTransactionPtr> transactions;
-
-
-    StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    alter_command.apply(metadata);
-
-    auto columns_for_parts = metadata.columns.getAllPhysical();
-    for (const auto & part : parts)
-    {
-        if (part->info.partition_id != partition_id)
-            throw Exception("Unexpected partition ID " + part->info.partition_id + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
-
-        MergeTreeData::AlterDataPartTransactionPtr transaction(new MergeTreeData::AlterDataPartTransaction(part));
-        alterDataPart(columns_for_parts, metadata.indices.indices, false, transaction);
-        if (transaction->isValid())
-            transactions.push_back(std::move(transaction));
-
-        if (alter_command.type == AlterCommand::DROP_COLUMN)
-            LOG_DEBUG(log, "Removing column " << alter_command.column_name << " from part " << part->name);
-        else if (alter_command.type == AlterCommand::DROP_INDEX)
-            LOG_DEBUG(log, "Removing index " << alter_command.index_name << " from part " << part->name);
-    }
-
-    if (transactions.empty())
-        return;
-
-    for (auto & transaction : transactions)
-    {
-        transaction->commit();
-        transaction.reset();
-    }
-
-    /// Recalculate columns size (not only for the modified column)
-    recalculateColumnSizes();
-}
-
-
 bool StorageMergeTree::optimize(
     const ASTPtr & /*query*/, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
 {
@@ -1051,24 +1000,6 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             {
                 auto lock = lockStructureForShare(false, context.getCurrentQueryId());
                 freezePartition(command.partition, command.with_name, context, lock);
-            }
-            break;
-
-            case PartitionCommand::CLEAR_COLUMN:
-            {
-                AlterCommand alter_command;
-                alter_command.type = AlterCommand::DROP_COLUMN;
-                alter_command.column_name = get<String>(command.column_name);
-                clearColumnOrIndexInPartition(command.partition, alter_command, context);
-            }
-            break;
-
-            case PartitionCommand::CLEAR_INDEX:
-            {
-                AlterCommand alter_command;
-                alter_command.type = AlterCommand::DROP_INDEX;
-                alter_command.index_name = get<String>(command.index_name);
-                clearColumnOrIndexInPartition(command.partition, alter_command, context);
             }
             break;
 

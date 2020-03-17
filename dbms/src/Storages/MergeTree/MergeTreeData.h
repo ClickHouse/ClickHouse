@@ -227,43 +227,6 @@ public:
         void clear() { precommitted_parts.clear(); }
     };
 
-    /// An object that stores the names of temporary files created in the part directory during ALTER of its
-    /// columns.
-    class AlterDataPartTransaction : private boost::noncopyable
-    {
-    public:
-        /// Renames temporary files, finishing the ALTER of the part.
-        void commit();
-
-        /// If commit() was not called, deletes temporary files, canceling the ALTER.
-        ~AlterDataPartTransaction();
-
-        const String & getPartName() const { return data_part->name; }
-
-        /// Review the changes before the commit.
-        const NamesAndTypesList & getNewColumns() const { return new_columns; }
-        const DataPart::Checksums & getNewChecksums() const { return new_checksums; }
-
-        AlterDataPartTransaction(DataPartPtr data_part_) : data_part(data_part_) {}
-        const DataPartPtr & getDataPart() const { return data_part; }
-        bool isValid() const;
-
-    private:
-        friend class MergeTreeData;
-        void clear();
-
-        bool valid = true;
-
-        DataPartPtr data_part;
-
-        DataPart::Checksums new_checksums;
-        NamesAndTypesList new_columns;
-        /// If the value is an empty string, the file is not temporary, and it must be deleted.
-        NameToNameMap rename_map;
-    };
-
-    using AlterDataPartTransactionPtr = std::unique_ptr<AlterDataPartTransaction>;
-
     struct PartsTemporaryRename : private boost::noncopyable
     {
         PartsTemporaryRename(
@@ -556,16 +519,6 @@ public:
     /// - columns corresponding to primary key, indices, sign, sampling expression and date are not affected.
     /// If something is wrong, throws an exception.
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) override;
-
-    /// Performs ALTER of the data part, writes the result to temporary files.
-    /// Returns an object allowing to rename temporary files to permanent files.
-    /// If the number of affected columns is suspiciously high and skip_sanity_checks is false, throws an exception.
-    /// If no data transformations are necessary, returns nullptr.
-    void alterDataPart(
-        const NamesAndTypesList & new_columns,
-        const IndicesASTs & new_indices,
-        bool skip_sanity_checks,
-        AlterDataPartTransactionPtr& transaction);
 
     /// Change MergeTreeSettings
     void changeSettings(
