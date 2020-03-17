@@ -132,7 +132,10 @@ CREATE TABLE `ontime` (
   `Div5LongestGTime` String,
   `Div5WheelsOff` String,
   `Div5TailNum` String
-) ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192)
+) ENGINE = MergeTree 
+PARTITION BY Year 
+ORDER BY (Carrier, FlightDate) 
+SETTINGS index_granularity = 8192;
 ```
 
 Загрузка данных:
@@ -224,7 +227,7 @@ FROM
         AND Year=2007
     GROUP BY Carrier
 )
-ANY INNER JOIN
+JOIN
 (
     SELECT
         Carrier,
@@ -243,7 +246,7 @@ SELECT Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year=2007
 GROUP BY Carrier
-ORDER BY Carrier
+ORDER BY c3 DESC
 ```
 
 Q6. Предыдущий запрос за более широкий диапазон лет, 2000-2008
@@ -260,7 +263,7 @@ FROM
         AND Year>=2000 AND Year<=2008
     GROUP BY Carrier
 )
-ANY INNER JOIN
+JOIN
 (
     SELECT
         Carrier,
@@ -279,7 +282,7 @@ SELECT Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year>=2000 AND Year<=2008
 GROUP BY Carrier
-ORDER BY Carrier;
+ORDER BY c3 DESC;
 ```
 
 Q7. Процент полетов, задержанных на более 10 минут, в разбивке по годам
@@ -295,7 +298,7 @@ FROM
     WHERE DepDelay>10
     GROUP BY Year
 )
-ANY INNER JOIN
+JOIN
 (
     select
         Year,
@@ -309,7 +312,7 @@ ORDER BY Year;
 Более оптимальная версия того же запроса:
 
 ```sql
-SELECT Year, avg(DepDelay>10)
+SELECT Year, avg(DepDelay>10)*100
 FROM ontime
 GROUP BY Year
 ORDER BY Year;
