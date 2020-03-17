@@ -30,7 +30,6 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int UNKNOWN_FORMAT;
-    extern const int CANNOT_UNLINK;
 }
 
 namespace

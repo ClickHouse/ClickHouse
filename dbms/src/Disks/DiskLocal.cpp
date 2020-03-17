@@ -17,7 +17,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int PATH_ACCESS_DENIED;
-    extern const int CANNOT_UNLINK;
 }
 
 std::mutex DiskLocal::reservation_mutex;
