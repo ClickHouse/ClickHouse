@@ -10,12 +10,13 @@ import markdown.util
 
 import slugify as slugify_impl
 
+
 class ClickHouseLinkMixin(object):
 
-    def handleMatch(self, m):
+    def handleMatch(self, m, data):
         single_page = (os.environ.get('SINGLE_PAGE') == '1')
         try:
-            el = super(ClickHouseLinkMixin, self).handleMatch(m)
+            el, start, end = super(ClickHouseLinkMixin, self).handleMatch(m, data)
         except IndexError:
             return
 
@@ -23,14 +24,14 @@ class ClickHouseLinkMixin(object):
             href = el.get('href') or ''
             is_external = href.startswith('http:') or href.startswith('https:')
             if is_external:
-                if not href.startswith('https://clickhouse.yandex'):
+                if not href.startswith('https://clickhouse.tech'):
                     el.set('rel', 'external nofollow')
             elif single_page:
                 if '#' in href:
                     el.set('href', '#' + href.split('#', 1)[1])
                 else:
                     el.set('href', '#' + href.replace('/index.md', '/').replace('.md', '/'))
-        return el
+        return el, start, end
 
 
 class ClickHouseAutolinkPattern(ClickHouseLinkMixin, markdown.inlinepatterns.AutolinkInlineProcessor):
@@ -59,8 +60,10 @@ class ClickHouseMarkdown(markdown.extensions.Extension):
         md.inlinePatterns['link'] = ClickHouseLinkPattern(markdown.inlinepatterns.LINK_RE, md)
         md.inlinePatterns['autolink'] = ClickHouseAutolinkPattern(markdown.inlinepatterns.AUTOLINK_RE, md)
 
+
 def makeExtension(**kwargs):
     return ClickHouseMarkdown(**kwargs)
+
 
 def slugify(value, separator):
     return slugify_impl.slugify(value, separator=separator, word_boundary=True, save_order=True)

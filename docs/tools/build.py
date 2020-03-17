@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
@@ -101,7 +101,7 @@ def build_for_lang(lang, args):
             edit_uri='edit/master/docs/%s' % lang,
             extra_css=['assets/stylesheets/custom.css?%s' % args.rev_short],
             markdown_extensions=[
-                'clickhouse',
+                'mdx_clickhouse',
                 'admonition',
                 'attr_list',
                 'codehilite',
@@ -113,7 +113,10 @@ def build_for_lang(lang, args):
                     }
                 }
             ],
-            plugins=[],
+            plugins=[
+                'search',
+                'htmlproofer'
+            ],
             extra={
                 'stable_releases': args.stable_releases,
                 'version_prefix': args.version_prefix,
@@ -311,8 +314,8 @@ if __name__ == '__main__':
 
     from github import choose_latest_releases, get_events
     args.stable_releases = choose_latest_releases() if args.enable_stable_releases else []
-    args.rev = subprocess.check_output('git rev-parse HEAD', shell=True).strip()
-    args.rev_short = subprocess.check_output('git rev-parse --short HEAD', shell=True).strip()
+    args.rev = subprocess.check_output('git rev-parse HEAD', shell=True).decode('utf-8').strip()
+    args.rev_short = subprocess.check_output('git rev-parse --short HEAD', shell=True).decode('utf-8').strip()
     args.rev_url = 'https://github.com/ClickHouse/ClickHouse/commit/%s' % args.rev
     args.events = get_events(args)
 
