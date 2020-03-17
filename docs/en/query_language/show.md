@@ -95,4 +95,15 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 
 ## SHOW GRANTS {#show-grants}
 
+- `SHOW GRANTS FOR vasya;` показывает то, что разрешено пользователю `vasya`; 
+- `SHOW GRANTS;` показывает то, что разрешено текущему пользователю.
+
+То есть, по сути, `SHOW GRANTS` печатает все эти графы. Если было несколько команд, то он все их печатает. 
+
+Команды `SHOW GRANTS FOR <объект (таблица)>`
+
+## SHOW CREATE USER {#show-create-user}
+
+`SHOW CREATE USER` не показывает пароли. В остальном, по сути, только хосты показывает. Видимо, из соображений секьюрности так правильнее. Мы можем показывать хеш, но, наверное, тоже не стоит этого делать.
+
 [Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->

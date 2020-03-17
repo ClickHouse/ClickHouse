@@ -108,6 +108,10 @@ DROP DICTIONARY [IF EXISTS] [db.]name
 Delets the dictionary.
 If `IF EXISTS` is specified, it doesn't return an error if the table doesn't exist or the database doesn't exist.
 
+## DROP USER {#drop-user}
+
+
+
 ## EXISTS
 
 ```sql
