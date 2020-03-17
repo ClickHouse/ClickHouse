@@ -20,7 +20,7 @@ The result type is an integer with bits equal to the maximum bits of its argumen
 
 ## bitRotateRight(a, b)
 
-## bitTest {#bittest}
+## bitTest { #bittest}
 
 Takes any integer and converts it into [binary form](https://en.wikipedia.org/wiki/Binary_number), returns the value of a bit at specified position. The countdown starts from 0 from the right to the left.
 
@@ -75,7 +75,7 @@ Result:
 └────────────────┘
 ```
 
-## bitTestAll {#bittestall}
+## bitTestAll { #bittestall}
 
 Returns result of [logical conjuction](https://en.wikipedia.org/wiki/Logical_conjunction) (AND operator) of all bits at given positions. The countdown starts from 0 from the right to the left.
 
@@ -140,7 +140,7 @@ Result:
 └───────────────────────────────┘
 ```
 
-## bitTestAny {#bittestany}
+## bitTestAny { #bittestany}
 
 Returns result of [logical disjunction](https://en.wikipedia.org/wiki/Logical_disjunction) (OR operator) of all bits at given positions. The countdown starts from 0 from the right to the left.
 

@@ -1,4 +1,4 @@
-# Data Types {#data_types}
+# Data Types { #data_types}
 
 ClickHouse can store various types of data in table cells.
 

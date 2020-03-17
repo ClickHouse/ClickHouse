@@ -44,7 +44,7 @@ You can insert data separately from the query by using the command-line client o
 
 If table has [constraints](create.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — server will raise an exception containing constraint name and expression, the query will be stopped.
 
-### Inserting The Results of `SELECT` {#insert_query_insert-select}
+### Inserting The Results of `SELECT` { #insert_query_insert-select}
 
 ```sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...

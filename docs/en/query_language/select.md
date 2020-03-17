@@ -93,7 +93,7 @@ FROM
 ```
 
 
-### FROM Clause {#select-from}
+### FROM Clause { #select-from}
 
 If the FROM clause is omitted, data will be read from the `system.one` table.
 The `system.one` table contains exactly one row (this table fulfills the same purpose as the DUAL table found in other DBMSs).
@@ -112,7 +112,7 @@ In contrast to standard SQL, a synonym does not need to be specified after a sub
 To execute a query, all the columns listed in the query are extracted from the appropriate table. Any columns not needed for the external query are thrown out of the subqueries.
 If a query does not list any columns (for example, `SELECT count() FROM t`), some column is extracted from the table anyway (the smallest one is preferred), in order to calculate the number of rows.
 
-#### FINAL Modifier {#select-from-final}
+#### FINAL Modifier { #select-from-final}
 
 Applicable when selecting data from tables from the [MergeTree](../operations/table_engines/mergetree.md)-engine family other than `GraphiteMergeTree`. When `FINAL` is specified, ClickHouse fully merges the data before returning the result and thus performs all data transformations that happen during merges for the given table engine.
 
@@ -127,7 +127,7 @@ Queries that use `FINAL` are executed not as fast as similar queries that don't,
 
 In most cases, avoid using `FINAL`.
 
-### SAMPLE Clause {#select-sample-clause}
+### SAMPLE Clause { #select-sample-clause}
 
 The `SAMPLE` clause allows for approximated query processing.
 
@@ -157,7 +157,7 @@ For the `SAMPLE` clause the following syntax is supported:
 | `SAMPLE k OFFSET m` | Here `k` and `m` are the numbers from 0 to 1.</br>The query is executed on a sample of `k` fraction of the data. The data used for the sample is offset by `m` fraction. [Read more](#select-sample-offset) |
 
 
-#### SAMPLE k {#select-sample-k}
+#### SAMPLE k { #select-sample-k}
 
 Here `k` is the number from 0 to 1 (both fractional and decimal notations are supported). For example, `SAMPLE 1/2` or `SAMPLE 0.5`.
 
@@ -177,7 +177,7 @@ ORDER BY PageViews DESC LIMIT 1000
 
 In this example, the query is executed on a sample from 0.1 (10%) of data. Values of aggregate functions are not corrected automatically, so to get an approximate result, the value `count()` is manually multiplied by 10.
 
-#### SAMPLE n {#select-sample-n}
+#### SAMPLE n { #select-sample-n}
 
 Here `n` is a sufficiently large integer. For example, `SAMPLE 10000000`.
 
@@ -213,7 +213,7 @@ FROM visits
 SAMPLE 10000000
 ``` 
 
-#### SAMPLE k OFFSET m {#select-sample-offset}
+#### SAMPLE k OFFSET m { #select-sample-offset}
 
 Here `k` and `m` are numbers from 0 to 1. Examples are shown below.
 
@@ -237,7 +237,7 @@ Here, a sample of 10% is taken from the second half of the data.
 
 `[----------++--------]`
 
-### ARRAY JOIN Clause {#select-array-join-clause}
+### ARRAY JOIN Clause { #select-array-join-clause}
 
 Allows executing `JOIN` with an array or nested data structure. The intent is similar to the [arrayJoin](functions/array_join.md#functions_arrayjoin) function, but its functionality is broader.
 
@@ -504,7 +504,7 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
 
-### JOIN Clause {#select-join}
+### JOIN Clause { #select-join}
 
 Joins the data in the normal [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) sense.
 
@@ -520,7 +520,7 @@ FROM <left_subquery>
 
 The table names can be specified instead of `<left_subquery>` and `<right_subquery>`. This is equivalent to the `SELECT * FROM table` subquery, except in a special case when the table has the [Join](../operations/table_engines/join.md) engine – an array prepared for joining.
 
-#### Supported Types of `JOIN` {#select-join-types}
+#### Supported Types of `JOIN` { #select-join-types}
 
 - `INNER JOIN` (or `JOIN`)
 - `LEFT JOIN` (or `LEFT OUTER JOIN`)
@@ -552,7 +552,7 @@ Don't mix these syntaxes.
 
 ClickHouse doesn't directly support syntax with commas, so we don't recommend using them. The algorithm tries to rewrite the query in terms of `CROSS JOIN` and `INNER JOIN` clauses and then proceeds to query processing. When rewriting the query, ClickHouse tries to optimize performance and memory consumption. By default, ClickHouse treats commas as an `INNER JOIN` clause and converts `INNER JOIN` to `CROSS JOIN` when the algorithm cannot guarantee that `INNER JOIN` returns the required data.
 
-#### Strictness {#select-join-strictness}
+#### Strictness { #select-join-strictness}
 
 - `ALL` — If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the standard `JOIN` behavior in SQL.
 - `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of queries with `ANY` and `ALL` keywords are the same.
@@ -704,7 +704,7 @@ For `ON`, `WHERE`, and `GROUP BY` clauses:
 - Arbitrary expressions cannot be used in `ON`, `WHERE`, and `GROUP BY` clauses, but you can define an expression in a `SELECT` clause and then use it in these clauses via an alias.
 
 
-### WHERE Clause {#select-where}
+### WHERE Clause { #select-where}
 
 If there is a WHERE clause, it must contain an expression with the UInt8 type. This is usually an expression with comparison and logical operators.
 This expression will be used for filtering data before all other transformations.
@@ -727,7 +727,7 @@ A query may simultaneously specify PREWHERE and WHERE. In this case, PREWHERE pr
 
 If the 'optimize_move_to_prewhere' setting is set to 1 and PREWHERE is omitted, the system uses heuristics to automatically move parts of expressions from WHERE to PREWHERE.
 
-### GROUP BY Clause {#select-group-by-clause}
+### GROUP BY Clause { #select-group-by-clause}
 
 This is one of the most important parts of a column-oriented DBMS.
 
@@ -824,7 +824,7 @@ If `max_rows_to_group_by` and `group_by_overflow_mode = 'any'` are not used, all
 
 You can use WITH TOTALS in subqueries, including subqueries in the JOIN clause (in this case, the respective total values are combined).
 
-#### GROUP BY in External Memory {#select-group-by-in-external-memory}
+#### GROUP BY in External Memory { #select-group-by-in-external-memory}
 
 You can enable dumping temporary data to the disk to restrict memory usage during `GROUP BY`.
 The [max_bytes_before_external_group_by](../operations/settings/settings.md#settings-max_bytes_before_external_group_by) setting determines the threshold RAM consumption for dumping `GROUP BY` temporary data to the file system. If set to 0 (the default), it is disabled.
@@ -911,7 +911,7 @@ WHERE and HAVING differ in that WHERE is performed before aggregation (GROUP BY)
 If aggregation is not performed, HAVING can't be used.
 
 
-### ORDER BY Clause {#select-order-by}
+### ORDER BY Clause { #select-order-by}
 
 The ORDER BY clause contains a list of expressions, which can each be assigned DESC or ASC (the sorting direction). If the direction is not specified, ASC is assumed. ASC is sorted in ascending order, and DESC in descending order. The sorting direction applies to a single expression, not to the entire list. Example: `ORDER BY Visits DESC, SearchPhrase`
 
@@ -974,7 +974,7 @@ Running a query may use more memory than 'max_bytes_before_external_sort'. For t
 
 External sorting works much less effectively than sorting in RAM.
 
-### SELECT Clause {#select-select}
+### SELECT Clause { #select-select}
 
 [Expressions](syntax.md#syntax-expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](#select-group-by-clause) aggregation.
 
@@ -1035,7 +1035,7 @@ In this example, `COLUMNS('a')` returns two columns: `aa` and `ab`. `COLUMNS('c'
 Columns that matched the `COLUMNS` expression can have different data types. If `COLUMNS` doesn't match any columns and is the only expression in `SELECT`, ClickHouse throws an exception.
 
 
-### DISTINCT Clause {#select-distinct}
+### DISTINCT Clause { #select-distinct}
 
 If DISTINCT is specified, only a single row will remain out of all the sets of fully matching rows in the result.
 The result will be the same as if GROUP BY were specified across all the fields specified in SELECT without aggregate functions. But there are several differences from GROUP BY:
@@ -1120,7 +1120,7 @@ The structure of results (the number and type of columns) must match for the que
 
 Queries that are parts of UNION ALL can't be enclosed in brackets. ORDER BY and LIMIT are applied to separate queries, not to the final result. If you need to apply a conversion to the final result, you can put all the queries with UNION ALL in a subquery in the FROM clause.
 
-### INTO OUTFILE Clause {#into-outfile-clause}
+### INTO OUTFILE Clause { #into-outfile-clause}
 
 Add the `INTO OUTFILE filename` clause (where filename is a string literal) to redirect query output to the specified file.
 In contrast to MySQL, the file is created on the client side. The query will fail if a file with the same filename already exists.
@@ -1128,7 +1128,7 @@ This functionality is available in the command-line client and clickhouse-local 
 
 The default output format is TabSeparated (the same as in the command-line client batch mode).
 
-### FORMAT Clause {#format-clause}
+### FORMAT Clause { #format-clause}
 
 Specify 'FORMAT format' to get data in any specified format.
 You can use this for convenience, or for creating dumps.
@@ -1138,7 +1138,7 @@ If the FORMAT clause is omitted, the default format is used, which depends on bo
 When using the command-line client, data is passed to the client in an internal efficient format. The client independently interprets the FORMAT clause of the query and formats the data itself (thus relieving the network and the server from the load).
 
 
-### IN Operators {#select-in-operators}
+### IN Operators { #select-in-operators}
 
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
 
@@ -1237,7 +1237,7 @@ FROM t_null
 ```
 
 
-#### Distributed Subqueries {#select-distributed-subqueries}
+#### Distributed Subqueries { #select-distributed-subqueries}
 
 There are two options for IN-s with subqueries (similar to JOINs): normal `IN` / `JOIN` and `GLOBAL IN` / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
 

@@ -2,7 +2,7 @@
 
 The functions for working with UUID are listed below.
 
-## generateUUIDv4 {#uuid_function-generate}
+## generateUUIDv4 { #uuid_function-generate}
 
 Generates the [UUID](../../data_types/uuid.md) of [version 4](https://tools.ietf.org/html/rfc4122#section-4.4).
 

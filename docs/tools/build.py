@@ -86,7 +86,7 @@ def build_for_lang(lang, args):
         else:
             site_dir = os.path.join(args.docs_output_dir, lang)
 
-        plugins = ['search']
+        plugins = ['macros', 'search']
         if args.htmlproofer:
             plugins.append('htmlproofer')
 
