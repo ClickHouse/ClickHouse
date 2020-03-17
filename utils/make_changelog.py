@@ -131,6 +131,15 @@ def parse_original_commits_from_cherry_pick_message(commit_message):
 # Use GitHub search api to check if commit from any pull request. Update pull_requests info.
 def find_pull_request_for_commit(commit_info, pull_requests, token, max_retries, retry_timeout):
     commits = [commit_info['sha']] + parse_original_commits_from_cherry_pick_message(commit_info['commit']['message'])
+
+    # Special case for cherry-picked merge commits without -x option. Parse pr number from commit message and search it.
+    if commit_info['commit']['message'].startswith('Merge pull request'):
+        tokens = commit_info['commit']['message'][len('Merge pull request'):].split()
+        if len(tokens) > 0 and tokens[0].startswith('#'):
+            pr_number = tokens[0][1:]
+            if len(pr_number) > 0 and pr_number.isdigit():
+                commits = [pr_number]
+
     query = 'search/issues?q={}+type:pr+repo:{}&sort=created&order=asc'.format(' '.join(commits), repo)
     resp = github_api_get_json(query, token, max_retries, retry_timeout)
 
