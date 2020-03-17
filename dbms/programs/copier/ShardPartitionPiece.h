@@ -2,30 +2,32 @@
 
 #include "Internals.h"
 
-namespace DB {
+namespace DB
+{
 
-struct ShardPartitionPiece {
+struct ShardPartitionPiece
+{
 
     ShardPartitionPiece(ShardPartition &parent, size_t current_piece_number_, bool is_present_piece_)
             : is_absent_piece(!is_present_piece_), current_piece_number(current_piece_number_),
               shard_partition(parent) {}
 
-    [[maybe_unused]] String getPartitionPiecePath() const;
+    String getPartitionPiecePath() const;
 
-    [[maybe_unused]] String getPartitionPieceCleanStartPath() const;
+    String getPartitionPieceCleanStartPath() const;
 
-    [[maybe_unused]] String getPartitionPieceIsDirtyPath() const;
+    String getPartitionPieceIsDirtyPath() const;
 
-    [[maybe_unused]] String getPartitionPieceIsCleanedPath() const;
+    String getPartitionPieceIsCleanedPath() const;
 
-    [[maybe_unused]] String getPartitionPieceActiveWorkersPath() const;
+    String getPartitionPieceActiveWorkersPath() const;
 
-    [[maybe_unused]] String getActiveWorkerPath() const ;
+    String getActiveWorkerPath() const ;
 
     /// On what shards do we have current partition.
-    [[maybe_unused]] String getPartitionPieceShardsPath() const;
+    String getPartitionPieceShardsPath() const;
 
-    [[maybe_unused]] String getShardStatusPath() const;
+    String getShardStatusPath() const;
 
     String getPartitionPieceCleanerPath() const;
 

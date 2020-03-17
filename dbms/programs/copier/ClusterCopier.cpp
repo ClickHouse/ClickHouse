@@ -593,8 +593,6 @@ PartitionTaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const Task
     /// Move partition to original destination table.
     for (size_t current_piece_number = 0; current_piece_number < task_table.number_of_splits; ++current_piece_number)
     {
-        /// TODO: Execute alter table move partition.
-
         LOG_DEBUG(log, "Trying to move partition " << partition_name
                                                    << " piece " << toString(current_piece_number)
                                                    << " to original table");
@@ -646,7 +644,8 @@ PartitionTaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const Task
         try
         {
             String query_deduplicate_ast_string;
-            if (!task_table.isReplicatedTable()) {
+            if (!task_table.isReplicatedTable())
+            {
                 query_deduplicate_ast_string += " OPTIMIZE TABLE " + getQuotedTable(original_table) +
                                                 " PARTITION " + partition_name + " DEDUPLICATE;";
 
@@ -670,9 +669,6 @@ PartitionTaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const Task
             throw;
         }
     }
-
-
-
 
     /// Create node to signal that we finished moving
     {
@@ -840,19 +836,14 @@ bool ClusterCopier::tryDropPartitionPiece(
 
         LOG_DEBUG(log, "Execute distributed DROP PARTITION: " << query);
         /// We have to drop partition_piece on each replica
-        UInt64 num_shards = executeQueryOnCluster(
+        size_t num_shards = executeQueryOnCluster(
                 cluster_push, query,
                 nullptr,
                 &settings_push,
                 PoolMode::GET_MANY,
                 ClusterExecutionMode::ON_EACH_NODE);
 
-        UNUSED(num_shards);
-//        if (num_shards < cluster_push->getShardCount())
-//        {
-//            LOG_INFO(log, "DROP PARTITION wasn't successfully executed on " << cluster_push->getShardCount() - num_shards << " shards");
-//            return false;
-//        }
+        LOG_INFO(log, "DROP PARTITION was successfully executed on " << num_shards << " nodes of a cluster.");
 
         /// Update the locking node
         if (!my_clock.is_stale())
@@ -1025,10 +1016,9 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
                     /// Repeat on errors
                     std::this_thread::sleep_for(default_sleep_time);
                 }
-                catch (...) {
-                    tryLogCurrentException(log,
-                                           "Some error occured while moving pieces to destination table for partition " +
-                                           partition_name);
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Some error occured while moving pieces to destination table for partition " + partition_name);
                 }
             }
         }
@@ -1201,8 +1191,7 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         query += " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = (" + task_partition.name + " AS partition_key))";
 
         if (enable_splitting)
-            query += " AND ( cityHash64(" + primary_key_comma_separated + ") %" + toString(number_of_splits) +
-                    " = " + toString(current_piece_number) + " )";
+            query += " AND ( cityHash64(" + primary_key_comma_separated + ") %" + toString(number_of_splits) + " = " + toString(current_piece_number) + " )";
 
         if (!task_table.where_condition_str.empty())
             query += " AND (" + task_table.where_condition_str + ")";
@@ -1238,7 +1227,6 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
 
         try
         {
-            /// TODO: tryDropPartitionPiece.
             tryDropPartitionPiece(task_partition, current_piece_number, zookeeper, clean_state_clock);
         }
         catch (...)
@@ -1317,7 +1305,6 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         auto checker = zkutil::EphemeralNodeHolder::create(partition_piece.getPartitionPieceCleanStartPath() + "/checker",
                                                            *zookeeper, host_id);
         // Maybe we are the first worker
-        ///TODO: Why table_split_shard???
 
         ASTPtr query_select_ast = get_select_query(split_table_for_current_piece, "count()", /*enable_splitting*/ true);
         UInt64 count;
@@ -1552,8 +1539,6 @@ PartitionTaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         zookeeper->set(current_task_piece_status_path, state_finished, 0);
     }
 
-    /// TODO: LOG_INFO (Piece copied and moved to destination table)
-
     return PartitionTaskStatus::Finished;
 }
 
@@ -1757,8 +1742,6 @@ bool ClusterCopier::checkShardHasPartition(const ConnectionTimeouts & timeouts,
     return InterpreterFactory::get(query_ast, local_context)->execute().in->read().rows() != 0;
 }
 
-/// TODO: Implement checkPresentPartitionPiecesOnCurrentShard();
-/// Just copypaste the function above
 bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTimeouts & timeouts,
                            TaskShard & task_shard, const String & partition_quoted_name, size_t current_piece_number)
 {
@@ -1782,7 +1765,8 @@ bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTi
     query += " LIMIT 1";
 
     LOG_DEBUG(log, "Checking shard " << task_shard.getDescription() << " for partition "
-                                     << partition_quoted_name << " piece " << std::to_string(current_piece_number) << "existence, executing query: " << query);
+                   << partition_quoted_name << " piece " << std::to_string(current_piece_number)
+                   << "existence, executing query: " << query);
 
     ParserQuery parser_query(query.data() + query.size());
     ASTPtr query_ast = parseQuery(parser_query, query, 0);
@@ -1792,10 +1776,10 @@ bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTi
     auto result = InterpreterFactory::get(query_ast, local_context)->execute().in->read().rows();
     if (result != 0)
         LOG_DEBUG(log, "Partition " << partition_quoted_name << " piece number "
-                                    << std::to_string(current_piece_number) << " is PRESENT on shard " << task_shard.getDescription());
+                       << std::to_string(current_piece_number) << " is PRESENT on shard " << task_shard.getDescription());
     else
         LOG_DEBUG(log, "Partition " << partition_quoted_name << " piece number "
-                                    << std::to_string(current_piece_number) << " is ABSENT on shard " << task_shard.getDescription());
+                       << std::to_string(current_piece_number) << " is ABSENT on shard " << task_shard.getDescription());
     return result != 0;
 }
 
