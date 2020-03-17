@@ -121,11 +121,11 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
                     DB::writeText(key, wb);
                     DB::writeChar('{', wb);
                     DB::writeText(key, wb);
-                    DB::writeText("=\"", wb);
+                    DB::writeChar('=', wb);
                     writeDoubleQuotedString(enum_value.first, wb);
-                    DB::writeText("\",name=\"", wb);
+                    DB::writeText(",name=", wb);
                     writeDoubleQuotedString(value.first, wb);
-                    DB::writeText("\"} ", wb);
+                    DB::writeText("} ", wb);
                     DB::writeText(value.second == enum_value.second, wb);
                     DB::writeChar('\n', wb);
                 }
