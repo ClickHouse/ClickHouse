@@ -88,7 +88,7 @@ WHERE isNotNull(left) AND isNotNull(right)
 ```
 Note: `NULL` values are not used in this example, check [NULL values in conditionals](#null-values-in-conditionals) section.
 
-## Ternary operator {#ternary-operator}
+## Ternary Operator {#ternary-operator}
 
 It works same as `if` function.
 
