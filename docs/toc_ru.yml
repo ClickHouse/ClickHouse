@@ -239,6 +239,9 @@ nav:
 
 - 'Что нового':
   - 'Changelog': 'changelog.md'
+  - 'Changelog 2019': 'changelog_2019.md'
+  - 'Changelog 2018': 'changelog_2018.md'
+  - 'Changelog 2017': 'changelog_2017.md'
   - 'Security changelog': 'security_changelog.md'
   - 'Roadmap': 'roadmap.md'
   - 'Подробный roadmap 2020': 'extended_roadmap.md'
