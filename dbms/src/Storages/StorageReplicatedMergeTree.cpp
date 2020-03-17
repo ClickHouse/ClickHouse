@@ -4941,10 +4941,10 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         part_checksums.emplace_back(hash_hex);
     }
 
-    /// In case of ATTACH PARTITION FROM we have nothing to do - return. Because no data will be added or removed.
-    /// In case of REPLACE PARTITION we can replace existing partition with empty.
-    if (!replace && src_parts.empty())
-        return;
+//    /// In case of ATTACH PARTITION FROM we have nothing to do - return. Because no data will be added or removed.
+//    /// In case of REPLACE PARTITION we can replace existing partition with empty.
+//    if (!replace && src_parts.empty())
+//        return;
 
     ReplicatedMergeTreeLogEntryData entry;
     {
