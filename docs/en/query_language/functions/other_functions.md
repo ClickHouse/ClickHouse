@@ -180,7 +180,7 @@ Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is infi
 
 ## ifNotFinite {#ifnotfinite}
 
-Checks whether `x` is a finite value.
+Checks whether floating point value is finite.
 
 **Syntax** 
 
