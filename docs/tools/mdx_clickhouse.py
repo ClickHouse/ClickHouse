@@ -33,11 +33,11 @@ class ClickHouseLinkMixin(object):
         return el
 
 
-class ClickHouseAutolinkPattern(ClickHouseLinkMixin, markdown.inlinepatterns.AutolinkPattern):
+class ClickHouseAutolinkPattern(ClickHouseLinkMixin, markdown.inlinepatterns.AutolinkInlineProcessor):
     pass
 
 
-class ClickHouseLinkPattern(ClickHouseLinkMixin, markdown.inlinepatterns.LinkPattern):
+class ClickHouseLinkPattern(ClickHouseLinkMixin, markdown.inlinepatterns.LinkInlineProcessor):
     pass
 
 
