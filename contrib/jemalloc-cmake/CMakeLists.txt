@@ -1,18 +1,14 @@
 option (ENABLE_JEMALLOC "Enable jemalloc allocator" ${ENABLE_LIBRARIES})
 
-if (SANITIZE)
-    set (ENABLE_JEMALLOC FALSE)
-    message (STATUS "jemalloc is disabled because of sanitizers")
+if (SANITIZE OR NOT OS_LINUX OR NOT (ARCH_AMD64 OR ARCH_ARM))
+    set (ENABLE_JEMALLOC OFF)
+    message (STATUS "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used on Linux with x86_64 or aarch64.")
 endif ()
 
 if (ENABLE_JEMALLOC)
     option (USE_INTERNAL_JEMALLOC "Use internal jemalloc library" ${NOT_UNBUNDLED})
 
     if (USE_INTERNAL_JEMALLOC)
-        if (NOT OS_LINUX OR NOT (ARCH_AMD64 OR ARCH_ARM))
-            message (FATAL_ERROR "Internal jemalloc can only be used on Linux with x86_64 or aarch64.")
-        endif ()
-
         set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/jemalloc")
 
         set (SRCS
@@ -72,6 +68,8 @@ if (ENABLE_JEMALLOC)
                 target_link_libraries (jemalloc PRIVATE unwind)
             endif ()
         endif ()
+
+        target_compile_options(jemalloc PUBLIC -Wno-redundant-decls)
     else ()
         find_library(LIBRARY_JEMALLOC jemalloc)
         find_path(INCLUDE_JEMALLOC jemalloc/jemalloc.h)
