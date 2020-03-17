@@ -14,7 +14,8 @@ namespace ErrorCodes
 
 struct TaskShard;
 
-struct TaskTable {
+struct TaskTable
+        {
     TaskTable(TaskCluster & parent, const Poco::Util::AbstractConfiguration & config, const String & prefix,
               const String & table_key);
 
@@ -42,8 +43,6 @@ struct TaskTable {
     String getCertainPartitionTaskStatusPath(const String & partition_name) const;
 
     String getCertainPartitionPieceTaskStatusPath(const String & partition_name, const size_t piece_number) const;
-
-    [[maybe_unused]] String getReplicatedEngineFirstArgumentForCurrentPiece(const size_t piece_number) const;
 
 
     bool isReplicatedTable() const { return engine_push_zk_path != ""; }
@@ -134,7 +133,8 @@ struct TaskTable {
     /// Parition names to process in user-specified order
     Strings ordered_partition_names;
 
-    ClusterPartition & getClusterPartition(const String &partition_name) {
+    ClusterPartition & getClusterPartition(const String &partition_name)
+    {
         auto it = cluster_partitions.find(partition_name);
         if (it == cluster_partitions.end())
             throw Exception("There are no cluster partition " + partition_name + " in " + table_id,
@@ -146,7 +146,7 @@ struct TaskTable {
     UInt64 bytes_copied = 0;
     UInt64 rows_copied = 0;
 
-    template<typename RandomEngine>
+    template <typename RandomEngine>
     void initShards(RandomEngine &&random_engine);
 };
 
@@ -188,9 +188,7 @@ struct TaskShard
 
     /// Internal distributed tables
     DatabaseAndTableName table_read_shard;
-
     DatabaseAndTableName main_table_split_shard;
-
     ListOfDatabasesAndTableNames list_of_split_tables_on_shard;
 };
 
@@ -228,7 +226,7 @@ inline String TaskTable::getCertainPartitionPieceIsDirtyPath(const String & part
     return getPartitionPiecePath(partition_name, piece_number) + "/is_dirty";
 }
 
-inline String TaskTable::getCertainPartitionIsCleanedPath(const String &partition_name) const
+inline String TaskTable::getCertainPartitionIsCleanedPath(const String & partition_name) const
 {
     return getCertainPartitionIsDirtyPath(partition_name) + "/cleaned";
 }
@@ -374,12 +372,6 @@ inline void TaskTable::initShards(RandomEngine && random_engine)
     local_shards.assign(all_shards.begin(), it_first_remote);
 }
 
-inline String TaskTable::getReplicatedEngineFirstArgumentForCurrentPiece(const size_t piece_number) const
-{
-    assert (engine_push_zk_path != "");
-    return engine_push_zk_path + "/piece_" + toString(piece_number);
-}
-
 inline ASTPtr TaskTable::rewriteReplicatedCreateQueryToPlain()
 {
     ASTPtr prev_engine_push_ast = engine_push_ast->clone();
@@ -415,7 +407,5 @@ inline String DB::TaskShard::getHostNameExample() const
     auto & replicas = task_table.cluster_pull->getShardsAddresses().at(indexInCluster());
     return replicas.at(0).readableString();
 }
-
-
 
 }

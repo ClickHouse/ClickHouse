@@ -4861,6 +4861,7 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
 void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace,
                                                       const Context & context)
 {
+    /// First argument is true, because we possibly will add new data to current table.
     auto lock1 = lockStructureForShare(true, context.getCurrentQueryId());
     auto lock2 = source_table->lockStructureForShare(false, context.getCurrentQueryId());
 
@@ -4940,11 +4941,6 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         block_id_paths.emplace_back(block_id_path);
         part_checksums.emplace_back(hash_hex);
     }
-
-//    /// In case of ATTACH PARTITION FROM we have nothing to do - return. Because no data will be added or removed.
-//    /// In case of REPLACE PARTITION we can replace existing partition with empty.
-//    if (!replace && src_parts.empty())
-//        return;
 
     ReplicatedMergeTreeLogEntryData entry;
     {
