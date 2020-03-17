@@ -1,7 +1,7 @@
 #include <signal.h>
 #include <time.h>
 #include <sys/time.h>
-#if OS_LINUX
+#if defined(OS_LINUX)
     #include <sys/sysinfo.h>
 #endif
 #include <sched.h>
@@ -18,16 +18,12 @@
 
 #include <Common/ThreadFuzzer.h>
 
-
 /// We will also wrap some thread synchronization functions to inject sleep/migration before or after.
-#if OS_LINUX
+#if defined(OS_LINUX)
 #define FOR_EACH_WRAPPED_FUNCTION(M) \
     M(int, pthread_mutex_lock, pthread_mutex_t * arg) \
     M(int, pthread_mutex_unlock, pthread_mutex_t * arg)
-#else
-#define FOR_EACH_WRAPPED_FUNCTION(M)
 #endif
-
 
 namespace DB
 {
@@ -70,6 +66,7 @@ static void initFromEnv(std::atomic<T> & what, const char * name)
 
 static std::atomic<int> num_cpus = 0;
 
+#if defined(OS_LINUX)
 #define DEFINE_WRAPPER_PARAMS(RET, NAME, ...) \
     static std::atomic<double> NAME ## _before_yield_probability = 0; \
     static std::atomic<double> NAME ## _before_migrate_probability = 0; \
@@ -84,11 +81,11 @@ static std::atomic<int> num_cpus = 0;
 FOR_EACH_WRAPPED_FUNCTION(DEFINE_WRAPPER_PARAMS)
 
 #undef DEFINE_WRAPPER_PARAMS
-
+#endif
 
 void ThreadFuzzer::initConfiguration()
 {
-#if OS_LINUX
+#if defined(OS_LINUX)
     num_cpus.store(get_nprocs(), std::memory_order_relaxed);
 #else
     (void)num_cpus;
@@ -100,6 +97,7 @@ void ThreadFuzzer::initConfiguration()
     initFromEnv(sleep_probability, "THREAD_FUZZER_SLEEP_PROBABILITY");
     initFromEnv(sleep_time_us, "THREAD_FUZZER_SLEEP_TIME_US");
 
+#if defined(OS_LINUX)
 #define INIT_WRAPPER_PARAMS(RET, NAME, ...) \
     initFromEnv(NAME ## _before_yield_probability, "THREAD_FUZZER_" #NAME "_BEFORE_YIELD_PROBABILITY"); \
     initFromEnv(NAME ## _before_migrate_probability, "THREAD_FUZZER_" #NAME "_BEFORE_MIGRATE_PROBABILITY"); \
@@ -114,11 +112,13 @@ void ThreadFuzzer::initConfiguration()
     FOR_EACH_WRAPPED_FUNCTION(INIT_WRAPPER_PARAMS)
 
 #undef INIT_WRAPPER_PARAMS
+#endif
 }
 
 
 bool ThreadFuzzer::isEffective() const
 {
+#if defined(OS_LINUX)
 #define CHECK_WRAPPER_PARAMS(RET, NAME, ...) \
     if (NAME ## _before_yield_probability.load(std::memory_order_relaxed)) return true; \
     if (NAME ## _before_migrate_probability.load(std::memory_order_relaxed)) return true; \
@@ -133,6 +133,7 @@ bool ThreadFuzzer::isEffective() const
     FOR_EACH_WRAPPED_FUNCTION(CHECK_WRAPPER_PARAMS)
 
 #undef INIT_WRAPPER_PARAMS
+#endif
 
     return cpu_time_period_us != 0
         && (yield_probability > 0
@@ -153,7 +154,7 @@ static void injection(
         sched_yield();
     }
 
-#if OS_LINUX
+#if defined(OS_LINUX)
     int num_cpus_loaded = num_cpus.load(std::memory_order_relaxed);
     if (num_cpus_loaded > 0
         && migrate_probability > 0
@@ -167,6 +168,8 @@ static void injection(
 
         (void)sched_setaffinity(0, sizeof(set), &set);
     }
+#else
+    UNUSED(migrate_probability);
 #endif
 
     if (sleep_probability > 0
@@ -194,11 +197,17 @@ void ThreadFuzzer::setup()
     sa.sa_handler = signalHandler;
     sa.sa_flags = SA_RESTART;
 
+#if defined(OS_LINUX)
     if (sigemptyset(&sa.sa_mask))
         throwFromErrno("Failed to clean signal mask for thread fuzzer", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
 
     if (sigaddset(&sa.sa_mask, SIGPROF))
         throwFromErrno("Failed to add signal to mask for thread fuzzer", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+#else
+    // the two following functions always return 0 under mac
+    sigemptyset(&sa.sa_mask);
+    sigaddset(&sa.sa_mask, SIGPROF);
+#endif
 
     if (sigaction(SIGPROF, &sa, nullptr))
         throwFromErrno("Failed to setup signal handler for thread fuzzer", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
@@ -219,6 +228,7 @@ void ThreadFuzzer::setup()
 /// We expect that for every function like pthread_mutex_lock there is the same function with two underscores prefix.
 /// NOTE We cannot use dlsym(... RTLD_NEXT), because it will call pthread_mutex_lock and it will lead to infinite recursion.
 
+#if defined(OS_LINUX)
 #define MAKE_WRAPPER(RET, NAME, ...) \
     extern "C" RET __ ## NAME(__VA_ARGS__); /* NOLINT */ \
     extern "C" RET NAME(__VA_ARGS__) /* NOLINT */ \
@@ -240,8 +250,9 @@ void ThreadFuzzer::setup()
         return ret; \
     } \
 
-FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER)
+    FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER)
 
 #undef MAKE_WRAPPER
+#endif
 
 }
