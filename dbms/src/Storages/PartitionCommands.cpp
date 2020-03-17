@@ -8,12 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_COLUMN;
-}
-
 std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * command_ast)
 {
     if (command_ast->type == ASTAlterCommand::DROP_PARTITION)
