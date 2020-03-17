@@ -6,6 +6,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
+#include <Poco/Logger.h>
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/multi_polygon.hpp>
 
@@ -291,30 +292,36 @@ private:
     bool find(const Point & point, size_t & id) const override;
 };
 
-/** Smarty implementation of the polygon dictionary. Generate edge indexes during its construction in
+/** Generate edge indexes during its construction in
  *  the following way: sort all polygon's vertexes by x coordinate, and then store all interesting
  *  polygon edges for each adjacent x coordinates. For each query finds interesting edges and 
  *  iterates over them, finding required polygon. If there is more than one any such polygon may be returned.
  */
-class SmartPolygonDictionary : public IPolygonDictionary
+class BucketsPolygonIndex
 {
 public:
-    SmartPolygonDictionary(
-            const std::string & database_,
-            const std::string & name_,
-            const DictionaryStructure & dict_struct_,
-            DictionarySourcePtr source_ptr_,
-            DictionaryLifetime dict_lifetime_,
-            InputType input_type_,
-            PointType point_type_);
+    /** A two-dimensional point in Euclidean coordinates. */
+    using Point = IPolygonDictionary::Point;
+    /** A polygon in boost is a an outer ring of points with zero or more cut out inner rings. */
+    using Polygon = IPolygonDictionary::Polygon;
+    /** A ring in boost used for describing the polygons. */
+    using Ring = IPolygonDictionary::Ring;
 
-    std::shared_ptr<const IExternalLoadable> clone() const override;
+    /** Builds an index by splitting all edges with provided sorted x coordinates. */
+    BucketsPolygonIndex(const std::vector<Polygon> & polygons, const std::vector<Float64> & splits);
+
+    /** Builds an index by splitting all edges with all points x coordinates. */
+    BucketsPolygonIndex(const std::vector<Polygon> & polygons);
+
+    /** Finds polygon id the same way as IPolygonIndex. */
+    bool find(const Point & point, size_t & id) const;
 
 private:
-    bool find(const Point & point, size_t & id) const override;
+    /** Returns unique x coordinates among all points. */
+    std::vector<Float64> uniqueX(const std::vector<Polygon> & polygons);
 
     /** Builds indexes described above. */
-    void indexBuild();
+    void indexBuild(const std::vector<Polygon> & polygons);
 
     /** Auxiliary function for adding ring to index */
     void indexAddRing(const Ring & ring, size_t polygon_id);
@@ -332,6 +339,8 @@ private:
         static bool compare2(const Edge & a, const Edge & b);
     };
 
+    Poco::Logger * log;
+
     /** Sorted distinct coordinates of all vertexes. */
     std::vector<Float64> sorted_x;
     std::vector<Edge> all_edges;
@@ -341,6 +350,27 @@ private:
      *  That means edges_index.size() + 1 == sorted_x.size()
      */
     std::vector<std::vector<Edge>> edges_index;
+};
+
+/** Smarty implementation of the polygon dictionary. Uses BucketsPolygonIndex. */
+class SmartPolygonDictionary : public IPolygonDictionary
+{
+public:
+    SmartPolygonDictionary(
+            const std::string & database_,
+            const std::string & name_,
+            const DictionaryStructure & dict_struct_,
+            DictionarySourcePtr source_ptr_,
+            DictionaryLifetime dict_lifetime_,
+            InputType input_type_,
+            PointType point_type_);
+
+    std::shared_ptr<const IExternalLoadable> clone() const override;
+
+private:
+    bool find(const Point & point, size_t & id) const override;
+
+    BucketsPolygonIndex buckets_idx;
 };
 
 }

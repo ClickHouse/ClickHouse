@@ -679,49 +679,67 @@ bool SimplePolygonDictionary::find(const Point &point, size_t & id) const
     return found;
 }
 
-SmartPolygonDictionary::SmartPolygonDictionary(
-    const std::string & database_,
-    const std::string & name_,
-    const DictionaryStructure & dict_struct_,
-    DictionarySourcePtr source_ptr_,
-    const DictionaryLifetime dict_lifetime_,
-    InputType input_type_,
-    PointType point_type_)
-    : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_)
+BucketsPolygonIndex::BucketsPolygonIndex(
+    const std::vector<Polygon> & polygons,
+    const std::vector<Float64> & splits)
+    : log(&Logger::get("BucketsPolygonIndex")),
+      sorted_x(splits)
 {
-    indexBuild();
+    indexBuild(polygons);
 }
 
-std::shared_ptr<const IExternalLoadable> SmartPolygonDictionary::clone() const
+BucketsPolygonIndex::BucketsPolygonIndex(
+    const std::vector<Polygon> & polygons)
+    : log(&Logger::get("BucketsPolygonIndex")),
+      sorted_x(uniqueX(polygons))
 {
-    return std::make_shared<SmartPolygonDictionary>(
-            this->database,
-            this->name,
-            this->dict_struct,
-            this->source_ptr->clone(),
-            this->dict_lifetime,
-            this->input_type,
-            this->point_type);
+    indexBuild(polygons);
 }
 
-void SmartPolygonDictionary::indexBuild()
+std::vector<Float64> BucketsPolygonIndex::uniqueX(const std::vector<Polygon> & polygons)
 {
-    for (size_t i = 0; i < (this->polygons).size(); ++i)
+    std::vector<Float64> all_x;
+    for (size_t i = 0; i < polygons.size(); ++i)
     {
-        indexAddRing(this->polygons[i].outer(), i);
+        for (auto & point : polygons[i].outer())
+        {
+            all_x.push_back(point.x());
+        }
 
-        for (auto & inner : this->polygons[i].inners())
+        for (auto & inner : polygons[i].inners())
+        {
+            for (auto & point : inner)
+            {
+                all_x.push_back(point.x());
+            }
+        }
+    }
+
+    /** making all_x sorted and distinct */
+    std::sort(all_x.begin(), all_x.end());
+    all_x.erase(std::unique(all_x.begin(), all_x.end()), all_x.end());
+
+    LOG_TRACE(log, "Found " << all_x.size() << " unique x coordinates");
+
+    return all_x;
+}
+
+void BucketsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
+{
+    for (size_t i = 0; i < polygons.size(); ++i)
+    {
+        indexAddRing(polygons[i].outer(), i);
+
+        for (auto & inner : polygons[i].inners())
         {
             indexAddRing(inner, i);
         }
     }
 
-    /** making this->sorted_x sorted and distinct */
-    std::sort(this->sorted_x.begin(), this->sorted_x.end());
-    this->sorted_x.erase(std::unique(this->sorted_x.begin(), this->sorted_x.end()), this->sorted_x.end());
-
     /** sorting edges consisting of (left_point, right_point, polygon_id) in that order */
     std::sort(this->all_edges.begin(), this->all_edges.end(), Edge::compare1);
+
+    LOG_TRACE(log, "Just sorted " << all_edges.size() << " edges from all " << polygons.size() << " polygons");
 
     /** using custom comparator for fetching edges in right_point order, like in scanline */
     auto cmp = [](const Edge & a, const Edge & b)
@@ -735,6 +753,7 @@ void SmartPolygonDictionary::indexBuild()
         this->edges_index.resize(this->sorted_x.size() - 1);
     }
 
+    size_t total_index_edges = 0;
     size_t edges_it = 0;
     for (size_t l = 0, r = 1; r < this->sorted_x.size(); ++l, ++r)
     {
@@ -754,16 +773,18 @@ void SmartPolygonDictionary::indexBuild()
         }
 
         this->edges_index[l] = std::vector<Edge>(interesting_edges.begin(), interesting_edges.end());
+        total_index_edges += interesting_edges.size();
+
+        if (l % 1000 == 0 || r + 1 == this->sorted_x.size())
+        {
+            LOG_TRACE(log, "Iteration " << r << "/" << this->sorted_x.size() << ", total_index_edges="
+                    << total_index_edges << ", interesting_edges.size()=" << interesting_edges.size());
+        }
     }
 }
 
-void SmartPolygonDictionary::indexAddRing(const Ring & ring, size_t polygon_id)
+void BucketsPolygonIndex::indexAddRing(const Ring & ring, size_t polygon_id)
 {
-    for (auto & point : ring)
-    {
-        this->sorted_x.push_back(point.x());
-    }
-
     for (size_t i = 0, prev = ring.size() - 1; i < ring.size(); prev = i, ++i)
     {
         Point a = ring[prev];
@@ -784,7 +805,7 @@ void SmartPolygonDictionary::indexAddRing(const Ring & ring, size_t polygon_id)
     }
 }
 
-bool SmartPolygonDictionary::Edge::compare1(const Edge & a, const Edge & b)
+bool BucketsPolygonIndex::Edge::compare1(const Edge & a, const Edge & b)
 {
     /** comparing left point */
     if (a.l.x() != b.l.x())
@@ -809,7 +830,7 @@ bool SmartPolygonDictionary::Edge::compare1(const Edge & a, const Edge & b)
     return a.polygon_id < b.polygon_id;
 }
 
-bool SmartPolygonDictionary::Edge::compare2(const Edge & a, const Edge & b)
+bool BucketsPolygonIndex::Edge::compare2(const Edge & a, const Edge & b)
 {
     /** comparing right point */
     if (a.r.x() != b.r.x())
@@ -834,7 +855,7 @@ bool SmartPolygonDictionary::Edge::compare2(const Edge & a, const Edge & b)
     return a.polygon_id < b.polygon_id;
 }
 
-bool SmartPolygonDictionary::find(const Point & point, size_t & id) const
+bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
 {
     /** TODO: maybe we should check for vertical line? */
     if (this->sorted_x.size() < 2)
@@ -911,6 +932,36 @@ bool SmartPolygonDictionary::find(const Point & point, size_t & id) const
     }
 
     return found;
+}
+
+SmartPolygonDictionary::SmartPolygonDictionary(
+    const std::string & database_,
+    const std::string & name_,
+    const DictionaryStructure & dict_struct_,
+    DictionarySourcePtr source_ptr_,
+    const DictionaryLifetime dict_lifetime_,
+    InputType input_type_,
+    PointType point_type_)
+    : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_),
+      buckets_idx(this->polygons)
+{
+}
+
+std::shared_ptr<const IExternalLoadable> SmartPolygonDictionary::clone() const
+{
+    return std::make_shared<SmartPolygonDictionary>(
+            this->database,
+            this->name,
+            this->dict_struct,
+            this->source_ptr->clone(),
+            this->dict_lifetime,
+            this->input_type,
+            this->point_type);
+}
+
+bool SmartPolygonDictionary::find(const Point & point, size_t & id) const
+{
+    return this->buckets_idx.find(point, id);
 }
 
 void registerDictionaryPolygon(DictionaryFactory & factory)
