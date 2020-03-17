@@ -263,7 +263,8 @@ function get_profiles
 # Build and analyze randomization distribution for all queries.
 function analyze_queries
 {
-    ls ./*-queries.tsv | xargs -n1 -I% basename % -queries.tsv | \
+    find . -maxdepth 1 -name "*-queries.tsv" -print | \
+        xargs -n1 -I% basename % -queries.tsv | \
         parallel --verbose right/clickhouse local --file "{}-queries.tsv" \
             --structure "\"query text, run int, version UInt32, time float\"" \
             --query "\"$(cat "$script_dir/eqmed.sql")\"" \
@@ -274,7 +275,7 @@ function analyze_queries
 function report
 {
 
-for x in {right,left}-{addresses,{query,trace,metric}-log}.tsv
+for x in {right,left}-{addresses,{query,query-thread,trace,metric}-log}.tsv
 do
     # FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
     # absolutely atrocious way. This should be done by the file() function itself.
@@ -427,7 +428,7 @@ create table stacks engine File(TSV, 'stacks.rep') as
     join unstable_query_runs using query_id
     group by query, trace
     ;
-"
+" ||:
 
 IFS=$'\n'
 for query in $(cut -d'	' -f1 stacks.rep | sort | uniq)
@@ -445,8 +446,6 @@ unset IFS
 # Remember that grep sets error code when nothing is found, hence the bayan
 # operator.
 grep -H -m2 'Exception:[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
-
-"$script_dir/report.py" > report.html
 }
 
 case "$stage" in
@@ -462,23 +461,25 @@ case "$stage" in
     time restart
     ;&
 "run_tests")
-    # Ignore the errors to collect the log anyway
+    # Ignore the errors to collect the log and build at least some report, anyway
     time run_tests ||:
     ;&
 "get_profiles")
     # If the tests fail with OOM or something, still try to restart the servers
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data.
-    time get_profiles || restart || get_profiles
+    time get_profiles || restart || get_profiles ||:
 
     # Stop the servers to free memory for the subsequent query analysis.
     while killall clickhouse; do echo . ; sleep 1 ; done
     echo Servers stopped.
     ;&
 "analyze_queries")
-    time analyze_queries
+    time analyze_queries ||:
     ;&
 "report")
-    time report
+    time report ||:
+
+    time "$script_dir/report.py" > report.html
     ;&
 esac
