@@ -2421,8 +2421,6 @@ void MergeTreeData::calculateColumnSizesImpl()
 
 void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 {
-    std::shared_lock<std::shared_mutex> lock(part->columns_lock);
-
     for (const auto & column : part->getColumns())
     {
         ColumnSize & total_column_size = column_sizes[column.name];
@@ -2433,8 +2431,6 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 
 void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part)
 {
-    std::shared_lock<std::shared_mutex> lock(part->columns_lock);
-
     for (const auto & column : part->getColumns())
     {
         ColumnSize & total_column_size = column_sizes[column.name];
