@@ -596,6 +596,9 @@ PartitionTaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const Task
             LOG_DEBUG(log, "Moving piece for partition " << current_partition_attach_is_active
                                    << " has not been successfully finished by " << status.owner
                                    << ". Will try to move by myself.");
+
+            /// Remove is_done marker.
+            zookeeper->remove(current_partition_attach_is_done);
         }
     }
 
@@ -1036,9 +1039,10 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
 
                     /// Sleep if this task is active
                     if (res == PartitionTaskStatus::Active)
-                        std::this_thread::sleep_for(default_sleep_time);
+                        break;
 
                     /// Repeat on errors
+                    std::this_thread::sleep_for(default_sleep_time);
                 }
                 catch (...) {
                     tryLogCurrentException(log,
