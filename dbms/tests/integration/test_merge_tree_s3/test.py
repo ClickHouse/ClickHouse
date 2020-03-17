@@ -219,3 +219,30 @@ def test_move_partition(cluster):
     node.query("ALTER TABLE s3_test MOVE PARTITION '2020-01-04' TO DISK 'hdd'")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
+
+
+def test_table_manipulations(cluster):
+    create_table(cluster)
+
+    node = cluster.instances["node"]
+    minio = cluster.minio_client
+
+    node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096)))
+    node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-04', 4096)))
+
+    node.query("RENAME TABLE s3_test TO s3_renamed")
+    assert node.query("SELECT count(*) FROM s3_renamed FORMAT Values") == "(8192)"
+    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE*2
+    node.query("RENAME TABLE s3_renamed TO s3_test")
+
+    # TODO: Doesn't work with min_max index.
+    #assert node.query("SET check_query_single_value_result='false'; CHECK TABLE s3_test FORMAT Values") == "(1)"
+
+    node.query("DETACH TABLE s3_test")
+    node.query("ATTACH TABLE s3_test")
+    assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
+    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE*2
+
+    node.query("TRUNCATE TABLE s3_test")
+    assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(0)"
+    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD
