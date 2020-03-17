@@ -10,6 +10,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Parsers/queryToString.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -21,7 +23,7 @@ namespace ErrorCodes
     extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN;
 }
 
-std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool from_zookeeper)
+std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands)
 {
     if (command->type == ASTAlterCommand::DELETE)
     {
@@ -57,7 +59,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.index_name = command->index->as<ASTIdentifier &>().name;
         return res;
     }
-    else if (from_zookeeper && command->type == ASTAlterCommand::MODIFY_COLUMN)
+    else if (parse_alter_commands && command->type == ASTAlterCommand::MODIFY_COLUMN)
     {
         MutationCommand res;
         res.ast = command->ptr();
@@ -67,20 +69,30 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.data_type = DataTypeFactory::instance().get(ast_col_decl.type);
         return res;
     }
-    else if (from_zookeeper && command->type == ASTAlterCommand::DROP_COLUMN)
+    else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_COLUMN)
     {
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MutationCommand::Type::DROP_COLUMN;
         res.column_name = getIdentifierName(command->column);
+        if (command->partition)
+            res.partition = command->partition;
+        if (command->clear_column)
+            res.clear = true;
+
         return res;
     }
-    else if (from_zookeeper && command->type == ASTAlterCommand::DROP_INDEX)
+    else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_INDEX)
     {
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MutationCommand::Type::DROP_INDEX;
         res.column_name = command->index->as<ASTIdentifier &>().name;
+        if (command->partition)
+            res.partition = command->partition;
+        if (command->clear_index)
+            res.clear = true;
+        return res;
     }
     else if (command->type == ASTAlterCommand::MATERIALIZE_TTL)
     {

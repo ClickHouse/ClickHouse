@@ -1000,7 +1000,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
 
-    //LOG_DEBUG(log, "All columns:" << all_columns.toString());
+    LOG_DEBUG(log, "All columns:" << all_columns.toString());
 
     //LOG_DEBUG(log, "Commands for interpreter:" << for_interpreter.size() << " commands for renames:" << for_file_renames.size());
     if (!for_interpreter.empty())
@@ -1023,7 +1023,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     /// It shouldn't be changed by mutation.
     new_data_part->index_granularity_info = source_part->index_granularity_info;
-    new_data_part->setColumns(getColumnsForNewDataPart(source_part, updated_header, all_columns));
+    new_data_part->setColumns(getColumnsForNewDataPart(source_part, updated_header, all_columns, for_file_renames));
 
     String new_part_tmp_path = new_data_part->getFullPath();
 
@@ -1179,7 +1179,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             in->readPrefix();
             out.writePrefix();
 
-            ////LOG_DEBUG(log, "PREFIX READED");
             Block block;
             while (check_not_cancelled() && (block = in->read()))
             {
@@ -1220,7 +1219,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             /// Write a file with a description of columns.
             WriteBufferFromFile out_columns(new_part_tmp_path + "columns.txt", 4096);
             new_data_part->getColumns().writeText(out_columns);
-        } /// close
+        } /// close fd
 
         new_data_part->rows_count = source_part->rows_count;
         new_data_part->index_granularity = source_part->index_granularity;
@@ -1454,7 +1453,6 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
         IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
         {
             String stream_name = IDataType::getFileNameForStream(entry.name, substream_path);
-            //LOG_DEBUG(log, "Collect to skip:" << stream_name);
             files_to_skip.insert(stream_name + ".bin");
             files_to_skip.insert(stream_name + mrk_extension);
         };
@@ -1473,8 +1471,17 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
 
 
 NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
-    MergeTreeData::DataPartPtr source_part, const Block & updated_header, NamesAndTypesList all_columns) const
+    MergeTreeData::DataPartPtr source_part,
+    const Block & updated_header,
+    NamesAndTypesList all_columns,
+    const MutationCommands & commands_for_removes) const
 {
+    NameSet removed_columns;
+    for (const auto & command : commands_for_removes)
+    {
+        if (command.type == MutationCommand::DROP_COLUMN)
+            removed_columns.insert(command.column_name);
+    }
     Names source_column_names = source_part->getColumns().getNames();
     NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
     for (auto it = all_columns.begin(); it != all_columns.end();)
@@ -1486,7 +1493,7 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
                 it->type = updated_type;
             ++it;
         }
-        else if (source_columns_name_set.count(it->name))
+        else if (source_columns_name_set.count(it->name) && !removed_columns.count(it->name))
         {
             ++it;
         }

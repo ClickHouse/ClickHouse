@@ -132,7 +132,6 @@ private:
 
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, const Context & context);
-    void clearColumnOrIndexInPartition(const ASTPtr & partition, const AlterCommand & alter_command, const Context & context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context);

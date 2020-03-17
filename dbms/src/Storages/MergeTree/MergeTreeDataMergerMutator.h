@@ -154,7 +154,11 @@ private:
     NameSet collectFilesToSkip(const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension) const;
 
     /// Get the columns list of the resulting part in the same order as all_columns.
-    NamesAndTypesList getColumnsForNewDataPart(MergeTreeData::DataPartPtr source_part, const Block & updated_header, NamesAndTypesList all_columns) const;
+    NamesAndTypesList getColumnsForNewDataPart(
+        MergeTreeData::DataPartPtr source_part,
+        const Block & updated_header,
+        NamesAndTypesList all_columns,
+        const MutationCommands & commands_for_removes) const;
 
     bool shouldExecuteTTL(const Names & columns, const MutationCommands & commands) const;
 

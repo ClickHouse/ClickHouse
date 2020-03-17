@@ -884,12 +884,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         return true;
     }
 
-    if (entry.type == LogEntry::CLEAR_COLUMN || entry.type == LogEntry::CLEAR_INDEX)
-    {
-        executeClearColumnOrIndexInPartition(entry);
-        return true;
-    }
-
     if (entry.type == LogEntry::REPLACE_RANGE)
     {
         executeReplaceRange(entry);
@@ -1471,75 +1465,6 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     /// To be removed a partition should have zero refcount, therefore call the cleanup thread at exit
     parts_to_remove.clear();
     cleanup_thread.wakeup();
-}
-
-
-void StorageReplicatedMergeTree::executeClearColumnOrIndexInPartition(const LogEntry & entry)
-{
-    LOG_INFO(log, "Clear column " << entry.column_name << " in parts inside " << entry.new_part_name << " range");
-
-    auto entry_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
-
-    /// We don't change table structure, only data in some parts
-    /// To disable reading from these parts, we will sequentially acquire write lock for each part inside alterDataPart()
-    /// If we will lock the whole table here, a deadlock can occur. For example, if use use Buffer table (CLICKHOUSE-3238)
-    auto lock_read_structure = lockStructureForShare(false, RWLockImpl::NO_QUERY);
-
-    auto zookeeper = getZooKeeper();
-
-    AlterCommand alter_command;
-    if (entry.type == LogEntry::CLEAR_COLUMN)
-    {
-        alter_command.type = AlterCommand::DROP_COLUMN;
-        alter_command.column_name = entry.column_name;
-    }
-    else if (entry.type == LogEntry::CLEAR_INDEX)
-    {
-        alter_command.type = AlterCommand::DROP_INDEX;
-        alter_command.index_name = entry.index_name;
-    }
-
-    StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    alter_command.apply(metadata);
-
-    size_t modified_parts = 0;
-    auto parts = getDataParts();
-    auto columns_for_parts = metadata.columns.getAllPhysical();
-
-    /// Check there are no merges in range again
-    /// TODO: Currently, there are no guarantees that a merge covering entry_part_info will happen during the execution.
-    /// To solve this problem we could add read/write flags for each part in future_parts
-    ///  and make more sophisticated checks for merges in shouldExecuteLogEntry().
-    /// But this feature will be useless when the mutation feature is implemented.
-    queue.checkThereAreNoConflictsInRange(entry_part_info, entry);
-
-    for (const auto & part : parts)
-    {
-        if (!entry_part_info.contains(part->info))
-            continue;
-
-        if (entry.type == LogEntry::CLEAR_COLUMN)
-            LOG_DEBUG(log, "Clearing column " << alter_command.column_name << " in part " << part->name);
-        else if (entry.type == LogEntry::CLEAR_INDEX)
-            LOG_DEBUG(log, "Clearing index " << alter_command.index_name << " in part " << part->name);
-
-        MergeTreeData::AlterDataPartTransactionPtr transaction(new MergeTreeData::AlterDataPartTransaction(part));
-        alterDataPart(columns_for_parts, metadata.indices.indices, false, transaction);
-        if (!transaction->isValid())
-            continue;
-
-        updatePartHeaderInZooKeeperAndCommit(zookeeper, *transaction);
-
-        ++modified_parts;
-    }
-
-    if (entry.type == LogEntry::CLEAR_COLUMN)
-        LOG_DEBUG(log, "Cleared column " << entry.column_name << " in " << modified_parts << " parts");
-    else if (entry.type == LogEntry::CLEAR_INDEX)
-        LOG_DEBUG(log, "Cleared index " << entry.index_name << " in " << modified_parts << " parts");
-
-    /// Recalculate columns size (not only for the modified column)
-    recalculateColumnSizes();
 }
 
 
@@ -3499,24 +3424,6 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
             }
             break;
 
-            case PartitionCommand::CLEAR_COLUMN:
-            {
-                LogEntry entry;
-                entry.type = LogEntry::CLEAR_COLUMN;
-                entry.column_name = command.column_name.safeGet<String>();
-                clearColumnOrIndexInPartition(command.partition, std::move(entry), query_context);
-            }
-            break;
-
-            case PartitionCommand::CLEAR_INDEX:
-            {
-                LogEntry entry;
-                entry.type = LogEntry::CLEAR_INDEX;
-                entry.index_name = command.index_name.safeGet<String>();
-                clearColumnOrIndexInPartition(command.partition, std::move(entry), query_context);
-            }
-            break;
-
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
                 auto lock = lockStructureForShare(false, query_context.getCurrentQueryId());
@@ -3576,40 +3483,6 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
     /// Artificial high level is chosen, to make this part "covering" all parts inside.
     part_info = MergeTreePartInfo(partition_id, left, right, MergeTreePartInfo::MAX_LEVEL, mutation_version);
     return true;
-}
-
-
-void StorageReplicatedMergeTree::clearColumnOrIndexInPartition(
-    const ASTPtr & partition, LogEntry && entry, const Context & query_context)
-{
-    assertNotReadonly();
-
-    /// We don't block merges, so anyone can manage this task (not only leader)
-
-    String partition_id = getPartitionIDFromQuery(partition, query_context);
-    MergeTreePartInfo drop_range_info;
-
-    if (!getFakePartCoveringAllPartsInPartition(partition_id, drop_range_info))
-    {
-        LOG_INFO(log, "Will not clear partition " << partition_id << ", it is empty.");
-        return;
-    }
-
-    /// We allocated new block number for this part, so new merges can't merge clearing parts with new ones
-    entry.new_part_name = getPartNamePossiblyFake(format_version, drop_range_info);
-    entry.create_time = time(nullptr);
-
-    String log_znode_path = getZooKeeper()->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
-    entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
-
-    /// If necessary, wait until the operation is performed on itself or on all replicas.
-    if (query_context.getSettingsRef().replication_alter_partitions_sync != 0)
-    {
-        if (query_context.getSettingsRef().replication_alter_partitions_sync == 1)
-            waitForReplicaToProcessLogEntry(replica_name, entry);
-        else
-            waitForAllReplicasToProcessLogEntry(entry);
-    }
 }
 
 
@@ -5269,59 +5142,6 @@ void StorageReplicatedMergeTree::getCommitPartOps(
             replica_path + "/parts/" + part->name + "/checksums",
             getChecksumsForZooKeeper(part->checksums),
             zkutil::CreateMode::Persistent));
-    }
-}
-
-void StorageReplicatedMergeTree::updatePartHeaderInZooKeeperAndCommit(
-    const zkutil::ZooKeeperPtr & zookeeper,
-    AlterDataPartTransaction & transaction)
-{
-    String part_path = replica_path + "/parts/" + transaction.getPartName();
-    const auto storage_settings_ptr = getSettings();
-
-    bool need_delete_columns_and_checksums_nodes = false;
-    try
-    {
-        if (storage_settings_ptr->use_minimalistic_part_header_in_zookeeper)
-        {
-            auto part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
-                transaction.getNewColumns(), transaction.getNewChecksums());
-            Coordination::Stat stat;
-            zookeeper->set(part_path, part_header.toString(), -1, &stat);
-
-            need_delete_columns_and_checksums_nodes = stat.numChildren > 0;
-        }
-        else
-        {
-            Coordination::Requests ops;
-            ops.emplace_back(zkutil::makeSetRequest(
-                    part_path, String(), -1));
-            ops.emplace_back(zkutil::makeSetRequest(
-                    part_path + "/columns", transaction.getNewColumns().toString(), -1));
-            ops.emplace_back(zkutil::makeSetRequest(
-                    part_path + "/checksums", getChecksumsForZooKeeper(transaction.getNewChecksums()), -1));
-            zookeeper->multi(ops);
-        }
-    }
-    catch (const Coordination::Exception & e)
-    {
-        /// The part does not exist in ZK. We will add to queue for verification - maybe the part is superfluous, and it must be removed locally.
-        if (e.code == Coordination::ZNONODE)
-            enqueuePartForCheck(transaction.getPartName());
-
-        throw;
-    }
-
-    /// Apply file changes.
-    transaction.commit();
-
-    /// Legacy <part_path>/columns and <part_path>/checksums znodes are not needed anymore and can be deleted.
-    if (need_delete_columns_and_checksums_nodes)
-    {
-        Coordination::Requests ops;
-        ops.emplace_back(zkutil::makeRemoveRequest(part_path + "/columns", -1));
-        ops.emplace_back(zkutil::makeRemoveRequest(part_path + "/checksums", -1));
-        zookeeper->multi(ops);
     }
 }
 
