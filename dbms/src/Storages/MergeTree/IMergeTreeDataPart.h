@@ -15,7 +15,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
-#include <Storages/MergeTree/AlterAnalysisResult.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Columns/IColumn.h>
 
@@ -100,12 +99,6 @@ public:
     virtual ColumnSize getTotalColumnsSize() const { return {}; }
 
     virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
-
-    /// Returns rename map of column files for the alter converting expression onto new table files.
-    /// Files to be deleted are mapped to an empty string in rename map.
-    virtual NameToNameMap createRenameMapForAlter(
-        AlterAnalysisResult & /* analysis_result */,
-        const NamesAndTypesList & /* old_columns */) const { return {}; }
 
     virtual ~IMergeTreeDataPart();
 
