@@ -1166,7 +1166,7 @@ TestResult check(const TestEntry & entry)
         auto storage_distributed_hits = StorageDistributedFake::create("distant_db", "distant_hits", entry.shard_count);
 
         DB::DatabasePtr database = std::make_shared<DB::DatabaseOrdinary>("test", "./metadata/test/", context);
-        context.addDatabase("test", database);
+        DB::DatabaseCatalog::instance().attachDatabase("test", database);
         database->attachTable("visits_all", storage_distributed_visits);
         database->attachTable("hits_all", storage_distributed_hits);
         context.setCurrentDatabase("test");
@@ -1209,12 +1209,12 @@ TestResult check(const TestEntry & entry)
         bool res = equals(ast_input, ast_expected);
         std::string output = DB::queryToString(ast_input);
 
-        context.detachDatabase("test");
+        DB::DatabaseCatalog::instance().detachDatabase("test");
         return TestResult(res, output);
     }
     catch (DB::Exception & e)
     {
-        context.detachDatabase("test");
+        DB::DatabaseCatalog::instance().detachDatabase("test");
         return TestResult(false, e.displayText());
     }
 }

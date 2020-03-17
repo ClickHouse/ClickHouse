@@ -37,7 +37,7 @@ private:
 protected:
     /// If even_distribution is true, numbers are distributed evenly between streams.
     /// Otherwise, streams concurrently increment atomic.
-    StorageSystemZeros(const std::string & name_, bool multithreaded_, std::optional<UInt64> limit_ = std::nullopt);
+    StorageSystemZeros(const StorageID & table_id_, bool multithreaded_, std::optional<UInt64> limit_ = std::nullopt);
 };
 
 }

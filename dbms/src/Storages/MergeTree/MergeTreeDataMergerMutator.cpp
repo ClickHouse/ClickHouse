@@ -1060,9 +1060,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         IMergeTreeDataPart::MinMaxIndex minmax_idx;
 
+        //LOG_WARNING(log, "Starting to read columns with header:" << updated_header.dumpStructure());
         MergedBlockOutputStream out{
             new_data_part,
-            all_columns,
+            new_data_part->getColumns(),
             compression_codec};
 
         in->readPrefix();
@@ -1078,11 +1079,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             merge_entry->bytes_written_uncompressed += block.bytes();
         }
 
+
+        //LOG_WARNING(log, "Data read FINISHED");
         new_data_part->partition.assign(source_part->partition);
         new_data_part->minmax_idx = std::move(minmax_idx);
 
         in->readSuffix();
         out.writeSuffixAndFinalizePart(new_data_part);
+
+        //LOG_WARNING(log, "SUFFIX WRITTEN");
     }
     else
     {
@@ -1155,7 +1160,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         new_data_part->checksums = source_part->checksums;
         if (in)
         {
-            //LOG_DEBUG(log, "Starting to read");
             if (need_remove_expired_values)
                 in = std::make_shared<TTLBlockInputStream>(in, data, new_data_part, time_of_mutation, true);
 
@@ -1172,7 +1176,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 &source_part->index_granularity_info
             );
 
-            //try{
             in->readPrefix();
             out.writePrefix();
 
@@ -1185,11 +1188,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 merge_entry->rows_written += block.rows();
                 merge_entry->bytes_written_uncompressed += block.bytes();
             }
-                //}
-                //catch(DB::Exception &)
-                //{
-                //    std::terminate();
-                //}
 
             in->readSuffix();
 

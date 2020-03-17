@@ -13,7 +13,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableStructureLockHolder.h>
 #include <Storages/ReadInOrderOptimizer.h>
-#include <Storages/StorageID.h>
+#include <Interpreters/StorageID.h>
 
 #include <Processors/QueryPipeline.h>
 #include <Columns/FilterDescription.h>
@@ -191,7 +191,7 @@ private:
     void executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr sorting_info);
     void executeWithFill(QueryPipeline & pipeline);
     void executeMergeSorted(QueryPipeline & pipeline);
-    void executePreLimit(QueryPipeline & pipeline);
+    void executePreLimit(QueryPipeline & pipeline, bool do_not_skip_offset);
     void executeLimitBy(QueryPipeline & pipeline);
     void executeLimit(QueryPipeline & pipeline);
     void executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);

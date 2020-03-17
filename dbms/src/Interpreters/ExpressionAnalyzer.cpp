@@ -59,7 +59,6 @@
 
 #include <Interpreters/ActionsVisitor.h>
 
-#include <Interpreters/ExternalTablesVisitor.h>
 #include <Interpreters/GlobalSubqueriesVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 
@@ -258,10 +257,6 @@ void ExpressionAnalyzer::analyzeAggregation()
 
 void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global)
 {
-    /// Adds existing external tables (not subqueries) to the external_tables dictionary.
-    ExternalTablesVisitor::Data tables_data{context, external_tables};
-    ExternalTablesVisitor(tables_data).visit(query);
-
     if (do_global)
     {
         GlobalSubqueriesVisitor::Data subqueries_data(context, subquery_depth, isRemoteStorage(),
@@ -319,8 +314,8 @@ SetPtr SelectQueryExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr &
     const auto * table = subquery_or_table_name->as<ASTIdentifier>();
     if (!table)
         return nullptr;
-    const DatabaseAndTableWithAlias database_table(*table);
-    const auto storage = context.getTable(database_table.database, database_table.table);
+    auto table_id = context.resolveStorageID(subquery_or_table_name);
+    const auto storage = DatabaseCatalog::instance().getTable(table_id);
     if (storage->getName() != "Set")
         return nullptr;
     const auto storage_set = std::dynamic_pointer_cast<StorageSet>(storage);
@@ -516,8 +511,8 @@ static JoinPtr tryGetStorageJoin(const ASTTablesInSelectQueryElement & join_elem
     /// TODO This syntax does not support specifying a database name.
     if (table_to_join.database_and_table_name)
     {
-        DatabaseAndTableWithAlias database_table(table_to_join.database_and_table_name);
-        StoragePtr table = context.tryGetTable(database_table.database, database_table.table);
+        auto table_id = context.resolveStorageID(table_to_join.database_and_table_name);
+        StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id);
 
         if (table)
         {

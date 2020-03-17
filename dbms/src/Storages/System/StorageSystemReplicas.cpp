@@ -70,7 +70,7 @@ Pipes StorageSystemReplicas::read(
 
     /// We collect a set of replicated tables.
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
-    for (const auto & db : context.getDatabases())
+    for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
         /// Lazy database can not contain replicated tables
         if (db.second->getEngineName() == "Lazy")
