@@ -2,6 +2,8 @@
 
 #include <time.h>
 
-#if defined (OS_DARWIN) or defined (OS_FREEBSD)
+#if defined (OS_DARWIN)
 #    define CLOCK_MONOTONIC_COARSE CLOCK_MONOTONIC
+#elif defined (OS_FREEBSD)
+#    define CLOCK_MONOTONIC_COARSE CLOCK_MONOTONIC_FAST
 #endif
