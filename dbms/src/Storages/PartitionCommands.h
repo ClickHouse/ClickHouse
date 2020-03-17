@@ -60,7 +60,8 @@ struct PartitionCommand
         TABLE,
     };
 
-    MoveDestinationType move_destination_type;
+    std::optional<MoveDestinationType> move_destination_type;
+
 
     String move_destination_name;
 

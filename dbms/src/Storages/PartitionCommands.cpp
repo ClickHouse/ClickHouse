@@ -96,4 +96,5 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
     else
         return {};
 }
+
 }

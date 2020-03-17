@@ -703,7 +703,7 @@ bool StorageMergeTree::tryMutatePart()
                     }
                 }
 
-                if (commands_for_size_validation.size())
+                if (!commands_for_size_validation.empty())
                 {
                     MutationsInterpreter interpreter(shared_from_this(), commands_for_size_validation, global_context, false);
                     commands_size += interpreter.evaluateCommandsSize();
@@ -966,7 +966,7 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
 
             case PartitionCommand::MOVE_PARTITION:
             {
-                switch (command.move_destination_type)
+                switch (*command.move_destination_type)
                 {
                     case PartitionCommand::MoveDestinationType::DISK:
                         movePartitionToDisk(command.partition, command.move_destination_name, command.part, context);
