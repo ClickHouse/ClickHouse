@@ -22,19 +22,27 @@ function find_reference_sha
 
     # Go back from the revision to be tested, trying to find the closest published
     # testing release.
-    start_ref="$SHA_TO_TEST"
+    start_ref="$SHA_TO_TEST"~
     # If we are testing a PR, and it merges with master successfully, we are
     # building and testing not the nominal last SHA specified by pull/.../head
     # and SHA_TO_TEST, but a revision that is merged with recent master, given
     # by pull/.../merge ref.
+    # Master is the first parent of the pull/.../merge.
     if git -C ch rev-parse pr/merge
     then
-        start_ref=pr/merge
+        start_ref=pr/merge~
     fi
 
     while :
     do
-        ref_tag=$(git -C ch describe --match='v*-testing' --abbrev=0 --first-parent "$start_ref")
+        # FIXME the original idea was to compare to a closest testing tag, which
+        # is a version that is verified to work correctly. However, we're having
+        # some test stability issues now, and the testing release can't roll out
+        # for more that a weak already because of that. Temporarily switch to
+        # using just closest master, so that we can go on.
+        #ref_tag=$(git -C ch describe --match='v*-testing' --abbrev=0 --first-parent "$start_ref")
+        ref_tag="$start_ref"
+
         echo Reference tag is "$ref_tag"
         # We use annotated tags which have their own shas, so we have to further
         # dereference the tag to get the commit it points to, hence the '~0' thing.

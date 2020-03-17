@@ -18,6 +18,7 @@ TEST(zkutil, ZookeeperConnected)
     {
         auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
         zookeeper->exists("/");
+        zookeeper->createIfNotExists("/clickhouse_test", "Unit tests of ClickHouse");
     }
     catch (...)
     {
@@ -112,6 +113,7 @@ TEST(zkutil, MultiAsync)
     using namespace std::chrono_literals;
     std::this_thread::sleep_for(1s);
 
+    try
     {
         ops.clear();
         ops.emplace_back(zkutil::makeCreateRequest("/clickhouse_test/zkutil_multi", "_", zkutil::CreateMode::Persistent));
@@ -123,6 +125,14 @@ TEST(zkutil, MultiAsync)
         auto res = fut.get();
         ASSERT_EQ(res.error, Coordination::ZNODEEXISTS);
         ASSERT_EQ(res.responses.size(), 2);
+    }
+    catch (const Coordination::Exception & e)
+    {
+        /// The test is quite heavy. It is normal if session is expired during this test.
+        /// If we don't check that, the test will be flacky.
+
+        if (e.code != Coordination::ZSESSIONEXPIRED && e.code != Coordination::ZCONNECTIONLOSS)
+            throw;
     }
 }
 

@@ -224,7 +224,7 @@ void StorageMergeTree::alter(
 
         changeSettings(metadata.settings_ast, table_lock_holder);
 
-        context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
 
         table_lock_holder.release();
     }
@@ -239,7 +239,7 @@ void StorageMergeTree::alter(
 
             setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast);
 
-            context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
 
             table_lock_holder.release();
         }
@@ -1029,8 +1029,8 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
 
                     case PartitionCommand::MoveDestinationType::TABLE:
                         checkPartitionCanBeDropped(command.partition);
-                        String dest_database = command.to_database.empty() ? context.getCurrentDatabase() : command.to_database;
-                        auto dest_storage = context.getTable(dest_database, command.to_table);
+                        String dest_database = context.resolveDatabase(command.to_database);
+                        auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table});
                         movePartitionToTable(dest_storage, command.partition, context);
                         break;
                 }
@@ -1041,8 +1041,8 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             case PartitionCommand::REPLACE_PARTITION:
             {
                 checkPartitionCanBeDropped(command.partition);
-                String from_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
-                auto from_storage = context.getTable(from_database, command.from_table);
+                String from_database = context.resolveDatabase(command.from_database);
+                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table});
                 replacePartitionFrom(from_storage, command.partition, command.replace, context);
             }
             break;

@@ -15,4 +15,7 @@ DROP TABLE memory_01069.mt;
 SELECT * FROM memory_01069.mt ORDER BY n; -- { serverError 60 }
 SELECT * FROM memory_01069.file ORDER BY n;
 
+SHOW CREATE TABLE memory_01069.mt; -- { serverError 60 }
+SHOW CREATE TABLE memory_01069.file;
+
 DROP DATABASE memory_01069;

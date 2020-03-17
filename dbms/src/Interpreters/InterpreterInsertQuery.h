@@ -29,7 +29,7 @@ public:
       */
     BlockIO execute() override;
 
-    std::pair<String, String> getDatabaseTable() const;
+    StorageID getDatabaseTable() const;
 
 private:
     StoragePtr getTable(ASTInsertQuery & query);

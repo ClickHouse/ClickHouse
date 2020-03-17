@@ -34,7 +34,7 @@ StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_fun
 
         context.checkAccess(AccessType::zeros);
 
-        auto res = StorageSystemZeros::create(table_name, multithreaded, length);
+        auto res = StorageSystemZeros::create(StorageID(getDatabaseName(), table_name), multithreaded, length);
         res->startup();
         return res;
     }

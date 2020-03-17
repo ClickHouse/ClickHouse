@@ -393,19 +393,6 @@ Possible values:
 
 Default value: 0.
 
-
-## join_any_take_last_row {#settings-join_any_take_last_row}
-
-Changes the behavior of `ANY JOIN`. When disabled, `ANY JOIN` takes the first row found for a key. When enabled, `ANY JOIN` takes the last matched row if there are multiple rows for the same key. The setting is used only in [Join table engine](../table_engines/join.md).
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-
-Default value: 1.
-
-
 ## max_block_size {#setting-max_block_size}
 
 In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. The `max_block_size` setting is a recommendation for what size of block (in number of rows) to load from tables. The block size shouldn't be too small, so that the expenditures on each block are still noticeable, but not too large, so that the query with LIMIT that is completed after the first block is processed quickly. The goal is to avoid consuming too much memory when extracting a large number of columns in multiple threads, and to preserve at least some cache locality.
@@ -874,6 +861,37 @@ See also:
 - [insert_quorum](#settings-insert_quorum)
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
+## insert_deduplicate {#settings-insert_deduplicate}
+
+Enables or disables block deduplication of `INSERT` (for Replicated* tables).
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 1.
+
+By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication] (../ table_engines/replication.md).
+
+## deduplicate_blocks_in_dependent_materialized_views {#settings-deduplicate_blocks_in_dependent_materialized_views}
+
+Enables or disables the deduplication check for materialized views that receive data from Replicated* tables.
+
+Possible values:
+
+    0 — Disabled.
+    1 — Enabled.
+
+Default value: 0.
+
+Usage
+
+By default, deduplication is not performed for materialized views, but is done upstream, in the source table.
+If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behavior exists to enable insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
+At the same time, this behavior "breaks" `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won't receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows to change this behavior. On retry a materialized view will receive the repeat insert and will perform deduplication check by itself,
+ignoring check result for the source table, and will insert rows lost because of first failure.
+
 ## max_network_bytes {#settings-max_network_bytes}
 Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies to every individual query.
 
@@ -916,24 +934,6 @@ Possible values:
 - 0 — Control of the data speed is disabled.
 
 Default value: 0.
-
-## allow_experimental_cross_to_join_conversion {#settings-allow_experimental_cross_to_join_conversion}
-
-Enables or disables:
-
-1. Rewriting queries for join from the syntax with commas to the `JOIN ON/USING` syntax. If the setting value is 0, ClickHouse doesn't process queries with syntax that uses commas, and throws an exception.
-2. Converting `CROSS JOIN` to `INNER JOIN` if `WHERE` conditions allow it.
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-
-Default value: 1.
-
-See also:
-
-- [Multiple JOIN](../../query_language/select.md#select-join)
 
 ## count_distinct_implementation {#settings-count_distinct_implementation}
 

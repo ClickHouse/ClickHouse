@@ -68,24 +68,18 @@ StoragePtr JoinedTables::getLeftTableStorage()
 
     if (left_db_and_table)
     {
-        database_name = left_db_and_table->database;
-        table_name = left_db_and_table->table;
-
-        /// If the database is not specified - use the current database.
-        if (database_name.empty() && !context.isExternalTableExist(table_name))
-            database_name = context.getCurrentDatabase();
+        table_id = context.resolveStorageID(StorageID(left_db_and_table->database, left_db_and_table->table, left_db_and_table->uuid));
     }
     else /// If the table is not specified - use the table `system.one`.
     {
-        database_name = "system";
-        table_name = "one";
+        table_id = StorageID("system", "one");
     }
 
     if (auto view_source = context.getViewSource())
     {
         auto & storage_values = static_cast<const StorageValues &>(*view_source);
         auto tmp_table_id = storage_values.getStorageID();
-        if (tmp_table_id.database_name == database_name && tmp_table_id.table_name == table_name)
+        if (tmp_table_id.database_name == table_id.database_name && tmp_table_id.table_name == table_id.table_name)
         {
             /// Read from view source.
             return context.getViewSource();
@@ -93,7 +87,7 @@ StoragePtr JoinedTables::getLeftTableStorage()
     }
 
     /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
-    return context.getTable(database_name, table_name);
+    return DatabaseCatalog::instance().getTable(table_id);
 }
 
 bool JoinedTables::resolveTables()
