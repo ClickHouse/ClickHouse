@@ -213,7 +213,7 @@ Result:
 └─────────┴───────────────────────────────┘
 ```
 
-You can get the similar result by [ternary operator](conditional_functions.md#ternary-operator) `isFinite(x) ? x : y`.
+You can get similar result by using [ternary operator](conditional_functions.md#ternary-operator): `isFinite(x) ? x : y`.
 
 ## isNaN(x)
 
