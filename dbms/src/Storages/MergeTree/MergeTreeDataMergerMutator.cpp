@@ -625,7 +625,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     LOG_DEBUG(log, "Selected MergeAlgorithm: " << ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Horizontal"));
 
     /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
-    /// (which is locked in data.getTotalActiveSizeInBytes()) is locked after part->columns_lock
+    /// (which is locked in data.getTotalActiveSizeInBytes())
     /// (which is locked in shared mode when input streams are created) and when inserting new data
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
@@ -1028,7 +1028,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     String new_part_tmp_path = new_data_part->getFullPath();
 
     /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
-    /// (which is locked in data.getTotalActiveSizeInBytes()) is locked after part->columns_lock
+    /// (which is locked in data.getTotalActiveSizeInBytes())
     /// (which is locked in shared mode when input streams are created) and when inserting new data
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.

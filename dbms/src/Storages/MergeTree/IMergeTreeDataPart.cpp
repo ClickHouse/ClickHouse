@@ -739,8 +739,6 @@ void IMergeTreeDataPart::remove() const
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wunused-variable"
 #endif
-        std::shared_lock<std::shared_mutex> lock(columns_lock);
-
         /// TODO: IDisk doesn't support `unlink()` and `rmdir()` functionality.
         auto to = fullPath(disk, to_);
 

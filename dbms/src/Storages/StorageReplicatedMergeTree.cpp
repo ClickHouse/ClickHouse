@@ -1593,11 +1593,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 continue;
             }
 
-            String checksum_hex;
-            {
-                std::shared_lock<std::shared_mutex> part_lock(src_part->columns_lock);
-                checksum_hex = src_part->checksums.getTotalChecksumHex();
-            }
+            String checksum_hex  = src_part->checksums.getTotalChecksumHex();
 
             if (checksum_hex != part_desc->checksum_hex)
             {
@@ -1707,7 +1703,6 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     {
         if (part_desc->src_table_part)
         {
-            std::shared_lock<std::shared_mutex> part_lock(part_desc->src_table_part->columns_lock);
 
             if (part_desc->checksum_hex != part_desc->src_table_part->checksums.getTotalChecksumHex())
                 throw Exception("Checksums of " + part_desc->src_table_part->name + " is suddenly changed", ErrorCodes::UNFINISHED);

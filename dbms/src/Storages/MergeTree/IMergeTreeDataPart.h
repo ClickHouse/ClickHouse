@@ -93,7 +93,7 @@ public:
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// NOTE: You must ensure that no ALTERs are in progress when calculating ColumnSizes.
-    ///   (either by locking columns_lock, or by locking table structure).
+    ///   (by locking table structure).
     virtual ColumnSize getColumnSize(const String & /* name */, const IDataType & /* type */) const { return {}; }
 
     virtual ColumnSize getTotalColumnsSize() const { return {}; }
@@ -275,11 +275,6 @@ public:
 
     /// Columns with values, that all have been zeroed by expired ttl
     NameSet expired_columns;
-
-    /** It is blocked for writing when changing columns, checksums or any part files.
-        * Locked to read when reading columns, checksums or any part files.
-        */
-    mutable std::shared_mutex columns_lock;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
