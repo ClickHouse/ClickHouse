@@ -85,7 +85,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NO_SUCH_DATA_PART;
-    extern const int TABLE_DIFFERS_TOO_MUCH;
     extern const int NOT_IMPLEMENTED;
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
