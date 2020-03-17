@@ -1,5 +1,10 @@
 #pragma once
 
+#include <vector>
+#include <utility>
+#include <ostream>
+#include <Core/Types.h>
+
 namespace DB
 {
     enum class ExternalLoaderStatus
