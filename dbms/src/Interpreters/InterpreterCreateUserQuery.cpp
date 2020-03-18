@@ -13,7 +13,11 @@ namespace DB
 {
 namespace
 {
-    void updateUserFromQueryImpl(User & user, const ASTCreateUserQuery & query, const std::optional<ExtendedRoleSet> & default_roles_from_query = {})
+    void updateUserFromQueryImpl(
+        User & user,
+        const ASTCreateUserQuery & query,
+        const std::optional<ExtendedRoleSet> & default_roles_from_query = {},
+        const std::optional<SettingsProfileElements> & settings_from_query = {})
     {
         if (query.alter)
         {
@@ -47,6 +51,16 @@ namespace
 
             InterpreterSetRoleQuery::updateUserSetDefaultRoles(user, *default_roles);
         }
+
+        const SettingsProfileElements * settings = nullptr;
+        std::optional<SettingsProfileElements> temp_settings;
+        if (settings_from_query)
+            settings = &*settings_from_query;
+        else if (query.settings)
+            settings = &temp_settings.emplace(*query.settings);
+
+        if (settings)
+            user.settings = *settings;
     }
 }
 
@@ -69,12 +83,16 @@ BlockIO InterpreterCreateUserQuery::execute()
         }
     }
 
+    std::optional<SettingsProfileElements> settings_from_query;
+    if (query.settings)
+        settings_from_query = SettingsProfileElements{*query.settings, access_control};
+
     if (query.alter)
     {
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
         {
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
-            updateUserFromQueryImpl(*updated_user, query, default_roles_from_query);
+            updateUserFromQueryImpl(*updated_user, query, default_roles_from_query, settings_from_query);
             return updated_user;
         };
         if (query.if_exists)
@@ -88,7 +106,7 @@ BlockIO InterpreterCreateUserQuery::execute()
     else
     {
         auto new_user = std::make_shared<User>();
-        updateUserFromQueryImpl(*new_user, query, default_roles_from_query);
+        updateUserFromQueryImpl(*new_user, query, default_roles_from_query, settings_from_query);
 
         if (query.if_not_exists)
             access_control.tryInsert(new_user);

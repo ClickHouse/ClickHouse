@@ -205,12 +205,10 @@ namespace
 bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool alter = false;
-    bool attach = false;
     if (attach_mode)
     {
         if (!ParserKeyword{"ATTACH QUOTA"}.ignore(pos, expected))
             return false;
-        attach = true;
     }
     else
     {
@@ -243,7 +241,6 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     String new_name;
     std::optional<KeyType> key_type;
     std::vector<ASTCreateQuotaQuery::Limits> all_limits;
-    std::shared_ptr<ASTExtendedRoleSet> roles;
 
     while (true)
     {
@@ -256,11 +253,11 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (parseAllLimits(pos, expected, alter, all_limits))
             continue;
 
-        if (!roles && parseToRoles(pos, expected, attach, roles))
-            continue;
-
         break;
     }
+
+    std::shared_ptr<ASTExtendedRoleSet> roles;
+    parseToRoles(pos, expected, attach_mode, roles);
 
     auto query = std::make_shared<ASTCreateQuotaQuery>();
     node = query;

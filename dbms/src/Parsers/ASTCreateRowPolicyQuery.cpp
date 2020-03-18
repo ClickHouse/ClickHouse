@@ -165,7 +165,7 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
 
     formatMultipleConditions(conditions, alter, settings);
 
-    if (roles)
+    if (roles && (!roles->empty() || alter))
         formatToRoles(*roles, settings);
 }
 }

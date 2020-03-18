@@ -1,11 +1,13 @@
-#include <Parsers/ParserCreateRoleQuery.h>
-#include <Parsers/ASTCreateRoleQuery.h>
+#include <Parsers/ParserCreateSettingsProfileQuery.h>
+#include <Parsers/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Parsers/ParserSettingsProfileElement.h>
-#include <Parsers/parseUserName.h>
+#include <Parsers/ParserExtendedRoleSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 
 
 namespace DB
@@ -19,7 +21,7 @@ namespace
             if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected))
                 return false;
 
-            return parseRoleName(pos, expected, new_name);
+            return parseIdentifierOrStringLiteral(pos, expected, new_name);
         });
     }
 
@@ -41,22 +43,36 @@ namespace
             return true;
         });
     }
+
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTExtendedRoleSet> & roles)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            ASTPtr ast;
+            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected)
+                || !ParserExtendedRoleSet{}.useIDMode(id_mode).parse(pos, ast, expected))
+                return false;
+
+            roles = std::static_pointer_cast<ASTExtendedRoleSet>(ast);
+            return true;
+        });
+    }
 }
 
 
-bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserCreateSettingsProfileQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool alter = false;
     if (attach_mode)
     {
-        if (!ParserKeyword{"ATTACH ROLE"}.ignore(pos, expected))
+        if (!ParserKeyword{"ATTACH SETTINGS PROFILE"}.ignore(pos, expected) && !ParserKeyword{"ATTACH PROFILE"}.ignore(pos, expected))
             return false;
     }
     else
     {
-        if (ParserKeyword{"ALTER ROLE"}.ignore(pos, expected))
+        if (ParserKeyword{"ALTER SETTINGS PROFILE"}.ignore(pos, expected) || ParserKeyword{"ALTER PROFILE"}.ignore(pos, expected))
             alter = true;
-        else if (!ParserKeyword{"CREATE ROLE"}.ignore(pos, expected))
+        else if (!ParserKeyword{"CREATE SETTINGS PROFILE"}.ignore(pos, expected) && !ParserKeyword{"CREATE PROFILE"}.ignore(pos, expected))
             return false;
     }
 
@@ -77,7 +93,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
 
     String name;
-    if (!parseRoleName(pos, expected, name))
+    if (!parseIdentifierOrStringLiteral(pos, expected, name))
         return false;
 
     String new_name;
@@ -93,7 +109,10 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         break;
     }
 
-    auto query = std::make_shared<ASTCreateRoleQuery>();
+    std::shared_ptr<ASTExtendedRoleSet> to_roles;
+    parseToRoles(pos, expected, attach_mode, to_roles);
+
+    auto query = std::make_shared<ASTCreateSettingsProfileQuery>();
     node = query;
 
     query->alter = alter;
@@ -104,6 +123,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->name = std::move(name);
     query->new_name = std::move(new_name);
     query->settings = std::move(settings);
+    query->to_roles = std::move(to_roles);
 
     return true;
 }

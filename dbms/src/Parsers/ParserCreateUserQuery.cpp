@@ -7,6 +7,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/ParserExtendedRoleSet.h>
+#include <Parsers/ASTSettingsProfileElement.h>
+#include <Parsers/ParserSettingsProfileElement.h>
 #include <ext/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -225,18 +227,21 @@ namespace
     }
 
 
-    bool parseProfileName(IParserBase::Pos & pos, Expected & expected, std::optional<String> & profile)
+    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTSettingsProfileElements> & settings)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"PROFILE"}.ignore(pos, expected))
+            if (!ParserKeyword{"SETTINGS"}.ignore(pos, expected))
                 return false;
 
-            ASTPtr ast;
-            if (!ParserStringLiteral{}.parse(pos, ast, expected))
+            ASTPtr new_settings_ast;
+            if (!ParserSettingsProfileElements{}.useIDMode(id_mode).parse(pos, new_settings_ast, expected))
                 return false;
 
-            profile = ast->as<const ASTLiteral &>().value.safeGet<String>();
+            if (!settings)
+                settings = std::make_shared<ASTSettingsProfileElements>();
+            const auto & new_settings = new_settings_ast->as<const ASTSettingsProfileElements &>();
+            settings->elements.insert(settings->elements.end(), new_settings.elements.begin(), new_settings.elements.end());
             return true;
         });
     }
@@ -246,12 +251,9 @@ namespace
 bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool alter = false;
-    bool attach = false;
     if (attach_mode)
     {
-        if (ParserKeyword{"ATTACH USER"}.ignore(pos, expected))
-            attach = true;
-        else
+        if (!ParserKeyword{"ATTACH USER"}.ignore(pos, expected))
             return false;
     }
     else
@@ -290,7 +292,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
     std::shared_ptr<ASTExtendedRoleSet> default_roles;
-    std::optional<String> profile;
+    std::shared_ptr<ASTSettingsProfileElements> settings;
 
     while (true)
     {
@@ -300,10 +302,10 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (parseHosts(pos, expected, nullptr, hosts))
             continue;
 
-        if (!profile && parseProfileName(pos, expected, profile))
+        if (parseSettings(pos, expected, attach_mode, settings))
             continue;
 
-        if (!default_roles && parseDefaultRoles(pos, expected, attach, default_roles))
+        if (!default_roles && parseDefaultRoles(pos, expected, attach_mode, default_roles))
             continue;
 
         if (alter)
@@ -330,7 +332,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     node = query;
 
     query->alter = alter;
-    query->attach = attach;
+    query->attach = attach_mode;
     query->if_exists = if_exists;
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;
@@ -341,7 +343,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->add_hosts = std::move(add_hosts);
     query->remove_hosts = std::move(remove_hosts);
     query->default_roles = std::move(default_roles);
-    query->profile = std::move(profile);
+    query->settings = std::move(settings);
 
     return true;
 }

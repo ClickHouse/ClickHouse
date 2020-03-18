@@ -355,6 +355,7 @@ private:
         auto alter_user = std::make_unique<Node>("ALTER USER", next_flag++, GLOBAL);
         auto drop_user = std::make_unique<Node>("DROP USER", next_flag++, GLOBAL);
         auto create_role = std::make_unique<Node>("CREATE ROLE", next_flag++, GLOBAL);
+        auto alter_role = std::make_unique<Node>("ALTER ROLE", next_flag++, GLOBAL);
         auto drop_role = std::make_unique<Node>("DROP ROLE", next_flag++, GLOBAL);
         auto create_policy = std::make_unique<Node>("CREATE POLICY", next_flag++, GLOBAL);
         auto alter_policy = std::make_unique<Node>("ALTER POLICY", next_flag++, GLOBAL);
@@ -362,8 +363,14 @@ private:
         auto create_quota = std::make_unique<Node>("CREATE QUOTA", next_flag++, GLOBAL);
         auto alter_quota = std::make_unique<Node>("ALTER QUOTA", next_flag++, GLOBAL);
         auto drop_quota = std::make_unique<Node>("DROP QUOTA", next_flag++, GLOBAL);
+        auto create_profile = std::make_unique<Node>("CREATE SETTINGS PROFILE", next_flag++, GLOBAL);
+        ext::push_back(create_profile->aliases, "CREATE PROFILE");
+        auto alter_profile = std::make_unique<Node>("ALTER SETTINGS PROFILE", next_flag++, GLOBAL);
+        ext::push_back(alter_profile->aliases, "ALTER PROFILE");
+        auto drop_profile = std::make_unique<Node>("DROP SETTINGS PROFILE", next_flag++, GLOBAL);
+        ext::push_back(drop_profile->aliases, "DROP PROFILE");
         auto role_admin = std::make_unique<Node>("ROLE ADMIN", next_flag++, GLOBAL);
-        ext::push_back(all, std::move(create_user), std::move(alter_user), std::move(drop_user), std::move(create_role), std::move(drop_role), std::move(create_policy), std::move(alter_policy), std::move(drop_policy), std::move(create_quota), std::move(alter_quota), std::move(drop_quota), std::move(role_admin));
+        ext::push_back(all, std::move(create_user), std::move(alter_user), std::move(drop_user), std::move(create_role), std::move(alter_role), std::move(drop_role), std::move(create_policy), std::move(alter_policy), std::move(drop_policy), std::move(create_quota), std::move(alter_quota), std::move(drop_quota), std::move(create_profile), std::move(alter_profile), std::move(drop_profile), std::move(role_admin));
 
         auto shutdown = std::make_unique<Node>("SHUTDOWN", next_flag++, GLOBAL);
         ext::push_back(shutdown->aliases, "SYSTEM SHUTDOWN", "SYSTEM KILL");

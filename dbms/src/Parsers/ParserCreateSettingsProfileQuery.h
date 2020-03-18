@@ -6,20 +6,20 @@
 namespace DB
 {
 /** Parses queries like
-  * CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
+  * CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name
   *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
   *
-  * ALTER ROLE [IF EXISTS] name
+  * ALTER SETTINGS PROFILE [IF EXISTS] name
   *     [RENAME TO new_name]
   *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
   */
-class ParserCreateRoleQuery : public IParserBase
+class ParserCreateSettingsProfileQuery : public IParserBase
 {
 public:
-    ParserCreateRoleQuery & enableAttachMode(bool enable) { attach_mode = enable; return *this; }
+    ParserCreateSettingsProfileQuery & enableAttachMode(bool enable) { attach_mode = enable; return *this; }
 
 protected:
-    const char * getName() const override { return "CREATE ROLE or ALTER ROLE query"; }
+    const char * getName() const override { return "CREATE SETTINGS PROFILE or ALTER SETTINGS PROFILE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:
