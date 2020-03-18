@@ -494,7 +494,7 @@ public:
 /// Vertical merge) or a mutation of a single part. During a single stage all rows are read.
 struct MergeStageProgress
 {
-    MergeStageProgress(Float64 weight_)
+    explicit MergeStageProgress(Float64 weight_)
         : is_first(true) , weight(weight_)
     {
     }

@@ -54,7 +54,7 @@ TEST(StrongTypedefSuite, NoDefaultCtor)
 {
     struct NoDefaultCtor
     {
-        NoDefaultCtor(int i) {}
+        NoDefaultCtor(int) {} // NOLINT
     };
 
     STRONG_TYPEDEF(NoDefaultCtor, MyStruct);

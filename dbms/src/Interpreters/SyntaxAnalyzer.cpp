@@ -806,6 +806,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
     /// TODO: Remove unneeded conversion
     std::vector<TableWithColumnNames> tables_with_column_names;
+    tables_with_column_names.reserve(tables_with_columns.size());
     for (const auto & table : tables_with_columns)
         tables_with_column_names.emplace_back(table.removeTypes());
 

@@ -319,9 +319,9 @@ UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
     }
 
     UInt64 items = 0;
-    for (auto lon = args.longitude_min; lon < args.longitude_max; lon += args.longitude_step)
+    for (auto lon = args.longitude_min; lon < args.longitude_max; lon += args.longitude_step) // NOLINT
     {
-        for (auto lat = args.latitude_min; lat < args.latitude_max; lat += args.latitude_step)
+        for (auto lat = args.latitude_min; lat < args.latitude_max; lat += args.latitude_step) // NOLINT
         {
             assert(items <= args.items_count);
 

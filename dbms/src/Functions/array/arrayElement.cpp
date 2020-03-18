@@ -95,7 +95,7 @@ namespace ArrayImpl
 class NullMapBuilder
 {
 public:
-    operator bool() const { return src_null_map; }
+    explicit operator bool() const { return src_null_map; }
     bool operator!() const { return !src_null_map; }
 
     void initSource(const UInt8 * src_null_map_)

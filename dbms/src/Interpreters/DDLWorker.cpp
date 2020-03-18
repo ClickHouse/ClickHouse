@@ -794,7 +794,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
         /// Does nothing if wasn't previously locked
         lock->unlock();
-        std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<long>(0, 1000)(rng)));
+        std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<int>(0, 1000)(rng)));
     }
 
     /// Not executed by leader so was not executed at all

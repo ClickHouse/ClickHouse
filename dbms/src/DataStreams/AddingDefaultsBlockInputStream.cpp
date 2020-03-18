@@ -54,7 +54,7 @@ static void mixNumberColumns(
     const ColumnPtr & col_defaults,
     const BlockMissingValues::RowsBitMask & defaults_mask)
 {
-    auto call = [&](const auto & types) -> bool
+    auto call = [&](const auto & types)
     {
         using Types = std::decay_t<decltype(types)>;
         using DataType = typename Types::LeftType;
