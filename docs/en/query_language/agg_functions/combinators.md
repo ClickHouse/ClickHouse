@@ -1,8 +1,8 @@
-# Aggregate function combinators { #aggregate_functions_combinators}
+# Aggregate function combinators {#aggregate_functions_combinators}
 
 The name of an aggregate function can have a suffix appended to it. This changes the way the aggregate function works.
 
-## -If { #agg-functions-combinator-if}
+## -If {#agg-functions-combinator-if}
 
 The suffix -If can be appended to the name of any aggregate function. In this case, the aggregate function accepts an extra argument – a condition (Uint8 type). The aggregate function processes only the rows that trigger the condition. If the condition was not triggered even once, it returns a default value (usually zeros or empty strings).
 
@@ -10,7 +10,7 @@ Examples: `sumIf(column, cond)`, `countIf(cond)`, `avgIf(x, cond)`, `quantilesTi
 
 With conditional aggregate functions, you can calculate aggregates for several conditions at once, without using subqueries and `JOIN`s. For example, in Yandex.Metrica, conditional aggregate functions are used to implement the segment comparison functionality.
 
-## -Array { #agg-functions-combinator-array}
+## -Array {#agg-functions-combinator-array}
 
 The -Array suffix can be appended to any aggregate function. In this case, the aggregate function takes arguments of the 'Array(T)' type (arrays) instead of 'T' type arguments. If the aggregate function accepts multiple arguments, this must be arrays of equal lengths. When processing arrays, the aggregate function works like the original aggregate function across all array elements.
 
@@ -20,7 +20,7 @@ Example 2: `uniqArray(arr)` – Counts the number of unique elements in all 'arr
 
 -If and -Array can be combined. However, 'Array' must come first, then 'If'. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the 'cond' argument won't be an array.
 
-## -State { #agg-functions-combinator-state}
+## -State {#agg-functions-combinator-state}
 
 If you apply this combinator, the aggregate function doesn't return the resulting value (such as the number of unique values for the [uniq](reference.md#agg_function-uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
 
@@ -32,19 +32,19 @@ To work with these states, use:
 - [-Merge](#aggregate_functions_combinators_merge) combinator.
 - [-MergeState](#aggregate_functions_combinators_mergestate) combinator.
 
-## -Merge { #aggregate_functions_combinators_merge}
+## -Merge {#aggregate_functions_combinators_merge}
 
 If you apply this combinator, the aggregate function takes the intermediate aggregation state as an argument, combines the states to finish aggregation, and returns the resulting value.
 
-## -MergeState { #aggregate_functions_combinators_mergestate}
+## -MergeState {#aggregate_functions_combinators_mergestate}
 
 Merges the intermediate aggregation states in the same way as the -Merge combinator. However, it doesn't return the resulting value, but an intermediate aggregation state, similar to the -State combinator.
 
-## -ForEach { #agg-functions-combinator-foreach}
+## -ForEach {#agg-functions-combinator-foreach}
 
 Converts an aggregate function for tables into an aggregate function for arrays that aggregates the corresponding array items and returns an array of results. For example, `sumForEach` for the arrays `[1, 2]`, `[3, 4, 5]`and`[6, 7]`returns the result `[10, 13, 5]` after adding together the corresponding array items.
 
-## -OrDefault { #agg-functions-combinator-ordefault}
+## -OrDefault {#agg-functions-combinator-ordefault}
 
 Fills the default value of the aggregate function's return type if there is nothing to aggregate.
 
@@ -57,7 +57,7 @@ SELECT avg(number), avgOrDefault(number) FROM numbers(0)
 └─────────────┴──────────────────────┘
 ```
 
-## -OrNull { #agg-functions-combinator-ornull}
+## -OrNull {#agg-functions-combinator-ornull}
 
 Fills `null` if there is nothing to aggregate. The return column will be nullable.
 
@@ -85,7 +85,7 @@ FROM
 └────────────────────────────────┘
 ```
 
-## -Resample { #agg_functions-combinator-resample}
+## -Resample {#agg_functions-combinator-resample}
 
 Lets you divide data into groups, and then separately aggregates the data in those groups. Groups are created by splitting the values from one column into intervals.
 

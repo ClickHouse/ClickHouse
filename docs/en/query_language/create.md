@@ -1,6 +1,6 @@
 # CREATE Queries
 
-## CREATE DATABASE { #query_language-create-database}
+## CREATE DATABASE {#query_language-create-database}
 
 Creates database.
 
@@ -29,7 +29,7 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 
     By default, ClickHouse uses its own [database engine](../database_engines/index.md).
 
-## CREATE TABLE { #create-table-query}
+## CREATE TABLE {#create-table-query}
 
 The `CREATE TABLE` query can have several forms.
 
@@ -70,7 +70,7 @@ In all cases, if `IF NOT EXISTS` is specified, the query won't return an error i
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](../operations/table_engines/index.md#table_engines).
 
-### Default Values { #create-default-values}
+### Default Values {#create-default-values}
 
 The column description can specify an expression for a default value, in one of the following ways:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 Example: `URLDomain String DEFAULT domain(URL)`.
@@ -105,7 +105,7 @@ If you add a new column to a table but later change its default expression, the 
 
 It is not possible to set default values for elements in nested data structures.
 
-### Constraints { #constraints}
+### Constraints {#constraints}
 
 Along with columns descriptions constraints could be defined:
 
@@ -127,7 +127,7 @@ Adding large amount of constraints can negatively affect performance of big `INS
 
 Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../operations/table_engines/mergetree.md#table_engine-mergetree-ttl).
 
-### Column Compression Codecs { #codecs}
+### Column Compression Codecs {#codecs}
 
 By default, ClickHouse applies the `lz4` compression method. For `MergeTree`-engine family you can change the default compression method in the [compression](../operations/server_settings/settings.md#server-settings-compression) section of a server configuration. You can also define the compression method for each individual column in the `CREATE TABLE` query.
 
@@ -158,7 +158,7 @@ Compression is supported for the following table engines:
 
 ClickHouse supports common purpose codecs and specialized codecs.
 
-#### Specialized Codecs { #create-query-specialized-codecs}
+#### Specialized Codecs {#create-query-specialized-codecs}
 
 These codecs are designed to make compression more effective by using specific features of data. Some of these codecs don't compress data themself. Instead, they prepare the data for a common purpose codec, which compresses it better than without this preparation.
 
@@ -180,7 +180,7 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
-#### Common purpose codecs { #create-query-common-purpose-codecs}
+#### Common purpose codecs {#create-query-common-purpose-codecs}
 
 Codecs:
 
@@ -275,7 +275,7 @@ Views look the same as normal tables. For example, they are listed in the result
 
 There isn't a separate query for deleting views. To delete a view, use `DROP TABLE`.
 
-## CREATE DICTIONARY { #create-dictionary-query}
+## CREATE DICTIONARY {#create-dictionary-query}
 
 ```sql
 CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name
