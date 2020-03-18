@@ -43,7 +43,7 @@ Attributes are described in the query body:
 - `AttrName AttrType` — [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes). There can be a multiple number of attributes.
 
 
-## Key { #ext_dict_structure-key}
+## Key {#ext_dict_structure-key}
 
 ClickHouse supports the following types of keys:
 
@@ -56,7 +56,7 @@ An xml structure can contain either `<id>` or `<key>`. DDL-query must contain si
     You must not describe key as an attribute.
 
 
-### Numeric Key { #ext_dict-numeric-key}
+### Numeric Key {#ext_dict-numeric-key}
 
 Type: `UInt64`.
 
@@ -126,7 +126,7 @@ PRIMARY KEY field1, field2
 For a query to the `dictGet*` function, a tuple is passed as the key. Example: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
 
-## Attributes { #ext_dict_structure-attributes}
+## Attributes {#ext_dict_structure-attributes}
 
 Configuration example:
 

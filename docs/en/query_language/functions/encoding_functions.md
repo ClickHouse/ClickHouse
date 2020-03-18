@@ -1,6 +1,6 @@
 # Encoding functions
 
-## char { #char}
+## char {#char}
 
 Returns the string with the length as the number of passed arguments and each byte has the value of corresponding argument. Accepts multiple arguments of numeric types. If the value of argument is out of range of UInt8 data type, it is converted to UInt8 with possible rounding and overflow.
 
@@ -60,7 +60,7 @@ Result:
 └───────┘
 ```
 
-## hex { #hex}
+## hex {#hex}
 
 Returns a string containing the argument's hexadecimal representation. 
 

@@ -1,4 +1,4 @@
-# Table engines { #table_engines}
+# Table engines {#table_engines}
 
 The table engine (type of table) determines:
 
@@ -64,7 +64,7 @@ Engines in the family:
 - [Memory](memory.md)
 - [Buffer](buffer.md)
 
-## Virtual columns { #table_engines-virtual_columns}
+## Virtual columns {#table_engines-virtual_columns}
 
 Virtual column is an integral table engine attribute that is defined in the engine source code.
 

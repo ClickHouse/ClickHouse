@@ -1,4 +1,4 @@
-# Parametric aggregate functions { #aggregate_functions_parametric}
+# Parametric aggregate functions {#aggregate_functions_parametric}
 
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
@@ -71,7 +71,7 @@ FROM
 
 In this case, you should remember that you don't know the histogram bin borders.
 
-## sequenceMatch(pattern)(timestamp, cond1, cond2, ...) { #function-sequencematch}
+## sequenceMatch(pattern)(timestamp, cond1, cond2, ...) {#function-sequencematch}
 
 Checks whether the sequence contains an event chain that matches the pattern.
 
@@ -161,7 +161,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 - [sequenceCount](#function-sequencecount)
 
 
-## sequenceCount(pattern)(time, cond1, cond2, ...) { #function-sequencecount}
+## sequenceCount(pattern)(time, cond1, cond2, ...) {#function-sequencecount}
 
 Counts the number of event chains that matched the pattern. The function searches event chains that don't overlap. It starts to search for the next chain after the current chain is matched.
 
@@ -219,7 +219,7 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 - [sequenceMatch](#function-sequencematch)
 
 
-## windowFunnel { #windowfunnel}
+## windowFunnel {#windowfunnel}
 
 Searches for event chains in a sliding time window and calculates the maximum number of events that occurred from the chain.
 
@@ -309,7 +309,7 @@ Result:
 └───────┴───┘
 ```
 
-## retention { #retention}
+## retention {#retention}
 
 The function takes as arguments a set of conditions from 1 to 32 arguments of type `UInt8` that indicate whether a certain condition was met for the event.
 Any condition can be specified as an argument (as in [WHERE](../../query_language/select.md#select-where)).

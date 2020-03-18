@@ -1,4 +1,4 @@
-# DateTime64 { #data_type-datetime64}
+# DateTime64 {#data_type-datetime64}
 
 Allows to store an instant in time, that can be expressed as a calendar date and a time of a day, with defined sub-second precision
 
