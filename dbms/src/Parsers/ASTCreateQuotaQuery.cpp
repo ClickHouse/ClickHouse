@@ -143,7 +143,7 @@ void ASTCreateQuotaQuery::formatImpl(const FormatSettings & settings, FormatStat
 
     formatAllLimits(all_limits, settings);
 
-    if (roles)
+    if (roles && (!roles->empty() || alter))
         formatToRoles(*roles, settings);
 }
 }

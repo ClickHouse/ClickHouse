@@ -206,12 +206,10 @@ namespace
 bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool alter = false;
-    bool attach = false;
     if (attach_mode)
     {
         if (!ParserKeyword{"ATTACH POLICY"}.ignore(pos, expected) && !ParserKeyword{"ATTACH ROW POLICY"}.ignore(pos, expected))
             return false;
-        attach = true;
     }
     else
     {
@@ -248,7 +246,6 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     String new_policy_name;
     std::optional<bool> is_restrictive;
     std::vector<std::pair<ConditionType, ASTPtr>> conditions;
-    std::shared_ptr<ASTExtendedRoleSet> roles;
 
     while (true)
     {
@@ -261,17 +258,17 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (parseMultipleConditions(pos, expected, alter, conditions))
             continue;
 
-        if (!roles && parseToRoles(pos, expected, attach, roles))
-            continue;
-
         break;
     }
+
+    std::shared_ptr<ASTExtendedRoleSet> roles;
+    parseToRoles(pos, expected, attach_mode, roles);
 
     auto query = std::make_shared<ASTCreateRowPolicyQuery>();
     node = query;
 
     query->alter = alter;
-    query->attach = attach;
+    query->attach = attach_mode;
     query->if_exists = if_exists;
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;

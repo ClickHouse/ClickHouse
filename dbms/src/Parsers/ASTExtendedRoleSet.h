@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Access/Quota.h>
 
 
 namespace DB

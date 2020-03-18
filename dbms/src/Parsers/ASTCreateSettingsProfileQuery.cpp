@@ -1,5 +1,6 @@
-#include <Parsers/ASTCreateRoleQuery.h>
+#include <Parsers/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/ASTSettingsProfileElement.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Common/quoteString.h>
 
 
@@ -18,30 +19,36 @@ namespace
         format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
         settings.format(format);
     }
+
+    void formatToRoles(const ASTExtendedRoleSet & roles, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TO " << (settings.hilite ? IAST::hilite_none : "");
+        roles.format(settings);
+    }
 }
 
 
-String ASTCreateRoleQuery::getID(char) const
+String ASTCreateSettingsProfileQuery::getID(char) const
 {
-    return "CreateRoleQuery";
+    return "CreateSettingsProfileQuery";
 }
 
 
-ASTPtr ASTCreateRoleQuery::clone() const
+ASTPtr ASTCreateSettingsProfileQuery::clone() const
 {
-    return std::make_shared<ASTCreateRoleQuery>(*this);
+    return std::make_shared<ASTCreateSettingsProfileQuery>(*this);
 }
 
 
-void ASTCreateRoleQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
+void ASTCreateSettingsProfileQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
     if (attach)
     {
-        format.ostr << (format.hilite ? hilite_keyword : "") << "ATTACH ROLE" << (format.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_keyword : "") << "ATTACH SETTINGS PROFILE" << (format.hilite ? hilite_none : "");
     }
     else
     {
-        format.ostr << (format.hilite ? hilite_keyword : "") << (alter ? "ALTER ROLE" : "CREATE ROLE")
+        format.ostr << (format.hilite ? hilite_keyword : "") << (alter ? "ALTER SETTINGS PROFILE" : "CREATE SETTINGS PROFILE")
                       << (format.hilite ? hilite_none : "");
     }
 
@@ -59,6 +66,9 @@ void ASTCreateRoleQuery::formatImpl(const FormatSettings & format, FormatState &
 
     if (settings && (!settings->empty() || alter))
         formatSettings(*settings, format);
+
+    if (to_roles && (!to_roles->empty() || alter))
+        formatToRoles(*to_roles, format);
 }
 
 }
