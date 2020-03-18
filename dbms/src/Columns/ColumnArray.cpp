@@ -18,6 +18,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
 
 
 namespace DB

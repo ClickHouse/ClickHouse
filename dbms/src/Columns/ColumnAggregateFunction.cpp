@@ -10,8 +10,8 @@
 #include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
-#include <common/StringRef.h>
 #include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
 
 #include <AggregateFunctions/AggregateFunctionMLMethod.h>
 
@@ -295,9 +295,11 @@ void ColumnAggregateFunction::updateWeakHash32(WeakHash32 & hash) const
 
     for (size_t i = 0; i < s; ++i)
     {
-        WriteBufferFromOwnString wbuf;
+        std::vector<UInt8> v;
+        WriteBufferFromVector<std::vector<UInt8>> wbuf(v);
         func->serialize(data[i], wbuf);
-        hash_data[i] = StringRefHash::updateWeakHash(StringRef(wbuf.str().c_str(), wbuf.str().size()), hash_data[i]);
+        wbuf.finalize();
+        hash_data[i] = ::updateWeakHash32(v.data(), v.size(), hash_data[i]);
     }
 }
 
