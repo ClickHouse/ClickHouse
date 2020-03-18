@@ -162,6 +162,14 @@ private:
 
     bool shouldExecuteTTL(const Names & columns, const MutationCommands & commands) const;
 
+    /// Return set of indices which should be recalculated during mutation also
+    /// wraps input stream into additional expression stream
+    std::set<MergeTreeIndexPtr> getIndicesToRecalc(
+        BlockInputStreamPtr & input_stream,
+        StoragePtr storage_from_source_part,
+        const NamesAndTypesList & updated_columns,
+        const Context & context) const;
+
 
 public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
