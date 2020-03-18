@@ -1,4 +1,4 @@
-# JDBC { #table_engine-jdbc}
+# JDBC {#table_engine-jdbc}
 
 Allows ClickHouse to connect to external databases via [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
 
