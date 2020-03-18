@@ -595,6 +595,69 @@ bool ParserNullityChecking::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     return true;
 }
 
+bool ParserDateOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    auto begin = pos;
+
+    /// If no DATE keyword, go to the nested parser.
+    if (!ParserKeyword("DATE").ignore(pos, expected))
+        return next_parser.parse(pos, node, expected);
+
+    ASTPtr expr;
+    if (!ParserStringLiteral().parse(pos, expr, expected))
+    {
+        pos = begin;
+        return next_parser.parse(pos, node, expected);
+    }
+
+    /// the function corresponding to the operator
+    auto function = std::make_shared<ASTFunction>();
+
+    /// function arguments
+    auto exp_list = std::make_shared<ASTExpressionList>();
+
+    /// the first argument of the function is the previous element, the second is the next one
+    function->name = "toDate";
+    function->arguments = exp_list;
+    function->children.push_back(exp_list);
+
+    exp_list->children.push_back(expr);
+
+    node = function;
+    return true;
+}
+
+bool ParserTimestampOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    auto begin = pos;
+
+    /// If no TIMESTAMP keyword, go to the nested parser.
+    if (!ParserKeyword("TIMESTAMP").ignore(pos, expected))
+        return next_parser.parse(pos, node, expected);
+
+    ASTPtr expr;
+    if (!ParserStringLiteral().parse(pos, expr, expected))
+    {
+        pos = begin;
+        return next_parser.parse(pos, node, expected);
+    }
+
+    /// the function corresponding to the operator
+    auto function = std::make_shared<ASTFunction>();
+
+    /// function arguments
+    auto exp_list = std::make_shared<ASTExpressionList>();
+
+    /// the first argument of the function is the previous element, the second is the next one
+    function->name = "toDateTime";
+    function->arguments = exp_list;
+    function->children.push_back(exp_list);
+
+    exp_list->children.push_back(expr);
+
+    node = function;
+    return true;
+}
 
 bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {

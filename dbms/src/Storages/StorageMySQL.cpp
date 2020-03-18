@@ -175,7 +175,7 @@ public:
         return splitted_blocks;
     }
 
-    std::string dumpNamesWithBackQuote(const Block & block) const
+    static std::string dumpNamesWithBackQuote(const Block & block)
     {
         WriteBufferFromOwnString out;
         for (auto it = block.begin(); it != block.end(); ++it)
@@ -186,7 +186,6 @@ public:
         }
         return out.str();
     }
-
 
 private:
     const StorageMySQL & storage;

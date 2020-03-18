@@ -705,8 +705,9 @@ ASTPtr ClusterCopier::removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast
 }
 
 /// Replaces ENGINE and table name in a create query
-std::shared_ptr<ASTCreateQuery> ClusterCopier::rewriteCreateQueryStorage(
-        const ASTPtr & create_query_ast, const DatabaseAndTableName & new_table, const ASTPtr & new_storage_ast)
+std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_query_ast,
+                                                          const DatabaseAndTableName & new_table,
+                                                          const ASTPtr & new_storage_ast)
 {
     const auto & create = create_query_ast->as<ASTCreateQuery &>();
     auto res = std::make_shared<ASTCreateQuery>(create);

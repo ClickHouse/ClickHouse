@@ -218,7 +218,7 @@ private:
 
     /// Buffer should be allocated with features_count * column->size() elements.
     /// Place string pointers in positions buffer[0], buffer[features_count], ... , buffer[size * features_count]
-    void placeStringColumn(const ColumnString & column, const char ** buffer, size_t features_count) const
+    static void placeStringColumn(const ColumnString & column, const char ** buffer, size_t features_count)
     {
         size_t size = column.size();
         for (size_t i = 0; i < size; ++i)
@@ -231,8 +231,8 @@ private:
     /// Buffer should be allocated with features_count * column->size() elements.
     /// Place string pointers in positions buffer[0], buffer[features_count], ... , buffer[size * features_count]
     /// Returns PODArray which holds data (because ColumnFixedString doesn't store terminating zero).
-    PODArray<char> placeFixedStringColumn(
-            const ColumnFixedString & column, const char ** buffer, size_t features_count) const
+    static PODArray<char> placeFixedStringColumn(
+            const ColumnFixedString & column, const char ** buffer, size_t features_count)
     {
         size_t size = column.size();
         size_t str_size = column.getN();
@@ -281,8 +281,8 @@ private:
 
     /// Place columns into buffer, returns data which was used for fixed string columns.
     /// Buffer should contains column->size() values, each value contains size strings.
-    std::vector<PODArray<char>> placeStringColumns(
-            const ColumnRawPtrs & columns, size_t offset, size_t size, const char ** buffer) const
+    static std::vector<PODArray<char>> placeStringColumns(
+            const ColumnRawPtrs & columns, size_t offset, size_t size, const char ** buffer)
     {
         if (size == 0)
             return {};
