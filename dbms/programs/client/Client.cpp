@@ -481,8 +481,6 @@ private:
 
             if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
             {
-                if (config().has("case_insensitive_suggestion"))
-                    Suggest::instance().setCaseInsensitive();
                 /// Load suggestion data from the server.
                 Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
             }
@@ -1720,7 +1718,6 @@ public:
             ("always_load_suggestion_data", "Load suggestion data even if clickhouse-client is run in non-interactive mode. Used for testing.")
             ("suggestion_limit", po::value<int>()->default_value(10000),
                 "Suggestion limit for how many databases, tables and columns to fetch.")
-            ("case_insensitive_suggestion", "Case sensitive suggestions.")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
             ("format,f", po::value<std::string>(), "default output format")
