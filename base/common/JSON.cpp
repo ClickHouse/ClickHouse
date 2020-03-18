@@ -1,19 +1,20 @@
-#include <string>
-#include <string.h>
+#include "JSON.h"
 
-#include <Poco/UTF8Encoding.h>
+#include "find_symbols.h"
+#include "preciseExp10.h"
+
 #include <Poco/NumberParser.h>
-#include <common/JSON.h>
-#include <common/find_symbols.h>
-#include <common/preciseExp10.h>
+#include <Poco/UTF8Encoding.h>
 
 #include <iostream>
+#include <string>
+
+#include <string.h>
+
 
 #define JSON_MAX_DEPTH 100
 
-
 POCO_IMPLEMENT_EXCEPTION(JSONException, Poco::Exception, "JSONException")
-
 
 /// Прочитать беззнаковое целое в простом формате из не-0-terminated строки.
 static UInt64 readUIntText(const char * buf, const char * end)
@@ -836,4 +837,3 @@ bool JSON::isType<bool>() const
 {
     return isBool();
 }
-

@@ -1,9 +1,11 @@
 #pragma once
 
-#include <typeinfo>
+#include "StringRef.h"
+#include "Types.h"
+
 #include <Poco/Exception.h>
-#include <common/StringRef.h>
-#include <common/types.h>
+
+#include <typeinfo>
 
 
 /** Очень простой класс для чтения JSON (или его кусочков).
