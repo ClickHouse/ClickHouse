@@ -108,6 +108,9 @@ void StorageMergeTree::shutdown()
         return;
     shutdown_called = true;
 
+    /// Unlock all waiting mutations
+    mutation_wait_event.notify_all();
+
     try
     {
         clearOldPartsFromFilesystem(true);
@@ -121,9 +124,6 @@ void StorageMergeTree::shutdown()
 
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
-
-    /// Unlock all waiting mutations
-    mutation_wait_event.notify_all();
 
     if (merging_mutating_task_handle)
         global_context.getBackgroundPool().removeTask(merging_mutating_task_handle);
@@ -228,24 +228,22 @@ void StorageMergeTree::alter(
         changeSettings(metadata.settings_ast, table_lock_holder);
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
-
-        table_lock_holder.release();
     }
     else
     {
-        {
-            lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-            changeSettings(metadata.settings_ast, table_lock_holder);
-            /// Reinitialize primary key because primary key column types might have changed.
-            setProperties(metadata);
+        changeSettings(metadata.settings_ast, table_lock_holder);
+        /// Reinitialize primary key because primary key column types might have changed.
+        setProperties(metadata);
 
-            setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast);
+        setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast);
 
-            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
 
-            table_lock_holder.release();
-        }
+        /// We release all locks except alter_intention_lock which allows
+        /// to execute alter queries sequentially
+        table_lock_holder.releaseAllExpectAlterIntention();
 
         /// Always execute required mutations synchronously, because alters
         /// should be executed in sequential order.
@@ -358,21 +356,22 @@ void StorageMergeTree::mutateImpl(const MutationCommands & commands, size_t muta
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See loadMutations().
     auto disk = getStoragePolicy()->getAnyDisk();
-    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get());
     String file_name;
     Int64 version;
+
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
+        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get());
         version = increment.get();
         entry.commit(version);
         file_name = entry.file_name;
         auto insertion = current_mutations_by_id.emplace(file_name, std::move(entry));
         current_mutations_by_version.emplace(version, insertion.first->second);
-    }
 
-    LOG_INFO(log, "Added mutation: " << file_name);
-    merging_mutating_task_handle->wake();
+        LOG_INFO(log, "Added mutation: " << file_name);
+        merging_mutating_task_handle->wake();
+    }
 
     /// We have to wait mutation end
     if (mutations_sync > 0)
@@ -381,6 +380,7 @@ void StorageMergeTree::mutateImpl(const MutationCommands & commands, size_t muta
         auto check = [version, this]() { return shutdown_called || isMutationDone(version); };
         std::unique_lock lock(mutation_wait_mutex);
         mutation_wait_event.wait(lock, check);
+        LOG_INFO(log, "Mutation " << file_name << " done");
     }
 
 }
