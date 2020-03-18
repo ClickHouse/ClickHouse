@@ -501,7 +501,7 @@ MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns
     size_t num_rows = size();
 
     {
-        size_t reserve_size = num_rows / num_columns * 1.1; /// 1.1 is just a guess. Better to use n-sigma rule.
+        size_t reserve_size = double(num_rows) / num_columns * 1.1; /// 1.1 is just a guess. Better to use n-sigma rule.
 
         if (reserve_size > 1)
             for (auto & column : columns)
