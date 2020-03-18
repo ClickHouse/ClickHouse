@@ -17,9 +17,7 @@ struct CRCBase
         {
             T c = i;
             for (size_t j = 0; j < 8; ++j)
-            {
                 c = c & 1 ? polynomial ^ (c >> 1) : c >> 1;
-            }
             tab[i] = c;
         }
     }
@@ -34,13 +32,9 @@ struct CRCImpl
     {
         static CRCBase<ReturnType> base(polynomial);
 
-        T i, crc;
-
-        crc = 0;
-        for (i = 0; i < size; i++)
-        {
+        T crc = 0;
+        for (size_t i = 0; i < size; i++)
             crc = base.tab[(crc ^ buf[i]) & 0xff] ^ (crc >> 8);
-        }
         return crc;
     }
 };
@@ -63,10 +57,12 @@ struct CRC32ZLIBImpl
     static constexpr auto name = "CRC32";
 
     static UInt32 make_crc(const unsigned char *buf, size_t size)
-    { return crc32_z(0L, buf, size); }
+    {
+        return crc32_z(0L, buf, size);
+    }
 };
 
-} // \anonymous
+}
 
 namespace DB
 {
