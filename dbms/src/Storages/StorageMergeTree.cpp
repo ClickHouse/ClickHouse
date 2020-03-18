@@ -378,7 +378,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
     if (query_context.getSettingsRef().mutations_sync > 0)
     {
         LOG_INFO(log, "Waiting mutation: " << file_name);
-        auto check = [version, this]() { return isMutationDone(version); };
+        auto check = [version, this]() { return shutdown_called || isMutationDone(version); };
         std::unique_lock lock(mutation_wait_mutex);
         mutation_wait_event.wait(lock, check);
     }
