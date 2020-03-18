@@ -38,7 +38,7 @@ namespace ClusterProxy
 SelectStreamFactory::SelectStreamFactory(
     const Block & header_,
     QueryProcessingStage::Enum processed_stage_,
-    QualifiedTableName main_table_,
+    StorageID main_table_,
     const Scalars & scalars_,
     bool has_virtual_shard_num_column_,
     const Tables & external_tables_)
@@ -111,10 +111,10 @@ Pipe createLocalStream(const ASTPtr & query_ast, const Block & header, const Con
     return std::move(pipeline).getPipe();
 }
 
-static String formattedAST(const ASTPtr & ast)
+String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
-        return "";
+        return {};
     std::stringstream ss;
     formatAST(*ast, ss, false, true);
     return ss.str();
@@ -172,7 +172,10 @@ void SelectStreamFactory::createForShard(
             main_table_storage = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
         }
         else
-            main_table_storage = context.tryGetTable(main_table.database, main_table.table);
+        {
+            auto resolved_id = context.resolveStorageID(main_table);
+            main_table_storage = DatabaseCatalog::instance().tryGetTable(resolved_id);
+        }
 
 
         if (!main_table_storage) /// Table is absent on a local server.
@@ -182,7 +185,7 @@ void SelectStreamFactory::createForShard(
             {
                 LOG_WARNING(
                         &Logger::get("ClusterProxy::SelectStreamFactory"),
-                        "There is no table " << main_table.database << "." << main_table.table
+                        "There is no table " << main_table.getNameForLogs()
                         << " on local replica of shard " << shard_info.shard_num << ", will try remote replicas.");
                 emplace_remote_stream();
             }
@@ -264,7 +267,7 @@ void SelectStreamFactory::createForShard(
                 if (table_func_ptr)
                     try_results = pool->getManyForTableFunction(timeouts, &current_settings, PoolMode::GET_MANY);
                 else
-                    try_results = pool->getManyChecked(timeouts, &current_settings, PoolMode::GET_MANY, main_table);
+                    try_results = pool->getManyChecked(timeouts, &current_settings, PoolMode::GET_MANY, main_table.getQualifiedName());
             }
             catch (const Exception & ex)
             {

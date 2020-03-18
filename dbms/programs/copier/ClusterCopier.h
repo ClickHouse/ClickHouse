@@ -88,11 +88,6 @@ protected:
     /// Removes MATERIALIZED and ALIAS columns from create table query
     static ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr &query_ast);
 
-    /// Replaces ENGINE and table name in a create query
-    std::shared_ptr<ASTCreateQuery>
-    rewriteCreateQueryStorage(const ASTPtr & create_query_ast, const DatabaseAndTableName & new_table,
-                              const ASTPtr & new_storage_ast);
-
     bool tryDropPartition(ShardPartition & task_partition,
                           const zkutil::ZooKeeperPtr & zookeeper,
                           const CleanStateClock & clean_state_clock);

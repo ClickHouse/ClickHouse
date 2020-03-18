@@ -2,7 +2,7 @@
 
 #include <Poco/Net/TCPServerConnection.h>
 
-#include <Common/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Core/Protocol.h>
@@ -157,8 +157,8 @@ private:
     void receiveQuery();
     bool receiveData(bool scalar);
     bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
-    void readData(const Settings & global_settings);
-    std::tuple<size_t, int> getReadTimeouts(const Settings & global_settings);
+    void readData(const Settings & connection_settings);
+    std::tuple<size_t, int> getReadTimeouts(const Settings & connection_settings);
 
     [[noreturn]] void receiveUnexpectedData();
     [[noreturn]] void receiveUnexpectedQuery();
@@ -166,7 +166,7 @@ private:
     [[noreturn]] void receiveUnexpectedTablesStatusRequest();
 
     /// Process INSERT query
-    void processInsertQuery(const Settings & global_settings);
+    void processInsertQuery(const Settings & connection_settings);
 
     /// Process a request that does not require the receiving of data blocks from the client
     void processOrdinaryQuery();

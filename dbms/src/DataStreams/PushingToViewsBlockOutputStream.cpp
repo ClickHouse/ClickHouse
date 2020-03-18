@@ -34,7 +34,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
 
     auto table_id = storage->getStorageID();
-    Dependencies dependencies = context.getDependencies(table_id);
+    Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
 
     /// We need special context for materialized views insertions
     if (!dependencies.empty())
@@ -47,7 +47,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
     for (const auto & database_table : dependencies)
     {
-        auto dependent_table = context.getTable(database_table);
+        auto dependent_table = DatabaseCatalog::instance().getTable(database_table);
 
         ASTPtr query;
         BlockOutputStreamPtr out;
@@ -61,8 +61,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             query = materialized_view->getInnerQuery();
 
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-            insert->database = inner_table_id.database_name;
-            insert->table = inner_table_id.table_name;
+            insert->table_id = inner_table_id;
 
             /// Get list of columns we get from select query.
             auto header = InterpreterSelectQuery(query, *views_context, SelectQueryOptions().analyze())

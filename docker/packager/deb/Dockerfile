@@ -28,6 +28,7 @@ RUN apt-get --allow-unauthenticated update -y \
             lld-8 \
             libclang-8-dev \
             liblld-8-dev \
+            clang-tidy-8 \
             libicu-dev \
             libreadline-dev \
             gperf \
@@ -63,7 +64,8 @@ RUN apt-get --allow-unauthenticated update -y \
             cmake \
             gdb  \
             pigz \
-            moreutils
+            moreutils \
+            libcctz-dev
 
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.

@@ -378,9 +378,8 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::selectAllPartsFromPar
 
     MergeTreeData::DataParts data_parts = data.getDataParts();
 
-    for (MergeTreeData::DataParts::iterator it = data_parts.cbegin(); it != data_parts.cend(); ++it)
+    for (const auto & current_part : data_parts)
     {
-        const MergeTreeData::DataPartPtr & current_part = *it;
         if (current_part->info.partition_id != partition_id)
             continue;
 
@@ -1211,7 +1210,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         new_data_part->partition.assign(source_part->partition);
         new_data_part->minmax_idx = source_part->minmax_idx;
         new_data_part->modification_time = time(nullptr);
-        new_data_part->bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->getFullPath());
+        new_data_part->bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->disk, new_data_part->getFullRelativePath());
     }
 
     return new_data_part;
@@ -1319,7 +1318,7 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
     MergeTreeData::DataPartPtr part,
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
-    MutationCommands & for_file_renames) const
+    MutationCommands & for_file_renames)
 {
     NameSet removed_columns_from_compact_part;
     NameSet already_changed_columns;
@@ -1380,7 +1379,7 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
 
 
 NameSet MergeTreeDataMergerMutator::collectFilesToRemove(
-    MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension) const
+    MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension)
 {
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
@@ -1393,7 +1392,6 @@ NameSet MergeTreeDataMergerMutator::collectFilesToRemove(
             },
             {});
     }
-
 
     NameSet remove_files;
     /// Remove old indices
@@ -1423,11 +1421,12 @@ NameSet MergeTreeDataMergerMutator::collectFilesToRemove(
                 column->type->enumerateStreams(callback, stream_path);
         }
     }
+
     return remove_files;
 }
 
 NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
-    const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension) const
+    const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension)
 {
     NameSet files_to_skip = {"checksums.txt", "columns.txt"};
 
@@ -1455,7 +1454,7 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
 
 
 NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
-    MergeTreeData::DataPartPtr source_part, const Block & updated_header, NamesAndTypesList all_columns) const
+    MergeTreeData::DataPartPtr source_part, const Block & updated_header, NamesAndTypesList all_columns)
 {
     Names source_column_names = source_part->getColumns().getNames();
     NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());

@@ -118,7 +118,7 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
 
     auto read_alpha_month = [&month] (const auto & alpha)
     {
-             if (0 == strncasecmp(alpha, "Jan", 3)) month = 1;
+        if (0 == strncasecmp(alpha, "Jan", 3)) month = 1;
         else if (0 == strncasecmp(alpha, "Feb", 3)) month = 2;
         else if (0 == strncasecmp(alpha, "Mar", 3)) month = 3;
         else if (0 == strncasecmp(alpha, "Apr", 3)) month = 4;
@@ -479,12 +479,12 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
                     if (read_alpha_month(alpha))
                     {
                     }
-                    else if (0 == strncasecmp(alpha, "UTC", 3)) has_time_zone_offset = true;
+                    else if (0 == strncasecmp(alpha, "UTC", 3)) has_time_zone_offset = true; // NOLINT
                     else if (0 == strncasecmp(alpha, "GMT", 3)) has_time_zone_offset = true;
                     else if (0 == strncasecmp(alpha, "MSK", 3)) { has_time_zone_offset = true; time_zone_offset_hour = 3; }
                     else if (0 == strncasecmp(alpha, "MSD", 3)) { has_time_zone_offset = true; time_zone_offset_hour = 4; }
 
-                    else if (0 == strncasecmp(alpha, "Mon", 3)) has_day_of_week = true;
+                    else if (0 == strncasecmp(alpha, "Mon", 3)) has_day_of_week = true; // NOLINT
                     else if (0 == strncasecmp(alpha, "Tue", 3)) has_day_of_week = true;
                     else if (0 == strncasecmp(alpha, "Wed", 3)) has_day_of_week = true;
                     else if (0 == strncasecmp(alpha, "Thu", 3)) has_day_of_week = true;

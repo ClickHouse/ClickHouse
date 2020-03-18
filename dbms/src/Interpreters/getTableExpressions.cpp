@@ -94,8 +94,8 @@ static NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression 
     }
     else if (table_expression.database_and_table_name)
     {
-        DatabaseAndTableWithAlias database_table(table_expression.database_and_table_name);
-        const auto & table = context.getTable(database_table.database, database_table.table);
+        auto table_id = context.resolveStorageID(table_expression.database_and_table_name);
+        const auto & table = DatabaseCatalog::instance().getTable(table_id);
         auto & columns = table->getColumns();
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();

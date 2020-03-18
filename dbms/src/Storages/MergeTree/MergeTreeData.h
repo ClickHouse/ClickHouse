@@ -547,7 +547,7 @@ public:
     /// Moves the entire data directory.
     /// Flushes the uncompressed blocks cache and the marks cache.
     /// Must be called with locked lockStructureForAlter().
-    void rename(const String & new_path_to_table_data, const String & new_database_name,
+    void rename(const String & new_table_path, const String & new_database_name,
         const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     /// Check if the ALTER can be performed:
@@ -569,7 +569,7 @@ public:
 
     /// Change MergeTreeSettings
     void changeSettings(
-           const ASTPtr & new_changes,
+           const ASTPtr & new_settings,
            TableStructureWriteLockHolder & table_lock_holder);
 
     /// Remove columns, that have been marked as empty after zeroing values with expired ttl
@@ -601,7 +601,6 @@ public:
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path);
-    void loadPartAndFixMetadata(MutableDataPartPtr part);
 
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
@@ -638,7 +637,7 @@ public:
     }
 
     /// For ATTACH/DETACH/DROP PARTITION.
-    String getPartitionIDFromQuery(const ASTPtr & partition, const Context & context);
+    String getPartitionIDFromQuery(const ASTPtr & ast, const Context & context);
 
     /// Extracts MergeTreeData of other *MergeTree* storage
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM
@@ -683,13 +682,14 @@ public:
     using PathWithDisk = std::pair<String, DiskPtr>;
     using PathsWithDisks = std::vector<PathWithDisk>;
     PathsWithDisks getDataPathsWithDisks() const;
+    PathsWithDisks getRelativeDataPathsWithDisks() const;
 
     /// Reserves space at least 1MB.
     ReservationPtr reserveSpace(UInt64 expected_size) const;
 
     /// Reserves space at least 1MB on specific disk or volume.
-    ReservationPtr reserveSpace(UInt64 expected_size, SpacePtr space) const;
-    ReservationPtr tryReserveSpace(UInt64 expected_size, SpacePtr space) const;
+    static ReservationPtr reserveSpace(UInt64 expected_size, SpacePtr space);
+    static ReservationPtr tryReserveSpace(UInt64 expected_size, SpacePtr space);
 
     /// Reserves space at least 1MB preferring best destination according to `ttl_infos`.
     ReservationPtr reserveSpacePreferringTTLRules(UInt64 expected_size,
@@ -957,7 +957,7 @@ protected:
     using MatcherFn = std::function<bool(const DataPartPtr &)>;
     void freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context);
 
-    bool canReplacePartition(const DataPartPtr & data_part) const;
+    bool canReplacePartition(const DataPartPtr & src_part) const;
 
     void writePartLog(
         PartLogElement::Type type,
@@ -996,7 +996,7 @@ private:
     };
 
     /// Move selected parts to corresponding disks
-    bool moveParts(CurrentlyMovingPartsTagger && parts_to_move);
+    bool moveParts(CurrentlyMovingPartsTagger && moving_tagger);
 
     /// Select parts for move and disks for them. Used in background moving processes.
     CurrentlyMovingPartsTagger selectPartsForMove();

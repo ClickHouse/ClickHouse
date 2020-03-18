@@ -28,13 +28,21 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FILE_ALREADY_EXISTS;
     extern const int PATH_ACCESS_DENIED;
-    extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int UNKNOWN_FORMAT;
 }
 
 namespace
 {
+    String getRandomName()
+    {
+        std::uniform_int_distribution<int> distribution('a', 'z');
+        String res(32, ' '); /// The number of bits of entropy should be not less than 128.
+        for (auto & c : res)
+            c = distribution(thread_local_rng);
+        return res;
+    }
+
     template <typename Result, typename Error>
     void throwIfError(Aws::Utils::Outcome<Result, Error> && response)
     {
@@ -144,32 +152,45 @@ namespace
     public:
         ReadIndirectBufferFromS3(
             std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, Metadata metadata_, size_t buf_size_)
-            : ReadBufferFromFileBase()
-            , client_ptr(std::move(client_ptr_))
-            , bucket(bucket_)
-            , metadata(std::move(metadata_))
-            , buf_size(buf_size_)
-            , absolute_position(0)
-            , current_buf_idx(0)
-            , current_buf(nullptr)
+            : client_ptr(std::move(client_ptr_)),
+            bucket(bucket_),
+            metadata(std::move(metadata_)),
+            buf_size(buf_size_)
         {
         }
 
         off_t seek(off_t offset_, int whence) override
         {
-            if (whence != SEEK_SET)
-                throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+            if (whence == SEEK_CUR)
+            {
+                /// If position within current working buffer - shift pos.
+                if (working_buffer.size() && size_t(getPosition() + offset_) < absolute_position)
+                {
+                    pos += offset_;
+                    return getPosition();
+                }
+                else
+                {
+                    absolute_position += offset_;
+                }
+            }
+            else if (whence == SEEK_SET)
+            {
+                /// If position within current working buffer - shift pos.
+                if (working_buffer.size() && size_t(offset_) >= absolute_position - working_buffer.size()
+                    && size_t(offset_) < absolute_position)
+                {
+                    pos = working_buffer.end() - (absolute_position - offset_);
+                    return getPosition();
+                }
+                else
+                {
+                    absolute_position = offset_;
+                }
+            }
+            else
+                throw Exception("Only SEEK_SET or SEEK_CUR modes are allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
-            if (offset_ < 0 || metadata.total_size <= static_cast<UInt64>(offset_))
-                throw Exception(
-                    "Seek position is out of bounds. "
-                    "Offset: "
-                        + std::to_string(offset_) + ", Max: " + std::to_string(metadata.total_size),
-                    ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
-
-            absolute_position = offset_;
-
-            /// TODO: Do not re-initialize buffer if current position within working buffer.
             current_buf = initialize();
             pos = working_buffer.end();
 
@@ -187,8 +208,7 @@ namespace
             for (UInt32 i = 0; i < metadata.s3_objects_count; ++i)
             {
                 current_buf_idx = i;
-                auto path = metadata.s3_objects[i].first;
-                auto size = metadata.s3_objects[i].second;
+                auto [path, size] = metadata.s3_objects[i];
                 if (size > offset)
                 {
                     auto buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, path, buf_size);
@@ -235,7 +255,7 @@ namespace
         size_t buf_size;
 
         size_t absolute_position = 0;
-        UInt32 current_buf_idx;
+        UInt32 current_buf_idx = 0;
         std::unique_ptr<ReadBufferFromS3> current_buf;
     };
 
@@ -324,6 +344,8 @@ public:
         else
             return folder_path + iter.name();
     }
+
+    String name() const override { return iter.name(); }
 
 private:
     Poco::DirectoryIterator iter;
@@ -547,7 +569,7 @@ void DiskS3::removeRecursive(const String & path)
     Poco::File file(metadata_path + path);
     if (file.isFile())
     {
-        remove(metadata_path + path);
+        remove(path);
     }
     else
     {
@@ -557,14 +579,6 @@ void DiskS3::removeRecursive(const String & path)
     }
 }
 
-String DiskS3::getRandomName() const
-{
-    std::uniform_int_distribution<int> distribution('a', 'z');
-    String res(32, ' '); /// The number of bits of entropy should be not less than 128.
-    for (auto & c : res)
-        c = distribution(thread_local_rng);
-    return res;
-}
 
 bool DiskS3::tryReserve(UInt64 bytes)
 {
@@ -589,6 +603,22 @@ bool DiskS3::tryReserve(UInt64 bytes)
         return true;
     }
     return false;
+}
+
+void DiskS3::listFiles(const String & path, std::vector<String> & file_names)
+{
+    for (auto it = iterateDirectory(path); it->isValid(); it->next())
+        file_names.push_back(it->name());
+}
+
+void DiskS3::setLastModified(const String & path, const Poco::Timestamp & timestamp)
+{
+    Poco::File(metadata_path + path).setLastModified(timestamp);
+}
+
+Poco::Timestamp DiskS3::getLastModified(const String & path)
+{
+    return Poco::File(metadata_path + path).getLastModified();
 }
 
 

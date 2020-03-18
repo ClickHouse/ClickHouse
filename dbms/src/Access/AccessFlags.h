@@ -401,6 +401,7 @@ private:
         auto input = std::make_unique<Node>("input()", next_flag++, GLOBAL_LEVEL);
         auto values = std::make_unique<Node>("values()", next_flag++, GLOBAL_LEVEL);
         auto numbers = std::make_unique<Node>("numbers()", next_flag++, GLOBAL_LEVEL);
+        auto zeros = std::make_unique<Node>("zeros()", next_flag++, GLOBAL_LEVEL);
         auto merge = std::make_unique<Node>("merge()", next_flag++, DATABASE_LEVEL);
         auto remote = std::make_unique<Node>("remote()", next_flag++, GLOBAL_LEVEL);
         ext::push_back(remote->aliases, "remoteSecure()", "cluster()");
@@ -409,7 +410,7 @@ private:
         auto jdbc = std::make_unique<Node>("jdbc()", next_flag++, GLOBAL_LEVEL);
         auto hdfs = std::make_unique<Node>("hdfs()", next_flag++, GLOBAL_LEVEL);
         auto s3 = std::make_unique<Node>("s3()", next_flag++, GLOBAL_LEVEL);
-        auto table_functions = std::make_unique<Node>("TABLE FUNCTIONS", std::move(file), std::move(url), std::move(input), std::move(values), std::move(numbers), std::move(merge), std::move(remote), std::move(mysql), std::move(odbc), std::move(jdbc), std::move(hdfs), std::move(s3));
+        auto table_functions = std::make_unique<Node>("TABLE FUNCTIONS", std::move(file), std::move(url), std::move(input), std::move(values), std::move(numbers), std::move(zeros), std::move(merge), std::move(remote), std::move(mysql), std::move(odbc), std::move(jdbc), std::move(hdfs), std::move(s3));
         ext::push_back(all, std::move(table_functions));
 
         flags_to_keyword_tree_ = std::make_unique<Node>("ALL", std::move(all));

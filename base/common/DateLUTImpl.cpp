@@ -59,7 +59,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     time_t start_of_day = DATE_LUT_MIN;
 
     cctz::time_zone cctz_time_zone;
-    if (!cctz::load_time_zone(time_zone.data(), &cctz_time_zone))
+    if (!cctz::load_time_zone(time_zone, &cctz_time_zone))
         throw Poco::Exception("Cannot load time zone " + time_zone_);
 
     cctz::time_zone::absolute_lookup start_of_epoch_lookup = cctz_time_zone.lookup(std::chrono::system_clock::from_time_t(start_of_day));

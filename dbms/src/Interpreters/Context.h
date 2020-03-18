@@ -7,6 +7,7 @@
 #include <Core/UUID.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
@@ -78,7 +79,6 @@ class TraceLog;
 class MetricLog;
 struct MergeTreeSettings;
 class IDatabase;
-class DDLGuard;
 class DDLWorker;
 class ITableFunction;
 class Block;
@@ -101,22 +101,14 @@ using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
-
 class Volume;
 using VolumePtr = std::shared_ptr<Volume>;
+struct NamedSession;
+
 
 #if USE_EMBEDDED_COMPILER
-
 class CompiledExpressionCache;
-
 #endif
-
-/// Table -> set of table-views that make SELECT from it.
-using ViewDependencies = std::map<StorageID, std::set<StorageID>>;
-using Dependencies = std::vector<StorageID>;
-
-using TableAndCreateAST = std::pair<StoragePtr, ASTPtr>;
-using TableAndCreateASTs = std::map<String, TableAndCreateAST>;
 
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(Context &)>;
@@ -167,27 +159,25 @@ private:
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
     QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
-    std::pair<String, String> insertion_table;  /// Saved insertion table in query context
+    StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
-    // TODO maybe replace with DatabaseMemory?
-    TableAndCreateASTs external_tables;     /// Temporary tables.
+    TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
+
+    //TODO maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
+
     Context * query_context = nullptr;
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
 
-    UInt64 session_close_cycle = 0;
-    bool session_is_used = false;
+    friend class NamedSessions;
 
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
-
-    using DatabasePtr = std::shared_ptr<IDatabase>;
-    using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
@@ -265,6 +255,11 @@ public:
     void checkAccess(const AccessRightsElement & access) const;
     void checkAccess(const AccessRightsElements & access) const;
 
+    void checkAccess(const AccessFlags & access, const StorageID & table_id) const;
+    void checkAccess(const AccessFlags & access, const StorageID & table_id, const std::string_view & column) const;
+    void checkAccess(const AccessFlags & access, const StorageID & table_id, const std::vector<std::string_view> & columns) const;
+    void checkAccess(const AccessFlags & access, const StorageID & table_id, const Strings & columns) const;
+
     AccessRightsContextPtr getAccessRights() const;
 
     RowPolicyContextPtr getRowPolicy() const;
@@ -296,46 +291,34 @@ public:
     ClientInfo & getClientInfo() { return client_info; }
     const ClientInfo & getClientInfo() const { return client_info; }
 
-    void addDependency(const StorageID & from, const StorageID & where);
-    void removeDependency(const StorageID & from, const StorageID & where);
-    Dependencies getDependencies(const StorageID & from) const;
+    enum StorageNamespace
+    {
+         ResolveGlobal = 1u,                                           /// Database name must be specified
+         ResolveCurrentDatabase = 2u,                                  /// Use current database
+         ResolveOrdinary = ResolveGlobal | ResolveCurrentDatabase,     /// If database name is not specified, use current database
+         ResolveExternal = 4u,                                         /// Try get external table
+         ResolveAll = ResolveExternal | ResolveOrdinary                /// If database name is not specified, try get external table,
+                                                                       ///    if external table not found use current database.
+    };
 
-    /// Functions where we can lock the context manually
-    void addDependencyUnsafe(const StorageID & from, const StorageID & where);
-    void removeDependencyUnsafe(const StorageID & from, const StorageID & where);
+    String resolveDatabase(const String & database_name) const;
+    StorageID resolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
+    StorageID tryResolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
+    StorageID resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const;
 
-    /// Checking the existence of the table/database. Database can be empty - in this case the current database is used.
-    bool isTableExist(const String & database_name, const String & table_name) const;
-    bool isDatabaseExist(const String & database_name) const;
-    bool isDictionaryExists(const String & database_name, const String & dictionary_name) const;
-    bool isExternalTableExist(const String & table_name) const;
-    void assertTableDoesntExist(const String & database_name, const String & table_name) const;
-    void assertDatabaseExists(const String & database_name) const;
-    void assertDatabaseDoesntExist(const String & database_name) const;
+    Tables getExternalTables() const;
+    void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
+    std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
     const Scalars & getScalars() const;
     const Block & getScalar(const String & name) const;
-    Tables getExternalTables() const;
-    StoragePtr tryGetExternalTable(const String & table_name) const;
-    StoragePtr getTable(const String & database_name, const String & table_name) const;
-    StoragePtr getTable(const StorageID & table_id) const;
-    StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
-    StoragePtr tryGetTable(const StorageID & table_id) const;
-    void addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast = {});
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
-    StoragePtr tryRemoveExternalTable(const String & table_name);
 
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource();
-
-    void addDatabase(const String & database_name, const DatabasePtr & database);
-    DatabasePtr detachDatabase(const String & database_name);
-
-    /// Get an object that protects the table from concurrently executing multiple DDL operations.
-    std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table) const;
 
     String getCurrentDatabase() const;
     String getCurrentQueryId() const;
@@ -348,8 +331,8 @@ public:
 
     void killCurrentQuery();
 
-    void setInsertionTable(std::pair<String, String> && db_and_table) { insertion_table = db_and_table; }
-    const std::pair<String, String> & getInsertionTable() const { return insertion_table; }
+    void setInsertionTable(StorageID db_and_table) { insertion_table = std::move(db_and_table); }
+    const StorageID & getInsertionTable() const { return insertion_table; }
 
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);
@@ -412,25 +395,13 @@ public:
 
     std::optional<UInt16> getTCPPortSecure() const;
 
-    /// Get query for the CREATE table.
-    ASTPtr getCreateExternalTableQuery(const String & table_name) const;
+    /// Allow to use named sessions. The thread will be run to cleanup sessions after timeout has expired.
+    /// The method must be called at the server startup.
+    void enableNamedSessions();
 
-    const DatabasePtr getDatabase(const String & database_name) const;
-    DatabasePtr getDatabase(const String & database_name);
-    const DatabasePtr tryGetDatabase(const String & database_name) const;
-    DatabasePtr tryGetDatabase(const String & database_name);
+    std::shared_ptr<NamedSession> acquireNamedSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check);
 
-    const Databases getDatabases() const;
-    Databases getDatabases();
-
-    std::shared_ptr<Context> acquireSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check) const;
-    void releaseSession(const String & session_id, std::chrono::steady_clock::duration timeout);
-
-    /// Close sessions, that has been expired. Returns how long to wait for next session to be expired, if no new sessions will be added.
-    std::chrono::steady_clock::duration closeSessions() const;
-
-    /// For methods below you may need to acquire a lock by yourself.
-    std::unique_lock<std::recursive_mutex> getLock() const;
+    /// For methods below you may need to acquire the context lock by yourself.
 
     const Context & getQueryContext() const;
     Context & getQueryContext();
@@ -449,7 +420,11 @@ public:
 
     void makeQueryContext() { query_context = this; }
     void makeSessionContext() { session_context = this; }
-    void makeGlobalContext() { global_context = this; }
+    void makeGlobalContext()
+    {
+        global_context = this;
+        DatabaseCatalog::init(this);
+    }
 
     const Settings & getSettingsRef() const { return settings; }
     Settings & getSettingsRef() { return settings; }
@@ -590,9 +565,6 @@ public:
     String getFormatSchemaPath() const;
     void setFormatSchemaPath(const String & path);
 
-    /// User name and session identifier. Named sessions are local to users.
-    using SessionKey = std::pair<String, String>;
-
     SampleBlockCache & getSampleBlockCache() const;
 
     /// Query parameters for prepared statements.
@@ -622,6 +594,8 @@ public:
 
     MySQLWireContext mysql;
 private:
+    std::unique_lock<std::recursive_mutex> getLock() const;
+
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateUserSettings();
     void calculateAccessRights();
@@ -633,63 +607,30 @@ private:
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 
-    StoragePtr getTableImpl(const StorageID & table_id, std::optional<Exception> * exception) const;
-
-    SessionKey getSessionKey(const String & session_id) const;
-
-    /// Session will be closed after specified timeout.
-    void scheduleCloseSession(const SessionKey & key, std::chrono::steady_clock::duration timeout);
-
     void checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const;
 };
 
 
-/// Allows executing DDL query only in one thread.
-/// Puts an element into the map, locks tables's mutex, counts how much threads run parallel query on the table,
-/// when counter is 0 erases element in the destructor.
-/// If the element already exists in the map, waits, when ddl query will be finished in other thread.
-class DDLGuard
+class NamedSessions;
+
+/// User name and session identifier. Named sessions are local to users.
+using NamedSessionKey = std::pair<String, String>;
+
+/// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
+struct NamedSession
 {
-public:
-    struct Entry
-    {
-        std::unique_ptr<std::mutex> mutex;
-        UInt32 counter;
-    };
+    NamedSessionKey key;
+    UInt64 close_cycle = 0;
+    Context context;
+    std::chrono::steady_clock::duration timeout;
+    NamedSessions & parent;
 
-    /// Element name -> (mutex, counter).
-    /// NOTE: using std::map here (and not std::unordered_map) to avoid iterator invalidation on insertion.
-    using Map = std::map<String, Entry>;
-
-    DDLGuard(Map & map_, std::unique_lock<std::mutex> guards_lock_, const String & elem);
-    ~DDLGuard();
-
-private:
-    Map & map;
-    Map::iterator it;
-    std::unique_lock<std::mutex> guards_lock;
-    std::unique_lock<std::mutex> table_lock;
-};
-
-
-class SessionCleaner
-{
-public:
-    SessionCleaner(Context & context_)
-        : context{context_}
+    NamedSession(NamedSessionKey key_, Context & context_, std::chrono::steady_clock::duration timeout_, NamedSessions & parent_)
+        : key(key_), context(context_), timeout(timeout_), parent(parent_)
     {
     }
-    ~SessionCleaner();
 
-private:
-    void run();
-
-    Context & context;
-
-    std::mutex mutex;
-    std::condition_variable cond;
-    std::atomic<bool> quit{false};
-    ThreadFromGlobalPool thread{&SessionCleaner::run, this};
+    void release();
 };
 
 }

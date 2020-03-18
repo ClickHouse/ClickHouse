@@ -266,7 +266,7 @@ Pipes StorageSystemColumns::read(
     Pipes pipes;
 
     {
-        Databases databases = context.getDatabases();
+        Databases databases = DatabaseCatalog::instance().getDatabases();
 
         /// Add `database` column.
         MutableColumnPtr database_column_mut = ColumnString::create();

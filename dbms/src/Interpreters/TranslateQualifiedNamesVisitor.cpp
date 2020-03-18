@@ -93,10 +93,10 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
     if (IdentifierSemantic::getColumnName(identifier))
     {
         String short_name = identifier.shortName();
-        size_t table_pos = 0;
         bool allow_ambiguous = data.join_using_columns.count(short_name);
-        if (IdentifierSemantic::chooseTable(identifier, data.tables, table_pos, allow_ambiguous))
+        if (auto best_pos = IdentifierSemantic::chooseTable(identifier, data.tables, allow_ambiguous))
         {
+            size_t table_pos = *best_pos;
             if (data.unknownColumn(table_pos, identifier))
             {
                 String table_name = data.tables[table_pos].table.getQualifiedNamePrefix(false);

@@ -550,7 +550,7 @@ FROM <left_subquery>
 SELECT * FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t1.a = t3.a
 ```
 
-В секции `FROM` вы можете использовать разделенные запятыми списки таблиц для объединения. Этот синтаксис работает только при включённой настройке [allow_experimental_cross_to_join_conversion = 1](../operations/settings/settings.md#settings-allow_experimental_cross_to_join_conversion). Например:
+В секции `FROM` вы можете использовать разделенные запятыми списки таблиц для объединения. Например:
 
 ```sql
 SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a

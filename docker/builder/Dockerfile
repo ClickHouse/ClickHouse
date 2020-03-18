@@ -22,7 +22,8 @@ RUN apt-get update -y \
             python-termcolor \
             sudo \
             tzdata \
-            gperf
+            gperf \
+            libcctz-dev
 
 RUN apt install -y wget
 RUN printf "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main\ndeb-src http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list \

@@ -1,6 +1,6 @@
-# Generate {#table_engines-generate}
+# GenerateRandom {#table_engines-generate}
 
-The Generate table engine produces random data for given table schema.
+The GenerateRandom table engine produces random data for given table schema.
 
 Usage examples:
 
@@ -10,7 +10,7 @@ Usage examples:
 ## Usage in ClickHouse Server
 
 ```sql
-Generate(max_array_length, max_string_length, random_seed)
+ENGINE = GenerateRandom(random_seed, max_string_length, max_array_length)
 ```
 
 The `max_array_length` and `max_string_length` parameters specify maximum length of all
@@ -25,7 +25,7 @@ It supports all [DataTypes](../../data_types/index.md) that can be stored in a t
 **1.** Set up the `generate_engine_table` table:
 
 ```sql
-CREATE TABLE generate_engine_table (name String, value UInt32) ENGINE=Generate(3, 5, 1)
+CREATE TABLE generate_engine_table (name String, value UInt32) ENGINE = GenerateRandom(1, 5, 3)
 ```
 
 **2.** Query the data:

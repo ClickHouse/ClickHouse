@@ -67,7 +67,6 @@ public:
     bool isRemote() const override { return true; }
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context, const ClusterPtr & cluster) const;
 
     Pipes read(
         const Names & column_names,
@@ -86,7 +85,6 @@ public:
 
     void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
     void renameOnDisk(const String & new_path_to_table_data);
-
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
 

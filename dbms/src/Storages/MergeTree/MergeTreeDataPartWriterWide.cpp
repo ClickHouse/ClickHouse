@@ -13,6 +13,7 @@ namespace
 }
 
 MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
+    DiskPtr disk_,
     const String & part_path_,
     const MergeTreeData & storage_,
     const NamesAndTypesList & columns_list_,
@@ -21,7 +22,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-    : IMergeTreeDataPartWriter(part_path_,
+    : IMergeTreeDataPartWriter(disk_, part_path_,
         storage_, columns_list_, indices_to_recalc_,
         marks_file_extension_, default_codec_, settings_, index_granularity_, false)
 {
@@ -48,6 +49,7 @@ void MergeTreeDataPartWriterWide::addStreams(
 
         column_streams[stream_name] = std::make_unique<Stream>(
             stream_name,
+            disk,
             part_path + stream_name, DATA_FILE_EXTENSION,
             part_path + stream_name, marks_file_extension,
             effective_codec,
@@ -295,12 +297,12 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
         }
     }
 
-    for (auto it = column_streams.begin(); it != column_streams.end(); ++it)
+    for (auto & stream : column_streams)
     {
-        it->second->finalize();
+        stream.second->finalize();
         if (sync)
-            it->second->sync();
-        it->second->addToChecksums(checksums);
+            stream.second->sync();
+        stream.second->addToChecksums(checksums);
     }
 
     column_streams.clear();

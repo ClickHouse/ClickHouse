@@ -124,9 +124,9 @@ maxClientCnxns=2000
 
 maxSessionTimeout=60000000
 # the directory where the snapshot is stored.
-dataDir=/opt/zookeeper/{{ cluster['name'] }}/data
+dataDir=/opt/zookeeper/{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }}/data
 # Place the dataLogDir to a separate physical disc for better performance
-dataLogDir=/opt/zookeeper/{{ cluster['name'] }}/logs
+dataLogDir=/opt/zookeeper/{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }}/logs
 
 autopurge.snapRetainCount=10
 autopurge.purgeInterval=1
@@ -159,7 +159,7 @@ snapCount=3000000
 leaderServes=yes
 
 standaloneEnabled=false
-dynamicConfigFile=/etc/zookeeper-{{ cluster['name'] }}/conf/zoo.cfg.dynamic
+dynamicConfigFile=/etc/zookeeper-{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }}/conf/zoo.cfg.dynamic
 ```
 
 Версия Java:
@@ -172,7 +172,7 @@ Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
 Параметры JVM:
 
 ```bash
-NAME=zookeeper-{{ cluster['name'] }}
+NAME=zookeeper-{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }}
 ZOOCFGDIR=/etc/$NAME/conf
 
 # TODO this is really ugly
@@ -191,8 +191,8 @@ JAVA=/usr/bin/java
 ZOOMAIN="org.apache.zookeeper.server.quorum.QuorumPeerMain"
 ZOO_LOG4J_PROP="INFO,ROLLINGFILE"
 JMXLOCALONLY=false
-JAVA_OPTS="-Xms{{ cluster.get('xms','128M') }} \
-    -Xmx{{ cluster.get('xmx','1G') }} \
+JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '{{' }} '}}' }} \
+    -Xmx{{ '{{' }} cluster.get('xmx','1G') {{ '{{' }} '}}' }} \
     -Xloggc:/var/log/$NAME/zookeeper-gc.log \
     -XX:+UseGCLogFileRotation \
     -XX:NumberOfGCLogFiles=16 \
@@ -213,7 +213,7 @@ JAVA_OPTS="-Xms{{ cluster.get('xms','128M') }} \
 Salt init:
 
 ```text
-description "zookeeper-{{ cluster['name'] }} centralized coordination service"
+description "zookeeper-{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }} centralized coordination service"
 
 start on runlevel [2345]
 stop on runlevel [!2345]
@@ -223,19 +223,19 @@ respawn
 limit nofile 8192 8192
 
 pre-start script
-    [ -r "/etc/zookeeper-{{ cluster['name'] }}/conf/environment" ] || exit 0
-    . /etc/zookeeper-{{ cluster['name'] }}/conf/environment
+    [ -r "/etc/zookeeper-{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }}/conf/environment" ] || exit 0
+    . /etc/zookeeper-{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }}/conf/environment
     [ -d $ZOO_LOG_DIR ] || mkdir -p $ZOO_LOG_DIR
     chown $USER:$GROUP $ZOO_LOG_DIR
 end script
 
 script
-    . /etc/zookeeper-{{ cluster['name'] }}/conf/environment
+    . /etc/zookeeper-{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }}/conf/environment
     [ -r /etc/default/zookeeper ] && . /etc/default/zookeeper
     if [ -z "$JMXDISABLE" ]; then
         JAVA_OPTS="$JAVA_OPTS -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=$JMXLOCALONLY"
     fi
-    exec start-stop-daemon --start -c $USER --exec $JAVA --name zookeeper-{{ cluster['name'] }} \
+    exec start-stop-daemon --start -c $USER --exec $JAVA --name zookeeper-{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }} \
         -- -cp $CLASSPATH $JAVA_OPTS -Dzookeeper.log.dir=${ZOO_LOG_DIR} \
         -Dzookeeper.root.logger=${ZOO_LOG4J_PROP} $ZOOMAIN $ZOOCFG
 end script

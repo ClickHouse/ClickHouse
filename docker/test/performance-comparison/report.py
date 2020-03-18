@@ -135,7 +135,9 @@ def printSimpleTable(caption, columns, rows):
     print(tableEnd())
 
 printSimpleTable('Tested commits', ['Old', 'New'],
-    [[open('left-commit.txt').read(), open('right-commit.txt').read()]])
+    [['<pre>{}</pre>'.format(x) for x in
+        [open('left-commit.txt').read(),
+         open('right-commit.txt').read()]]])
 
 def print_changes():
     rows = tsvRows('changed-perf.tsv')
@@ -150,7 +152,7 @@ def print_changes():
         'New, s',                                                        # 1
         'Relative difference (new&nbsp;-&nbsp;old)/old',                 # 2
         'Randomization distribution quantiles \
-            [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]',                          # 3
+            [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]',                         # 3
         'Test',                                                          # 4
         'Query',                                                         # 5
         ]
@@ -221,15 +223,15 @@ def print_test_times():
 
     attrs = ['' for c in columns]
     for r in rows:
-        if float(r[6]) > 15:
+        if float(r[6]) > 22:
+            # FIXME should be 15s max -- investigate parallel_insert
             slow_average_tests += 1
             attrs[6] = 'style="background: #ffb0a0"'
         else:
             attrs[6] = ''
 
         if float(r[5]) > 30:
-            # Just a hint for now.
-            # slow_average_tests += 1
+            slow_average_tests += 1
             attrs[5] = 'style="background: #ffb0a0"'
         else:
             attrs[5] = ''
@@ -251,13 +253,14 @@ if len(report_errors):
 print("""
 <p class="links">
 <a href="output.7z">Test output</a>
+<a href="compare.log">Log</a>
 </p>
 </body>
 </html>
 """)
 
 if slow_average_tests:
-    #status = 'failure'
+    status = 'failure'
     message_array.append(str(slow_average_tests) + ' too long')
 
 if faster_queries:
@@ -271,6 +274,7 @@ if unstable_queries:
 
 error_tests += slow_average_tests
 if error_tests:
+    status = 'failure'
     message_array.append(str(error_tests) + ' errors')
 
 if message_array:

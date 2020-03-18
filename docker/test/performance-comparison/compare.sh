@@ -2,55 +2,9 @@
 set -ex
 set -o pipefail
 trap "exit" INT TERM
-trap "kill 0" EXIT
+trap "kill $(jobs -pr) ||:" EXIT
 
 stage=${stage:-}
-script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-
-mkdir db0 ||:
-
-left_pr=$1
-left_sha=$2
-
-right_pr=$3
-right_sha=$4
-
-datasets=${CHPC_DATASETS:-"hits1 hits10 hits100 values"}
-
-declare -A dataset_paths
-dataset_paths["hits10"]="https://s3.mds.yandex.net/clickhouse-private-datasets/hits_10m_single/partitions/hits_10m_single.tar"
-dataset_paths["hits100"]="https://s3.mds.yandex.net/clickhouse-private-datasets/hits_100m_single/partitions/hits_100m_single.tar"
-dataset_paths["hits1"]="https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_v1.tar"
-dataset_paths["values"]="https://clickhouse-datasets.s3.yandex.net/values_with_expressions/partitions/test_values.tar"
-
-function download
-{
-    rm -r left ||:
-    mkdir left ||:
-    rm -r right ||:
-    mkdir right ||:
-
-    # might have the same version on left and right
-    if ! [ "$left_sha" = "$right_sha" ]
-    then
-        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv  &
-        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$right_pr/$right_sha/performance/performance.tgz" -O- | tar -C right --strip-components=1 -zxv &
-    else
-        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv && cp -a left right &
-    fi
-
-    for dataset_name in $datasets
-    do
-        dataset_path="${dataset_paths[$dataset_name]}"
-        [ "$dataset_path" != "" ]
-        cd db0 && wget -nv -nd -c "$dataset_path" -O- | tar -xv &
-    done
-
-    mkdir ~/fg ||:
-    cd ~/fg && wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl" && chmod +x ~/fg/flamegraph.pl &
-
-    wait
-}
 
 function configure
 {
@@ -151,13 +105,22 @@ function restart
     echo right ok
 
     left/clickhouse client --port 9001 --query "select * from system.tables where database != 'system'"
+    left/clickhouse client --port 9001 --query "select * from system.build_options"
     right/clickhouse client --port 9002 --query "select * from system.tables where database != 'system'"
+    right/clickhouse client --port 9002 --query "select * from system.build_options"
 }
 
 function run_tests
 {
     # Just check that the script runs at all
     "$script_dir/perf.py" --help > /dev/null
+
+    # When testing commits from master, use the older test files. This allows the
+    # tests to pass even when we add new functions and tests for them, that are
+    # not supported in the old revision.
+    # When testing a PR, use the test files from the PR so that we can test their
+    # changes.
+    test_prefix=$([ "$PR_TO_TEST" == "0" ] && echo left || echo right)/performance
 
     for x in {test-times,skipped-tests}.tsv
     do
@@ -166,15 +129,20 @@ function run_tests
     done
 
     # FIXME remove some broken long tests
-    rm right/performance/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
+    rm "$test_prefix"/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
 
-    test_files=$(ls right/performance/*.xml)
+    test_files=$(ls "$test_prefix"/*.xml)
 
-    # FIXME a quick crutch to bring the run time down for the flappy tests --
+    # FIXME a quick crutch to bring the run time down for the unstable tests --
     # if some performance tests xmls were changed in a PR, run only these ones.
     if [ "$PR_TO_TEST" != "0" ]
     then
-        test_files_override=$(sed 's/dbms\/tests/right/' changed-tests.txt)
+        # changed-test.txt prepared in entrypoint.sh from git diffs, because it
+        # has the cloned repo. Used to use rsync for that but it was really ugly
+        # and not always correct (e.g. when the reference SHA is really old and
+        # has some other differences to the tested SHA, besides the one introduced
+        # by the PR).
+        test_files_override=$(sed "s/dbms\/tests\/performance/${test_prefix//\//\\/}/" changed-tests.txt)
         if [ "$test_files_override" != "" ]
         then
             test_files=$test_files_override
@@ -186,7 +154,7 @@ function run_tests
     then
         # I do want to expand the globs in the variable.
         # shellcheck disable=SC2086
-        test_files=$(ls right/performance/$CHPC_TEST_GLOB.xml)
+        test_files=$(ls "$test_prefix"/$CHPC_TEST_GLOB.xml)
     fi
 
     # Run the tests.
@@ -232,11 +200,13 @@ function get_profiles
     right/clickhouse client --port 9001 --query "set query_profiler_real_time_period_ns = 0"
 
     left/clickhouse client --port 9001 --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
+    left/clickhouse client --port 9001 --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > left-query-thread-log.tsv ||: &
     left/clickhouse client --port 9001 --query "select * from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
     left/clickhouse client --port 9001 --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > left-addresses.tsv ||: &
     left/clickhouse client --port 9001 --query "select * from system.metric_log format TSVWithNamesAndTypes" > left-metric-log.tsv ||: &
 
     right/clickhouse client --port 9002 --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
+    right/clickhouse client --port 9002 --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > right-query-thread-log.tsv ||: &
     right/clickhouse client --port 9002 --query "select * from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
     right/clickhouse client --port 9002 --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > right-addresses.tsv ||: &
     right/clickhouse client --port 9002 --query "select * from system.metric_log format TSVWithNamesAndTypes" > right-metric-log.tsv ||: &
@@ -247,7 +217,8 @@ function get_profiles
 # Build and analyze randomization distribution for all queries.
 function analyze_queries
 {
-    ls ./*-queries.tsv | xargs -n1 -I% basename % -queries.tsv | \
+    find . -maxdepth 1 -name "*-queries.tsv" -print | \
+        xargs -n1 -I% basename % -queries.tsv | \
         parallel --verbose right/clickhouse local --file "{}-queries.tsv" \
             --structure "\"query text, run int, version UInt32, time float\"" \
             --query "\"$(cat "$script_dir/eqmed.sql")\"" \
@@ -258,7 +229,7 @@ function analyze_queries
 function report
 {
 
-for x in {right,left}-{addresses,{query,trace,metric}-log}.tsv
+for x in {right,left}-{addresses,{query,query-thread,trace,metric}-log}.tsv
 do
     # FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
     # absolutely atrocious way. This should be done by the file() function itself.
@@ -278,14 +249,14 @@ create table queries engine Memory as select
         -- immediately, so for now we pretend they don't exist. We don't want to
         -- remove them altogether because we want to be able to detect regressions,
         -- but the right way to do this is not yet clear.
-        left + right < 0.01 as short,
+        left + right < 0.05 as short,
 
         not short and abs(diff) < 0.10 and rd[3] > 0.10 as unstable,
 
-        -- Do not consider changed the queries with 5% RD below 1% -- e.g., we're
-        -- likely to observe a difference > 1% in less than 5% cases.
+        -- Do not consider changed the queries with 5% RD below 5% -- e.g., we're
+        -- likely to observe a difference > 5% in less than 5% cases.
         -- Not sure it is correct, but empirically it filters out a lot of noise.
-        not short and abs(diff) > 0.15 and abs(diff) > rd[3] and rd[1] > 0.01 as changed,
+        not short and abs(diff) > 0.15 and abs(diff) > rd[3] and rd[1] > 0.05 as changed,
         *
     from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
 
@@ -368,8 +339,8 @@ create table unstable_run_metrics_2 engine File(TSVWithNamesAndTypes, 'unstable-
     select v, n, query_id, query
     from
         (select
-            ['memory_usage', 'read_bytes', 'written_bytes'] n,
-            [memory_usage, read_bytes, written_bytes] v,
+            ['memory_usage', 'read_bytes', 'written_bytes', 'query_duration_ms'] n,
+            [memory_usage, read_bytes, written_bytes, query_duration_ms] v,
             query,
             query_id
         from right_query_log
@@ -394,7 +365,7 @@ create table metric_devation engine File(TSVWithNamesAndTypes, 'metric-deviation
     join queries using query
     group by query, metric
     having d > 0.5
-    order by any(rd[3]) desc, d desc
+    order by any(rd[3]) desc, query desc, d desc
     ;
 
 create table stacks engine File(TSV, 'stacks.rep') as
@@ -411,7 +382,7 @@ create table stacks engine File(TSV, 'stacks.rep') as
     join unstable_query_runs using query_id
     group by query, trace
     ;
-"
+" ||:
 
 IFS=$'\n'
 for query in $(cut -d'	' -f1 stacks.rep | sort | uniq)
@@ -419,6 +390,7 @@ do
     query_file=$(echo "$query" | cut -c-120 | sed 's/[/]/_/g')
     grep -F "$query	" stacks.rep \
         | cut -d'	' -f 2- \
+        | sed 's/\t/ /g' \
         | tee "$query_file.stacks.rep" \
         | ~/fg/flamegraph.pl > "$query_file.svg" &
 done
@@ -428,15 +400,10 @@ unset IFS
 # Remember that grep sets error code when nothing is found, hence the bayan
 # operator.
 grep -H -m2 'Exception:[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
-
-"$script_dir/report.py" > report.html
 }
 
 case "$stage" in
 "")
-    ;&
-"download")
-    time download
     ;&
 "configure")
     time configure
@@ -445,23 +412,25 @@ case "$stage" in
     time restart
     ;&
 "run_tests")
-    # Ignore the errors to collect the log anyway
+    # Ignore the errors to collect the log and build at least some report, anyway
     time run_tests ||:
     ;&
 "get_profiles")
     # If the tests fail with OOM or something, still try to restart the servers
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data.
-    time get_profiles || restart || get_profiles
+    time get_profiles || restart || get_profiles ||:
 
     # Stop the servers to free memory for the subsequent query analysis.
     while killall clickhouse; do echo . ; sleep 1 ; done
     echo Servers stopped.
     ;&
 "analyze_queries")
-    time analyze_queries
+    time analyze_queries ||:
     ;&
 "report")
-    time report
+    time report ||:
+
+    time "$script_dir/report.py" > report.html
     ;&
 esac

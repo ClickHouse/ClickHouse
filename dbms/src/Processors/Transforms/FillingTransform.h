@@ -13,7 +13,7 @@ namespace DB
 class FillingTransform : public ISimpleTransform
 {
 public:
-    FillingTransform(const Block & header_, const SortDescription & fill_description_);
+    FillingTransform(const Block & header_, const SortDescription & sort_description_);
 
     String getName() const override { return "FillingTransform"; }
 

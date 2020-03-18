@@ -37,7 +37,7 @@ sudo apt install git
 
 Выполните в терминале:
 ```
-git clone --recursive git@github.com:yandex/ClickHouse.git
+git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 cd ClickHouse
 ```
 Замените *yandex* на имя вашего аккаунта на GitHub.
@@ -71,7 +71,7 @@ git clone https://github.com/ClickHouse/ClickHouse.git
 
 Вы можете также добавить для своего локального репозитория адрес оригинального репозитория Яндекса, чтобы притягивать оттуда обновления:
 ```
-git remote add upstream git@github.com:yandex/ClickHouse.git
+git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 ```
 После этого, вы сможете добавлять в свой репозиторий обновления из репозитория Яндекса с помощью команды `git pull upstream master`.
 

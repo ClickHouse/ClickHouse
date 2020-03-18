@@ -54,7 +54,6 @@ PerformanceTestInfo::PerformanceTestInfo(
     extractQueries(config);
     extractAuxiliaryQueries(config);
     processSubstitutions(config);
-    getExecutionType(config);
     getStopConditions(config);
 }
 
@@ -139,22 +138,6 @@ void PerformanceTestInfo::processSubstitutions(XMLConfigurationPtr config)
             drop_queries.insert(drop_queries.end(), formatted.begin(), formatted.end());
         }
     }
-}
-
-void PerformanceTestInfo::getExecutionType(XMLConfigurationPtr config)
-{
-    if (!config->has("type"))
-        throw Exception("Missing type property in config: " + test_name,
-            ErrorCodes::BAD_ARGUMENTS);
-
-    std::string config_exec_type = config->getString("type");
-    if (config_exec_type == "loop")
-        exec_type = ExecutionType::Loop;
-    else if (config_exec_type == "once")
-        exec_type = ExecutionType::Once;
-    else
-        throw Exception("Unknown type " + config_exec_type + " in :" + test_name,
-            ErrorCodes::BAD_ARGUMENTS);
 }
 
 

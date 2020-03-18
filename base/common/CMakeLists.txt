@@ -6,6 +6,7 @@ set (SRCS
     DateLUT.cpp
     DateLUTImpl.cpp
     demangle.cpp
+    getFQDNOrHostName.cpp
     getMemoryAmount.cpp
     getThreadId.cpp
     JSON.cpp
@@ -20,15 +21,9 @@ set (SRCS
 )
 
 if (ENABLE_REPLXX)
-    set (SRCS ${SRCS}
-        ReplxxLineReader.cpp
-        ReplxxLineReader.h
-    )
+    list (APPEND SRCS ReplxxLineReader.cpp)
 elseif (ENABLE_READLINE)
-    set (SRCS ${SRCS}
-        ReadlineLineReader.cpp
-        ReadlineLineReader.h
-    )
+    list (APPEND SRCS ReadlineLineReader.cpp)
 endif ()
 
 if (USE_DEBUG_HELPERS)
@@ -38,11 +33,13 @@ endif ()
 
 add_library (common ${SRCS})
 
-target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
-
-if (USE_INTERNAL_MEMCPY)
-    target_link_libraries (common PRIVATE memcpy)
+if (WITH_COVERAGE)
+    target_compile_definitions(common PUBLIC WITH_COVERAGE=1)
+else ()
+    target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
 endif ()
+
+target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
 
 if(CCTZ_INCLUDE_DIR)
     target_include_directories(common BEFORE PRIVATE ${CCTZ_INCLUDE_DIR})
@@ -59,8 +56,6 @@ endif()
 if(CCTZ_LIBRARY)
     target_link_libraries(common PRIVATE ${CCTZ_LIBRARY})
 endif()
-
-target_link_libraries(common PUBLIC replxx)
 
 # allow explicitly fallback to readline
 if (NOT ENABLE_REPLXX AND ENABLE_READLINE)
@@ -86,10 +81,13 @@ endif ()
 
 target_link_libraries (common
     PUBLIC
+        ${Poco_Net_LIBRARY}
         ${Poco_Util_LIBRARY}
         ${Poco_Foundation_LIBRARY}
         ${CITYHASH_LIBRARIES}
         ${Boost_SYSTEM_LIBRARY}
+        FastMemcpy
+        replxx
 )
 
 if (ENABLE_TESTS)
