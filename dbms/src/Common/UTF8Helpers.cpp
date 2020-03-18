@@ -77,6 +77,7 @@ static int wcwidth(wchar_t wc)
         case widechar_nonprint:
         case widechar_combining:
         case widechar_unassigned:
+            return 0;
         case widechar_ambiguous:
         case widechar_private_use:
         case widechar_widened_in_9:
