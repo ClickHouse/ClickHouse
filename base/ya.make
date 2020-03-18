@@ -1,11 +1,3 @@
-LIBRARY()
-
-PEERDIR(
-    contrib/libs/poco/Util
+RECURSE(
+    common
 )
-
-SRCS(
-    argsToConfig.cpp
-)
-
-END()

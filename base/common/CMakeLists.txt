@@ -33,6 +33,12 @@ endif ()
 
 add_library (common ${SRCS})
 
+if (WITH_COVERAGE)
+    target_compile_definitions(common PUBLIC WITH_COVERAGE=1)
+else ()
+    target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
+endif ()
+
 target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
 
 if(CCTZ_INCLUDE_DIR)
