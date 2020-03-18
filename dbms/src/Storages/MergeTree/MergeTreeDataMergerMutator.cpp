@@ -1499,7 +1499,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
     const MergeTreeDataPartPtr & source_part,
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     MergeTreeData::MutableDataPartPtr new_data_part,
-    BlockInputStreamPtr mutation_stream,
+    BlockInputStreamPtr mutating_stream,
     time_t time_of_mutation,
     const CompressionCodecPtr & compression_codec,
     MergeListEntry & merge_entry,
@@ -1513,16 +1513,16 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
         return true;
     };
 
-    if (mutation_stream == nullptr)
+    if (mutating_stream == nullptr)
         throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
     if (need_remove_expired_values)
-        mutation_stream = std::make_shared<TTLBlockInputStream>(mutation_stream, data, new_data_part, time_of_mutation, true);
+        mutating_stream = std::make_shared<TTLBlockInputStream>(mutating_stream, data, new_data_part, time_of_mutation, true);
 
     IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
     MergedColumnOnlyOutputStream out(
         new_data_part,
-        mutation_stream->getHeader(),
+        mutating_stream->getHeader(),
         /* sync = */ false,
         compression_codec,
         /* skip_offsets = */ false,
@@ -1532,11 +1532,11 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
         &source_part->index_granularity_info
     );
 
-    mutation_stream->readPrefix();
+    mutating_stream->readPrefix();
     out.writePrefix();
 
     Block block;
-    while (check_not_cancelled() && (block = mutation_stream->read()))
+    while (check_not_cancelled() && (block = mutating_stream->read()))
     {
         out.write(block);
 
@@ -1544,7 +1544,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
         merge_entry->bytes_written_uncompressed += block.bytes();
     }
 
-    mutation_stream->readSuffix();
+    mutating_stream->readSuffix();
 
     auto changed_checksums = out.writeSuffixAndGetChecksums(new_data_part, new_data_part->checksums);
 
