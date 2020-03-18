@@ -113,6 +113,7 @@ def build_for_lang(lang, args):
                 'nl2br',
                 'sane_lists',
                 'pymdownx.magiclink',
+                'pymdownx.superfences',
                 'extra',
                 {
                     'toc': {
