@@ -285,9 +285,9 @@ struct Merger
 
 int main(int argc, char ** argv)
 {
-    size_t n = atoi(argv[1]);
-    size_t num_threads = atoi(argv[2]);
-    size_t method = argc <= 3 ? 0 : atoi(argv[3]);
+    size_t n = std::stol(argv[1]);
+    size_t num_threads = std::stol(argv[2]);
+    size_t method = argc <= 3 ? 0 : std::stol(argv[3]);
 
     std::cerr << std::fixed << std::setprecision(2);
 

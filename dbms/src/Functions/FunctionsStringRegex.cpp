@@ -306,8 +306,8 @@ struct MultiMatchAnyImpl
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
         auto on_match = []([[maybe_unused]] unsigned int id,
-                           unsigned long long /* from */,
-                           unsigned long long /* to */,
+                           unsigned long long /* from */, // NOLINT
+                           unsigned long long /* to */, // NOLINT
                            unsigned int /* flags */,
                            void * context) -> int
         {
@@ -407,8 +407,8 @@ struct MultiMatchAllIndicesImpl
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
         auto on_match = [](unsigned int id,
-                           unsigned long long /* from */,
-                           unsigned long long /* to */,
+                           unsigned long long /* from */, // NOLINT
+                           unsigned long long /* to */, // NOLINT
                            unsigned int /* flags */,
                            void * context) -> int
         {

@@ -40,7 +40,7 @@ int main(int argc, char ** argv)
 
         using T = UInt8;
 
-        size_t n = atoi(argv[1]);
+        size_t n = std::stol(argv[1]);
         std::vector<T> data(n);
         std::vector<T> data2(n);
 

@@ -52,8 +52,6 @@ void waitQuery(Connection & connection)
 }
 }
 
-namespace fs = std::filesystem;
-
 PerformanceTest::PerformanceTest(
     const XMLConfigurationPtr & config_,
     Connection & connection_,

@@ -181,7 +181,7 @@ private:
     UInt64 seed;
 
 public:
-    UnsignedIntegerModel(UInt64 seed_) : seed(seed_) {}
+    explicit UnsignedIntegerModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -222,7 +222,7 @@ private:
     UInt64 seed;
 
 public:
-    SignedIntegerModel(UInt64 seed_) : seed(seed_) {}
+    explicit SignedIntegerModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -271,7 +271,7 @@ private:
     Float res_prev_value = 0;
 
 public:
-    FloatModel(UInt64 seed_) : seed(seed_) {}
+    explicit FloatModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -372,7 +372,7 @@ private:
     UInt64 seed;
 
 public:
-    FixedStringModel(UInt64 seed_) : seed(seed_) {}
+    explicit FixedStringModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -414,7 +414,7 @@ private:
     const DateLUTImpl & date_lut;
 
 public:
-    DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::instance()) {}
+    explicit DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::instance()) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -567,7 +567,7 @@ private:
     }
 
 public:
-    MarkovModel(MarkovModelParameters params_)
+    explicit MarkovModel(MarkovModelParameters params_)
         : params(std::move(params_)), code_points(params.order, BEGIN) {}
 
     void consume(const char * data, size_t size)
@@ -836,7 +836,7 @@ private:
     ModelPtr nested_model;
 
 public:
-    ArrayModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
+    explicit ArrayModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
 
     void train(const IColumn & column) override
     {
@@ -874,7 +874,7 @@ private:
     ModelPtr nested_model;
 
 public:
-    NullableModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
+    explicit NullableModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
 
     void train(const IColumn & column) override
     {

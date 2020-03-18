@@ -17,9 +17,9 @@ std::string TestStats::getStatisticByName(const std::string & statistic_name)
     {
         std::string result = "\n";
 
-        for (double percent = 10; percent <= 90; percent += 10)
+        for (int percent = 10; percent <= 90; percent += 10)
         {
-            result += FOUR_SPACES + std::to_string((percent / 100));
+            result += FOUR_SPACES + std::to_string((percent / 100.0));
             result += ": " + std::to_string(sampler.quantileInterpolated(percent / 100.0));
             result += "\n";
         }
