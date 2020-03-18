@@ -149,6 +149,11 @@ protected:
 
     void dropHelpingTables(const TaskTable & task_table);
 
+    /// Is used for usage less disk space.
+    /// After all pieces were successfully moved to original destination
+    /// table we can get rid of partition pieces (partitions in helping tables).
+    void dropParticularPartitionPieceFromAllHelpingTables(const TaskTable & task_table, const String & partition_name);
+
     String getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings * settings = nullptr);
 
     ASTPtr getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard);
