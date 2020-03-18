@@ -53,29 +53,29 @@ private:
                      ArrayImpl::NullMapBuilder & builder, size_t input_rows_count);
 
     template <typename DataType>
-    bool executeNumberConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
+    static bool executeNumberConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
         ArrayImpl::NullMapBuilder & builder);
 
     template <typename IndexType, typename DataType>
-    bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
+    static bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
         ArrayImpl::NullMapBuilder & builder);
 
-    bool executeStringConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
-        ArrayImpl::NullMapBuilder & builder);
-
-    template <typename IndexType>
-    bool executeString(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
-        ArrayImpl::NullMapBuilder & builder);
-
-    bool executeGenericConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
+    static bool executeStringConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
         ArrayImpl::NullMapBuilder & builder);
 
     template <typename IndexType>
-    bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
+    static bool executeString(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
+        ArrayImpl::NullMapBuilder & builder);
+
+    static bool executeGenericConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
         ArrayImpl::NullMapBuilder & builder);
 
     template <typename IndexType>
-    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result,
+    static bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
+        ArrayImpl::NullMapBuilder & builder);
+
+    template <typename IndexType>
+    static bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result,
                           const PaddedPODArray <IndexType> & indices, ArrayImpl::NullMapBuilder & builder,
                           size_t input_rows_count);
 
