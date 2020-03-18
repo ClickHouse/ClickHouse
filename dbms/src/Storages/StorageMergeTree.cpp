@@ -247,10 +247,10 @@ void StorageMergeTree::alter(
             table_lock_holder.release();
         }
 
-        Context copy = context;
-        copy.getSettingsRef().mutations_sync = 1;
+        /// Always execute required mutations synchronously, because alters
+        /// should be executed in sequential order.
         if (!maybe_mutation_commands.empty())
-            mutate(maybe_mutation_commands, copy);
+            mutateImpl(maybe_mutation_commands, /* mutations_sync = */ 1);
     }
 }
 
@@ -353,7 +353,7 @@ public:
 };
 
 
-void StorageMergeTree::mutate(const MutationCommands & commands, const Context & query_context)
+void StorageMergeTree::mutateImpl(const MutationCommands & commands, size_t mutations_sync)
 {
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See loadMutations().
@@ -375,13 +375,19 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
     merging_mutating_task_handle->wake();
 
     /// We have to wait mutation end
-    if (query_context.getSettingsRef().mutations_sync > 0)
+    if (mutations_sync > 0)
     {
         LOG_INFO(log, "Waiting mutation: " << file_name);
         auto check = [version, this]() { return shutdown_called || isMutationDone(version); };
         std::unique_lock lock(mutation_wait_mutex);
         mutation_wait_event.wait(lock, check);
     }
+
+}
+
+void StorageMergeTree::mutate(const MutationCommands & commands, const Context & query_context)
+{
+    mutateImpl(commands, query_context.getSettingsRef().mutations_sync);
 }
 
 namespace
@@ -399,6 +405,7 @@ bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
 }
 
 }
+
 
 bool StorageMergeTree::isMutationDone(Int64 mutation_version) const
 {

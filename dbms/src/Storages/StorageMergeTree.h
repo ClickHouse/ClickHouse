@@ -119,6 +119,8 @@ private:
 
     BackgroundProcessingPoolTaskResult movePartsTask();
 
+    void mutateImpl(const MutationCommands & commands, size_t mutations_sync);
+
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
     bool tryMutatePart();
 
