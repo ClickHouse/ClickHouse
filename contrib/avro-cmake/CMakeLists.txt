@@ -1,5 +1,5 @@
 set(AVROCPP_ROOT_DIR ${CMAKE_SOURCE_DIR}/contrib/avro/lang/c++)
-set(AVROCPP_INCLUDE_DIR ${AVROCPP_ROOT_DIR}/api)
+set(AVROCPP_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/contrib/avro-cmake/include)
 set(AVROCPP_SOURCE_DIR ${AVROCPP_ROOT_DIR}/impl)
 
 set (CMAKE_CXX_STANDARD 17)
@@ -44,6 +44,7 @@ add_library (avrocpp ${AVROCPP_SOURCE_FILES})
 set_target_properties (avrocpp PROPERTIES VERSION ${AVRO_VERSION_MAJOR}.${AVRO_VERSION_MINOR})
 
 target_include_directories(avrocpp SYSTEM PUBLIC ${AVROCPP_INCLUDE_DIR})
+target_include_directories(avrocpp SYSTEM PRIVATE ${AVROCPP_ROOT_DIR}/api)
 
 target_include_directories(avrocpp SYSTEM PUBLIC ${Boost_INCLUDE_DIRS})
 target_link_libraries (avrocpp ${Boost_IOSTREAMS_LIBRARY})
@@ -61,10 +62,3 @@ elseif (COMPILER_CLANG)
 endif ()
 
 target_compile_options(avrocpp PRIVATE ${SUPPRESS_WARNINGS})
-
-# create a symlink to include headers with <avro/...>
-ADD_CUSTOM_TARGET(avro_symlink_headers ALL
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${AVROCPP_ROOT_DIR}/include
-    COMMAND ${CMAKE_COMMAND} -E create_symlink ${AVROCPP_ROOT_DIR}/api ${AVROCPP_ROOT_DIR}/include/avro
-)
-add_dependencies(avrocpp avro_symlink_headers)
