@@ -52,6 +52,7 @@
 #include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/Join.h>
 #include <Interpreters/JoinedTables.h>
+#include <Interpreters/QueryAliasesVisitor.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -115,6 +116,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int INVALID_WITH_FILL_EXPRESSION;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -264,13 +266,24 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
     {
-        CrossToInnerJoinVisitor::Data cross_to_inner{joined_tables.tablesWithColumns(), context->getCurrentDatabase()};
+        ASTSelectQuery & select = getSelectQuery();
+
+        Aliases aliases;
+        if (ASTPtr with = select.with())
+            QueryAliasesNoSubqueriesVisitor(aliases).visit(with);
+        QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
+
+        CrossToInnerJoinVisitor::Data cross_to_inner{joined_tables.tablesWithColumns(), aliases, context->getCurrentDatabase()};
         CrossToInnerJoinVisitor(cross_to_inner).visit(query_ptr);
 
-        JoinToSubqueryTransformVisitor::Data join_to_subs_data{*context};
+        size_t rewriter_version = settings.multiple_joins_rewriter_version;
+        if (!rewriter_version || rewriter_version > 2)
+            throw Exception("Bad multiple_joins_rewriter_version setting value: " + settings.multiple_joins_rewriter_version.toString(),
+                            ErrorCodes::INVALID_SETTING_VALUE);
+        JoinToSubqueryTransformVisitor::Data join_to_subs_data{*context, joined_tables.tablesWithColumns(), aliases, rewriter_version};
         JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query_ptr);
 
-        joined_tables.reset(getSelectQuery());
+        joined_tables.reset(select);
         joined_tables.resolveTables();
 
         if (storage && joined_tables.isLeftTableSubquery())

@@ -893,8 +893,7 @@ void SyntaxAnalyzer::normalize(ASTPtr & query, Aliases & aliases, const Settings
     CustomizeFunctionsVisitor(data).visit(query);
 
     /// Creates a dictionary `aliases`: alias -> ASTPtr
-    QueryAliasesVisitor::Data query_aliases_data{aliases};
-    QueryAliasesVisitor(query_aliases_data).visit(query);
+    QueryAliasesVisitor(aliases).visit(query);
 
     /// Mark table ASTIdentifiers with not a column marker
     MarkTableIdentifiersVisitor::Data identifiers_data{aliases};

@@ -31,6 +31,15 @@ namespace ErrorCodes
 namespace
 {
 
+ASTPtr makeSubqueryTemplate()
+{
+    ParserTablesInSelectQueryElement parser(true);
+    ASTPtr subquery_template = parseQuery(parser, "(select * from _t)", 0);
+    if (!subquery_template)
+        throw Exception("Cannot parse subquery template", ErrorCodes::LOGICAL_ERROR);
+    return subquery_template;
+}
+
 /// Replace asterisks in select_expression_list with column identifiers
 class ExtractAsterisksMatcher
 {
@@ -296,6 +305,7 @@ struct SetSubqueryAliasVisitorData
     }
 };
 
+template <size_t version = 1>
 bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *> & table_expressions)
 {
     if (!select.tables())
@@ -346,7 +356,7 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
         return false;
 
     /// it's not trivial to support mix of JOIN ON & JOIN USING cause of short names
-    if (num_using)
+    if (num_using && version <= 1)
         throw Exception("Multiple JOIN does not support USING", ErrorCodes::NOT_IMPLEMENTED);
     if (num_array_join)
         throw Exception("Multiple JOIN does not support mix with ARRAY JOINs", ErrorCodes::NOT_IMPLEMENTED);
@@ -362,16 +372,254 @@ using ColumnAliasesVisitor = ConstInDepthNodeVisitor<ColumnAliasesMatcher, true>
 using AppendSemanticMatcher = OneTypeMatcher<AppendSemanticVisitorData>;
 using AppendSemanticVisitor = InDepthNodeVisitor<AppendSemanticMatcher, true>;
 
+/// V2 specific visitors
+
+struct CollectColumnIdentifiersMatcher
+{
+    using Data = std::vector<ASTIdentifier *>;
+
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
+    {
+        /// Do not go into subqueries. Do not collect table identifiers.
+        return !node->as<ASTSubquery>() &&
+            !node->as<ASTTablesInSelectQuery>();
+    }
+
+    static void visit(const ASTPtr & ast, Data & data)
+    {
+        if (auto * t = ast->as<ASTIdentifier>())
+            visit(*t, ast, data);
+    }
+
+    static void visit(const ASTIdentifier & ident, const ASTPtr &, Data & data)
+    {
+        data.push_back(const_cast<ASTIdentifier *>(&ident));
+    }
+};
+
+struct TableNeededColumns
+{
+    const DatabaseAndTableWithAlias & table;
+    NameSet no_clashes = {};
+    NameSet column_clashes = {}; /// It's column for sure
+    NameSet alias_clashes = {}; /// It's column or alias
+
+    void fillExpressionList(ASTExpressionList & expression_list) const
+    {
+        size_t columns_count = no_clashes.size() + column_clashes.size() + alias_clashes.size();
+        expression_list.children.reserve(expression_list.children.size() + columns_count);
+
+        String table_name = table.getQualifiedNamePrefix(false);
+
+        for (auto & column : no_clashes)
+            addShortName(column, expression_list);
+
+        for (auto & column : column_clashes)
+            addAliasedName(table_name, column, expression_list);
+
+        for (auto & column : alias_clashes)
+            addShortName(column, expression_list);
+    }
+
+    static void addShortName(const String & column, ASTExpressionList & expression_list)
+    {
+        auto ident = std::make_shared<ASTIdentifier>(column);
+        expression_list.children.emplace_back(std::move(ident));
+    }
+
+    /// t.x as `t.x`
+    static void addAliasedName(const String & table, const String & column, ASTExpressionList & expression_list)
+    {
+        auto ident = std::make_shared<ASTIdentifier>(std::vector<String>{table, column});
+        ident->setAlias(table + '.' + column);
+        expression_list.children.emplace_back(std::move(ident));
+    }
+};
+
+class SubqueryExpressionsRewriteMatcher
+{
+public:
+    struct Data
+    {
+        ASTPtr expression_list;
+        const String & alias;
+        bool rewritten = false;
+        bool aliased = false;
+    };
+
+    static bool needChildVisit(ASTPtr & node, ASTPtr &)
+    {
+        return !node->as<ASTSelectQuery>();
+    }
+
+    static void visit(ASTPtr & ast, Data & data)
+    {
+        if (auto * t = ast->as<ASTSelectQuery>())
+            visit(*t, ast, data);
+        if (auto * t = ast->as<ASTSubquery>())
+            visit(*t, ast, data);
+    }
+
+private:
+    static void visit(ASTSelectQuery & select, ASTPtr &, Data & data)
+    {
+        if (!data.rewritten)
+            select.setExpression(ASTSelectQuery::Expression::SELECT, std::move(data.expression_list));
+        data.rewritten = true;
+    }
+
+    static void visit(ASTSubquery &, ASTPtr & ast, Data & data)
+    {
+        if (!data.aliased)
+            ast->setAlias(data.alias);
+        data.aliased = true;
+    }
+};
+
+using CollectColumnIdentifiersVisitor = ConstInDepthNodeVisitor<CollectColumnIdentifiersMatcher, true>;
+using SubqueryExpressionsRewriteVisitor = InDepthNodeVisitor<SubqueryExpressionsRewriteMatcher, true>;
+
 } /// namelesspace
 
 
 void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * t = ast->as<ASTSelectQuery>())
-        visit(*t, ast, data);
+    {
+        if (data.version == 1)
+            visitV1(*t, ast, data);
+        else
+            visitV2(*t, ast, data);
+    }
 }
 
-void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & data)
+/// The reason for V2: not to alias columns without clashes, use better `t.x` style aliases for others.
+void JoinToSubqueryTransformMatcher::visitV2(ASTSelectQuery & select, ASTPtr & ast, Data & data)
+{
+    std::vector<const ASTTableExpression *> table_expressions;
+    if (!needRewrite<2>(select, table_expressions))
+        return;
+
+    /// TODO: check table_expressions vs data.tables consistency
+
+    /// Collect column identifiers
+
+    std::vector<ASTIdentifier *> identifiers;
+    CollectColumnIdentifiersVisitor(identifiers).visit(ast);
+
+    /// JOIN sections
+    for (auto & child : select.tables()->children)
+    {
+        auto * table = child->as<ASTTablesInSelectQueryElement>();
+        if (table->table_join)
+        {
+            auto & join = table->table_join->as<ASTTableJoin &>();
+            if (join.on_expression)
+                CollectColumnIdentifiersVisitor(identifiers).visit(join.on_expression);
+            /// Nothing special for join.using_expression_list cause it contains short names
+        }
+    }
+
+    /// Find clashes and normalize names:
+    /// 1. If column name has no clashes make all its occurrences short: 'table.column' -> 'column', 'table_alias.column' -> 'column'.
+    /// 2. If column name can't be short cause of same alias we keep it long converting 'table.column' -> 'table_alias.column' if any.
+    /// 3. If column clashes with another column keep their names long but convert 'table.column' -> 'table_alias.column' if any.
+    /// 4. If column clashes with another column and it's short - it's 'ambiguous column' error.
+    /// 5. If column clashes with alias add short column name to select list. It would be removed later if not needed.
+    /// @note Source query aliases should not clash with qualified names.
+
+    std::vector<TableNeededColumns> needed_columns;
+    needed_columns.reserve(data.tables.size());
+    for (auto & table : data.tables)
+        needed_columns.push_back(TableNeededColumns{table.table});
+    NameSet alias_uses;
+
+    for (ASTIdentifier * ident : identifiers)
+    {
+        bool got_alias = data.aliases.count(ident->name);
+
+        if (auto table_pos = IdentifierSemantic::chooseTable(*ident, data.tables))
+        {
+            const String & short_name = ident->shortName();
+            if (!ident->isShort())
+            {
+                if (got_alias)
+                    throw Exception("Alias clashes with qualified column '" + ident->name + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+
+                size_t count = 0;
+                for (auto & table : data.tables)
+                    if (table.hasColumn(short_name))
+                        ++count;
+
+                if (count > 1 || data.aliases.count(short_name))
+                {
+                    auto & table = data.tables[*table_pos];
+                    IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
+                    needed_columns[*table_pos].column_clashes.emplace(short_name);
+                }
+                else
+                {
+                    ident->setShortName(short_name); /// table.column -> column
+                    needed_columns[*table_pos].no_clashes.emplace(short_name);
+                }
+            }
+            else if (got_alias)
+                needed_columns[*table_pos].alias_clashes.emplace(short_name);
+            else
+                needed_columns[*table_pos].no_clashes.emplace(short_name);
+        }
+        else if (got_alias)
+            alias_uses.insert(ident->name);
+        else
+            throw Exception("Unknown column name '" + ident->name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
+    }
+
+    /// Rewrite tables
+
+    auto & src_tables = select.tables()->children;
+    ASTPtr left_table = src_tables[0];
+
+    static ASTPtr subquery_template = makeSubqueryTemplate();
+    static constexpr const char * join_subquery_alias = "--join";
+
+    for (size_t i = 1; i < src_tables.size() - 1; ++i)
+    {
+        String prev_join_alias = String(join_subquery_alias) + std::to_string(i-1);
+        String current_join_alias = String(join_subquery_alias) + std::to_string(i);
+
+        auto expression_list = std::make_shared<ASTExpressionList>();
+        {
+            if (i == 1)
+            {
+                /// First time extract needed left table columns manually
+                needed_columns[0].fillExpressionList(*expression_list);
+            }
+            else
+            {
+                /// Next times extract left tables via QualifiedAsterisk
+                auto asterisk = std::make_shared<ASTQualifiedAsterisk>();
+                asterisk->children.emplace_back(std::make_shared<ASTIdentifier>(prev_join_alias));
+                expression_list->children.emplace_back(std::move(asterisk));
+            }
+
+            /// Add needed right table columns
+            needed_columns[i].fillExpressionList(*expression_list);
+        }
+
+        ASTPtr subquery = subquery_template->clone();
+        SubqueryExpressionsRewriteVisitor::Data expr_rewrite_data{std::move(expression_list), current_join_alias};
+        SubqueryExpressionsRewriteVisitor(expr_rewrite_data).visit(subquery);
+
+        left_table = replaceJoin(left_table, src_tables[i], subquery);
+    }
+
+    RewriteVisitor::Data visitor_data{left_table, src_tables.back()};
+    RewriteVisitor(visitor_data).visit(select.refTables());
+
+    data.done = true;
+}
+
+void JoinToSubqueryTransformMatcher::visitV1(ASTSelectQuery & select, ASTPtr &, Data & data)
 {
     using RevertedAliases = AsteriskSemantic::RevertedAliases;
 
@@ -425,9 +673,11 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr &, Da
     auto & src_tables = select.tables()->children;
     ASTPtr left_table = src_tables[0];
 
+    static ASTPtr subquery_template = makeSubqueryTemplate();
+
     for (size_t i = 1; i < src_tables.size() - 1; ++i)
     {
-        left_table = replaceJoin(left_table, src_tables[i]);
+        left_table = replaceJoin(left_table, src_tables[i], subquery_template->clone());
         if (!left_table)
             throw Exception("Cannot replace tables with subselect", ErrorCodes::LOGICAL_ERROR);
 
@@ -451,16 +701,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr &, Da
     data.done = true;
 }
 
-static ASTPtr makeSubqueryTemplate()
-{
-    ParserTablesInSelectQueryElement parser(true);
-    ASTPtr subquery_template = parseQuery(parser, "(select * from _t)", 0);
-    if (!subquery_template)
-        throw Exception("Cannot parse subquery template", ErrorCodes::LOGICAL_ERROR);
-    return subquery_template;
-}
-
-ASTPtr JoinToSubqueryTransformMatcher::replaceJoin(ASTPtr ast_left, ASTPtr ast_right)
+ASTPtr JoinToSubqueryTransformMatcher::replaceJoin(ASTPtr ast_left, ASTPtr ast_right, ASTPtr subquery_template)
 {
     const auto * left = ast_left->as<ASTTablesInSelectQueryElement>();
     const auto * right = ast_right->as<ASTTablesInSelectQueryElement>();
@@ -470,13 +711,10 @@ ASTPtr JoinToSubqueryTransformMatcher::replaceJoin(ASTPtr ast_left, ASTPtr ast_r
     if (!right->table_join)
         throw Exception("Table join expected", ErrorCodes::LOGICAL_ERROR);
 
-    static ASTPtr subquery_template = makeSubqueryTemplate();
-
     /// replace '_t' with pair of joined tables
-    ASTPtr res = subquery_template->clone();
     RewriteVisitor::Data visitor_data{ast_left, ast_right};
-    RewriteVisitor(visitor_data).visit(res);
-    return res;
+    RewriteVisitor(visitor_data).visit(subquery_template);
+    return subquery_template;
 }
 
 }
