@@ -6,7 +6,7 @@ System tables don't have files with data on the disk or files with metadata. The
 System tables are read-only.
 They are located in the 'system' database.
 
-## system.asynchronous_metrics {#system_tables-asynchronous_metrics}
+## system.asynchronous_metrics { #system_tables-asynchronous_metrics}
 
 Contains metrics that are calculated periodically in the background. For example, the amount of RAM in use.
 
@@ -92,7 +92,7 @@ The `system.columns` table contains the following columns (the column type is sh
 - `is_in_primary_key` (UInt8) — Flag that indicates whether the column is in the primary key expression.
 - `is_in_sampling_key` (UInt8) — Flag that indicates whether the column is in the sampling key expression.
 
-## system.contributors {#system_contributors}
+## system.contributors { #system_contributors}
 
 Contains information about contributors. All constributors in random order. The order is random at query execution time.
 
@@ -138,7 +138,7 @@ This table contains a single String column called 'name' – the name of a datab
 Each database that the server knows about has a corresponding entry in the table.
 This system table is used for implementing the `SHOW DATABASES` query.
 
-## system.detached_parts {#system_tables-detached_parts}
+## system.detached_parts { #system_tables-detached_parts}
 
 Contains information about detached parts of [MergeTree](table_engines/mergetree.md) tables. The `reason` column specifies why the part was detached. For user-detached parts, the reason is empty. Such parts can be attached with [ALTER TABLE ATTACH PARTITION|PART](../query_language/query_language/alter/#alter_attach-partition) command. For the description of other columns, see [system.parts](#system_tables-parts). If part name is invalid, values of some columns may be `NULL`. Such parts can be deleted with [ALTER TABLE DROP DETACHED PART](../query_language/query_language/alter/#alter_drop-detached).
 
@@ -164,7 +164,7 @@ Columns:
 
 Note that the amount of memory used by the dictionary is not proportional to the number of items stored in it. So for flat and cached dictionaries, all the memory cells are pre-assigned, regardless of how full the dictionary actually is.
 
-## system.events {#system_tables-events}
+## system.events { #system_tables-events}
 
 Contains information about the number of events that have occurred in the system. For example, in the table, you can find how many `SELECT` queries were processed since the ClickHouse server started.
 
@@ -243,7 +243,7 @@ Columns:
 - `bytes_written_uncompressed` (UInt64) — Number of bytes written, uncompressed.
 - `rows_written` (UInt64) — Number of rows written.
 
-## system.metrics {#system_tables-metrics}
+## system.metrics { #system_tables-metrics}
 
 Contains metrics which can be calculated instantly, or have a current value. For example, the number of simultaneously processed queries or the current replica delay. This table is always up to date.
 
@@ -283,7 +283,7 @@ SELECT * FROM system.metrics LIMIT 10
 - [system.metric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 - [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 
-## system.metric_log {#system_tables-metric_log}
+## system.metric_log { #system_tables-metric_log}
 
 Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
 To turn on metrics history collection on `system.metric_log`, create `/etc/clickhouse-server/config.d/metric_log.xml` with following content:
@@ -356,7 +356,7 @@ This table contains a single row with a single 'dummy' UInt8 column containing t
 This table is used if a SELECT query doesn't specify the FROM clause.
 This is similar to the DUAL table found in other DBMSs.
 
-## system.parts {#system_tables-parts}
+## system.parts { #system_tables-parts}
 
 Contains information about parts of [MergeTree](table_engines/mergetree.md) tables.
 
@@ -406,7 +406,7 @@ Columns:
 - `marks_size` (`UInt64`) – Alias for `marks_bytes`.
 
 
-## system.part_log {#system_tables-part-log}
+## system.part_log { #system_tables-part-log}
 
 The `system.part_log` table is created only if the [part_log](server_settings/settings.md#server_settings-part-log) server setting is specified.
 
@@ -439,7 +439,7 @@ The `system.part_log` table contains the following columns:
 
 The `system.part_log` table is created after the first inserting data to the `MergeTree` table.
 
-## system.processes {#system_tables-processes}
+## system.processes { #system_tables-processes}
 
 This system table is used for implementing the `SHOW PROCESSLIST` query.
 
@@ -455,7 +455,7 @@ Columns:
 - `query` (String) – The query text. For `INSERT`, it doesn't include the data to insert.
 - `query_id` (String) – Query ID, if defined.
 
-## system.text_log {#system_tables-text_log}
+## system.text_log { #system_tables-text_log}
 
 Contains logging entries. Logging level which goes to this table can be limited with `text_log.level` server setting.
 
@@ -483,7 +483,7 @@ Columns:
 - `source_line` (`UInt64`) - Source line from which the logging was done.
 
 
-## system.query_log {#system_tables-query_log}
+## system.query_log { #system_tables-query_log}
 
 Contains information about execution of queries. For each query, you can see processing start time, duration of processing, error messages and other information.
 
@@ -569,7 +569,7 @@ When the table is deleted manually, it will be automatically created on the fly.
 
 You can specify an arbitrary partitioning key for the `system.query_log` table in the [query_log](server_settings/settings.md#server_settings-query-log) server setting (see the `partition_by` parameter).
 
-## system.query_thread_log {#system_tables-query-thread-log}
+## system.query_thread_log { #system_tables-query-thread-log}
 
 The table contains information about each query execution thread.
 
@@ -634,7 +634,7 @@ When the table is deleted manually, it will be automatically created on the fly.
 
 You can specify an arbitrary partitioning key for the `system.query_thread_log` table in the [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) server setting (see the `partition_by` parameter).
 
-## system.trace_log {#system_tables-trace_log}
+## system.trace_log { #system_tables-trace_log}
 
 Contains stack traces collected by the sampling query profiler.
 
@@ -677,7 +677,7 @@ query_id:      acc4d61f-5bd1-4a3e-bc91-2180be37c915
 trace:         [94222141367858,94222152240175,94222152325351,94222152329944,94222152330796,94222151449980,94222144088167,94222151682763,94222144088167,94222151682763,94222144088167,94222144058283,94222144059248,94222091840750,94222091842302,94222091831228,94222189631488,140509950166747,140509942945935]
 ```
 
-## system.replicas {#system_tables-replicas}
+## system.replicas { #system_tables-replicas}
 
 Contains information and status for replicated tables residing on the local server.
 This table can be used for monitoring. The table contains a row for every Replicated\* table.
@@ -960,7 +960,7 @@ pzxid:          987021252247
 path:           /clickhouse/tables/01-08/visits/replicas
 ```
 
-## system.mutations {#system_tables-mutations}
+## system.mutations { #system_tables-mutations}
 
 The table contains information about [mutations](../query_language/alter.md#alter-mutations) of MergeTree tables and their progress. Each mutation command is represented by a single row. The table has the following columns:
 
@@ -987,7 +987,7 @@ If there were problems with mutating some parts, the following columns contain a
 **latest_fail_reason** - The exception message that caused the most recent part mutation failure.
 
 
-## system.disks {#system_tables-disks}
+## system.disks { #system_tables-disks}
 
 Contains information about disks defined in the [server configuration](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
@@ -1000,7 +1000,7 @@ Columns:
 - `keep_free_space` ([UInt64](../data_types/int_uint.md)) — Amount of disk space that should stay free on disk in bytes. Defined in the `keep_free_space_bytes` parameter of disk configuration.
 
 
-## system.storage_policies {#system_tables-storage_policies}
+## system.storage_policies { #system_tables-storage_policies}
 
 Contains information about storage policies and volumes defined in the [server configuration](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 

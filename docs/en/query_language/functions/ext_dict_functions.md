@@ -1,4 +1,4 @@
-# Functions for Working with External Dictionaries {#ext_dict_functions}
+# Functions for Working with External Dictionaries { #ext_dict_functions}
 
 For information on connecting and configuring external dictionaries, see [External dictionaries](../dicts/external_dicts.md).
 
@@ -111,7 +111,7 @@ dictHas('dict_name', id_expr)
 
 Type: `UInt8`.
 
-## dictGetHierarchy {#dictgethierarchy}
+## dictGetHierarchy { #dictgethierarchy}
 
 Creates an array, containing all the parents of a key in the [hierarchical dictionary](../dicts/external_dicts_dict_hierarchical.md).
 
@@ -154,7 +154,7 @@ dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
 
 Type: `UInt8`.
 
-## Other functions {#ext_dict_functions-other}
+## Other functions { #ext_dict_functions-other}
 
 ClickHouse supports specialized functions that convert dictionary attribute values to a specific data type regardless of the dictionary configuration.
 

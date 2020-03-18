@@ -14,7 +14,7 @@ For proper operation of introspection functions:
 
 ClickHouse saves profiler reports to the [trace_log](../../operations/system_tables.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
 
-## addressToLine {#addresstoline}
+## addressToLine { #addresstoline}
 
 Converts virtual memory address inside ClickHouse server process to the filename and the line number in ClickHouse source code.
 
@@ -104,7 +104,7 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 /build/glibc-OTsEL5/glibc-2.27/misc/../sysdeps/unix/sysv/linux/x86_64/clone.S:97
 ```
 
-## addressToSymbol {#addresstosymbol}
+## addressToSymbol { #addresstosymbol}
 
 Converts virtual memory address inside ClickHouse server process to the symbol from ClickHouse object files.
 
@@ -201,7 +201,7 @@ start_thread
 clone
 ```
 
-## demangle {#demangle}
+## demangle { #demangle}
 
 Converts a symbol that you can get using the [addressToSymbol](#addresstosymbol) function to the C++ function name.
 

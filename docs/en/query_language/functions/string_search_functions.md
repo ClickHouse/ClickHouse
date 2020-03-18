@@ -2,7 +2,7 @@
 
 The search is case-sensitive by default in all these functions. There are separate variants for case insensitive search.
 
-## position(haystack, needle), locate(haystack, needle) {#position}
+## position(haystack, needle), locate(haystack, needle) { #position}
 
 Returns the position (in bytes) of the found substring in the string, starting from 1.
 
@@ -64,7 +64,7 @@ Result:
 └───────────────────────────────┘
 ```
 
-## positionCaseInsensitive {#positioncaseinsensitive}
+## positionCaseInsensitive { #positioncaseinsensitive}
 
 The same as [position](#position) returns the position (in bytes) of the found substring in the string, starting from 1. Use the function for a case-insensitive search.
 
@@ -104,7 +104,7 @@ Result:
 └───────────────────────────────────────────────────┘
 ```
 
-## positionUTF8 {#positionutf8}
+## positionUTF8 { #positionutf8}
 
 Returns the position (in Unicode points) of the found substring in the string, starting from 1.
 
@@ -178,7 +178,7 @@ Result:
 └────────────────────────────────────────┘
 ```
 
-## positionCaseInsensitiveUTF8 {#positioncaseinsensitiveutf8}
+## positionCaseInsensitiveUTF8 { #positioncaseinsensitiveutf8}
 
 The same as [positionUTF8](#positionutf8), but is case-insensitive. Returns the position (in Unicode points) of the found substring in the string, starting from 1.
 
@@ -218,7 +218,7 @@ Result:
 └────────────────────────────────────────────────────┘
 ```
 
-## multiSearchAllPositions {#multiSearchAllPositions}
+## multiSearchAllPositions { #multiSearchAllPositions}
 
 The same as [position](string_search_functions.md#position) but returns `Array` of positions (in bytes) of the found corresponding substrings in the string. Positions are indexed starting from 1.
 
@@ -259,11 +259,11 @@ Result:
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## multiSearchAllPositionsUTF8 {#multiSearchAllPositionsUTF8}
+## multiSearchAllPositionsUTF8 { #multiSearchAllPositionsUTF8}
 
 See `multiSearchAllPositions`.
 
-## multiSearchFirstPosition(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>]) {#multiSearchFirstPosition}
+## multiSearchFirstPosition(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>]) { #multiSearchFirstPosition}
 
 The same as `position` but returns the leftmost offset of the string `haystack` that is matched to some of the needles.
 
@@ -275,7 +275,7 @@ Returns the index `i` (starting from 1) of the leftmost found needle<sub>i</sub>
 
 For a case-insensitive search or/and in UTF-8 format use functions `multiSearchFirstIndexCaseInsensitive, multiSearchFirstIndexUTF8, multiSearchFirstIndexCaseInsensitiveUTF8`.
 
-## multiSearchAny(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>]) {#function-multisearchany}
+## multiSearchAny(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>]) { #function-multisearchany}
 
 Returns 1, if at least one string needle<sub>i</sub> matches the string `haystack` and 0 otherwise.
 
@@ -336,7 +336,7 @@ Extracts a fragment of a string using a regular expression. If 'haystack' doesn'
 
 Extracts all the fragments of a string using a regular expression. If 'haystack' doesn't match the 'pattern' regex, an empty string is returned. Returns an array of strings consisting of all matches to the regex. In general, the behavior is the same as the 'extract' function (it takes the first subpattern, or the entire expression if there isn't a subpattern).
 
-## like(haystack, pattern), haystack LIKE pattern operator {#function-like}
+## like(haystack, pattern), haystack LIKE pattern operator { #function-like}
 
 Checks whether a string matches a simple regular expression.
 The regular expression can contain the metasymbols `%` and `_`.
@@ -350,7 +350,7 @@ Use the backslash (`\`) for escaping metasymbols. See the note on escaping in th
 For regular expressions like `%needle%`, the code is more optimal and works as fast as the `position` function.
 For other regular expressions, the code is the same as for the 'match' function.
 
-## notLike(haystack, pattern), haystack NOT LIKE pattern operator {#function-notlike}
+## notLike(haystack, pattern), haystack NOT LIKE pattern operator { #function-notlike}
 
 The same thing as 'like', but negative.
 
