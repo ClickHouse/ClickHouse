@@ -6,7 +6,7 @@
 #include <thread>
 
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <common/getMemoryAmount.h>
 #include <Common/StringUtils/StringUtils.h>
 
