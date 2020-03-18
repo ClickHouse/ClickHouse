@@ -106,7 +106,7 @@ private:
     UInt64 block_size;
     UInt64 max_counter;
 
-    Block createHeader() const
+    static Block createHeader()
     {
         return { ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number") };
     }

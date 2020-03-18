@@ -379,7 +379,7 @@ void IAccessStorage::throwNotFound(std::type_index type, const String & name) co
 }
 
 
-void IAccessStorage::throwBadCast(const UUID & id, std::type_index type, const String & name, std::type_index required_type) const
+void IAccessStorage::throwBadCast(const UUID & id, std::type_index type, const String & name, std::type_index required_type)
 {
     throw Exception(
         "ID {" + toString(id) + "}: " + getTypeName(type) + backQuote(name) + " expected to be of type " + getTypeName(required_type),

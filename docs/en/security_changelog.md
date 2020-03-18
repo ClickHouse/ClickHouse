@@ -2,7 +2,7 @@
 
 ### CVE-2019-15024
 
-Аn attacker having write access to ZooKeeper and who is able to run a custom server available from the network where ClickHouse runs, can create a custom-built malicious server that will act as a ClickHouse replica and register it in ZooKeeper. When another replica will fetch data part from the malicious replica, it can force clickhouse-server to write to arbitrary path on filesystem.
+Аn attacker that has write access to ZooKeeper and who ican run a custom server available from the network where ClickHouse runs, can create a custom-built malicious server that will act as a ClickHouse replica and register it in ZooKeeper. When another replica will fetch data part from the malicious replica, it can force clickhouse-server to write to arbitrary path on filesystem.
 
 Credits: Eldar Zaitov of Yandex Information Security Team
 
@@ -14,7 +14,7 @@ Credits: Eldar Zaitov of Yandex Information Security Team
 
 ### CVE-2019-16536
 
-Stack overflow leading to DoS can be triggered by malicious authenticated client.
+Stack overflow leading to DoS can be triggered by a malicious authenticated client.
 
 Credits: Eldar Zaitov of Yandex Information Security Team
 
@@ -62,7 +62,7 @@ Credits: Andrey Krasichkov and Evgeny Sidorov of Yandex Information Security Tea
 
 ### CVE-2018-14670
 
-Incorrect configuration in deb package could lead to unauthorized use of the database.
+Incorrect configuration in deb package could lead to the unauthorized use of the database.
 
 Credits: the UK's National Cyber Security Centre (NCSC)
 

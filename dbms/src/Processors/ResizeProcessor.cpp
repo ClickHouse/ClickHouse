@@ -350,7 +350,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
         if (waiting_output.status != OutputStatus::NeedData)
             throw Exception("Invalid status for associated output.", ErrorCodes::LOGICAL_ERROR);
 
-        waiting_output.port->pushData(input_with_data.port->pullData(/* set_not_deeded = */ true));
+        waiting_output.port->pushData(input_with_data.port->pullData(/* set_not_needed = */ true));
         waiting_output.status = OutputStatus::NotActive;
 
         if (input_with_data.port->isFinished())

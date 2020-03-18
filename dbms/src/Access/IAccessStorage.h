@@ -151,8 +151,9 @@ protected:
     static String getTypeName(std::type_index type) { return IAccessEntity::getTypeName(type); }
     [[noreturn]] void throwNotFound(const UUID & id) const;
     [[noreturn]] void throwNotFound(std::type_index type, const String & name) const;
-    [[noreturn]] void throwBadCast(const UUID & id, std::type_index type, const String & name, std::type_index required_type) const;
-    [[noreturn]] void throwIDCollisionCannotInsert(const UUID & id, std::type_index type, const String & name, std::type_index existing_type, const String & existing_name) const;
+    [[noreturn]] static void throwBadCast(const UUID & id, std::type_index type, const String & name, std::type_index required_type);
+    [[noreturn]] void throwIDCollisionCannotInsert(
+        const UUID & id, std::type_index type, const String & name, std::type_index existing_type, const String & existing_name) const;
     [[noreturn]] void throwNameCollisionCannotInsert(std::type_index type, const String & name) const;
     [[noreturn]] void throwNameCollisionCannotRename(std::type_index type, const String & old_name, const String & new_name) const;
     [[noreturn]] void throwReadonlyCannotInsert(std::type_index type, const String & name) const;

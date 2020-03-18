@@ -135,7 +135,10 @@ CREATE TABLE `ontime` (
   `Div5LongestGTime` String,
   `Div5WheelsOff` String,
   `Div5TailNum` String
-) ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192)
+) ENGINE = MergeTree 
+PARTITION BY Year 
+ORDER BY (Carrier, FlightDate) 
+SETTINGS index_granularity = 8192;
 ```
 
 加载数据：
@@ -226,7 +229,7 @@ FROM
         AND Year=2007
     GROUP BY Carrier
 )
-ANY INNER JOIN
+JOIN
 (
     SELECT
         Carrier,
@@ -245,7 +248,7 @@ SELECT Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year=2007
 GROUP BY Carrier
-ORDER BY Carrier
+ORDER BY c3 DESC
 ```
 
 Q6. 同上一个查询一致,只是查询范围扩大到2000年到2008年
@@ -262,7 +265,7 @@ FROM
         AND Year>=2000 AND Year<=2008
     GROUP BY Carrier
 )
-ANY INNER JOIN
+JOIN
 (
     SELECT
         Carrier,
@@ -281,7 +284,7 @@ SELECT Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year>=2000 AND Year<=2008
 GROUP BY Carrier
-ORDER BY Carrier;
+ORDER BY c3 DESC;
 ```
 
 Q7. 每年航班延误超过10分钟的百分比
@@ -297,7 +300,7 @@ FROM
     WHERE DepDelay>10
     GROUP BY Year
 )
-ANY INNER JOIN
+JOIN
 (
     select
         Year,
@@ -311,7 +314,7 @@ ORDER BY Year;
 更好的查询版本：
 
 ```sql
-SELECT Year, avg(DepDelay>10)
+SELECT Year, avg(DepDelay>10)*100
 FROM ontime
 GROUP BY Year
 ORDER BY Year;

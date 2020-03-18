@@ -136,7 +136,10 @@ CREATE TABLE `ontime` (
   `Div5LongestGTime` String,
   `Div5WheelsOff` String,
   `Div5TailNum` String
-) ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192)
+) ENGINE = MergeTree 
+PARTITION BY Year 
+ORDER BY (Carrier, FlightDate) 
+SETTINGS index_granularity = 8192;
 ```
 
 <div dir="rtl" markdown="1">
@@ -218,7 +221,7 @@ FROM
         AND Year=2007
     GROUP BY Carrier
 )
-ANY INNER JOIN
+JOIN
 (
     SELECT
         Carrier,
@@ -237,7 +240,7 @@ ORDER BY c3 DESC;
 </div>
 
 ``` sql
-SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year = 2007 GROUP BY Carrier ORDER BY Carrier
+SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year = 2007 GROUP BY Carrier ORDER BY c3 DESC
 ```
 
 <div dir="rtl" markdown="1">
@@ -258,7 +261,7 @@ FROM
         AND Year >= 2000 AND Year <= 2008
     GROUP BY Carrier
 )
-ANY INNER JOIN
+JOIN
 (
     SELECT
         Carrier,
@@ -277,7 +280,7 @@ ORDER BY c3 DESC;
 </div>
 
 ``` sql
-SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY Carrier
+SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY c3 DESC
 ```
 
 <div dir="rtl" markdown="1">
@@ -297,7 +300,7 @@ FROM
     WHERE DepDelay>10
     GROUP BY Year
 )
-ANY INNER JOIN
+JOIN
 (
     select
         Year,
@@ -315,7 +318,7 @@ ORDER BY Year
 </div>
 
 ``` sql
-SELECT Year, avg(DepDelay > 10) FROM ontime GROUP BY Year ORDER BY Year
+SELECT Year, avg(DepDelay > 10)*100 FROM ontime GROUP BY Year ORDER BY Year
 ```
 
 <div dir="rtl" markdown="1">

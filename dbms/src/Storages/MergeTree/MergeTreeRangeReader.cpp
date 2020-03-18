@@ -15,6 +15,25 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
+static void filterColumns(Columns & columns, const IColumn::Filter & filter)
+{
+    for (auto & column : columns)
+    {
+        if (column)
+        {
+            column = column->filter(filter, -1);
+
+            if (column->empty())
+            {
+                columns.clear();
+                return;
+            }
+        }
+    }
+}
+
+
 MergeTreeRangeReader::DelayedStream::DelayedStream(
         size_t from_mark, IMergeTreeReader * merge_tree_reader_)
         : current_mark(from_mark), current_offset(0), num_delayed_rows(0)
@@ -682,22 +701,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
     return read_result;
 }
 
-void MergeTreeRangeReader::filterColumns(Columns & columns, const IColumn::Filter & filter) const
-{
-    for (auto & column : columns)
-    {
-        if (column)
-        {
-            column = column->filter(filter, -1);
-
-            if (column->empty())
-            {
-                columns.clear();
-                return;
-            }
-        }
-    }
-}
 
 MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t max_rows, MarkRanges & ranges)
 {

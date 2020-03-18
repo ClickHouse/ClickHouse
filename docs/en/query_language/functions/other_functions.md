@@ -178,6 +178,43 @@ Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is not 
 
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is infinite, otherwise 0. Note that 0 is returned for a NaN.
 
+## ifNotFinite {#ifnotfinite}
+
+Checks whether floating point value is finite.
+
+**Syntax** 
+
+```
+ifNotFinite(x,y)
+```
+**Parameters** 
+
+- `x` — Value to be checked for infinity. Type: [Float*](../../data_types/float.md).
+- `y` — Fallback value. Type: [Float*](../../data_types/float.md).
+
+**Returned value**
+
+- `x` if `x` is finite.
+- `y` if `x` is not finite.
+
+**Example**
+
+Query:
+
+```
+SELECT 1/0 as infimum, ifNotFinite(infimum,42)
+```
+
+Result:
+
+```
+┌─infimum─┬─ifNotFinite(divide(1, 0), 42)─┐
+│     inf │                            42 │
+└─────────┴───────────────────────────────┘
+```
+
+You can get similar result by using [ternary operator](conditional_functions.md#ternary-operator): `isFinite(x) ? x : y`.
+
 ## isNaN(x)
 
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is a NaN, otherwise 0.

@@ -138,23 +138,23 @@ private:
       * First part should be executed by mutations interpreter.
       * Other is just simple drop/renames, so they can be executed without interpreter.
       */
-    void splitMutationCommands(
+    static void splitMutationCommands(
         MergeTreeData::DataPartPtr part,
         const MutationCommands & commands,
         MutationCommands & for_interpreter,
-        MutationCommands & for_file_renames) const;
+        MutationCommands & for_file_renames);
 
 
     /// Apply commands to source_part i.e. remove some columns in source_part
     /// and return set of files, that have to be removed from filesystem and checksums
-    NameSet collectFilesToRemove(MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension) const;
+    static NameSet collectFilesToRemove(MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension);
 
     /// Files, that we don't need to remove and don't need to hardlink, for example columns.txt and checksums.txt.
     /// Because we will generate new versions of them after we perform mutation.
-    NameSet collectFilesToSkip(const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension) const;
+    static NameSet collectFilesToSkip(const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension);
 
     /// Get the columns list of the resulting part in the same order as all_columns.
-    NamesAndTypesList getColumnsForNewDataPart(MergeTreeData::DataPartPtr source_part, const Block & updated_header, NamesAndTypesList all_columns) const;
+    static NamesAndTypesList getColumnsForNewDataPart(MergeTreeData::DataPartPtr source_part, const Block & updated_header, NamesAndTypesList all_columns);
 
     bool shouldExecuteTTL(const Names & columns, const MutationCommands & commands) const;
 
