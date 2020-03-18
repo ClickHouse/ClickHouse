@@ -246,7 +246,9 @@ void DatabaseOnDisk::renameTable(
     TableStructureWriteLockHolder table_lock;
     String table_metadata_path;
     ASTPtr attach_query;
-    StoragePtr table = detachTable(table_name);
+    /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
+    StoragePtr table = tryGetTable(context, table_name);
+    detachTable(table_name);
     try
     {
         table_lock = table->lockExclusively(context.getCurrentQueryId());
@@ -451,6 +453,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const Context & context, const Str
         String table_name = Poco::Path(metadata_file_path).makeFile().getBaseName();
         if (Poco::Path(table_name).makeFile().getExtension() == "sql")
             table_name = Poco::Path(table_name).makeFile().getBaseName();
+        table_name = unescapeForFileName(table_name);
 
         if (create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER)
             LOG_WARNING(log, "File " << metadata_file_path << " contains both UUID and table name. "

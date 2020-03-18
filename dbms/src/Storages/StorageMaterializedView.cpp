@@ -34,9 +34,11 @@ namespace ErrorCodes
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
 }
 
-static inline String generateInnerTableName(const String & table_name)
+static inline String generateInnerTableName(const StorageID & view_id)
 {
-    return ".inner." + table_name;
+    if (view_id.hasUUID())
+        return ".inner." + toString(view_id.uuid);
+    return ".inner." + view_id.getTableName();
 }
 
 static StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, const Context & context, bool add_default_db = true)
@@ -128,14 +130,14 @@ StorageMaterializedView::StorageMaterializedView(
     else if (attach_)
     {
         /// If there is an ATTACH request, then the internal table must already be created.
-        target_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID().table_name));
+        target_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()));
     }
     else
     {
         /// We will create a query to create an internal table.
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
         manual_create_query->database = getStorageID().database_name;
-        manual_create_query->table = generateInnerTableName(getStorageID().table_name);
+        manual_create_query->table = generateInnerTableName(getStorageID());
 
         auto new_columns_list = std::make_shared<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
@@ -327,9 +329,10 @@ void StorageMaterializedView::mutate(const MutationCommands & commands, const Co
 
 void StorageMaterializedView::renameInMemory(const String & new_database_name, const String & new_table_name)
 {
-    if (has_inner_table && tryGetTargetTable())
+    auto old_table_id = getStorageID();
+    if (has_inner_table && tryGetTargetTable() && !old_table_id.hasUUID())
     {
-        auto new_target_table_name = generateInnerTableName(new_table_name);
+        auto new_target_table_name = generateInnerTableName({new_database_name, new_table_name});
         auto rename = std::make_shared<ASTRenameQuery>();
 
         ASTRenameQuery::Table from;
@@ -349,7 +352,6 @@ void StorageMaterializedView::renameInMemory(const String & new_database_name, c
         target_table_id.table_name = new_target_table_name;
     }
 
-    auto old_table_id = getStorageID();
     IStorage::renameInMemory(new_database_name, new_table_name);
     // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
     DatabaseCatalog::instance().updateDependency(select_table_id, old_table_id, select_table_id, getStorageID());

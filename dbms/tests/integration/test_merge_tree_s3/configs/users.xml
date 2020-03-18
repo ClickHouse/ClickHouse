@@ -2,6 +2,7 @@
 <yandex>
     <profiles>
         <default>
+            <default_database_engine>Ordinary</default_database_engine>
         </default>
     </profiles>
 

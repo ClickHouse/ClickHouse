@@ -603,15 +603,10 @@ bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
         if (!create.attach && create.uuid == UUIDHelpers::Nil && database->getEngineName() == "Atomic")
             create.uuid = UUIDHelpers::generateV4();
 
-        data_path = database->getTableDataPath(create);
-
         /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
           * If table doesnt exist, one thread is creating table, while others wait in DDLGuard.
           */
         guard = DatabaseCatalog::instance().getDDLGuard(create.database, table_name);
-
-        if (!create.attach && !data_path.empty() && Poco::File(context.getPath() + data_path).exists())
-            throw Exception("Directory for table data " + data_path + " already exists", ErrorCodes::TABLE_ALREADY_EXISTS);
 
         /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
         if (database->isTableExist(context, table_name))
@@ -633,6 +628,10 @@ bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
             else
                 throw Exception("Table " + create.database + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
         }
+
+        data_path = database->getTableDataPath(create);
+        if (!create.attach && !data_path.empty() && Poco::File(context.getPath() + data_path).exists())
+            throw Exception("Directory for table data " + data_path + " already exists", ErrorCodes::TABLE_ALREADY_EXISTS);
     }
     else
     {
