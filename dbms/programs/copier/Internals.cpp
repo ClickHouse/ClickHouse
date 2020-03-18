@@ -171,7 +171,7 @@ ASTPtr extractOrderBy(const ASTPtr & storage_ast)
 String createCommaSeparatedStringFrom(const Names & names)
 {
     std::ostringstream ss;
-    if(!names.empty())
+    if (!names.empty())
     {
         std::copy(names.begin(), std::prev(names.end()), std::ostream_iterator<std::string>(ss, ", "));
         ss << names.back();
