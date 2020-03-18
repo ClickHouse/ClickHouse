@@ -14,7 +14,7 @@ To run ClickHouse on processors that do not support SSE 4.2 or have AArch64 or P
 
 ## Available Installation Options
 
-### From DEB Packages { #install-from-deb-packages}
+### From DEB Packages {#install-from-deb-packages}
 
 It is recommended to use official pre-compiled `deb` packages for Debian or Ubuntu.
 
@@ -66,7 +66,7 @@ sudo yum install clickhouse-server clickhouse-client
 
 You can also download and install packages manually from here: <https://repo.clickhouse.tech/rpm/stable/x86_64>.
 
-### From tgz archives { #from-tgz-archives}
+### From tgz archives {#from-tgz-archives}
 
 It is recommended to use official pre-compiled `tgz` archives for all Linux distributions, where installation of `deb` or `rpm` packages is not possible.
 

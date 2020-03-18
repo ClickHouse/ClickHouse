@@ -4,7 +4,7 @@ This engine belongs to the family of log engines. See the common properties of l
 
 Use this engine in scenarios when you need to write many tables with a small amount of data (less than 1 million rows).
 
-## Creating a Table { #table_engines-stripelog-creating-a-table}
+## Creating a Table {#table_engines-stripelog-creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -17,7 +17,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 See the detailed description of the [CREATE TABLE](../../query_language/create.md#create-table-query) query.
 
-## Writing the Data { #table_engines-stripelog-writing-the-data}
+## Writing the Data {#table_engines-stripelog-writing-the-data}
 
 The `StripeLog` engine stores all the columns in one file. For each `INSERT` query, ClickHouse appends the data block to the end of a table file, writing columns one by one.
 
@@ -28,11 +28,11 @@ For each table ClickHouse writes the files:
 
 The `StripeLog` engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
 
-## Reading the Data { #table_engines-stripelog-reading-the-data}
+## Reading the Data {#table_engines-stripelog-reading-the-data}
 
 The file with marks allows ClickHouse to parallelize the reading of data. This means that a `SELECT` query returns rows in an unpredictable order. Use the `ORDER BY` clause to sort rows.
 
-## Example of Use { #table_engines-stripelog-example-of-use}
+## Example of Use {#table_engines-stripelog-example-of-use}
 
 Creating a table:
 
