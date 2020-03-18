@@ -198,7 +198,7 @@ ASTPtr extractPrimaryKey(const ASTPtr & storage_ast);
 
 ASTPtr extractOrderBy(const ASTPtr & storage_ast);
 
-String createCommaSeparatedStringFrom(const Names & strings);
+String createCommaSeparatedStringFrom(const Names & names);
 
 Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast);
 
