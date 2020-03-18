@@ -7,7 +7,7 @@
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
-#include <common/StringRef.h>
+#include <Common/HashTable/Hash.h>
 
 #include <DataStreams/ColumnGathererStream.h>
 
@@ -116,7 +116,7 @@ void ColumnFixedString::updateWeakHash32(WeakHash32 & hash) const
 
     for (size_t row = 0; row < s; ++row)
     {
-        *hash_data = StringRefHash::updateWeakHash(StringRef(pos, n), *hash_data);
+        *hash_data = ::updateWeakHash32(pos, n, *hash_data);
 
         pos += n;
         ++hash_data;
