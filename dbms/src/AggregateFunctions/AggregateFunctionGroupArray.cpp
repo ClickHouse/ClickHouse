@@ -88,7 +88,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(const std::string &
     assertUnary(name, argument_types);
 
     UInt64 max_elems = std::numeric_limits<UInt64>::max();
-    UInt64 seed = 123456;
+    UInt64 seed = thread_local_rng();
 
     UInt64 * params[2] = {&max_elems, &seed};
     if (parameters.size() != 1 && parameters.size() != 2)
