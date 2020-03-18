@@ -61,18 +61,18 @@ def test_two_files(started_cluster):
 
 
 def test_single_file_old(started_cluster):
-    node.query("create table distr_3 (x UInt64, s String) engine = Distributed('test_cluster', database, table)")
-    node.query("insert into distr_3 values (1, 'a'), (2, 'bb'), (3, 'ccc')")
+    node.query("create table test.distr_3 (x UInt64, s String) engine = Distributed('test_cluster', database, table)")
+    node.query("insert into test.distr_3 values (1, 'a'), (2, 'bb'), (3, 'ccc')")
 
-    query = "select * from file('/var/lib/clickhouse/data/default/distr_3/default@not_existing:9000/1.bin', 'Distributed')"
+    query = "select * from file('/var/lib/clickhouse/data/test/distr_3/default@not_existing:9000/1.bin', 'Distributed')"
     out = node.exec_in_container(['/usr/bin/clickhouse', 'local', '--stacktrace', '-q', query])
 
     assert out == '1\ta\n2\tbb\n3\tccc\n'
 
-    query = "create table t (dummy UInt32) engine = File('Distributed', '/var/lib/clickhouse/data/default/distr_3/default@not_existing:9000/1.bin');" \
+    query = "create table t (dummy UInt32) engine = File('Distributed', '/var/lib/clickhouse/data/test/distr_3/default@not_existing:9000/1.bin');" \
             "select * from t"
     out = node.exec_in_container(['/usr/bin/clickhouse', 'local', '--stacktrace', '-q', query])
 
     assert out == '1\ta\n2\tbb\n3\tccc\n'
 
-    node.query("drop table distr_3")
+    node.query("drop table test.distr_3")

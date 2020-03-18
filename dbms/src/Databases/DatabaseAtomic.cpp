@@ -139,10 +139,10 @@ void DatabaseAtomic::dropTable(const Context & context, const String & table_nam
         {
             LOG_INFO(log, "Mark table " + table->getStorageID().getNameForLogs() + " to drop.");
             /// Context:getPath acquires lock
-            auto data_path = context.getPath() + table_data_path_relative;
+            auto table_data_path = context.getPath() + table_data_path_relative;
             std::lock_guard lock(tables_to_drop_mutex);
             time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            tables_to_drop.push_back({table, data_path, current_time});
+            tables_to_drop.push_back({table, table_data_path, current_time});
         }
     }
     catch (...)
