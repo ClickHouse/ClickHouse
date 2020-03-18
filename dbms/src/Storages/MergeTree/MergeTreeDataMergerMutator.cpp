@@ -299,7 +299,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         parts.push_back(part);
     }
 
-    //LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
+    LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
     future_part.assign(std::move(parts));
     return true;
 }
@@ -675,7 +675,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             total_size += part->bytes_on_disk;
             if (total_size >= data_settings->min_merge_bytes_to_use_direct_io)
             {
-                //LOG_DEBUG(log, "Will merge parts reading files in O_DIRECT");
+                LOG_DEBUG(log, "Will merge parts reading files in O_DIRECT");
                 read_with_direct_io = true;
 
                 break;
@@ -1002,18 +1002,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     LOG_DEBUG(log, "All columns:" << all_columns.toString());
 
-    //LOG_DEBUG(log, "Commands for interpreter:" << for_interpreter.size() << " commands for renames:" << for_file_renames.size());
     if (!for_interpreter.empty())
     {
         interpreter.emplace(storage_from_source_part, for_interpreter, context_for_reading, true);
         in = interpreter->execute(table_lock_holder);
         updated_header = interpreter->getUpdatedHeader();
         in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
-
-        //LOG_DEBUG(log, "Interpreter header:" << in->getHeader().dumpStructure());
     }
-
-    //LOG_DEBUG(log, "Interpreter prepared");
 
     auto new_data_part = data.createPart(
         future_part.name, future_part.type, future_part.part_info, space_reservation->getDisk(), "tmp_mut_" + future_part.name);
@@ -1060,7 +1055,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         IMergeTreeDataPart::MinMaxIndex minmax_idx;
 
-        //LOG_WARNING(log, "Starting to read columns with header:" << updated_header.dumpStructure());
         MergedBlockOutputStream out{
             new_data_part,
             new_data_part->getColumns(),
@@ -1080,14 +1074,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         }
 
 
-        //LOG_WARNING(log, "Data read FINISHED");
         new_data_part->partition.assign(source_part->partition);
         new_data_part->minmax_idx = std::move(minmax_idx);
 
         in->readSuffix();
         out.writeSuffixAndFinalizePart(new_data_part);
-
-        //LOG_WARNING(log, "SUFFIX WRITTEN");
     }
     else
     {
@@ -1142,15 +1133,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         for (Poco::DirectoryIterator dir_it(source_part->getFullPath()); dir_it != dir_end; ++dir_it)
         {
             if (files_to_skip.count(dir_it.name()) || files_to_remove.count(dir_it.name()))
-            {
-                //LOG_DEBUG(log, "Skipping file:" << dir_it.path().toString());
                 continue;
-            }
 
             Poco::Path destination(new_part_tmp_path);
             destination.append(dir_it.name());
-
-            //LOG_DEBUG(log, "SRC:" << dir_it.path().toString() << " DEST:" << destination.toString());
 
             createHardLink(dir_it.path().toString(), destination.toString());
         }
