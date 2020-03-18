@@ -178,9 +178,11 @@ template <> struct NearestFieldTypeImpl<Int128> { using Type = Int128; };
 template <> struct NearestFieldTypeImpl<Decimal32> { using Type = DecimalField<Decimal32>; };
 template <> struct NearestFieldTypeImpl<Decimal64> { using Type = DecimalField<Decimal64>; };
 template <> struct NearestFieldTypeImpl<Decimal128> { using Type = DecimalField<Decimal128>; };
+template <> struct NearestFieldTypeImpl<Decimal256> { using Type = DecimalField<Decimal256>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal32>> { using Type = DecimalField<Decimal32>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal64>> { using Type = DecimalField<Decimal64>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal128>> { using Type = DecimalField<Decimal128>; };
+template <> struct NearestFieldTypeImpl<DecimalField<Decimal256>> { using Type = DecimalField<Decimal256>; };
 template <> struct NearestFieldTypeImpl<Float32> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<Float64> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<const char *> { using Type = String; };
@@ -227,6 +229,8 @@ public:
             Float64 = 3,
             UInt128 = 4,
             Int128  = 5,
+            UInt256 = 6,
+            Int256  = 7,
 
             /// Non-POD types.
 
@@ -236,7 +240,8 @@ public:
             Decimal32  = 19,
             Decimal64  = 20,
             Decimal128 = 21,
-            AggregateFunctionState = 22,
+            Decimal256 = 22,
+            AggregateFunctionState = 23,
         };
 
         static const int MIN_NON_POD = 16;
@@ -248,8 +253,10 @@ public:
                 case Null:    return "Null";
                 case UInt64:  return "UInt64";
                 case UInt128: return "UInt128";
+                case UInt256: return "UInt256";
                 case Int64:   return "Int64";
                 case Int128:  return "Int128";
+                case Int256:  return "Int256";
                 case Float64: return "Float64";
                 case String:  return "String";
                 case Array:   return "Array";
@@ -257,6 +264,7 @@ public:
                 case Decimal32:  return "Decimal32";
                 case Decimal64:  return "Decimal64";
                 case Decimal128: return "Decimal128";
+                case Decimal256: return "Decimal256";
                 case AggregateFunctionState: return "AggregateFunctionState";
             }
 
@@ -269,7 +277,7 @@ public:
     template <typename T> struct TypeToEnum;
     template <Types::Which which> struct EnumToType;
 
-    static bool IsDecimal(Types::Which which) { return which >= Types::Decimal32 && which <= Types::Decimal128; }
+    static bool IsDecimal(Types::Which which) { return which >= Types::Decimal32 && which <= Types::Decimal256; }
 
     Field()
         : which(Types::Null)
@@ -429,8 +437,10 @@ public:
             case Types::Null:    return false;
             case Types::UInt64:  return get<UInt64>()  < rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() < rhs.get<UInt128>();
+            case Types::UInt256: return get<UInt256>() < rhs.get<UInt256>();
             case Types::Int64:   return get<Int64>()   < rhs.get<Int64>();
             case Types::Int128:  return get<Int128>()  < rhs.get<Int128>();
+            case Types::Int256:  return get<Int256>()  < rhs.get<Int256>();
             case Types::Float64: return get<Float64>() < rhs.get<Float64>();
             case Types::String:  return get<String>()  < rhs.get<String>();
             case Types::Array:   return get<Array>()   < rhs.get<Array>();
@@ -438,6 +448,7 @@ public:
             case Types::Decimal32:  return get<DecimalField<Decimal32>>()  < rhs.get<DecimalField<Decimal32>>();
             case Types::Decimal64:  return get<DecimalField<Decimal64>>()  < rhs.get<DecimalField<Decimal64>>();
             case Types::Decimal128: return get<DecimalField<Decimal128>>() < rhs.get<DecimalField<Decimal128>>();
+            case Types::Decimal256: return get<DecimalField<Decimal256>>() < rhs.get<DecimalField<Decimal256>>();
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() < rhs.get<AggregateFunctionStateData>();
         }
 
@@ -461,8 +472,10 @@ public:
             case Types::Null:    return true;
             case Types::UInt64:  return get<UInt64>()  <= rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() <= rhs.get<UInt128>();
+            case Types::UInt256: return get<UInt256>() <= rhs.get<UInt256>();
             case Types::Int64:   return get<Int64>()   <= rhs.get<Int64>();
             case Types::Int128:  return get<Int128>()  <= rhs.get<Int128>();
+            case Types::Int256:  return get<Int256>()  <= rhs.get<Int256>();
             case Types::Float64: return get<Float64>() <= rhs.get<Float64>();
             case Types::String:  return get<String>()  <= rhs.get<String>();
             case Types::Array:   return get<Array>()   <= rhs.get<Array>();
@@ -470,6 +483,7 @@ public:
             case Types::Decimal32:  return get<DecimalField<Decimal32>>()  <= rhs.get<DecimalField<Decimal32>>();
             case Types::Decimal64:  return get<DecimalField<Decimal64>>()  <= rhs.get<DecimalField<Decimal64>>();
             case Types::Decimal128: return get<DecimalField<Decimal128>>() <= rhs.get<DecimalField<Decimal128>>();
+            case Types::Decimal256: return get<DecimalField<Decimal256>>() <= rhs.get<DecimalField<Decimal256>>();
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() <= rhs.get<AggregateFunctionStateData>();
         }
 
@@ -503,9 +517,12 @@ public:
             case Types::Tuple:   return get<Tuple>()   == rhs.get<Tuple>();
             case Types::UInt128: return get<UInt128>() == rhs.get<UInt128>();
             case Types::Int128:  return get<Int128>()  == rhs.get<Int128>();
+            case Types::UInt256: return get<UInt256>() == rhs.get<UInt256>();
+            case Types::Int256:  return get<Int256>()  == rhs.get<Int256>();
             case Types::Decimal32:  return get<DecimalField<Decimal32>>()  == rhs.get<DecimalField<Decimal32>>();
             case Types::Decimal64:  return get<DecimalField<Decimal64>>()  == rhs.get<DecimalField<Decimal64>>();
             case Types::Decimal128: return get<DecimalField<Decimal128>>() == rhs.get<DecimalField<Decimal128>>();
+            case Types::Decimal256: return get<DecimalField<Decimal256>>() == rhs.get<DecimalField<Decimal256>>();
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() == rhs.get<AggregateFunctionStateData>();
         }
 
@@ -532,7 +549,9 @@ public:
 #endif
             case Types::UInt64:  return f(field.template get<UInt64>());
             case Types::UInt128: return f(field.template get<UInt128>());
+            case Types::UInt256: return f(field.template get<UInt256>());
             case Types::Int64:   return f(field.template get<Int64>());
+            case Types::Int256:   return f(field.template get<Int256>());
             case Types::Float64: return f(field.template get<Float64>());
             case Types::String:  return f(field.template get<String>());
             case Types::Array:   return f(field.template get<Array>());
@@ -543,6 +562,7 @@ public:
             case Types::Decimal32:  return f(field.template get<DecimalField<Decimal32>>());
             case Types::Decimal64:  return f(field.template get<DecimalField<Decimal64>>());
             case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
+            case Types::Decimal256: return f(field.template get<DecimalField<Decimal256>>());
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
             case Types::Int128:
                 // TODO: investigate where we need Int128 Fields. There are no
@@ -563,8 +583,8 @@ public:
 
 private:
     std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
-        Null, UInt64, UInt128, Int64, Int128, Float64, String, Array, Tuple,
-        DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, AggregateFunctionStateData
+        Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, Float64, String, Array, Tuple,
+        DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>, AggregateFunctionStateData
         > storage;
 
     Types::Which which;

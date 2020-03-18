@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <boost/multiprecision/integer.hpp>
+
 #include <common/Types.h>
 #include <Common/intExp.h>
 
@@ -24,7 +25,7 @@ enum class TypeIndex
     UInt32,
     UInt64,
     UInt128,
-//    UInt256,
+    UInt256,
     Int8,
     Int16,
     Int32,
@@ -59,8 +60,7 @@ using UInt8 = uint8_t;
 using UInt16 = uint16_t;
 using UInt32 = uint32_t;
 using UInt64 = uint64_t;
-//using UInt256 = boost::multiprecision::uint256_t;
-// UInt128.h
+using UInt256 = boost::multiprecision::uint256_t;
 
 using Int8 = int8_t;
 using Int16 = int16_t;
@@ -82,7 +82,7 @@ template <> inline constexpr bool IsNumber<UInt8> = true;
 template <> inline constexpr bool IsNumber<UInt16> = true;
 template <> inline constexpr bool IsNumber<UInt32> = true;
 template <> inline constexpr bool IsNumber<UInt64> = true;
-//template <> inline constexpr bool IsNumber<UInt256> = true;
+template <> inline constexpr bool IsNumber<UInt256> = true;
 template <> inline constexpr bool IsNumber<Int8> = true;
 template <> inline constexpr bool IsNumber<Int16> = true;
 template <> inline constexpr bool IsNumber<Int32> = true;
@@ -97,7 +97,7 @@ template <> struct TypeName<UInt8>   { static const char * get() { return "UInt8
 template <> struct TypeName<UInt16>  { static const char * get() { return "UInt16";  } };
 template <> struct TypeName<UInt32>  { static const char * get() { return "UInt32";  } };
 template <> struct TypeName<UInt64>  { static const char * get() { return "UInt64";  } };
-//template <> struct TypeName<UInt256>  { static const char * get() { return "UInt256";  } };
+template <> struct TypeName<UInt256>  { static const char * get() { return "UInt256";  } };
 template <> struct TypeName<Int8>    { static const char * get() { return "Int8";    } };
 template <> struct TypeName<Int16>   { static const char * get() { return "Int16";   } };
 template <> struct TypeName<Int32>   { static const char * get() { return "Int32";   } };
@@ -112,7 +112,7 @@ template <> struct TypeId<UInt8>    { static constexpr const TypeIndex value = T
 template <> struct TypeId<UInt16>   { static constexpr const TypeIndex value = TypeIndex::UInt16;  };
 template <> struct TypeId<UInt32>   { static constexpr const TypeIndex value = TypeIndex::UInt32;  };
 template <> struct TypeId<UInt64>   { static constexpr const TypeIndex value = TypeIndex::UInt64;  };
-//template <> struct TypeId<UInt256>   { static constexpr const TypeIndex value = TypeIndex::UInt256;  };
+template <> struct TypeId<UInt256>   { static constexpr const TypeIndex value = TypeIndex::UInt256;  };
 template <> struct TypeId<Int8>     { static constexpr const TypeIndex value = TypeIndex::Int8;  };
 template <> struct TypeId<Int16>    { static constexpr const TypeIndex value = TypeIndex::Int16; };
 template <> struct TypeId<Int32>    { static constexpr const TypeIndex value = TypeIndex::Int32; };
@@ -211,7 +211,7 @@ inline const char * getTypeName(TypeIndex idx)
         case TypeIndex::UInt32:     return TypeName<UInt32>::get();
         case TypeIndex::UInt64:     return TypeName<UInt64>::get();
         case TypeIndex::UInt128:    return "UInt128";
-//        case TypeIndex::UInt256:    return TypeName<UInt256>::get();
+        case TypeIndex::UInt256:    return TypeName<UInt256>::get();
         case TypeIndex::Int8:       return TypeName<Int8>::get();
         case TypeIndex::Int16:      return TypeName<Int16>::get();
         case TypeIndex::Int32:      return TypeName<Int32>::get();

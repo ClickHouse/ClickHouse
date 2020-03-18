@@ -19,11 +19,13 @@ template <typename T> static constexpr size_t maxPrecision() { return 0; }
 template <> constexpr size_t maxPrecision<Decimal32>() { return 9; }
 template <> constexpr size_t maxPrecision<Decimal64>() { return 18; }
 template <> constexpr size_t maxPrecision<Decimal128>() { return 38; }
+template <> constexpr size_t maxPrecision<Decimal256>() { return 76; }
 
 template <typename T> T scaleMultiplier(UInt32 scale);
 template <> inline Int32 scaleMultiplier<Int32>(UInt32 scale) { return common::exp10_i32(scale); }
 template <> inline Int64 scaleMultiplier<Int64>(UInt32 scale) { return common::exp10_i64(scale); }
 template <> inline Int128 scaleMultiplier<Int128>(UInt32 scale) { return common::exp10_i128(scale); }
+template <> inline Int256 scaleMultiplier<Int256>(UInt32 scale) { return common::exp10_i256(scale); }
 
 /** Components of DecimalX value:
  * whole - represents whole part of decimal, can be negatve or positive.

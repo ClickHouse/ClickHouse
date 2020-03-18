@@ -67,7 +67,9 @@ public:
     String operator() (const Null & x) const;
     String operator() (const UInt64 & x) const;
     String operator() (const UInt128 & x) const;
+    String operator() (const UInt256 & x) const;
     String operator() (const Int64 & x) const;
+    String operator() (const Int256 & x) const;
     String operator() (const Float64 & x) const;
     String operator() (const String & x) const;
     String operator() (const Array & x) const;
@@ -75,6 +77,7 @@ public:
     String operator() (const DecimalField<Decimal32> & x) const;
     String operator() (const DecimalField<Decimal64> & x) const;
     String operator() (const DecimalField<Decimal128> & x) const;
+    String operator() (const DecimalField<Decimal256> & x) const;
     String operator() (const AggregateFunctionStateData & x) const;
 };
 
@@ -86,7 +89,9 @@ public:
     String operator() (const Null & x) const;
     String operator() (const UInt64 & x) const;
     String operator() (const UInt128 & x) const;
+    String operator() (const UInt256 & x) const;
     String operator() (const Int64 & x) const;
+    String operator() (const Int256 & x) const;
     String operator() (const Float64 & x) const;
     String operator() (const String & x) const;
     String operator() (const Array & x) const;
@@ -94,6 +99,7 @@ public:
     String operator() (const DecimalField<Decimal32> & x) const;
     String operator() (const DecimalField<Decimal64> & x) const;
     String operator() (const DecimalField<Decimal128> & x) const;
+    String operator() (const DecimalField<Decimal256> & x) const;
     String operator() (const AggregateFunctionStateData & x) const;
 };
 
@@ -159,7 +165,9 @@ public:
     void operator() (const Null & x) const;
     void operator() (const UInt64 & x) const;
     void operator() (const UInt128 & x) const;
+    void operator() (const UInt256 & x) const;
     void operator() (const Int64 & x) const;
+    void operator() (const Int256 & x) const;
     void operator() (const Float64 & x) const;
     void operator() (const String & x) const;
     void operator() (const Array & x) const;
@@ -167,6 +175,7 @@ public:
     void operator() (const DecimalField<Decimal32> & x) const;
     void operator() (const DecimalField<Decimal64> & x) const;
     void operator() (const DecimalField<Decimal128> & x) const;
+    void operator() (const DecimalField<Decimal256> & x) const;
     void operator() (const AggregateFunctionStateData & x) const;
 };
 
@@ -175,6 +184,7 @@ template <typename T> constexpr bool isDecimalField() { return false; }
 template <> constexpr bool isDecimalField<DecimalField<Decimal32>>() { return true; }
 template <> constexpr bool isDecimalField<DecimalField<Decimal64>>() { return true; }
 template <> constexpr bool isDecimalField<DecimalField<Decimal128>>() { return true; }
+template <> constexpr bool isDecimalField<DecimalField<Decimal256>>() { return true; }
 
 
 /** More precise comparison, used for index.
@@ -394,6 +404,7 @@ public:
         return cantCompare(l, r);
     }
 
+    // FIX?
     template <typename T> bool operator() (const UInt64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) < r; }
     template <typename T> bool operator() (const Int64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) < r; }
     template <typename T> bool operator() (const Float64 &, const DecimalField<T> &) const { return false; }

@@ -72,6 +72,11 @@ TEST_P(DecimalUtilsSplitAndCombineTest, split_Decimal128)
     testSplit<Decimal128>(GetParam());
 }
 
+TEST_P(DecimalUtilsSplitAndCombineTest, split_Decimal256)
+{
+    testSplit<Decimal256>(GetParam());
+}
+
 TEST_P(DecimalUtilsSplitAndCombineTest, combine_Decimal32)
 {
     testDecimalFromComponents<Decimal32>(GetParam());
@@ -83,6 +88,11 @@ TEST_P(DecimalUtilsSplitAndCombineTest, combine_Decimal64)
 }
 
 TEST_P(DecimalUtilsSplitAndCombineTest, combine_Decimal128)
+{
+    testDecimalFromComponents<Decimal64>(GetParam());
+}
+
+TEST_P(DecimalUtilsSplitAndCombineTest, combine_Decimal256)
 {
     testDecimalFromComponents<Decimal64>(GetParam());
 }
@@ -102,6 +112,11 @@ TEST_P(DecimalUtilsSplitAndCombineTest, getWholePart_Decimal128)
     testGetWhole<Decimal128>(GetParam());
 }
 
+TEST_P(DecimalUtilsSplitAndCombineTest, getWholePart_Decimal256)
+{
+    testGetWhole<Decimal256>(GetParam());
+}
+
 TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPart_Decimal32)
 {
     testGetFractional<Decimal32>(GetParam());
@@ -117,9 +132,14 @@ TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPart_Decimal128)
     testGetFractional<Decimal128>(GetParam());
 }
 
+TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPart_Decimal256)
+{
+    testGetFractional<Decimal256>(GetParam());
 }
 
-// Intentionally small values that fit into 32-bit in order to cover Decimal32, Decimal64 and Decimal128 with single set of data.
+}
+
+// Intentionally small values that fit into 32-bit in order to cover Decimal32, Decimal64, Decimal128 and Decimal256 with single set of data.
 INSTANTIATE_TEST_SUITE_P(Basic,
     DecimalUtilsSplitAndCombineTest,
     ::testing::ValuesIn(std::initializer_list<DecimalUtilsSplitAndCombineTestParam>{

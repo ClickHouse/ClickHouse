@@ -21,8 +21,9 @@ namespace ErrorCodes
 /// Int32    9
 /// Int64   18
 /// Int128  38
+/// Int256  76
 /// Operation between two decimals leads to Decimal(P, S), where
-///     P is one of (9, 18, 38); equals to the maximum precision for the biggest underlying type of operands.
+///     P is one of (9, 18, 38, 76); equals to the maximum precision for the biggest underlying type of operands.
 ///     S is maximum scale of operands. The allowed valuas are [0, precision]
 template <typename T>
 class DataTypeDecimal final : public DataTypeDecimalBase<T>
@@ -80,6 +81,8 @@ inline UInt32 getDecimalScale(const IDataType & data_type, UInt32 default_value 
     if (auto * decimal_type = checkDecimal<Decimal64>(data_type))
         return decimal_type->getScale();
     if (auto * decimal_type = checkDecimal<Decimal128>(data_type))
+        return decimal_type->getScale();
+    if (auto * decimal_type = checkDecimal<Decimal256>(data_type))
         return decimal_type->getScale();
     return default_value;
 }

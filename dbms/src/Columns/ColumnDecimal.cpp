@@ -242,4 +242,5 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 template class ColumnDecimal<Decimal32>;
 template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;
+template class ColumnDecimal<Decimal256>;
 }
