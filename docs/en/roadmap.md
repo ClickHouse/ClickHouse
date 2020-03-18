@@ -9,4 +9,5 @@
 - Integration with external authentication services
 - Resource pools for more precise distribution of cluster capacity between users
 
+
 [Original article](https://clickhouse.tech/docs/en/roadmap/) <!--hide-->

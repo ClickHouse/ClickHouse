@@ -158,7 +158,7 @@ public:
     void revoke(const AccessFlags & access_to_revoke, const Helper & helper)
     {
         if constexpr (mode == NORMAL_REVOKE_MODE)
-        {
+        { // NOLINT
             if (level == TABLE_LEVEL)
                 removeExplicitGrantsRec(access_to_revoke);
             else
@@ -166,11 +166,12 @@ public:
         }
         else if constexpr (mode == PARTIAL_REVOKE_MODE)
         {
-            AccessFlags new_partial_revokes = access_to_revoke - explicit_grants;
             if (level == TABLE_LEVEL)
                 removeExplicitGrantsRec(access_to_revoke);
             else
                 removeExplicitGrants(access_to_revoke);
+
+            AccessFlags new_partial_revokes = access_to_revoke - explicit_grants;
             removePartialRevokesRec(new_partial_revokes);
             partial_revokes |= new_partial_revokes;
         }

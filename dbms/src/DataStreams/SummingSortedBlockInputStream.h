@@ -35,6 +35,13 @@ public:
 
     String getName() const override { return "SummingSorted"; }
 
+    /// Stores numbers of key-columns and value-columns.
+    struct MapDescription
+    {
+        std::vector<size_t> key_col_nums;
+        std::vector<size_t> val_col_nums;
+    };
+
 protected:
     /// Can return 1 more records than max_block_size.
     Block readImpl() override;
@@ -120,13 +127,6 @@ private:
         AggregateDescription(const AggregateDescription &) = delete;
     };
 
-    /// Stores numbers of key-columns and value-columns.
-    struct MapDescription
-    {
-        std::vector<size_t> key_col_nums;
-        std::vector<size_t> val_col_nums;
-    };
-
     std::vector<AggregateDescription> columns_to_aggregate;
     std::vector<MapDescription> maps_to_sum;
 
@@ -145,9 +145,6 @@ private:
 
     /// Insert the summed row for the current group into the result and updates some of per-block flags if the row is not "zero".
     void insertCurrentRowIfNeeded(MutableColumns & merged_columns);
-
-    /// Returns true if merge result is not empty
-    bool mergeMap(const MapDescription & desc, Row & row, SortCursor & cursor);
 
     // Add the row under the cursor to the `row`.
     void addRow(SortCursor & cursor);

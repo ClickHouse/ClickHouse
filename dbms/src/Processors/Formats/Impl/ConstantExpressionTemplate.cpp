@@ -128,7 +128,7 @@ private:
         return true;
     }
 
-    void setDataType(LiteralInfo & info)
+    static void setDataType(LiteralInfo & info)
     {
         /// Type (Field::Types:Which) of literal in AST can be: String, UInt64, Int64, Float64, Null or Array of simple literals (not of Arrays).
         /// Null and empty Array literals are considered as tokens, because template with Nullable(Nothing) or Array(Nothing) is useless.
