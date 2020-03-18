@@ -7,7 +7,6 @@
 
 #include <common/Types.h>
 #include <common/unaligned.h>
-#include <Common/HashTable/Hash.h>
 
 #include <city.h>
 
