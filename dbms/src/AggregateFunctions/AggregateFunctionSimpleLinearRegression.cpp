@@ -56,7 +56,7 @@ AggregateFunctionPtr createAggregateFunctionSimpleLinearRegression(
         FOR_LEASTSQR_TYPES_2(M, Float64)
     #define DISPATCH(T1, T2) \
         if (which_x.idx == TypeIndex::T1 && which_y.idx == TypeIndex::T2) \
-            return std::make_shared<AggregateFunctionSimpleLinearRegression<T1, T2>>( /* NOLINT */ \
+            return std::make_shared<AggregateFunctionSimpleLinearRegression<T1, T2>>(/* NOLINT */ \
                 arguments, \
                 params \
             );
