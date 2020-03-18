@@ -62,7 +62,16 @@
         ;
     </create_query>
 
-    <query>SELECT count() FROM nums WHERE NOT ignore({op}({arg}, {arg}))</query>
+    <query>SELECT count() FROM nums WHERE NOT ignore(
+        identity({op}({arg}, {arg})),
+        identity({op}({arg}, {arg})),
+        identity({op}({arg}, {arg})),
+        identity({op}({arg}, {arg})),
+        identity({op}({arg}, {arg})),
+        identity({op}({arg}, {arg})),
+        identity({op}({arg}, {arg})),
+        identity({op}({arg}, {arg}))
+        )</query>
 
     <drop_query>DROP TABLE nums</drop_query>
 </test>
