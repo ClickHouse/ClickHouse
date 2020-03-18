@@ -17,6 +17,21 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static void assertGranuleBlocksStructure(const Blocks & granule_index_blocks)
+{
+    Block prev_block;
+    for (size_t index = 0; index < granule_index_blocks.size(); ++index)
+    {
+        Block granule_index_block = granule_index_blocks[index];
+
+        if (index != 0)
+            assertBlocksHaveEqualStructure(prev_block, granule_index_block, "Granule blocks of bloom filter has difference structure.");
+
+        prev_block = granule_index_block;
+    }
+}
+
+
 MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_)
     : bits_per_row(bits_per_row_), hash_functions(hash_functions_)
 {
@@ -94,20 +109,6 @@ void MergeTreeIndexGranuleBloomFilter::serializeBinary(WriteBuffer & ostr) const
     size_t bytes_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
     for (const auto & bloom_filter : bloom_filters)
         ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), bytes_size);
-}
-
-void MergeTreeIndexGranuleBloomFilter::assertGranuleBlocksStructure(const Blocks & granule_index_blocks) const
-{
-    Block prev_block;
-    for (size_t index = 0; index < granule_index_blocks.size(); ++index)
-    {
-        Block granule_index_block = granule_index_blocks[index];
-
-        if (index != 0)
-            assertBlocksHaveEqualStructure(prev_block, granule_index_block, "Granule blocks of bloom filter has difference structure.");
-
-        prev_block = granule_index_block;
-    }
 }
 
 void MergeTreeIndexGranuleBloomFilter::fillingBloomFilter(BloomFilterPtr & bf, const Block & granule_index_block, size_t index_hash_column)

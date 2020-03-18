@@ -1,4 +1,3 @@
-
 # Nothing
 
 The only purpose of this data type is to represent cases where value is not expected. So you can't create a `Nothing` type value.

@@ -1,4 +1,4 @@
-## ALTER {#query_language_queries_alter}
+## ALTER { #query_language_queries_alter}
 
 The `ALTER` query is only supported for `*MergeTree` tables, as well as `Merge`and`Distributed`. The query has several variations.
 
@@ -23,7 +23,7 @@ The following actions are supported:
 
 These actions are described in detail below.
 
-#### ADD COLUMN {#alter_add-column}
+#### ADD COLUMN { #alter_add-column}
 
 ```sql
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
@@ -43,7 +43,7 @@ Example:
 ALTER TABLE visits ADD COLUMN browser String AFTER user_id
 ```
 
-#### DROP COLUMN {#alter_drop-column}
+#### DROP COLUMN { #alter_drop-column}
 
 ```sql
 DROP COLUMN [IF EXISTS] name
@@ -59,7 +59,7 @@ Example:
 ALTER TABLE visits DROP COLUMN browser
 ```
 
-#### CLEAR COLUMN {#alter_clear-column}
+#### CLEAR COLUMN { #alter_clear-column}
 
 ```sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
@@ -75,7 +75,7 @@ Example:
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
-#### COMMENT COLUMN {#alter_comment-column}
+#### COMMENT COLUMN { #alter_comment-column}
 
 ```sql
 COMMENT COLUMN [IF EXISTS] name 'comment'
@@ -93,7 +93,7 @@ Example:
 ALTER TABLE visits COMMENT COLUMN browser 'The table shows the browser used for accessing the site.'
 ```
 
-#### MODIFY COLUMN {#alter_modify-column}
+#### MODIFY COLUMN { #alter_modify-column}
 
 ```sql
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
@@ -191,7 +191,7 @@ Constraint check *will not be executed* on existing data if it was added.
 
 All changes on replicated tables are broadcasting to ZooKeeper so will be applied on other replicas.
 
-### Manipulations With Partitions and Parts {#alter_manipulations-with-partitions}
+### Manipulations With Partitions and Parts { #alter_manipulations-with-partitions}
 
 The following operations with [partitions](../operations/table_engines/custom_partitioning_key.md) are available:
 
@@ -207,7 +207,7 @@ The following operations with [partitions](../operations/table_engines/custom_pa
 - [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
 - [FETCH PARTITION](#alter_fetch-partition) – Downloads a partition from another server.
 - [MOVE PARTITION|PART](#alter_move-partition) – Move partition/data part to another disk or volume.                                                                                                                   
-#### DETACH PARTITION {#alter_detach-partition}
+#### DETACH PARTITION { #alter_detach-partition}
 
 ```sql
 ALTER TABLE table_name DETACH PARTITION partition_expr
@@ -227,7 +227,7 @@ After the query is executed, you can do whatever you want with the data in the `
 
 This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](../operations/system_tables.md#system_tables-replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replica.
 
-#### DROP PARTITION {#alter_drop-partition}
+#### DROP PARTITION { #alter_drop-partition}
 
 ```sql
 ALTER TABLE table_name DROP PARTITION partition_expr
@@ -239,7 +239,7 @@ Read about setting the partition expression in a section [How to specify the par
 
 The query is replicated – it deletes data on all replicas.
 
-#### DROP DETACHED PARTITION|PART {#alter_drop-detached}
+#### DROP DETACHED PARTITION|PART { #alter_drop-detached}
 
 ```sql
 ALTER TABLE table_name DROP DETACHED PARTITION|PART partition_expr
@@ -249,7 +249,7 @@ Removes the specified part or all parts of the specified partition from `detache
 Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
 
-#### ATTACH PARTITION|PART {#alter_attach-partition}
+#### ATTACH PARTITION|PART { #alter_attach-partition}
 
 ``` sql
 ALTER TABLE table_name ATTACH PARTITION|PART partition_expr
@@ -268,7 +268,7 @@ This query is replicated. The replica-initiator checks whether there is data in 
 
 So you can put data to the `detached` directory on one replica, and use the `ALTER ... ATTACH` query to add it to the table on all replicas.
 
-#### ATTACH PARTITION FROM {#alter_attach-partition-from}
+#### ATTACH PARTITION FROM { #alter_attach-partition-from}
 
 ```sql
 ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
@@ -281,7 +281,7 @@ For the query to run successfully, the following conditions must be met:
 - Both tables must have the same structure.
 - Both tables must have the same partition key.
 
-#### REPLACE PARTITION {#alter_replace-partition}
+#### REPLACE PARTITION { #alter_replace-partition}
 
 ```sql
 ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
@@ -294,7 +294,7 @@ For the query to run successfully, the following conditions must be met:
 - Both tables must have the same structure.
 - Both tables must have the same partition key.
 
-#### MOVE PARTITION TO TABLE {#alter_move_to_table-partition}
+#### MOVE PARTITION TO TABLE { #alter_move_to_table-partition}
 
 ``` sql
 ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
@@ -311,7 +311,7 @@ For the query to run successfully, the following conditions must be met:
 
 
 
-#### CLEAR COLUMN IN PARTITION {#alter_clear-column-partition}
+#### CLEAR COLUMN IN PARTITION { #alter_clear-column-partition}
 
 ```sql
 ALTER TABLE table_name CLEAR COLUMN column_name IN PARTITION partition_expr
@@ -325,7 +325,7 @@ Example:
 ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ```
 
-#### FREEZE PARTITION {#alter_freeze-partition}
+#### FREEZE PARTITION { #alter_freeze-partition}
 
 ```sql
 ALTER TABLE table_name FREEZE [PARTITION partition_expr]
@@ -364,7 +364,7 @@ Restoring from a backup doesn't require stopping the server.
 
 For more information about backups and restoring data, see the [Data Backup](../operations/backup.md) section.
 
-#### CLEAR INDEX IN PARTITION {#alter_clear-index-partition}
+#### CLEAR INDEX IN PARTITION { #alter_clear-index-partition}
 
 ```sql
 ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
@@ -372,7 +372,7 @@ ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
 
 The query works similar to `CLEAR COLUMN`, but it resets an index instead of a column data.
 
-#### FETCH PARTITION {#alter_fetch-partition}
+#### FETCH PARTITION { #alter_fetch-partition}
 
 ```sql
 ALTER TABLE table_name FETCH PARTITION partition_expr FROM 'path-in-zookeeper'
@@ -400,7 +400,7 @@ Before downloading, the system checks if the partition exists and the table stru
 
 Although the query is called `ALTER TABLE`, it does not change the table structure and does not immediately change the data available in the table.
 
-#### MOVE PARTITION|PART {#alter_move-partition}
+#### MOVE PARTITION|PART { #alter_move-partition}
 
 Moves partitions or data parts to another volume or disk for `MergeTree`-engine tables. See [Using Multiple Block Devices for Data Storage](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes).
 
@@ -421,7 +421,7 @@ ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
 ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ```
 
-#### How To Set Partition Expression {#alter-how-to-specify-part-expr}
+#### How To Set Partition Expression { #alter-how-to-specify-part-expr}
 
 You can specify the partition expression in `ALTER ... PARTITION` queries in different ways:
 
@@ -458,7 +458,7 @@ For non-replicatable tables, all `ALTER` queries are performed synchronously. Fo
 For `ALTER ... ATTACH|DETACH|DROP` queries, you can use the `replication_alter_partitions_sync` setting to set up waiting.
 Possible values: `0` – do not wait; `1` – only wait for own execution (default); `2` – wait for all.
 
-### Mutations {#alter-mutations}
+### Mutations { #alter-mutations}
 
 Mutations are an ALTER query variant that allows changing or deleting rows in a table. In contrast to standard `UPDATE` and `DELETE` queries that are intended for point data changes, mutations are intended for heavy operations that change a lot of rows in a table. Supported for the `MergeTree` family of table engines including the engines with replication support.
 

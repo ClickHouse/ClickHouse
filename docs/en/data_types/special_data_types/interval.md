@@ -1,9 +1,9 @@
-# Interval {#data-type-interval}
+# Interval { #data-type-interval}
 
 The family of data types representing time and date intervals. The resulting types of the [INTERVAL](../../query_language/operators.md#operator-interval) operator.
 
 !!! warning "Warning"
-    You can't use `Interval` data types for storing values in tables.
+    `Interval` data type values can't be stored in tables.
 
 Structure:
 
@@ -32,7 +32,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-## Usage Remarks {#data-type-interval-usage-remarks}
+## Usage Remarks { #data-type-interval-usage-remarks}
 
 You can use `Interval`-type values in arithmetical operations with [Date](../../data_types/date.md) and [DateTime](../../data_types/datetime.md)-type values. For example, you can add 4 days to the current time:
 

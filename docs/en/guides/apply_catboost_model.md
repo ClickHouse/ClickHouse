@@ -1,4 +1,4 @@
-# Applying a Catboost Model in ClickHouse {#applying-catboost-model-in-clickhouse}
+# Applying a Catboost Model in ClickHouse { #applying-catboost-model-in-clickhouse}
 
 [CatBoost](https://catboost.ai) is a free and open-source gradient boosting library developed at [Yandex](https://yandex.com/company/) for machine learning.
 
@@ -13,7 +13,7 @@ To apply a CatBoost model in ClickHouse:
 
 For more information about training CatBoost models, see [Training and applying models](https://catboost.ai/docs/features/training.html#training).
 
-## Prerequisites {#prerequisites}
+## Prerequisites { #prerequisites}
 
 If you don't have the [Docker](https://docs.docker.com/install/) yet, install it.
 
@@ -44,7 +44,7 @@ yandex/tutorial-catboost-clickhouse   latest              622e4d17945b        22
 $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 ```
 
-## 1. Create a Table {#create-table}
+## 1. Create a Table { #create-table}
 
 To create a ClickHouse table for the train sample:
 
@@ -83,7 +83,7 @@ ENGINE = MergeTree ORDER BY date
 :) exit
 ```
 
-## 2. Insert the Data to the Table {#insert-data-to-table}
+## 2. Insert the Data to the Table { #insert-data-to-table}
 
 To insert the data:
 
@@ -112,7 +112,7 @@ FROM amazon_train
 +---------+
 ```
 
-## 3. Integrate CatBoost into ClickHouse {#integrate-catboost-into-clickhouse}
+## 3. Integrate CatBoost into ClickHouse { #integrate-catboost-into-clickhouse}
 
 !!! note "Note"
     **Optional step.** The Docker image contains everything you need to run CatBoost and ClickHouse.
@@ -154,7 +154,7 @@ The fastest way to evaluate a CatBoost model is compile `libcatboostmodel.<so|dl
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
 
-## 4. Run the Model Inference from SQL {#run-model-inference}
+## 4. Run the Model Inference from SQL { #run-model-inference}
 
 For test model run the ClickHouse client `$ clickhouse client`.
 

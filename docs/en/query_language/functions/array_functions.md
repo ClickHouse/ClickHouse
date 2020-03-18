@@ -1,18 +1,18 @@
 # Functions for working with arrays
 
-## empty {#function-empty}
+## empty { #function-empty}
 
 Returns 1 for an empty array, or 0 for a non-empty array.
 The result type is UInt8.
 The function also works for strings.
 
-## notEmpty {#function-notempty}
+## notEmpty { #function-notempty}
 
 Returns 0 for an empty array, or 1 for a non-empty array.
 The result type is UInt8.
 The function also works for strings.
 
-## length {#array_functions-length}
+## length { #array_functions-length}
 
 Returns the number of items in the array.
 The result type is UInt64.
@@ -202,7 +202,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 └──────────────────────────────────────┘
 ```
 
-## arrayEnumerate(arr) {#array_functions-arrayenumerate}
+## arrayEnumerate(arr) { #array_functions-arrayenumerate}
 
 Returns the array \[1, 2, 3, ..., length (arr) \]
 
@@ -455,7 +455,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 
 Array elements set to `NULL` are handled as normal values.
 
-## arraySort(\[func,\] arr, ...) {#array_functions-sort}
+## arraySort(\[func,\] arr, ...) { #array_functions-sort}
 
 Sorts the elements of the `arr` array in ascending order. If the `func` function is specified, sorting order is determined by the result of the `func` function applied to the elements of the array. If `func` accepts multiple arguments, the `arraySort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arraySort` description.
 
@@ -548,7 +548,7 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 !!! note
     To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used.
 
-## arrayReverseSort([func,] arr, ...) {#array_functions-reverse-sort}
+## arrayReverseSort([func,] arr, ...) { #array_functions-reverse-sort}
 
 Sorts the elements of the `arr` array in descending order. If the `func` function is specified, `arr` is sorted according to the result of the `func` function applied to the elements of the array, and then the sorted array is reversed. If `func` accepts multiple arguments, the `arrayReverseSort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arrayReverseSort` description.
 
@@ -648,11 +648,11 @@ If multiple arguments are passed, it counts the number of different tuples of el
 
 If you want to get a list of unique items in an array, you can use arrayReduce('groupUniqArray', arr).
 
-## arrayJoin(arr) {#array_functions-join}
+## arrayJoin(arr) { #array_functions-join}
 
 A special function. See the section ["ArrayJoin function"](array_join.md#functions_arrayjoin).
 
-## arrayDifference {#arraydifference}
+## arrayDifference { #arraydifference}
 
 Calculates the difference between adjacent array elements. Returns an array where the first element will be 0, the second is the difference between `a[1] - a[0]`, etc. The type of elements in the resulting array is determined by the type inference rules for subtraction (e.g. `UInt8` - `UInt8` = `Int16`).
 
@@ -704,7 +704,7 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-## arrayDistinct {#arraydistinct}
+## arrayDistinct { #arraydistinct}
 
 Takes an array, returns an array containing the distinct elements only.
 
@@ -738,7 +738,7 @@ Result:
 └────────────────────────────────┘
 ```
 
-## arrayEnumerateDense(arr) {#array_functions-arrayenumeratedense}
+## arrayEnumerateDense(arr) { #array_functions-arrayenumeratedense}
 
 Returns an array of the same size as the source array, indicating where each element first appears in the source array.
 
@@ -754,7 +754,7 @@ SELECT arrayEnumerateDense([10, 20, 10, 30])
 └───────────────────────────────────────┘
 ```
 
-## arrayIntersect(arr) {#array_functions-arrayintersect}
+## arrayIntersect(arr) { #array_functions-arrayintersect}
 
 Takes multiple arrays, returns an array with elements that are present in all source arrays. Elements order in the resulting array is the same as in the first array.
 
@@ -772,7 +772,7 @@ SELECT
 └──────────────┴───────────┘
 ```
 
-## arrayReduce(agg_func, arr1, ...) {#array_functions-arrayreduce}
+## arrayReduce(agg_func, arr1, ...) { #array_functions-arrayreduce}
 
 Applies an aggregate function to array elements and returns its result. The name of the aggregation function is passed as a string in single quotes `'max'`, `'sum'`. When using parametric aggregate functions, the parameter is indicated after the function name in parentheses `'uniqUpTo(6)'`.
 
@@ -814,7 +814,7 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## arrayReverse(arr) {#array_functions-arrayreverse}
+## arrayReverse(arr) { #array_functions-arrayreverse}
 
 Returns an array of the same size as the original array containing the elements in reverse order.
 
@@ -830,11 +830,11 @@ SELECT arrayReverse([1, 2, 3])
 └─────────────────────────┘
 ```
 
-## reverse(arr) {#array_functions-reverse}
+## reverse(arr) { #array_functions-reverse}
 
 Synonym for ["arrayReverse"](#array_functions-arrayreverse)
 
-## arrayFlatten {#arrayflatten}
+## arrayFlatten { #arrayflatten}
 
 Converts an array of arrays to a flat array.
 
@@ -869,7 +869,7 @@ SELECT flatten([[[1]], [[2], [3]]])
 └─────────────────────────────────────────────┘
 ```
 
-## arrayCompact {#arraycompact}
+## arrayCompact { #arraycompact}
 
 Removes consecutive duplicate elements from an array. The order of result values is determined by the order in the source array.
 
@@ -905,7 +905,7 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-## arrayZip {#arrayzip}
+## arrayZip { #arrayzip}
 
 Combine multiple Array type columns into one Array[Tuple(...)] column
 

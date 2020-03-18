@@ -1,6 +1,6 @@
 # Function Reference
 
-## count {#agg_function-count}
+## count { #agg_function-count}
 
 Counts the number of rows or not-NULL values.
 
@@ -65,7 +65,7 @@ SELECT count(DISTINCT num) FROM t
 This example shows that `count(DISTINCT num)` is performed by the `uniqExact` function according to the `count_distinct_implementation` setting value.
 
 
-## any(x) {#agg_function-any}
+## any(x) { #agg_function-any}
 
 Selects the first encountered value.
 The query can be executed in any order and even in a different order each time, so the result of this function is indeterminate.
@@ -277,15 +277,15 @@ num
 3
 ```
 
-## min(x) {#agg_function-min}
+## min(x) { #agg_function-min}
 
 Calculates the minimum.
 
-## max(x) {#agg_function-max}
+## max(x) { #agg_function-max}
 
 Calculates the maximum.
 
-## argMin(arg, val) {#agg_function-argMin}
+## argMin(arg, val) { #agg_function-argMin}
 
 Calculates the 'arg' value for a minimal 'val' value. If there are several different values of 'arg' for minimal values of 'val', the first of these values encountered is output.
 
@@ -306,12 +306,12 @@ SELECT argMin(user, salary) FROM salary
 └──────────────────────┘
 ```
 
-## argMax(arg, val) {#agg_function-argMax}
+## argMax(arg, val) { #agg_function-argMax}
 
 Calculates the 'arg' value for a maximum 'val' value. If there are several different values of 'arg' for maximum values of 'val', the first of these values encountered is output.
 
 
-## sum(x) {#agg_function-sum}
+## sum(x) { #agg_function-sum}
 
 Calculates the sum.
 Only works for numbers.
@@ -323,7 +323,7 @@ Computes the sum of the numbers, using the same data type for the result as for 
 Only works for numbers.
 
 
-## sumMap(key, value) {#agg_functions-summap}
+## sumMap(key, value) { #agg_functions-summap}
 
 Totals the 'value' array according to the keys specified in the 'key' array.
 The number of elements in 'key' and 'value' must be the same for each row that is totaled.
@@ -451,7 +451,7 @@ The kurtosis of the given distribution. Type — [Float64](../../data_types/floa
 SELECT kurtSamp(value) FROM series_with_value_column
 ```
 
-## timeSeriesGroupSum(uid, timestamp, value) {#agg_function-timeseriesgroupsum}
+## timeSeriesGroupSum(uid, timestamp, value) { #agg_function-timeseriesgroupsum}
 `timeSeriesGroupSum` can aggregate different time series that sample timestamp not alignment.
 It will use linear interpolation between two sample timestamp and then sum time-series together.
 
@@ -498,7 +498,7 @@ And the result will be:
 [(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
 ```
 
-## timeSeriesGroupRateSum(uid, ts, val) {#agg_function-timeseriesgroupratesum}
+## timeSeriesGroupRateSum(uid, ts, val) { #agg_function-timeseriesgroupratesum}
 Similarly timeSeriesGroupRateSum, timeSeriesGroupRateSum will Calculate the rate of time-series and then sum rates together.
 Also, timestamp should be in ascend order before use this function.
 
@@ -507,13 +507,13 @@ Use this function, the result above case will be:
 [(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
 ```
 
-## avg(x) {#agg_function-avg}
+## avg(x) { #agg_function-avg}
 
 Calculates the average.
 Only works for numbers.
 The result is always Float64.
 
-## uniq {#agg_function-uniq}
+## uniq { #agg_function-uniq}
 
 Calculates the approximate number of different values of the argument.
 
@@ -549,7 +549,7 @@ We recommend using this function in almost all scenarios.
 - [uniqHLL12](#agg_function-uniqhll12)
 - [uniqExact](#agg_function-uniqexact)
 
-## uniqCombined {#agg_function-uniqcombined}
+## uniqCombined { #agg_function-uniqcombined}
 
 Calculates the approximate number of different argument values.
 
@@ -596,11 +596,11 @@ Compared to the [uniq](#agg_function-uniq) function, the `uniqCombined`:
 - [uniqHLL12](#agg_function-uniqhll12)
 - [uniqExact](#agg_function-uniqexact)
 
-## uniqCombined64 {#agg_function-uniqcombined64}
+## uniqCombined64 { #agg_function-uniqcombined64}
 
 Same as [uniqCombined](#agg_function-uniqcombined), but uses 64-bit hash for all data types.
 
-## uniqHLL12 {#agg_function-uniqhll12}
+## uniqHLL12 { #agg_function-uniqhll12}
 
 Calculates the approximate number of different argument values, using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
 
@@ -636,7 +636,7 @@ We don't recommend using this function. In most cases, use the [uniq](#agg_funct
 - [uniqExact](#agg_function-uniqexact)
 
 
-## uniqExact {#agg_function-uniqexact}
+## uniqExact { #agg_function-uniqexact}
 
 Calculates the exact number of different argument values.
 
@@ -659,7 +659,7 @@ The function takes a variable number of parameters. Parameters can be `Tuple`, `
 - [uniqHLL12](#agg_function-uniqhll12)
 
 
-## groupArray(x), groupArray(max_size)(x) {#agg_function-grouparray}
+## groupArray(x), groupArray(max_size)(x) { #agg_function-grouparray}
 
 Creates an array of argument values.
 Values can be added to the array in any (indeterminate) order.
@@ -684,7 +684,7 @@ Optional parameters:
 - The default value for substituting in empty positions.
 - The length of the resulting array. This allows you to receive arrays of the same size for all the aggregate keys. When using this parameter, the default value must be specified.
 
-## groupArrayMovingSum {#agg_function-grouparraymovingsum}
+## groupArrayMovingSum { #agg_function-grouparraymovingsum}
 
 Calculates the moving sum of input values.
 
@@ -753,7 +753,7 @@ FROM t
 └────────────┴─────────────────────────────────┴────────────────────────┘
 ```
 
-## groupArrayMovingAvg {#agg_function-grouparraymovingavg}
+## groupArrayMovingAvg { #agg_function-grouparraymovingavg}
 
 Calculates the moving average of input values.
 
@@ -831,7 +831,7 @@ Creates an array from different argument values. Memory consumption is the same 
 The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements.
 For example, `groupUniqArray(1)(x)` is equivalent to `[any(x)]`.
 
-## quantile {#quantile}
+## quantile { #quantile}
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -896,7 +896,7 @@ Result:
 - [quantiles](#quantiles)
 
 
-## quantileDeterministic {#quantiledeterministic}
+## quantileDeterministic { #quantiledeterministic}
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -962,7 +962,7 @@ Result:
 - [quantiles](#quantiles)
 
 
-## quantileExact {#quantileexact}
+## quantileExact { #quantileexact}
 
 Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -1014,7 +1014,7 @@ Result:
 - [median](#median)
 - [quantiles](#quantiles)
 
-## quantileExactWeighted {#quantileexactweighted}
+## quantileExactWeighted { #quantileexactweighted}
 
 Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence, taking into account the weight of each element.
 
@@ -1078,7 +1078,7 @@ Result:
 - [median](#median)
 - [quantiles](#quantiles)
 
-## quantileTiming {#quantiletiming}
+## quantileTiming { #quantiletiming}
 
 With the determined precision computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -1160,7 +1160,7 @@ Result:
 - [median](#median)
 - [quantiles](#quantiles)
 
-## quantileTimingWeighted {#quantiletimingweighted}
+## quantileTimingWeighted { #quantiletimingweighted}
 
 With the determined precision computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence according to the weight of each sequence member.
 
@@ -1243,7 +1243,7 @@ Result:
 - [quantiles](#quantiles)
 
 
-## quantileTDigest {#quantiletdigest}
+## quantileTDigest { #quantiletdigest}
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm.
 
@@ -1298,7 +1298,7 @@ Result:
 - [median](#median)
 - [quantiles](#quantiles)
 
-## quantileTDigestWeighted {#quantiletdigestweighted}
+## quantileTDigestWeighted { #quantiletdigestweighted}
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm. The function takes into account the weight of each sequence member. The maximum error is 1%.  Memory consumption is `log(n)`, where `n` is a number of values.
 
@@ -1354,7 +1354,7 @@ Result:
 - [quantiles](#quantiles)
 
 
-## median {#median}
+## median { #median}
 
 The `median*` functions are the aliases for the corresponding `quantile*` functions. They calculate median of a numeric data sample.
 
@@ -1397,7 +1397,7 @@ Result:
 ```
 
 
-## quantiles(level1, level2, ...)(x) {#quantiles}
+## quantiles(level1, level2, ...)(x) { #quantiles}
 
 All the quantile functions also have corresponding quantiles functions: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`. These functions calculate all the quantiles of the listed levels in one pass, and return an array of the resulting values.
 
@@ -1462,7 +1462,7 @@ FROM ontime
 └─────────────────────┘
 ```
 
-## topKWeighted {#topkweighted}
+## topKWeighted { #topkweighted}
 
 Similar to `topK` but takes one additional argument of integer type - `weight`. Every value is accounted `weight` times for frequency calculation.
 
@@ -1562,12 +1562,12 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
+## stochasticLinearRegression { #agg_functions-stochasticlinearregression}
 
 
 This function implements stochastic linear regression. It supports custom parameters for learning rate, L2 regularization coefficient, mini-batch size and has few methods for updating weights ([Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) (used by default), [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
 
-### Parameters {#agg_functions-stochasticlinearregression-parameters}
+### Parameters { #agg_functions-stochasticlinearregression-parameters}
 
 There are 4 customizable parameters. They are passed to the function sequentially, but there is no need to pass all four - default values will be used, however good model required some parameter tuning.
 
@@ -1581,7 +1581,7 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 4. `method for updating weights`, they are: `Adam` (by default), `SGD`, `Momentum`, `Nesterov`. `Momentum` and `Nesterov` require little bit more computations and memory, however they happen to be useful in terms of speed of convergance and stability of stochastic gradient methods.
 
 
-### Usage {#agg_functions-stochasticlinearregression-usage}
+### Usage { #agg_functions-stochasticlinearregression-usage}
 
 `stochasticLinearRegression` is used in two steps: fitting the model and predicting on new data. In order to fit the model and save its state for later usage we use `-State` combinator, which basically saves the state (model weights, etc).
 To predict we use function [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
@@ -1622,7 +1622,7 @@ The query will return a column of predicted values. Note that first argument of 
 
 `test_data` is a table like `train_data` but may not contain target value.
 
-### Notes {#agg_functions-stochasticlinearregression-notes}
+### Notes { #agg_functions-stochasticlinearregression-notes}
 
 1. To merge two models user may create such query:
     ```sql
@@ -1642,12 +1642,12 @@ The query will return a column of predicted values. Note that first argument of 
 - [Difference between linear and logistic regressions](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
 
 
-## stochasticLogisticRegression {#agg_functions-stochasticlogisticregression}
+## stochasticLogisticRegression { #agg_functions-stochasticlogisticregression}
 
 
 This function implements stochastic logistic regression. It can be used for binary classification problem, supports the same custom parameters as stochasticLinearRegression and works the same way.
 
-### Parameters {#agg_functions-stochasticlogisticregression-parameters}
+### Parameters { #agg_functions-stochasticlogisticregression-parameters}
 
 Parameters are exactly the same as in stochasticLinearRegression:
 `learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
