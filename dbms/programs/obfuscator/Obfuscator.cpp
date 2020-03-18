@@ -529,13 +529,13 @@ private:
     static constexpr CodePoint END = -2;
 
 
-    NGramHash hashContext(const CodePoint * begin, const CodePoint * end) const
+    static NGramHash hashContext(const CodePoint * begin, const CodePoint * end)
     {
         return CRC32Hash()(StringRef(reinterpret_cast<const char *>(begin), (end - begin) * sizeof(CodePoint)));
     }
 
     /// By the way, we don't have to use actual Unicode numbers. We use just arbitrary bijective mapping.
-    CodePoint readCodePoint(const char *& pos, const char * end)
+    static CodePoint readCodePoint(const char *& pos, const char * end)
     {
         size_t length = UTF8::seqLength(*pos);
 
@@ -550,7 +550,7 @@ private:
         return res;
     }
 
-    bool writeCodePoint(CodePoint code, char *& pos, const char * end)
+    static bool writeCodePoint(CodePoint code, char *& pos, const char * end)
     {
         size_t length
             = (code & 0xFF000000) ? 4

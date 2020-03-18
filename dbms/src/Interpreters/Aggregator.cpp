@@ -510,7 +510,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
     AggregatedDataWithoutKey & res,
     size_t rows,
     AggregateFunctionInstruction * aggregate_instructions,
-    Arena * arena) const
+    Arena * arena)
 {
     /// Adding values
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)

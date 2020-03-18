@@ -208,7 +208,7 @@ void SettingMaxThreads::setAuto()
     is_auto = true;
 }
 
-UInt64 SettingMaxThreads::getAutoValue() const
+UInt64 SettingMaxThreads::getAutoValue()
 {
     static auto res = getNumberOfPhysicalCPUCores();
     return res;
