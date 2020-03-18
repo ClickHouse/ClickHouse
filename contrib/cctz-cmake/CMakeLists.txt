@@ -34,7 +34,7 @@ else ()
     set(CMAKE_REQUIRED_LIBRARIES cctz)
     check_cxx_source_compiles(
         "
-        #include <civil_time.h>
+        #include <cctz/civil_time.h>
         int main() {
             cctz::civil_day date;
         }
