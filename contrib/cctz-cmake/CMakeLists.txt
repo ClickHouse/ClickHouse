@@ -29,7 +29,7 @@ else ()
 
     add_library (cctz UNKNOWN IMPORTED)
     set_property (TARGET cctz PROPERTY IMPORTED_LOCATION ${LIBRARY_CCTZ})
-    target_include_directories (cctz PUBLIC ${INCLUDE_CCTZ})
+    set_property (TARGET cctz PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_CCTZ})
 
     set(CMAKE_REQUIRED_LIBRARIES cctz)
     check_cxx_source_compiles(
