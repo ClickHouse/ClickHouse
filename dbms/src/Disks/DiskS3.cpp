@@ -34,6 +34,15 @@ namespace ErrorCodes
 
 namespace
 {
+    String getRandomName()
+    {
+        std::uniform_int_distribution<int> distribution('a', 'z');
+        String res(32, ' '); /// The number of bits of entropy should be not less than 128.
+        for (auto & c : res)
+            c = distribution(thread_local_rng);
+        return res;
+    }
+
     template <typename Result, typename Error>
     void throwIfError(Aws::Utils::Outcome<Result, Error> && response)
     {
@@ -570,14 +579,6 @@ void DiskS3::removeRecursive(const String & path)
     }
 }
 
-String DiskS3::getRandomName() const
-{
-    std::uniform_int_distribution<int> distribution('a', 'z');
-    String res(32, ' '); /// The number of bits of entropy should be not less than 128.
-    for (auto & c : res)
-        c = distribution(thread_local_rng);
-    return res;
-}
 
 bool DiskS3::tryReserve(UInt64 bytes)
 {

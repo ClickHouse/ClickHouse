@@ -28,10 +28,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-BlockInputStreamPtr InterpreterWatchQuery::executeImpl()
-{
-    return std::make_shared<OneBlockInputStream>(Block());
-}
 
 BlockIO InterpreterWatchQuery::execute()
 {

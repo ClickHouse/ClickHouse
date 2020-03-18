@@ -40,7 +40,7 @@ ReportBuilder::ReportBuilder(const std::string & server_version_)
 {
 }
 
-std::string ReportBuilder::getCurrentTime() const
+static std::string getCurrentTime()
 {
     return DateLUT::instance().timeToString(time(nullptr));
 }
@@ -163,7 +163,7 @@ std::string ReportBuilder::buildFullReport(
 std::string ReportBuilder::buildCompactReport(
     const PerformanceTestInfo & test_info,
     std::vector<TestStats> & stats,
-    const std::vector<std::size_t> & queries_to_run) const
+    const std::vector<std::size_t> & queries_to_run)
 {
     FormatSettings settings;
     std::ostringstream output;

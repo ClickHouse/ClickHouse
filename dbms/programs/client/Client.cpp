@@ -281,7 +281,7 @@ private:
     }
 
     /// Should we celebrate a bit?
-    bool isNewYearMode()
+    static bool isNewYearMode()
     {
         time_t current_time = time(nullptr);
 
@@ -294,7 +294,7 @@ private:
             || (now.month() == 1 && now.day() <= 5);
     }
 
-    bool isChineseNewYearMode(const String & local_tz)
+    static bool isChineseNewYearMode(const String & local_tz)
     {
         /// Days of Dec. 20 in Chinese calendar starting from year 2019 to year 2105
         static constexpr UInt16 chineseNewYearIndicators[]
@@ -1594,7 +1594,7 @@ private:
             std::cout << "Ok." << std::endl;
     }
 
-    void showClientVersion()
+    static void showClientVersion()
     {
         std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
     }
