@@ -1,5 +1,6 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
+#include <boost/algorithm/string/replace.hpp>
 #include <Poco/DOM/AutoPtr.h>
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
@@ -34,8 +35,12 @@ using NamesToTypeNames = std::unordered_map<std::string, std::string>;
 String getUnescapedFieldString(const Field & field)
 {
     String string = applyVisitor(FieldVisitorToString(), field);
+
     if (!string.empty() && string.front() == '\'' && string.back() == '\'')
-        return string.substr(1, string.size() - 2);
+        string = string.substr(1, string.size() - 2);
+
+    /// Backqouting will be performed on dictionary providers side
+    boost::replace_all(string, "\\'", "'");
     return string;
 }
 
