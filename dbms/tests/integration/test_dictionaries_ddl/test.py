@@ -214,3 +214,32 @@ def test_file_dictionary_restrictions(started_cluster):
         node3.query("SELECT dictGetString('test.restricted_file_dictionary', 'value', toUInt64(1))")
     except QueryRuntimeException as ex:
         assert 'is not inside' in str(ex)
+
+
+def test_dictionary_with_where(started_cluster):
+    mysql_conn = create_mysql_conn("root", "clickhouse", "localhost", 3308)
+    execute_mysql_query(mysql_conn, "CREATE DATABASE IF NOT EXISTS clickhouse")
+    execute_mysql_query(mysql_conn, "CREATE TABLE clickhouse.special_table (key_field1 int, value1 text, PRIMARY KEY (key_field1))")
+    execute_mysql_query(mysql_conn, "INSERT INTO clickhouse.special_table VALUES (1, 'abcabc'), (2, 'qweqwe')")
+
+    node1.query("""
+    CREATE DICTIONARY default.special_dict (
+        key_field1 Int32,
+        value1 String DEFAULT 'xxx'
+    )
+    PRIMARY KEY key_field1
+    SOURCE(MYSQL(
+        USER 'root'
+        PASSWORD 'clickhouse'
+        DB 'clickhouse'
+        TABLE 'special_table'
+        REPLICA(PRIORITY 1 HOST 'mysql1' PORT 3306)
+        WHERE 'value1 = \\'qweqwe\\''
+    ))
+    LAYOUT(FLAT())
+    LIFETIME(MIN 1 MAX 3)
+    """)
+
+    node1.query("SYSTEM RELOAD DICTIONARY default.special_dict")
+
+    assert node1.query("SELECT dictGetString('default.special_dict', 'value1', toUInt64(2))") == 'qweqwe\n'
