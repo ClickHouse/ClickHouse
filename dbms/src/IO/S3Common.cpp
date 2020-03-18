@@ -84,7 +84,7 @@ namespace S3
         return ret;
     }
 
-    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create(
+    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
         const String & endpoint,
         const String & access_key_id,
         const String & secret_access_key)

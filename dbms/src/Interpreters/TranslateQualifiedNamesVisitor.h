@@ -64,7 +64,7 @@ struct RestoreQualifiedNamesData
 {
     using TypeToVisit = ASTIdentifier;
 
-    void visit(ASTIdentifier & identifier, ASTPtr & ast);
+    static void visit(ASTIdentifier & identifier, ASTPtr & ast);
 };
 
 using RestoreQualifiedNamesMatcher = OneTypeMatcher<RestoreQualifiedNamesData>;

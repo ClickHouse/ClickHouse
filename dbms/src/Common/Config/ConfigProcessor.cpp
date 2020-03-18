@@ -219,7 +219,7 @@ void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
     mergeRecursive(config, config_root, with_root);
 }
 
-std::string ConfigProcessor::layerFromHost()
+static std::string layerFromHost()
 {
     utsname buf;
     if (uname(&buf))

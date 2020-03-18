@@ -41,7 +41,7 @@ void ConfigPreprocessor::removeConfigurationsIf(
     std::vector<XMLConfigurationPtr> & configs,
     ConfigPreprocessor::FilterType filter_type,
     const Strings & values,
-    bool leave) const
+    bool leave)
 {
     auto checker = [&filter_type, &values, &leave] (XMLConfigurationPtr & config)
     {
