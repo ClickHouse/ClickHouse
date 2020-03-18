@@ -71,7 +71,7 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
 #endif
 }
 
-UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size,  DB::UInt32 updated_value)
+inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size,  DB::UInt32 updated_value)
 {
     if (size < 8)
     {
