@@ -1019,6 +1019,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     /// It shouldn't be changed by mutation.
     new_data_part->index_granularity_info = source_part->index_granularity_info;
     new_data_part->setColumns(getColumnsForNewDataPart(source_part, updated_header, all_columns, for_file_renames));
+    new_data_part->partition.assign(source_part->partition);
 
     String new_part_tmp_path = new_data_part->getFullPath();
 
@@ -1028,7 +1029,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
     auto compression_codec = context.chooseCompressionCodec(
-        source_part->bytes_on_disk, static_cast<double>(source_part->bytes_on_disk) / data.getTotalActiveSizeInBytes());
+        source_part->bytes_on_disk,
+        static_cast<double>(source_part->bytes_on_disk) / data.getTotalActiveSizeInBytes());
 
 
     Poco::File(new_part_tmp_path).createDirectories();
@@ -1045,45 +1047,20 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     /// All columns from part are changed and may be some more that were missing before in part
     if (source_part->getColumns().isSubsetOf(updated_header.getNamesAndTypesList()) || isCompactPart(source_part))
     {
-        /// All columns are modified, proceed to write a new part from scratch.
-        if (data.hasPrimaryKey() || data.hasSkipIndices())
-            in = std::make_shared<MaterializingBlockInputStream>(
-                std::make_shared<ExpressionBlockInputStream>(in, data.primary_key_and_skip_indices_expr));
-
-        if (need_remove_expired_values)
-            in = std::make_shared<TTLBlockInputStream>(in, data, new_data_part, time_of_mutation, true);
-
-        IMergeTreeDataPart::MinMaxIndex minmax_idx;
-
-        MergedBlockOutputStream out{
+        mutateAllPartColumns(
             new_data_part,
-            new_data_part->getColumns(),
-            compression_codec};
+            in,
+            time_of_mutation,
+            compression_codec,
+            merge_entry,
+            need_remove_expired_values);
 
-        in->readPrefix();
-        out.writePrefix();
-
-        Block block;
-        while (check_not_cancelled() && (block = in->read()))
-        {
-            minmax_idx.update(block, data.minmax_idx_columns);
-            out.write(block);
-
-            merge_entry->rows_written += block.rows();
-            merge_entry->bytes_written_uncompressed += block.bytes();
-        }
-
-
-        new_data_part->partition.assign(source_part->partition);
-        new_data_part->minmax_idx = std::move(minmax_idx);
-
-        in->readSuffix();
-        out.writeSuffixAndFinalizePart(new_data_part);
+        /// no finalization required, because mutateAllPartColumns use
+        /// MergedBlockOutputStream which finilaze all part fields itself
     }
-    else
+    else /// TODO: check that we modify only non-key columns in this case.
     {
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
-        /// TODO: check that we modify only non-key columns in this case.
         auto indices_to_recalc = getIndicesToRecalc(in, storage_from_source_part, updated_header.getNamesAndTypesList(), context);
 
         NameSet files_to_skip = collectFilesToSkip(updated_header, indices_to_recalc, mrk_extension);
@@ -1108,76 +1085,25 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         merge_entry->columns_written = all_columns.size() - updated_header.columns();
 
         new_data_part->checksums = source_part->checksums;
+
         if (in)
         {
-            if (need_remove_expired_values)
-                in = std::make_shared<TTLBlockInputStream>(in, data, new_data_part, time_of_mutation, true);
-
-            IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
-            MergedColumnOnlyOutputStream out(
+            mutateSomePartColumns(
+                source_part,
+                indices_to_recalc,
                 new_data_part,
-                updated_header,
-                /* sync = */ false,
+                in,
+                time_of_mutation,
                 compression_codec,
-                /* skip_offsets = */ false,
-                std::vector<MergeTreeIndexPtr>(indices_to_recalc.begin(), indices_to_recalc.end()),
-                nullptr,
-                source_part->index_granularity,
-                &source_part->index_granularity_info
-            );
-
-            in->readPrefix();
-            out.writePrefix();
-
-            Block block;
-            while (check_not_cancelled() && (block = in->read()))
-            {
-                out.write(block);
-
-                merge_entry->rows_written += block.rows();
-                merge_entry->bytes_written_uncompressed += block.bytes();
-            }
-
-            in->readSuffix();
-
-            auto changed_checksums = out.writeSuffixAndGetChecksums(new_data_part, new_data_part->checksums);
-
-            new_data_part->checksums.add(std::move(changed_checksums));
-        }
-
-        if (need_remove_expired_values)
-        {
-            /// Write a file with ttl infos in json format.
-            WriteBufferFromFile out_ttl(new_part_tmp_path + "ttl.txt", 4096);
-            HashingWriteBuffer out_hashing(out_ttl);
-            new_data_part->ttl_infos.write(out_hashing);
-            new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
-            new_data_part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
+                merge_entry,
+                need_remove_expired_values);
         }
 
         for (const String & removed_file : files_to_remove)
             if (new_data_part->checksums.files.count(removed_file))
                 new_data_part->checksums.files.erase(removed_file);
-        {
-            /// Write file with checksums.
-            WriteBufferFromFile out_checksums(new_part_tmp_path + "checksums.txt", 4096);
-            new_data_part->checksums.write(out_checksums);
-        } /// close fd
 
-
-        {
-            /// Write a file with a description of columns.
-            WriteBufferFromFile out_columns(new_part_tmp_path + "columns.txt", 4096);
-            new_data_part->getColumns().writeText(out_columns);
-        } /// close fd
-
-        new_data_part->rows_count = source_part->rows_count;
-        new_data_part->index_granularity = source_part->index_granularity;
-        new_data_part->index = source_part->index;
-        new_data_part->partition.assign(source_part->partition);
-        new_data_part->minmax_idx = source_part->minmax_idx;
-        new_data_part->modification_time = time(nullptr);
-        new_data_part->bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->disk, new_data_part->getFullRelativePath());
+        finalizeMutatedPart(source_part, new_data_part, need_remove_expired_values);
     }
 
     return new_data_part;
@@ -1514,6 +1440,154 @@ bool MergeTreeDataMergerMutator::shouldExecuteTTL(const Names & columns, const M
             return true;
 
     return false;
+}
+
+void MergeTreeDataMergerMutator::mutateAllPartColumns(
+    MergeTreeData::MutableDataPartPtr new_data_part,
+    BlockInputStreamPtr mutating_stream,
+    time_t time_of_mutation,
+    const CompressionCodecPtr & compression_codec,
+    MergeListEntry & merge_entry,
+    bool need_remove_expired_values) const
+{
+    if (mutating_stream == nullptr)
+        throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
+
+    auto check_not_cancelled = [&]()
+    {
+        if (merges_blocker.isCancelled() || merge_entry->is_cancelled)
+            throw Exception("Cancelled mutating parts", ErrorCodes::ABORTED);
+
+        return true;
+    };
+
+    if (data.hasPrimaryKey() || data.hasSkipIndices())
+        mutating_stream = std::make_shared<MaterializingBlockInputStream>(
+            std::make_shared<ExpressionBlockInputStream>(mutating_stream, data.primary_key_and_skip_indices_expr));
+
+    if (need_remove_expired_values)
+        mutating_stream = std::make_shared<TTLBlockInputStream>(mutating_stream, data, new_data_part, time_of_mutation, true);
+
+    IMergeTreeDataPart::MinMaxIndex minmax_idx;
+
+    MergedBlockOutputStream out{
+        new_data_part,
+        new_data_part->getColumns(),
+        compression_codec};
+
+    mutating_stream->readPrefix();
+    out.writePrefix();
+
+    Block block;
+    while (check_not_cancelled() && (block = mutating_stream->read()))
+    {
+        minmax_idx.update(block, data.minmax_idx_columns);
+        out.write(block);
+
+        merge_entry->rows_written += block.rows();
+        merge_entry->bytes_written_uncompressed += block.bytes();
+    }
+
+
+    new_data_part->minmax_idx = std::move(minmax_idx);
+
+    mutating_stream->readSuffix();
+    out.writeSuffixAndFinalizePart(new_data_part);
+}
+
+void MergeTreeDataMergerMutator::mutateSomePartColumns(
+    const MergeTreeDataPartPtr & source_part,
+    const std::set<MergeTreeIndexPtr> & indices_to_recalc,
+    MergeTreeData::MutableDataPartPtr new_data_part,
+    BlockInputStreamPtr mutation_stream,
+    time_t time_of_mutation,
+    const CompressionCodecPtr & compression_codec,
+    MergeListEntry & merge_entry,
+    bool need_remove_expired_values) const
+{
+    auto check_not_cancelled = [&]()
+    {
+        if (merges_blocker.isCancelled() || merge_entry->is_cancelled)
+            throw Exception("Cancelled mutating parts", ErrorCodes::ABORTED);
+
+        return true;
+    };
+
+    if (mutation_stream == nullptr)
+        throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
+
+    if (need_remove_expired_values)
+        mutation_stream = std::make_shared<TTLBlockInputStream>(mutation_stream, data, new_data_part, time_of_mutation, true);
+
+    IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
+    MergedColumnOnlyOutputStream out(
+        new_data_part,
+        mutation_stream->getHeader(),
+        /* sync = */ false,
+        compression_codec,
+        /* skip_offsets = */ false,
+        std::vector<MergeTreeIndexPtr>(indices_to_recalc.begin(), indices_to_recalc.end()),
+        nullptr,
+        source_part->index_granularity,
+        &source_part->index_granularity_info
+    );
+
+    mutation_stream->readPrefix();
+    out.writePrefix();
+
+    Block block;
+    while (check_not_cancelled() && (block = mutation_stream->read()))
+    {
+        out.write(block);
+
+        merge_entry->rows_written += block.rows();
+        merge_entry->bytes_written_uncompressed += block.bytes();
+    }
+
+    mutation_stream->readSuffix();
+
+    auto changed_checksums = out.writeSuffixAndGetChecksums(new_data_part, new_data_part->checksums);
+
+    new_data_part->checksums.add(std::move(changed_checksums));
+
+}
+
+void MergeTreeDataMergerMutator::finalizeMutatedPart(
+    const MergeTreeDataPartPtr & source_part,
+    MergeTreeData::MutableDataPartPtr new_data_part,
+    bool need_remove_expired_values) const
+{
+    if (need_remove_expired_values)
+    {
+        /// Write a file with ttl infos in json format.
+        WriteBufferFromFile out_ttl(new_data_part->getFullPath() + "ttl.txt", 4096);
+        HashingWriteBuffer out_hashing(out_ttl);
+        new_data_part->ttl_infos.write(out_hashing);
+        new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
+        new_data_part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
+    }
+
+    {
+        /// Write file with checksums.
+        WriteBufferFromFile out_checksums(new_data_part->getFullPath() + "checksums.txt", 4096);
+        new_data_part->checksums.write(out_checksums);
+    } /// close fd
+
+
+    {
+        /// Write a file with a description of columns.
+        WriteBufferFromFile out_columns(new_data_part->getFullPath() + "columns.txt", 4096);
+        new_data_part->getColumns().writeText(out_columns);
+    } /// close fd
+
+    new_data_part->rows_count = source_part->rows_count;
+    new_data_part->index_granularity = source_part->index_granularity;
+    new_data_part->index = source_part->index;
+    new_data_part->minmax_idx = source_part->minmax_idx;
+    new_data_part->modification_time = time(nullptr);
+    new_data_part->bytes_on_disk
+        = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->disk, new_data_part->getFullRelativePath());
+
 }
 
 }

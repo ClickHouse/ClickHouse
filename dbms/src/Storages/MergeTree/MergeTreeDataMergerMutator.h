@@ -170,6 +170,32 @@ private:
         const NamesAndTypesList & updated_columns,
         const Context & context) const;
 
+    /// Override all columns of new part using mutating_stream
+    void mutateAllPartColumns(
+        MergeTreeData::MutableDataPartPtr new_data_part,
+        BlockInputStreamPtr mutating_stream,
+        time_t time_of_mutation,
+        const CompressionCodecPtr & codec,
+        MergeListEntry & merge_entry,
+        bool need_remove_expired_values) const;
+
+    /// Mutate some columns of source part with mutation_stream
+    void mutateSomePartColumns(
+        const MergeTreeDataPartPtr & source_part,
+        const std::set<MergeTreeIndexPtr> & indices_to_recalc,
+        MergeTreeData::MutableDataPartPtr new_data_part,
+        BlockInputStreamPtr mutating_stream,
+        time_t time_of_mutation,
+        const CompressionCodecPtr & codec,
+        MergeListEntry & merge_entry,
+        bool need_remove_expired_values) const;
+
+    /// Initialize and write to disk new part fields like checksums, columns,
+    /// etc.
+    void finalizeMutatedPart(
+        const MergeTreeDataPartPtr & source_part,
+        MergeTreeData::MutableDataPartPtr new_data_part,
+        bool need_remove_expired_values) const;
 
 public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
