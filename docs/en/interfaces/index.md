@@ -1,4 +1,4 @@
-# Interfaces { #interfaces}
+# Interfaces {#interfaces}
 
 ClickHouse provides two network interfaces (both can be optionally wrapped in TLS for additional security):
 

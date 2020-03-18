@@ -54,7 +54,7 @@ If the table is corrupted, you can copy the non-corrupted data to another table.
 3. Execute the query `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. This request copies the non-corrupted data from the damaged table to another table. Only the data before the corrupted part will be copied.
 4. Restart the `clickhouse-client` to reset the `max_threads` value.
 
-## DESCRIBE TABLE { #misc-describe-table}
+## DESCRIBE TABLE {#misc-describe-table}
 
 ```sql
 DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
@@ -151,7 +151,7 @@ The response contains the `kill_status` column, which can take the following val
 
 A test query (`TEST`) only checks the user's rights and displays a list of queries to stop.
 
-## KILL MUTATION { #kill-mutation}
+## KILL MUTATION {#kill-mutation}
 
 ```sql
 KILL MUTATION [ON CLUSTER cluster]
@@ -178,7 +178,7 @@ The query is useful when a mutation is stuck and cannot finish (e.g. if some fun
 
 Changes already made by the mutation are not rolled back.
 
-## OPTIMIZE { #misc_operations-optimize}
+## OPTIMIZE {#misc_operations-optimize}
 
 ```sql
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL] [DEDUPLICATE]
@@ -198,7 +198,7 @@ When `OPTIMIZE` is used with the [ReplicatedMergeTree](../operations/table_engin
 !!! warning "Warning"
     `OPTIMIZE` can't fix the "Too many parts" error.
 
-## RENAME { #misc_operations-rename}
+## RENAME {#misc_operations-rename}
 
 Renames one or more tables.
 
@@ -208,7 +208,7 @@ RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ...
 
 All tables are renamed under global locking. Renaming tables is a light operation. If you indicated another database after TO, the table will be moved to this database. However, the directories with databases must reside in the same file system (otherwise, an error is returned).
 
-## SET { #query-set}
+## SET {#query-set}
 
 ```sql
 SET param = value

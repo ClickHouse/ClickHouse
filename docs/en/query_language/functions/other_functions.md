@@ -4,7 +4,7 @@
 
 Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
 
-## FQDN { #fqdn}
+## FQDN {#fqdn}
 
 Returns the fully qualified domain name.
 
@@ -109,7 +109,7 @@ Returns a string containing the type name of the passed argument.
 
 If `NULL` is passed to the function as input, then it returns the `Nullable(Nothing)` type, which corresponds to an internal `NULL` representation in ClickHouse.
 
-## blockSize() { #function-blocksize}
+## blockSize() {#function-blocksize}
 
 Gets the size of the block.
 In ClickHouse, queries are always run on blocks (sets of column parts). This function allows getting the size of the block that you called it for.
@@ -137,7 +137,7 @@ Sleeps 'seconds' seconds on each row. You can specify an integer or a floating-p
 Returns the name of the current database.
 You can use this function in table engine parameters in a CREATE TABLE query where you need to specify the database.
 
-## currentUser() { #other_function-currentuser}
+## currentUser() {#other_function-currentuser}
 
 Returns the login of current user. Login of user, that initiated query, will be returned in case distibuted query.
 
@@ -178,7 +178,7 @@ Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is not 
 
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is infinite, otherwise 0. Note that 0 is returned for a NaN.
 
-## ifNotFinite { #ifnotfinite}
+## ifNotFinite {#ifnotfinite}
 
 Checks whether floating point value is finite.
 
@@ -225,7 +225,7 @@ Accepts constant strings: database name, table name, and column name. Returns a 
 The function throws an exception if the table does not exist.
 For elements in a nested data structure, the function checks for the existence of a column. For the nested data structure itself, the function returns 0.
 
-## bar { #function-bar}
+## bar {#function-bar}
 
 Allows building a unicode-art diagram.
 
@@ -408,7 +408,7 @@ Returns the timezone of the server.
 
 Returns the sequence number of the data block where the row is located.
 
-## rowNumberInBlock { #function-rownumberinblock}
+## rowNumberInBlock {#function-rownumberinblock}
 
 Returns the ordinal number of the row in the data block. Different data blocks are always recalculated.
 
@@ -416,7 +416,7 @@ Returns the ordinal number of the row in the data block. Different data blocks a
 
 Returns the ordinal number of the row in the data block. This function only considers the affected data blocks.
 
-## neighbor { #neighbor}
+## neighbor {#neighbor}
 
 The window function that provides access to a row at a specified offset which comes before or after the current row of a given column.
 
@@ -527,7 +527,7 @@ Result:
 └────────────┴───────┴───────────┴────────────────┘
 ```
 
-## runningDifference(x) { #other_functions-runningdifference}
+## runningDifference(x) {#other_functions-runningdifference}
 
 Calculates the difference between successive row values ​​in the data block.
 Returns 0 for the first row and the difference from the previous row for each subsequent row.
@@ -772,7 +772,7 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 ```
 
 
-## replicate { #other_functions-replicate}
+## replicate {#other_functions-replicate}
 
 Creates an array with a single value.
 
@@ -809,7 +809,7 @@ Result:
 └───────────────────────────────┘
 ```
 
-## filesystemAvailable { #filesystemavailable}
+## filesystemAvailable {#filesystemavailable}
 
 Returns amount of remaining space on the filesystem where the files of the databases located. It is always smaller than total free space ([filesystemFree](#filesystemfree)) because some space is reserved for OS.
 
@@ -841,7 +841,7 @@ Result:
 └─────────────────┴────────┘
 ```
 
-## filesystemFree { #filesystemfree}
+## filesystemFree {#filesystemfree}
 
 Returns total amount of the free space on the filesystem where the files of the databases located. See also `filesystemAvailable`
 
@@ -873,7 +873,7 @@ Result:
 └────────────┴────────┘
 ```
 
-## filesystemCapacity { #filesystemcapacity}
+## filesystemCapacity {#filesystemcapacity}
 
 Returns the capacity of the filesystem in bytes. For evaluation, the [path](../../operations/server_settings/settings.md#server_settings-path) to the data directory must be configured.
 
@@ -905,17 +905,17 @@ Result:
 └───────────┴────────┘
 ```
 
-## finalizeAggregation { #function-finalizeaggregation}
+## finalizeAggregation {#function-finalizeaggregation}
 
 Takes state of aggregate function. Returns result of aggregation (finalized state).
 
-## runningAccumulate { #function-runningaccumulate}
+## runningAccumulate {#function-runningaccumulate}
 
 Takes the states of the aggregate function and returns a column with values, are the result of the accumulation of these states for a set of block lines, from the first to the current line.
 For example, takes state of aggregate function (example runningAccumulate(uniqState(UserID))), and for each row of block, return result of aggregate function on merge of states of all previous rows and current row.
 So, result of function depends on partition of data to blocks and on order of data in block.
 
-## joinGet { #joinget}
+## joinGet {#joinget}
 
 The function lets you extract data from the table the same way as from a [dictionary](../../query_language/dicts/index.md).
 
@@ -978,7 +978,7 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model_name, ...) { #function-modelevaluate}
+## modelEvaluate(model_name, ...) {#function-modelevaluate}
 Evaluate external model.
 Accepts a model name and model arguments. Returns Float64.
 
@@ -995,7 +995,7 @@ SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
 Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 ```
 
-## identity { #identity}
+## identity {#identity}
 
 Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn't look inside `identity` functions.
 
@@ -1021,7 +1021,7 @@ Result:
 └──────────────┘
 ```
 
-## randomPrintableASCII { #randomascii}
+## randomPrintableASCII {#randomascii}
 
 Generates a string with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
 

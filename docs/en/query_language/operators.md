@@ -65,9 +65,9 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 `a GLOBAL NOT IN ...` – The `globalNotIn(a, b)` function.
 
-## Operators for Working with Dates and Times { #operators-datetime}
+## Operators for Working with Dates and Times {#operators-datetime}
 
-### EXTRACT { #operator-extract}
+### EXTRACT {#operator-extract}
 
 ```sql
 EXTRACT(part FROM date);
@@ -129,7 +129,7 @@ FROM test.Orders;
 
 You can see more examples in [tests](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00619_extract.sql).
 
-### INTERVAL { #operator-interval}
+### INTERVAL {#operator-interval}
 
 Creates an [Interval](../data_types/special_data_types/interval.md)-type value that should be used in arithmetical operations with [Date](../data_types/date.md) and [DateTime](../data_types/datetime.md)-type values.
 
@@ -182,7 +182,7 @@ Note:
 
 The conditional operator calculates the values of b and c, then checks whether condition a is met, and then returns the corresponding value. If `b` or `C` is an [arrayJoin()](functions/array_join.md#functions_arrayjoin) function, each row will be replicated regardless of the "a" condition.
 
-## Conditional Expression { #operator_case}
+## Conditional Expression {#operator_case}
 
 ```sql
 CASE [x]
@@ -227,7 +227,7 @@ For efficiency, the `and` and `or` functions accept any number of arguments. The
 
 ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
 
-### IS NULL { #operator-is-null}
+### IS NULL {#operator-is-null}
 
 - For [Nullable](../data_types/nullable.md) type values, the `IS NULL` operator returns:
     - `1`, if the value is `NULL`.

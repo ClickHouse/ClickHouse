@@ -1,6 +1,6 @@
 # Type Conversion Functions
 
-## Common Issues of Numeric Conversions { #numeric-conversion-issues}
+## Common Issues of Numeric Conversions {#numeric-conversion-issues}
 
 When you convert a value from one to another data type, you should remember that in common case, it is an unsafe operation that can lead to a data loss. A data loss can occur if you try to fit value from a larger data type to a smaller data type, or if you convert values between different data types.
 
@@ -297,7 +297,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 
 These functions accept a string and interpret the bytes placed at the beginning of the string as a number in host order (little endian). If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored. A date is interpreted as the number of days since the beginning of the Unix Epoch, and a date with time is interpreted as the number of seconds since the beginning of the Unix Epoch.
 
-## reinterpretAsString { #type_conversion_functions-reinterpretAsString}
+## reinterpretAsString {#type_conversion_functions-reinterpretAsString}
 
 This function accepts a number or date or date with time, and returns a string containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
 
@@ -305,7 +305,7 @@ This function accepts a number or date or date with time, and returns a string c
 
 This function accepts a number or date or date with time, and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
 
-## CAST(x, t) { #type_conversion_function-cast}
+## CAST(x, t) {#type_conversion_function-cast}
 
 Converts 'x' to the 't' data type. The syntax CAST(x AS t) is also supported.
 
@@ -349,7 +349,7 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 └─────────────────────────────────────────┘
 ```
 
-## toInterval(Year|Quarter|Month|Week|Day|Hour|Minute|Second) { #function-tointerval}
+## toInterval(Year|Quarter|Month|Week|Day|Hour|Minute|Second) {#function-tointerval}
 
 Converts a Number type argument to an [Interval](../../data_types/special_data_types/interval.md) data type.
 
@@ -392,7 +392,7 @@ SELECT
 └───────────────────────────┴──────────────────────────────┘
 ```
 
-## parseDateTimeBestEffort { #type_conversion_functions-parsedatetimebesteffort}
+## parseDateTimeBestEffort {#type_conversion_functions-parsedatetimebesteffort}
 
 Parse a number type argument to a Date or DateTime type.
 different from toDate and toDateTime, parseDateTimeBestEffort can progress more complex date format.

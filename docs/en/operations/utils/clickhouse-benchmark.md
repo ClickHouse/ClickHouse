@@ -25,7 +25,7 @@ Then pass this file to a standard input of `clickhouse-benchmark`.
 clickhouse-benchmark [keys] < queries_file
 ```
 
-## Keys { #clickhouse-benchmark-keys}
+## Keys {#clickhouse-benchmark-keys}
 
 - `-c N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` sends simultaneously. Default value: 1.
 - `-d N`, `--delay=N` — Interval in seconds between intermediate reports (set 0 to disable reports). Default value: 1.
@@ -47,7 +47,7 @@ clickhouse-benchmark [keys] < queries_file
 
 If you want to apply some [settings](../../operations/settings/index.md) for queries, pass them as a key `--<session setting name>= SETTING_VALUE`. For example, `--max_memory_usage=1048576`.
 
-## Output { #clickhouse-benchmark-output}
+## Output {#clickhouse-benchmark-output}
 
 By default, `clickhouse-benchmark` reports for each `--delay` interval.
 
@@ -90,13 +90,13 @@ In the report you can find:
 - Percentiles of queries execution time.
 
 
-## Comparison mode { #clickhouse-benchmark-comparison-mode}
+## Comparison mode {#clickhouse-benchmark-comparison-mode}
 
 `clickhouse-benchmark` can compare performances for two running ClickHouse servers. 
 
 To use the comparison mode, specify endpoints of both servers by two pairs of `--host`, `--port` keys. Keys matched together by position in arguments list, the first `--host` is matched with the first `--port` and so on. `clickhouse-benchmark` establishes connections to both servers, then sends queries. Each query addressed to a randomly selected server. The results are shown for each server separately.
 
-## Example { #clickhouse-benchmark-example}
+## Example {#clickhouse-benchmark-example}
 
 ```bash
 $ echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark -i 10

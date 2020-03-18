@@ -1,4 +1,4 @@
-#include <common/argsToConfig.h>
+#include "argsToConfig.h"
 
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
