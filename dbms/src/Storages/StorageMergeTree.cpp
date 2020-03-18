@@ -122,6 +122,9 @@ void StorageMergeTree::shutdown()
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
 
+    /// Unlock all waiting mutations
+    mutation_wait_event.notify_all();
+
     if (merging_mutating_task_handle)
         global_context.getBackgroundPool().removeTask(merging_mutating_task_handle);
 
