@@ -162,18 +162,6 @@ public:
     /// The number of all shards.
     size_t getShardCount() const { return shards_info.size(); }
 
-//    /// The number of all nodes (all replicas of each shard).
-//    size_t getNodesCount() const
-//    {
-//        size_t nodes_count = 0;
-//        std::cout << "addresses_with_failover.size() " << addresses_with_failover.size() << std::endl;
-//        std::for_each(addresses_with_failover.begin(), addresses_with_failover.end(), [&] (const Addresses & addresses)
-//        {
-//            nodes_count += addresses.size();
-//        });
-//        return nodes_count;
-//    }
-
     /// Get a subcluster consisting of one shard - index by count (from 0) of the shard of this cluster.
     std::unique_ptr<Cluster> getClusterWithSingleShard(size_t index) const;
 

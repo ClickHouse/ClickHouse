@@ -15,7 +15,7 @@ namespace ErrorCodes
 struct TaskShard;
 
 struct TaskTable
-        {
+{
     TaskTable(TaskCluster & parent, const Poco::Util::AbstractConfiguration & config, const String & prefix,
               const String & table_key);
 
@@ -87,17 +87,6 @@ struct TaskTable
     ASTPtr sharding_key_ast;
     ASTPtr main_engine_split_ast;
 
-
-    /*
-     * Auxuliary table engines used to perform partition piece copying.
-     * Each AST represent table engine for certatin piece number.
-     * After copying partition piece is Ok, this piece will be moved to the main
-     * target table. All this tables are stored on each shard as the main table.
-     * We have to use separate tables for partition pieces because of the atomicity of copying.
-     * Also if we want to move some partition to another table, the partition keys have to be the same.
-     * */
-
-
     /*
      * To copy partiton piece form one cluster to another we have to use Distributed table.
      * In case of usage separate table (engine_push) for each partiton piece,
@@ -133,7 +122,7 @@ struct TaskTable
     /// Parition names to process in user-specified order
     Strings ordered_partition_names;
 
-    ClusterPartition & getClusterPartition(const String &partition_name)
+    ClusterPartition & getClusterPartition(const String & partition_name)
     {
         auto it = cluster_partitions.find(partition_name);
         if (it == cluster_partitions.end())

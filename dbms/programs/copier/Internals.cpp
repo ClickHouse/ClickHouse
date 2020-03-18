@@ -168,16 +168,15 @@ ASTPtr extractOrderBy(const ASTPtr & storage_ast)
 }
 
 
-String createCommaSeparatedStringFrom(const Names & strings)
+String createCommaSeparatedStringFrom(const Names & names)
 {
-    String answer;
-    for (auto & string: strings)
-        answer += string + ", ";
-
-    /// Remove last comma and space
-    answer.pop_back();
-    answer.pop_back();
-    return answer;
+    std::ostringstream ss;
+    if(!names.empty())
+    {
+        std::copy(names.begin(), std::prev(names.end()), std::ostream_iterator<std::string>(ss, ", "));
+        ss << names.back();
+    }
+    return ss.str();
 }
 
 Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
@@ -189,7 +188,7 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
     const auto primary_key_expr_list = primary_key_ast
                            ? MergeTreeData::extractKeyExpressionList(primary_key_ast) : sorting_key_expr_list->clone();
 
-    ///    VersionedCollapsing ???
+    /// Maybe we have to handle VersionedCollapsing engine separately. But in our case in looks pointless.
 
     size_t primary_key_size = primary_key_expr_list->children.size();
     size_t sorting_key_size = sorting_key_expr_list->children.size();
