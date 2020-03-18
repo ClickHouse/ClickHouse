@@ -155,15 +155,12 @@ protected:
     ASTPtr getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard);
 
     /// If it is implicitly asked to create split Distributed table for certain piece on current shard, we will do it.
-    /// TODO: rewrite comment
     void createShardInternalTables(const ConnectionTimeouts & timeouts, TaskShard & task_shard, bool create_split = true);
 
     std::set<String> getShardPartitions(const ConnectionTimeouts & timeouts, TaskShard & task_shard);
 
     bool checkShardHasPartition(const ConnectionTimeouts & timeouts, TaskShard & task_shard, const String & partition_quoted_name);
 
-    /// TODO: Implement checkPresentPartitionPiecesOnCurrentShard();
-    /// Just copypaste the function above
     bool checkPresentPartitionPiecesOnCurrentShard(const ConnectionTimeouts & timeouts,
              TaskShard & task_shard, const String & partition_quoted_name, size_t current_piece_number);
 
