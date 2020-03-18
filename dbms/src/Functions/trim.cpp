@@ -79,14 +79,14 @@ private:
         const char * char_end = char_data + size;
 
         if constexpr (mode::trim_left)
-        {
+        { // NOLINT
             const char * found = find_first_not_symbols<' '>(char_data, char_end);
             size_t num_chars = found - char_data;
             char_data += num_chars;
         }
 
         if constexpr (mode::trim_right)
-        {
+        { // NOLINT
             const char * found = find_last_not_symbols_or_null<' '>(char_data, char_end);
             if (found)
                 char_end = found + 1;

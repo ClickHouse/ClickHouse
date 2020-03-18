@@ -43,7 +43,7 @@ int main(int argc, char ** argv)
 
         Arr arr2 = std::move(arr);
 
-        std::cerr << arr.size() << ", " << arr2.size() << std::endl;
+        std::cerr << arr.size() << ", " << arr2.size() << std::endl;  // NOLINT
 
         for (auto & elem : arr2)
             std::cerr << elem << std::endl;
@@ -182,7 +182,7 @@ int main(int argc, char ** argv)
         }
 
         arr2 = std::move(arr1);
-        arr1.resize(n);
+        arr1.resize(n); // NOLINT
 
         std::cerr
             << "arr1.size(): " << arr1.size() << ", arr2.size(): " << arr2.size() << std::endl
