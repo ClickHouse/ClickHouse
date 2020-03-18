@@ -861,6 +861,37 @@ See also:
 - [insert_quorum](#settings-insert_quorum)
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
+## insert_deduplicate {#settings-insert_deduplicate}
+
+Enables or disables block deduplication of `INSERT` (for Replicated* tables).
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 1.
+
+By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication] (../ table_engines/replication.md).
+
+## deduplicate_blocks_in_dependent_materialized_views {#settings-deduplicate_blocks_in_dependent_materialized_views}
+
+Enables or disables the deduplication check for materialized views that receive data from Replicated* tables.
+
+Possible values:
+
+    0 — Disabled.
+    1 — Enabled.
+
+Default value: 0.
+
+Usage
+
+By default, deduplication is not performed for materialized views, but is done upstream, in the source table.
+If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behavior exists to enable insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
+At the same time, this behavior "breaks" `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won't receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows to change this behavior. On retry a materialized view will receive the repeat insert and will perform deduplication check by itself,
+ignoring check result for the source table, and will insert rows lost because of first failure.
+
 ## max_network_bytes {#settings-max_network_bytes}
 Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies to every individual query.
 
