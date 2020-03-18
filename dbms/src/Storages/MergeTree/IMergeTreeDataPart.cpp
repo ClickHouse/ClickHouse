@@ -706,7 +706,7 @@ void IMergeTreeDataPart::remove() const
 
         try
         {
-            disk->removeRecursive(to);
+            disk->removeRecursive(to + "/");
         }
         catch (...)
         {
