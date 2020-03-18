@@ -7,6 +7,7 @@ import os
 import markdown.inlinepatterns
 import markdown.extensions
 import markdown.util
+import macros.plugin
 
 import slugify as slugify_impl
 
@@ -67,3 +68,13 @@ def makeExtension(**kwargs):
 
 def slugify(value, separator):
     return slugify_impl.slugify(value, separator=separator, word_boundary=True, save_order=True)
+
+
+class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
+    def on_config(self, config):
+        super(PatchedMacrosPlugin, self).on_config(config)
+        self.env.comment_start_string = '{##'
+        self.env.comment_end_string = '##}'
+
+
+macros.plugin.MacrosPlugin = PatchedMacrosPlugin
