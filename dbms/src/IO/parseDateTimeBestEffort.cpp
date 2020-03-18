@@ -68,7 +68,7 @@ inline void readDecimalNumber(T & res, const char * src)
 template <typename T>
 inline void readDecimalNumber(T & res, size_t num_digits, const char * src)
 {
-#define READ_DECIMAL_NUMBER(N)         res *= common::exp10_i32(N); readDecimalNumber<N>(res, src); src += N; num_digits -= N; break
+#define READ_DECIMAL_NUMBER(N) do { res *= common::exp10_i32(N); readDecimalNumber<N>(res, src); src += (N); num_digits -= (N); } while (false)
 
     while (num_digits)
     {
@@ -77,7 +77,7 @@ inline void readDecimalNumber(T & res, size_t num_digits, const char * src)
             case 3: READ_DECIMAL_NUMBER(3); break;
             case 2: READ_DECIMAL_NUMBER(2); break;
             case 1: READ_DECIMAL_NUMBER(1); break;
-            default: READ_DECIMAL_NUMBER(4);
+            default: READ_DECIMAL_NUMBER(4); break;
         }
     }
 #undef DECIMAL_NUMBER_CASE

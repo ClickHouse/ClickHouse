@@ -183,7 +183,7 @@ namespace DB
                     /// Do not store more than max_block_size values for one request.
                     if (primary_with_secondary.size() == max_block_size + 1)
                     {
-                        hkeys.add(std::move(primary_with_secondary));
+                        hkeys.add(primary_with_secondary);
                         primary_with_secondary.clear();
                         primary_with_secondary.addRedisType(key);
                     }
