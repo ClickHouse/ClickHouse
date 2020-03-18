@@ -70,6 +70,31 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
 #endif
 }
 
+UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size,  DB::UInt32 updated_value)
+{
+    if (size < 8)
+    {
+        auto value = unalignedLoad<DB::UInt64>(pos);
+        /// 8 bytes were loaded to UInt64 value, but string size is less then 8 bytes.
+        /// We need to zero excessive bytes to remove the garbage.
+        /// But instead we move bits to the right, so that we had zeros at left.
+        /// It helps to have different hash for strings like 'a' and 'a\0'
+        value >>= UInt8(8 * (8 - size));
+        return intHashCRC32(value, updated_value);
+    }
+
+    const auto * end = pos + size;
+    while (pos + 8 < end)
+    {
+        auto word = unalignedLoad<UInt64>(pos);
+        updated_value = intHashCRC32(word, updated_value);
+
+        pos += 8;
+    }
+
+    auto word = unalignedLoad<UInt64>(pos - 8);
+    return intHashCRC32(word, updated_value);
+}
 
 template <typename T>
 inline size_t DefaultHash64(T key)

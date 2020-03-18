@@ -80,7 +80,7 @@ void ColumnString::updateWeakHash32(WeakHash32 & hash) const
     for (auto & offset : offsets)
     {
         auto str_size = offset - prev_offset;
-        *hash_data = StringRefHash::updateWeakHash(StringRef(pos, str_size), *hash_data);
+        *hash_data = ::updateWeakHash32(pos, str_size, *hash_data);
 
         pos += str_size;
         prev_offset = offset;
