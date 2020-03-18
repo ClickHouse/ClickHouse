@@ -1,4 +1,4 @@
-# MySQL interface {#mysql_interface}
+# MySQL interface { #mysql_interface}
 
 ClickHouse supports MySQL wire protocol. It can be enabled by [mysql_port](../operations/server_settings/settings.md#server_settings-mysql_port) setting in configuration file:
 ```xml

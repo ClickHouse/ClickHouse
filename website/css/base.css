@@ -56,19 +56,6 @@ a.btn-outline-yellow {
     text-decoration: none;
 }
 
-.stealth-link:link, .stealth-link:visited {
-    color: #000;
-    text-decoration: none;
-}
-
-.text-light .stealth-link:link, .text-light .stealth-link:visited {
-    color: #fff;
-}
-
-.text-muted .stealth-link:link, .text-muted .stealth-link:visited {
-    color: #999;
-}
-
 .text-red {
     color: #ff3939;
 }
@@ -89,7 +76,7 @@ a.btn-outline-yellow {
     color: #000;
 }
 
-.navbar-light .navbar-nav .nav-link:hover, .stealth-link:hover, .stealth-link:active {
+.navbar-light .navbar-nav .nav-link:hover {
     color: #f14600;
 }
 

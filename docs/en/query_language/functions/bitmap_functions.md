@@ -9,7 +9,7 @@ RoaringBitmap is wrapped into a data structure while actual storage of Bitmap ob
 For more information on RoaringBitmap, see: [CRoaring](https://github.com/RoaringBitmap/CRoaring).
 
 
-## bitmapBuild {#bitmap_functions-bitmapbuild}
+## bitmapBuild { #bitmap_functions-bitmapbuild}
 
 Build a bitmap from unsigned integer array.
 
@@ -56,7 +56,7 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 └─────────────┘
 ```
 
-## bitmapSubsetInRange {#bitmap_functions-bitmapsubsetinrange}
+## bitmapSubsetInRange { #bitmap_functions-bitmapsubsetinrange}
 
 Return subset in specified range (not include the range_end).
 
@@ -82,7 +82,7 @@ SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,
 └───────────────────┘
 ```
 
-## bitmapSubsetLimit {#bitmapsubsetlimit}
+## bitmapSubsetLimit { #bitmapsubsetlimit}
 
 Creates a subset of bitmap with n elements taken between `range_start` and `cardinality_limit`.
 
@@ -120,7 +120,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## bitmapContains {#bitmap_functions-bitmapcontains}
+## bitmapContains { #bitmap_functions-bitmapcontains}
 
 Checks whether the bitmap contains an element.
 

@@ -1,4 +1,4 @@
-# odbc {#table_functions-odbc}
+# odbc { #table_functions-odbc}
 
 Returns table that is connected via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
