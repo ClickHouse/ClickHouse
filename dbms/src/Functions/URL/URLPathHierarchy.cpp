@@ -31,7 +31,7 @@ public:
     void init(Block & /*block*/, const ColumnNumbers & /*arguments*/) {}
 
     /// Returns the position of the argument that is the column of rows
-    size_t getStringsArgumentPosition()
+    static size_t getStringsArgumentPosition()
     {
         return 0;
     }

@@ -188,7 +188,7 @@ public:
     }
 
 private:
-    void executeConst(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+    static void executeConst(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
     {
         /// Materialize the input column and compute the function as usual.
 

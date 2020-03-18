@@ -416,7 +416,7 @@ private:
         return true;
     }
 
-    bool executeString(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
+    static bool executeString(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
     {
         const IColumn * col_then_untyped = block.getByPosition(arguments[1]).column.get();
         const IColumn * col_else_untyped = block.getByPosition(arguments[2]).column.get();
@@ -494,7 +494,7 @@ private:
         return false;
     }
 
-    bool executeGenericArray(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
+    static bool executeGenericArray(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
     {
         /// For generic implementation, arrays must be of same type.
         if (!block.getByPosition(arguments[1]).type->equals(*block.getByPosition(arguments[2]).type))
