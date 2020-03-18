@@ -92,12 +92,17 @@ export CHPC_RUNS=${CHPC_RUNS:-7}
 
 # Even if we have some errors, try our best to save the logs.
 set +e
-# compare.sh kills its process group, so put it into a separate one.
-# It's probably at fault for using `kill 0` as an error handling mechanism,
-# but I can't be bothered to change this now.
-set -m
-time ../compare.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
+
+# Use main comparison script from the tested package, so that we can change it
+# in PRs.
+# Older version use 'kill 0', so put the script into a separate process group
+# FIXME remove set +m in April 2020
 set +m
+{ \
+    time ../download.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" && \
+    time stage=configure right/scripts/compare.sh ; \
+} 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
+set -m
 
 # Stop the servers to free memory. Normally they are restarted before getting
 # the profile info, so they shouldn't use much, but if the comparison script

@@ -868,7 +868,7 @@ private:
         }
     }
 
-    void cancelLoading(Info & info)
+    static void cancelLoading(Info & info)
     {
         if (!info.is_loading())
             return;

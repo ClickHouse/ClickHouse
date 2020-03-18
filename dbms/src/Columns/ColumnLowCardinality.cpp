@@ -16,6 +16,12 @@ namespace ErrorCodes
 
 namespace
 {
+    void checkColumn(const IColumn & column)
+    {
+        if (!dynamic_cast<const IColumnUnique *>(&column))
+            throw Exception("ColumnUnique expected as an argument of ColumnLowCardinality.", ErrorCodes::ILLEGAL_COLUMN);
+    }
+
     template <typename T>
     PaddedPODArray<T> * getIndexesData(IColumn & indexes)
     {
@@ -649,13 +655,6 @@ ColumnLowCardinality::Dictionary::Dictionary(ColumnPtr column_unique_, bool is_s
     : column_unique(std::move(column_unique_)), shared(is_shared)
 {
     checkColumn(*column_unique);
-}
-
-void ColumnLowCardinality::Dictionary::checkColumn(const IColumn & column)
-{
-
-    if (!dynamic_cast<const IColumnUnique *>(&column))
-        throw Exception("ColumnUnique expected as an argument of ColumnLowCardinality.", ErrorCodes::ILLEGAL_COLUMN);
 }
 
 void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & column_unique_)

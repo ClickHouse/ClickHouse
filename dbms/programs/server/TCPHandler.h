@@ -2,7 +2,7 @@
 
 #include <Poco/Net/TCPServerConnection.h>
 
-#include <Common/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Core/Protocol.h>

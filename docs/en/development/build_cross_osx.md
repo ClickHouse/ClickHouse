@@ -1,6 +1,6 @@
 # How to Build ClickHouse on Linux for Mac OS X
 
-This is for the case when you have Linux machine and want to use it to build `clickhouse` binary that will run on OS X. This is intended for continuous integration checks that run on Linux servers. If you want to build ClickHouse directly on Mac OS X, then proceed with another instruction: https://clickhouse.tech/docs/en/development/build_osx/
+This is for the case when you have Linux machine and want to use it to build `clickhouse` binary that will run on OS X. This is intended for continuous integration checks that run on Linux servers. If you want to build ClickHouse directly on Mac OS X, then proceed with [another instruction](build_osx.md).
 
 The cross-build for Mac OS X is based on the [Build instructions](build.md), follow them first.
 
@@ -33,7 +33,7 @@ cd cctools-port/cctools
 make install
 ```
 
-Also, we need to download MacOS X SDK into the working tree.
+Also, we need to download macOS X SDK into the working tree.
 
 ```bash
 cd ClickHouse
@@ -54,4 +54,4 @@ CC=clang-8 CXX=clang++-8 cmake . -Bbuild-osx -DCMAKE_TOOLCHAIN_FILE=cmake/darwin
 ninja -C build-osx
 ```
 
-The resulting binary will have Mach-O executable format and can't be run on Linux.
+The resulting binary will have a Mach-O executable format and can't be run on Linux.

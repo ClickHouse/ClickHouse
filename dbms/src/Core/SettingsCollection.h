@@ -91,7 +91,7 @@ struct SettingMaxThreads
     void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 
     void setAuto();
-    UInt64 getAutoValue() const;
+    static UInt64 getAutoValue();
 };
 
 
