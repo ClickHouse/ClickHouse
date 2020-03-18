@@ -145,15 +145,9 @@ struct ShardPriority
     }
 };
 
-/// Execution status of a task
-enum class PartitionTaskStatus
-{
-    Active,
-    Finished,
-    Error,
-};
-
-enum class PartititonPieceTaskStatus
+/// Execution status of a task.
+/// Is used for: partition copying task status, partition piece copying task status, partition moving task status.
+enum class TaskStatus
 {
     Active,
     Finished,

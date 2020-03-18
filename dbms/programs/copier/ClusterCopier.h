@@ -111,7 +111,7 @@ protected:
 
 
     /*Alter successful insertion to helping tables it will move all pieces to destination table*/
-    PartitionTaskStatus tryMoveAllPiecesToDestinationTable(const TaskTable & task_table, const String & partition_name);
+    TaskStatus tryMoveAllPiecesToDestinationTable(const TaskTable & task_table, const String & partition_name);
 
     /// Removes MATERIALIZED and ALIAS columns from create table query
     ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast);
@@ -130,13 +130,18 @@ protected:
     bool tryProcessTable(const ConnectionTimeouts & timeouts, TaskTable & task_table);
 
     /// Job for copying partition from particular shard.
-    PartitionTaskStatus tryProcessPartitionTask(const ConnectionTimeouts & timeouts, ShardPartition & task_partition, bool is_unprioritized_task);
+    TaskStatus tryProcessPartitionTask(const ConnectionTimeouts & timeouts,
+                                       ShardPartition & task_partition,
+                                       bool is_unprioritized_task);
 
-    PartitionTaskStatus iterateThroughAllPiecesInPartition(const ConnectionTimeouts & timeouts, ShardPartition & task_partition,
-                                                           bool is_unprioritized_task);
+    TaskStatus iterateThroughAllPiecesInPartition(const ConnectionTimeouts & timeouts,
+                                                  ShardPartition & task_partition,
+                                                  bool is_unprioritized_task);
 
-    PartitionTaskStatus processPartitionPieceTaskImpl(const ConnectionTimeouts & timeouts, ShardPartition & task_partition,
-            const size_t current_piece_number, bool is_unprioritized_task);
+    TaskStatus processPartitionPieceTaskImpl(const ConnectionTimeouts & timeouts,
+                                             ShardPartition & task_partition,
+                                             const size_t current_piece_number,
+                                             bool is_unprioritized_task);
 
     void dropAndCreateLocalTable(const ASTPtr & create_ast);
 
