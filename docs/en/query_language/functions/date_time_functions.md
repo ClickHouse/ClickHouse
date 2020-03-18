@@ -62,7 +62,7 @@ Converts a date with time to a UInt8 number containing the number of the minute 
 Converts a date with time to a UInt8 number containing the number of the second in the minute (0-59).
 Leap seconds are not accounted for.
 
-## toUnixTimestamp { #to_unix_timestamp}
+## toUnixTimestamp {#to_unix_timestamp}
 
 For DateTime argument: converts value to its internal numeric representation (Unix Timestamp).
 For String argument: parse datetime from string according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
@@ -342,7 +342,7 @@ SELECT
 └──────────────────────────┴───────────────────────────────┘
 ```
 
-## dateDiff { #datediff}
+## dateDiff {#datediff}
 
 Returns the difference between two Date or DateTime values.
 
@@ -401,7 +401,7 @@ For a time interval starting at 'StartTime' and continuing for 'Duration' second
 For example, `timeSlots(toDateTime('2012-01-01 12:20:00'), 600) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')]`.
 This is necessary for searching for pageviews in the corresponding session.
 
-## formatDateTime(Time, Format\[, Timezone\]) { #formatdatetime}
+## formatDateTime(Time, Format\[, Timezone\]) {#formatdatetime}
 
 Function formats a Time according given Format string. N.B.: Format is a constant expression, e.g. you can not have multiple formats for single result column.
 

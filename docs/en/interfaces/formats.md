@@ -1,4 +1,4 @@
-# Formats for Input and Output Data { #formats}
+# Formats for Input and Output Data {#formats}
 
 ClickHouse can accept and return data in various formats. A format supported for input can be used to parse the data provided to `INSERT`s, to perform `SELECT`s from a file-backed table such as File, URL or HDFS, or to read an external dictionary. A format supported for output can be used to arrange the
 results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
@@ -42,7 +42,7 @@ The supported formats are:
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
 
-## TabSeparated { #tabseparated}
+## TabSeparated {#tabseparated}
 
 In TabSeparated format, data is written by row. Each row contains values separated by tabs. Each value is follow by a tab, except the last value in the row, which is followed by a line feed. Strictly Unix line feeds are assumed everywhere. The last row also must contain a line feed at the end. Values are written in text format, without enclosing quotation marks, and with special characters escaped.
 
@@ -130,14 +130,14 @@ SELECT * FROM nestedt FORMAT TSV
 1	[1]	['a']
 ```
 
-## TabSeparatedRaw { #tabseparatedraw}
+## TabSeparatedRaw {#tabseparatedraw}
 
 Differs from `TabSeparated` format in that the rows are written without escaping.
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
 This format is also available under the name `TSVRaw`.
 
-## TabSeparatedWithNames { #tabseparatedwithnames}
+## TabSeparatedWithNames {#tabseparatedwithnames}
 
 Differs from the `TabSeparated` format in that the column names are written in the first row.
 During parsing, the first row is completely ignored. You can't use column names to determine their position or to check their correctness.
@@ -145,14 +145,14 @@ During parsing, the first row is completely ignored. You can't use column names 
 
 This format is also available under the name `TSVWithNames`.
 
-## TabSeparatedWithNamesAndTypes { #tabseparatedwithnamesandtypes}
+## TabSeparatedWithNamesAndTypes {#tabseparatedwithnamesandtypes}
 
 Differs from the `TabSeparated` format in that the column names are written to the first row, while the column types are in the second row.
 During parsing, the first and second rows are completely ignored.
 
 This format is also available under the name `TSVWithNamesAndTypes`.
 
-## Template { #format-template}
+## Template {#format-template}
 
 This format allows to specify a custom format string with placeholders for values with specified escaping rule.
 
@@ -268,7 +268,7 @@ Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Du
 `PageViews`, `UserID`, `Duration` and `Sign` inside placeholders are names of columns in the table. Values after `Useless field` in rows and after `\nTotal rows: ` in suffix will be ignored.
 All delimiters in the input data must be strictly equal to delimiters in specified format strings.
 
-## TemplateIgnoreSpaces { #templateignorespaces}
+## TemplateIgnoreSpaces {#templateignorespaces}
 
 This format is suitable only for input.
 Similar to `Template`,  but skips whitespace characters between delimiters and values in the input stream. However, if format strings contain whitespace characters, these characters will be expected in the input stream. Also allows to specify empty placeholders (`${}` or `${:None}`) to split some delimiter into separate parts to ignore spaces between them. Such placeholders are used only for skipping whitespace characters.
@@ -286,7 +286,7 @@ format_template_resultset = '/some/path/resultset.format', format_template_row =
 {${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}
 ```
 
-## TSKV { #tskv}
+## TSKV {#tskv}
 
 Similar to TabSeparated, but outputs a value in name=value format. Names are escaped the same way as in TabSeparated format, and the = symbol is also escaped.
 
@@ -319,7 +319,7 @@ Both data output and parsing are supported in this format. For parsing, any orde
 
 Parsing allows the presence of the additional field `tskv` without the equal sign or a value. This field is ignored.
 
-## CSV { #csv}
+## CSV {#csv}
 
 Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
 
@@ -345,12 +345,12 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 
 Also prints the header row, similar to `TabSeparatedWithNames`.
 
-## CustomSeparated { #format-customseparated}
+## CustomSeparated {#format-customseparated}
 
 Similar to [Template](#format-template), but it prints or reads all columns and uses escaping rule from setting `format_custom_escaping_rule` and delimiters from settings `format_custom_field_delimiter`, `format_custom_row_before_delimiter`, `format_custom_row_after_delimiter`, `format_custom_row_between_delimiter`, `format_custom_result_before_delimiter` and `format_custom_result_after_delimiter`, not from format strings.
 There is also `CustomSeparatedIgnoreSpaces` format, which is similar to `TemplateIgnoreSpaces`.
 
-## JSON { #json}
+## JSON {#json}
 
 Outputs data in JSON format. Besides data tables, it also outputs column names and types, along with some additional information: the total number of output rows, and the number of rows that could have been output if there weren't a LIMIT. Example:
 
@@ -439,7 +439,7 @@ ClickHouse supports [NULL](../query_language/syntax.md), which is displayed as `
 
 See also the [JSONEachRow](#jsoneachrow) format.
 
-## JSONCompact { #jsoncompact}
+## JSONCompact {#jsoncompact}
 
 Differs from JSON only in that data rows are output in arrays, not in objects.
 
@@ -485,7 +485,7 @@ Example:
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 See also the `JSONEachRow` format.
 
-## JSONEachRow { #jsoneachrow}
+## JSONEachRow {#jsoneachrow}
 
 When using this format, ClickHouse outputs rows as separated, newline-delimited JSON objects, but the data as a whole is not valid JSON.
 
@@ -555,7 +555,7 @@ Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 seque
 !!! note "Note"
     Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
 
-### Usage of Nested Structures { #jsoneachrow-nested}
+### Usage of Nested Structures {#jsoneachrow-nested}
 
 If you have a table with [Nested](../data_types/nested_data_structures/nested.md) data type columns, you can insert JSON data with the same structure. Enable this feature with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
 
@@ -609,18 +609,18 @@ SELECT * FROM json_each_row_nested
 └───────────────┴────────┘
 ```
 
-## Native { #native}
+## Native {#native}
 
 The most efficient format. Data is written and read by blocks in binary format. For each block, the number of rows, number of columns, column names and types, and parts of columns in this block are recorded one after another. In other words, this format is "columnar" – it doesn't convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
 
 You can use this format to quickly generate dumps that can only be read by the ClickHouse DBMS. It doesn't make sense to work with this format yourself.
 
-## Null { #null}
+## Null {#null}
 
 Nothing is output. However, the query is processed, and when using the command-line client, data is transmitted to the client. This is used for tests, including productivity testing.
 Obviously, this format is only appropriate for output, not for parsing.
 
-## Pretty { #pretty}
+## Pretty {#pretty}
 
 Outputs data as Unicode-art tables, also using ANSI-escape sequences for setting colors in the terminal.
 A full grid of the table is drawn, and each row occupies two lines in the terminal.
@@ -684,16 +684,16 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-## PrettyCompact { #prettycompact}
+## PrettyCompact {#prettycompact}
 
 Differs from [Pretty](#pretty) in that the grid is drawn between rows and the result is more compact.
 This format is used by default in the command-line client in interactive mode.
 
-## PrettyCompactMonoBlock { #prettycompactmonoblock}
+## PrettyCompactMonoBlock {#prettycompactmonoblock}
 
 Differs from [PrettyCompact](#prettycompact) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
 
-## PrettyNoEscapes { #prettynoescapes}
+## PrettyNoEscapes {#prettynoescapes}
 
 Differs from Pretty in that ANSI-escape sequences aren't used. This is necessary for displaying this format in a browser, as well as for using the 'watch' command-line utility.
 
@@ -713,11 +713,11 @@ The same as the previous setting.
 
 The same as the previous setting.
 
-## PrettySpace { #prettyspace}
+## PrettySpace {#prettyspace}
 
 Differs from [PrettyCompact](#prettycompact) in that whitespace (space characters) is used instead of the grid.
 
-## RowBinary { #rowbinary}
+## RowBinary {#rowbinary}
 
 Formats and parses data by row in binary format. Rows and values are listed consecutively, without separators.
 This format is less efficient than the Native format, since it is row-based.
@@ -732,7 +732,7 @@ Array is represented as a varint length (unsigned [LEB128](https://en.wikipedia.
 
 For [NULL](../query_language/syntax.md#null-literal) support, an additional byte containing 1 or 0 is added before each [Nullable](../data_types/nullable.md) value. If 1, then the value is `NULL` and this byte is interpreted as a separate value. If 0, the value after the byte is not `NULL`.
 
-## RowBinaryWithNamesAndTypes { #rowbinarywithnamesandtypes}
+## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
 Similar to [RowBinary](#rowbinary), but with added header:
 
@@ -740,7 +740,7 @@ Similar to [RowBinary](#rowbinary), but with added header:
  * N `String`s specifying column names
  * N `String`s specifying column types
 
-## Values { #data-format-values}
+## Values {#data-format-values}
 
 Prints every row in brackets. Rows are separated by commas. There is no comma after the last row. The values inside the brackets are also comma-separated. Numbers are output in decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are similar to the [TabSeparated](#tabseparated) format. During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). [NULL](../query_language/syntax.md) is represented as `NULL`.
 
@@ -750,7 +750,7 @@ This is the format that is used in `INSERT INTO t VALUES ...`, but you can also 
 
 See also: [input_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) and [input_format_values_deduce_templates_of_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) settings.
 
-## Vertical { #vertical}
+## Vertical {#vertical}
 
 Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows, if each row consists of a large number of columns.
 
@@ -783,11 +783,11 @@ test: string with 'quotes' and 	 with some special
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
-## VerticalRaw { #verticalraw}
+## VerticalRaw {#verticalraw}
 
 Similar to [Vertical](#vertical), but with escaping disabled. This format is only suitable for outputting query results, not for parsing (receiving data and inserting it in the table).
 
-## XML { #xml}
+## XML {#xml}
 
 XML format is suitable only for output, not for parsing. Example:
 
@@ -860,7 +860,7 @@ In string values, the characters `<` and `&` are escaped as `<` and `&`.
 
 Arrays are output as `<array><elem>Hello</elem><elem>World</elem>...</array>`,and tuples as `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>`.
 
-## CapnProto { #capnproto}
+## CapnProto {#capnproto}
 
 Cap'n Proto is a binary message format similar to Protocol Buffers and Thrift, but not like JSON or MessagePack.
 
@@ -883,7 +883,7 @@ Deserialization is effective and usually doesn't increase the system load.
 
 See also [Format Schema](#formatschema).
 
-## Protobuf { #protobuf}
+## Protobuf {#protobuf}
 
 Protobuf - is a [Protocol Buffers](https://developers.google.com/protocol-buffers/) format.
 
@@ -950,7 +950,7 @@ ClickHouse inputs and outputs protobuf messages in the `length-delimited` format
 It means before every message should be written its length as a [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
 See also [how to read/write length-delimited protobuf messages in popular languages](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
 
-## Avro { #data-format-avro}
+## Avro {#data-format-avro}
 
 [Apache Avro](http://avro.apache.org/) is a row-oriented data serialization framework developed within Apache's Hadoop project.
 
@@ -1014,7 +1014,7 @@ Column names must:
 
 Output Avro file compression and sync interval can be configured with [output_format_avro_codec](../operations/settings/settings.md#settings-output_format_avro_codec) and [output_format_avro_sync_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) respectively.
 
-## AvroConfluent { #data-format-avro-confluent}
+## AvroConfluent {#data-format-avro-confluent}
 
 AvroConfluent supports decoding single-object Avro messages commonly used with [Kafka](https://kafka.apache.org/) and [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html).
 
@@ -1062,7 +1062,7 @@ SELECT * FROM topic1_stream;
     Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it's value after a restart.
 
 
-## Parquet { #data-format-parquet}
+## Parquet {#data-format-parquet}
 
 [Apache Parquet](http://parquet.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
 
@@ -1110,7 +1110,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 
 To exchange data with Hadoop, you can use [HDFS table engine](../operations/table_engines/hdfs.md).
 
-## ORC { #data-format-orc}
+## ORC {#data-format-orc}
 
 [Apache ORC](https://orc.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. You can only insert data in this format to ClickHouse.
 
@@ -1151,7 +1151,7 @@ $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT OR
 
 To exchange data with Hadoop, you can use [HDFS table engine](../operations/table_engines/hdfs.md).
 
-## Format Schema { #formatschema}
+## Format Schema {#formatschema}
 
 The file name containing the format schema is set by the setting `format_schema`.
 It's required to set this setting when it is used one of the formats `Cap'n Proto` and `Protobuf`.
@@ -1170,7 +1170,7 @@ in the server configuration.
 
 [Original article](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->
 
-## Skipping Errors { #skippingerrors}
+## Skipping Errors {#skippingerrors}
 
 Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) and
 [input_format_allow_errors_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) settings.

@@ -9,7 +9,7 @@ Kafka lets you:
 - Process streams as they become available.
 
 
-## Creating a Table { #table_engine-kafka-creating-a-table}
+## Creating a Table {#table_engine-kafka-creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
