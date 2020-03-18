@@ -1,7 +1,8 @@
 #include "CompressedReadBufferBase.h"
 
 #include <vector>
-#include <string.h>
+#include <cstring>
+#include <cassert>
 #include <city.h>
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
@@ -117,6 +118,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
 
     size_compressed_without_checksum = ICompressionCodec::readCompressedBlockSize(own_compressed_buffer.data());
     size_decompressed = ICompressionCodec::readDecompressedBlockSize(own_compressed_buffer.data());
+
+    assert(size_decompressed > 0);
 
     if (size_compressed_without_checksum > DBMS_MAX_COMPRESSED_SIZE)
         throw Exception("Too large size_compressed_without_checksum: "

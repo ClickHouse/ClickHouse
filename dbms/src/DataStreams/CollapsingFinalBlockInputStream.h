@@ -5,6 +5,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
 #include <queue>
+#include <cassert>
+
 
 namespace DB
 {
@@ -115,6 +117,8 @@ private:
 
         MergingBlockPtr & operator=(const MergingBlockPtr & rhs)
         {
+            assert(ptr != rhs.ptr);
+
             destroy();
             ptr = rhs.ptr;
             if (ptr)
