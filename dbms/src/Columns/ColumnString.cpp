@@ -73,42 +73,18 @@ void ColumnString::updateWeakHash32(WeakHash32 & hash) const
         throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
                         ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
 
-    const UInt8 * begin = &chars[0];
-    const UInt8 * str_begin = begin;
-    const Offset * offset_begin = &offsets[0];
-    const Offset * offset_end = offset_begin + s;
+    const UInt8 * pos = &chars[0];
     UInt32 * hash_data = &hash.getData()[0];
+    Offset prev_offset = 0;
 
-    while (offset_begin < offset_end)
+    for (auto & offset : offsets)
     {
-        const UInt8 * str_end = begin + *offset_begin;
+        auto str_size = offset - prev_offset;
+        *hash_data = StringRefHash::updateWeakHash(StringRef(pos, str_size), *hash_data);
 
-        auto str_size = str_end - str_begin;
-
-        if (str_size < 8)
-        {
-            auto value = unalignedLoad<UInt64>(str_begin);
-            value &= (1ull << UInt64((8 * str_size))) - 1ull;
-            *hash_data = intHashCRC32(value, *hash_data);
-        }
-        else
-        {
-            /// Copy from StringRef.h
-            while (str_begin + 8 < str_end)
-            {
-                auto word = unalignedLoad<UInt64>(str_begin);
-                *hash_data = intHashCRC32(word, *hash_data);
-
-                str_begin += 8;
-            }
-
-            auto word = unalignedLoad<UInt64>(str_end - 8);
-            *hash_data = intHashCRC32(word, *hash_data);
-        }
-
-        ++offset_begin;
+        pos += str_size;
+        prev_offset = offset;
         ++hash_data;
-        str_begin = str_end;
     }
 }
 
