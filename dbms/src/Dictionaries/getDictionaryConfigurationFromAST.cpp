@@ -39,8 +39,9 @@ String getUnescapedFieldString(const Field & field)
     if (!string.empty() && string.front() == '\'' && string.back() == '\'')
         string = string.substr(1, string.size() - 2);
 
-    /// Backqouting will be performed on dictionary providers side
+    /// Escaping will be performed on dictionary providers side
     boost::replace_all(string, "\\'", "'");
+    boost::replace_all(string, "\\\\", "\\");
     return string;
 }
 
