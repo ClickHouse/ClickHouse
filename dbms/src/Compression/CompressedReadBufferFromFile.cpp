@@ -1,3 +1,5 @@
+#include <cassert>
+
 #include "CompressedReadBufferFromFile.h"
 
 #include <Compression/CompressionInfo.h>
@@ -16,11 +18,13 @@ namespace ErrorCodes
 
 bool CompressedReadBufferFromFile::nextImpl()
 {
-    size_t size_decompressed;
+    size_t size_decompressed = 0;
     size_t size_compressed_without_checksum;
     size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum);
     if (!size_compressed)
         return false;
+
+    assert(size_decompressed > 0);
 
     memory.resize(size_decompressed + codec->getAdditionalSizeAtTheEndOfBuffer());
     working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
