@@ -714,7 +714,7 @@ void IMergeTreeDataPart::remove() const
         }
         catch (...)
         {
-            LOG_ERROR(storage.log, "Cannot remove directory " << fullPath(disk, to_) << ". Check owner and access rights.");
+            LOG_ERROR(storage.log, "Cannot recursively remove directory " << fullPath(disk, to_) << ". Exception: " << getCurrentExceptionMessage(false));
             throw;
         }
     }

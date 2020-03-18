@@ -1,4 +1,4 @@
-# docker build -t yandex/clickhouse-stateless-test .
+# docker build -t yandex/clickhouse-stateless-test . 
 FROM yandex/clickhouse-deb-builder
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"

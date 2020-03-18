@@ -152,7 +152,7 @@ def print_changes():
         'New, s',                                                        # 1
         'Relative difference (new&nbsp;-&nbsp;old)/old',                 # 2
         'Randomization distribution quantiles \
-            [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]',                          # 3
+            [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]',                         # 3
         'Test',                                                          # 4
         'Query',                                                         # 5
         ]
