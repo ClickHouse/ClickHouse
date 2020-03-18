@@ -41,6 +41,8 @@ endif ()
 
 target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
 
+target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
+
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (common SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
