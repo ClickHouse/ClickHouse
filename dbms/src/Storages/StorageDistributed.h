@@ -67,7 +67,6 @@ public:
     bool isRemote() const override { return true; }
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context, const ClusterPtr & cluster) const;
 
     Pipes read(
         const Names & column_names,

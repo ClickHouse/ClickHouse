@@ -1,4 +1,4 @@
-# Sources of External Dictionaries {#dicts-external_dicts_dict_sources}
+# Sources of External Dictionaries { #dicts-external_dicts_dict_sources}
 
 An external dictionary can be connected from many different sources.
 
@@ -43,7 +43,7 @@ Types of sources (`source_type`):
     - [Redis](#dicts-external_dicts_dict_sources-redis)
 
 
-## Local File {#dicts-external_dicts_dict_sources-local_file}
+## Local File { #dicts-external_dicts_dict_sources-local_file}
 
 Example of settings:
 
@@ -68,7 +68,7 @@ Setting fields:
 - `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
 
 
-## Executable File {#dicts-external_dicts_dict_sources-executable}
+## Executable File { #dicts-external_dicts_dict_sources-executable}
 
 Working with executable files depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file's STDIN. Otherwise, ClickHouse starts executable file and treats its output as dictionary data.
 
@@ -95,7 +95,7 @@ Setting fields:
 - `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
 
 
-## HTTP(s) {#dicts-external_dicts_dict_sources-http}
+## HTTP(s) { #dicts-external_dicts_dict_sources-http}
 
 Working with an HTTP(s) server depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
 
@@ -146,7 +146,7 @@ Setting fields:
         - `value` – Value set for a specific identifiant name.
 
 
-## ODBC {#dicts-external_dicts_dict_sources-odbc}
+## ODBC { #dicts-external_dicts_dict_sources-odbc}
 
 You can use this method to connect any database that has an ODBC driver.
 
@@ -390,7 +390,7 @@ LIFETIME(MIN 300 MAX 360)
 ## DBMS
 
 
-### MySQL {#dicts-external_dicts_dict_sources-mysql}
+### MySQL { #dicts-external_dicts_dict_sources-mysql}
 
 Example of settings:
 
@@ -482,7 +482,7 @@ SOURCE(MYSQL(
 ```
 
 
-### ClickHouse {#dicts-external_dicts_dict_sources-clickhouse}
+### ClickHouse { #dicts-external_dicts_dict_sources-clickhouse}
 
 Example of settings:
 
@@ -526,7 +526,7 @@ Setting fields:
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
 
 
-### MongoDB {#dicts-external_dicts_dict_sources-mongodb}
+### MongoDB { #dicts-external_dicts_dict_sources-mongodb}
 
 Example of settings:
 
@@ -566,7 +566,7 @@ Setting fields:
 - `collection` – Name of the collection.
 
 
-### Redis {#dicts-external_dicts_dict_sources-redis}
+### Redis { #dicts-external_dicts_dict_sources-redis}
 
 Example of settings:
 

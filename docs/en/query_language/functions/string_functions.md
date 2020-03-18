@@ -1,6 +1,6 @@
 # Functions for working with strings
 
-## empty {#string_functions-empty}
+## empty { #string_functions-empty}
 
 Returns 1 for an empty string or 0 for a non-empty string.
 The result type is UInt8.
@@ -85,7 +85,7 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 └───────────────────────┘
 ```
 
-## repeat {#repeat}
+## repeat { #repeat}
 
 Repeats a string as many times as specified and concatenates the replicated values as a single string.
 
@@ -132,7 +132,7 @@ Reverses a sequence of Unicode code points, assuming that the string contains a 
 
 ## format(pattern, s0, s1, ...)
 
-Formatting constant pattern with the string listed in the arguments. `pattern` is a simplified Python format pattern. Format string contains "replacement fields" surrounded by curly braces `{}`. Anything that is not contained in braces is considered literal text, which is copied unchanged to the output. If you need to include a brace character in the literal text, it can be escaped by doubling: `{{` and `}}`. Field names can be numbers (starting from zero) or empty (then they are treated as consequence numbers).
+Formatting constant pattern with the string listed in the arguments. `pattern` is a simplified Python format pattern. Format string contains "replacement fields" surrounded by curly braces `{}`. Anything that is not contained in braces is considered literal text, which is copied unchanged to the output. If you need to include a brace character in the literal text, it can be escaped by doubling: `{{ '{{' }}` and `{{ '}}' }}`. Field names can be numbers (starting from zero) or empty (then they are treated as consequence numbers).
 
 ```sql
 SELECT format('{1} {0} {1}', 'World', 'Hello')
@@ -151,7 +151,7 @@ SELECT format('{} {}', 'Hello', 'World')
 └───────────────────────────────────┘
 ```
 
-## concat {#concat}
+## concat { #concat}
 
 Concatenates the strings listed in the arguments, without a separator.
 
@@ -187,7 +187,7 @@ Result:
 └─────────────────────────────┘
 ```
 
-## concatAssumeInjective {#concatassumeinjective}
+## concatAssumeInjective { #concatassumeinjective}
 
 Same as [concat](#concat), the difference is that you need to ensure that `concat(s1, s2, ...) → sn` is injective, it will be used for optimization of GROUP BY.
 
@@ -253,11 +253,11 @@ Decode base64-encoded string 's' into original string. In case of failure raises
 ## tryBase64Decode(s)
 Similar to base64Decode, but in case of error an empty string would be returned.
 
-## endsWith(s, suffix) {#function-endswith}
+## endsWith(s, suffix) { #function-endswith}
 
 Returns whether to end with the specified suffix. Returns 1 if the string ends with the specified suffix, otherwise it returns 0.
 
-## startsWith(str, prefix) {#function-startswith}
+## startsWith(str, prefix) { #function-startswith}
 
 Returns 1 whether string starts with the specified prefix, otherwise it returns 0.
 
@@ -286,7 +286,7 @@ Result:
 └───────────────────────────────────┘
 ```
 
-## trim {#trim}
+## trim { #trim}
 
 Removes all specified characters from the start or end of a string.
 By default removes all consecutive occurrences of common whitespace (ASCII character 32) from both ends of a string.
@@ -324,7 +324,7 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
-## trimLeft {#trimleft}
+## trimLeft { #trimleft}
 
 Removes all consecutive occurrences of common whitespace (ASCII character 32) from the beginning of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
 
@@ -362,7 +362,7 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-## trimRight {#trimright}
+## trimRight { #trimright}
 
 Removes all consecutive occurrences of common whitespace (ASCII character 32) from the end of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
 
@@ -400,7 +400,7 @@ Result:
 └──────────────────────────────────────┘
 ```
 
-## trimBoth  {#trimboth}
+## trimBoth  { #trimboth}
 
 Removes all consecutive occurrences of common whitespace (ASCII character 32) from both ends of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
 

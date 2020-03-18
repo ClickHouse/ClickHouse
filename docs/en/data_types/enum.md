@@ -2,7 +2,7 @@
 
 Enumerated type consisting of named values. 
 
-Named values must be delcared as `'string' = integer` pairs. ClickHouse stores only numbers, but supports operations with the values through their names.
+Named values must be declared as `'string' = integer` pairs. ClickHouse stores only numbers, but supports operations with the values through their names.
 
 ClickHouse supports:
 
@@ -106,7 +106,7 @@ The implicit default value is the value with the lowest number.
 
 During `ORDER BY`, `GROUP BY`, `IN`, `DISTINCT` and so on, Enums behave the same way as the corresponding numbers. For example, ORDER BY sorts them numerically. Equality and comparison operators work the same way on Enums as they do on the underlying numeric values.
 
-Enum values cannot be compared with numbers. Enums can be compared to a constant string. If the string compared to is not a valid value for the Enum, an exception will be thrown. The IN operator is supported with the Enum on the left hand side and a set of strings on the right hand side. The strings are the values of the corresponding Enum.
+Enum values cannot be compared with numbers. Enums can be compared to a constant string. If the string compared to is not a valid value for the Enum, an exception will be thrown. The IN operator is supported with the Enum on the left-hand side and a set of strings on the right-hand side. The strings are the values of the corresponding Enum.
 
 Most numeric and string operations are not defined for Enum values, e.g. adding a number to an Enum or concatenating a string to an Enum.
 However, the Enum has a natural `toString` function that returns its string value.

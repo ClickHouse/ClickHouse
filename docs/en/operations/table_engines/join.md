@@ -2,7 +2,7 @@
 
 Prepared data structure for using in [JOIN](../../query_language/select.md#select-join) operations.
 
-## Creating a Table {#creating-a-table}
+## Creating a Table { #creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -77,7 +77,7 @@ You cannot perform a `SELECT` query directly from the table. Instead, use one of
 - Place the table to the right side in a `JOIN` clause.
 - Call the [joinGet](../../query_language/functions/other_functions.md#joinget) function, which lets you extract data from the table the same way as from a dictionary.
 
-### Limitations and Settings {#join-limitations-and-settings}
+### Limitations and Settings { #join-limitations-and-settings}
 
 When creating a table, the following settings are applied:
 

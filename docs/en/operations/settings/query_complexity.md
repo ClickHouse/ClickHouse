@@ -16,7 +16,7 @@ It can take one of two values: `throw` or `break`. Restrictions on aggregation (
 
 `any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but don't add new keys to the set.
 
-## max_memory_usage {#settings_max_memory_usage}
+## max_memory_usage { #settings_max_memory_usage}
 
 The maximum amount of RAM to use for running a query on a single server.
 
@@ -64,7 +64,7 @@ Maximum number of bytes (uncompressed data) that can be read from a table when r
 
 What to do when the volume of data read exceeds one of the limits: 'throw' or 'break'. By default, throw.
 
-## max_rows_to_group_by {#settings-max_rows_to_group_by}
+## max_rows_to_group_by { #settings-max_rows_to_group_by}
 
 Maximum number of unique keys received from aggregation. This setting lets you limit memory consumption when aggregating.
 
@@ -73,7 +73,7 @@ Maximum number of unique keys received from aggregation. This setting lets you l
 What to do when the number of unique keys for aggregation exceeds the limit: 'throw', 'break', or 'any'. By default, throw.
 Using the 'any' value lets you run an approximation of GROUP BY. The quality of this approximation depends on the statistical nature of the data.
 
-## max_bytes_before_external_group_by {#settings-max_bytes_before_external_group_by}
+## max_bytes_before_external_group_by { #settings-max_bytes_before_external_group_by}
 
 Enables or disables execution of `GROUP BY` clauses in external memory. See [GROUP BY in external memory](../../query_language/select.md#select-group-by-in-external-memory).
 
@@ -96,7 +96,7 @@ Maximum number of bytes before sorting.
 
 What to do if the number of rows received before sorting exceeds one of the limits: 'throw' or 'break'. By default, throw.
 
-## max_result_rows {#setting-max_result_rows}
+## max_result_rows { #setting-max_result_rows}
 
 Limit on the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
 
@@ -223,7 +223,7 @@ Maximum number of bytes (uncompressed data) that can be passed to a remote serve
 
 What to do when the amount of data exceeds one of the limits: 'throw' or 'break'. By default, throw.
 
-## max_rows_in_join {#settings-max_rows_in_join}
+## max_rows_in_join { #settings-max_rows_in_join}
 
 Limits the number of rows in the hash table that is used when joining tables.
 
@@ -240,7 +240,7 @@ Possible values:
 
 Default value: 0.
 
-## max_bytes_in_join {#settings-max_bytes_in_join}
+## max_bytes_in_join { #settings-max_bytes_in_join}
 
 Limits the size in bytes of the hash table used when joining tables.
 
@@ -257,7 +257,7 @@ Possible values:
 
 Default value: 0.
 
-## join_overflow_mode {#settings-join_overflow_mode}
+## join_overflow_mode { #settings-join_overflow_mode}
 
 Defines what action ClickHouse performs when any of the following join limits is reached:
 

@@ -20,7 +20,7 @@ Returns the smallest round number that is greater than or equal to `x`. In every
 
 Returns the round number with largest absolute value that has an absolute value less than or equal to `x`'s. In every other way, it is the same as the 'floor' function (see above).
 
-## round(x\[, N\]) {#rounding_functions-round}
+## round(x\[, N\]) { #rounding_functions-round}
 
 Rounds a value to a specified number of decimal places.
 
@@ -82,7 +82,7 @@ round(3.65, 1) = 3.6
 
 - [roundBankers](#roundbankers)
 
-## roundBankers {#roundbankers}
+## roundBankers { #roundbankers}
 
 Rounds a number to a specified decimal position.
 

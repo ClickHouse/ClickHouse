@@ -86,7 +86,7 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 ```
 
 
-## Data Processing {#data-processing}
+## Data Processing { #data-processing}
 
 When data are inserted into a table, they are saved as-is. Clickhouse merges the inserted parts of data periodically and this is when rows with the same primary key are summed and replaced with one for each resulting part of data.
 
