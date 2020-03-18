@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Common/UInt128.h>
+#include <common/unaligned.h>
 
 #include <type_traits>
 
