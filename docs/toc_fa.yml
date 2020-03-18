@@ -241,5 +241,9 @@ nav:
 
 - 'What''s New':
   - 'Roadmap': 'roadmap.md'
-  - 'Changelog': 'changelog.md'
+  - 'Changelog':
+    - '2020': 'changelog/index.md'
+    - '2019': 'changelog/2019.md'
+    - '2018': 'changelog/2018.md'
+    - '2017': 'changelog/2017.md'
   - 'Security Changelog': 'security_changelog.md'
