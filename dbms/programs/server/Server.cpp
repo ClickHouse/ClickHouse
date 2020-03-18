@@ -175,7 +175,7 @@ int Server::run()
         std::cout << DBMS_NAME << " server version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
         return 0;
     }
-    return Application::run();
+    return Application::run(); // NOLINT
 }
 
 void Server::initialize(Poco::Util::Application & self)

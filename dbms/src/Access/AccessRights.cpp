@@ -75,6 +75,9 @@ public:
 
     Node & operator =(const Node & src)
     {
+        if (this == &src)
+            return *this;
+
         node_name = src.node_name;
         level = src.level;
         inherited_access = src.inherited_access;
