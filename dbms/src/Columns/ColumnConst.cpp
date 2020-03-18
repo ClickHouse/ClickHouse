@@ -5,6 +5,7 @@
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 #include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
 
 
 namespace DB
