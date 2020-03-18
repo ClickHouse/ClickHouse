@@ -234,7 +234,7 @@ def test_dictionary_with_where(started_cluster):
         DB 'clickhouse'
         TABLE 'special_table'
         REPLICA(PRIORITY 1 HOST 'mysql1' PORT 3306)
-        WHERE 'value1 = \\'qweqwe\\''
+        WHERE 'value1 = \\'qweqwe\\' OR value1 = \\'\\\\u3232\\''
     ))
     LAYOUT(FLAT())
     LIFETIME(MIN 1 MAX 3)
