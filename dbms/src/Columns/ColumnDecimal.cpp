@@ -2,6 +2,7 @@
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <Common/WeakHash.h>
 
 #include <common/unaligned.h>
 
@@ -63,6 +64,40 @@ template <typename T>
 void ColumnDecimal<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
     hash.update(data[n]);
+}
+
+template <typename T>
+void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
+{
+    auto s = data.size();
+
+    if (hash.getData().size() != s)
+        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
+                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+
+    const T * begin = &data[0];
+    const T * end = begin + s;
+    UInt32 * hash_data = &hash.getData()[0];
+
+    while (begin < end)
+    {
+        if constexpr (sizeof(T) <= sizeof(UInt64))
+        {
+            *hash_data = intHashCRC32(*begin, *hash_data);
+        }
+        else
+        {
+            auto * begin64 = reinterpret_cast<const UInt64 *>(begin);
+            for (size_t i = 0; i < sizeof(T); i += sizeof(UInt64))
+            {
+                *hash_data = intHashCRC32(*begin64, *hash_data);
+                ++begin64;
+            }
+        }
+
+        ++begin;
+        ++hash_data;
+    }
 }
 
 template <typename T>

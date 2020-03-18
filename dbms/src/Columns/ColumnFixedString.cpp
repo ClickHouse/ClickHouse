@@ -6,6 +6,8 @@
 #include <Common/memcpySmall.h>
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
+#include <Common/WeakHash.h>
+#include <common/StringRef.h>
 
 #include <DataStreams/ColumnGathererStream.h>
 
@@ -99,6 +101,26 @@ const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
 void ColumnFixedString::updateHashWithValue(size_t index, SipHash & hash) const
 {
     hash.update(reinterpret_cast<const char *>(&chars[n * index]), n);
+}
+
+void ColumnFixedString::updateWeakHash32(WeakHash32 & hash) const
+{
+    auto s = size();
+
+    if (hash.getData().size() != s)
+        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
+                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+
+    const UInt8 * pos = &chars[0];
+    UInt32 * hash_data = &hash.getData()[0];
+
+    for (size_t row = 0; row < s; ++row)
+    {
+        *hash_data = StringRefHash::updateWeakHash(StringRef(pos, n), *hash_data);
+
+        pos += n;
+        ++hash_data;
+    }
 }
 
 template <bool positive>
