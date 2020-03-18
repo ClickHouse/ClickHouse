@@ -101,7 +101,7 @@ Features:
 - Refactorings.
 - Search and Navigation.
 
-### Yandex DataLens { #yandex-datalens}
+### Yandex DataLens {#yandex-datalens}
 
 [Yandex DataLens](https://cloud.yandex.ru/services/datalens) is a service of data visualization and analytics.
 

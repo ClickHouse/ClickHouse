@@ -1,4 +1,4 @@
-# Server configuration parameters { #server_settings}
+# Server configuration parameters {#server_settings}
 
 This section contains descriptions of server settings that cannot be changed at the session or query level.
 

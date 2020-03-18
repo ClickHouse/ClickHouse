@@ -5,7 +5,7 @@
 - [Query processing](#troubleshooting-does-not-process-queries)
 - [Efficiency of query processing](#troubleshooting-too-slow)
 
-## Installation { #troubleshooting-installation-errors}
+## Installation {#troubleshooting-installation-errors}
 
 ### You Cannot Get Deb Packages from ClickHouse Repository With apt-get
 
@@ -13,7 +13,7 @@
 - If you cannot access the repository for any reason, download packages as described in the [Getting started](../getting_started/index.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
 
 
-## Connecting to the Server { #troubleshooting-accepts-no-connections}
+## Connecting to the Server {#troubleshooting-accepts-no-connections}
 
 Possible issues:
 
@@ -120,7 +120,7 @@ Check:
 
     You might be using the wrong user name or password.
 
-## Query Processing { #troubleshooting-does-not-process-queries}
+## Query Processing {#troubleshooting-does-not-process-queries}
 
 If ClickHouse is not able to process the query, it sends an error description to the client. In the `clickhouse-client` you get a description of the error in the console. If you are using the HTTP interface, ClickHouse sends the error description in the response body. For example:
 
@@ -133,7 +133,7 @@ If you start `clickhouse-client` with the `stack-trace` parameter, ClickHouse re
 
 You might see a message about a broken connection. In this case, you can repeat the query. If the connection breaks every time you perform the query, check the server logs for errors.
 
-## Efficiency of Query Processing { #troubleshooting-too-slow}
+## Efficiency of Query Processing {#troubleshooting-too-slow}
 
 If you see that ClickHouse is working too slowly, you need to profile the load on the server resources and network for your queries.
 

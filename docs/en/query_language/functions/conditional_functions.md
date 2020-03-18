@@ -1,6 +1,6 @@
 # Conditional functions
 
-## if { #if}
+## if {#if}
 
 Controls conditional branching. Unlike most systems, ClickHouse always evaluate both expressions `then` and `else`.
 
@@ -88,7 +88,7 @@ WHERE isNotNull(left) AND isNotNull(right)
 ```
 Note: `NULL` values are not used in this example, check [NULL values in conditionals](#null-values-in-conditionals) section.
 
-## Ternary Operator { #ternary-operator}
+## Ternary Operator {#ternary-operator}
 
 It works same as `if` function.
 
