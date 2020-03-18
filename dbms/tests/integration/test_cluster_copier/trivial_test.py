@@ -131,10 +131,10 @@ def test_trivial_copy(started_cluster):
     execute_task(TaskTrivial(started_cluster), [])
 
 def test_trivial_copy_with_copy_fault(started_cluster):
-    execute_task(TaskTrivial(started_cluster), ['--copy-fault-probability', str(0.1)])
+    execute_task(TaskTrivial(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
 
 def test_trivial_copy_with_move_fault(started_cluster):
-    execute_task(TaskTrivial(started_cluster), ['--move-fault-probability', str(0.1)])
+    execute_task(TaskTrivial(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
 
 
 if __name__ == '__main__':
