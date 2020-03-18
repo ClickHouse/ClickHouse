@@ -186,7 +186,7 @@ def build_single_page_version(lang, args, cfg):
                     create_pdf_command = ['wkhtmltopdf', '--print-media-type', single_page_index_html, single_page_pdf]
                     logging.debug(' '.join(create_pdf_command))
                     with open(os.devnull, 'w') as devnull:
-                        subprocess.check_call(' '.join(create_pdf_command), shell=True, stderr=devnull)
+                        subprocess.check_call(' '.join(create_pdf_command), shell=True)
 
                 with util.temp_dir() as test_dir:
                     cfg.load_dict({
