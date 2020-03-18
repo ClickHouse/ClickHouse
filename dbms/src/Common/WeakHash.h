@@ -14,6 +14,7 @@ public:
     using Container = PaddedPODArray<UInt32>;
 
     explicit WeakHash32(size_t size) : data(size, ~UInt32(0)) {}
+    WeakHash32(const WeakHash32 & other) { data.assign(other.data); }
 
     const Container & getData() const { return data; }
     Container & getData() { return data; }
