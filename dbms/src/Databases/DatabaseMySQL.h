@@ -1,7 +1,6 @@
 #pragma once
 
 #include "config_core.h"
-#define USE_MYSQL 1
 #if USE_MYSQL
 
 #include <mysqlxx/Pool.h>

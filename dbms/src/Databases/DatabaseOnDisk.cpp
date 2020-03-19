@@ -56,8 +56,8 @@ std::pair<String, StoragePtr> createTableFromAST(
     {
         const auto & table_function = ast_create_query.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
-        //FIXME storage will have wrong database name
         StoragePtr storage = factory.get(table_function.name, context)->execute(ast_create_query.as_table_function, context, ast_create_query.table);
+        storage->resetStorageIDForTableFunction({ast_create_query.database, ast_create_query.table, ast_create_query.uuid});
         return {ast_create_query.table, storage};
     }
     /// We do not directly use `InterpreterCreateQuery::execute`, because
@@ -254,7 +254,7 @@ void DatabaseOnDisk::renameTable(
         table_lock = table->lockExclusively(context.getCurrentQueryId());
 
         table_metadata_path = getObjectMetadataPath(table_name);
-        attach_query = parseQueryFromMetadata(context, table_metadata_path);
+        attach_query = parseQueryFromMetadata(log, context, table_metadata_path);
         auto & create = attach_query->as<ASTCreateQuery &>();
         create.table = to_table_name;
         if (from_ordinary_to_atomic)
@@ -407,7 +407,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & /*context*/, const Ite
     }
 }
 
-ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const Context & context, const String & metadata_file_path, bool throw_on_error /*= true*/, bool remove_empty /*= false*/) const
+ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * loger, const Context & context, const String & metadata_file_path, bool throw_on_error /*= true*/, bool remove_empty /*= false*/)
 {
     String query;
 
@@ -429,7 +429,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const Context & context, const Str
       */
     if (remove_empty && query.empty())
     {
-        LOG_ERROR(log, "File " << metadata_file_path << " is empty. Removing.");
+        LOG_ERROR(loger, "File " << metadata_file_path << " is empty. Removing.");
         Poco::File(metadata_file_path).remove();
         return nullptr;
     }
@@ -439,7 +439,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const Context & context, const Str
     const char * pos = query.data();
     std::string error_message;
     auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message, /* hilite = */ false,
-                             "in file " + getMetadataPath(), /* allow_multi_statements = */ false, 0, settings.max_parser_depth);
+                             "in file " + metadata_file_path, /* allow_multi_statements = */ false, 0, settings.max_parser_depth);
 
     if (!ast && throw_on_error)
         throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
@@ -449,14 +449,11 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const Context & context, const Str
     auto & create = ast->as<ASTCreateQuery &>();
     if (create.uuid != UUIDHelpers::Nil)
     {
-        //FIXME it can be .sql or .sql.tmp_drop
         String table_name = Poco::Path(metadata_file_path).makeFile().getBaseName();
-        if (Poco::Path(table_name).makeFile().getExtension() == "sql")
-            table_name = Poco::Path(table_name).makeFile().getBaseName();
         table_name = unescapeForFileName(table_name);
 
         if (create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER)
-            LOG_WARNING(log, "File " << metadata_file_path << " contains both UUID and table name. "
+            LOG_WARNING(loger, "File " << metadata_file_path << " contains both UUID and table name. "
                                                     "Will use name `" << table_name << "` instead of `" << create.table << "`");
         create.table = table_name;
     }
@@ -466,7 +463,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const Context & context, const Str
 
 ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const Context & context, const String & database_metadata_path, bool throw_on_error) const
 {
-    ASTPtr ast = parseQueryFromMetadata(context, database_metadata_path, throw_on_error);
+    ASTPtr ast = parseQueryFromMetadata(log, context, database_metadata_path, throw_on_error);
 
     if (ast)
     {

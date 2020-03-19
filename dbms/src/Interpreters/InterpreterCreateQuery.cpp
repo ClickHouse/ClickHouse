@@ -649,8 +649,8 @@ bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
     {
         const auto & table_function = create.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
-        //FIXME storage will have wrong database name
         res = factory.get(table_function.name, context)->execute(create.as_table_function, context, create.table);
+        res->resetStorageIDForTableFunction({create.database, create.table, create.uuid});
     }
     else
     {

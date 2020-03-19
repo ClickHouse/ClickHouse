@@ -431,4 +431,10 @@ void IStorage::renameInMemory(const String & new_database_name, const String & n
     storage_id.table_name = new_table_name;
 }
 
+void IStorage::resetStorageIDForTableFunction(const StorageID & actual_table_id)
+{
+    std::lock_guard lock(id_mutex);
+    storage_id = actual_table_id;
+}
+
 }
