@@ -23,9 +23,6 @@ public:
         return instance;
     }
 
-    /// Need to set before load
-    void setCaseInsensitive() { case_insensitive = true; }
-
     void load(const ConnectionParameters & connection_parameters, size_t suggestion_limit);
 
     /// Older server versions cannot execute the query above.

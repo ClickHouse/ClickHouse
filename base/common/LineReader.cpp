@@ -52,19 +52,10 @@ LineReader::Suggest::WordsRange LineReader::Suggest::getCompletions(const String
         last_word = std::string_view(prefix).substr(last_word_pos + 1, std::string::npos);
 
     /// last_word can be empty.
-
-    if (case_insensitive)
-        return std::equal_range(
-                words.begin(), words.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
-                {
-                    return strncasecmp(s.data(), prefix_searched.data(), prefix_length) < 0;
-                });
-    else
-        return std::equal_range(
-                words.begin(), words.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
-                {
-                    return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0;
-                });
+    return std::equal_range(words.begin(), words.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
+    {
+        return strncasecmp(s.data(), prefix_searched.data(), prefix_length) < 0;
+    });
 }
 
 LineReader::LineReader(const String & history_file_path_, char extender_, char delimiter_)
