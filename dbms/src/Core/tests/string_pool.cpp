@@ -27,7 +27,7 @@ int main(int argc, char ** argv)
     std::ofstream devnull("/dev/null");
 
     DB::ReadBufferFromFileDescriptor in(STDIN_FILENO);
-    size_t n = atoi(argv[1]);
+    size_t n = std::stol(argv[1]);
     size_t elems_show = 1;
 
     using Vec = std::vector<std::string>;

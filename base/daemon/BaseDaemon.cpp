@@ -99,12 +99,12 @@ static void writeSignalIDtoSignalPipe(int sig)
 }
 
 /** Signal handler for HUP / USR1 */
-static void closeLogsSignalHandler(int sig, siginfo_t * info, void * context)
+static void closeLogsSignalHandler(int sig, siginfo_t *, void *)
 {
     writeSignalIDtoSignalPipe(sig);
 }
 
-static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * context)
+static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
 {
     writeSignalIDtoSignalPipe(sig);
 }
@@ -404,7 +404,7 @@ std::string instructionFailToString(InstructionFail fail)
 
 sigjmp_buf jmpbuf;
 
-void sigIllCheckHandler(int sig, siginfo_t * info, void * context)
+void sigIllCheckHandler(int, siginfo_t *, void *)
 {
     siglongjmp(jmpbuf, 1);
 }

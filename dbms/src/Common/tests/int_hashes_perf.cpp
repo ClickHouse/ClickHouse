@@ -273,8 +273,8 @@ static inline void test(size_t n, const UInt64 * data, const char * name)
 
 int main(int argc, char ** argv)
 {
-    size_t n = (atoi(argv[1]) + (BUF_SIZE - 1)) / BUF_SIZE * BUF_SIZE;
-    size_t method = argc <= 2 ? 0 : atoi(argv[2]);
+    size_t n = (std::stol(argv[1]) + (BUF_SIZE - 1)) / BUF_SIZE * BUF_SIZE;
+    size_t method = argc <= 2 ? 0 : std::stol(argv[2]);
 
     std::cerr << std::fixed << std::setprecision(2);
 

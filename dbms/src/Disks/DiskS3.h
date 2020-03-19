@@ -71,17 +71,17 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        size_t estimated_size = 0,
-        size_t aio_threshold = 0,
-        size_t mmap_threshold = 0) const override;
+        size_t buf_size,
+        size_t estimated_size,
+        size_t aio_threshold,
+        size_t mmap_threshold) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite,
-        size_t estimated_size = 0,
-        size_t aio_threshold = 0) override;
+        size_t buf_size,
+        WriteMode mode,
+        size_t estimated_size,
+        size_t aio_threshold) override;
 
     void remove(const String & path) override;
 

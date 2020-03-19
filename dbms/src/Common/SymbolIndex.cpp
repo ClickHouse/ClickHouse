@@ -186,7 +186,7 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
                     symbol.address_begin = reinterpret_cast<const void *>(info->dlpi_addr + elf_sym[sym_index].st_value);
                     symbol.address_end = reinterpret_cast<const void *>(info->dlpi_addr + elf_sym[sym_index].st_value + elf_sym[sym_index].st_size);
                     symbol.name = sym_name;
-                    symbols.push_back(std::move(symbol));
+                    symbols.push_back(symbol);
                 }
 
                 break;
@@ -227,7 +227,7 @@ void collectSymbolsFromELFSymbolTable(
         symbol.address_begin = reinterpret_cast<const void *>(info->dlpi_addr + symbol_table_entry->st_value);
         symbol.address_end = reinterpret_cast<const void *>(info->dlpi_addr + symbol_table_entry->st_value + symbol_table_entry->st_size);
         symbol.name = symbol_name;
-        symbols.push_back(std::move(symbol));
+        symbols.push_back(symbol);
     }
 }
 
