@@ -2034,8 +2034,7 @@ void MergeTreeData::PartsTemporaryRename::addPart(const String & old_name, const
     {
         for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
         {
-            String name = it.name();
-            if (name == old_name)
+            if (it.name() == old_name)
             {
                 old_part_name_to_full_path[old_name] = full_path;
                 break;
@@ -3103,12 +3102,10 @@ MergeTreeData::getDetachedParts() const
         for (Poco::DirectoryIterator it(path + "detached");
             it != Poco::DirectoryIterator(); ++it)
         {
-            auto dir_name = it.name();
-
             res.emplace_back();
             auto & part = res.back();
 
-            DetachedPartInfo::tryParseDetachedPartName(dir_name, part, format_version);
+            DetachedPartInfo::tryParseDetachedPartName(it.name(), part, format_version);
             part.disk = disk->getName();
         }
     }

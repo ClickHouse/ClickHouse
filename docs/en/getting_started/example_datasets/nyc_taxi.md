@@ -272,7 +272,7 @@ SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mer
 └────────────────────────────────┘
 ```
 
-Among other things, you can run the OPTIMIZE query on MergeTree. But it's not required, since everything will be fine without it.
+Among other things, you can run the OPTIMIZE query on MergeTree. But it's not required since everything will be fine without it.
 
 ## Download of Prepared Partitions
 
@@ -285,8 +285,7 @@ $ clickhouse-client --query "select count(*) from datasets.trips_mergetree"
 ```
 
 !!!info
-    If you will run queries described below, you have to use full table name,
-    `datasets.trips_mergetree`.
+    If you will run the queries described below, you have to use the full table name, `datasets.trips_mergetree`.
 
 
 ## Results on Single Server
@@ -330,7 +329,7 @@ The following server was used:
 
 Two Intel(R) Xeon(R) CPU E5-2650 v2 @ 2.60GHz, 16 physical kernels total,128 GiB RAM,8x6 TB HD on hardware RAID-5
 
-Execution time is the best of three runsBut starting from the second run, queries read data from the file system cache. No further caching occurs: the data is read out and processed in each run.
+Execution time is the best of three runs. But starting from the second run, queries read data from the file system cache. No further caching occurs: the data is read out and processed in each run.
 
 Creating a table on three servers:
 
@@ -363,7 +362,7 @@ Q4: 1.241 seconds.
 
 No surprises here, since the queries are scaled linearly.
 
-We also have results from a cluster of 140 servers:
+We also have the results from a cluster of 140 servers:
 
 Q1: 0.028 sec.
 Q2: 0.043 sec.

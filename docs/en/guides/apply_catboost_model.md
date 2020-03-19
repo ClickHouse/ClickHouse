@@ -46,9 +46,9 @@ $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 
 ## 1. Create a Table {#create-table}
 
-To create a ClickHouse table for the train sample:
+To create a ClickHouse table for the training sample:
 
-**1.** Start ClickHouse console client in interactive mode:
+**1.** Start ClickHouse console client in the interactive mode:
 
 ```bash
 $ clickhouse client
@@ -93,7 +93,7 @@ To insert the data:
 $ clickhouse client --host 127.0.0.1 --query 'INSERT INTO amazon_train FORMAT CSVWithNames' < ~/amazon/train.csv
 ```
 
-**2.** Start ClickHouse console client in interactive mode:
+**2.** Start ClickHouse console client in the interactive mode:
 
 ```bash
 $ clickhouse client
@@ -180,7 +180,7 @@ LIMIT 10
 !!! note "Note"
     Function [modelEvaluate](../query_language/functions/other_functions.md#function-modelevaluate) returns tuple with per-class raw predictions for multiclass models.
 
-Let's predict probability:
+Let's predict the probability:
 
 ```sql
 :) SELECT 
@@ -228,3 +228,5 @@ FROM
 
 !!! note "Note"
     More info about [avg()](../query_language/agg_functions/reference.md#agg_function-avg) and [log()](../query_language/functions/math_functions.md) functions.
+
+[Original article](https://clickhouse.tech/docs/en/guides/apply_catboost_model/) <!--hide-->

@@ -1,5 +1,4 @@
-# Server settings
-
+# Server Settings
 
 ## builtin_dictionaries_reload_interval
 
@@ -206,7 +205,7 @@ The port for connecting to the server over HTTP(s).
 
 If `https_port` is specified, [openSSL](#server_settings-openssl) must be configured.
 
-If `http_port` is specified, the openSSL configuration is ignored even if it is set.
+If `http_port` is specified, the OpenSSL configuration is ignored even if it is set.
 
 **Example**
 
@@ -218,7 +217,7 @@ If `http_port` is specified, the openSSL configuration is ignored even if it is 
 ## http_server_default_response {#server_settings-http_server_default_response}
 
 The page that is shown by default when you access the ClickHouse HTTP(s) server.
-Default value is "Ok." (with a line feed at the end)
+The default value is "Ok." (with a line feed at the end)
 
 **Example**
 
@@ -256,7 +255,7 @@ Port for exchanging data between ClickHouse servers.
 
 ## interserver_http_host
 
-The host name that can be used by other servers to access this server.
+The hostname that can be used by other servers to access this server.
 
 If omitted, it is defined in the same way as the `hostname-f` command.
 
@@ -415,7 +414,7 @@ The maximum number of open files.
 
 By default: `maximum`.
 
-We recommend using this option in Mac OS X, since the `getrlimit()` function returns an incorrect value.
+We recommend using this option in Mac OS X since the `getrlimit()` function returns an incorrect value.
 
 **Example**
 
@@ -474,7 +473,7 @@ Keys for server/client settings:
 - loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `true`, `false`.  |
 - cipherList – Supported OpenSSL encryptions. For example: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`.
 - cacheSessions – Enables or disables caching sessions. Must be used in combination with ``sessionIdContext``. Acceptable values: `true`, `false`.
-- sessionIdContext – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed ``SSL_MAX_SSL_SESSION_ID_LENGTH``. This parameter is always recommended, since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: ``${application.name}``.
+- sessionIdContext – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed ``SSL_MAX_SSL_SESSION_ID_LENGTH``. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: ``${application.name}``.
 - sessionCacheSize – The maximum number of sessions that the server caches. Default value: 1024\*20. 0 – Unlimited sessions.
 - sessionTimeout – Time for caching the session on the server.
 - extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
@@ -483,7 +482,7 @@ Keys for server/client settings:
 - requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 - fips – Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.
 - privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: ``<privateKeyPassphraseHandler>``, ``<name>KeyFileHandler</name>``, ``<options><password>test</password></options>``, ``</privateKeyPassphraseHandler>``.
-- invalidCertificateHandler – Class (subclass of CertificateHandler) for verifying invalid certificates. For example: `` <invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>`` .
+- invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `` <invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>`` .
 - disableProtocols – Protocols that are not allowed to use.
 - preferServerCiphers – Preferred server ciphers on the client.
 
@@ -634,9 +633,9 @@ The default server configuration file `config.xml` contains the following settin
 ## query_masking_rules
 
 Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
-`system.query_log`, `system.text_log`, `system.processes` table, and in logs sent to client. That allows preventing
-sensitive data leakage from SQL queries (like names / emails / personal
-identifiers / credit card numbers etc) to logs.
+`system.query_log`, `system.text_log`, `system.processes` table, and in logs sent to the client. That allows preventing
+sensitive data leakage from SQL queries (like names, emails, personal
+identifiers or credit card numbers) to logs.
 
 **Example**
 
@@ -655,11 +654,11 @@ Config fields:
 - `regexp` - RE2 compatible regular expression (mandatory)
 - `replace` - substitution string for sensitive data (optional, by default - six asterisks)
 
-The masking rules are applied on whole query (to prevent leaks of sensitive data from malformed / non parsable queries).
+The masking rules are applied to the whole query (to prevent leaks of sensitive data from malformed / non-parsable queries).
 
-`system.events` table have counter `QueryMaskingRulesMatch` which have overall number of query masking rules matches.
+`system.events` table have counter `QueryMaskingRulesMatch` which have an overall number of query masking rules matches.
 
-For distributed queries each server have to be configured separately, otherwise subquries passed to other
+For distributed queries each server have to be configured separately, otherwise, subqueries passed to other
 nodes will be stored without masking.
 
 ## remote_servers {#server_settings_remote_servers}
@@ -682,9 +681,9 @@ For the value of the `incl` attribute, see the section "[Configuration files](..
 
 The server's time zone.
 
-Specified as an IANA identifier for the UTC time zone or geographic location (for example, Africa/Abidjan).
+Specified as an IANA identifier for the UTC timezone or geographic location (for example, Africa/Abidjan).
 
-The time zone is necessary for conversions between String and DateTime formats when DateTime fields are output to text format (printed on the screen or in a file), and when getting DateTime from a string. In addition, the time zone is used in functions that work with the time and date if they didn't receive the time zone in the input parameters.
+The time zone is necessary for conversions between String and DateTime formats when DateTime fields are output to text format (printed on the screen or in a file), and when getting DateTime from a string. Besides, the time zone is used in functions that work with the time and date if they didn't receive the time zone in the input parameters.
 
 **Example**
 
@@ -856,11 +855,11 @@ This setting only applies to the `MergeTree` family. It can be specified:
 
 - Globally in the [merge_tree](#server_settings-merge_tree) section of the `config.xml` file.
 
-    ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behavior when the setting changes.
+    ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behaviour when the setting changes.
 
-- For each individual table.
+- For each table.
 
-    When creating a table, specify the corresponding [engine setting](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). The behavior of an existing table with this setting does not change, even if the global setting changes.
+    When creating a table, specify the corresponding [engine setting](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). The behaviour of an existing table with this setting does not change, even if the global setting changes.
 
 **Possible values**
 

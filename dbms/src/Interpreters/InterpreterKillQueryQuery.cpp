@@ -102,7 +102,7 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
         res.emplace_back(std::move(query_id), std::move(query_user), i, false);
     }
 
-    if (res.empty() && !query_user.empty())
+    if (res.empty() && !query_user.empty()) // NOLINT
         throw Exception("User " + my_client.current_user + " attempts to kill query created by " + query_user, ErrorCodes::ACCESS_DENIED);
 
     return res;

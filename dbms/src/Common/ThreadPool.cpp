@@ -225,7 +225,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 {
                     std::unique_lock lock(mutex);
                     if (!first_exception)
-                        first_exception = std::current_exception();
+                        first_exception = std::current_exception(); // NOLINT
                     shutdown = true;
                     --scheduled_jobs;
                 }
@@ -257,11 +257,11 @@ template class ThreadPoolImpl<std::thread>;
 template class ThreadPoolImpl<ThreadFromGlobalPool>;
 
 
-void ExceptionHandler::setException(std::exception_ptr && exception)
+void ExceptionHandler::setException(std::exception_ptr exception)
 {
     std::unique_lock lock(mutex);
     if (!first_exception)
-        first_exception = std::move(exception);
+        first_exception = std::move(exception); // NOLINT
 }
 
 void ExceptionHandler::throwIfException()

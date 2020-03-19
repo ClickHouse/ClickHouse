@@ -752,9 +752,9 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
 
     UInt16 year = 0;
     if (!append_digit(year)
-        || !append_digit(year)
-        || !append_digit(year)
-        || !append_digit(year))
+        || !append_digit(year) // NOLINT
+        || !append_digit(year) // NOLINT
+        || !append_digit(year)) // NOLINT
         return error();
 
     if (!ignore_delimiter())
