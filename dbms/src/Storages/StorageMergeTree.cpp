@@ -667,12 +667,10 @@ bool StorageMergeTree::tryMutatePart()
 
         if (current_mutations_by_version.empty())
             return false;
-        LOG_DEBUG(log, "Looking at parts");
 
         auto mutations_end_it = current_mutations_by_version.end();
         for (const auto & part : getDataPartsVector())
         {
-            LOG_DEBUG(log, "Iterating parts");
             if (currently_merging_mutating_parts.count(part))
                 continue;
 

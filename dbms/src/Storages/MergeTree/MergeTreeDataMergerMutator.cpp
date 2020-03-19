@@ -946,15 +946,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     const ReservationPtr & space_reservation,
     TableStructureReadLockHolder & table_lock_holder)
 {
-    auto check_not_cancelled = [&]()
-    {
-        if (merges_blocker.isCancelled() || merge_entry->is_cancelled)
-            throw Exception("Cancelled mutating parts", ErrorCodes::ABORTED);
-
-        return true;
-    };
-
-    check_not_cancelled();
+    checkOperationIsNotCanceled(merge_entry);
 
     if (future_part.parts.size() != 1)
         throw Exception("Trying to mutate " + toString(future_part.parts.size()) + " parts, not one. "
@@ -999,8 +991,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     MergeStageProgress stage_progress(1.0);
 
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
-
-    LOG_DEBUG(log, "All columns:" << all_columns.toString());
 
     if (!for_interpreter.empty())
     {
@@ -1091,6 +1081,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             mutateSomePartColumns(
                 source_part,
                 indices_to_recalc,
+                updated_header,
                 new_data_part,
                 in,
                 time_of_mutation,
@@ -1408,8 +1399,7 @@ std::set<MergeTreeIndexPtr> MergeTreeDataMergerMutator::getIndicesToRecalc(
 
     if (!indices_to_recalc.empty() && input_stream)
     {
-        auto indices_recalc_syntax =
-            SyntaxAnalyzer(context).analyze(indices_recalc_expr_list, updated_columns);
+        auto indices_recalc_syntax = SyntaxAnalyzer(context).analyze(indices_recalc_expr_list, input_stream->getHeader().getNamesAndTypesList());
         auto indices_recalc_expr = ExpressionAnalyzer(
                 indices_recalc_expr_list,
                 indices_recalc_syntax, context).getActions(false);
@@ -1453,14 +1443,6 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
     if (mutating_stream == nullptr)
         throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
-    auto check_not_cancelled = [&]()
-    {
-        if (merges_blocker.isCancelled() || merge_entry->is_cancelled)
-            throw Exception("Cancelled mutating parts", ErrorCodes::ABORTED);
-
-        return true;
-    };
-
     if (data.hasPrimaryKey() || data.hasSkipIndices())
         mutating_stream = std::make_shared<MaterializingBlockInputStream>(
             std::make_shared<ExpressionBlockInputStream>(mutating_stream, data.primary_key_and_skip_indices_expr));
@@ -1479,7 +1461,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
     out.writePrefix();
 
     Block block;
-    while (check_not_cancelled() && (block = mutating_stream->read()))
+    while (checkOperationIsNotCanceled(merge_entry) && (block = mutating_stream->read()))
     {
         minmax_idx.update(block, data.minmax_idx_columns);
         out.write(block);
@@ -1498,6 +1480,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
 void MergeTreeDataMergerMutator::mutateSomePartColumns(
     const MergeTreeDataPartPtr & source_part,
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
+    const Block & mutation_header,
     MergeTreeData::MutableDataPartPtr new_data_part,
     BlockInputStreamPtr mutating_stream,
     time_t time_of_mutation,
@@ -1505,16 +1488,9 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
     MergeListEntry & merge_entry,
     bool need_remove_expired_values) const
 {
-    auto check_not_cancelled = [&]()
-    {
-        if (merges_blocker.isCancelled() || merge_entry->is_cancelled)
-            throw Exception("Cancelled mutating parts", ErrorCodes::ABORTED);
-
-        return true;
-    };
-
     if (mutating_stream == nullptr)
         throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
+
 
     if (need_remove_expired_values)
         mutating_stream = std::make_shared<TTLBlockInputStream>(mutating_stream, data, new_data_part, time_of_mutation, true);
@@ -1522,7 +1498,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
     IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
     MergedColumnOnlyOutputStream out(
         new_data_part,
-        mutating_stream->getHeader(),
+        mutation_header,
         /* sync = */ false,
         compression_codec,
         /* skip_offsets = */ false,
@@ -1536,7 +1512,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
     out.writePrefix();
 
     Block block;
-    while (check_not_cancelled() && (block = mutating_stream->read()))
+    while (checkOperationIsNotCanceled(merge_entry) && (block = mutating_stream->read()))
     {
         out.write(block);
 
@@ -1588,6 +1564,15 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     new_data_part->bytes_on_disk
         = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->disk, new_data_part->getFullRelativePath());
 
+}
+
+
+bool MergeTreeDataMergerMutator::checkOperationIsNotCanceled(const MergeListEntry & merge_entry) const
+{
+    if (merges_blocker.isCancelled() || merge_entry->is_cancelled)
+        throw Exception("Cancelled mutating parts", ErrorCodes::ABORTED);
+
+    return true;
 }
 
 }
