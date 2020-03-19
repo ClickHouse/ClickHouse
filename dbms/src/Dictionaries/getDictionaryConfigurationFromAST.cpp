@@ -1,7 +1,5 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <Poco/DOM/AutoPtr.h>
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
