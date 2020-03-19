@@ -168,7 +168,7 @@ private:
     void executeMergeAggregated(Pipeline & pipeline, bool overflow_row, bool final);
     void executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeHaving(Pipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeExpression(Pipeline & pipeline, const ExpressionActionsPtr & expression);
+    static void executeExpression(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeOrder(Pipeline & pipeline, InputSortingInfoPtr sorting_info);
     void executeWithFill(Pipeline & pipeline);
     void executeMergeSorted(Pipeline & pipeline);
@@ -176,7 +176,7 @@ private:
     void executeUnion(Pipeline & pipeline, Block header);
     void executeLimitBy(Pipeline & pipeline);
     void executeLimit(Pipeline & pipeline);
-    void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
+    static void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeDistinct(Pipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(Pipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
@@ -187,14 +187,14 @@ private:
     void executeMergeAggregated(QueryPipeline & pipeline, bool overflow_row, bool final);
     void executeTotalsAndHaving(QueryPipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
+    static void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr sorting_info);
     void executeWithFill(QueryPipeline & pipeline);
     void executeMergeSorted(QueryPipeline & pipeline);
     void executePreLimit(QueryPipeline & pipeline, bool do_not_skip_offset);
     void executeLimitBy(QueryPipeline & pipeline);
     void executeLimit(QueryPipeline & pipeline);
-    void executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
+    static void executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(QueryPipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);

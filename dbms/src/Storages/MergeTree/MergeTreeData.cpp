@@ -2034,8 +2034,7 @@ void MergeTreeData::PartsTemporaryRename::addPart(const String & old_name, const
     {
         for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
         {
-            String name = it.name();
-            if (name == old_name)
+            if (it.name() == old_name)
             {
                 old_part_name_to_full_path[old_name] = full_path;
                 break;
@@ -2753,14 +2752,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
 }
 
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path)
-{
-    MutableDataPartPtr part = createPart(Poco::Path(relative_path).getFileName(), disk, relative_path);
-    loadPartAndFixMetadata(part);
-    return part;
-}
-
-void MergeTreeData::loadPartAndFixMetadata(MutableDataPartPtr part)
+static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
 {
     String full_part_path = part->getFullPath();
 
@@ -2784,6 +2776,13 @@ void MergeTreeData::loadPartAndFixMetadata(MutableDataPartPtr part)
 
         Poco::File(full_part_path + "checksums.txt.tmp").renameTo(full_part_path + "checksums.txt");
     }
+}
+
+MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path)
+{
+    MutableDataPartPtr part = createPart(Poco::Path(relative_path).getFileName(), disk, relative_path);
+    loadPartAndFixMetadataImpl(part);
+    return part;
 }
 
 
@@ -3103,12 +3102,10 @@ MergeTreeData::getDetachedParts() const
         for (Poco::DirectoryIterator it(path + "detached");
             it != Poco::DirectoryIterator(); ++it)
         {
-            auto dir_name = it.name();
-
             res.emplace_back();
             auto & part = res.back();
 
-            DetachedPartInfo::tryParseDetachedPartName(dir_name, part, format_version);
+            DetachedPartInfo::tryParseDetachedPartName(it.name(), part, format_version);
             part.disk = disk->getName();
         }
     }
@@ -3233,7 +3230,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     {
         LOG_DEBUG(log, "Checking part " << part_names.second);
         MutableDataPartPtr part = createPart(part_names.first, name_to_disk[part_names.first], source_dir + part_names.second);
-        loadPartAndFixMetadata(part);
+        loadPartAndFixMetadataImpl(part);
         loaded_parts.push_back(part);
     }
 
@@ -3257,25 +3254,20 @@ inline ReservationPtr checkAndReturnReservation(UInt64 expected_size, Reservatio
 ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
-
     auto reservation = getStoragePolicy()->reserve(expected_size);
-
     return checkAndReturnReservation(expected_size, std::move(reservation));
 }
 
-ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size, SpacePtr space) const
+ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size, SpacePtr space)
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
-
     auto reservation = tryReserveSpace(expected_size, space);
-
     return checkAndReturnReservation(expected_size, std::move(reservation));
 }
 
-ReservationPtr MergeTreeData::tryReserveSpace(UInt64 expected_size, SpacePtr space) const
+ReservationPtr MergeTreeData::tryReserveSpace(UInt64 expected_size, SpacePtr space)
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
-
     return space->reserve(expected_size);
 }
 

@@ -1,5 +1,7 @@
 #include <Client/MultiplexedConnections.h>
 #include <IO/ConnectionTimeouts.h>
+#include <Common/thread_local_rng.h>
+
 
 namespace DB
 {
@@ -308,10 +310,10 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
             throw Exception("Timeout exceeded while reading from " + dumpAddressesUnlocked(), ErrorCodes::TIMEOUT_EXCEEDED);
     }
 
-    /// TODO Absolutely wrong code: read_list could be empty; rand() is not thread safe and has low quality; motivation of rand is unclear.
+    /// TODO Absolutely wrong code: read_list could be empty; motivation of rand is unclear.
     /// This code path is disabled by default.
 
-    auto & socket = read_list[rand() % read_list.size()];
+    auto & socket = read_list[thread_local_rng() % read_list.size()];
     if (fd_to_replica_state_idx.empty())
     {
         fd_to_replica_state_idx.reserve(replica_states.size());

@@ -64,7 +64,8 @@ RUN apt-get --allow-unauthenticated update -y \
             cmake \
             gdb  \
             pigz \
-            moreutils
+            moreutils \
+            libcctz-dev
 
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
