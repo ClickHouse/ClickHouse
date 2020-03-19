@@ -168,7 +168,7 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
                 const ElfW(Sym) * elf_sym = reinterpret_cast<const ElfW(Sym) *>(correct_address(info->dlpi_addr, it->d_un.d_ptr));
 
                 /* Iterate over the symbol table */
-                for (ElfW(Word) sym_index = 0; sym_index < sym_cnt; ++sym_index)
+                for (ElfW(Word) sym_index = 0; sym_index < ElfW(Word)(sym_cnt); ++sym_index)
                 {
                     /// We are not interested in empty symbols.
                     if (!elf_sym[sym_index].st_size)

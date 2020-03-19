@@ -465,7 +465,7 @@ void SettingURI::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
     case static_cast<UnderlyingType>(EnumType::NAME): return IO_NAME;
 
 #define IMPLEMENT_SETTING_ENUM_FROM_STRING_HELPER_(NAME, IO_NAME) \
-    if (s == IO_NAME) \
+    if (s == (IO_NAME)) \
     { \
         set(EnumType::NAME); \
         return; \
@@ -474,7 +474,7 @@ void SettingURI::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
 #define IMPLEMENT_SETTING_ENUM_CONCAT_NAMES_HELPER_(NAME, IO_NAME) \
     if (!all_io_names.empty()) \
         all_io_names += ", "; \
-    all_io_names += String("'") + IO_NAME + "'";
+    all_io_names += String("'") + (IO_NAME) + "'";
 
 
 #define LOAD_BALANCING_LIST_OF_NAMES(M) \

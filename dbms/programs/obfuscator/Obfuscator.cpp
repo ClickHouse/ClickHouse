@@ -677,7 +677,7 @@ public:
                 if (!histogram.total)
                     continue;
 
-                double average = histogram.total / histogram.buckets.size();
+                double average = double(histogram.total) / histogram.buckets.size();
 
                 UInt64 new_total = 0;
                 for (auto & bucket : histogram.buckets)

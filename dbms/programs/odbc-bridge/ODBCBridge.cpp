@@ -111,7 +111,7 @@ void ODBCBridge::defineOptions(Poco::Util::OptionSet & options)
                           .binding("help")
                           .callback(Poco::Util::OptionCallback<Me>(this, &Me::handleHelp)));
 
-    ServerApplication::defineOptions(options); /// Don't need complex BaseDaemon's .xml config
+    ServerApplication::defineOptions(options); // NOLINT Don't need complex BaseDaemon's .xml config
 }
 
 void ODBCBridge::initialize(Application & self)
@@ -138,7 +138,7 @@ void ODBCBridge::initialize(Application & self)
 
     initializeTerminationAndSignalProcessing();
 
-    ServerApplication::initialize(self);
+    ServerApplication::initialize(self); // NOLINT
 }
 
 void ODBCBridge::uninitialize()
