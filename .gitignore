@@ -18,6 +18,8 @@
 /docs/website
 /docs/venv/
 /docs/tools/venv/
+/docs/tools/translate/venv/
+/docs/tools/translate/output.md
 /docs/en/single.md
 /docs/ru/single.md
 /docs/zh/single.md
