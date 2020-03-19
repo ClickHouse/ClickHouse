@@ -1,3 +1,4 @@
+#pragma once
 #include <atomic>
 #include <memory>
 
@@ -15,7 +16,7 @@ public:
 
     uint64_t get() const { return rows_before_limit.load(std::memory_order_acquire); }
 
-    bool setAppliedLimit() { has_applied_limit.store(true, std::memory_order::release); }
+    void setAppliedLimit() { has_applied_limit.store(true, std::memory_order::release); }
     bool hasAppliedLimit() const { return has_applied_limit.load(std::memory_order_acquire); }
 
 private:
