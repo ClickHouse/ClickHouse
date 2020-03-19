@@ -210,7 +210,7 @@ void TreeExecutorBlockInputStream::execute(bool on_totals)
 
 void TreeExecutorBlockInputStream::initRowsBeforeLimit()
 {
-    std::vector<LimitTransform *> limits;
+    std::vector<LimitTransform *> limit_transforms;
     std::vector<SourceFromInputStream *> sources;
 
     struct StackEntry
@@ -234,7 +234,7 @@ void TreeExecutorBlockInputStream::initRowsBeforeLimit()
             if (auto * limit = typeid_cast<LimitTransform *>(processor))
             {
                 visited_limit = true;
-                limits.emplace_back(limit);
+                limit_transforms.emplace_back(limit);
             }
 
             if (auto * source = typeid_cast<SourceFromInputStream *>(processor))
@@ -259,11 +259,11 @@ void TreeExecutorBlockInputStream::initRowsBeforeLimit()
         }
     }
 
-    if (!rows_before_limit_at_least && (!limits.empty() && !sources.empty()))
+    if (!rows_before_limit_at_least && (!limit_transforms.empty() && !sources.empty()))
     {
         rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
 
-        for (auto & limit : limits)
+        for (auto & limit : limit_transforms)
             limit->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 
         for (auto & source : sources)
