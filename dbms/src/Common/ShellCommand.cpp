@@ -194,6 +194,8 @@ int ShellCommand::tryWait()
     if (-1 == waitpid(pid, &status, 0))
         throwFromErrno("Cannot waitpid", ErrorCodes::CANNOT_WAITPID);
 
+    LOG_TRACE(getLogger(), "Wait for shell command pid " << pid << " completed with status " << status);
+
     if (WIFEXITED(status))
         return WEXITSTATUS(status);
 
