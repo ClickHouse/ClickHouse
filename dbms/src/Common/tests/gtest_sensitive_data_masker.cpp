@@ -63,7 +63,7 @@ TEST(Common, SensitiveDataMasker)
 #ifndef NDEBUG
     // simple benchmark
     auto start = std::chrono::high_resolution_clock::now();
-    constexpr unsigned long int iterations = 200000;
+    static constexpr size_t iterations = 200000;
     for (int i = 0; i < iterations; ++i)
     {
         std::string query2 = "SELECT id FROM mysql('localhost:3308', 'database', 'table', 'root', 'qwerty123') WHERE ssn='123-45-6789' or "

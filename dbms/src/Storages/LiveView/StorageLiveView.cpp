@@ -323,7 +323,7 @@ ASTPtr StorageLiveView::getInnerBlocksQuery()
         /// Rewrite inner query with right aliases for JOIN.
         /// It cannot be done in constructor or startup() because InterpreterSelectQuery may access table,
         /// which is not loaded yet during server startup, so we do it lazily
-        InterpreterSelectQuery(inner_blocks_query, *live_view_context, SelectQueryOptions().modify().analyze());
+        InterpreterSelectQuery(inner_blocks_query, *live_view_context, SelectQueryOptions().modify().analyze()); // NOLINT
         auto table_id = getStorageID();
         extractDependentTable(inner_blocks_query, global_context, table_id.table_name, inner_subquery);
     }

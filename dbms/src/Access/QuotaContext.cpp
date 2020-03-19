@@ -135,6 +135,9 @@ struct QuotaContext::Impl
 
 QuotaContext::Interval & QuotaContext::Interval::operator =(const Interval & src)
 {
+    if (this == &src)
+        return *this;
+
     randomize_interval = src.randomize_interval;
     duration = src.duration;
     end_of_interval.store(src.end_of_interval.load());

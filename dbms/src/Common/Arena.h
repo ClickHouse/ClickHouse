@@ -4,7 +4,6 @@
 #include <memory>
 #include <vector>
 #include <boost/noncopyable.hpp>
-#include <common/likely.h>
 #if __has_include(<sanitizer/asan_interface.h>)
 #   include <sanitizer/asan_interface.h>
 #endif

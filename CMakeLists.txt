@@ -354,7 +354,6 @@ endif ()
 
 # Need to process before "contrib" dir:
 include (cmake/find/jemalloc.cmake)
-include (cmake/find/cctz.cmake)
 include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
