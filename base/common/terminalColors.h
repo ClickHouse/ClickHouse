@@ -1,5 +1,4 @@
-#include <string>
-#include <common/types.h>
+#include "types.h"
 
 
 /** Set color in terminal based on 64-bit hash value.

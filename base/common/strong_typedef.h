@@ -1,10 +1,11 @@
 #pragma once
 
 #include <boost/operators.hpp>
+
 #include <type_traits>
 
-/** https://svn.boost.org/trac/boost/ticket/5182
-  */
+
+/// https://svn.boost.org/trac/boost/ticket/5182
 
 template <class T, class Tag>
 struct StrongTypedef
@@ -61,4 +62,3 @@ namespace std
 #define STRONG_TYPEDEF(T, D) \
     struct D ## Tag {}; \
     using D = StrongTypedef<T, D ## Tag>; \
-

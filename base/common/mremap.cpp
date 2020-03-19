@@ -1,8 +1,9 @@
-#include <common/mremap.h>
+#include "mremap.h"
 
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+
 #include <errno.h>
 
 
@@ -19,22 +20,14 @@ void * mremap_fallback(
         return MAP_FAILED;
     }
 
-#if _MSC_VER
-    void * new_address = ::operator new(new_size);
-#else
     void * new_address = mmap(nullptr, new_size, mmap_prot, mmap_flags, mmap_fd, mmap_offset);
     if (MAP_FAILED == new_address)
         return MAP_FAILED;
-#endif
 
     memcpy(new_address, old_address, old_size);
 
-#if _MSC_VER
-    delete old_address;
-#else
     if (munmap(old_address, old_size))
         abort();
-#endif
 
     return new_address;
 }

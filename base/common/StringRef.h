@@ -1,22 +1,22 @@
 #pragma once
 
-#include <string>
-#include <vector>
+#include "types.h"
+#include "unaligned.h"
+
 #include <functional>
 #include <ostream>
-
-#include <common/types.h>
-#include <common/unaligned.h>
+#include <string>
+#include <vector>
 
 #include <city.h>
 
 #if defined(__SSE2__)
-    #include <emmintrin.h>
+#    include <emmintrin.h>
 #endif
 
 #if defined(__SSE4_2__)
-    #include <smmintrin.h>
-    #include <nmmintrin.h>
+#    include <nmmintrin.h>
+#    include <smmintrin.h>
 #endif
 
 
@@ -170,11 +170,15 @@ inline bool operator> (StringRef lhs, StringRef rhs)
   * For more information, see hash_map_string_3.cpp
   */
 
+#if defined(ARCADIA_BUILD)
+using namespace CityHash_v1_0_2;
+#endif
+
 struct StringRefHash64
 {
     size_t operator() (StringRef x) const
     {
-        return CityHash_v1_0_2::CityHash64(x.data, x.size);
+        return CityHash64(x.data, x.size);
     }
 };
 
@@ -184,7 +188,7 @@ struct StringRefHash64
 
 inline UInt64 hashLen16(UInt64 u, UInt64 v)
 {
-    return CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(u, v));
+    return Hash128to64(uint128(u, v));
 }
 
 inline UInt64 shiftMix(UInt64 val)

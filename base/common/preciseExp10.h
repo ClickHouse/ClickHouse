@@ -8,9 +8,12 @@
   * Note: the function names are different to avoid confusion with symbols from the system libm.
   */
 
-extern "C"
-{
+#if defined(__cplusplus)
+extern "C" {
+#endif
 
 double preciseExp10(double x);
 
+#if defined(__cplusplus)
 }
+#endif

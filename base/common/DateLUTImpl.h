@@ -16,9 +16,9 @@
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
 
 #if defined(__PPC__)
-#if !__clang__
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
+#    if !__clang__
+#        pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#    endif
 #endif
 
 /// Flags for toYearWeek() function.
@@ -929,7 +929,7 @@ public:
 };
 
 #if defined(__PPC__)
-#if !__clang__
-#pragma GCC diagnostic pop
-#endif
+#    if !__clang__
+#        pragma GCC diagnostic pop
+#    endif
 #endif

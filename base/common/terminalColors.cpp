@@ -1,5 +1,4 @@
-#include <string>
-#include <common/terminalColors.h>
+#include "terminalColors.h"
 
 
 std::string setColor(UInt64 hash)

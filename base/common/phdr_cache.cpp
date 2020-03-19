@@ -1,43 +1,29 @@
 /// This code was based on the code by Fedor Korotkiy (prime@yandex-team.ru) for YT product in Yandex.
+#include "phdr_cache.h"
 
-#if defined(__has_feature)
-    #if __has_feature(address_sanitizer)
-        #define ADDRESS_SANITIZER 1
-    #endif
-    #if __has_feature(thread_sanitizer)
-        #define THREAD_SANITIZER 1
-    #endif
-#else
-    #if defined(__SANITIZE_ADDRESS__)
-        #define ADDRESS_SANITIZER 1
-    #endif
-    #if defined(__SANITIZE_THREAD__)
-        #define THREAD_SANITIZER 1
-    #endif
-#endif
+#include "defines.h"
 
-#if defined(__linux__) && !defined(THREAD_SANITIZER)
-    #define USE_PHDR_CACHE 1
-#endif
-
-#define __msan_unpoison(X, Y)
-#if defined(__has_feature)
-#   if __has_feature(memory_sanitizer)
-#       undef __msan_unpoison
-#       include <sanitizer/msan_interface.h>
-#   endif
-#endif
-
-/// Thread Sanitizer uses dl_iterate_phdr function on initialization and fails if we provide our own.
-#ifdef USE_PHDR_CACHE
-
-#include <link.h>
-#include <dlfcn.h>
-#include <vector>
 #include <atomic>
 #include <cstddef>
 #include <stdexcept>
+#include <vector>
 
+#include <dlfcn.h>
+#include <link.h>
+
+#if defined(OS_LINUX) && !defined(THREAD_SANITIZER)
+#    define USE_PHDR_CACHE 1
+#endif
+
+#define __msan_unpoison(X, Y)
+
+#if defined(MEMORY_SANITIZER)
+#    undef __msan_unpoison
+#    include <sanitizer/msan_interface.h>
+#endif
+
+/// Thread Sanitizer uses dl_iterate_phdr function on initialization and fails if we provide our own.
+#if defined(USE_PHDR_CACHE)
 
 namespace
 {
@@ -64,11 +50,11 @@ std::atomic<PHDRCache *> phdr_cache {};
 
 
 extern "C"
-#ifndef __clang__
-[[gnu::visibility("default")]]
-[[gnu::externally_visible]]
-#endif
-int dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * data), void * data)
+#    if !defined(__clang__)
+    [[gnu::visibility("default")]] [[gnu::externally_visible]]
+#    endif
+    int
+    dl_iterate_phdr(int (*callback)(dl_phdr_info * info, size_t size, void * data), void * data)
 {
     auto current_phdr_cache = phdr_cache.load();
     if (!current_phdr_cache)
@@ -90,11 +76,13 @@ int dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * da
 
 extern "C"
 {
-#ifdef ADDRESS_SANITIZER
+#    if defined(ADDRESS_SANITIZER)
 void __lsan_ignore_object(const void *);
-#else
-void __lsan_ignore_object(const void *) {}
-#endif
+#    else
+void __lsan_ignore_object(const void *)
+{
+}
+#    endif
 }
 
 

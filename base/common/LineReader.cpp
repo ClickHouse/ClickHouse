@@ -1,4 +1,4 @@
-#include <common/LineReader.h>
+#include "LineReader.h"
 
 #include <iostream>
 #include <string_view>
@@ -6,9 +6,9 @@
 #include <string.h>
 #include <unistd.h>
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX)
 /// We can detect if code is linked with one or another readline variants or open the library dynamically.
-#   include <dlfcn.h>
+#    include <dlfcn.h>
 extern "C"
 {
     char * readline(const char *) __attribute__((__weak__));
@@ -124,7 +124,7 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
 {
     input.clear();
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX)
     if (!readline_ptr)
     {
         for (auto name : {"libreadline.so", "libreadline.so.0", "libeditline.so", "libeditline.so.0"})

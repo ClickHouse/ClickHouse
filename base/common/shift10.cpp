@@ -1,4 +1,4 @@
-#include <common/shift10.h>
+#include "shift10.h"
 
 #include "defines.h"
 

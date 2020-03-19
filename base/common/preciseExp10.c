@@ -169,6 +169,8 @@ obstacle to adoption, that text has been removed.
 
 */
 
+#include "preciseExp10.h"
+
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>

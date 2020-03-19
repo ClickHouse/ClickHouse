@@ -1,14 +1,9 @@
-#include <common/demangle.h>
+#include "demangle.h"
 
-#if defined(__has_feature)
-    #if __has_feature(memory_sanitizer)
-        #define MEMORY_SANITIZER 1
-    #endif
-#elif defined(__MEMORY_SANITIZER__)
-    #define MEMORY_SANITIZER 1
-#endif
+#include "defines.h"
 
-#if _MSC_VER || MEMORY_SANITIZER
+
+#if defined(MEMORY_SANITIZER)
 
 DemangleResult tryDemangle(const char * name)
 {
@@ -23,8 +18,8 @@ std::string demangle(const char * name, int & status)
 
 #else
 
-#include <stdlib.h>
-#include <cxxabi.h>
+#    include <cxxabi.h>
+#    include <stdlib.h>
 
 static DemangleResult tryDemangle(const char * name, int & status)
 {
@@ -47,6 +42,5 @@ std::string demangle(const char * name, int & status)
 
     return name;
 }
-
 
 #endif

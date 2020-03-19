@@ -6,6 +6,10 @@
 #include <string>
 #include <type_traits>
 
+#if __cplusplus < 202001L
+using char8_t = unsigned char;
+#endif
+
 using Int8 = int8_t;
 using Int16 = int16_t;
 using Int32 = int32_t;
