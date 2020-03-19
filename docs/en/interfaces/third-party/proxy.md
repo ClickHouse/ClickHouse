@@ -2,13 +2,13 @@
 
 ## chproxy
 
-[chproxy](https://github.com/Vertamedia/chproxy), is an http proxy and load balancer for ClickHouse database. 
+[chproxy](https://github.com/Vertamedia/chproxy), is an HTTP proxy and load balancer for ClickHouse database. 
 
 Features:
 
 * Per-user routing and response caching.
 * Flexible limits.
-* Automatic SSL cerificate renewal.
+* Automatic SSL certificate renewal.
 
 Implemented in Go.
 
