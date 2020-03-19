@@ -1,4 +1,4 @@
-# Getting Started
+# Getting Started {#getting-started}
 
 If you are new to ClickHouse and want to get a hands-on feeling of its performance, first of all, you need to go through the [installation process](install.md). After that you can:
 

@@ -157,6 +157,8 @@ def translate_filter(key, value, _format, _):
     elif key == 'Header':
         value[2] = process_sentence(value[2])
         return cls(*value)
+    elif key == 'SoftBreak':
+        return pandocfilters.LineBreak()
 
     return
 
