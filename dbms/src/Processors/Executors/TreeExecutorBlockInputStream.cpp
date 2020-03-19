@@ -240,8 +240,7 @@ void TreeExecutorBlockInputStream::initRowsBeforeLimit()
             if (auto * source = typeid_cast<SourceFromInputStream *>(processor))
                 sources.emplace_back(source);
         }
-
-        if (auto * sorting = typeid_cast<PartialSortingTransform *>(processor))
+        else if (auto * sorting = typeid_cast<PartialSortingTransform *>(processor))
         {
             if (!rows_before_limit_at_least)
                 rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
@@ -269,6 +268,11 @@ void TreeExecutorBlockInputStream::initRowsBeforeLimit()
         for (auto & source : sources)
             source->setRowsBeforeLimitCounter(rows_before_limit_at_least);
     }
+
+    /// If there is a limit, then enable rows_before_limit_at_least
+    /// It is needed when zero rows is read, but we still want rows_before_limit_at_least in result.
+    if (!limit_transforms.empty())
+        rows_before_limit_at_least->add(0);
 }
 
 Block TreeExecutorBlockInputStream::readImpl()
