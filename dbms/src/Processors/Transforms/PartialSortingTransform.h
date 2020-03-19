@@ -13,7 +13,6 @@ class PartialSortingTransform : public ISimpleTransform
 {
 public:
     /// limit - if not 0, then you can sort each block not completely, but only `limit` first rows by order.
-    /// When count_rows is false, read_rows is not changed. It is needed
     PartialSortingTransform(
         const Block & header_,
         SortDescription & description_,

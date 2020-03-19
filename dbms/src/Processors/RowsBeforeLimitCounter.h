@@ -5,6 +5,7 @@
 namespace DB
 {
 
+/// This class helps to calculate rows_before_limit_at_least.
 class RowsBeforeLimitCounter
 {
 public:
