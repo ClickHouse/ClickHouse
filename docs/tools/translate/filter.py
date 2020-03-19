@@ -105,6 +105,12 @@ def translate_filter(key, value, _format, _):
     if key == 'Para' or key == 'Plain' or key == 'Strong' or key == 'Emph':
         return cls(process_sentence(value))
     elif key == 'Link':
+        try:
+            # Plain links case
+            if value[2][0] == value[1][0].get('c'):
+                return pandocfilters.Str(value[2][0])
+        except IndexError:
+            pass
         value[1] = process_sentence(value[1])
         return cls(*value)
     elif key == 'Header':
