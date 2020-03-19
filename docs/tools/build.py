@@ -21,6 +21,7 @@ from mkdocs.commands import build as mkdocs_build
 from concatenate import concatenate
 
 from website import build_website, minify_website
+
 import mdx_clickhouse
 import test
 import util
@@ -109,6 +110,10 @@ def build_for_lang(lang, args):
                 'admonition',
                 'attr_list',
                 'codehilite',
+                'nl2br',
+                'sane_lists',
+                'pymdownx.magiclink',
+                'pymdownx.superfences',
                 'extra',
                 {
                     'toc': {
