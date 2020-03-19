@@ -30,7 +30,7 @@ repackage==0.7.3
 requests==2.23.0
 singledispatch==3.4.0.3
 six==1.14.0
-soupsieve==1.9.5
+soupsieve==2.0
 termcolor==1.1.0
 tornado==5.1.1
 Unidecode==1.1.1
