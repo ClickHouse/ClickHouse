@@ -41,20 +41,12 @@ endif ()
 
 target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
 
-if(CCTZ_INCLUDE_DIR)
-    target_include_directories(common BEFORE PRIVATE ${CCTZ_INCLUDE_DIR})
-endif()
-
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (common SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
 
 if(NOT USE_INTERNAL_POCO_LIBRARY)
     target_include_directories (common SYSTEM BEFORE PUBLIC ${Poco_Foundation_INCLUDE_DIR})
-endif()
-
-if(CCTZ_LIBRARY)
-    target_link_libraries(common PRIVATE ${CCTZ_LIBRARY})
 endif()
 
 # allow explicitly fallback to readline
@@ -88,6 +80,9 @@ target_link_libraries (common
         ${Boost_SYSTEM_LIBRARY}
         FastMemcpy
         replxx
+
+    PRIVATE
+        cctz
 )
 
 if (ENABLE_TESTS)

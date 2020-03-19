@@ -31,7 +31,7 @@ public:
 
     const String & getName() const override { return name; }
 
-    const String & getPath() const override { return s3_root_path; }
+    const String & getPath() const override { return metadata_path; }
 
     ReservationPtr reserve(UInt64 bytes) override;
 
@@ -87,9 +87,15 @@ public:
 
     void removeRecursive(const String & path) override;
 
+    void createHardLink(const String & src_path, const String & dst_path) override;
+
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
     Poco::Timestamp getLastModified(const String & path) override;
+
+    void createFile(const String & path) override;
+
+    void setReadOnly(const String & path) override;
 
 private:
     bool tryReserve(UInt64 bytes);

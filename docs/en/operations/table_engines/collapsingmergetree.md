@@ -4,7 +4,7 @@ The engine inherits from [MergeTree](mergetree.md) and adds the logic of rows co
 
 `CollapsingMergeTree` asynchronously deletes (collapses) pairs of rows if all of the fields in a sorting key (`ORDER BY`) are equivalent excepting the particular field `Sign` which can have `1` and `-1` values. Rows without a pair are kept. For more details see the [Collapsing](#table_engine-collapsingmergetree-collapsing) section of the document.
 
-The engine may significantly reduce the volume of storage and increase efficiency of `SELECT` query as a consequence.
+The engine may significantly reduce the volume of storage and increase the efficiency of `SELECT` query as a consequence.
 
 ## Creating a Table
 
@@ -63,7 +63,7 @@ Consider the situation where you need to save continually changing data for some
 
 Use the particular column `Sign`. If `Sign = 1` it means that the row is a state of an object, let's call it "state" row. If `Sign = -1` it means the cancellation of the state of an object with the same attributes, let's call it "cancel" row.
 
-For example, we want to calculate how much pages users checked at some site and how long they were there. At some moment of time we write the following row with the state of user activity:
+For example, we want to calculate how much pages users checked at some site and how long they were there. At some moment we write the following row with the state of user activity:
 
 ```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
@@ -80,7 +80,7 @@ At some moment later we register the change of user activity and write it with t
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 
-The first row cancels the previous state of the object (user). It should copy the sorting key fields of the canceled state excepting `Sign`.
+The first row cancels the previous state of the object (user). It should copy the sorting key fields of the cancelled state excepting `Sign`.
 
 The second row contains the current state.
 
@@ -100,7 +100,7 @@ Why we need 2 rows for each change read in the [Algorithm](#table_engine-collaps
 **Peculiar properties of such approach**
 
 1. The program that writes the data should remember the state of an object to be able to cancel it. "Cancel" string should contain copies of the sorting key fields of the "state" string and the opposite `Sign`. It increases the initial size of storage but allows to write the data quickly.
-2. Long growing arrays in columns reduce the efficiency of the engine due to load for writing. The more straightforward data, the higher efficiency.
+2. Long growing arrays in columns reduce the efficiency of the engine due to load for writing. The more straightforward data, the higher the efficiency.
 3. The `SELECT` results depend strongly on the consistency of object changes history. Be accurate when preparing data for inserting. You can get unpredictable results in inconsistent data, for example, negative values for non-negative metrics such as session depth.
 
 ### Algorithm {#table_engine-collapsingmergetree-collapsing-algorithm}
@@ -110,11 +110,11 @@ When ClickHouse merges data parts, each group of consecutive rows with the same 
 For each resulting data part ClickHouse saves:
 
   1. The first "cancel" and the last "state" rows, if the number of "state" and "cancel" rows matches and the last row is a "state" row.
-  2. The last "state" row, if there is more "state" rows than "cancel" rows.
-  3. The first "cancel" row, if there is more "cancel" rows than "state" rows.
+  2. The last "state" row, if there are more "state" rows than "cancel" rows.
+  3. The first "cancel" row, if there are more "cancel" rows than "state" rows.
   4. None of the rows, in all other cases.
 
-      In addition when there is at least 2 more "state" rows than "cancel" rows, or at least 2 more "cancel" rows then "state" rows, the merge continues, but ClickHouse treats this situation as a logical error and records it in the server log. This error can occur if the same data were inserted more than once.
+      Also when there are at least 2 more "state" rows than "cancel" rows, or at least 2 more "cancel" rows then "state" rows, the merge continues, but ClickHouse treats this situation as a logical error and records it in the server log. This error can occur if the same data were inserted more than once.
 
 Thus, collapsing should not change the results of calculating statistics.
 Changes gradually collapsed so that in the end only the last state of almost every object left.
@@ -123,7 +123,7 @@ The `Sign` is required because the merging algorithm doesn't guarantee that all 
 
 To finalize collapsing, write a query with `GROUP BY` clause and aggregate functions that account for the sign. For example, to calculate quantity, use `sum(Sign)` instead of `count()`. To calculate the sum of something, use `sum(Sign * x)` instead of `sum(x)`, and so on, and also add `HAVING sum(Sign) > 0`.
 
-The aggregates `count`, `sum` and `avg` could be calculated this way. The aggregate `uniq` could be calculated if an object has at least one state not collapsed. The aggregates `min` and `max` could not be calculated because `CollapsingMergeTree` does not save values history of the collapsed states.
+The aggregates `count`, `sum` and `avg` could be calculated this way. The aggregate `uniq` could be calculated if an object has at least one state not collapsed. The aggregates `min` and `max` could not be calculated because `CollapsingMergeTree` does not save the values history of the collapsed states.
 
 If you need to extract data without aggregation (for example, to check whether rows are present whose newest values match certain conditions), you can use the `FINAL` modifier for the `FROM` clause. This approach is significantly less efficient.
 
@@ -182,7 +182,7 @@ SELECT * FROM UAct
 
 What do we see and where is collapsing?
 
-With two `INSERT` queries, we created 2 data parts. The `SELECT` query was performed in 2 threads, and we got a random order of rows. Collapsing not occurred because there was no merge of the data parts yet. ClickHouse merges data part in an unknown moment of time which we can not predict.
+With two `INSERT` queries, we created 2 data parts. The `SELECT` query was performed in 2 threads, and we got a random order of rows. Collapsing not occurred because there was no merge of the data parts yet. ClickHouse merges data part in an unknown moment which we can not predict.
 
 Thus we need aggregation:
 

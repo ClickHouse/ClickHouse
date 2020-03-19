@@ -207,10 +207,10 @@ def build_single_page_version(lang, args, cfg):
                         ]
                     })
                     mkdocs_build.build(cfg)
-                    if not args.version_prefix:  # maybe enable in future
-                        test.test_single_page(os.path.join(test_dir, 'single', 'index.html'), lang)
                     if args.save_raw_single_page:
                         shutil.copytree(test_dir, args.save_raw_single_page)
+                    if not args.version_prefix:  # maybe enable in future
+                        test.test_single_page(os.path.join(test_dir, 'single', 'index.html'), lang)
 
 
 def write_redirect_html(out_path, to_url):

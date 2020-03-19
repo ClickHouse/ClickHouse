@@ -1,7 +1,6 @@
-
 # Distributed
 
-**The Distributed engine does not store data itself**, but allows distributed query processing on multiple servers.
+**Tables with Distributed engine do not store any data by themself**, but allow distributed query processing on multiple servers.
 Reading is automatically parallelized. During a read, the table indexes on remote servers are used, if there are any.
 
 The Distributed engine accepts parameters:
@@ -23,7 +22,7 @@ Distributed(logs, default, hits[, sharding_key[, policy_name]])
 ```
 
 Data will be read from all servers in the 'logs' cluster, from the default.hits table located on every server in the cluster.
-Data is not only read, but is partially processed on the remote servers (to the extent that this is possible).
+Data is not only read but is partially processed on the remote servers (to the extent that this is possible).
 For example, for a query with GROUP BY, data will be aggregated on remote servers, and the intermediate states of aggregate functions will be sent to the requestor server. Then data will be further aggregated.
 
 Instead of the database name, you can use a constant expression that returns a string. For example: currentDatabase().
@@ -83,7 +82,7 @@ The parameters `host`, `port`, and optionally `user`, `password`, `secure`, `com
 
 When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [load_balancing](../settings/settings.md#settings-load_balancing) setting.
 If the connection with the server is not established, there will be an attempt to connect with a short timeout. If the connection failed, the next replica will be selected, and so on for all the replicas. If the connection attempt failed for all the replicas, the attempt will be repeated the same way, several times.
-This works in favor of resiliency, but does not provide complete fault tolerance: a remote server might accept the connection, but might not work, or work poorly.
+This works in favour of resiliency, but does not provide complete fault tolerance: a remote server might accept the connection, but might not work, or work poorly.
 
 You can specify just one of the shards (in this case, query processing should be called remote, rather than distributed) or up to any number of shards. In each shard, you can specify from one to any number of replicas. You can specify a different number of replicas for each shard.
 
@@ -99,9 +98,9 @@ The Distributed engine requires writing clusters to the config file. Clusters fr
 
 There are two methods for writing data to a cluster:
 
-First, you can define which servers to write which data to and perform the write directly on each shard. In other words, perform INSERT in the tables that the distributed table "looks at". This is the most flexible solution as you can use any sharding scheme, which could be non-trivial due to the requirements of the subject area. This is also the most optimal solution, since data can be written to different shards completely independently.
+First, you can define which servers to write which data to and perform the write directly on each shard. In other words, perform INSERT in the tables that the distributed table "looks at". This is the most flexible solution as you can use any sharding scheme, which could be non-trivial due to the requirements of the subject area. This is also the most optimal solution since data can be written to different shards completely independently.
 
-Second, you can perform INSERT in a Distributed table. In this case, the table will distribute the inserted data across servers itself. In order to write to a Distributed table, it must have a sharding key set (the last parameter). In addition, if there is only one shard, the write operation works without specifying the sharding key, since it doesn't mean anything in this case.
+Second, you can perform INSERT in a Distributed table. In this case, the table will distribute the inserted data across the servers itself. In order to write to a Distributed table, it must have a sharding key set (the last parameter). In addition, if there is only one shard, the write operation works without specifying the sharding key, since it doesn't mean anything in this case.
 
 Each shard can have a weight defined in the config file. By default, the weight is equal to one. Data is distributed across shards in the amount proportional to the shard weight. For example, if there are two shards and the first has a weight of 9 while the second has a weight of 10, the first will be sent 9 / 19 parts of the rows, and the second will be sent 10 / 19.
 
@@ -115,9 +114,9 @@ To select the shard that a row of data is sent to, the sharding expression is an
 
 The sharding expression can be any expression from constants and table columns that returns an integer. For example, you can use the expression 'rand()' for random distribution of data, or 'UserID' for distribution by the remainder from dividing the user's ID (then the data of a single user will reside on a single shard, which simplifies running IN and JOIN by users). If one of the columns is not distributed evenly enough, you can wrap it in a hash function: intHash64(UserID).
 
-A simple remainder from division is a limited solution for sharding and isn't always appropriate. It works for medium and large volumes of data (dozens of servers), but not for very large volumes of data (hundreds of servers or more). In the latter case, use the sharding scheme required by the subject area, rather than using entries in Distributed tables.
+A simple reminder from the division is a limited solution for sharding and isn't always appropriate. It works for medium and large volumes of data (dozens of servers), but not for very large volumes of data (hundreds of servers or more). In the latter case, use the sharding scheme required by the subject area, rather than using entries in Distributed tables.
 
-SELECT queries are sent to all the shards, and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you don't have to transfer the old data to it. You can write new data with a heavier weight – the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
+SELECT queries are sent to all the shards and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you don't have to transfer the old data to it. You can write new data with a heavier weight – the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
 
 You should be concerned about the sharding scheme in the following cases:
 

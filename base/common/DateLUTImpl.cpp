@@ -1,23 +1,14 @@
-#if __has_include(<cctz/civil_time.h>)
-#include <cctz/civil_time.h> // bundled, debian
-#else
-#include <civil_time.h> // freebsd
-#endif
+#include "DateLUTImpl.h"
 
-#if __has_include(<cctz/time_zone.h>)
+#include <cctz/civil_time.h>
 #include <cctz/time_zone.h>
-#else
-#include <time_zone.h>
-#endif
-
-#include <common/DateLUTImpl.h>
 #include <Poco/Exception.h>
 
-#include <memory>
+#include <cassert>
 #include <chrono>
 #include <cstring>
-#include <cassert>
 #include <iostream>
+#include <memory>
 
 #define DATE_LUT_MIN 0
 
