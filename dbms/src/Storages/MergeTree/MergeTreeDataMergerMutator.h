@@ -183,6 +183,7 @@ private:
     void mutateSomePartColumns(
         const MergeTreeDataPartPtr & source_part,
         const std::set<MergeTreeIndexPtr> & indices_to_recalc,
+        const Block & mutation_header,
         MergeTreeData::MutableDataPartPtr new_data_part,
         BlockInputStreamPtr mutating_stream,
         time_t time_of_mutation,
@@ -215,6 +216,9 @@ private:
     MergeAlgorithm chooseMergeAlgorithm(
         const MergeTreeData::DataPartsVector & parts,
         size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, bool deduplicate, bool need_remove_expired_values) const;
+
+    bool checkOperationIsNotCanceled(const MergeListEntry & merge_entry) const;
+
 
 private:
     MergeTreeData & data;
