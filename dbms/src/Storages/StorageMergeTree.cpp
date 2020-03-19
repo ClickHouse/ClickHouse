@@ -514,8 +514,8 @@ void StorageMergeTree::loadMutations()
             {
                 MergeTreeMutationEntry entry(disk, path, it->name());
                 Int64 block_number = entry.block_number;
-                auto insertion = current_mutations_by_id.emplace(it->name(), std::move(entry));
                 LOG_DEBUG(log, "Loading mutation:" << it->name() << " entry commands size " << entry.commands.size());
+                auto insertion = current_mutations_by_id.emplace(it->name(), std::move(entry));
                 current_mutations_by_version.emplace(block_number, insertion.first->second);
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
@@ -689,13 +689,9 @@ bool StorageMergeTree::tryMutatePart()
                 for (const auto & command : it->second.commands)
                 {
                     if (command.type != MutationCommand::Type::DROP_COLUMN && command.type != MutationCommand::Type::DROP_INDEX)
-                    {
                         commands_for_size_validation.push_back(command);
-                    }
                     else
-                    {
                         commands_size += command.ast->size();
-                    }
                 }
 
                 if (!commands_for_size_validation.empty())
