@@ -19,7 +19,7 @@ SYSTEM FLUSH LOGS;
 SELECT
   DISTINCT read_bytes >= peak_memory_usage
 FROM
-    system.part_log2
+    system.part_log
 WHERE event_type = 'MutatePart' AND table = 'table_with_pk' AND database = currentDatabase();
 
 DROP TABLE IF EXISTS table_with_pk;
