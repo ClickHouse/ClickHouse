@@ -118,7 +118,7 @@ BlockIO InterpreterInsertQuery::execute()
     BlockOutputStreams out_streams;
     bool is_distributed_insert_select = false;
 
-    if (query.select && table->isRemote() && settings.distributed_insert_select)
+    if (query.select && table->isRemote() && settings.parallel_distributed_insert_select)
     {
         // Distributed INSERT SELECT
         std::shared_ptr<StorageDistributed> storage_src;

@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS local_01099_b;
 DROP TABLE IF EXISTS distributed_01099_a;
 DROP TABLE IF EXISTS distributed_01099_b;
 
-SET distributed_insert_select=1;
+SET parallel_distributed_insert_select=1;
 
 --
 -- test_shard_localhost
