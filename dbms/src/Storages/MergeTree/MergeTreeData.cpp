@@ -2027,8 +2027,7 @@ void MergeTreeData::PartsTemporaryRename::addPart(const String & old_name, const
     {
         for (auto it = disk->iterateDirectory(path + source_dir); it->isValid(); it->next())
         {
-            String name = it->name();
-            if (name == old_name)
+            if (it->name() == old_name)
             {
                 old_part_name_to_path_and_disk[old_name] = {path, disk};
                 break;
@@ -3102,7 +3101,7 @@ MergeTreeData::getDetachedParts() const
             res.emplace_back();
             auto & part = res.back();
 
-            DetachedPartInfo::tryParseDetachedPartName(it.name(), part, format_version);
+            DetachedPartInfo::tryParseDetachedPartName(it->name(), part, format_version);
             part.disk = disk->getName();
         }
     }
