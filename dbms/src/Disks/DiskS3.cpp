@@ -209,10 +209,10 @@ namespace
         std::unique_ptr<ReadBufferFromS3> initialize()
         {
             size_t offset = absolute_position;
-            for (UInt32 i = 0; i < metadata.s3_objects.size(); ++i)
+            for (size_t i = 0; i < metadata.s3_objects.size(); ++i)
             {
                 current_buf_idx = i;
-                auto [path, size] = metadata.s3_objects[i];
+                auto & [path, size] = metadata.s3_objects[i];
                 if (size > offset)
                 {
                     auto buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, path, buf_size);
@@ -243,7 +243,7 @@ namespace
                 return false;
 
             ++current_buf_idx;
-            auto path = metadata.s3_objects[current_buf_idx].first;
+            auto & path = metadata.s3_objects[current_buf_idx].first;
             current_buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, path, buf_size);
             current_buf->next();
             working_buffer = current_buf->buffer();
@@ -259,7 +259,7 @@ namespace
         size_t buf_size;
 
         size_t absolute_position = 0;
-        UInt32 current_buf_idx = 0;
+        size_t current_buf_idx = 0;
         std::unique_ptr<ReadBufferFromS3> current_buf;
     };
 
