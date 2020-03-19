@@ -48,6 +48,9 @@ void IOutputFormat::work()
 {
     if (finished && !finalized)
     {
+        if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedLimit())
+            setRowsBeforeLimit(rows_before_limit_counter->get());
+
         finalize();
         finalized = true;
         return;
