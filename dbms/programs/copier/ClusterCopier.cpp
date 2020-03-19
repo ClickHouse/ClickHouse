@@ -1181,7 +1181,7 @@ String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, C
 ASTPtr ClusterCopier::getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard)
 {
     /// Fetch and parse (possibly) new definition
-    auto connection_entry = task_shard.info.pool->get(timeouts, &task_cluster->settings_pull);
+    auto connection_entry = task_shard.info.pool->get(timeouts, &task_cluster->settings_pull, true);
     String create_query_pull_str = getRemoteCreateTable(
         task_shard.task_table.table_pull,
         *connection_entry,

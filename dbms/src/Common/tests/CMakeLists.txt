@@ -4,9 +4,6 @@ if(OPENSSL_CRYPTO_LIBRARY)
     target_link_libraries (hashes_test PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
 endif()
 
-add_executable (sip_hash sip_hash.cpp)
-target_link_libraries (sip_hash PRIVATE clickhouse_common_io)
-
 add_executable (sip_hash_perf sip_hash_perf.cpp)
 target_link_libraries (sip_hash_perf PRIVATE clickhouse_common_io)
 

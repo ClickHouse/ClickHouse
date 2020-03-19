@@ -11,7 +11,7 @@ template <class T>
 struct CRCBase
 {
     T tab[256];
-    CRCBase(T polynomial)
+    explicit CRCBase(T polynomial)
     {
         for (size_t i = 0; i < 256; ++i)
         {
