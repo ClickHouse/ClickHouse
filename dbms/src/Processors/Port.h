@@ -9,7 +9,6 @@
 #include <Core/Defines.h>
 #include <Processors/Chunk.h>
 #include <Common/Exception.h>
-#include <common/likely.h>
 
 namespace DB
 {
