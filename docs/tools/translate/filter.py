@@ -5,13 +5,16 @@ import random
 import sys
 import time
 import json.decoder
+import urllib.parse
 
 import googletrans
 import pandocfilters
+import requests
 
 translator = googletrans.Translator()
 target_language = os.environ.get('TARGET_LANGUAGE', 'ru')
 is_debug = os.environ.get('DEBUG') is not None
+is_yandex = os.environ.get('YANDEX') is not None
 
 
 def debug(*args):
@@ -23,8 +26,19 @@ def translate(text):
     if target_language == 'en':
         return text
     else:
-        time.sleep(random.random())
-        return translator.translate(text, target_language).text
+        if is_yandex:
+            text = urllib.parse.quote(text)
+            url = f'http://translate.yandex.net/api/v1/tr.json/translate?srv=docs&lang=en-{target_language}&text={text}'
+            result = requests.get(url).json()
+            debug(result)
+            if result.get('code') == 200:
+                return result['text'][0]
+            else:
+                print('Failed to translate', str(result), file=sys.stderr)
+                sys.exit(1)
+        else:
+            time.sleep(random.random())
+            return translator.translate(text, target_language).text
 
 
 def process_buffer(buffer, new_value, item=None):

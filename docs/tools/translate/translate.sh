@@ -7,7 +7,7 @@ export TARGET_LANGUAGE="$1"
 export DEBUG
 TEMP_FILE=$(mktemp)
 trap 'rm -f -- "${TEMP_FILE}"' INT TERM HUP EXIT
-
+source "${BASE_DIR}/venv/bin/activate"
 pandoc "$2" --filter "${BASE_DIR}/filter.py" -o "${TEMP_FILE}" \
     -f markdown -t "markdown_strict+pipe_tables+markdown_attribute+all_symbols_escapable+backtick_code_blocks" \
     --atx-headers --wrap=none
