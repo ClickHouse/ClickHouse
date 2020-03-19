@@ -9,7 +9,7 @@ TEMP_FILE=$(mktemp)
 trap 'rm -f -- "${TEMP_FILE}"' INT TERM HUP EXIT
 
 pandoc "$2" --filter "${BASE_DIR}/filter.py" -o "${TEMP_FILE}" \
-    -f markdown -t "markdown_strict+grid_tables+markdown_attribute+all_symbols_escapable" \
+    -f markdown -t "markdown_strict+pipe_tables+markdown_attribute+all_symbols_escapable+backtick_code_blocks" \
     --atx-headers --wrap=none
 perl -pi -e 's/{\\#\\#/{##/g' "${TEMP_FILE}"
 perl -pi -e 's/\\#\\#}/##}/g' "${TEMP_FILE}"

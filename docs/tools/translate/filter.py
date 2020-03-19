@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
 import os
+import random
 import sys
-
+import time
+import json.decoder
 
 import googletrans
 import pandocfilters
@@ -21,20 +23,24 @@ def translate(text):
     if target_language == 'en':
         return text
     else:
+        time.sleep(random.random())
         return translator.translate(text, target_language).text
 
 
 def process_buffer(buffer, new_value, item=None):
     if buffer:
         text = ''.join(buffer)
-        
+
         try:
             translated_text = translate(text)
         except TypeError:
             translated_text = text
+        except json.decoder.JSONDecodeError as e:
+            print('Failed to translate', str(e), file=sys.stderr)
+            sys.exit(1)
 
         debug('Translate', text, ' -> ', translated_text)
-        
+
         if text and text[0].isupper() and not translated_text[0].isupper():
             translated_text = translated_text[0].upper() + translated_text[1:]
 
@@ -43,11 +49,11 @@ def process_buffer(buffer, new_value, item=None):
             
         if text.endswith(' ') and not translated_text.endswith(' '):
             translated_text = translated_text + ' '
-        
+
         for token in translated_text.split(' '):
             new_value.append(pandocfilters.Str(token))
             new_value.append(pandocfilters.Space())
-        
+
         if item is None and len(new_value):
             new_value.pop(len(new_value) - 1)
         else:
@@ -81,10 +87,8 @@ def translate_filter(key, value, _format, _):
         cls = getattr(pandocfilters, key)
     except AttributeError:
         return
-    
-    if key == 'Para':
-        return cls(process_sentence(value))
-    elif key == 'Plain':
+
+    if key == 'Para' or key == 'Plain' or key == 'Strong' or key == 'Emph':
         return cls(process_sentence(value))
     elif key == 'Link':
         value[1] = process_sentence(value[1])
@@ -92,7 +96,7 @@ def translate_filter(key, value, _format, _):
     elif key == 'Header':
         value[2] = process_sentence(value[2])
         return cls(*value)
-    
+
     return
 
 
