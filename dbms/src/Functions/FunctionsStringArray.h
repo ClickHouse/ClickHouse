@@ -214,9 +214,6 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN);
 
         sep = col->getValue<String>();
-
-        if (sep.empty())
-            throw Exception("Illegal separator for function " + getName() + ". Must be not empty.", ErrorCodes::BAD_ARGUMENTS);
     }
 
     /// Returns the position of the argument that is the column of strings
@@ -239,15 +236,27 @@ public:
             return false;
 
         token_begin = pos;
-        pos = reinterpret_cast<Pos>(memmem(pos, end - pos, sep.data(), sep.size()));
 
-        if (pos)
+        if (sep.empty())
         {
+            pos += 1;
             token_end = pos;
-            pos += sep.size();
+
+            if (pos == end)
+                pos = nullptr;
         }
         else
-            token_end = end;
+        {
+            pos = reinterpret_cast<Pos>(memmem(pos, end - pos, sep.data(), sep.size()));
+
+            if (pos)
+            {
+                token_end = pos;
+                pos += sep.size();
+            }
+            else
+                token_end = end;
+        }
 
         return true;
     }
