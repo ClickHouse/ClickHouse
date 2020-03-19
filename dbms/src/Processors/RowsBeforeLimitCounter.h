@@ -1,0 +1,28 @@
+#include <atomic>
+#include <memory>
+
+namespace DB
+{
+
+class RowsBeforeLimitCounter
+{
+public:
+    void add(uint64_t rows)
+    {
+        setAppliedLimit();
+        rows_before_limit.fetch_add(rows, std::memory_order_release);
+    }
+
+    uint64_t get() const { return rows_before_limit.load(std::memory_order_acquire); }
+
+    bool setAppliedLimit() { has_applied_limit.store(true, std::memory_order::release); }
+    bool hasAppliedLimit() const { return has_applied_limit.load(std::memory_order_acquire); }
+
+private:
+    std::atomic<uint64_t> rows_before_limit = 0;
+    std::atomic_bool has_applied_limit = false;
+};
+
+using RowsBeforeLimitCounterPtr = std::shared_ptr<RowsBeforeLimitCounter>;
+
+}
