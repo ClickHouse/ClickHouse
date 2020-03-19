@@ -20,7 +20,7 @@
 #include <Access/AccessRightsElement.h>
 #include <Common/DNSResolver.h>
 #include <Common/Macros.h>
-#include <Common/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>

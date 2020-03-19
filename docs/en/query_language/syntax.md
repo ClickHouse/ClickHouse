@@ -27,7 +27,7 @@ SQL-style and C-style comments are supported.
 SQL-style comments: from `--` to the end of the line. The space after `--` can be omitted.
 Comments in C-style: from `/*` to `*/`. These comments can be multiline. Spaces are not required here, either.
 
-## Keywords { #syntax-keywords}
+## Keywords {#syntax-keywords}
 
 Keywords are case-insensitive when they correspond to:
 
@@ -40,7 +40,7 @@ In contrast to standard SQL all other keywords (including functions names) are *
 
 Keywords are not reserved (they are just parsed as keywords in the corresponding context). If you use [identifiers](#syntax-identifiers) the same as the keywords, enclose them into quotes. For example, the query `SELECT "FROM" FROM table_name` is valid if the table `table_name` has column with the name `"FROM"`.
 
-## Identifiers { #syntax-identifiers}
+## Identifiers {#syntax-identifiers}
 
 Identifiers are:
 
@@ -75,7 +75,7 @@ For example, 1 is parsed as `UInt8`, but 256 is parsed as `UInt16`. For more inf
 Examples: `1`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
 
 
-### String { #syntax-string-literal}
+### String {#syntax-string-literal}
 
 Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have a corresponding special value: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. In all other cases, escape sequences in the format `\c`, where `c` is any character, are converted to `c`. This means that you can use the sequences `\'`and`\\`. The value will have the [String](../data_types/string.md) type.
 
@@ -88,7 +88,7 @@ Actually, these are not literals, but expressions with the array creation operat
 An array must consist of at least one item, and a tuple must have at least two items.
 Tuples have a special purpose for use in the `IN` clause of a `SELECT` query. Tuples can be obtained as the result of a query, but they can't be saved to a database (with the exception of [Memory](../operations/table_engines/memory.md) tables).
 
-### NULL { #null-literal}
+### NULL {#null-literal}
 
 Indicates that the value is missing.
 
@@ -115,7 +115,7 @@ For example, the expression `1 + 2 * 3 + 4` is transformed to `plus(plus(1, mult
 
 Data types and table engines in the `CREATE` query are written the same way as identifiers or functions. In other words, they may or may not contain an arguments list in brackets. For more information, see the sections "Data types," "Table engines," and "CREATE".
 
-## Expression Aliases { #syntax-expression_aliases}
+## Expression Aliases {#syntax-expression_aliases}
 
 An alias is a user-defined name for an expression in a query.
 
@@ -173,7 +173,7 @@ In this example, we declared table `t` with column `b`. Then, when selecting dat
 
 In a `SELECT` query, an asterisk can replace the expression. For more information, see the section "SELECT".
 
-## Expressions { #syntax-expressions}
+## Expressions {#syntax-expressions}
 
 An expression is a function, identifier, literal, application of an operator, expression in brackets, subquery, or asterisk. It can also contain an alias.
 A list of expressions is one or more expressions separated by commas.

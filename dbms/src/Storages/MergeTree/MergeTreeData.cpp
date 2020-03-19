@@ -3373,6 +3373,7 @@ try
 
         part_log_elem.rows = (*merge_entry)->rows_written;
         part_log_elem.bytes_uncompressed = (*merge_entry)->bytes_written_uncompressed;
+        part_log_elem.peak_memory_usage = (*merge_entry)->memory_tracker.getPeak();
     }
 
     part_log->add(part_log_elem);

@@ -1,4 +1,3 @@
-
 # OnTime
 
 This dataset can be obtained in two ways:
@@ -158,8 +157,7 @@ $ clickhouse-client --query "select count(*) from datasets.ontime"
 ```
 
 !!!info
-    If you will run queries described below, you have to use full table name,
-    `datasets.ontime`.
+    If you will run the queries described below, you have to use the full table name, `datasets.ontime`.
 
 ## Queries
 
@@ -195,7 +193,7 @@ GROUP BY DayOfWeek
 ORDER BY c DESC;
 ```
 
-Q3. The number of delays by airport for 2000-2008
+Q3. The number of delays by the airport for 2000-2008
 
 ```sql
 SELECT Origin, count(*) AS c

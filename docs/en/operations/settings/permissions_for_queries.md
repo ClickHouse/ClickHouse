@@ -1,12 +1,12 @@
-# Permissions for queries { #permissions_for_queries}
+# Permissions for Queries {#permissions_for_queries}
 
 Queries in ClickHouse can be divided into several types:
 
 1. Read data queries: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
-1. Write data queries: `INSERT`, `OPTIMIZE`.
-1. Change settings queries: `SET`, `USE`.
-1. [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries: `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
-1. `KILL QUERY`.
+2. Write data queries: `INSERT`, `OPTIMIZE`.
+3. Change settings query: `SET`, `USE`.
+4. [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries: `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
+5. `KILL QUERY`.
 
 The following settings regulate user permissions by the type of query:
 
@@ -15,9 +15,9 @@ The following settings regulate user permissions by the type of query:
 
 `KILL QUERY` can be performed with any settings.
 
-## readonly { #settings_readonly}
+## readonly {#settings_readonly}
 
-Restricts permissions for read data, write data and change settings queries.
+Restricts permissions for reading data, write data and change settings queries.
 
 See how the queries are divided into types [above](#permissions_for_queries).
 
@@ -36,7 +36,7 @@ from changing only specific settings, for details see [constraints on settings](
 
 Default value: 0
 
-## allow_ddl { #settings_allow_ddl}
+## allow_ddl {#settings_allow_ddl}
 
 Allows or denies [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries.
 

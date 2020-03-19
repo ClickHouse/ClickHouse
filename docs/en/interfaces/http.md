@@ -1,4 +1,4 @@
-# HTTP Interface { #http_interface}
+# HTTP Interface {#http_interface}
 
 The HTTP interface lets you use ClickHouse on any platform from any programming language. We use it for working from Java and Perl, as well as shell scripts. In other departments, the HTTP interface is used from Perl, Python, and Go. The HTTP interface is more limited than the native interface, but it has better compatibility.
 
@@ -10,7 +10,7 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
-Use GET /ping request in health-check scripts. This handler always return "Ok." (with a line feed at the end). Available from version 18.12.13.
+Use GET /ping request in health-check scripts. This handler always returns "Ok." (with a line feed at the end). Available from version 18.12.13.
 ```bash
 $ curl 'http://localhost:8123/ping'
 Ok.
@@ -22,7 +22,7 @@ Send the request as a URL 'query' parameter, or as a POST. Or send the beginning
 If successful, you receive the 200 response code and the result in the response body.
 If an error occurs, you receive the 500 response code and an error description text in the response body.
 
-When using the GET method, 'readonly' is set. In other words, for queries that modify data, you can only use the POST method. You can send the query itself either in the POST body, or in the URL parameter.
+When using the GET method, 'readonly' is set. In other words, for queries that modify data, you can only use the POST method. You can send the query itself either in the POST body or in the URL parameter.
 
 Examples:
 
@@ -200,7 +200,7 @@ $ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: pass
 ```
 
 If the user name is not specified, the `default` name is used. If the password is not specified, the empty password is used.
-You can also use the URL parameters to specify any settings for processing a single query, or entire profiles of settings. Example:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
+You can also use the URL parameters to specify any settings for processing a single query or entire profiles of settings. Example:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
 For more information, see the [Settings](../operations/settings/index.md) section.
 
@@ -238,7 +238,7 @@ Possible header fields:
 - `written_rows` — Number of rows written.
 - `written_bytes` — Volume of data written in bytes.
 
-Running requests don't stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server side, and using the network might be ineffective.
+Running requests don't stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server-side, and using the network might be ineffective.
 The optional 'query_id' parameter can be passed as the query ID (any string). For more information, see the section "Settings, replace_running_query".
 
 The optional 'quota_key' parameter can be passed as the quota key (any string). For more information, see the section "Quotas".
@@ -247,9 +247,9 @@ The HTTP interface allows passing external data (external temporary tables) for 
 
 ## Response Buffering
 
-You can enable response buffering on the server side. The `buffer_size` and `wait_end_of_query` URL parameters are provided for this purpose.
+You can enable response buffering on the server-side. The `buffer_size` and `wait_end_of_query` URL parameters are provided for this purpose.
 
-`buffer_size` determines the number of bytes in the result to buffer in the server memory. If the result body is larger than this threshold, the buffer is written to the HTTP channel, and the remaining data is sent directly to the HTTP channel.
+`buffer_size` determines the number of bytes in the result to buffer in the server memory. If a result body is larger than this threshold, the buffer is written to the HTTP channel, and the remaining data is sent directly to the HTTP channel.
 
 To ensure that the entire response is buffered, set `wait_end_of_query=1`. In this case, the data that is not stored in memory will be buffered in a temporary server file.
 
@@ -259,9 +259,9 @@ Example:
 $ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wait_end_of_query=1' -d 'SELECT toUInt8(number) FROM system.numbers LIMIT 9000000 FORMAT RowBinary'
 ```
 
-Use buffering to avoid situations where a query processing error occurred after the response code and HTTP headers were sent to the client. In this situation, an error message is written at the end of the response body, and on the client side, the error can only be detected at the parsing stage.
+Use buffering to avoid situations where a query processing error occurred after the response code and HTTP headers were sent to the client. In this situation, an error message is written at the end of the response body, and on the client-side, the error can only be detected at the parsing stage.
 
-### Queries with Parameters { #cli-queries-with-parameters}
+### Queries with Parameters {#cli-queries-with-parameters}
 
 You can create a query with parameters and pass values for them from the corresponding HTTP request parameters. For more information, see [Queries with Parameters for CLI](cli.md#cli-queries-with-parameters).
 
