@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/AnalyzedJoin.h>
 #include <Functions/IFunction.h>
-#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 
 namespace DB
 {
@@ -32,28 +31,14 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
 
 InputSortingInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage) const
 {
-    Names sorting_key_columns;
-    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
-    {
-        if (!merge_tree->hasSortingKey())
-            return {};
-        sorting_key_columns = merge_tree->getSortingKeyColumns();
-    }
-    else if (const auto * part = dynamic_cast<const StorageFromMergeTreeDataPart *>(storage.get()))
-    {
-        if (!part->hasSortingKey())
-            return {};
-        sorting_key_columns = part->getSortingKeyColumns();
-    }
-    else /// Inapplicable storage type
-    {
+    const MergeTreeData * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get());
+    if (!merge_tree || !merge_tree->hasSortingKey())
         return {};
-    }
-
 
     SortDescription order_key_prefix_descr;
     int read_direction = required_sort_description.at(0).direction;
 
+    const auto & sorting_key_columns = merge_tree->getSortingKeyColumns();
     size_t prefix_size = std::min(required_sort_description.size(), sorting_key_columns.size());
 
     for (size_t i = 0; i < prefix_size; ++i)
