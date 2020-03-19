@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
+#include <Processors/RowsBeforeLimitCounter.h>
 #include <Core/SortDescription.h>
 
 namespace DB
@@ -29,7 +30,7 @@ private:
     std::vector<size_t> sort_column_positions;
 
     size_t rows_read = 0; /// including the last read block
-    size_t rows_before_limit_at_least = 0;
+    RowsBeforeLimitCounterPtr rows_before_limit_at_least;
 
     /// State of port's pair.
     /// Chunks from different port pairs are not mixed for berret cache locality.
@@ -65,7 +66,7 @@ public:
     InputPort & getInputPort() { return inputs.front(); }
     OutputPort & getOutputPort() { return outputs.front(); }
 
-    size_t getRowsBeforeLimitAtLeast() const { return rows_before_limit_at_least; }
+    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit_at_least.swap(counter); }
 };
 
 }
