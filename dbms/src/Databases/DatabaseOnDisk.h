@@ -61,6 +61,8 @@ public:
     String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.table); }
     String getMetadataPath() const override { return metadata_path; }
 
+    static ASTPtr parseQueryFromMetadata(Poco::Logger * log, const Context & context, const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false);
+
 protected:
     static constexpr const char * create_suffix = ".tmp";
     static constexpr const char * drop_suffix = ".tmp_drop";
@@ -76,7 +78,6 @@ protected:
         const String & table_name,
         bool throw_on_error) const override;
 
-    ASTPtr parseQueryFromMetadata(const Context & context, const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false) const;
     ASTPtr getCreateQueryFromMetadata(const Context & context, const String & metadata_path, bool throw_on_error) const;
 
 

@@ -31,35 +31,23 @@ public:
     String getTableDataPath(const String & table_name) const override;
     String getTableDataPath(const ASTCreateQuery & query) const override;
 
+    inline static String getPathForUUID(const UUID & uuid)
+    {
+        const size_t uuid_prefix_len = 3;
+        return toString(uuid).substr(0, uuid_prefix_len) + '/' + toString(uuid) + '/';
+    }
+
     void drop(const Context & /*context*/) override;
 
     void loadStoredObjects(Context & context, bool has_force_restore_data_flag) override;
     void shutdown() override;
 
 private:
-    struct TableToDrop
-    {
-        StoragePtr table;
-        String data_path;
-        time_t drop_time;
-        //time_t last_attempt_time;
-    };
-    using TablesToDrop = std::list<TableToDrop>;
-
-    void dropTableDataTask();
-    void dropTableFinally(const TableToDrop & table) const;
-
-private:
-    static constexpr time_t drop_delay_s = 10;
-    static constexpr size_t reschedule_time_ms = 5000;
 
     //TODO store path in DatabaseWithOwnTables::tables
     std::map<String, String> table_name_to_path;
 
-    TablesToDrop tables_to_drop;
-    std::mutex tables_to_drop_mutex;
 
-    BackgroundSchedulePoolTaskHolder drop_task;
 
 };
 

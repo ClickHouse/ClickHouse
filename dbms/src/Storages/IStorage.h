@@ -94,6 +94,10 @@ public:
     /// The name of the table.
     StorageID getStorageID() const;
 
+    /// This method is required to set actual storage id for storage created by table function. Do not use it
+    /// TODO refactor table names in table functions
+    void resetStorageIDForTableFunction(const StorageID & actual_table_id);
+
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 

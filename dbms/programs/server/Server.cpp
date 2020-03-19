@@ -391,6 +391,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
         Poco::File(dictionaries_lib_path).createDirectories();
     }
 
+    {
+        /// Directory with metadata of tables, which was marked as dropped by Atomic database
+        Poco::File(path + "metadata_dropped/").createDirectories();
+    }
+
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
         throw Exception("Both http and https interserver ports are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
