@@ -170,8 +170,8 @@ bool DNSResolver::updateCache()
 {
     {
         std::lock_guard lock(impl->drop_mutex);
-        for (auto & host : impl->new_hosts)
-            impl->known_hosts.insert(std::move(host));
+        for (const auto & host : impl->new_hosts)
+            impl->known_hosts.insert(host);
         impl->new_hosts.clear();
 
         impl->host_name.emplace(Poco::Net::DNS::hostName());

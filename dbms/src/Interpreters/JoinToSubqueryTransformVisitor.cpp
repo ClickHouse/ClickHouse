@@ -138,7 +138,7 @@ struct ColumnAliasesMatcher
         std::vector<std::pair<ASTIdentifier *, bool>> compound_identifiers;
         std::set<String> allowed_long_names;            /// original names allowed as aliases '--t.x as t.x' (select expressions only).
 
-        Data(const std::vector<DatabaseAndTableWithAlias> && tables_)
+        explicit Data(const std::vector<DatabaseAndTableWithAlias> && tables_)
             : tables(tables_)
             , public_names(false)
         {}

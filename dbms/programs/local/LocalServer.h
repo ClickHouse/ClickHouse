@@ -37,12 +37,8 @@ private:
     void tryInitPath();
     void applyCmdOptions();
     void applyCmdSettings();
-    void attachSystemTables();
     void processQueries();
     void setupUsers();
-
-    std::string getHelpHeader() const;
-    std::string getHelpFooter() const;
 
 protected:
     std::unique_ptr<Context> context;

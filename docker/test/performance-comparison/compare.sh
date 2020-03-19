@@ -2,55 +2,9 @@
 set -ex
 set -o pipefail
 trap "exit" INT TERM
-trap "kill 0" EXIT
+trap "kill $(jobs -pr) ||:" EXIT
 
 stage=${stage:-}
-script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-
-mkdir db0 ||:
-
-left_pr=$1
-left_sha=$2
-
-right_pr=$3
-right_sha=$4
-
-datasets=${CHPC_DATASETS:-"hits1 hits10 hits100 values"}
-
-declare -A dataset_paths
-dataset_paths["hits10"]="https://s3.mds.yandex.net/clickhouse-private-datasets/hits_10m_single/partitions/hits_10m_single.tar"
-dataset_paths["hits100"]="https://s3.mds.yandex.net/clickhouse-private-datasets/hits_100m_single/partitions/hits_100m_single.tar"
-dataset_paths["hits1"]="https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_v1.tar"
-dataset_paths["values"]="https://clickhouse-datasets.s3.yandex.net/values_with_expressions/partitions/test_values.tar"
-
-function download
-{
-    rm -r left ||:
-    mkdir left ||:
-    rm -r right ||:
-    mkdir right ||:
-
-    # might have the same version on left and right
-    if ! [ "$left_sha" = "$right_sha" ]
-    then
-        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv  &
-        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$right_pr/$right_sha/performance/performance.tgz" -O- | tar -C right --strip-components=1 -zxv &
-    else
-        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv && cp -a left right &
-    fi
-
-    for dataset_name in $datasets
-    do
-        dataset_path="${dataset_paths[$dataset_name]}"
-        [ "$dataset_path" != "" ]
-        cd db0 && wget -nv -nd -c "$dataset_path" -O- | tar -xv &
-    done
-
-    mkdir ~/fg ||:
-    cd ~/fg && wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl" && chmod +x ~/fg/flamegraph.pl &
-
-    wait
-}
 
 function configure
 {
@@ -263,7 +217,8 @@ function get_profiles
 # Build and analyze randomization distribution for all queries.
 function analyze_queries
 {
-    ls ./*-queries.tsv | xargs -n1 -I% basename % -queries.tsv | \
+    find . -maxdepth 1 -name "*-queries.tsv" -print | \
+        xargs -n1 -I% basename % -queries.tsv | \
         parallel --verbose right/clickhouse local --file "{}-queries.tsv" \
             --structure "\"query text, run int, version UInt32, time float\"" \
             --query "\"$(cat "$script_dir/eqmed.sql")\"" \
@@ -274,7 +229,7 @@ function analyze_queries
 function report
 {
 
-for x in {right,left}-{addresses,{query,trace,metric}-log}.tsv
+for x in {right,left}-{addresses,{query,query-thread,trace,metric}-log}.tsv
 do
     # FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
     # absolutely atrocious way. This should be done by the file() function itself.
@@ -294,14 +249,14 @@ create table queries engine Memory as select
         -- immediately, so for now we pretend they don't exist. We don't want to
         -- remove them altogether because we want to be able to detect regressions,
         -- but the right way to do this is not yet clear.
-        left + right < 0.02 as short,
+        left + right < 0.05 as short,
 
         not short and abs(diff) < 0.10 and rd[3] > 0.10 as unstable,
 
-        -- Do not consider changed the queries with 5% RD below 1% -- e.g., we're
-        -- likely to observe a difference > 1% in less than 5% cases.
+        -- Do not consider changed the queries with 5% RD below 5% -- e.g., we're
+        -- likely to observe a difference > 5% in less than 5% cases.
         -- Not sure it is correct, but empirically it filters out a lot of noise.
-        not short and abs(diff) > 0.15 and abs(diff) > rd[3] and rd[1] > 0.01 as changed,
+        not short and abs(diff) > 0.15 and abs(diff) > rd[3] and rd[1] > 0.05 as changed,
         *
     from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
 
@@ -410,7 +365,7 @@ create table metric_devation engine File(TSVWithNamesAndTypes, 'metric-deviation
     join queries using query
     group by query, metric
     having d > 0.5
-    order by any(rd[3]) desc, d desc
+    order by any(rd[3]) desc, query desc, d desc
     ;
 
 create table stacks engine File(TSV, 'stacks.rep') as
@@ -427,7 +382,7 @@ create table stacks engine File(TSV, 'stacks.rep') as
     join unstable_query_runs using query_id
     group by query, trace
     ;
-"
+" ||:
 
 IFS=$'\n'
 for query in $(cut -d'	' -f1 stacks.rep | sort | uniq)
@@ -445,15 +400,10 @@ unset IFS
 # Remember that grep sets error code when nothing is found, hence the bayan
 # operator.
 grep -H -m2 'Exception:[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
-
-"$script_dir/report.py" > report.html
 }
 
 case "$stage" in
 "")
-    ;&
-"download")
-    time download
     ;&
 "configure")
     time configure
@@ -462,23 +412,25 @@ case "$stage" in
     time restart
     ;&
 "run_tests")
-    # Ignore the errors to collect the log anyway
+    # Ignore the errors to collect the log and build at least some report, anyway
     time run_tests ||:
     ;&
 "get_profiles")
     # If the tests fail with OOM or something, still try to restart the servers
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data.
-    time get_profiles || restart || get_profiles
+    time get_profiles || restart || get_profiles ||:
 
     # Stop the servers to free memory for the subsequent query analysis.
     while killall clickhouse; do echo . ; sleep 1 ; done
     echo Servers stopped.
     ;&
 "analyze_queries")
-    time analyze_queries
+    time analyze_queries ||:
     ;&
 "report")
-    time report
+    time report ||:
+
+    time "$script_dir/report.py" > report.html
     ;&
 esac

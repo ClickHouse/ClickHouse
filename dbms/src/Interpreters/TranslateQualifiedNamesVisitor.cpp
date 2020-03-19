@@ -34,7 +34,7 @@ bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const
     auto nested1 = IdentifierSemantic::extractNestedName(identifier, table.table);
     auto nested2 = IdentifierSemantic::extractNestedName(identifier, table.alias);
 
-    String short_name = identifier.shortName();
+    const String & short_name = identifier.shortName();
     const Names & column_names = tables[table_pos].columns;
     for (auto & known_name : column_names)
     {

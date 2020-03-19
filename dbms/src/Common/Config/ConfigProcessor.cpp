@@ -219,7 +219,7 @@ void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
     mergeRecursive(config, config_root, with_root);
 }
 
-std::string ConfigProcessor::layerFromHost()
+static std::string layerFromHost()
 {
     utsname buf;
     if (uname(&buf))
@@ -294,7 +294,7 @@ void ConfigProcessor::doIncludesRecursive(
 
     auto process_include = [&](const Node * include_attr, const std::function<const Node * (const std::string &)> & get_node, const char * error_msg)
     {
-        std::string name = include_attr->getNodeValue();
+        const std::string & name = include_attr->getNodeValue();
         const Node * node_to_include = get_node(name);
         if (!node_to_include)
         {

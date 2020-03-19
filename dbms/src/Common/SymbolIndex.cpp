@@ -168,7 +168,7 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
                 const ElfW(Sym) * elf_sym = reinterpret_cast<const ElfW(Sym) *>(correct_address(info->dlpi_addr, it->d_un.d_ptr));
 
                 /* Iterate over the symbol table */
-                for (ElfW(Word) sym_index = 0; sym_index < sym_cnt; ++sym_index)
+                for (ElfW(Word) sym_index = 0; sym_index < ElfW(Word)(sym_cnt); ++sym_index)
                 {
                     /// We are not interested in empty symbols.
                     if (!elf_sym[sym_index].st_size)
@@ -186,7 +186,7 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
                     symbol.address_begin = reinterpret_cast<const void *>(info->dlpi_addr + elf_sym[sym_index].st_value);
                     symbol.address_end = reinterpret_cast<const void *>(info->dlpi_addr + elf_sym[sym_index].st_value + elf_sym[sym_index].st_size);
                     symbol.name = sym_name;
-                    symbols.push_back(std::move(symbol));
+                    symbols.push_back(symbol);
                 }
 
                 break;
@@ -227,7 +227,7 @@ void collectSymbolsFromELFSymbolTable(
         symbol.address_begin = reinterpret_cast<const void *>(info->dlpi_addr + symbol_table_entry->st_value);
         symbol.address_end = reinterpret_cast<const void *>(info->dlpi_addr + symbol_table_entry->st_value + symbol_table_entry->st_size);
         symbol.name = symbol_name;
-        symbols.push_back(std::move(symbol));
+        symbols.push_back(symbol);
     }
 }
 

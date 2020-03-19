@@ -27,7 +27,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include "config_core.h"
-#include <Common/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getExecutablePath.h>
@@ -175,7 +175,7 @@ int Server::run()
         std::cout << DBMS_NAME << " server version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
         return 0;
     }
-    return Application::run();
+    return Application::run(); // NOLINT
 }
 
 void Server::initialize(Poco::Util::Application & self)

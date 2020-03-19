@@ -37,6 +37,89 @@ namespace
 
         return false;
     }
+
+    /// Returns true if merge result is not empty
+    bool mergeMap(const SummingSortedBlockInputStream::MapDescription & desc, Row & row, SortCursor & cursor)
+    {
+        /// Strongly non-optimal.
+
+        Row & left = row;
+        Row right(left.size());
+
+        for (size_t col_num : desc.key_col_nums)
+            right[col_num] = (*cursor->all_columns[col_num])[cursor->pos].template get<Array>();
+
+        for (size_t col_num : desc.val_col_nums)
+            right[col_num] = (*cursor->all_columns[col_num])[cursor->pos].template get<Array>();
+
+        auto at_ith_column_jth_row = [&](const Row & matrix, size_t i, size_t j) -> const Field &
+        {
+            return matrix[i].get<Array>()[j];
+        };
+
+        auto tuple_of_nth_columns_at_jth_row = [&](const Row & matrix, const ColumnNumbers & col_nums, size_t j) -> Array
+        {
+            size_t size = col_nums.size();
+            Array res(size);
+            for (size_t col_num_index = 0; col_num_index < size; ++col_num_index)
+                res[col_num_index] = at_ith_column_jth_row(matrix, col_nums[col_num_index], j);
+            return res;
+        };
+
+        std::map<Array, Array> merged;
+
+        auto accumulate = [](Array & dst, const Array & src)
+        {
+            bool has_non_zero = false;
+            size_t size = dst.size();
+            for (size_t i = 0; i < size; ++i)
+                if (applyVisitor(FieldVisitorSum(src[i]), dst[i]))
+                    has_non_zero = true;
+            return has_non_zero;
+        };
+
+        auto merge = [&](const Row & matrix)
+        {
+            size_t rows = matrix[desc.key_col_nums[0]].get<Array>().size();
+
+            for (size_t j = 0; j < rows; ++j)
+            {
+                Array key = tuple_of_nth_columns_at_jth_row(matrix, desc.key_col_nums, j);
+                Array value = tuple_of_nth_columns_at_jth_row(matrix, desc.val_col_nums, j);
+
+                auto it = merged.find(key);
+                if (merged.end() == it)
+                    merged.emplace(std::move(key), std::move(value));
+                else
+                {
+                    if (!accumulate(it->second, value))
+                        merged.erase(it);
+                }
+            }
+        };
+
+        merge(left);
+        merge(right);
+
+        for (size_t col_num : desc.key_col_nums)
+            row[col_num] = Array(merged.size());
+        for (size_t col_num : desc.val_col_nums)
+            row[col_num] = Array(merged.size());
+
+        size_t row_num = 0;
+        for (const auto & key_value : merged)
+        {
+            for (size_t col_num_index = 0, size = desc.key_col_nums.size(); col_num_index < size; ++col_num_index)
+                row[desc.key_col_nums[col_num_index]].get<Array>()[row_num] = key_value.first[col_num_index];
+
+            for (size_t col_num_index = 0, size = desc.val_col_nums.size(); col_num_index < size; ++col_num_index)
+                row[desc.val_col_nums[col_num_index]].get<Array>()[row_num] = key_value.second[col_num_index];
+
+            ++row_num;
+        }
+
+        return row_num != 0;
+    }
 }
 
 
@@ -398,89 +481,6 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, Sorti
     /// If it is zero, and without it the output stream will be empty, we will write it anyway.
     insertCurrentRowIfNeeded(merged_columns);
     finished = true;
-}
-
-
-bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & row, SortCursor & cursor)
-{
-    /// Strongly non-optimal.
-
-    Row & left = row;
-    Row right(left.size());
-
-    for (size_t col_num : desc.key_col_nums)
-        right[col_num] = (*cursor->all_columns[col_num])[cursor->pos].template get<Array>();
-
-    for (size_t col_num : desc.val_col_nums)
-        right[col_num] = (*cursor->all_columns[col_num])[cursor->pos].template get<Array>();
-
-    auto at_ith_column_jth_row = [&](const Row & matrix, size_t i, size_t j) -> const Field &
-    {
-        return matrix[i].get<Array>()[j];
-    };
-
-    auto tuple_of_nth_columns_at_jth_row = [&](const Row & matrix, const ColumnNumbers & col_nums, size_t j) -> Array
-    {
-        size_t size = col_nums.size();
-        Array res(size);
-        for (size_t col_num_index = 0; col_num_index < size; ++col_num_index)
-            res[col_num_index] = at_ith_column_jth_row(matrix, col_nums[col_num_index], j);
-        return res;
-    };
-
-    std::map<Array, Array> merged;
-
-    auto accumulate = [](Array & dst, const Array & src)
-    {
-        bool has_non_zero = false;
-        size_t size = dst.size();
-        for (size_t i = 0; i < size; ++i)
-            if (applyVisitor(FieldVisitorSum(src[i]), dst[i]))
-                has_non_zero = true;
-        return has_non_zero;
-    };
-
-    auto merge = [&](const Row & matrix)
-    {
-        size_t rows = matrix[desc.key_col_nums[0]].get<Array>().size();
-
-        for (size_t j = 0; j < rows; ++j)
-        {
-            Array key = tuple_of_nth_columns_at_jth_row(matrix, desc.key_col_nums, j);
-            Array value = tuple_of_nth_columns_at_jth_row(matrix, desc.val_col_nums, j);
-
-            auto it = merged.find(key);
-            if (merged.end() == it)
-                merged.emplace(std::move(key), std::move(value));
-            else
-            {
-                if (!accumulate(it->second, value))
-                    merged.erase(it);
-            }
-        }
-    };
-
-    merge(left);
-    merge(right);
-
-    for (size_t col_num : desc.key_col_nums)
-        row[col_num] = Array(merged.size());
-    for (size_t col_num : desc.val_col_nums)
-        row[col_num] = Array(merged.size());
-
-    size_t row_num = 0;
-    for (const auto & key_value : merged)
-    {
-        for (size_t col_num_index = 0, size = desc.key_col_nums.size(); col_num_index < size; ++col_num_index)
-            row[desc.key_col_nums[col_num_index]].get<Array>()[row_num] = key_value.first[col_num_index];
-
-        for (size_t col_num_index = 0, size = desc.val_col_nums.size(); col_num_index < size; ++col_num_index)
-            row[desc.val_col_nums[col_num_index]].get<Array>()[row_num] = key_value.second[col_num_index];
-
-        ++row_num;
-    }
-
-    return row_num != 0;
 }
 
 

@@ -95,7 +95,7 @@ std::string bin(const T & value, size_t bits = sizeof(T)*8)
     static const uint8_t MAX_BITS = sizeof(T)*8;
     assert(bits <= MAX_BITS);
 
-    return std::bitset<sizeof(T) * 8>(static_cast<unsigned long long>(value))
+    return std::bitset<sizeof(T) * 8>(static_cast<uint64_t>(value))
             .to_string().substr(MAX_BITS - bits, bits);
 }
 
@@ -182,7 +182,7 @@ public:
         return *this;
     }
 
-    operator bool() const
+    explicit operator bool() const
     {
         return ItemsLeft() > 0;
     }
@@ -519,7 +519,7 @@ public:
         CODEC_WITHOUT_DATA_TYPE,
     };
 
-    CompressionCodecPtr makeCodec(MakeCodecParam with_data_type)
+    static CompressionCodecPtr makeCodec(MakeCodecParam with_data_type)
     {
         const auto & codec_string = std::get<0>(GetParam()).codec_statement;
         const auto & data_type = with_data_type == CODEC_WITH_DATA_TYPE ? std::get<1>(GetParam()).data_type : nullptr;
@@ -527,7 +527,7 @@ public:
         return ::makeCodec(codec_string, data_type);
     }
 
-    void testTranscoding(ICompressionCodec & codec)
+    static void testTranscoding(ICompressionCodec & codec)
     {
         NoOpTimer timer;
         ::testTranscoding(timer, codec, std::get<1>(GetParam()), std::get<0>(GetParam()).expected_compression_ratio);
@@ -706,9 +706,9 @@ typename std::conditional_t<std::is_floating_point_v<T>, std::uniform_real_distr
 
 
 template <typename T = Int32>
-struct MonotonicGenerator
+struct MonotonicGenerator // NOLINT
 {
-    MonotonicGenerator(T stride_ = 1, T max_step = 10)
+    explicit MonotonicGenerator(T stride_ = 1, T max_step = 10) // NOLINT
         : prev_value(0),
           stride(stride_),
           random_engine(0),
@@ -732,7 +732,7 @@ private:
 template <typename T>
 struct RandomGenerator
 {
-    RandomGenerator(T seed = 0, T value_min = std::numeric_limits<T>::min(), T value_max = std::numeric_limits<T>::max())
+    explicit RandomGenerator(T seed = 0, T value_min = std::numeric_limits<T>::min(), T value_max = std::numeric_limits<T>::max())
         : random_engine(seed),
           distribution(value_min, value_max)
     {
