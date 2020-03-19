@@ -12,11 +12,13 @@ import util
 
 
 def choose_latest_releases():
+    logging.info('Collecting release candidates')
     seen = collections.OrderedDict()
     candidates = []
     for page in range(1, 10):
         url = 'https://api.github.com/repos/ClickHouse/ClickHouse/tags?per_page=100&page=%d' % page
         candidates += requests.get(url).json()
+    logging.info('Collected all release candidates')
 
     for tag in candidates:
         if isinstance(tag, dict):
@@ -45,7 +47,7 @@ def process_release(args, callback, release):
     tar = tarfile.open(mode='r:gz', fileobj=buf)
     with util.temp_dir() as base_dir:
         tar.extractall(base_dir)
-        args = copy.deepcopy(args)
+        args = copy.copy(args)
         args.version_prefix = name
         args.is_stable_release = True
         args.docs_dir = os.path.join(base_dir, os.listdir(base_dir)[0], 'docs')
