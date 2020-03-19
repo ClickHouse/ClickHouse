@@ -53,6 +53,11 @@ public:
     }
 
 
+    bool hasSortingKey() const { return part->storage.hasSortingKey(); }
+
+    Names getSortingKeyColumns() const override { return part->storage.getSortingKeyColumns(); }
+
+
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(getIDFromPart(part_), part_->storage.getVirtuals())
