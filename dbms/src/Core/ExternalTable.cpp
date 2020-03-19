@@ -1,5 +1,4 @@
 #include <boost/program_options.hpp>
-#include <boost/algorithm/string.hpp>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
@@ -8,13 +7,13 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
 #include <Storages/StorageMemory.h>
-#include <Poco/Net/MessageHeader.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
-
-#include <Core/ExternalTable.h>
 #include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Core/ExternalTable.h>
+#include <Poco/Net/MessageHeader.h>
+#include <common/find_symbols.h>
 
 
 namespace DB
@@ -42,11 +41,11 @@ ExternalTableDataPtr BaseExternalTable::getData(const Context & context)
 
 void BaseExternalTable::clean()
 {
-    name = "";
-    file = "";
-    format = "";
+    name.clear();
+    file.clear();
+    format.clear();
     structure.clear();
-    sample_block = Block();
+    sample_block.clear();
     read_buffer.reset();
 }
 
@@ -58,19 +57,13 @@ void BaseExternalTable::write()
     std::cerr << "format " << format << std::endl;
     std::cerr << "structure: \n";
     for (const auto & elem : structure)
-        std::cerr << "\t" << elem.first << " " << elem.second << std::endl;
-}
-
-std::vector<std::string> BaseExternalTable::split(const std::string & s, const std::string & d)
-{
-    std::vector<std::string> res;
-    boost::split(res, s, boost::algorithm::is_any_of(d), boost::algorithm::token_compress_on);
-    return res;
+        std::cerr << '\t' << elem.first << ' ' << elem.second << std::endl;
 }
 
 void BaseExternalTable::parseStructureFromStructureField(const std::string & argument)
 {
-    std::vector<std::string> vals = split(argument, " ,");
+    std::vector<std::string> vals;
+    splitInto<' ', ','>(vals, argument, true);
 
     if (vals.size() & 1)
         throw Exception("Odd number of attributes in section structure", ErrorCodes::BAD_ARGUMENTS);
@@ -81,7 +74,8 @@ void BaseExternalTable::parseStructureFromStructureField(const std::string & arg
 
 void BaseExternalTable::parseStructureFromTypesField(const std::string & argument)
 {
-    std::vector<std::string> vals = split(argument, " ,");
+    std::vector<std::string> vals;
+    splitInto<' ', ','>(vals, argument, true);
 
     for (size_t i = 0; i < vals.size(); ++i)
         structure.emplace_back("_" + toString(i + 1), vals[i]);

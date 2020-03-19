@@ -19,7 +19,7 @@ namespace DB
 /* Database to store StorageDictionary tables
  * automatically creates tables for all dictionaries
  */
-class DatabaseDictionary : public IDatabase
+class DatabaseDictionary final : public IDatabase
 {
 public:
     DatabaseDictionary(const String & name_);

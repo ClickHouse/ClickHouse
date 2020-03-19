@@ -18,7 +18,7 @@ namespace DB
   * We don't use StorageSystemPartsBase, because it introduces virtual _state
   * column and column aliases which we don't need.
   */
-class StorageSystemDetachedParts :
+class StorageSystemDetachedParts final :
     public ext::shared_ptr_helper<StorageSystemDetachedParts>,
     public IStorage
 {

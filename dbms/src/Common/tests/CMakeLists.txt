@@ -22,7 +22,7 @@ target_link_libraries (parallel_aggregation PRIVATE dbms)
 add_executable (parallel_aggregation2 parallel_aggregation2.cpp)
 target_link_libraries (parallel_aggregation2 PRIVATE dbms)
 
-add_executable (int_hashes_perf int_hashes_perf.cpp AvalancheTest.cpp Random.cpp)
+add_executable (int_hashes_perf int_hashes_perf.cpp)
 target_link_libraries (int_hashes_perf PRIVATE clickhouse_common_io)
 
 add_executable (simple_cache simple_cache.cpp)
