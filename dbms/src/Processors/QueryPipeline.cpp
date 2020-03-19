@@ -592,8 +592,7 @@ void QueryPipeline::initRowsBeforeLimit()
             if (auto * source = typeid_cast<SourceFromInputStream *>(processor))
                 sources.emplace_back(source);
         }
-
-        if (auto * sorting = typeid_cast<PartialSortingTransform *>(processor))
+        else if (auto * sorting = typeid_cast<PartialSortingTransform *>(processor))
         {
             if (!rows_before_limit_at_least)
                 rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
@@ -601,7 +600,7 @@ void QueryPipeline::initRowsBeforeLimit()
             sorting->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 
             /// Don't go to children. Take rows_before_limit from last PartialSortingTransform.
-            /// continue;
+            continue;
         }
 
         /// Skip totals and extremes port for output format.
@@ -632,6 +631,11 @@ void QueryPipeline::initRowsBeforeLimit()
         for (auto & source : sources)
             source->setRowsBeforeLimitCounter(rows_before_limit_at_least);
     }
+
+    /// If there is a limit, then enable rows_before_limit_at_least
+    /// It is needed when zero rows is read, but we still want rows_before_limit_at_least in result.
+    if (!limits.empty())
+        rows_before_limit_at_least->add(0);
 
     if (rows_before_limit_at_least)
         output_format->setRowsBeforeLimitCounter(rows_before_limit_at_least);
