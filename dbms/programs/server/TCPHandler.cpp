@@ -647,8 +647,6 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
           */
         if (!isQueryCancelled())
         {
-            pipeline.finalize();
-
             sendTotals(lazy_format->getTotals());
             sendExtremes(lazy_format->getExtremes());
             sendProfileInfo(lazy_format->getProfileInfo());

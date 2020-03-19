@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
+#include <Processors/RowsBeforeLimitCounter.h>
 #include <Core/SortDescription.h>
 
 namespace DB
@@ -21,7 +22,7 @@ private:
     bool block_processed = false;
     Chunk current_chunk;
 
-    UInt64 rows_before_limit_at_least = 0;
+    RowsBeforeLimitCounterPtr rows_before_limit_at_least;
 
     bool with_ties;
     const SortDescription description;
@@ -47,7 +48,7 @@ public:
     InputPort & getInputPort() { return input; }
     OutputPort & getOutputPort() { return output; }
 
-    UInt64 getRowsBeforeLimitAtLeast() const { return rows_before_limit_at_least; }
+    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit_at_least.swap(counter); }
 };
 
 }

@@ -2033,10 +2033,12 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
 
         if (need_finish_sorting)
         {
-            pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
+            pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
             {
-                bool do_count_rows = stream_type == QueryPipeline::StreamType::Main;
-                return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit, do_count_rows);
+                if (stream_type != QueryPipeline::StreamType::Main)
+                    return nullptr;
+
+                return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit);
             });
 
             pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
@@ -2050,10 +2052,12 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
         return;
     }
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
-        bool do_count_rows = stream_type == QueryPipeline::StreamType::Main;
-        return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit, do_count_rows);
+        if (stream_type != QueryPipeline::StreamType::Main)
+            return nullptr;
+
+        return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit);
     });
 
     /// Merge the sorted blocks.

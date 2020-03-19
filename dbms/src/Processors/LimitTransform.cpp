@@ -93,7 +93,9 @@ LimitTransform::Status LimitTransform::prepare()
     has_block = true;
 
     auto rows = current_chunk.getNumRows();
-    rows_before_limit_at_least += rows;
+
+    if (rows_before_limit_at_least)
+        rows_before_limit_at_least->add(rows);
 
     /// Skip block (for 'always_read_till_end' case).
     if (pushing_is_finished)
