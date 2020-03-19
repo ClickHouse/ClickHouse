@@ -93,7 +93,6 @@ void PartLogElement::appendToBlock(Block & block) const
     columns[i++]->insert(error);
     columns[i++]->insert(exception);
 
-
     block.setColumns(std::move(columns));
 }
 
