@@ -140,9 +140,6 @@ public:
     void setProgressCallback(const ProgressCallback & callback);
     void setProcessListElement(QueryStatus * elem);
 
-    /// Call after execution.
-    void finalize();
-
     /// Recommend number of threads for pipeline execution.
     size_t getNumThreads() const
     {
@@ -200,7 +197,7 @@ private:
     template <typename TProcessorGetter>
     void addSimpleTransformImpl(const TProcessorGetter & getter);
 
-    void calcRowsBeforeLimit();
+    void initRowsBeforeLimit();
 };
 
 }
