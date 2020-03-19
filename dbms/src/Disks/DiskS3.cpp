@@ -303,7 +303,12 @@ namespace
             finalized = true;
         }
 
-        void sync() override { metadata.save(true); }
+        void sync() override
+        {
+            if (finalized)
+                metadata.save(true);
+        }
+
         std::string getFileName() const override { return metadata.metadata_file_path; }
 
     private:
@@ -480,14 +485,12 @@ void DiskS3::copyFile(const String & from_path, const String & to_path)
     Metadata from(metadata_path + from_path);
     Metadata to(metadata_path + to_path, true);
 
-    for (UInt32 i = 0; i < from.s3_objects_count; ++i)
+    for (const auto & [path, size] : from.s3_objects)
     {
-        auto path = from.s3_objects[i].first;
-        auto size = from.s3_objects[i].second;
         auto new_path = s3_root_path + getRandomName();
         Aws::S3::Model::CopyObjectRequest req;
+        req.SetCopySource(bucket + "/" + path);
         req.SetBucket(bucket);
-        req.SetCopySource(path);
         req.SetKey(new_path);
         throwIfError(client->CopyObject(req));
 
@@ -621,6 +624,27 @@ Poco::Timestamp DiskS3::getLastModified(const String & path)
     return Poco::File(metadata_path + path).getLastModified();
 }
 
+void DiskS3::createHardLink(const String & src_path, const String & dst_path)
+{
+    /**
+     * TODO: Replace with optimal implementation:
+     * Store links into a list in metadata file.
+     * Hardlink creation is adding new link to list and just metadata file copy.
+     */
+    copyFile(src_path, dst_path);
+}
+
+void DiskS3::createFile(const String & path)
+{
+    /// Create empty metadata file.
+    Metadata metadata(metadata_path + path, true);
+    metadata.save();
+}
+
+void DiskS3::setReadOnly(const String & path)
+{
+    Poco::File(metadata_path + path).setReadOnly(true);
+}
 
 DiskS3Reservation::~DiskS3Reservation()
 {
