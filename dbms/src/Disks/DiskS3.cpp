@@ -571,7 +571,7 @@ void DiskS3::remove(const String & path)
         }
         else /// In other case decrement number of references, save metadata and delete file.
         {
-            metadata.ref_count--;
+            --metadata.ref_count;
             metadata.save();
             file.remove();
         }
@@ -641,7 +641,7 @@ void DiskS3::createHardLink(const String & src_path, const String & dst_path)
 {
     /// Increment number of references.
     Metadata src(metadata_path, src_path);
-    src.ref_count++;
+    ++src.ref_count;
     src.save();
 
     /// Create FS hardlink to metadata file.
