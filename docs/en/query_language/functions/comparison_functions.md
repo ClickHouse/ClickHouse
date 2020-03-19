@@ -17,17 +17,17 @@ Strings are compared by bytes. A shorter string is smaller than all strings that
 
 Note. Up until version 1.1.54134, signed and unsigned numbers were compared the same way as in C++. In other words, you could get an incorrect result in cases like SELECT 9223372036854775807 &gt; -1. This behavior changed in version 1.1.54134 and is now mathematically correct.
 
-## equals, a = b and a == b operator { #function-equals}
+## equals, a = b and a == b operator {#function-equals}
 
-## notEquals, a ! operator= b and a `<>` b { #function-notequals}
+## notEquals, a ! operator= b and a `<>` b {#function-notequals}
 
-## less, `< operator` { #function-less}
+## less, `< operator` {#function-less}
 
-## greater, `> operator` { #function-greater}
+## greater, `> operator` {#function-greater}
 
-## lessOrEquals, `<= operator` { #function-lessorequals}
+## lessOrEquals, `<= operator` {#function-lessorequals}
 
-## greaterOrEquals, `>= operator` { #function-greaterorequals}
+## greaterOrEquals, `>= operator` {#function-greaterorequals}
 
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/comparison_functions/) <!--hide-->

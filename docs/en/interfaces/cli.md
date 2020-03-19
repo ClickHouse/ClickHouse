@@ -19,7 +19,7 @@ Different client and server versions are compatible with one another, but some f
 ClickHouse client version is older than ClickHouse server. It may lack support for new features.
 ```
 
-## Usage { #cli_usage}
+## Usage {#cli_usage}
 
 The client can be used in interactive and non-interactive (batch) mode.
 To use batch mode, specify the 'query' parameter, or send data to 'stdin' (it verifies that 'stdin' is not a terminal), or both.
@@ -40,7 +40,7 @@ $ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FOR
 
 In batch mode, the default data format is TabSeparated. You can set the format in the FORMAT clause of the query.
 
-By default, you can only process a single query in batch mode. To make multiple queries from a "script," use the --multiquery parameter. This works for all queries except INSERT. Query results are output consecutively without additional separators.
+By default, you can only process a single query in batch mode. To make multiple queries from a "script," use the `--multiquery` parameter. This works for all queries except INSERT. Query results are output consecutively without additional separators.
 Similarly, to process a large number of queries, you can run 'clickhouse-client' for each query. Note that it may take tens of milliseconds to launch the 'clickhouse-client' program.
 
 In interactive mode, you get a command line where you can enter queries.
@@ -67,11 +67,11 @@ When processing a query, the client shows:
 3. The result in the specified format.
 4. The number of lines in the result, the time passed, and the average speed of query processing.
 
-You can cancel a long query by pressing Ctrl+C. However, you will still need to wait a little for the server to abort the request. It is not possible to cancel a query at certain stages. If you don't wait and press Ctrl+C a second time, the client will exit.
+You can cancel a long query by pressing Ctrl+C. However, you will still need to wait for a little for the server to abort the request. It is not possible to cancel a query at certain stages. If you don't wait and press Ctrl+C a second time, the client will exit.
 
 The command-line client allows passing external data (external temporary tables) for querying. For more information, see the section "External data for query processing".
 
-### Queries with Parameters { #cli-queries-with-parameters}
+### Queries with Parameters {#cli-queries-with-parameters}
 
 You can create a query with parameters and pass values to them from client application. This allows to avoid formatting query with specific dynamic values on client side. For example:
 
@@ -79,7 +79,7 @@ You can create a query with parameters and pass values to them from client appli
 $ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
 ```
 
-#### Query Syntax { #cli-queries-with-parameters-syntax}
+#### Query Syntax {#cli-queries-with-parameters-syntax}
 
 Format a query as usual, then place the values that you want to pass from the app parameters to the query in braces in the following format:
 
@@ -96,7 +96,7 @@ Format a query as usual, then place the values that you want to pass from the ap
 $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
 ```
 
-## Configuring { #interfaces_cli_configuration}
+## Configuring {#interfaces_cli_configuration}
 
 You can pass parameters to `clickhouse-client` (all parameters have a default value) using:
 

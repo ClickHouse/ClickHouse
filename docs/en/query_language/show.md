@@ -8,7 +8,7 @@ SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [F
 
 Returns a single `String`-type 'statement' column, which contains a single value – the `CREATE` query used for creating the specified object.
 
-## SHOW DATABASES { #show-databases}
+## SHOW DATABASES {#show-databases}
 
 ```sql
 SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]

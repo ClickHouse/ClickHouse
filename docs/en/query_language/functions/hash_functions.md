@@ -2,7 +2,7 @@
 
 Hash functions can be used for the deterministic pseudo-random shuffling of elements.
 
-## halfMD5 { #hash_functions-halfmd5}
+## halfMD5 {#hash_functions-halfmd5}
 
 [Interprets](../../query_language/functions/type_conversion_functions.md#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the [MD5](https://en.wikipedia.org/wiki/MD5) hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the resulting string, and interprets them as `UInt64` in big-endian byte order.
 
@@ -32,13 +32,13 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 └────────────────────┴────────┘
 ```
 
-## MD5 { #hash_functions-md5}
+## MD5 {#hash_functions-md5}
 
 Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
 If you don't need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the 'sipHash128' function instead.
 If you want to get the same result as output by the md5sum utility, use lower(hex(MD5(s))).
 
-## sipHash64 { #hash_functions-siphash64}
+## sipHash64 {#hash_functions-siphash64}
 
 Produces a 64-bit [SipHash](https://131002.net/siphash/) hash value.
 
@@ -74,7 +74,7 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 └──────────────────────┴────────┘
 ```
 
-## sipHash128 { #hash_functions-siphash128}
+## sipHash128 {#hash_functions-siphash128}
 
 Calculates SipHash from a string.
 Accepts a String-type argument. Returns FixedString(16).
@@ -175,7 +175,7 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 └──────────────────────┴────────┘
 ```
 
-## javaHash { #hash_functions-javahash}
+## javaHash {#hash_functions-javahash}
 
 Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string. This hash function is neither fast nor having a good quality. The only reason to use it is when this algorithm is already used in another system and you have to calculate exactly the same result.
 
@@ -205,7 +205,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## javaHashUTF16LE { #javahashutf16le}
+## javaHashUTF16LE {#javahashutf16le}
 
 Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string, assuming it contains bytes representing a string in UTF-16LE encoding.
 
@@ -241,7 +241,7 @@ Result:
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## hiveHash { #hash_functions-hivehash}
+## hiveHash {#hash_functions-hivehash}
 
 Calculates `HiveHash` from a string.
 
@@ -391,7 +391,7 @@ SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3)
 └──────────────────┴─────────────────┘
 ```
 
-## xxHash32, xxHash64 { #hash_functions-xxhash32}
+## xxHash32, xxHash64 {#hash_functions-xxhash32}
 
 Calculates `xxHash` from a string. It is proposed in two flavors, 32 and 64 bits.
 

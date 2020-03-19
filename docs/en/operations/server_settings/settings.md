@@ -1,5 +1,4 @@
-# Server settings
-
+# Server Settings
 
 ## builtin_dictionaries_reload_interval
 
@@ -16,7 +15,7 @@ Default value: 3600.
 ```
 
 
-## compression { #server-settings-compression}
+## compression {#server-settings-compression}
 
 Data compression settings for [MergeTree](../table_engines/mergetree.md)-engine tables.
 
@@ -90,7 +89,7 @@ Settings profiles are located in the file specified in the parameter `user_confi
 ```
 
 
-## dictionaries_config { #server_settings-dictionaries_config}
+## dictionaries_config {#server_settings-dictionaries_config}
 
 The path to the config file for external dictionaries.
 
@@ -108,7 +107,7 @@ See also "[External dictionaries](../../query_language/dicts/external_dicts.md)"
 ```
 
 
-## dictionaries_lazy_load { #server_settings-dictionaries_lazy_load}
+## dictionaries_lazy_load {#server_settings-dictionaries_lazy_load}
 
 Lazy loading of dictionaries.
 
@@ -125,7 +124,7 @@ The default is `true`.
 ```
 
 
-## format_schema_path { #server_settings-format_schema_path}
+## format_schema_path {#server_settings-format_schema_path}
 
 The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#capnproto) format.
 
@@ -136,7 +135,7 @@ The path to the directory with the schemes for the input data, such as schemas f
   <format_schema_path>format_schemas/</format_schema_path>
 ```
 
-## graphite { #server_settings-graphite}
+## graphite {#server_settings-graphite}
 
 Sending data to [Graphite](https://github.com/graphite-project).
 
@@ -171,7 +170,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
 ```
 
 
-## graphite_rollup { #server_settings-graphite_rollup}
+## graphite_rollup {#server_settings-graphite_rollup}
 
 Settings for thinning data for Graphite.
 
@@ -206,7 +205,7 @@ The port for connecting to the server over HTTP(s).
 
 If `https_port` is specified, [openSSL](#server_settings-openssl) must be configured.
 
-If `http_port` is specified, the openSSL configuration is ignored even if it is set.
+If `http_port` is specified, the OpenSSL configuration is ignored even if it is set.
 
 **Example**
 
@@ -215,10 +214,10 @@ If `http_port` is specified, the openSSL configuration is ignored even if it is 
 ```
 
 
-## http_server_default_response { #server_settings-http_server_default_response}
+## http_server_default_response {#server_settings-http_server_default_response}
 
 The page that is shown by default when you access the ClickHouse HTTP(s) server.
-Default value is "Ok." (with a line feed at the end)
+The default value is "Ok." (with a line feed at the end)
 
 **Example**
 
@@ -230,7 +229,7 @@ Opens `https://tabix.io/` when accessing ` http://localhost: http_port`.
 </http_server_default_response>
 ```
 
-## include_from { #server_settings-include_from}
+## include_from {#server_settings-include_from}
 
 The path to the file with substitutions.
 
@@ -256,7 +255,7 @@ Port for exchanging data between ClickHouse servers.
 
 ## interserver_http_host
 
-The host name that can be used by other servers to access this server.
+The hostname that can be used by other servers to access this server.
 
 If omitted, it is defined in the same way as the `hostname-f` command.
 
@@ -268,7 +267,7 @@ Useful for breaking away from a specific network interface.
 <interserver_http_host>example.yandex.ru</interserver_http_host>
 ```
 
-## interserver_http_credentials { #server-settings-interserver_http_credentials}
+## interserver_http_credentials {#server-settings-interserver_http_credentials}
 
 The username and password used to authenticate during [replication](../table_engines/replication.md) with the Replicated* engines. These credentials are used only for communication between replicas and are unrelated to credentials for ClickHouse clients. The server is checking these credentials for connecting replicas and use the same credentials when connecting to other replicas. So, these credentials should be set the same for all replicas in a cluster.
 By default, the authentication is not used.
@@ -299,7 +298,7 @@ The number of seconds that ClickHouse waits for incoming requests before closing
 ```
 
 
-## listen_host { #server_settings-listen_host}
+## listen_host {#server_settings-listen_host}
 
 Restriction on hosts that requests can come from. If you want the server to answer all of them, specify `::`.
 
@@ -311,7 +310,7 @@ Examples:
 ```
 
 
-## logger { #server_settings-logger}
+## logger {#server_settings-logger}
 
 Logging settings.
 
@@ -374,7 +373,7 @@ For more information, see the section "[Creating replicated tables](../../operat
 ```
 
 
-## mark_cache_size { #server-mark-cache-size}
+## mark_cache_size {#server-mark-cache-size}
 
 Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../table_engines/mergetree.md) family.
 
@@ -415,7 +414,7 @@ The maximum number of open files.
 
 By default: `maximum`.
 
-We recommend using this option in Mac OS X, since the `getrlimit()` function returns an incorrect value.
+We recommend using this option in Mac OS X since the `getrlimit()` function returns an incorrect value.
 
 **Example**
 
@@ -443,7 +442,7 @@ The value 0 means that you can delete all tables without any restrictions.
 ```
 
 
-## merge_tree { #server_settings-merge_tree}
+## merge_tree {#server_settings-merge_tree}
 
 Fine tuning for tables in the [MergeTree](../table_engines/mergetree.md).
 
@@ -458,7 +457,7 @@ For more information, see the MergeTreeSettings.h header file.
 ```
 
 
-## openSSL { #server_settings-openssl}
+## openSSL {#server_settings-openssl}
 
 SSL client/server configuration.
 
@@ -474,7 +473,7 @@ Keys for server/client settings:
 - loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `true`, `false`.  |
 - cipherList – Supported OpenSSL encryptions. For example: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`.
 - cacheSessions – Enables or disables caching sessions. Must be used in combination with ``sessionIdContext``. Acceptable values: `true`, `false`.
-- sessionIdContext – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed ``SSL_MAX_SSL_SESSION_ID_LENGTH``. This parameter is always recommended, since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: ``${application.name}``.
+- sessionIdContext – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed ``SSL_MAX_SSL_SESSION_ID_LENGTH``. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: ``${application.name}``.
 - sessionCacheSize – The maximum number of sessions that the server caches. Default value: 1024\*20. 0 – Unlimited sessions.
 - sessionTimeout – Time for caching the session on the server.
 - extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
@@ -483,7 +482,7 @@ Keys for server/client settings:
 - requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 - fips – Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.
 - privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: ``<privateKeyPassphraseHandler>``, ``<name>KeyFileHandler</name>``, ``<options><password>test</password></options>``, ``</privateKeyPassphraseHandler>``.
-- invalidCertificateHandler – Class (subclass of CertificateHandler) for verifying invalid certificates. For example: `` <invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>`` .
+- invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `` <invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>`` .
 - disableProtocols – Protocols that are not allowed to use.
 - preferServerCiphers – Preferred server ciphers on the client.
 
@@ -518,7 +517,7 @@ Keys for server/client settings:
 ```
 
 
-## part_log { #server_settings-part-log}
+## part_log {#server_settings-part-log}
 
 Logging events that are associated with [MergeTree](../table_engines/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
@@ -543,7 +542,7 @@ Use the following parameters to configure logging:
 ```
 
 
-## path { #server_settings-path}
+## path {#server_settings-path}
 
 The path to the directory containing data.
 
@@ -557,7 +556,7 @@ The path to the directory containing data.
 ```
 
 
-## query_log { #server_settings-query-log}
+## query_log {#server_settings-query-log}
 
 Setting for logging queries received with the [log_queries=1](../settings/settings.md) setting.
 
@@ -583,7 +582,7 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 </query_log>
 ```
 
-## query_thread_log { #server_settings-query-thread-log}
+## query_thread_log {#server_settings-query-thread-log}
 
 Setting for logging threads of queries received with the [log_query_threads=1](../settings/settings.md#settings-log-query-threads) setting.
 
@@ -609,7 +608,7 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 </query_thread_log>
 ```
 
-## trace_log { #server_settings-trace_log}
+## trace_log {#server_settings-trace_log}
 
 Settings for the [trace_log](../system_tables.md#system_tables-trace_log) system table operation.
 
@@ -634,9 +633,9 @@ The default server configuration file `config.xml` contains the following settin
 ## query_masking_rules
 
 Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
-`system.query_log`, `system.text_log`, `system.processes` table, and in logs sent to client. That allows preventing
-sensitive data leakage from SQL queries (like names / emails / personal
-identifiers / credit card numbers etc) to logs.
+`system.query_log`, `system.text_log`, `system.processes` table, and in logs sent to the client. That allows preventing
+sensitive data leakage from SQL queries (like names, emails, personal
+identifiers or credit card numbers) to logs.
 
 **Example**
 
@@ -655,14 +654,14 @@ Config fields:
 - `regexp` - RE2 compatible regular expression (mandatory)
 - `replace` - substitution string for sensitive data (optional, by default - six asterisks)
 
-The masking rules are applied on whole query (to prevent leaks of sensitive data from malformed / non parsable queries).
+The masking rules are applied to the whole query (to prevent leaks of sensitive data from malformed / non-parsable queries).
 
-`system.events` table have counter `QueryMaskingRulesMatch` which have overall number of query masking rules matches.
+`system.events` table have counter `QueryMaskingRulesMatch` which have an overall number of query masking rules matches.
 
-For distributed queries each server have to be configured separately, otherwise subquries passed to other
+For distributed queries each server have to be configured separately, otherwise, subqueries passed to other
 nodes will be stored without masking.
 
-## remote_servers { #server_settings_remote_servers}
+## remote_servers {#server_settings_remote_servers}
 
 Configuration of clusters used by the [Distributed](../../operations/table_engines/distributed.md) table engine and by the `cluster` table function.
 
@@ -678,13 +677,13 @@ For the value of the `incl` attribute, see the section "[Configuration files](..
 
 - [skip_unavailable_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
-## timezone { #server_settings-timezone}
+## timezone {#server_settings-timezone}
 
 The server's time zone.
 
-Specified as an IANA identifier for the UTC time zone or geographic location (for example, Africa/Abidjan).
+Specified as an IANA identifier for the UTC timezone or geographic location (for example, Africa/Abidjan).
 
-The time zone is necessary for conversions between String and DateTime formats when DateTime fields are output to text format (printed on the screen or in a file), and when getting DateTime from a string. In addition, the time zone is used in functions that work with the time and date if they didn't receive the time zone in the input parameters.
+The time zone is necessary for conversions between String and DateTime formats when DateTime fields are output to text format (printed on the screen or in a file), and when getting DateTime from a string. Besides, the time zone is used in functions that work with the time and date if they didn't receive the time zone in the input parameters.
 
 **Example**
 
@@ -693,7 +692,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 ```
 
 
-## tcp_port { #server_settings-tcp_port}
+## tcp_port {#server_settings-tcp_port}
 
 Port for communicating with clients over the TCP protocol.
 
@@ -703,7 +702,7 @@ Port for communicating with clients over the TCP protocol.
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp_port_secure { #server_settings-tcp_port_secure}
+## tcp_port_secure {#server_settings-tcp_port_secure}
 
 TCP port for secure communication with clients. Use it with [OpenSSL](#server_settings-openssl) settings.
 
@@ -717,7 +716,7 @@ Positive integer.
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-## mysql_port { #server_settings-mysql_port}
+## mysql_port {#server_settings-mysql_port}
 
 Port for communicating with clients over MySQL protocol.
 
@@ -731,7 +730,7 @@ Example
 <mysql_port>9004</mysql_port>
 ```
 
-## tmp_path { #server-settings-tmp_path}
+## tmp_path {#server-settings-tmp_path}
 
 Path to temporary data for processing large queries.
 
@@ -745,7 +744,7 @@ Path to temporary data for processing large queries.
 ```
 
 
-## tmp_policy { #server-settings-tmp_policy}
+## tmp_policy {#server-settings-tmp_policy}
 
 Policy from [`storage_configuration`](../table_engines/mergetree.md#table_engine-mergetree-multiple-volumes) to store temporary files.
 If not set [`tmp_path`](#server-settings-tmp_path) is used, otherwise it is ignored.
@@ -756,7 +755,7 @@ If not set [`tmp_path`](#server-settings-tmp_path) is used, otherwise it is igno
     - `max_data_part_size_bytes` is ignored
     - you must have exactly one volume in that policy
 
-## uncompressed_cache_size { #server-settings-uncompressed_cache_size}
+## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
 Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../table_engines/mergetree.md).
 
@@ -770,7 +769,7 @@ The uncompressed cache is advantageous for very short queries in individual case
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 ```
 
-## user_files_path { #server_settings-user_files_path}
+## user_files_path {#server_settings-user_files_path}
 
 The directory with user files. Used in the table function [file()](../../query_language/table_functions/file.md).
 
@@ -797,7 +796,7 @@ Path to the file that contains:
 ```
 
 
-## zookeeper { #server-settings_zookeeper}
+## zookeeper {#server-settings_zookeeper}
 
 Contains settings that allow ClickHouse to interact with a [ZooKeeper](http://zookeeper.apache.org/) cluster.
 
@@ -848,7 +847,7 @@ This section contains the following parameters:
 - [Replication](../../operations/table_engines/replication.md)
 - [ZooKeeper Programmer's Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
-## use_minimalistic_part_header_in_zookeeper { #server-settings-use_minimalistic_part_header_in_zookeeper}
+## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 
 Storage method for data part headers in ZooKeeper.
 
@@ -856,11 +855,11 @@ This setting only applies to the `MergeTree` family. It can be specified:
 
 - Globally in the [merge_tree](#server_settings-merge_tree) section of the `config.xml` file.
 
-    ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behavior when the setting changes.
+    ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behaviour when the setting changes.
 
-- For each individual table.
+- For each table.
 
-    When creating a table, specify the corresponding [engine setting](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). The behavior of an existing table with this setting does not change, even if the global setting changes.
+    When creating a table, specify the corresponding [engine setting](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). The behaviour of an existing table with this setting does not change, even if the global setting changes.
 
 **Possible values**
 
@@ -876,14 +875,14 @@ If `use_minimalistic_part_header_in_zookeeper = 1`, then [replicated](../table_e
 
 **Default value:** 0.
 
-## disable_internal_dns_cache { #server-settings-disable_internal_dns_cache}
+## disable_internal_dns_cache {#server-settings-disable_internal_dns_cache}
 
 Disables the internal DNS cache. Recommended for operating ClickHouse in systems
 with frequently changing infrastructure such as Kubernetes.
 
 **Default value:** 0.
 
-## dns_cache_update_period { #server-settings-dns_cache_update_period}
+## dns_cache_update_period {#server-settings-dns_cache_update_period}
 
 The period of updating IP addresses stored in the ClickHouse internal DNS cache (in seconds).
 The update is performed asynchronously, in a separate system thread.

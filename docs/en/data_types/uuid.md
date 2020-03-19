@@ -1,4 +1,4 @@
-# UUID { #uuid-data-type}
+# UUID {#uuid-data-type}
 
 A universally unique identifier (UUID) is a 16-byte number used to identify records. For detailed information about the UUID, see [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
 
