@@ -71,7 +71,8 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
 
 
     /// Also log to system.text_log table, if message is not too noisy
-    if (text_log_max_priority && msg.getPriority() <= text_log_max_priority)
+    auto text_log_max_priority_loaded = text_log_max_priority.load(std::memory_order_relaxed);
+    if (text_log_max_priority_loaded && msg.getPriority() <= text_log_max_priority_loaded)
     {
         TextLogElement elem;
 
@@ -108,7 +109,7 @@ void OwnSplitChannel::addTextLog(std::shared_ptr<DB::TextLog> log, int max_prior
 {
     std::lock_guard<std::mutex> lock(text_log_mutex);
     text_log = log;
-    text_log_max_priority = max_priority;
+    text_log_max_priority.store(max_priority, std::memory_order_relaxed);
 }
 
 }
