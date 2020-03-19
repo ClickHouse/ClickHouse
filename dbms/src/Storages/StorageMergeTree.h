@@ -23,7 +23,7 @@ namespace DB
 
 /** See the description of the data structure in MergeTreeData.
   */
-class StorageMergeTree : public ext::shared_ptr_helper<StorageMergeTree>, public MergeTreeData
+class StorageMergeTree final : public ext::shared_ptr_helper<StorageMergeTree>, public MergeTreeData
 {
     friend struct ext::shared_ptr_helper<StorageMergeTree>;
 public:

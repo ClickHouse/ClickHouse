@@ -136,7 +136,6 @@ Checks: '-*,
     clang-analyzer-core.uninitialized.CapturedBlockVariable,
     clang-analyzer-core.uninitialized.UndefReturn,
     clang-analyzer-cplusplus.InnerPointer,
-    clang-analyzer-cplusplus.NewDelete,
     clang-analyzer-cplusplus.NewDeleteLeaks,
     clang-analyzer-cplusplus.PlacementNewChecker,
     clang-analyzer-cplusplus.SelfAssignment,
@@ -162,3 +161,6 @@ Checks: '-*,
     boost-use-to-string,
 '
 WarningsAsErrors: '*'
+
+# TODO:
+# clang-analyzer-cplusplus.NewDelete,
