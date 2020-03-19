@@ -9,8 +9,8 @@ TEMP_FILE=$(mktemp)
 trap 'rm -f -- "${TEMP_FILE}"' INT TERM HUP EXIT
 source "${BASE_DIR}/venv/bin/activate"
 pandoc "$2" --filter "${BASE_DIR}/filter.py" -o "${TEMP_FILE}" \
-    -f markdown -t "markdown_strict+pipe_tables+markdown_attribute+all_symbols_escapable+backtick_code_blocks+autolink_bare_uris-link_attributes+markdown_attribute+mmd_link_attributes-raw_attribute+header_attributes" \
-    --atx-headers --wrap=none
+    -f markdown -t "markdown_strict+pipe_tables+markdown_attribute+all_symbols_escapable+backtick_code_blocks+autolink_bare_uris-link_attributes+markdown_attribute+mmd_link_attributes-raw_attribute+header_attributes-grid_tables" \
+    --atx-headers --wrap=none --columns=99999
 perl -pi -e 's/{\\#\\#/{##/g' "${TEMP_FILE}"
 perl -pi -e 's/\\#\\#}/##}/g' "${TEMP_FILE}"
 perl -pi -e 's/ *$//gg' "${TEMP_FILE}"
