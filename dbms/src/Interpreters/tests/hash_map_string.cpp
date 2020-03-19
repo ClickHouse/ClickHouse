@@ -277,7 +277,7 @@ struct Grower : public HashTableGrower<>
     }
 
     /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
-    [[noreturn]] void set(size_t /*num_elems*/)
+    [[noreturn]] static void set(size_t /*num_elems*/)
     {
         throw Poco::Exception(__PRETTY_FUNCTION__);
     }

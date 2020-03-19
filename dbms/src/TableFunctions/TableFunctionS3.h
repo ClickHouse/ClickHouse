@@ -29,7 +29,7 @@ private:
         const Context & context,
         const std::string & table_name) const override;
 
-    StoragePtr getStorage(
+    static StoragePtr getStorage(
         const String & source,
         const String & access_key_id,
         const String & secret_access_key,
@@ -37,7 +37,7 @@ private:
         const ColumnsDescription & columns,
         Context & global_context,
         const std::string & table_name,
-        const String & compression_method) const;
+        const String & compression_method);
 };
 
 }

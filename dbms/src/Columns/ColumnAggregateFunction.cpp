@@ -576,8 +576,9 @@ ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
 }
 
 ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction & src_)
-    : foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
-      func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
+    : COWHelper<IColumn, ColumnAggregateFunction>(src_),
+    foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
+    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
 {
 }
 

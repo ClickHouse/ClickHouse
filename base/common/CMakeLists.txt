@@ -6,6 +6,7 @@ set (SRCS
     DateLUT.cpp
     DateLUTImpl.cpp
     demangle.cpp
+    getFQDNOrHostName.cpp
     getMemoryAmount.cpp
     getThreadId.cpp
     JSON.cpp
@@ -20,15 +21,9 @@ set (SRCS
 )
 
 if (ENABLE_REPLXX)
-    set (SRCS ${SRCS}
-        ReplxxLineReader.cpp
-        ReplxxLineReader.h
-    )
+    list (APPEND SRCS ReplxxLineReader.cpp)
 elseif (ENABLE_READLINE)
-    set (SRCS ${SRCS}
-        ReadlineLineReader.cpp
-        ReadlineLineReader.h
-    )
+    list (APPEND SRCS ReadlineLineReader.cpp)
 endif ()
 
 if (USE_DEBUG_HELPERS)
@@ -37,6 +32,12 @@ if (USE_DEBUG_HELPERS)
 endif ()
 
 add_library (common ${SRCS})
+
+if (WITH_COVERAGE)
+    target_compile_definitions(common PUBLIC WITH_COVERAGE=1)
+else ()
+    target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
+endif ()
 
 target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
 
@@ -72,6 +73,7 @@ endif ()
 
 target_link_libraries (common
     PUBLIC
+        ${Poco_Net_LIBRARY}
         ${Poco_Util_LIBRARY}
         ${Poco_Foundation_LIBRARY}
         ${CITYHASH_LIBRARIES}

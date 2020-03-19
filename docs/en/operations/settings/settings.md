@@ -41,7 +41,7 @@ Consider the following queries:
 1. `SELECT count() FROM test_table WHERE date = '2018-10-10'`
 2. `SELECT count() FROM (SELECT * FROM test_table) WHERE date = '2018-10-10'`
 
-If `enable_optimize_predicate_expression = 1`, then the execution time of these queries is equal, because ClickHouse applies `WHERE` to the subquery when processing it.
+If `enable_optimize_predicate_expression = 1`, then the execution time of these queries is equal because ClickHouse applies `WHERE` to the subquery when processing it.
 
 If `enable_optimize_predicate_expression = 0`, then the execution time of the second query is much longer, because the `WHERE` clause applies to all the data after the subquery finishes.
 
@@ -61,7 +61,7 @@ Disables query execution if the index can't be used by date.
 
 Works with tables in the MergeTree family.
 
-If `force_index_by_date=1`, ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see [MergeTree](../table_engines/mergetree.md).
+If `force_index_by_date=1`, ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see [MergeTree](../table_engines/mergetree.md).
 
 
 ## force_primary_key
@@ -70,7 +70,7 @@ Disables query execution if indexing by the primary key is not possible.
 
 Works with tables in the MergeTree family.
 
-If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](../table_engines/mergetree.md).
+If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](../table_engines/mergetree.md).
 
 ## format_schema
 
@@ -219,7 +219,7 @@ Ok.
 
 ## input_format_values_deduce_templates_of_expressions {#settings-input_format_values_deduce_templates_of_expressions}
 
-Enables or disables template deduction for an SQL expressions in [Values](../../interfaces/formats.md#data-format-values) format. It allows to parse and interpret expressions in `Values` much faster if expressions in consecutive rows have the same structure. ClickHouse will try to deduce template of an expression, parse the following rows using this template and evaluate the expression on batch of successfully parsed rows. For the following query:
+Enables or disables template deduction for an SQL expressions in [Values](../../interfaces/formats.md#data-format-values) format. It allows to parse and interpret expressions in `Values` much faster if expressions in consecutive rows have the same structure. ClickHouse will try to deduce template of an expression, parse the following rows using this template and evaluate the expression on a batch of successfully parsed rows. For the following query:
 
 ```sql
 INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
@@ -240,7 +240,7 @@ This setting is used only when `input_format_values_deduce_templates_of_expressi
 (..., abs(-1), ...),            -- Int64 literal
 ```
 
-When this setting is enabled, ClickHouse will check actual type of literal and will use expression template of the corresponding type. In some cases it may significantly slow down expression evaluation in `Values`.
+When this setting is enabled, ClickHouse will check the actual type of literal and will use an expression template of the corresponding type. In some cases, it may significantly slow down expression evaluation in `Values`.
 When disabled, ClickHouse may use more general type for some literals (e.g. `Float64` or `Int64` instead of `UInt64` for `42`), but it may cause overflow and precision issues.
 Enabled by default.
 
@@ -266,7 +266,7 @@ Disabled by default.
 
 ## input_format_null_as_default {#settings-input_format_null_as_default}
 
-Enables or disables using default values if input data contain `NULL`, but data type of corresponding column in not `Nullable(T)` (for text input formats).
+Enables or disables using default values if input data contain `NULL`, but data type of the corresponding column in not `Nullable(T)` (for text input formats).
 
 
 ## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}
@@ -328,7 +328,7 @@ Default value: 1.
 
 ## date_time_input_format {#settings-date_time_input_format}
 
-Allows to choose a parser of text representation of date and time.
+Allows choosing a parser of the text representation of date and time.
 
 The setting doesn't apply to [date and time functions](../../query_language/functions/date_time_functions.md).
 
@@ -355,7 +355,7 @@ Sets default strictness for [JOIN clauses](../../query_language/select.md#select
 
 Possible values:
 
-- `ALL` — If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the normal `JOIN` behavior from standard SQL.
+- `ALL` — If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the normal `JOIN` behaviour from standard SQL.
 - `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
 - `ASOF` — For joining sequences with an uncertain match.
 - `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
@@ -364,7 +364,7 @@ Default value: `ALL`.
 
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
-Changes behavior of join operations with `ANY` strictness.
+Changes behaviour of join operations with `ANY` strictness.
 
 !!! warning "Attention"
     This setting applies only for `JOIN` operations with [Join](../table_engines/join.md) engine tables.
@@ -395,7 +395,7 @@ Default value: 0.
 
 ## max_block_size {#setting-max_block_size}
 
-In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. The `max_block_size` setting is a recommendation for what size of block (in number of rows) to load from tables. The block size shouldn't be too small, so that the expenditures on each block are still noticeable, but not too large, so that the query with LIMIT that is completed after the first block is processed quickly. The goal is to avoid consuming too much memory when extracting a large number of columns in multiple threads, and to preserve at least some cache locality.
+In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. The `max_block_size` setting is a recommendation for what size of the block (in a count of rows) to load from tables. The block size shouldn't be too small, so that the expenditures on each block are still noticeable, but not too large so that the query with LIMIT that is completed after the first block is processed quickly. The goal is to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
 
 Default value: 65,536.
 
@@ -429,7 +429,7 @@ Default value: 251658240.
 
 ## merge_tree_min_rows_for_seek {#setting-merge_tree_min_rows_for_seek}
 
-If the distance between two data blocks to be read in one file is less than `merge_tree_min_rows_for_seek` rows, then ClickHouse does not seek through the file, but reads the data sequentially.
+If the distance between two data blocks to be read in one file is less than `merge_tree_min_rows_for_seek` rows, then ClickHouse does not seek through the file but reads the data sequentially.
 
 Possible values:
 
@@ -439,7 +439,7 @@ Default value: 0.
 
 ## merge_tree_min_bytes_for_seek {#setting-merge_tree_min_bytes_for_seek}
 
-If the distance between two data blocks to be read in one file is less than `merge_tree_min_bytes_for_seek` bytes, then ClickHouse sequentially reads range of file that contains both blocks, thus avoiding extra seek.
+If the distance between two data blocks to be read in one file is less than `merge_tree_min_bytes_for_seek` bytes, then ClickHouse sequentially reads a range of file that contains both blocks, thus avoiding extra seek.
 
 Possible values:
 
@@ -450,7 +450,7 @@ Default value: 0.
 
 ## merge_tree_coarse_index_granularity {#setting-merge_tree_coarse_index_granularity}
 
-When searching data, ClickHouse checks the data marks in the index file. If ClickHouse finds that required keys are in some range, it divides this range into `merge_tree_coarse_index_granularity` subranges and searches the required keys there recursively.
+When searching for data, ClickHouse checks the data marks in the index file. If ClickHouse finds that required keys are in some range, it divides this range into `merge_tree_coarse_index_granularity` subranges and searches the required keys there recursively.
 
 Possible values:
 
@@ -529,7 +529,7 @@ The setting also doesn't have a purpose when using INSERT SELECT, since data is 
 
 Default value: 1,048,576.
 
-The default is slightly more than `max_block_size`. The reason for this is because certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion, and a large enough block size allows sorting more data in RAM.
+The default is slightly more than `max_block_size`. The reason for this is because certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion and a large enough block size allow sorting more data in RAM.
 
 ## max_replica_delay_for_distributed_queries {#settings-max_replica_delay_for_distributed_queries}
 
@@ -599,9 +599,9 @@ Default value: 256 KiB.
 
 ## interactive_delay
 
-The interval in microseconds for checking whether request execution has been canceled and sending the progress.
+The interval in microseconds for checking whether request execution has been cancelled and sending the progress.
 
-Default value: 100,000 (checks for canceling and sends the progress ten times per second).
+Default value: 100,000 (checks for cancelling and sends the progress ten times per second).
 
 ## connect_timeout, receive_timeout, send_timeout
 
@@ -611,7 +611,7 @@ Default value: 10, 300, 300.
 
 ## cancel_http_readonly_queries_on_client_close
 
-Cancels HTTP readonly queries (e.g. SELECT) when a client closes the connection without waiting for response.
+Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
 
 Default value: 0
 
@@ -659,18 +659,18 @@ For more information, see the section "Extreme values".
 Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
 Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
-For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically in order to save space for truly small queries. This means that you can keep the 'use_uncompressed_cache' setting always set to 1.
+For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically to save space for truly small queries. This means that you can keep the 'use_uncompressed_cache' setting always set to 1.
 
 ## replace_running_query
 
 When using the HTTP interface, the 'query_id' parameter can be passed. This is any string that serves as the query identifier.
-If a query from the same user with the same 'query_id' already exists at this time, the behavior depends on the 'replace_running_query' parameter.
+If a query from the same user with the same 'query_id' already exists at this time, the behaviour depends on the 'replace_running_query' parameter.
 
 `0` (default) – Throw an exception (don't allow the query to run if a query with the same 'query_id' is already running).
 
 `1` – Cancel the old query and start running the new one.
 
-Yandex.Metrica uses this parameter set to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn't finished yet, it should be canceled.
+Yandex.Metrica uses this parameter set to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn't finished yet, it should be cancelled.
 
 
 ## stream_flush_interval_ms
@@ -699,7 +699,7 @@ ClickHouse supports the following algorithms of choosing replicas:
 load_balancing = random
 ```
 
-The number of errors is counted for each replica. The query is sent to the replica with the fewest errors, and if there are several of these, to any one of them.
+The number of errors is counted for each replica. The query is sent to the replica with the fewest errors, and if there are several of these, to anyone of them.
 Disadvantages: Server proximity is not accounted for; if the replicas have different data, you will also get different data.
 
 ### Nearest Hostname {#load_balancing-nearest_hostname}
@@ -708,7 +708,7 @@ Disadvantages: Server proximity is not accounted for; if the replicas have diffe
 load_balancing = nearest_hostname
 ```
 
-The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a host name that is most similar to the server's host name in the config file (for the number of different characters in identical positions, up to the minimum length of both host names).
+The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server's hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
 
 For instance, example01-01-1 and example01-01-2.yandex.ru are different in one position, while example01-01-1 and example01-02-2 differ in two places.
 This method might seem primitive, but it doesn't require external data about network topology, and it doesn't compare IP addresses, which would be complicated for our IPv6 addresses.
@@ -722,7 +722,7 @@ We can also assume that when sending a query to the same server, in the absence 
 load_balancing = in_order
 ```
 
-Replicas with the same number of errors are accessed in the same order as they are specified in configuration.
+Replicas with the same number of errors are accessed in the same order as they are specified in the configuration.
 This method is appropriate when you know exactly which replica is preferable.
 
 
@@ -734,7 +734,7 @@ load_balancing = first_or_random
 
 This algorithm chooses the first replica in the set or a random replica if the first is unavailable. It's effective in cross-replication topology setups, but useless in other configurations.
 
-The `first_or_random` algorithm solves the problem of the `in_order` algorithm. With `in_order`, if one replica goes down, the next one gets a double load while the remaining replicas handle the usual amount of traffic. When using the `first_or_random` algorithm, load is evenly distributed among replicas that are still available.
+The `first_or_random` algorithm solves the problem of the `in_order` algorithm. With `in_order`, if one replica goes down, the next one gets a double load while the remaining replicas handle the usual amount of traffic. When using the `first_or_random` algorithm, the load is evenly distributed among replicas that are still available.
 
 ## prefer_localhost_replica {#settings-prefer_localhost_replica}
 
@@ -770,7 +770,7 @@ Replica lag is not controlled.
 
 Enable compilation of queries. By default, 0 (disabled).
 
-Compilation is only used for part of the query-processing pipeline: for the first stage of aggregation (GROUP BY).
+The compilation is only used for part of the query-processing pipeline: for the first stage of aggregation (GROUP BY).
 If this portion of the pipeline was compiled, the query may run faster due to deployment of short cycles and inlining aggregate function calls. The maximum performance improvement (up to four times faster in rare cases) is seen for queries with multiple simple aggregate functions. Typically, the performance gain is insignificant. In very rare cases, it may slow down query execution.
 
 ## min_count_to_compile
@@ -780,7 +780,7 @@ For testing, the value can be set to 0: compilation runs synchronously and the q
 If the value is 1 or more, compilation occurs asynchronously in a separate thread. The result will be used as soon as it is ready, including queries that are currently running.
 
 Compiled code is required for each different combination of aggregate functions used in the query and the type of keys in the GROUP BY clause.
-The results of compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results, since they don't use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
+The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they don't use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
 
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
@@ -796,15 +796,15 @@ For CSV input format enables or disables parsing of unquoted `NULL` as literal (
 
 ## output_format_csv_crlf_end_of_line {#settings-output_format_csv_crlf_end_of_line}
 
-Use DOS/Windows style line separator (CRLF) in CSV instead of Unix style (LF).
+Use DOS/Windows-style line separator (CRLF) in CSV instead of Unix style (LF).
 
 ## output_format_tsv_crlf_end_of_line {#settings-output_format_tsv_crlf_end_of_line}
 
-Use DOC/Windows style line separator (CRLF) in TSV instead of Unix style (LF).
+Use DOC/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
 
 ## insert_quorum {#settings-insert_quorum}
 
-Enables quorum writes.
+Enables the quorum writes.
 
 - If `insert_quorum < 2`, the quorum writes are disabled.
 - If `insert_quorum >= 2`, the quorum writes are enabled.
@@ -831,7 +831,7 @@ See also:
 
 ## insert_quorum_timeout {#settings-insert_quorum_timeout}
 
-Quorum write timeout in seconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
+Write to quorum timeout in seconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
 
 Default value: 60 seconds.
 
@@ -887,10 +887,10 @@ Default value: 0.
 
 Usage
 
-By default, deduplication is not performed for materialized views, but is done upstream, in the source table.
-If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behavior exists to enable insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
-At the same time, this behavior "breaks" `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won't receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows to change this behavior. On retry a materialized view will receive the repeat insert and will perform deduplication check by itself,
-ignoring check result for the source table, and will insert rows lost because of first failure.
+By default, deduplication is not performed for materialized views but is done upstream, in the source table.
+If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behaviour exists to enable insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
+At the same time, this behaviour "breaks" `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won't receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform deduplication check by itself,
+ignoring check result for the source table, and will insert rows lost because of the first failure.
 
 ## max_network_bytes {#settings-max_network_bytes}
 Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies to every individual query.
@@ -981,7 +981,7 @@ Default value: 0.
 
 ## optimize_skip_unused_shards {#settings-optimize_skip_unused_shards}
 
-Enables or disables skipping of unused shards for SELECT queries that has sharding key condition in PREWHERE/WHERE (assumes that the data is distributed by sharding key, otherwise do nothing).
+Enables or disables skipping of unused shards for SELECT queries that have sharding key condition in PREWHERE/WHERE (assumes that the data is distributed by sharding key, otherwise do nothing).
 
 Default value: 0
 
@@ -1016,7 +1016,7 @@ Default value: 0.
 - Type: seconds
 - Default value: 60 seconds
 
-Controls how fast errors in distributed tables are zeroed. If a replica is unavailabe for some time, accumulates 5 errors, and distributed_replica_error_half_life is set to 1 second, then the replica is considered normal 3 seconds after last error.
+Controls how fast errors in distributed tables are zeroed. If a replica is unavailable for some time, accumulates 5 errors, and distributed_replica_error_half_life is set to 1 second, then the replica is considered normal 3 seconds after last error.
 
 See also:
 
@@ -1041,7 +1041,7 @@ Base interval for the [Distributed](../table_engines/distributed.md) table engin
 
 Possible values:
 
-- Positive integer number of milliseconds.
+- A positive integer number of milliseconds.
 
 Default value: 100 milliseconds.
 
@@ -1051,7 +1051,7 @@ Maximum interval for the [Distributed](../table_engines/distributed.md) table en
 
 Possible values:
 
-- Positive integer number of milliseconds.
+- A positive integer number of milliseconds.
 
 Default value: 30000 milliseconds (30 seconds).
 
@@ -1059,7 +1059,7 @@ Default value: 30000 milliseconds (30 seconds).
 
 Enables/disables sending of inserted data in batches.
 
-When batch sending is enabled, the [Distributed](../table_engines/distributed.md) table engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better utilizing server and network resources.
+When batch sending is enabled, the [Distributed](../table_engines/distributed.md) table engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better-utilizing server and network resources.
 
 Possible values:
 
@@ -1079,7 +1079,7 @@ Possible values:
 
 - You can set values in the range `[-20, 19]`.
 
-Lower values mean higher priority. Threads with low `nice` priority values are executed more frequently than threads with high values. High values are preferable for long running non-interactive queries because it allows them to quickly give up resources in favor of short interactive queries when they arrive.
+Lower values mean higher priority. Threads with low `nice` priority values are executed more frequently than threads with high values. High values are preferable for long-running non-interactive queries because it allows them to quickly give up resources in favour of short interactive queries when they arrive.
 
 Default value: 0.
 
@@ -1112,11 +1112,11 @@ Sets the period for a CPU clock timer of the [query profiler](../../operations/p
 
 Possible values:
 
-- Positive integer number of nanoseconds.
+- A positive integer number of nanoseconds.
 
     Recommended values:
 
-        - 10000000 (100 times a second) nanosecods and more for for single queries.
+        - 10000000 (100 times a second) nanoseconds and more for single queries.
         - 1000000000 (once a second) for cluster-wide profiling.
 
 - 0 for turning off the timer.

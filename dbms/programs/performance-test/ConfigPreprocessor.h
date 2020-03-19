@@ -39,11 +39,11 @@ private:
 
     /// Removes configurations that has a given value.
     /// If leave is true, the logic is reversed.
-    void removeConfigurationsIf(
+    static void removeConfigurationsIf(
         std::vector<XMLConfigurationPtr> & configs,
         FilterType filter_type,
         const Strings & values,
-        bool leave = false) const;
+        bool leave = false);
 
     const Strings paths;
 };
