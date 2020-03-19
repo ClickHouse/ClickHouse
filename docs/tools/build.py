@@ -87,7 +87,9 @@ def build_for_lang(lang, args):
         else:
             site_dir = os.path.join(args.docs_output_dir, lang)
 
-        plugins = ['macros', 'search']
+        plugins = ['search']
+        if not args.no_docs_macros:
+            plugins.append('macros')
         if args.htmlproofer:
             plugins.append('htmlproofer')
 
@@ -312,6 +314,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--skip-website', action='store_true')
     arg_parser.add_argument('--minify', action='store_true')
     arg_parser.add_argument('--htmlproofer', action='store_true')
+    arg_parser.add_argument('--no-docs-macros', action='store_true')
     arg_parser.add_argument('--save-raw-single-page', type=str)
     arg_parser.add_argument('--livereload', type=int, default='0')
     arg_parser.add_argument('--verbose', action='store_true')

@@ -1,7 +1,7 @@
 # Constraints on Settings
 
 The constraints on settings can be defined in the `profiles` section of the `user.xml` configuration file and prohibit users from changing some of the settings with the `SET` query.
-The constraints are defined as following:
+The constraints are defined as the following:
 
 ```xml
 <profiles>
@@ -25,8 +25,8 @@ The constraints are defined as following:
 </profiles>
 ```
 
-If user tries to violate the constraints an exception is thrown and the setting isn't actually changed.
-There are supported three types of constraints: `min`, `max`, `readonly`. The `min` and `max` constraints specify upper and lower boundaries for a numeric setting and can be used in combination. The `readonly` constraint specify that the user cannot change the corresponding setting at all.
+If the user tries to violate the constraints an exception is thrown and the setting isn't changed.
+There are supported three types of constraints: `min`, `max`, `readonly`. The `min` and `max` constraints specify upper and lower boundaries for a numeric setting and can be used in combination. The `readonly` constraint specifies that the user cannot change the corresponding setting at all.
 
 **Example:** Let `users.xml` includes lines:
 
@@ -63,6 +63,6 @@ Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not 
 Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should not be changed.
 ```
 
-**Note:** the `default` profile has a special handling: all the constraints defined for the `default` profile become the default constraints, so they restrict all the users until they're overriden explicitly for these users.
+**Note:** the `default` profile has special handling: all the constraints defined for the `default` profile become the default constraints, so they restrict all the users until they're overridden explicitly for these users.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/constraints_on_settings/) <!--hide-->
