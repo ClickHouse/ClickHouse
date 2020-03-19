@@ -54,6 +54,8 @@ public:
 
     DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
 
+    void createFile(const String & path) override;
+
     void moveFile(const String & from_path, const String & to_path) override;
 
     void replaceFile(const String & from_path, const String & to_path) override;
@@ -80,9 +82,13 @@ public:
 
     void removeRecursive(const String & path) override;
 
-    void setLastModified(const String &, const Poco::Timestamp &) override { }
+    void setLastModified(const String &, const Poco::Timestamp &) override {}
 
     Poco::Timestamp getLastModified(const String &) override { return Poco::Timestamp(); }
+
+    void setReadOnly(const String & path) override;
+
+    void createHardLink(const String & src_path, const String & dst_path) override;
 
 private:
     void createDirectoriesImpl(const String & path);
