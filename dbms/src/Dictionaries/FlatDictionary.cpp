@@ -11,8 +11,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
-    extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_TYPE;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -602,12 +600,12 @@ void FlatDictionary::setAttributeValueImpl(Attribute & attribute, const Key id, 
 }
 
 template <>
-void FlatDictionary::setAttributeValueImpl<String>(Attribute & attribute, const Key id, const String & string)
+void FlatDictionary::setAttributeValueImpl<String>(Attribute & attribute, const Key id, const String & value)
 {
     resize<StringRef>(attribute, id);
-    const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+    const auto string_in_arena = attribute.string_arena->insert(value.data(), value.size());
     auto & array = std::get<ContainerType<StringRef>>(attribute.arrays);
-    array[id] = StringRef{string_in_arena, string.size()};
+    array[id] = StringRef{string_in_arena, value.size()};
     loaded_ids[id] = true;
 }
 

@@ -46,6 +46,13 @@ namespace
         const AccessFlags create_table_flag = AccessType::CREATE_TABLE;
         const AccessFlags create_temporary_table_flag = AccessType::CREATE_TEMPORARY_TABLE;
     };
+
+    std::string_view checkCurrentDatabase(const std::string_view & current_database)
+    {
+        if (current_database.empty())
+            throw Exception("No current database", ErrorCodes::LOGICAL_ERROR);
+        return current_database;
+    }
 }
 
 
@@ -68,6 +75,9 @@ public:
 
     Node & operator =(const Node & src)
     {
+        if (this == &src)
+            return *this;
+
         node_name = src.node_name;
         level = src.level;
         inherited_access = src.inherited_access;
@@ -151,7 +161,7 @@ public:
     void revoke(const AccessFlags & access_to_revoke, const Helper & helper)
     {
         if constexpr (mode == NORMAL_REVOKE_MODE)
-        {
+        { // NOLINT
             if (level == TABLE_LEVEL)
                 removeExplicitGrantsRec(access_to_revoke);
             else
@@ -159,11 +169,12 @@ public:
         }
         else if constexpr (mode == PARTIAL_REVOKE_MODE)
         {
-            AccessFlags new_partial_revokes = access_to_revoke - explicit_grants;
             if (level == TABLE_LEVEL)
                 removeExplicitGrantsRec(access_to_revoke);
             else
                 removeExplicitGrants(access_to_revoke);
+
+            AccessFlags new_partial_revokes = access_to_revoke - explicit_grants;
             removePartialRevokesRec(new_partial_revokes);
             partial_revokes |= new_partial_revokes;
         }
@@ -521,21 +532,21 @@ void AccessRights::grantImpl(const AccessRightsElement & element, std::string_vi
     else if (element.any_table)
     {
         if (element.database.empty())
-            grantImpl(element.access_flags, current_database);
+            grantImpl(element.access_flags, checkCurrentDatabase(current_database));
         else
             grantImpl(element.access_flags, element.database);
     }
     else if (element.any_column)
     {
         if (element.database.empty())
-            grantImpl(element.access_flags, current_database, element.table);
+            grantImpl(element.access_flags, checkCurrentDatabase(current_database), element.table);
         else
             grantImpl(element.access_flags, element.database, element.table);
     }
     else
     {
         if (element.database.empty())
-            grantImpl(element.access_flags, current_database, element.table, element.columns);
+            grantImpl(element.access_flags, checkCurrentDatabase(current_database), element.table, element.columns);
         else
             grantImpl(element.access_flags, element.database, element.table, element.columns);
     }
@@ -576,21 +587,21 @@ void AccessRights::revokeImpl(const AccessRightsElement & element, std::string_v
     else if (element.any_table)
     {
         if (element.database.empty())
-            revokeImpl<mode>(element.access_flags, current_database);
+            revokeImpl<mode>(element.access_flags, checkCurrentDatabase(current_database));
         else
             revokeImpl<mode>(element.access_flags, element.database);
     }
     else if (element.any_column)
     {
         if (element.database.empty())
-            revokeImpl<mode>(element.access_flags, current_database, element.table);
+            revokeImpl<mode>(element.access_flags, checkCurrentDatabase(current_database), element.table);
         else
             revokeImpl<mode>(element.access_flags, element.database, element.table);
     }
     else
     {
         if (element.database.empty())
-            revokeImpl<mode>(element.access_flags, current_database, element.table, element.columns);
+            revokeImpl<mode>(element.access_flags, checkCurrentDatabase(current_database), element.table, element.columns);
         else
             revokeImpl<mode>(element.access_flags, element.database, element.table, element.columns);
     }
@@ -711,21 +722,21 @@ bool AccessRights::isGrantedImpl(const AccessRightsElement & element, std::strin
     else if (element.any_table)
     {
         if (element.database.empty())
-            return isGrantedImpl(element.access_flags, current_database);
+            return isGrantedImpl(element.access_flags, checkCurrentDatabase(current_database));
         else
             return isGrantedImpl(element.access_flags, element.database);
     }
     else if (element.any_column)
     {
         if (element.database.empty())
-            return isGrantedImpl(element.access_flags, current_database, element.table);
+            return isGrantedImpl(element.access_flags, checkCurrentDatabase(current_database), element.table);
         else
             return isGrantedImpl(element.access_flags, element.database, element.table);
     }
     else
     {
         if (element.database.empty())
-            return isGrantedImpl(element.access_flags, current_database, element.table, element.columns);
+            return isGrantedImpl(element.access_flags, checkCurrentDatabase(current_database), element.table, element.columns);
         else
             return isGrantedImpl(element.access_flags, element.database, element.table, element.columns);
     }

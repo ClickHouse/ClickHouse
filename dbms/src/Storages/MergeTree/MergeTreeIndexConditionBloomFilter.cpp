@@ -17,6 +17,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -156,7 +161,7 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
                 match_rows = maybeTrueOnBloomFilter(&*hash_column, filter, hash_functions);
             }
 
-            rpn_stack.emplace_back(match_rows, !match_rows);
+            rpn_stack.emplace_back(match_rows, true);
             if (element.function == RPNElement::FUNCTION_NOT_EQUALS || element.function == RPNElement::FUNCTION_NOT_IN)
                 rpn_stack.back() = !rpn_stack.back();
         }

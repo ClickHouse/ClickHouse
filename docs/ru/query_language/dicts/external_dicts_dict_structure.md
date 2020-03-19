@@ -24,10 +24,10 @@
 Атрибуты описываются элементами:
 
 - `<id>` — [столбец с ключом](external_dicts_dict_structure.md#ext_dict_structure-key).
-- `<attribute>` — [столбец данных](external_dicts_dict_structure.md#ext_dict_structure-attributes). Можно задать несколько столбцов.
+- `<attribute>` — [столбец данных](external_dicts_dict_structure.md#ext_dict_structure-attributes). Можно задать несколько атрибутов.
 
 
-Запрос создания словаря:
+Создание словаря запросом:
 
 ```sql
 CREATE DICTIONARY dict_name (
@@ -48,10 +48,10 @@ PRIMARY KEY Id
 
 ClickHouse поддерживает следующие виды ключей:
 
-- Числовой ключ. `UInt64`. Описывается в теге `<id>`.
-- Составной ключ. Набор значений разного типа. Описывается в теге `<key>`.
+- Числовой ключ. `UInt64`. Описывается в теге `<id>` или ключевым словом `PRIMARY KEY`.
+- Составной ключ. Набор значений разного типа. Описывается в теге `<key>` или ключевым словом `PRIMARY KEY`.
 
-Структура может содержать либо `<id>` либо `<key>`.
+Структура может содержать либо `<id>` либо `<key>`. DDL-запрос может содержать только `PRIMARY KEY`.
 
 !!! warning "Обратите внимание"
     Ключ не надо дополнительно описывать в атрибутах.
@@ -71,6 +71,20 @@ ClickHouse поддерживает следующие виды ключей:
 Поля конфигурации:
 
 - `name` — имя столбца с ключами.
+
+Для DDL-запроса:
+
+```sql
+CREATE DICTIONARY (
+    Id UInt64,
+    ...
+)
+PRIMARY KEY Id
+...
+```
+
+- `PRIMARY KEY` – имя столбца с ключами.
+
 
 ### Составной ключ
 
@@ -97,6 +111,18 @@ ClickHouse поддерживает следующие виды ключей:
 ...
 ```
 
+или
+
+```sql
+CREATE DICTIONARY (
+    field1 String,
+    field2 String
+    ...
+)
+PRIMARY KEY field1, field2
+...
+```
+
 При запросе в функции `dictGet*` в качестве ключа передаётся кортеж. Пример: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
 
@@ -118,6 +144,15 @@ ClickHouse поддерживает следующие виды ключей:
     </attribute>
 </structure>
 ```
+
+или
+
+```sql
+CREATE DICTIONARY somename (
+    Name ClickHouseDataType DEFAULT '' EXPRESSION rand64() HIERARCHICAL INJECTIVE IS_OBJECT_ID
+)
+```
+
 
 Поля конфигурации:
 

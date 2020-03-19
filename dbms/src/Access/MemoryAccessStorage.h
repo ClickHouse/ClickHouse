@@ -14,7 +14,6 @@ class MemoryAccessStorage : public IAccessStorage
 {
 public:
     MemoryAccessStorage(const String & storage_name_ = "memory");
-    ~MemoryAccessStorage() override;
 
     /// Sets all entities at once.
     void setAll(const std::vector<AccessEntityPtr> & all_entities);
@@ -26,6 +25,7 @@ private:
     bool existsImpl(const UUID & id) const override;
     AccessEntityPtr readImpl(const UUID & id) const override;
     String readNameImpl(const UUID & id) const override;
+    bool canInsertImpl(const AccessEntityPtr &) const override { return true; }
     UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;

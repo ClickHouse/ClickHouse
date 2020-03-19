@@ -8,8 +8,13 @@
 #    include <Common/typeid_cast.h>
 #    include <ext/range.h>
 
-#    include <h3api.h>
-#    include <constants.h>
+#    if __has_include(<h3/h3api.h>)
+#        include <h3/h3api.h>
+#        include <h3/constants.h>
+#    else
+#        include <h3api.h>
+#        include <constants.h>
+#    endif
 
 
 namespace DB
@@ -17,6 +22,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 

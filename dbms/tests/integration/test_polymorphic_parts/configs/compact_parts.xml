@@ -1,0 +1,5 @@
+<yandex>
+    <merge_tree>
+        <min_rows_for_wide_part>512</min_rows_for_wide_part>
+    </merge_tree>
+</yandex>

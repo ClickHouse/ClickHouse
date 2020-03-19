@@ -35,15 +35,25 @@
 ```
 
 
+Соответствущий [DDL-запрос](../create.md#create-dictionary-query):
+
+```sql
+CREATE DICTIONARY (...)
+...
+LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
+...
+```
+
 ## Способы размещения словарей в памяти
 
--   [flat](#flat)
--   [hashed](#hashed)
--   [cache](#cache)
--   [range_hashed](#range-hashed)
--   [complex_key_hashed](#complex-key-hashed)
--   [complex_key_cache](#complex-key-cache)
--   [ip_trie](#ip-trie)
+- [flat](#flat)
+- [hashed](#hashed)
+- [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
+- [cache](#cache)
+- [range_hashed](#range-hashed)
+- [complex_key_hashed](#complex-key-hashed)
+- [complex_key_cache](#complex-key-cache)
+- [ip_trie](#ip-trie)
 
 ### flat
 
@@ -63,6 +73,12 @@
 </layout>
 ```
 
+или
+
+```sql
+LAYOUT(FLAT())
+```
+
 ### hashed
 
 Словарь полностью хранится в оперативной памяти в виде хэш-таблиц. Словарь может содержать произвольное количество элементов с произвольными идентификаторами. На практике, количество ключей может достигать десятков миллионов элементов.
@@ -77,6 +93,29 @@
 </layout>
 ```
 
+или
+
+```sql
+LAYOUT(HASHED())
+```
+
+### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
+
+Аналогичен `hashed`, но при этом занимает меньше места в памяти и генерирует более высокую загрузку CPU.
+
+Пример конфигурации:
+
+```xml
+<layout>
+  <sparse_hashed />
+</layout>
+```
+
+или
+
+```sql
+LAYOUT(SPARSE_HASHED())
+```
 
 ### complex_key_hashed 
 
@@ -88,6 +127,12 @@
 <layout>
   <complex_key_hashed />
 </layout>
+```
+
+или
+
+```sql
+LAYOUT(COMPLEX_KEY_HASHED())
 ```
 
 
@@ -129,6 +174,19 @@
         <type>Date</type>        
     </range_max>
     ...
+```
+
+или
+
+```sql
+CREATE DICTIONARY somedict (
+    id UInt64,
+    first Date,
+    last Date
+)
+PRIMARY KEY id
+LAYOUT(RANGE_HASHED())
+RANGE(MIN first MAX last)
 ```
 
 Для работы с такими словарями в функцию `dictGetT` необходимо передавать дополнительный аргумент, для которого подбирается диапазон:
@@ -178,6 +236,18 @@
 </yandex>
 ```
 
+или
+
+```sql
+CREATE DICTIONARY somedict(
+    Abcdef UInt64,
+    StartTimeStamp UInt64,
+    EndTimeStamp UInt64,
+    XXXType String DEFAULT ''
+)
+PRIMARY KEY Abcdef
+RANGE(MIN StartTimeStamp MAX EndTimeStamp)
+```
 
 ### cache
 
@@ -202,6 +272,12 @@
         <size_in_cells>1000000000</size_in_cells>
     </cache>
 </layout>
+```
+
+или
+
+```sql
+LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 ```
 
 Укажите достаточно большой размер кэша. Количество ячеек следует подобрать экспериментальным путём:
@@ -263,6 +339,17 @@
             <null_value>??</null_value>
     </attribute>
     ...
+```
+
+или
+
+```sql
+CREATE DICTIONARY somedict (
+    prefix String,
+    asn UInt32,
+    cca2 String DEFAULT '??'
+)
+PRIMARY KEY prefix
 ```
 
 Этот ключ должен иметь только один атрибут типа `String`, содержащий допустимый префикс IP. Другие типы еще не поддерживаются.

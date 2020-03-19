@@ -36,7 +36,7 @@ public:
     void startup() override;
     void shutdown() override;
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -47,8 +47,6 @@ public:
     BlockOutputStreamPtr write(
         const ASTPtr & query,
         const Context & context) override;
-
-    void updateDependencies() override;
 
     void pushReadBuffer(ConsumerBufferPtr buf);
     ConsumerBufferPtr popReadBuffer();

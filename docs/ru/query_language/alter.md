@@ -19,7 +19,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 - [DROP COLUMN](#alter_drop-column) — удаляет столбец;
 - [CLEAR COLUMN](#alter_clear-column) — сбрасывает все значения в столбце для заданной партиции;
 - [COMMENT COLUMN](#alter_comment-column) — добавляет комментарий к столбцу;
-- [MODIFY COLUMN](#alter_modify-column) — изменяет тип столбца и/или выражение для значения по умолчанию.
+- [MODIFY COLUMN](#alter_modify-column) — изменяет тип столбца, выражение для значения по умолчанию и TTL.
 
 Подробное описание для каждого действия приведено ниже.
 
@@ -95,10 +95,18 @@ ALTER TABLE visits COMMENT COLUMN browser 'Столбец показывает, 
 #### MODIFY COLUMN {#alter_modify-column}
 
 ```sql
-MODIFY COLUMN [IF EXISTS] name [type] [default_expr]
+MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
 ```
 
-Изменяет тип столбца `name` на `type` и/или выражение для умолчания на `default_expr`. Если указано `IF EXISTS`, запрос не будет возвращать ошибку, если столбца не существует.
+Запрос изменяет следующие свойства столбца `name`:
+
+- Тип
+- Значение по умолчанию
+- TTL
+
+    Примеры изменения TTL столбца смотрите в разделе [TTL столбца](../operations/table_engines/mergetree.md#mergetree-column-ttl).
+
+Если указано `IF EXISTS`, запрос не возвращает ошибку, если столбца не существует.
 
 При изменении типа, значения преобразуются так, как если бы к ним была применена функция [toType](functions/type_conversion_functions.md). Если изменяется только выражение для умолчания, запрос не делает никакой сложной работы и выполняется мгновенно.
 
@@ -431,6 +439,14 @@ OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ```
 
 Примеры запросов `ALTER ... PARTITION` можно посмотреть в тестах: [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_local.sql) и [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
+
+### Манипуляции с TTL таблицы
+
+Вы можете изменить [TTL для таблицы](../operations/table_engines/mergetree.md#mergetree-table-ttl) запросом следующего вида:
+
+```sql
+ALTER TABLE table-name MODIFY TTL ttl-expression
+```
 
 ### Синхронность запросов ALTER
 

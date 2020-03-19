@@ -19,7 +19,6 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int OPENSSL_ERROR;
-    extern const int SYSTEM_ERROR;
 }
 
 MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)

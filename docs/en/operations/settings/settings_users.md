@@ -1,4 +1,4 @@
-# User settings
+# User Settings
 
 The `users` section of the `user.xml` configuration file contains user settings.
 

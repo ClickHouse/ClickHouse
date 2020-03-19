@@ -23,6 +23,7 @@ static const UInt64 max_block_size = 8192;
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int DICTIONARY_ACCESS_DENIED;
 }
 
@@ -200,10 +201,7 @@ bool ExecutableDictionarySource::supportsSelectiveLoad() const
 
 bool ExecutableDictionarySource::hasUpdateField() const
 {
-    if (update_field.empty())
-        return false;
-    else
-        return true;
+    return !update_field.empty();
 }
 
 DictionarySourcePtr ExecutableDictionarySource::clone() const

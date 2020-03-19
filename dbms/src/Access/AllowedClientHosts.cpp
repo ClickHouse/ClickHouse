@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DNS_ERROR;
-    extern const int IP_ADDRESS_NOT_ALLOWED;
 }
 
 namespace
@@ -365,18 +364,6 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
             return true;
 
     return false;
-}
-
-
-void AllowedClientHosts::checkContains(const IPAddress & address, const String & user_name) const
-{
-    if (!contains(address))
-    {
-        if (user_name.empty())
-            throw Exception("It's not allowed to connect from address " + address.toString(), ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
-        else
-            throw Exception("User " + user_name + " is not allowed to connect from address " + address.toString(), ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
-    }
 }
 
 }

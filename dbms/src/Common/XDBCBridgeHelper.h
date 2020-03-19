@@ -20,7 +20,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int EXTERNAL_EXECUTABLE_NOT_FOUND;
     extern const int EXTERNAL_SERVER_IS_NOT_RESPONDING;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }

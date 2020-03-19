@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 import logging
@@ -33,10 +33,8 @@ def test_single_page(input_path, lang):
 
         if duplicate_anchor_points:
             logging.warning('Found %d duplicate anchor points' % duplicate_anchor_points)
-        if links_to_nowhere:
-            logging.error('Found %d links to nowhere' % links_to_nowhere)
-            sys.exit(10)
 
+        assert not links_to_nowhere, 'Found %d links to nowhere' % links_to_nowhere
         assert len(anchor_points) > 10, 'Html parsing is probably broken'
 
 

@@ -22,7 +22,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include "IFunctionImpl.h"
 #include "FunctionHelpers.h"
-#include "intDiv.h"
+#include "DivisionUtils.h"
 #include "castTypeToEither.h"
 #include "FunctionFactory.h"
 #include <Common/typeid_cast.h>
@@ -47,7 +47,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DECIMAL_OVERFLOW;
     extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES;
-    extern const int ILLEGAL_DIVISION;
 }
 
 
@@ -63,23 +62,20 @@ struct BinaryOperationImplBase
     using ResultType = ResultType_;
     static const constexpr bool allow_fixed_string = false;
 
-    static void NO_INLINE vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE vector_vector(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size)
     {
-        size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<ResultType>(a[i], b[i]);
     }
 
-    static void NO_INLINE vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE vector_constant(const A * __restrict a, B b, ResultType * __restrict c, size_t size)
     {
-        size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<ResultType>(a[i], b);
     }
 
-    static void NO_INLINE constant_vector(A a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE constant_vector(A a, const B * __restrict b, ResultType * __restrict c, size_t size)
     {
-        size_t size = b.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<ResultType>(a, b[i]);
     }
@@ -93,28 +89,73 @@ struct BinaryOperationImplBase
 template <typename Op>
 struct FixedStringOperationImpl
 {
-    static void NO_INLINE vector_vector(const ColumnFixedString::Chars & a, const ColumnFixedString::Chars & b, ColumnFixedString::Chars & c)
+    static void NO_INLINE vector_vector(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size)
     {
-        size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<UInt8>(a[i], b[i]);
     }
 
-    static void NO_INLINE vector_constant(const ColumnFixedString::Chars & a, const ColumnFixedString::Chars & b, ColumnFixedString::Chars & c)
+    template <bool inverted>
+    static void NO_INLINE vector_constant_impl(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size, size_t N)
     {
-        size_t size = a.size();
-        for (size_t i = 0; i < size; ++i)
-            c[i] = Op::template apply<UInt8>(a[i], b[i % b.size()]);
+        /// These complications are needed to avoid integer division in inner loop.
+
+        /// Create a pattern of repeated values of b with at least 16 bytes,
+        /// so we can read 16 bytes of this repeated pattern starting from any offset inside b.
+        ///
+        /// Example:
+        ///
+        ///  N = 6
+        ///  ------
+        /// [abcdefabcdefabcdefabc]
+        ///       ^^^^^^^^^^^^^^^^
+        ///      16 bytes starting from the last offset inside b.
+
+        const size_t b_repeated_size = N + 15;
+        UInt8 b_repeated[b_repeated_size];
+        for (size_t i = 0; i < b_repeated_size; ++i)
+            b_repeated[i] = b[i % N];
+
+        size_t b_offset = 0;
+        size_t b_increment = 16 % N;
+
+        /// Example:
+        ///
+        /// At first iteration we copy 16 bytes at offset 0 from b_repeated:
+        /// [abcdefabcdefabcdefabc]
+        ///  ^^^^^^^^^^^^^^^^
+        /// At second iteration we copy 16 bytes at offset 4 = 16 % 6 from b_repeated:
+        /// [abcdefabcdefabcdefabc]
+        ///      ^^^^^^^^^^^^^^^^
+        /// At third iteration we copy 16 bytes at offset 2 = (16 * 2) % 6 from b_repeated:
+        /// [abcdefabcdefabcdefabc]
+        ///    ^^^^^^^^^^^^^^^^
+
+        /// PaddedPODArray allows overflow for 15 bytes.
+        for (size_t i = 0; i < size; i += 16)
+        {
+            /// This loop is formed in a way to be vectorized into two SIMD mov.
+            for (size_t j = 0; j < 16; ++j)
+                c[i + j] = inverted
+                    ? Op::template apply<UInt8>(a[i + j], b_repeated[b_offset + j])
+                    : Op::template apply<UInt8>(b_repeated[b_offset + j], a[i + j]);
+
+            b_offset += b_increment;
+            if (b_offset >= N) /// This condition is easily predictable.
+                b_offset -= N;
+        }
     }
 
-    static void NO_INLINE constant_vector(const ColumnFixedString::Chars & a, const ColumnFixedString::Chars & b, ColumnFixedString::Chars & c)
+    static void vector_constant(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size, size_t N)
     {
-        size_t size = b.size();
-        for (size_t i = 0; i < size; ++i)
-            c[i] = Op::template apply<UInt8>(a[i % a.size()], b[i]);
+        vector_constant_impl<false>(a, b, c, size, N);
+    }
+
+    static void constant_vector(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size, size_t N)
+    {
+        vector_constant_impl<true>(b, a, c, size, N);
     }
 };
-
 
 
 template <typename A, typename B, typename Op, typename ResultType = typename Op::ResultType>
@@ -506,43 +547,54 @@ class FunctionBinaryArithmetic : public IFunction
 
     FunctionOverloadResolverPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
     {
+        bool first_is_date_or_datetime = isDateOrDateTime(type0);
+        bool second_is_date_or_datetime = isDateOrDateTime(type1);
+
+        /// Exactly one argument must be Date or DateTime
+        if (first_is_date_or_datetime == second_is_date_or_datetime)
+            return {};
+
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         /// We construct another function (example: addMonths) and call it.
 
-        bool function_is_plus = std::is_same_v<Op<UInt8, UInt8>, PlusImpl<UInt8, UInt8>>;
-        bool function_is_minus = std::is_same_v<Op<UInt8, UInt8>, MinusImpl<UInt8, UInt8>>;
+        static constexpr bool function_is_plus = std::is_same_v<Op<UInt8, UInt8>, PlusImpl<UInt8, UInt8>>;
+        static constexpr bool function_is_minus = std::is_same_v<Op<UInt8, UInt8>, MinusImpl<UInt8, UInt8>>;
 
         if (!function_is_plus && !function_is_minus)
             return {};
 
-        int interval_arg = 1;
-        const DataTypeInterval * interval_data_type = checkAndGetDataType<DataTypeInterval>(type1.get());
-        if (!interval_data_type)
-        {
-            interval_arg = 0;
-            interval_data_type = checkAndGetDataType<DataTypeInterval>(type0.get());
-        }
-        if (!interval_data_type)
-            return {};
+        const DataTypePtr & type_time = first_is_date_or_datetime ? type0 : type1;
+        const DataTypePtr & type_interval = first_is_date_or_datetime ? type1 : type0;
 
-        if (interval_arg == 0 && function_is_minus)
+        bool interval_is_number = isNumber(type_interval);
+
+        const DataTypeInterval * interval_data_type = nullptr;
+        if (!interval_is_number)
+        {
+            interval_data_type = checkAndGetDataType<DataTypeInterval>(type_interval.get());
+
+            if (!interval_data_type)
+                return {};
+        }
+
+        if (second_is_date_or_datetime && function_is_minus)
             throw Exception("Wrong order of arguments for function " + getName() + ": argument of type Interval cannot be first.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        const DataTypeDate * date_data_type = checkAndGetDataType<DataTypeDate>(interval_arg == 0 ? type1.get() : type0.get());
-        const DataTypeDateTime * date_time_data_type = nullptr;
-        if (!date_data_type)
+        std::string function_name;
+        if (interval_data_type)
         {
-            date_time_data_type = checkAndGetDataType<DataTypeDateTime>(interval_arg == 0 ? type1.get() : type0.get());
-            if (!date_time_data_type)
-                throw Exception("Wrong argument types for function " + getName() + ": if one argument is Interval, then another must be Date or DateTime.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            function_name = String(function_is_plus ? "add" : "subtract") + interval_data_type->getKind().toString() + 's';
+        }
+        else
+        {
+            if (isDate(type_time))
+                function_name = function_is_plus ? "addDays" : "subtractDays";
+            else
+                function_name = function_is_plus ? "addSeconds" : "subtractSeconds";
         }
 
-        std::stringstream function_name;
-        function_name << (function_is_plus ? "add" : "subtract") << interval_data_type->getKind().toString() << 's';
-
-        return FunctionFactory::instance().get(function_name.str(), context);
+        return FunctionFactory::instance().get(function_name, context);
     }
 
     bool isAggregateMultiply(const DataTypePtr & type0, const DataTypePtr & type1) const
@@ -585,7 +637,6 @@ class FunctionBinaryArithmetic : public IFunction
             agg_state_is_const ? assert_cast<const ColumnConst &>(agg_state_column).getDataColumn() : agg_state_column);
 
         AggregateFunctionPtr function = column.getAggregateFunction();
-
 
         size_t size = agg_state_is_const ? 1 : input_rows_count;
 
@@ -675,7 +726,7 @@ class FunctionBinaryArithmetic : public IFunction
         ColumnNumbers new_arguments = arguments;
 
         /// Interval argument must be second.
-        if (WhichDataType(block.getByPosition(arguments[0]).type).isInterval())
+        if (WhichDataType(block.getByPosition(arguments[1]).type).isDateOrDateTime())
             std::swap(new_arguments[0], new_arguments[1]);
 
         /// Change interval argument type to its representation
@@ -735,7 +786,7 @@ public:
                 new_arguments[i].type = arguments[i];
 
             /// Interval argument must be second.
-            if (WhichDataType(new_arguments[0].type).isInterval())
+            if (WhichDataType(new_arguments[1].type).isDateOrDateTime())
                 std::swap(new_arguments[0], new_arguments[1]);
 
             /// Change interval argument to its representation
@@ -812,9 +863,10 @@ public:
                 auto col_res = ColumnFixedString::create(col_left->getN());
                 auto & out_chars = col_res->getChars();
                 out_chars.resize(col_left->getN());
-                OpImpl::vector_vector(col_left->getChars(),
-                                      col_right->getChars(),
-                                      out_chars);
+                OpImpl::vector_vector(col_left->getChars().data(),
+                                      col_right->getChars().data(),
+                                      out_chars.data(),
+                                      out_chars.size());
                 block.getByPosition(result).column = ColumnConst::create(std::move(col_res), block.rows());
                 return true;
             }
@@ -834,26 +886,36 @@ public:
         {
             if (col_left->getN() != col_right->getN())
                 return false;
+
             auto col_res = ColumnFixedString::create(col_left->getN());
             auto & out_chars = col_res->getChars();
             out_chars.resize((is_right_column_const ? col_left->size() : col_right->size()) * col_left->getN());
+
             if (!is_left_column_const && !is_right_column_const)
             {
-                OpImpl::vector_vector(col_left->getChars(),
-                                      col_right->getChars(),
-                                      out_chars);
+                OpImpl::vector_vector(
+                    col_left->getChars().data(),
+                    col_right->getChars().data(),
+                    out_chars.data(),
+                    out_chars.size());
             }
             else if (is_left_column_const)
             {
-                OpImpl::constant_vector(col_left->getChars(),
-                                        col_right->getChars(),
-                                        out_chars);
+                OpImpl::constant_vector(
+                    col_left->getChars().data(),
+                    col_right->getChars().data(),
+                    out_chars.data(),
+                    out_chars.size(),
+                    col_left->getN());
             }
             else
             {
-                OpImpl::vector_constant(col_left->getChars(),
-                                        col_right->getChars(),
-                                        out_chars);
+                OpImpl::vector_constant(
+                    col_left->getChars().data(),
+                    col_right->getChars().data(),
+                    out_chars.data(),
+                    out_chars.size(),
+                    col_left->getN());
             }
             block.getByPosition(result).column = std::move(col_res);
             return true;
@@ -861,12 +923,13 @@ public:
         return false;
     }
 
-    template<typename A, typename B>
+    template <typename A, typename B>
     bool executeNumeric(Block & block, const ColumnNumbers & arguments, size_t result [[maybe_unused]], const A & left, const B & right)
     {
         using LeftDataType = std::decay_t<decltype(left)>;
         using RightDataType = std::decay_t<decltype(right)>;
         using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+
         if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
         {
             constexpr bool result_is_decimal = IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>;
@@ -947,7 +1010,7 @@ public:
                                                 scale_a, scale_b, check_decimal_overflow);
                     }
                     else
-                        OpImpl::constant_vector(col_left_const->template getValue<T0>(), col_right->getData(), vec_res);
+                        OpImpl::constant_vector(col_left_const->template getValue<T0>(), col_right->getData().data(), vec_res.data(), vec_res.size());
                 }
                 else
                     return false;
@@ -978,9 +1041,9 @@ public:
                 else
                 {
                     if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
-                        OpImpl::vector_vector(col_left->getData(), col_right->getData(), vec_res);
+                        OpImpl::vector_vector(col_left->getData().data(), col_right->getData().data(), vec_res.data(), vec_res.size());
                     else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw))
-                        OpImpl::vector_constant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res);
+                        OpImpl::vector_constant(col_left->getData().data(), col_right_const->template getValue<T1>(), vec_res.data(), vec_res.size());
                     else
                         return false;
                 }
@@ -992,9 +1055,9 @@ public:
             return true;
         }
         return false;
-}
+    }
 
-void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type))

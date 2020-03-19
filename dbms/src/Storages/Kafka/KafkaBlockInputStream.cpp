@@ -8,6 +8,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 KafkaBlockInputStream::KafkaBlockInputStream(
     StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix_)
     : storage(storage_)
@@ -195,8 +199,6 @@ Block KafkaBlockInputStream::readImpl()
 
 void KafkaBlockInputStream::readSuffixImpl()
 {
-    broken = false;
-
     if (commit_in_suffix)
         commit();
 }
@@ -207,6 +209,8 @@ void KafkaBlockInputStream::commit()
         return;
 
     buffer->commit();
+
+    broken = false;
 }
 
 }

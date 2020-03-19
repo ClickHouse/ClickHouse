@@ -27,7 +27,7 @@ public:
     virtual ~ICompressionCodec() = default;
 
     /// Byte which indicates codec in compressed file
-    virtual UInt8 getMethodByte() const = 0;
+    virtual uint8_t getMethodByte() const = 0;
 
     /// Codec description, for example "ZSTD(2)" or "LZ4,LZ4HC(5)"
     virtual String getCodecDesc() const = 0;
@@ -54,7 +54,7 @@ public:
     static UInt32 readDecompressedBlockSize(const char * source);
 
     /// Read method byte from compressed source
-    static UInt8 readMethod(const char * source);
+    static uint8_t readMethod(const char * source);
 
     /// Some codecs may use information about column type which appears after codec creation
     virtual void useInfoAboutType(DataTypePtr /* data_type */) { }

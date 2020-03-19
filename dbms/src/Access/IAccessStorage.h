@@ -74,6 +74,10 @@ public:
     String readName(const UUID & id) const;
     std::optional<String> tryReadName(const UUID & id) const;
 
+    /// Returns true if a specified entity can be inserted into this storage.
+    /// This function doesn't check whether there are no entities with such name in the storage.
+    bool canInsert(const AccessEntityPtr & entity) const { return canInsertImpl(entity); }
+
     /// Inserts an entity to the storage. Returns ID of a new entry in the storage.
     /// Throws an exception if the specified name already exists.
     UUID insert(const AccessEntityPtr & entity);
@@ -133,6 +137,7 @@ protected:
     virtual bool existsImpl(const UUID & id) const = 0;
     virtual AccessEntityPtr readImpl(const UUID & id) const = 0;
     virtual String readNameImpl(const UUID & id) const = 0;
+    virtual bool canInsertImpl(const AccessEntityPtr & entity) const = 0;
     virtual UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) = 0;
     virtual void removeImpl(const UUID & id) = 0;
     virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) = 0;
@@ -146,8 +151,9 @@ protected:
     static String getTypeName(std::type_index type) { return IAccessEntity::getTypeName(type); }
     [[noreturn]] void throwNotFound(const UUID & id) const;
     [[noreturn]] void throwNotFound(std::type_index type, const String & name) const;
-    [[noreturn]] void throwBadCast(const UUID & id, std::type_index type, const String & name, std::type_index required_type) const;
-    [[noreturn]] void throwIDCollisionCannotInsert(const UUID & id, std::type_index type, const String & name, std::type_index existing_type, const String & existing_name) const;
+    [[noreturn]] static void throwBadCast(const UUID & id, std::type_index type, const String & name, std::type_index required_type);
+    [[noreturn]] void throwIDCollisionCannotInsert(
+        const UUID & id, std::type_index type, const String & name, std::type_index existing_type, const String & existing_name) const;
     [[noreturn]] void throwNameCollisionCannotInsert(std::type_index type, const String & name) const;
     [[noreturn]] void throwNameCollisionCannotRename(std::type_index type, const String & old_name, const String & new_name) const;
     [[noreturn]] void throwReadonlyCannotInsert(std::type_index type, const String & name) const;

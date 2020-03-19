@@ -20,6 +20,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 
 int main(int argc, char ** argv)
@@ -38,7 +39,7 @@ try
     context.makeGlobalContext();
 
     NamesAndTypesList source_columns = {{"number", std::make_shared<DataTypeUInt64>()}};
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(ast, source_columns);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(ast, source_columns);
     SelectQueryExpressionAnalyzer analyzer(ast, syntax_result, context);
     ExpressionActionsChain chain(context);
     analyzer.appendSelect(chain, false);
@@ -46,7 +47,7 @@ try
     chain.finalize();
     ExpressionActionsPtr expression = chain.getLastActions();
 
-    StoragePtr table = StorageSystemNumbers::create("numbers", false);
+    StoragePtr table = StorageSystemNumbers::create(StorageID("test", "numbers"), false);
 
     Names column_names;
     column_names.push_back("number");
@@ -54,7 +55,7 @@ try
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
     BlockInputStreamPtr in;
-    in = table->read(column_names, {}, context, stage, 8192, 1)[0];
+    in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, context, stage, 8192, 1)[0]));
     in = std::make_shared<ExpressionBlockInputStream>(in, expression);
     in = std::make_shared<LimitBlockInputStream>(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
 

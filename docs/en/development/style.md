@@ -128,7 +128,7 @@ for (auto & stream : streams)
 << ", " << (timer.elapsed() / chunks_stats.hits) << " μsec/hit.";
 ```
 
-**21** Do not write multiple expressions in a single line.
+**21.** Do not write multiple expressions in a single line.
 
 **22.** Group sections of code inside functions and separate them with no more than one empty line.
 

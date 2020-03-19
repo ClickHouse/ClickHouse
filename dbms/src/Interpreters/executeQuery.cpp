@@ -51,8 +51,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int QUERY_IS_TOO_LARGE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int QUERY_WAS_CANCELLED;
 }
@@ -251,7 +249,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     BlockIO res;
     QueryPipeline & pipeline = res.pipeline;
 
-    String query_for_logging = "";
+    String query_for_logging;
 
     try
     {
@@ -332,9 +330,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
         {
             /// Save insertion table (not table function). TODO: support remote() table function.
-            auto db_table = insert_interpreter->getDatabaseTable();
-            if (!db_table.second.empty())
-                context.setInsertionTable(std::move(db_table));
+            auto table_id = insert_interpreter->getDatabaseTable();
+            if (!table_id.empty())
+                context.setInsertionTable(std::move(table_id));
         }
 
         if (process_list_entry)
@@ -557,7 +555,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         throw;
     }
 
-    return std::make_tuple(ast, res);
+    return std::make_tuple(ast, std::move(res));
 }
 
 
@@ -593,8 +591,7 @@ void executeQuery(
     WriteBuffer & ostr,
     bool allow_into_outfile,
     Context & context,
-    std::function<void(const String &, const String &)> set_content_type_and_format,
-    std::function<void(const String &)> set_query_id)
+    std::function<void(const String &, const String &, const String &, const String &)> set_result_details)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -683,11 +680,8 @@ void executeQuery(
                 out->onProgress(progress);
             });
 
-            if (set_content_type_and_format)
-                set_content_type_and_format(out->getContentType(), format_name);
-
-            if (set_query_id)
-                set_query_id(context.getClientInfo().current_query_id);
+            if (set_result_details)
+                set_result_details(context.getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
 
             if (ast->as<ASTWatchQuery>())
             {
@@ -745,11 +739,8 @@ void executeQuery(
                 out->onProgress(progress);
             });
 
-            if (set_content_type_and_format)
-                set_content_type_and_format(out->getContentType(), format_name);
-
-            if (set_query_id)
-                set_query_id(context.getClientInfo().current_query_id);
+            if (set_result_details)
+                set_result_details(context.getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
 
             pipeline.setOutput(std::move(out));
 

@@ -61,7 +61,7 @@ private:
 };
 
 
-typedef testing::Types<DB::DiskMemory, DB::DiskLocal> DiskImplementations;
+using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
 TYPED_TEST_SUITE(DiskTest, DiskImplementations);
 
 
@@ -108,11 +108,13 @@ TYPED_TEST(DiskTest, readFile)
 
     // Test SEEK_SET
     {
-        DB::String data;
+        String buf(4, '0');
         std::unique_ptr<DB::SeekableReadBuffer> in = disk->readFile("test_file");
+
         in->seek(5, SEEK_SET);
-        readString(data, *in);
-        EXPECT_EQ("data", data);
+
+        in->readStrict(buf.data(), 4);
+        EXPECT_EQ("data", buf);
     }
 
     // Test SEEK_CUR

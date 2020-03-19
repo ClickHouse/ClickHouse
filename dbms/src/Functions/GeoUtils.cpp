@@ -14,7 +14,7 @@ const char geohash_base32_encode_lookup_table[32] = {
 };
 
 // TODO: this could be halved by excluding 128-255 range.
-const UInt8 geohash_base32_decode_lookup_table[256] = {
+const uint8_t geohash_base32_decode_lookup_table[256] = {
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
@@ -41,7 +41,7 @@ const Float64 LON_MAX = 180;
 const Float64 LAT_MIN = -90;
 const Float64 LAT_MAX = 90;
 
-using Encoded = std::array<UInt8, MAX_BITS>;
+using Encoded = std::array<uint8_t, MAX_BITS>;
 
 enum CoordType
 {
@@ -49,10 +49,10 @@ enum CoordType
     LONGITUDE,
 };
 
-inline UInt8 singleCoordBitsPrecision(UInt8 precision, CoordType type)
+inline uint8_t singleCoordBitsPrecision(uint8_t precision, CoordType type)
 {
     // Single coordinate occupies only half of the total bits.
-    const UInt8 bits = (precision * BITS_PER_SYMBOL) / 2;
+    const uint8_t bits = (precision * BITS_PER_SYMBOL) / 2;
     if (precision & 0x1 && type == LONGITUDE)
     {
         return bits + 1;
@@ -61,7 +61,7 @@ inline UInt8 singleCoordBitsPrecision(UInt8 precision, CoordType type)
     return bits;
 }
 
-inline Encoded encodeCoordinate(Float64 coord, Float64 min, Float64 max, UInt8 bits)
+inline Encoded encodeCoordinate(Float64 coord, Float64 min, Float64 max, uint8_t bits)
 {
     Encoded result;
     result.fill(0);
@@ -84,7 +84,7 @@ inline Encoded encodeCoordinate(Float64 coord, Float64 min, Float64 max, UInt8 b
     return result;
 }
 
-inline Float64 decodeCoordinate(const Encoded & coord, Float64 min, Float64 max, UInt8 bits)
+inline Float64 decodeCoordinate(const Encoded & coord, Float64 min, Float64 max, uint8_t bits)
 {
     Float64 mid = (max + min) / 2;
     for (size_t i = 0; i < bits; ++i)
@@ -105,13 +105,13 @@ inline Float64 decodeCoordinate(const Encoded & coord, Float64 min, Float64 max,
     return mid;
 }
 
-inline Encoded merge(const Encoded & encodedLon, const Encoded & encodedLat, UInt8 precision)
+inline Encoded merge(const Encoded & encodedLon, const Encoded & encodedLat, uint8_t precision)
 {
     Encoded result;
     result.fill(0);
 
     const auto bits = (precision * BITS_PER_SYMBOL) / 2;
-    UInt8 i = 0;
+    uint8_t i = 0;
     for (; i < bits; ++i)
     {
         result[i * 2 + 0] = encodedLon[i];
@@ -126,35 +126,35 @@ inline Encoded merge(const Encoded & encodedLon, const Encoded & encodedLat, UIn
     return result;
 }
 
-inline std::tuple<Encoded, Encoded> split(const Encoded & combined, UInt8 precision)
+inline std::tuple<Encoded, Encoded> split(const Encoded & combined, uint8_t precision)
 {
     Encoded lat, lon;
     lat.fill(0);
     lon.fill(0);
 
-    UInt8 i = 0;
+    size_t i = 0;
     for (; i < precision * BITS_PER_SYMBOL - 1; i += 2)
     {
         // longitude is even bits
-        lon[i/2] = combined[i];
-        lat[i/2] = combined[i + 1];
+        lon[i / 2] = combined[i];
+        lat[i / 2] = combined[i + 1];
     }
     // precision is even, read the last bit as lat.
     if (precision & 0x1)
     {
-        lon[i/2] = combined[precision * BITS_PER_SYMBOL - 1];
+        lon[i / 2] = combined[precision * BITS_PER_SYMBOL - 1];
     }
 
     return std::tie(lon, lat);
 }
 
-inline void base32Encode(const Encoded & binary, UInt8 precision, char * out)
+inline void base32Encode(const Encoded & binary, uint8_t precision, char * out)
 {
     extern const char geohash_base32_encode_lookup_table[32];
 
-    for (UInt8 i = 0; i < precision * BITS_PER_SYMBOL; i += BITS_PER_SYMBOL)
+    for (size_t i = 0; i < precision * BITS_PER_SYMBOL; i += BITS_PER_SYMBOL)
     {
-        UInt8 v = binary[i];
+        uint8_t v = binary[i];
         v <<= 1;
         v |= binary[i + 1];
         v <<= 1;
@@ -173,14 +173,14 @@ inline void base32Encode(const Encoded & binary, UInt8 precision, char * out)
 
 inline Encoded base32Decode(const char * encoded_string, size_t encoded_length)
 {
-    extern const UInt8 geohash_base32_decode_lookup_table[256];
+    extern const uint8_t geohash_base32_decode_lookup_table[256];
 
     Encoded result;
 
     for (size_t i = 0; i < encoded_length; ++i)
     {
-        const UInt8 c = static_cast<UInt8>(encoded_string[i]);
-        const UInt8 decoded = geohash_base32_decode_lookup_table[c] & 0x1F;
+        const uint8_t c = static_cast<uint8_t>(encoded_string[i]);
+        const uint8_t decoded = geohash_base32_decode_lookup_table[c] & 0x1F;
         result[i * 5 + 4] = (decoded >> 0) & 0x01;
         result[i * 5 + 3] = (decoded >> 1) & 0x01;
         result[i * 5 + 2] = (decoded >> 2) & 0x01;
@@ -201,14 +201,14 @@ inline Float64 getMaxSpan(CoordType type)
     return LAT_MAX - LAT_MIN;
 }
 
-inline Float64 getSpan(UInt8 precision, CoordType type)
+inline Float64 getSpan(uint8_t precision, CoordType type)
 {
     const auto bits = singleCoordBitsPrecision(precision, type);
     // since every bit of precision divides span by 2, divide max span by 2^bits.
     return ldexp(getMaxSpan(type), -1 * bits);
 }
 
-inline UInt8 geohashPrecision(UInt8 precision)
+inline uint8_t geohashPrecision(uint8_t precision)
 {
     if (precision == 0 || precision > MAX_PRECISION)
     {
@@ -218,7 +218,7 @@ inline UInt8 geohashPrecision(UInt8 precision)
     return precision;
 }
 
-inline size_t geohashEncodeImpl(Float64 longitude, Float64 latitude, UInt8 precision, char * out)
+inline size_t geohashEncodeImpl(Float64 longitude, Float64 latitude, uint8_t precision, char * out)
 {
     const Encoded combined = merge(
                 encodeCoordinate(longitude, LON_MIN, LON_MAX, singleCoordBitsPrecision(precision, LONGITUDE)),
@@ -237,13 +237,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace GeoUtils
 {
 
-size_t geohashEncode(Float64 longitude, Float64 latitude, UInt8 precision, char * out)
+size_t geohashEncode(Float64 longitude, Float64 latitude, uint8_t precision, char * out)
 {
     precision = geohashPrecision(precision);
     return geohashEncodeImpl(longitude, latitude, precision, out);
@@ -251,7 +250,7 @@ size_t geohashEncode(Float64 longitude, Float64 latitude, UInt8 precision, char 
 
 void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * longitude, Float64 * latitude)
 {
-    const UInt8 precision = std::min(encoded_len, static_cast<size_t>(MAX_PRECISION));
+    const uint8_t precision = std::min(encoded_len, static_cast<size_t>(MAX_PRECISION));
     if (precision == 0)
     {
         // Empty string is converted to (0, 0)
@@ -271,7 +270,7 @@ GeohashesInBoxPreparedArgs geohashesInBoxPrepare(const Float64 longitude_min,
                                               const Float64 latitude_min,
                                               const Float64 longitude_max,
                                               const Float64 latitude_max,
-                                              UInt8 precision)
+                                              uint8_t precision)
 {
     precision = geohashPrecision(precision);
 
@@ -320,9 +319,9 @@ UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
     }
 
     UInt64 items = 0;
-    for (auto lon = args.longitude_min; lon < args.longitude_max; lon += args.longitude_step)
+    for (auto lon = args.longitude_min; lon < args.longitude_max; lon += args.longitude_step) // NOLINT
     {
-        for (auto lat = args.latitude_min; lat < args.latitude_max; lat += args.latitude_step)
+        for (auto lat = args.latitude_min; lat < args.latitude_max; lat += args.latitude_step) // NOLINT
         {
             assert(items <= args.items_count);
 

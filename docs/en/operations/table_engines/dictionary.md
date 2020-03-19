@@ -1,4 +1,3 @@
-
 # Dictionary
 
 The `Dictionary` engine displays the [dictionary](../../query_language/dicts/external_dicts.md) data as a ClickHouse table.

@@ -7,9 +7,10 @@
 namespace DB
 {
 
-/** DROP QUOTA [IF EXISTS] name [,...]
+/** DROP USER [IF EXISTS] name [,...]
+  * DROP ROLE [IF EXISTS] name [,...]
+  * DROP QUOTA [IF EXISTS] name [,...]
   * DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...]
-  * DROP USER [IF EXISTS] name [,...]
   */
 class ASTDropAccessEntityQuery : public IAST
 {
@@ -17,6 +18,7 @@ public:
     enum class Kind
     {
         USER,
+        ROLE,
         QUOTA,
         ROW_POLICY,
     };

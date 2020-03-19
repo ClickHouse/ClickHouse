@@ -1,5 +1,4 @@
 <test>
-    <type>loop</type>
 
     <stop_conditions>
         <all_of>
@@ -191,7 +190,7 @@
         rand64(691) % 5 as c691, rand64(692) % 5 as c692, rand64(693) % 5 as c693, rand64(694) % 5 as c694, rand64(695) % 5 as c695, 
         rand64(696) % 5 as c696, rand64(697) % 5 as c697, rand64(698) % 5 as c698, rand64(699) % 5 as c699, rand64(700) % 5 as c700,
         rand64(701) % 5 as c701
-    FROM system.numbers
+    FROM system.zeros
     LIMIT 1048576
 </create_query>
 

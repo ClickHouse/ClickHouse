@@ -59,8 +59,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
 }
 
@@ -100,7 +98,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() == 0)
+        if (arguments.empty())
             throw Exception(
                 "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(arguments.size())
                     + ", should be at least 1.",

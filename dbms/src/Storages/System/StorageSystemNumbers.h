@@ -29,15 +29,13 @@ class StorageSystemNumbers : public ext::shared_ptr_helper<StorageSystemNumbers>
 public:
     std::string getName() const override { return "SystemNumbers"; }
 
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-    bool supportProcessorsPipeline() const override { return true; }
 
     bool hasEvenlyDistributedRead() const override { return true; }
 
@@ -50,7 +48,7 @@ private:
 protected:
     /// If even_distribution is true, numbers are distributed evenly between streams.
     /// Otherwise, streams concurrently increment atomic.
-    StorageSystemNumbers(const std::string & name_, bool multithreaded_, std::optional<UInt64> limit_ = std::nullopt, UInt64 offset_ = 0, bool even_distribution_ = true);
+    StorageSystemNumbers(const StorageID & table_id, bool multithreaded_, std::optional<UInt64> limit_ = std::nullopt, UInt64 offset_ = 0, bool even_distribution_ = true);
 };
 
 }

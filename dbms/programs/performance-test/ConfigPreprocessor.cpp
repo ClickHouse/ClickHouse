@@ -21,7 +21,7 @@ std::vector<XMLConfigurationPtr> ConfigPreprocessor::processConfig(
 
         const auto path = Poco::Path(path_str);
         test->setString("path", path.absolute().toString());
-        if (test->getString("name", "") == "")
+        if (test->getString("name", "").empty())
             test->setString("name", path.getBaseName());
     }
 
@@ -41,11 +41,11 @@ void ConfigPreprocessor::removeConfigurationsIf(
     std::vector<XMLConfigurationPtr> & configs,
     ConfigPreprocessor::FilterType filter_type,
     const Strings & values,
-    bool leave) const
+    bool leave)
 {
     auto checker = [&filter_type, &values, &leave] (XMLConfigurationPtr & config)
     {
-        if (values.size() == 0)
+        if (values.empty())
             return false;
 
         bool remove_or_not = false;

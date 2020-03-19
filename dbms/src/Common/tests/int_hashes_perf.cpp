@@ -179,9 +179,9 @@ static inline size_t tabulation(UInt64 x)
 };
     size_t res = 0;
 
-    for (size_t i = 0; i < 8; ++i)
+    for (const auto & rand : random)
     {
-        res ^= random[i][UInt8(x)];
+        res ^= rand[UInt8(x)];
         x >>= 8;
     }
 
@@ -273,8 +273,8 @@ static inline void test(size_t n, const UInt64 * data, const char * name)
 
 int main(int argc, char ** argv)
 {
-    size_t n = (atoi(argv[1]) + (BUF_SIZE - 1)) / BUF_SIZE * BUF_SIZE;
-    size_t method = argc <= 2 ? 0 : atoi(argv[2]);
+    size_t n = (std::stol(argv[1]) + (BUF_SIZE - 1)) / BUF_SIZE * BUF_SIZE;
+    size_t method = argc <= 2 ? 0 : std::stol(argv[2]);
 
     std::cerr << std::fixed << std::setprecision(2);
 

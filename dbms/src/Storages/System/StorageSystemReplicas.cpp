@@ -55,7 +55,7 @@ StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
 }
 
 
-Pipes StorageSystemReplicas::readWithProcessors(
+Pipes StorageSystemReplicas::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -70,7 +70,7 @@ Pipes StorageSystemReplicas::readWithProcessors(
 
     /// We collect a set of replicated tables.
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
-    for (const auto & db : context.getDatabases())
+    for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
         /// Lazy database can not contain replicated tables
         if (db.second->getEngineName() == "Lazy")

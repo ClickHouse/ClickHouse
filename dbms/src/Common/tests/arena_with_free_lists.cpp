@@ -309,7 +309,7 @@ int main(int argc, char ** argv)
 
     Dictionary::Attribute attr;
     attr.type = Dictionary::AttributeUnderlyingType::utString;
-    std::get<Dictionary::ContainerPtrType<StringRef>>(attr.arrays).reset(new StringRef[cache_size]{});
+    std::get<Dictionary::ContainerPtrType<StringRef>>(attr.arrays).reset(new StringRef[cache_size]{});  // NOLINT
 
     while (true)
     {

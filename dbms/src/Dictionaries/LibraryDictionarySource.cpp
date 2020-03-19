@@ -16,7 +16,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int FILE_DOESNT_EXIST;
     extern const int EXTERNAL_LIBRARY_ERROR;
@@ -137,7 +136,7 @@ LibraryDictionarySource::LibraryDictionarySource(
     {
         const String dictionaries_lib_path = context.getDictionariesLibPath();
         if (!startsWith(path, dictionaries_lib_path))
-            throw Exception("LibraryDictionarySource: Library path " + dictionaries_lib_path + " is not inside " + dictionaries_lib_path, ErrorCodes::PATH_ACCESS_DENIED);
+            throw Exception("LibraryDictionarySource: Library path " + path + " is not inside " + dictionaries_lib_path, ErrorCodes::PATH_ACCESS_DENIED);
     }
 
     if (!Poco::File(path).exists())

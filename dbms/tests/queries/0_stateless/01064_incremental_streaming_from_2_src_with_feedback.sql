@@ -1,3 +1,5 @@
+SET joined_subquery_requires_alias = 0;
+
 SYSTEM STOP MERGES;
 
 -- incremental streaming usecase

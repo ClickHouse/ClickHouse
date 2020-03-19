@@ -21,6 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TABLE_IS_DROPPED;
 }
 
@@ -76,7 +77,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
     const bool check_access_for_tables = !access_rights->isGranted(AccessType::SHOW);
 
     {
-        Databases databases = context.getDatabases();
+        Databases databases = DatabaseCatalog::instance().getDatabases();
 
         /// Add column 'database'.
         MutableColumnPtr database_column_mut = ColumnString::create();
@@ -218,7 +219,7 @@ StoragesInfo StoragesInfoStream::next()
     return {};
 }
 
-Pipes StorageSystemPartsBase::readWithProcessors(
+Pipes StorageSystemPartsBase::read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
