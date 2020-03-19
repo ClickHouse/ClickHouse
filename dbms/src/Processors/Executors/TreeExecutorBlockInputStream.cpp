@@ -259,7 +259,7 @@ void TreeExecutorBlockInputStream::initRowsBeforeLimit()
         }
     }
 
-    if (!rows_before_limit_at_least && (!limit_transforms.empty() && !sources.empty()))
+    if (!rows_before_limit_at_least && (!limit_transforms.empty() || !sources.empty()))
     {
         rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
 
