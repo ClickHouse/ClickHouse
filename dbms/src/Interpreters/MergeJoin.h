@@ -50,7 +50,7 @@ class MergeJoin : public IJoin
 public:
     MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block);
 
-    bool addJoinedBlock(const Block & block, bool check_limits = true) override;
+    bool addJoinedBlock(const Block & block, bool check_limits) override;
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
     void joinTotals(Block &) const override;
     void setTotals(const Block &) override;

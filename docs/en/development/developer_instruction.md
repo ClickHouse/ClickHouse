@@ -2,11 +2,11 @@ Building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
 
 # If you use Windows
 
-If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command line terminal in Ubuntu, please locate a program containing the word "terminal" in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
+If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command-line terminal in Ubuntu, please locate a program containing the word "terminal" in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
 
-# If you use 32-bit system
+# If you use a 32-bit system
 
-ClickHouse cannot work or build on 32-bit system. You should acquire access to 64-bit system and you can continue reading.
+ClickHouse cannot work or build on a 32-bit system. You should acquire access to a 64-bit system and you can continue reading.
 
 
 # Creating a repository on GitHub
@@ -17,7 +17,7 @@ You probably already have one, but if you don't, please register at https://gith
 
 Create a fork of ClickHouse repository. To do that please click on the "fork" button in the upper right corner at https://github.com/ClickHouse/ClickHouse.  It will fork your own copy of ClickHouse/ClickHouse to your account.
 
-Development process consists of first committing the intended changes into your fork of ClickHouse and then creating a "pull request" for these changes to be accepted into the main repository (ClickHouse/ClickHouse).
+The development process consists of first committing the intended changes into your fork of ClickHouse and then creating a "pull request" for these changes to be accepted into the main repository (ClickHouse/ClickHouse).
 
 To work with git repositories, please install `git`.
 
@@ -28,7 +28,7 @@ sudo apt install git
 ```
 
 A brief manual on using Git can be found here: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf.
-For a detailed manual on Git see: https://git-scm.com/book/ru/v2.
+For a detailed manual on Git see https://git-scm.com/book/ru/v2.
 
 
 # Cloning a repository to your development machine
@@ -51,7 +51,7 @@ Please note that ClickHouse repository uses `submodules`. That is what the refer
 git submodule init
 git submodule update
 ```
-You can check status with command: `git submodule status`.
+You can check the status with the command: `git submodule status`.
 
 If you get the following error message:
 ```
@@ -67,7 +67,7 @@ You can also clone the repository via https protocol:
 ```
 git clone https://github.com/ClickHouse/ClickHouse.git
 ```
-This however will not let you send your changes to the server. You can still use it temporarily and add the SSH keys later replacing the remote address of the repository with `git remote` command.
+This, however, will not let you send your changes to the server. You can still use it temporarily and add the SSH keys later replacing the remote address of the repository with `git remote` command.
 
 You can also add original ClickHouse repo's address to your local repository to pull updates from there:
 ```
@@ -92,7 +92,7 @@ git submodule update
 git submodule update --init
 ```
 
-The next commands would help you to reset all submodules to the initial state (!WARING! - any chenges inside will be deleted):
+The next commands would help you to reset all submodules to the initial state (!WARNING! - any changes inside will be deleted):
 
 ```
 # Synchronizes submodules' remote URL with .gitmodules
@@ -116,7 +116,7 @@ git submodule foreach git submodule foreach git clean -xfd
 ClickHouse uses CMake and Ninja for building.
 
 CMake - a meta-build system that can generate Ninja files (build tasks).
-Ninja - a smaller build system with focus on speed used to execute those cmake generated tasks.
+Ninja - a smaller build system with a focus on the speed used to execute those cmake generated tasks.
 
 To install on Ubuntu, Debian or Mint run `sudo apt install cmake ninja-build`.
 
@@ -162,7 +162,7 @@ cd build
 ```
 You can have several different directories (build_release, build_debug, etc.) for different types of build.
 
-While inside the `build` directory, configure your build by running CMake. Before the first run you need to define environment variables that specify compiler (version 9 gcc compiler in this example).
+While inside the `build` directory, configure your build by running CMake. Before the first run, you need to define environment variables that specify compiler (version 9 gcc compiler in this example).
 
 Linux:
 ```
@@ -178,7 +178,7 @@ cmake ..
 
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 
-For a faster build you can resort to the `debug` build type - a build with no optimizations. For that supply the following parameter `-D CMAKE_BUILD_TYPE=Debug`:
+For a faster build, you can resort to the `debug` build type - a build with no optimizations. For that supply the following parameter `-D CMAKE_BUILD_TYPE=Debug`:
 ```
 cmake -D CMAKE_BUILD_TYPE=Debug ..
 ```
@@ -197,15 +197,15 @@ ninja
 
 Full build requires about 30GB of free disk space or 15GB to build the main binaries.
 
-When large amount of RAM is available on build machine you should limit the number of build tasks run in parallel with `-j` param:
+When a large amount of RAM is available on build machine you should limit the number of build tasks run in parallel with `-j` param:
 ```
 ninja -j 1 clickhouse-server clickhouse-client
 ```
-On machines with 4GB of RAM it is recommended to specify 1, for 8GB of RAM `-j 2` is recommended.
+On machines with 4GB of RAM, it is recommended to specify 1, for 8GB of RAM `-j 2` is recommended.
 
 If you get the message: `ninja: error: loading 'build.ninja': No such file or directory`, it means that generating a build configuration has failed and you need to inspect the message above.
 
-Upon successful start of the building process you'll see the build progress - the number of processed tasks and the total number of tasks.
+Upon the successful start of the building process, you'll see the build progress - the number of processed tasks and the total number of tasks.
 
 While building messages about protobuf files in libhdfs2 library like `libprotobuf WARNING` may show up. They affect nothing and are safe to be ignored.
 
@@ -223,7 +223,7 @@ To run the server under the current user you need to navigate to `ClickHouse/dbm
 ../../../build/dbms/programs/clickhouse server
 ```
 
-In this case ClickHouse will use config files located in the current directory. You can run `clickhouse server` from any directory specifying the path to a config file as a command line parameter `--config-file`.
+In this case, ClickHouse will use config files located in the current directory. You can run `clickhouse server` from any directory specifying the path to a config file as a command-line parameter `--config-file`.
 
 To connect to ClickHouse with clickhouse-client in another terminal navigate to `ClickHouse/build/dbms/programs/` and run `clickhouse client`.
 
@@ -232,7 +232,7 @@ If you get `Connection refused` message on Mac OS X or FreeBSD, try specifying h
 clickhouse client --host 127.0.0.1
 ```
 
-You can replace production version of ClickHouse binary installed in your system with your custom built ClickHouse binary. To do that install ClickHouse on your machine following the instructions from the official website. Next, run the following:
+You can replace the production version of ClickHouse binary installed in your system with your custom-built ClickHouse binary. To do that install ClickHouse on your machine following the instructions from the official website. Next, run the following:
 ```
 sudo service clickhouse-server stop
 sudo cp ClickHouse/build/dbms/programs/clickhouse /usr/bin/
@@ -241,7 +241,7 @@ sudo service clickhouse-server start
 
 Note that `clickhouse-client`, `clickhouse-server` and others are symlinks to the commonly shared `clickhouse` binary.
 
-You can also run your custom built ClickHouse binary with the config file from the ClickHouse package installed on your system:
+You can also run your custom-built ClickHouse binary with the config file from the ClickHouse package installed on your system:
 ```
 sudo service clickhouse-server stop
 sudo -u clickhouse ClickHouse/build/dbms/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
@@ -250,13 +250,13 @@ sudo -u clickhouse ClickHouse/build/dbms/programs/clickhouse server --config-fil
 
 # IDE (Integrated Development Environment)
 
-If you do not know which IDE to use, we recommend that you use CLion. CLion is a commercial software, but it offers 30 day free trial period. It is also free of charge for students. CLion can be used both on Linux and on Mac OS X.
+If you do not know which IDE to use, we recommend that you use CLion. CLion is commercial software, but it offers 30 days free trial period. It is also free of charge for students. CLion can be used both on Linux and on Mac OS X.
 
-KDevelop and QTCreator are another great alternatives of an IDE for developing ClickHouse. KDevelop comes in as a very handy IDE although unstable. If KDevelop crashes after a while upon opening project, you should click "Stop All" button as soon as it has opened the list of project's files. After doing so KDevelop should be fine to work with.
+KDevelop and QTCreator are other great alternatives of an IDE for developing ClickHouse. KDevelop comes in as a very handy IDE although unstable. If KDevelop crashes after a while upon opening project, you should click "Stop All" button as soon as it has opened the list of project's files. After doing so KDevelop should be fine to work with.
 
-As simple code editors you can use Sublime Text or Visual Studio Code, or Kate (all of which are available on Linux).
+As simple code editors, you can use Sublime Text or Visual Studio Code, or Kate (all of which are available on Linux).
 
-Just in case, it is worth mentioning that CLion creates `build` path on its own, it also on its own selects `debug` for build type, for configuration it uses a version of CMake that is defined in CLion and not the one installed by you, and finally CLion will use `make` to run build tasks instead of `ninja`. This is a normal behaviour, just keep that in mind to avoid confusion.
+Just in case, it is worth mentioning that CLion creates `build` path on its own, it also on its own selects `debug` for build type, for configuration it uses a version of CMake that is defined in CLion and not the one installed by you, and finally, CLion will use `make` to run build tasks instead of `ninja`. This is normal behaviour, just keep that in mind to avoid confusion.
 
 
 # Writing Code
@@ -272,7 +272,7 @@ List of tasks: https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/i
 
 # Test Data
 
-Developing ClickHouse often requires loading realistic datasets. It is particularly important for performance testing. We have a specially prepared set of anonymized data from Yandex.Metrica. It requires additionally some 3GB of free disk space. Note that this data is not required to accomplish most of development tasks.
+Developing ClickHouse often requires loading realistic datasets. It is particularly important for performance testing. We have a specially prepared set of anonymized data from Yandex.Metrica. It requires additionally some 3GB of free disk space. Note that this data is not required to accomplish most of the development tasks.
 
 ```
 sudo apt install wget xz-utils
@@ -297,12 +297,12 @@ clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.visit
 
 # Creating Pull Request
 
-Navigate to your fork repository in GitHub's UI. If you have been developing in a branch, you need to select that branch. There will be a "Pull request" button located on the screen. In essence this means "create a request for accepting my changes into the main repository".
+Navigate to your fork repository in GitHub's UI. If you have been developing in a branch, you need to select that branch. There will be a "Pull request" button located on the screen. In essence, this means "create a request for accepting my changes into the main repository".
 
-A pull request can be created even if the work is not completed yet. In this case please put the word "WIP" (work in progress) at the beginning of the title, it can be changed later. This is useful for cooperative reviewing and discussion of changes as well as for running all of the available tests. It is important that you provide a brief description of your changes, it will later be used for generating realease changelogs.
+A pull request can be created even if the work is not completed yet. In this case please put the word "WIP" (work in progress) at the beginning of the title, it can be changed later. This is useful for cooperative reviewing and discussion of changes as well as for running all of the available tests. It is important that you provide a brief description of your changes, it will later be used for generating release changelogs.
 
-Testing will commence as soon as Yandex employees label your PR with a tag "can be tested". The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within a half an hour. And the main set of tests will report itself within an hour.
+Testing will commence as soon as Yandex employees label your PR with a tag "can be tested". The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
 
 The system will prepare ClickHouse binary builds for your pull request individually. To retrieve these builds click the "Details" link next to "ClickHouse build check" entry in the list of checks. There you will find direct links to the built .deb packages of ClickHouse which you can deploy even on your production servers (if you have no fear).
 
-Most probably some of the builds will fail at first times. This is due to the fact that we check builds both with gcc as well as with clang, with almost all of existing warnings (always with the `-Werror` flag) enabled for clang. On that same page you can find all of the build logs so that you do not have to build ClickHouse in all of the possible ways.
+Most probably some of the builds will fail at first times. This is due to the fact that we check builds both with gcc as well as with clang, with almost all of existing warnings (always with the `-Werror` flag) enabled for clang. On that same page, you can find all of the build logs so that you do not have to build ClickHouse in all of the possible ways.

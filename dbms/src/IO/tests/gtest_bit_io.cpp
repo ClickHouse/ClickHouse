@@ -32,7 +32,7 @@ std::string bin(const T & value, size_t bits = sizeof(T) * 8)
     static const uint8_t MAX_BITS = sizeof(T)*8;
     assert(bits <= MAX_BITS);
 
-    return std::bitset<sizeof(T) * 8>(static_cast<unsigned long long>(value))
+    return std::bitset<sizeof(T) * 8>(static_cast<uint64_t>(value))
             .to_string().substr(MAX_BITS - bits, bits);
 }
 
@@ -112,7 +112,7 @@ struct TestCaseParameter
     std::vector<std::pair<uint8_t, UInt64>> bits_and_vals;
     std::string expected_buffer_binary;
 
-    TestCaseParameter(std::vector<std::pair<uint8_t, UInt64>> vals, std::string binary = std::string{})
+    TestCaseParameter(std::vector<std::pair<uint8_t, UInt64>> vals, std::string binary = std::string{}) // NOLINT
         : bits_and_vals(std::move(vals)),
           expected_buffer_binary(binary)
     {}

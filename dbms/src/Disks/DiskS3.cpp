@@ -34,6 +34,15 @@ namespace ErrorCodes
 
 namespace
 {
+    String getRandomName()
+    {
+        std::uniform_int_distribution<int> distribution('a', 'z');
+        String res(32, ' '); /// The number of bits of entropy should be not less than 128.
+        for (auto & c : res)
+            c = distribution(thread_local_rng);
+        return res;
+    }
+
     template <typename Result, typename Error>
     void throwIfError(Aws::Utils::Outcome<Result, Error> && response)
     {
@@ -570,14 +579,6 @@ void DiskS3::removeRecursive(const String & path)
     }
 }
 
-String DiskS3::getRandomName() const
-{
-    std::uniform_int_distribution<int> distribution('a', 'z');
-    String res(32, ' '); /// The number of bits of entropy should be not less than 128.
-    for (auto & c : res)
-        c = distribution(thread_local_rng);
-    return res;
-}
 
 bool DiskS3::tryReserve(UInt64 bytes)
 {
@@ -647,24 +648,29 @@ DiskS3Reservation::~DiskS3Reservation()
     }
 }
 
-inline void checkWriteAccess(std::shared_ptr<DiskS3> & disk)
+namespace
 {
-    auto file = disk->writeFile("test_acl", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+
+void checkWriteAccess(IDisk & disk)
+{
+    auto file = disk.writeFile("test_acl", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
     file->write("test", 4);
 }
 
-inline void checkReadAccess(const String & disk_name, std::shared_ptr<DiskS3> & disk)
+void checkReadAccess(const String & disk_name, IDisk & disk)
 {
-    auto file = disk->readFile("test_acl", DBMS_DEFAULT_BUFFER_SIZE);
+    auto file = disk.readFile("test_acl", DBMS_DEFAULT_BUFFER_SIZE);
     String buf(4, '0');
     file->readStrict(buf.data(), 4);
     if (buf != "test")
         throw Exception("No read access to S3 bucket in disk " + disk_name, ErrorCodes::PATH_ACCESS_DENIED);
 }
 
-inline void checkRemoveAccess(std::shared_ptr<DiskS3> & disk)
+void checkRemoveAccess(IDisk & disk)
 {
-    disk->remove("test_acl");
+    disk.remove("test_acl");
+}
+
 }
 
 void registerDiskS3(DiskFactory & factory)
@@ -691,9 +697,9 @@ void registerDiskS3(DiskFactory & factory)
             = std::make_shared<DiskS3>(name, client, uri.bucket, uri.key, metadata_path, context.getSettingsRef().s3_min_upload_part_size);
 
         /// This code is used only to check access to the corresponding disk.
-        checkWriteAccess(s3disk);
-        checkReadAccess(name, s3disk);
-        checkRemoveAccess(s3disk);
+        checkWriteAccess(*s3disk);
+        checkReadAccess(name, *s3disk);
+        checkRemoveAccess(*s3disk);
 
         return s3disk;
     };

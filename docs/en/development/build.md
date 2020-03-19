@@ -63,9 +63,9 @@ This will create the `dbms/programs/clickhouse` executable, which can be used wi
 
 # How to Build ClickHouse on Any Linux
 
-The build requires the following componenets:
+The build requires the following components:
 
-- Git (is used only to checkout the sources, it's not needed for build)
+- Git (is used only to checkout the sources, it's not needed for the build)
 - CMake 3.10 or newer
 - Ninja (recommended) or Make
 - C++ compiler: gcc 9 or clang 8 or newer
@@ -110,9 +110,9 @@ make -j $(nproc)
 
 ClickHouse is available in pre-built binaries and packages. Binaries are portable and can be run on any Linux flavour.
 
-They are build for stable, prestable and testing releases as long as for every commit to master and for every pull request.
+They are built for stable, prestable and testing releases as long as for every commit to master and for every pull request.
 
-To find the most fresh build from `master`, go to [commits page](https://github.com/ClickHouse/ClickHouse/commits/master), click on the first green check mark or red cross near commit, and click to the "Details" link right after "ClickHouse Build Check".
+To find the freshest build from `master`, go to [commits page](https://github.com/ClickHouse/ClickHouse/commits/master), click on the first green checkmark or red cross near commit, and click to the "Details" link right after "ClickHouse Build Check".
 
 
 # How to Build ClickHouse Debian Package

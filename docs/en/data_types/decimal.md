@@ -1,7 +1,7 @@
 
 # Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S)
 
-Signed fixed point numbers that keep precision during add, subtract and multiply operations. For division least significant digits are discarded (not rounded).
+Signed fixed-point numbers that keep precision during add, subtract and multiply operations. For division least significant digits are discarded (not rounded).
 
 ## Parameters
 
@@ -23,9 +23,9 @@ For example, Decimal32(4) can contain numbers from -99999.9999 to 99999.9999 wit
 
 ## Internal representation
 
-Internally data is represented as normal signed integers with respective bit width. Real value ranges that can be stored in memory are a bit larger than specified above, which are checked only on convertion from string.
+Internally data is represented as normal signed integers with respective bit width. Real value ranges that can be stored in memory are a bit larger than specified above, which are checked only on conversion from a string.
 
-Because modern CPU's do not support 128 bit integers natively, operations on Decimal128 are emulated. Because of this Decimal128 works signigicantly slower than Decimal32/Decimal64.
+Because modern CPU's do not support 128-bit integers natively, operations on Decimal128 are emulated. Because of this Decimal128 works significantly slower than Decimal32/Decimal64.
 
 ## Operations and result type
 
@@ -41,15 +41,15 @@ Rules for scale:
 - multuply: S = S1 + S2.
 - divide: S = S1.
 
-For similar operations between Decimal and integers, the result is Decimal of the same size as argument.
+For similar operations between Decimal and integers, the result is Decimal of the same size as an argument.
 
-Operations between Decimal and Float32/Float64 are not defined. If you really need them, you can explicitly cast one of argument using toDecimal32, toDecimal64, toDecimal128 or toFloat32, toFloat64 builtins. Keep in mind that the result will lose precision and type conversion is computationally expensive operation. 
+Operations between Decimal and Float32/Float64 are not defined. If you need them, you can explicitly cast one of argument using toDecimal32, toDecimal64, toDecimal128 or toFloat32, toFloat64 builtins. Keep in mind that the result will lose precision and type conversion is a computationally expensive operation.
 
-Some functions on Decimal return result as Float64 (for example, var or stddev). Intermediate calculations might still be performed in Decimal, which might lead to different results between Float64 and Decimal inputs with same values.
+Some functions on Decimal return result as Float64 (for example, var or stddev). Intermediate calculations might still be performed in Decimal, which might lead to different results between Float64 and Decimal inputs with the same values.
 
 ## Overflow checks
 
-During calculations on Decimal, integer overflows might happen. Excessive digits in fraction are discarded (not rounded). Excessive digits in integer part will lead to exception.
+During calculations on Decimal, integer overflows might happen. Excessive digits in a fraction are discarded (not rounded). Excessive digits in integer part will lead to an exception.
 
 ```sql
 SELECT toDecimal32(2, 4) AS x, x / 3
@@ -86,7 +86,7 @@ SELECT toDecimal32(4.2, 8) AS x, 6 * x
 └────────────┴──────────────────────────────────┘
 ```
 
-Overflow checks happen not only on arithmetic operations, but also on value comparison:
+Overflow checks happen not only on arithmetic operations but also on value comparison:
 
 ```sql
 SELECT toDecimal32(1, 8) < 100

@@ -44,7 +44,7 @@ You can control some format processing parameters with the ClickHouse settings. 
 
 ## TabSeparated {#tabseparated}
 
-In TabSeparated format, data is written by row. Each row contains values separated by tabs. Each value is follow by a tab, except the last value in the row, which is followed by a line feed. Strictly Unix line feeds are assumed everywhere. The last row also must contain a line feed at the end. Values are written in text format, without enclosing quotation marks, and with special characters escaped.
+In TabSeparated format, data is written by row. Each row contains values separated by tabs. Each value is followed by a tab, except the last value in the row, which is followed by a line feed. Strictly Unix line feeds are assumed everywhere. The last row also must contain a line feed at the end. Values are written in text format, without enclosing quotation marks, and with special characters escaped.
 
 This format is also available under the name `TSV`.
 
@@ -80,13 +80,13 @@ During formatting, accuracy may be lost on floating-point numbers.
 During parsing, it is not strictly required to read the nearest machine-representable number.
 
 Dates are written in YYYY-MM-DD format and parsed in the same format, but with any characters as separators.
-Dates with times are written in the format YYYY-MM-DD hh:mm:ss and parsed in the same format, but with any characters as separators.
-This all occurs in the system time zone at the time the client or server starts (depending on which one formats data). For dates with times, daylight saving time is not specified. So if a dump has times during daylight saving time, the dump does not unequivocally match the data, and parsing will select one of the two times.
+Dates with times are written in the format `YYYY-MM-DD hh:mm:ss` and parsed in the same format, but with any characters as separators.
+This all occurs in the system time zone at the time the client or server starts (depending on which of them formats data). For dates with times, daylight saving time is not specified. So if a dump has times during daylight saving time, the dump does not unequivocally match the data, and parsing will select one of the two times.
 During a read operation, incorrect dates and dates with times can be parsed with natural overflow or as null dates and times, without an error message.
 
 As an exception, parsing dates with times is also supported in Unix timestamp format, if it consists of exactly 10 decimal digits. The result is not time zone-dependent. The formats YYYY-MM-DD hh:mm:ss and NNNNNNNNNN are differentiated automatically.
 
-Strings are output with backslash-escaped special characters. The following escape sequences are used for output: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. Parsing also supports the sequences `\a`, `\v`, and `\xHH` (hex escape sequences) and any `\c` sequences, where `c` is any character (these sequences are converted to `c`). Thus, reading data supports formats where a line feed can be written as `\n` or `\`, or as a line feed. For example, the string `Hello world` with a line feed between the words instead of a space can be parsed in any of the following variations:
+Strings are output with backslash-escaped special characters. The following escape sequences are used for output: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. Parsing also supports the sequences `\a`, `\v`, and `\xHH` (hex escape sequences) and any `\c` sequences, where `c` is any character (these sequences are converted to `c`). Thus, reading data supports formats where a line feed can be written as `\n` or `\`, or as a line feed. For example, the string `Hello world` with a line feed between the words instead of space can be parsed in any of the following variations:
 
 ```text
 Hello\nworld
@@ -127,7 +127,7 @@ INSERT INTO nestedt Values ( 1, [1], ['a'])
 SELECT * FROM nestedt FORMAT TSV
 ```
 ```text
-1	[1]	['a']
+1  [1]    ['a']
 ```
 
 ## TabSeparatedRaw {#tabseparatedraw}
@@ -154,7 +154,7 @@ This format is also available under the name `TSVWithNamesAndTypes`.
 
 ## Template {#format-template}
 
-This format allows to specify a custom format string with placeholders for values with specified escaping rule.
+This format allows specifying a custom format string with placeholders for values with a specified escaping rule.
 
 It uses settings `format_template_resultset`, `format_template_row`, `format_template_rows_between_delimiter` and some settings of other formats (e.g. `output_format_json_quote_64bit_integers` when using `JSON` escaping, see further)
 
@@ -172,7 +172,7 @@ Setting `format_template_row` specifies path to file, which contains format stri
   - `Raw` (without escaping, similarly to `TSVRaw`)
   - `None` (no escaping rule, see further)
 
-  If escaping rule is omitted, then`None` will be used. `XML` and `Raw` are suitable only for output.
+  If an escaping rule is omitted, then `None` will be used. `XML` and `Raw` are suitable only for output.
 
   So, for the following format string:
 
@@ -184,21 +184,21 @@ Setting `format_template_row` specifies path to file, which contains format stri
 
  The `format_template_rows_between_delimiter` setting specifies delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
 
-Setting `format_template_resultset` specifies path to file, which contains format string for resultset. Format string for resultset has the same syntax as format string for row and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
+Setting `format_template_resultset` specifies the path to file, which contains a format string for resultset. Format string for resultset has the same syntax as a format string for row and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
 
  - `data` is the rows with data in `format_template_row` format, separated by `format_template_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
  - `totals` is the row with total values in `format_template_row` format (when using WITH TOTALS)
- - `min` is the row with minimum values in `format_template_row` format (when extremes is set to 1)
- - `max` is the row with maximum values in `format_template_row` format (when extremes is set to 1)
+ - `min` is the row with minimum values in `format_template_row` format (when extremes are set to 1)
+ - `max` is the row with maximum values in `format_template_row` format (when extremes are set to 1)
  - `rows` is the total number of output rows
  - `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows_before_limit_at_least is the exact number of rows there would have been without a LIMIT.
  - `time` is the request execution time in seconds
- - `rows_read` is the number of rows have been read
- - `bytes_read` is the number of bytes (uncompressed) have been read
+ - `rows_read` is the number of rows has been read
+ - `bytes_read` is the number of bytes (uncompressed) has been read
 
  The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified (or `None` must be specified explicitly). The remaining placeholders may have any escaping rule specified.
  If the `format_template_resultset` setting is an empty string, `${data}` is used as default value.
-  For insert queries format allows to skip some columns or some fields if prefix or suffix (see example).
+  For insert queries format allows skipping some columns or some fields if prefix or suffix (see example).
 
  Select example:
 ```sql
@@ -310,7 +310,7 @@ SELECT * FROM t_null FORMAT TSKV
 ```
 
 ```text
-x=1	y=\N
+x=1    y=\N
 ```
 
 When there is a large number of small columns, this format is ineffective, and there is generally no reason to use it. Nevertheless, it is no worse than JSONEachRow in terms of efficiency.
@@ -323,7 +323,7 @@ Parsing allows the presence of the additional field `tskv` without the equal sig
 
 Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
 
-When formatting, rows are enclosed in double quotes. A double quote inside a string is output as two double quotes in a row. There are no other rules for escaping characters. Date and date-time are enclosed in double quotes. Numbers are output without quotes. Values are separated by a delimiter character, which is `,` by default. The delimiter character is defined in the setting [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Rows are separated using the Unix line feed (LF). Arrays are serialized in CSV as follows: first the array is serialized to a string as in TabSeparated format, and then the resulting string is output to CSV in double quotes. Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
+When formatting, rows are enclosed in double-quotes. A double quote inside a string is output as two double quotes in a row. There are no other rules for escaping characters. Date and date-time are enclosed in double-quotes. Numbers are output without quotes. Values are separated by a delimiter character, which is `,` by default. The delimiter character is defined in the setting [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Rows are separated using the Unix line feed (LF). Arrays are serialized in CSV as follows: first, the array is serialized to a string as in TabSeparated format, and then the resulting string is output to CSV in double-quotes. Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
 
 ```bash
 $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
@@ -422,7 +422,7 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-The JSON is compatible with JavaScript. To ensure this, some characters are additionally escaped: the slash `/` is escaped as `\/`; alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double quotes by default. To remove the quotes, you can set the configuration parameter [output_format_json_quote_64bit_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) to 0.
+The JSON is compatible with JavaScript. To ensure this, some characters are additionally escaped: the slash `/` is escaped as `\/`; alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output_format_json_quote_64bit_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) to 0.
 
 `rows` – The total number of output rows.
 
@@ -431,7 +431,7 @@ If the query contains GROUP BY, rows_before_limit_at_least is the exact number o
 
 `totals` – Total values (when using WITH TOTALS).
 
-`extremes` – Extreme values (when extremes is set to 1).
+`extremes` – Extreme values (when extremes are set to 1).
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
@@ -617,12 +617,12 @@ You can use this format to quickly generate dumps that can only be read by the C
 
 ## Null {#null}
 
-Nothing is output. However, the query is processed, and when using the command-line client, data is transmitted to the client. This is used for tests, including productivity testing.
+Nothing is output. However, the query is processed, and when using the command-line client, data is transmitted to the client. This is used for tests, including performance testing.
 Obviously, this format is only appropriate for output, not for parsing.
 
 ## Pretty {#pretty}
 
-Outputs data as Unicode-art tables, also using ANSI-escape sequences for setting colors in the terminal.
+Outputs data as Unicode-art tables, also using ANSI-escape sequences for setting colours in the terminal.
 A full grid of the table is drawn, and each row occupies two lines in the terminal.
 Each result block is output as a separate table. This is necessary so that blocks can be output without buffering results (buffering would be necessary in order to pre-calculate the visible width of all the values).
 
@@ -648,7 +648,7 @@ SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 
 ```text
 ┌─Escaping_test────────────────────────┐
-│ String with 'quotes' and 	 character │
+│ String with 'quotes' and      character │
 └──────────────────────────────────────┘
 ```
 
@@ -720,9 +720,9 @@ Differs from [PrettyCompact](#prettycompact) in that whitespace (space character
 ## RowBinary {#rowbinary}
 
 Formats and parses data by row in binary format. Rows and values are listed consecutively, without separators.
-This format is less efficient than the Native format, since it is row-based.
+This format is less efficient than the Native format since it is row-based.
 
-Integers use fixed-length little endian representation. For example, UInt64 uses 8 bytes.
+Integers use fixed-length little-endian representation. For example, UInt64 uses 8 bytes.
 DateTime is represented as UInt32 containing the Unix timestamp as the value.
 Date is represented as a UInt16 object that contains the number of days since 1970-01-01 as the value.
 String is represented as a varint length (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128)), followed by the bytes of the string.
@@ -742,7 +742,7 @@ Similar to [RowBinary](#rowbinary), but with added header:
 
 ## Values {#data-format-values}
 
-Prints every row in brackets. Rows are separated by commas. There is no comma after the last row. The values inside the brackets are also comma-separated. Numbers are output in decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are similar to the [TabSeparated](#tabseparated) format. During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). [NULL](../query_language/syntax.md) is represented as `NULL`.
+Prints every row in brackets. Rows are separated by commas. There is no comma after the last row. The values inside the brackets are also comma-separated. Numbers are output in a decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are similar to the [TabSeparated](#tabseparated) format. During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). [NULL](../query_language/syntax.md) is represented as `NULL`.
 
 The minimum set of characters that you need to escape when passing data in Values ​​format: single quotes and backslashes.
 
@@ -752,7 +752,7 @@ See also: [input_format_values_interpret_expressions](../operations/settings/set
 
 ## Vertical {#vertical}
 
-Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows, if each row consists of a large number of columns.
+Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows if each row consists of a large number of columns.
 
 [NULL](../query_language/syntax.md) is output as `ᴺᵁᴸᴸ`.
 
@@ -777,7 +777,7 @@ SELECT 'string with \'quotes\' and \t with some special \n characters' AS test F
 ```text
 Row 1:
 ──────
-test: string with 'quotes' and 	 with some special
+test: string with 'quotes' and      with some special
  characters
 ```
 
@@ -997,7 +997,7 @@ The root schema of input Avro file must be of `record` type.
 To find the correspondence between table columns and fields of Avro schema ClickHouse compares their names. This comparison is case-sensitive.
 Unused fields are skipped.
 
-Data types of a ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to corresponding column type.
+Data types of ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to corresponding column type.
 
 ### Selecting Data
 
@@ -1092,7 +1092,7 @@ ClickHouse supports configurable precision of `Decimal` type. The `INSERT` query
 
 Unsupported Parquet data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-Data types of a ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
+Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
 
 ### Inserting and Selecting Data
 
@@ -1155,10 +1155,10 @@ To exchange data with Hadoop, you can use [HDFS table engine](../operations/tabl
 
 The file name containing the format schema is set by the setting `format_schema`.
 It's required to set this setting when it is used one of the formats `Cap'n Proto` and `Protobuf`.
-The format schema is a combination of a file name and the name of a message type in this file, delimited by colon,
+The format schema is a combination of a file name and the name of a message type in this file, delimited by a colon,
 e.g. `schemafile.proto:MessageType`.
 If the file has the standard extension for the format (for example, `.proto` for `Protobuf`),
-it can be omitted and in this case the format schema looks like `schemafile:MessageType`.
+it can be omitted and in this case, the format schema looks like `schemafile:MessageType`.
 
 If you input or output data via the [client](../interfaces/cli.md) in the [interactive mode](../interfaces/cli.md#cli_usage), the file name specified in the format schema
 can contain an absolute path or a path relative to the current directory on the client.
@@ -1168,8 +1168,6 @@ If you input or output data via the [HTTP interface](../interfaces/http.md) the 
 should be located in the directory specified in [format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path)
 in the server configuration.
 
-[Original article](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->
-
 ## Skipping Errors {#skippingerrors}
 
 Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) and
@@ -1177,3 +1175,5 @@ Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `
 Limitations:
  - In case of parsing error `JSONEachRow` skips all data until the new line (or EOF), so rows must be delimited by `\n` to count errors correctly.
  - `Template` and `CustomSeparated` use delimiter after the last column and delimiter between rows to find the beginning of next row, so skipping errors works only if at least one of them is not empty.
+
+[Original article](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->

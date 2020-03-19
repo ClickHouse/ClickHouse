@@ -132,17 +132,17 @@ inline std::tuple<Encoded, Encoded> split(const Encoded & combined, uint8_t prec
     lat.fill(0);
     lon.fill(0);
 
-    uint8_t i = 0;
+    size_t i = 0;
     for (; i < precision * BITS_PER_SYMBOL - 1; i += 2)
     {
         // longitude is even bits
-        lon[i/2] = combined[i];
-        lat[i/2] = combined[i + 1];
+        lon[i / 2] = combined[i];
+        lat[i / 2] = combined[i + 1];
     }
     // precision is even, read the last bit as lat.
     if (precision & 0x1)
     {
-        lon[i/2] = combined[precision * BITS_PER_SYMBOL - 1];
+        lon[i / 2] = combined[precision * BITS_PER_SYMBOL - 1];
     }
 
     return std::tie(lon, lat);
@@ -152,7 +152,7 @@ inline void base32Encode(const Encoded & binary, uint8_t precision, char * out)
 {
     extern const char geohash_base32_encode_lookup_table[32];
 
-    for (uint8_t i = 0; i < precision * BITS_PER_SYMBOL; i += BITS_PER_SYMBOL)
+    for (size_t i = 0; i < precision * BITS_PER_SYMBOL; i += BITS_PER_SYMBOL)
     {
         uint8_t v = binary[i];
         v <<= 1;
@@ -319,9 +319,9 @@ UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
     }
 
     UInt64 items = 0;
-    for (auto lon = args.longitude_min; lon < args.longitude_max; lon += args.longitude_step)
+    for (auto lon = args.longitude_min; lon < args.longitude_max; lon += args.longitude_step) // NOLINT
     {
-        for (auto lat = args.latitude_min; lat < args.latitude_max; lat += args.latitude_step)
+        for (auto lat = args.latitude_min; lat < args.latitude_max; lat += args.latitude_step) // NOLINT
         {
             assert(items <= args.items_count);
 

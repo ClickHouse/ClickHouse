@@ -94,7 +94,7 @@ HashJoinPtr StorageJoin::getJoin(std::shared_ptr<AnalyzedJoin> analyzed_join) co
 }
 
 
-void StorageJoin::insertBlock(const Block & block) { join->addJoinedBlock(block); }
+void StorageJoin::insertBlock(const Block & block) { join->addJoinedBlock(block, true); }
 size_t StorageJoin::getSize() const { return join->getTotalRowCount(); }
 
 

@@ -30,7 +30,7 @@ namespace
 
 struct JoinedElement
 {
-    JoinedElement(const ASTTablesInSelectQueryElement & table_element)
+    explicit JoinedElement(const ASTTablesInSelectQueryElement & table_element)
         : element(table_element)
     {
         if (element.table_join)
