@@ -12,6 +12,7 @@ GRANT privilege TO user|role [WITH GRANT OPTION]
 
 - `privilege` — Type of privilege.
 - `user` — ClickHouse user.
+- `role` — ClickHouse user role.
 
 The `WITH GRANT OPTION` clause sets `GRANT OPTION` privilege for `user`.
 

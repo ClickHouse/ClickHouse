@@ -106,4 +106,8 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 
 `SHOW CREATE USER` не показывает пароли. В остальном, по сути, только хосты показывает. Видимо, из соображений секьюрности так правильнее. Мы можем показывать хеш, но, наверное, тоже не стоит этого делать.
 
+## SHOW CREATE ROW POLICY {#show-create-row-policy}
+
+`SHOW CREATE ROW POLICY filter ON mydb.mytable;`
+
 [Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->

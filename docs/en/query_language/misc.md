@@ -110,7 +110,11 @@ If `IF EXISTS` is specified, it doesn't return an error if the table doesn't exi
 
 ## DROP USER {#drop-user}
 
+## DROP ROLE {#drop-role}
 
+## DROP ROW POLICY{#drop-row-policy}
+
+`DROP ROW POLICY filter ON mydb.mytable;`
 
 ## EXISTS
 
@@ -227,6 +231,10 @@ SET profile = 'profile-name-from-the-settings-file'
 ```
 
 For more information, see [Settings](../operations/settings/settings.md).
+
+# SET ROLE {#SET ROLE}
+
+
 
 ## TRUNCATE
 

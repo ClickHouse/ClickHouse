@@ -494,4 +494,12 @@ A mutation query returns immediately after the mutation entry is added (in case 
 
 Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter). Older mutation entries are deleted.
 
+## ALTER USER {#alter-user}
+
+
+## ALTER ROW POLICY {#alter-row-policy}
+
+`ALTER ROW POLICY filter ON mydb.mytable ...;`
+
+
 [Original article](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->
