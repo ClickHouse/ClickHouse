@@ -1,6 +1,7 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
-#include <boost/algorithm/string/replace.hpp>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Poco/DOM/AutoPtr.h>
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
@@ -32,16 +33,16 @@ namespace
 using NamesToTypeNames = std::unordered_map<std::string, std::string>;
 /// Get value from field and convert it to string.
 /// Also remove quotes from strings.
-String getUnescapedFieldString(const Field & field)
+String getUnquotedFieldString(const Field & field)
 {
     String string = applyVisitor(FieldVisitorToString(), field);
-
-    if (!string.empty() && string.front() == '\'' && string.back() == '\'')
-        string = string.substr(1, string.size() - 2);
-
-    /// Escaping will be performed on dictionary providers side
-    boost::replace_all(string, "\\'", "'");
-    boost::replace_all(string, "\\\\", "\\");
+    if (string.front() == '\'')
+    {
+        String result;
+        ReadBufferFromString buf(string);
+        readQuotedString(result, buf);
+        return result;
+    }
     return string;
 }
 
@@ -189,7 +190,7 @@ void buildSingleAttribute(
      AutoPtr<Element> null_value_element(doc->createElement("null_value"));
      String null_value_str;
      if (dict_attr->default_value)
-         null_value_str = getUnescapedFieldString(dict_attr->default_value->as<ASTLiteral>()->value);
+         null_value_str = getUnquotedFieldString(dict_attr->default_value->as<ASTLiteral>()->value);
      AutoPtr<Text> null_value(doc->createTextNode(null_value_str));
      null_value_element->appendChild(null_value);
      attribute_element->appendChild(null_value_element);
@@ -203,7 +204,7 @@ void buildSingleAttribute(
         if (const auto * literal = dict_attr->expression->as<ASTLiteral>();
                 literal && literal->value.getType() == Field::Types::String)
         {
-            expression_str = getUnescapedFieldString(literal->value);
+            expression_str = getUnquotedFieldString(literal->value);
         }
         else
             expression_str = queryToString(dict_attr->expression);
@@ -352,7 +353,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         }
         else if (auto literal = pair->second->as<const ASTLiteral>(); literal)
         {
-            AutoPtr<Text> value(doc->createTextNode(getUnescapedFieldString(literal->value)));
+            AutoPtr<Text> value(doc->createTextNode(getUnquotedFieldString(literal->value)));
             current_xml_element->appendChild(value);
         }
         else if (auto list = pair->second->as<const ASTExpressionList>(); list)
