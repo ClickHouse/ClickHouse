@@ -167,7 +167,7 @@ void validateFunctionArgumentTypes(const IFunction & func,
 {
     if (arguments.size() < mandatory_args.size() || arguments.size() > mandatory_args.size() + optional_args.size())
     {
-        auto joinArgumentTypes = [](const auto & args, const String sep = ", ") -> String
+        auto joinArgumentTypes = [](const auto & args, const String sep = ", ")
         {
             String result;
             for (const auto & a : args)

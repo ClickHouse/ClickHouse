@@ -5,12 +5,12 @@ ClickHouse supports MySQL wire protocol. It can be enabled by [mysql_port](../op
 <mysql_port>9004</mysql_port>
 ```
 
-Example of connecting using command-line tool mysql:
+Example of connecting using command-line tool `mysql`:
 ```bash
 $ mysql --protocol tcp -u default -P 9004
 ```
 
-Output if connection succeeded:
+Output if a connection succeeded:
 ```text
 Welcome to the MySQL monitor.  Commands end with ; or \g.
 Your MySQL connection id is 4
@@ -35,3 +35,5 @@ Restrictions:
 - prepared queries are not supported
 
 - some data types are sent as strings
+
+[Original article](https://clickhouse.tech/docs/en/interfaces/mysql/) <!--hide-->

@@ -50,16 +50,13 @@ void Suggest::load(const ConnectionParameters & connection_parameters, size_t su
 
         /// Note that keyword suggestions are available even if we cannot load data from server.
 
-        if (case_insensitive)
-            std::sort(words.begin(), words.end(), [](const std::string & str1, const std::string & str2)
+        std::sort(words.begin(), words.end(), [](const std::string & str1, const std::string & str2)
+        {
+            return std::lexicographical_compare(begin(str1), end(str1), begin(str2), end(str2), [](const char char1, const char char2)
             {
-                return std::lexicographical_compare(begin(str1), end(str1), begin(str2), end(str2), [](const char char1, const char char2)
-                {
-                    return std::tolower(char1) < std::tolower(char2);
-                });
+                return std::tolower(char1) < std::tolower(char2);
             });
-        else
-            std::sort(words.begin(), words.end());
+        });
 
         ready = true;
     });

@@ -6,7 +6,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
 #include <Common/typeid_cast.h>
-#include <common/likely.h>
 
 
 namespace DB

@@ -3099,12 +3099,10 @@ MergeTreeData::getDetachedParts() const
     {
         for (auto it = disk->iterateDirectory(path + "detached"); it->isValid(); it->next())
         {
-            auto dir_name = it->name();
-
             res.emplace_back();
             auto & part = res.back();
 
-            DetachedPartInfo::tryParseDetachedPartName(dir_name, part, format_version);
+            DetachedPartInfo::tryParseDetachedPartName(it.name(), part, format_version);
             part.disk = disk->getName();
         }
     }

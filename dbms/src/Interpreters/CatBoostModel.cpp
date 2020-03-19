@@ -54,7 +54,7 @@ struct CatBoostWrapperAPI
                                                       double * result, size_t resultSize);
 
     int (* GetStringCatFeatureHash)(const char * data, size_t size);
-    int (* GetIntegerCatFeatureHash)(long long val);
+    int (* GetIntegerCatFeatureHash)(uint64_t val);
 
     size_t (* GetFloatFeaturesCount)(ModelCalcerHandle* calcer);
     size_t (* GetCatFeaturesCount)(ModelCalcerHandle* calcer);

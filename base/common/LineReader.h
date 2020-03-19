@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/Types.h>
+#include <common/types.h>
 
 #include <atomic>
 #include <vector>
@@ -18,9 +18,6 @@ public:
 
         /// Get iterators for the matched range of words if any.
         WordsRange getCompletions(const String & prefix, size_t prefix_length) const;
-
-        /// case sensitive suggestion
-        bool case_insensitive = false;
     };
 
     LineReader(const String & history_file_path, char extender, char delimiter = 0);  /// if delimiter != 0, then it's multiline mode
