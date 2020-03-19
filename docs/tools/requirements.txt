@@ -25,7 +25,7 @@ numpy==1.18.2
 Pygments==2.5.2
 pymdown-extensions==6.3
 python-slugify==1.2.6
-PyYAML==5.3
+PyYAML==5.3.1
 repackage==0.7.3
 requests==2.23.0
 singledispatch==3.4.0.3
