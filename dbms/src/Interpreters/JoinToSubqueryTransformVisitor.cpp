@@ -267,7 +267,6 @@ struct AppendSemanticVisitorData
     }
 };
 
-
 /// Replaces table elements with pair.
 struct RewriteTablesVisitorData
 {
@@ -514,7 +513,7 @@ private:
     }
 };
 
-size_t countSuchColumns(const std::vector<TableWithColumnNamesAndTypes> & tables, const String & short_name)
+size_t countTablesWithColumn(const std::vector<TableWithColumnNamesAndTypes> & tables, const String & short_name)
 {
     size_t count = 0;
     for (auto & table : tables)
@@ -577,7 +576,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 if (public_identifiers.count(ident))
                     original_long_name = ident->name;
 
-                size_t count = countSuchColumns(tables, short_name);
+                size_t count = countTablesWithColumn(tables, short_name);
 
                 if (count > 1 || aliases.count(short_name))
                 {
