@@ -1,4 +1,4 @@
-# Introspection Functions
+# Introspection Functions {#introspection-functions}
 
 You can use functions described in this chapter to introspect [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) and [DWARF](https://en.wikipedia.org/wiki/DWARF) for query profiling.
 
@@ -8,11 +8,12 @@ You can use functions described in this chapter to introspect [ELF](https://en.w
 For proper operation of introspection functions:
 
 - Install the `clickhouse-common-static-dbg` package.
-- Set the [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting to 1.
+
+- Set the [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting to 1.
 
     For security reasons introspection functions are disabled by default.
 
-ClickHouse saves profiler reports to the [trace_log](../../operations/system_tables.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
+ClickHouse saves profiler reports to the [trace\_log](../../operations/system_tables.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
 
 ## addressToLine {#addresstoline}
 
@@ -22,7 +23,7 @@ If you use official ClickHouse packages, you need to install the `clickhouse-com
 
 **Syntax**
 
-```sql
+``` sql
 addressToLine(address_of_binary_instruction)
 ```
 
@@ -36,7 +37,8 @@ addressToLine(address_of_binary_instruction)
 
     For example, `/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.cpp:199`, where `199` is a line number.
 
-- Name of a binary, if the function couldn't find the debug information.
+- Name of a binary, if the function couldn’t find the debug information.
+
 - Empty string, if the address is not valid.
 
 Type: [String](../../data_types/string.md).
@@ -45,16 +47,17 @@ Type: [String](../../data_types/string.md).
 
 Enabling introspection functions:
 
-```sql
+``` sql
 SET allow_introspection_functions=1
 ```
 
 Selecting the first string from the `trace_log` system table:
 
-```sql
+``` sql
 SELECT * FROM system.trace_log LIMIT 1 \G
 ```
-```text
+
+``` text
 Row 1:
 ──────
 event_date:              2019-11-19
@@ -70,10 +73,11 @@ The `trace` field contains the stack trace at the moment of sampling.
 
 Getting the source code filename and the line number for a single address:
 
-```sql
+``` sql
 SELECT addressToLine(94784076370703) \G
 ```
-```text
+
+``` text
 Row 1:
 ──────
 addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.cpp:199
@@ -81,17 +85,17 @@ addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../dbms/src/Common/Th
 
 Applying the function to the whole stack trace:
 
-```sql
-SELECT 
-    arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines  
-FROM system.trace_log 
-LIMIT 1 
+``` sql
+SELECT
+    arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines
+FROM system.trace_log
+LIMIT 1
 \G
 ```
 
 The [arrayMap](higher_order_functions.md#higher_order_functions-array-map) function allows to process each individual element of the `trace` array by the `addressToLine` function. The result of this processing you see in the `trace_source_code_lines` column of output.
 
-```text
+``` text
 Row 1:
 ──────
 trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
@@ -108,10 +112,9 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 
 Converts virtual memory address inside ClickHouse server process to the symbol from ClickHouse object files.
 
-
 **Syntax**
 
-```sql
+``` sql
 addressToSymbol(address_of_binary_instruction)
 ```
 
@@ -130,16 +133,17 @@ Type: [String](../../data_types/string.md).
 
 Enabling introspection functions:
 
-```sql
+``` sql
 SET allow_introspection_functions=1
 ```
 
 Selecting the first string from the `trace_log` system table:
 
-```sql
+``` sql
 SELECT * FROM system.trace_log LIMIT 1 \G
 ```
-```text
+
+``` text
 Row 1:
 ──────
 event_date:    2019-11-20
@@ -155,10 +159,11 @@ The `trace` field contains the stack trace at the moment of sampling.
 
 Getting a symbol for a single address:
 
-```sql
+``` sql
 SELECT addressToSymbol(94138803686098) \G
 ```
-```text
+
+``` text
 Row 1:
 ──────
 addressToSymbol(94138803686098): _ZNK2DB24IAggregateFunctionHelperINS_20AggregateFunctionSumImmNS_24AggregateFunctionSumDataImEEEEE19addBatchSinglePlaceEmPcPPKNS_7IColumnEPNS_5ArenaE
@@ -166,8 +171,8 @@ addressToSymbol(94138803686098): _ZNK2DB24IAggregateFunctionHelperINS_20Aggregat
 
 Applying the function to the whole stack trace:
 
-```sql
-SELECT 
+``` sql
+SELECT
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols
 FROM system.trace_log
 LIMIT 1
@@ -176,8 +181,7 @@ LIMIT 1
 
 The [arrayMap](higher_order_functions.md#higher_order_functions-array-map) function allows to process each individual element of the `trace` array by the `addressToSymbols` function. The result of this processing you see in the `trace_symbols` column of output.
 
-
-```text
+``` text
 Row 1:
 ──────
 trace_symbols: _ZNK2DB24IAggregateFunctionHelperINS_20AggregateFunctionSumImmNS_24AggregateFunctionSumDataImEEEEE19addBatchSinglePlaceEmPcPPKNS_7IColumnEPNS_5ArenaE
@@ -205,10 +209,9 @@ clone
 
 Converts a symbol that you can get using the [addressToSymbol](#addresstosymbol) function to the C++ function name.
 
-
 **Syntax**
 
-```sql
+``` sql
 demangle(symbol)
 ```
 
@@ -227,16 +230,17 @@ Type: [String](../../data_types/string.md).
 
 Enabling introspection functions:
 
-```sql
+``` sql
 SET allow_introspection_functions=1
 ```
 
 Selecting the first string from the `trace_log` system table:
 
-```sql
+``` sql
 SELECT * FROM system.trace_log LIMIT 1 \G
 ```
-```text
+
+``` text
 Row 1:
 ──────
 event_date:    2019-11-20
@@ -252,10 +256,11 @@ The `trace` field contains the stack trace at the moment of sampling.
 
 Getting a function name for a single address:
 
-```sql
+``` sql
 SELECT demangle(addressToSymbol(94138803686098)) \G
 ```
-```text
+
+``` text
 Row 1:
 ──────
 demangle(addressToSymbol(94138803686098)): DB::IAggregateFunctionHelper<DB::AggregateFunctionSum<unsigned long, unsigned long, DB::AggregateFunctionSumData<unsigned long> > >::addBatchSinglePlace(unsigned long, char*, DB::IColumn const**, DB::Arena*) const
@@ -263,8 +268,8 @@ demangle(addressToSymbol(94138803686098)): DB::IAggregateFunctionHelper<DB::Aggr
 
 Applying the function to the whole stack trace:
 
-```sql
-SELECT 
+``` sql
+SELECT
     arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS trace_functions
 FROM system.trace_log
 LIMIT 1
@@ -273,7 +278,7 @@ LIMIT 1
 
 The [arrayMap](higher_order_functions.md#higher_order_functions-array-map) function allows to process each individual element of the `trace` array by the `demangle` function. The result of this processing you see in the `trace_functions` column of output.
 
-```text
+``` text
 Row 1:
 ──────
 trace_functions: DB::IAggregateFunctionHelper<DB::AggregateFunctionSum<unsigned long, unsigned long, DB::AggregateFunctionSumData<unsigned long> > >::addBatchSinglePlace(unsigned long, char*, DB::IColumn const**, DB::Arena*) const

@@ -1,16 +1,16 @@
-<div dir="rtl" markdown="1">
+<div markdown="1" dir="rtl">
 
-# بنچمارک AMPLab Big Data
+# بنچمارک AMPLab Big Data {#bnchmrkh-amplab-big-data}
 
-ببینید <https://amplab.cs.berkeley.edu/benchmark/>
+ببینید https://amplab.cs.berkeley.edu/benchmark/
 
-با یک اکانت مجانی در <https://aws.amazon.com> ثبت نام کنید. شما نیاز به ایمیل، شماره تلفن و credit card دارید. یک Access key جدید از <https://console.aws.amazon.com/iam/home?nc2=h_m_sc#security_credential> دریافت کنید.
+با یک اکانت مجانی در https://aws.amazon.com ثبت نام کنید. شما نیاز به ایمیل، شماره تلفن و credit card دارید. یک Access key جدید از https://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential دریافت کنید.
 
 در کنسول این دستورات را وارد کنید:
 
 </div>
 
-```bash
+``` bash
 sudo apt-get install s3cmd
 mkdir tiny; cd tiny;
 s3cmd sync s3://big-data-benchmark/pavlo/text-deflate/tiny/ .
@@ -23,7 +23,7 @@ s3cmd sync s3://big-data-benchmark/pavlo/text-deflate/5nodes/ .
 cd ..
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" dir="rtl">
 
 این query های ClickHouse را اجرا کنید:
 
@@ -91,13 +91,13 @@ CREATE TABLE uservisits_5nodes_on_single
 ) ENGINE = MergeTree(visitDate, visitDate, 8192);
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" dir="rtl">
 
 به کنسول برگردید و دستورات زیر را مجددا اجرا کنید:
 
 </div>
 
-```bash
+``` bash
 for i in tiny/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_tiny FORMAT CSV"; done
 for i in tiny/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_tiny FORMAT CSV"; done
 for i in 1node/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_1node FORMAT CSV"; done
@@ -106,7 +106,7 @@ for i in 5nodes/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | cl
 for i in 5nodes/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_5nodes_on_single FORMAT CSV"; done
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" dir="rtl">
 
 query های گرفتن data sample
 

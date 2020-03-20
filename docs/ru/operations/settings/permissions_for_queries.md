@@ -1,21 +1,21 @@
-# Разрешения для запросов {#permissions_for_queries}
+# Разрешения для запросов {#permissions-for-queries}
 
 Запросы в ClickHouse можно разделить на несколько типов:
 
-1. Запросы на чтение данных: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
-1. Запросы за запись данных: `INSERT`, `OPTIMIZE`.
-1. Запросы на изменение настроек: `SET`, `USE`.
-1. [Запросы DDL](https://ru.wikipedia.org/wiki/Data_Definition_Language): `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
-1. `KILL QUERY`.
+1.  Запросы на чтение данных: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
+2.  Запросы за запись данных: `INSERT`, `OPTIMIZE`.
+3.  Запросы на изменение настроек: `SET`, `USE`.
+4.  [Запросы DDL](https://ru.wikipedia.org/wiki/Data_Definition_Language): `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
+5.  `KILL QUERY`.
 
 Разрешения пользователя по типу запроса регулируются параметрами:
 
 - [readonly](#settings_readonly) — ограничивает разрешения для всех типов запросов, кроме DDL.
-- [allow_ddl](#settings_allow_ddl) — ограничивает разрешения для DDL запросов.
+- [allow\_ddl](#settings_allow_ddl) — ограничивает разрешения для DDL запросов.
 
 `KILL QUERY` выполняется с любыми настройками.
 
-## readonly {#settings_readonly}
+## readonly {#settings-readonly}
 
 Ограничивает разрешения для запросов на чтение данных, запись данных и изменение параметров.
 
@@ -37,7 +37,7 @@
 
 0
 
-## allow_ddl {#settings_allow_ddl}
+## allow\_ddl {#settings-allow-ddl}
 
 Разрешает/запрещает [DDL](https://ru.wikipedia.org/wiki/Data_Definition_Language) запросы.
 

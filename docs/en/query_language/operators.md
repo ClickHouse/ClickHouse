@@ -1,19 +1,19 @@
-# Operators
+# Operators {#operators}
 
 All operators are transformed to their corresponding functions at the query parsing stage in accordance with their precedence and associativity.
 Groups of operators are listed in order of priority (the higher it is in the list, the earlier the operator is connected to its arguments).
 
-## Access Operators
+## Access Operators {#access-operators}
 
 `a[N]` – Access to an element of an array. The `arrayElement(a, N)` function.
 
 `a.N` – Access to a tuple element. The `tupleElement(a, N)` function.
 
-## Numeric Negation Operator
+## Numeric Negation Operator {#numeric-negation-operator}
 
 `-a` – The `negate (a)` function.
 
-## Multiplication and Division Operators
+## Multiplication and Division Operators {#multiplication-and-division-operators}
 
 `a * b` – The `multiply (a, b)` function.
 
@@ -21,13 +21,13 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 `a % b` – The `modulo(a, b)` function.
 
-## Addition and Subtraction Operators
+## Addition and Subtraction Operators {#addition-and-subtraction-operators}
 
 `a + b` – The `plus(a, b)` function.
 
 `a - b` – The `minus(a, b)` function.
 
-## Comparison Operators
+## Comparison Operators {#comparison-operators}
 
 `a = b` – The `equals(a, b)` function.
 
@@ -53,7 +53,7 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 `a NOT BETWEEN b AND c` – The same as `a < b OR a > c`.
 
-## Operators for Working With Data Sets
+## Operators for Working With Data Sets {#operators-for-working-with-data-sets}
 
 *See [IN operators](select.md#select-in-operators).*
 
@@ -69,7 +69,7 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 ### EXTRACT {#operator-extract}
 
-```sql
+``` sql
 EXTRACT(part FROM date);
 ```
 
@@ -90,7 +90,7 @@ The `date` parameter specifies the date or the time to process. Either [Date](..
 
 Examples:
 
-```sql
+``` sql
 SELECT EXTRACT(DAY FROM toDate('2017-06-15'));
 SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
 SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
@@ -98,7 +98,7 @@ SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
 
 In the following example we create a table and insert into it a value with the `DateTime` type.
 
-```sql
+``` sql
 CREATE TABLE test.Orders
 (
     OrderId UInt64,
@@ -108,10 +108,11 @@ CREATE TABLE test.Orders
 ENGINE = Log;
 ```
 
-```sql
+``` sql
 INSERT INTO test.Orders VALUES (1, 'Jarlsberg Cheese', toDateTime('2008-10-11 13:23:44'));
 ```
-```sql
+
+``` sql
 SELECT
     toYear(OrderDate) AS OrderYear,
     toMonth(OrderDate) AS OrderMonth,
@@ -121,7 +122,8 @@ SELECT
     toSecond(OrderDate) AS OrderSecond
 FROM test.Orders;
 ```
-```text
+
+``` text
 ┌─OrderYear─┬─OrderMonth─┬─OrderDay─┬─OrderHour─┬─OrderMinute─┬─OrderSecond─┐
 │      2008 │         10 │       11 │        13 │          23 │          44 │
 └───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
@@ -144,14 +146,15 @@ Types of intervals:
 - `YEAR`
 
 !!! warning "Warning"
-    Intervals with different types can't be combined. You can't use expressions like `INTERVAL 4 DAY 1 HOUR`. Express intervals in units that are smaller or equal the the smallest unit of the interval, for example `INTERVAL 25 HOUR`. You can use consequtive operations like in the example below.
+    Intervals with different types can’t be combined. You can’t use expressions like `INTERVAL 4 DAY 1 HOUR`. Express intervals in units that are smaller or equal the the smallest unit of the interval, for example `INTERVAL 25 HOUR`. You can use consequtive operations like in the example below.
 
 Example:
 
-```sql
+``` sql
 SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
 ```
-```text
+
+``` text
 ┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
 │ 2019-10-23 11:16:28 │                                    2019-10-27 14:16:28 │
 └─────────────────────┴────────────────────────────────────────────────────────┘
@@ -162,29 +165,29 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 - [Interval](../data_types/special_data_types/interval.md) data type
 - [toInterval](functions/type_conversion_functions.md#function-tointerval) type convertion functions
 
-## Logical Negation Operator
+## Logical Negation Operator {#logical-negation-operator}
 
 `NOT a` – The `not(a)` function.
 
-## Logical AND Operator
+## Logical AND Operator {#logical-and-operator}
 
 `a AND b` – The`and(a, b)` function.
 
-## Logical OR Operator
+## Logical OR Operator {#logical-or-operator}
 
 `a OR b` – The `or(a, b)` function.
 
-## Conditional Operator
+## Conditional Operator {#conditional-operator}
 
 `a ? b : c` – The `if(a, b, c)` function.
 
 Note:
 
-The conditional operator calculates the values of b and c, then checks whether condition a is met, and then returns the corresponding value. If `b` or `C` is an [arrayJoin()](functions/array_join.md#functions_arrayjoin) function, each row will be replicated regardless of the "a" condition.
+The conditional operator calculates the values of b and c, then checks whether condition a is met, and then returns the corresponding value. If `b` or `C` is an [arrayJoin()](functions/array_join.md#functions_arrayjoin) function, each row will be replicated regardless of the “a” condition.
 
 ## Conditional Expression {#operator_case}
 
-```sql
+``` sql
 CASE [x]
     WHEN a THEN b
     [WHEN ... THEN ...]
@@ -198,63 +201,68 @@ If there is no `ELSE c` clause in the expression, the default value is `NULL`.
 
 The `transform` function does not work with `NULL`.
 
-## Concatenation Operator
+## Concatenation Operator {#concatenation-operator}
 
 `s1 || s2` – The `concat(s1, s2) function.`
 
-## Lambda Creation Operator
+## Lambda Creation Operator {#lambda-creation-operator}
 
 `x -> expr` – The `lambda(x, expr) function.`
 
 The following operators do not have a priority, since they are brackets:
 
-## Array Creation Operator
+## Array Creation Operator {#array-creation-operator}
 
 `[x1, ...]` – The `array(x1, ...) function.`
 
-## Tuple Creation Operator
+## Tuple Creation Operator {#tuple-creation-operator}
 
 `(x1, x2, ...)` – The `tuple(x2, x2, ...) function.`
 
-## Associativity
+## Associativity {#associativity}
 
 All binary operators have left associativity. For example, `1 + 2 + 3` is transformed to `plus(plus(1, 2), 3)`.
-Sometimes this doesn't work the way you expect. For example, ` SELECT 4 > 2 > 3` will result in 0.
+Sometimes this doesn’t work the way you expect. For example, `SELECT 4 > 2 > 3` will result in 0.
 
 For efficiency, the `and` and `or` functions accept any number of arguments. The corresponding chains of `AND` and `OR` operators are transformed to a single call of these functions.
 
-## Checking for `NULL`
+## Checking for `NULL` {#checking-for-null}
 
 ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
 
 ### IS NULL {#operator-is-null}
 
 - For [Nullable](../data_types/nullable.md) type values, the `IS NULL` operator returns:
-    - `1`, if the value is `NULL`.
-    - `0` otherwise.
+  - `1`, if the value is `NULL`.
+  - `0` otherwise.
 - For other values, the `IS NULL` operator always returns `0`.
 
-```sql
+<!-- -->
+
+``` sql
 SELECT x+100 FROM t_null WHERE y IS NULL
 ```
-```text
+
+``` text
 ┌─plus(x, 100)─┐
 │          101 │
 └──────────────┘
 ```
 
-
-### IS NOT NULL
+### IS NOT NULL {#is-not-null}
 
 - For [Nullable](../data_types/nullable.md) type values, the `IS NOT NULL` operator returns:
-    - `0`, if the value is `NULL`.
-    - `1` otherwise.
+  - `0`, if the value is `NULL`.
+  - `1` otherwise.
 - For other values, the `IS NOT NULL` operator always returns `1`.
 
-```sql
+<!-- -->
+
+``` sql
 SELECT * FROM t_null WHERE y IS NOT NULL
 ```
-```text
+
+``` text
 ┌─x─┬─y─┐
 │ 2 │ 3 │
 └───┴───┘

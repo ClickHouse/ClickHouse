@@ -7,7 +7,7 @@ ClickHouse also supports:
 - [Parametric aggregate functions](parametric_functions.md#aggregate_functions_parametric), which accept other parameters in addition to columns.
 - [Combinators](combinators.md#aggregate_functions_combinators), which change the behavior of aggregate functions.
 
-## NULL processing
+## NULL processing {#null-processing}
 
 During aggregation, all `NULL`s are skipped.
 
@@ -15,7 +15,7 @@ During aggregation, all `NULL`s are skipped.
 
 Consider this table:
 
-```text
+``` text
 ┌─x─┬────y─┐
 │ 1 │    2 │
 │ 2 │ ᴺᵁᴸᴸ │
@@ -25,32 +25,30 @@ Consider this table:
 └───┴──────┘
 ```
 
-Let's say you need to total the values in the `y` column:
+Let’s say you need to total the values in the `y` column:
 
-```sql
+``` sql
 SELECT sum(y) FROM t_null_big
 ```
-```
-┌─sum(y)─┐
-│      7 │
-└────────┘
-```
+
+  ┌─sum(y)─┐
+  │      7 │
+  └────────┘
 
 The `sum` function interprets `NULL` as `0`. In particular, this means that if the function receives input of a selection where all the values are `NULL`, then the result will be `0`, not `NULL`.
 
 Now you can use the `groupArray` function to create an array from the `y` column:
 
-```sql
+``` sql
 SELECT groupArray(y) FROM t_null_big
 ```
-```text
+
+``` text
 ┌─groupArray(y)─┐
 │ [2,2,3]       │
 └───────────────┘
-
 ```
 
 `groupArray` does not include `NULL` in the resulting array.
-
 
 [Original article](https://clickhouse.tech/docs/en/query_language/agg_functions/) <!--hide-->

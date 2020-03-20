@@ -1,10 +1,10 @@
-# Ключ и поля словаря
+# Ключ и поля словаря {#kliuch-i-polia-slovaria}
 
 Секция `<structure>` описывает ключ словаря и поля, доступные для запросов.
 
 Описание в формате XML:
 
-```xml
+``` xml
 <dictionary>
     <structure>
         <id>
@@ -26,10 +26,9 @@
 - `<id>` — [столбец с ключом](external_dicts_dict_structure.md#ext_dict_structure-key).
 - `<attribute>` — [столбец данных](external_dicts_dict_structure.md#ext_dict_structure-attributes). Можно задать несколько атрибутов.
 
-
 Создание словаря запросом:
 
-```sql
+``` sql
 CREATE DICTIONARY dict_name (
     Id UInt64,
     -- attributes
@@ -43,8 +42,7 @@ PRIMARY KEY Id
 - `PRIMARY KEY` — [столбец с ключом](external_dicts_dict_structure.md#ext_dict_structure-key)
 - `AttrName AttrType` — [столбец данных](external_dicts_dict_structure.md#ext_dict_structure-attributes). Можно задать несколько столбцов.
 
-
-## Ключ {#ext_dict_structure-key}
+## Ключ {#ext-dict-structure-key}
 
 ClickHouse поддерживает следующие виды ключей:
 
@@ -56,13 +54,13 @@ ClickHouse поддерживает следующие виды ключей:
 !!! warning "Обратите внимание"
     Ключ не надо дополнительно описывать в атрибутах.
 
-### Числовой ключ {#ext_dict-numeric-key}
+### Числовой ключ {#ext-dict-numeric-key}
 
 Тип: `UInt64`.
 
 Пример конфигурации:
 
-```xml
+``` xml
 <id>
     <name>Id</name>
 </id>
@@ -74,7 +72,7 @@ ClickHouse поддерживает следующие виды ключей:
 
 Для DDL-запроса:
 
-```sql
+``` sql
 CREATE DICTIONARY (
     Id UInt64,
     ...
@@ -85,8 +83,7 @@ PRIMARY KEY Id
 
 - `PRIMARY KEY` – имя столбца с ключами.
 
-
-### Составной ключ
+### Составной ключ {#sostavnoi-kliuch}
 
 Ключом может быть кортеж (`tuple`) из полей произвольных типов. В этом случае [layout](external_dicts_dict_layout.md) должен быть `complex_key_hashed` или `complex_key_cache`.
 
@@ -95,7 +92,7 @@ PRIMARY KEY Id
 
 Структура ключа задаётся в элементе `<key>`. Поля ключа задаются в том же формате, что и [атрибуты](external_dicts_dict_structure.md) словаря. Пример:
 
-```xml
+``` xml
 <structure>
     <key>
         <attribute>
@@ -113,7 +110,7 @@ PRIMARY KEY Id
 
 или
 
-```sql
+``` sql
 CREATE DICTIONARY (
     field1 String,
     field2 String
@@ -125,12 +122,11 @@ PRIMARY KEY field1, field2
 
 При запросе в функции `dictGet*` в качестве ключа передаётся кортеж. Пример: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
-
-## Атрибуты {#ext_dict_structure-attributes}
+## Атрибуты {#ext-dict-structure-attributes}
 
 Пример конфигурации:
 
-```xml
+``` xml
 <structure>
     ...
     <attribute>
@@ -147,27 +143,25 @@ PRIMARY KEY field1, field2
 
 или
 
-```sql
+``` sql
 CREATE DICTIONARY somename (
     Name ClickHouseDataType DEFAULT '' EXPRESSION rand64() HIERARCHICAL INJECTIVE IS_OBJECT_ID
 )
 ```
 
-
 Поля конфигурации:
 
-| Тег | Описание | Обязательный |
-| ---- | ------------- | --------- |
-| `name` | Имя столбца. | Да |
-| `type` | Тип данных ClickHouse.<br/>ClickHouse пытается привести значение из словаря к заданному типу данных. Например, в случае MySQL, в таблице-источнике поле может быть `TEXT`, `VARCHAR`, `BLOB`, но загружено может быть как `String`. [Nullable](../../data_types/nullable.md) не поддерживается. | Да |
-| `null_value` | Значение по умолчанию для несуществующего элемента.<br/>В примере это пустая строка. Нельзя указать значение `NULL`. | Да |
-| `expression` | [Выражение](../syntax.md#syntax-expressions), которое ClickHouse выполняет со значением.<br/>Выражением может быть имя столбца в удаленной SQL базе. Таким образом, вы можете использовать его для создания псевдонима удаленного столбца.<br/><br/>Значение по умолчанию: нет выражения. | Нет |
-<a name="hierarchical-dict-attr"></a> `hierarchical` | Если `true`, то атрибут содержит ключ предка для текущего элемента. Смотрите [Иерархические словари](external_dicts_dict_hierarchical.md).<br/><br/>Default value: `false`. | No| `injective` | Признак [инъективности](https://ru.wikipedia.org/wiki/Инъекция_(математика)) отображения `id -> attribute`. <br/>Если `true`, то обращения к словарям с включенной инъективностью могут быть автоматически переставлены ClickHouse за стадию `GROUP BY`, что как правило существенно сокращает их количество.<br/><br/>Значение по умолчанию: `false`. | Нет |
-| `is_object_id` | Признак того, что запрос выполняется к документу MongoDB по `ObjectID`.<br/><br/>Значение по умолчанию: `false`. | Нет |
+| Тег                                                  | Описание                                                                                                                                                                                                                                                                                        | Обязательный |
+|------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------|
+| `name`                                               | Имя столбца.                                                                                                                                                                                                                                                                                    | Да           |
+| `type`                                               | Тип данных ClickHouse.<br/>ClickHouse пытается привести значение из словаря к заданному типу данных. Например, в случае MySQL, в таблице-источнике поле может быть `TEXT`, `VARCHAR`, `BLOB`, но загружено может быть как `String`. [Nullable](../../data_types/nullable.md) не поддерживается. | Да           |
+| `null_value`                                         | Значение по умолчанию для несуществующего элемента.<br/>В примере это пустая строка. Нельзя указать значение `NULL`.                                                                                                                                                                            | Да           |
+| `expression`                                         | [Выражение](../syntax.md#syntax-expressions), которое ClickHouse выполняет со значением.<br/>Выражением может быть имя столбца в удаленной SQL базе. Таким образом, вы можете использовать его для создания псевдонима удаленного столбца.<br/><br/>Значение по умолчанию: нет выражения.       | Нет          |
+| <a name="hierarchical-dict-attr"></a> `hierarchical` | Если `true`, то атрибут содержит ключ предка для текущего элемента. Смотрите [Иерархические словари](external_dicts_dict_hierarchical.md).<br/><br/>Default value: `false`.                                                                                                                     | No           |
+| `is_object_id`                                       | Признак того, что запрос выполняется к документу MongoDB по `ObjectID`.<br/><br/>Значение по умолчанию: `false`.                                                                                                                                                                                | Нет          |
 
+## Смотрите также {#smotrite-takzhe}
 
-## Смотрите также
-
- - [Функции для работы с внешними словарями](../functions/ext_dict_functions.md).
+- [Функции для работы с внешними словарями](../functions/ext_dict_functions.md).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

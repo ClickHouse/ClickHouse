@@ -1,5 +1,4 @@
-
-# Dictionary Updates
+# Dictionary Updates {#dictionary-updates}
 
 ClickHouse periodically updates the dictionaries. The update interval for fully downloaded dictionaries and the invalidation interval for cached dictionaries are defined in the `<lifetime>` tag in seconds.
 
@@ -7,7 +6,7 @@ Dictionary updates (other than loading for first use) do not block queries. Duri
 
 Example of settings:
 
-```xml
+``` xml
 <dictionary>
     ...
     <lifetime>300</lifetime>
@@ -15,7 +14,7 @@ Example of settings:
 </dictionary>
 ```
 
-```sql
+``` sql
 CREATE DICTIONARY (...)
 ...
 LIFETIME(300)
@@ -28,7 +27,7 @@ You can set a time interval for upgrades, and ClickHouse will choose a uniformly
 
 Example of settings:
 
-```xml
+``` xml
 <dictionary>
     ...
     <lifetime>
@@ -41,11 +40,11 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 LIFETIME(MIN 300 MAX 360)
 ```
 
-When upgrading the dictionaries, the ClickHouse server applies different logic depending on the type of [ source](external_dicts_dict_sources.md):
+When upgrading the dictionaries, the ClickHouse server applies different logic depending on the type of [source](external_dicts_dict_sources.md):
 
 - For a text file, it checks the time of modification. If the time differs from the previously recorded time, the dictionary is updated.
 - For MyISAM tables, the time of modification is checked using a `SHOW TABLE STATUS` query.
@@ -58,7 +57,7 @@ For MySQL (InnoDB), ODBC and ClickHouse sources, you can set up a query that wil
 
 Example of settings:
 
-```xml
+``` xml
 <dictionary>
     ...
     <odbc>
@@ -71,11 +70,10 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 ...
 SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source where id = 1'))
 ...
 ```
-
 
 [Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_lifetime/) <!--hide-->

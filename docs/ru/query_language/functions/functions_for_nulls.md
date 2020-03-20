@@ -1,10 +1,10 @@
-# Функции для работы с Nullable-аргументами
+# Функции для работы с Nullable-аргументами {#funktsii-dlia-raboty-s-nullable-argumentami}
 
-## isNull
+## isNull {#isnull}
 
 Проверяет является ли аргумент [NULL](../syntax.md#null).
 
-```sql
+``` sql
 isNull(x)
 ```
 
@@ -21,7 +21,7 @@ isNull(x)
 
 Входная таблица
 
-```text
+``` text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -30,20 +30,21 @@ isNull(x)
 
 Запрос
 
-```sql
+``` sql
 SELECT x FROM t_null WHERE isNull(y)
 ```
-```text
+
+``` text
 ┌─x─┐
 │ 1 │
 └───┘
 ```
 
-## isNotNull
+## isNotNull {#isnotnull}
 
 Проверяет не является ли аргумент [NULL](../syntax.md#null).
 
-```sql
+``` sql
 isNotNull(x)
 ```
 
@@ -60,7 +61,7 @@ isNotNull(x)
 
 Входная таблица
 
-```text
+``` text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -69,22 +70,24 @@ isNotNull(x)
 
 Запрос
 
-```sql
+``` sql
 SELECT x FROM t_null WHERE isNotNull(y)
 ```
-```text
+
+``` text
 ┌─x─┐
 │ 2 │
 └───┘
 ```
 
-## coalesce
+## coalesce {#coalesce}
 
 Последовательно слева-направо проверяет являются ли переданные аргументы `NULL` и возвращает первый не `NULL`.
 
-```sql
+``` sql
 coalesce(x,...)
 ```
+
 **Параметры**
 
 - Произвольное количество параметров не составного типа. Все параметры должны быть совместимы по типу данных.
@@ -98,7 +101,7 @@ coalesce(x,...)
 
 Рассмотрим адресную книгу, в которой может быть указано несколько способов связи с клиентом.
 
-```text
+``` text
 ┌─name─────┬─mail─┬─phone─────┬──icq─┐
 │ client 1 │ ᴺᵁᴸᴸ │ 123-45-67 │  123 │
 │ client 2 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ │
@@ -109,21 +112,22 @@ coalesce(x,...)
 
 Получим из адресной книги первый доступный способ связаться с клиентом:
 
-```sql
+``` sql
 SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook
 ```
-```text
+
+``` text
 ┌─name─────┬─coalesce(mail, phone, CAST(icq, 'Nullable(String)'))─┐
 │ client 1 │ 123-45-67                                            │
 │ client 2 │ ᴺᵁᴸᴸ                                                 │
 └──────────┴──────────────────────────────────────────────────────┘
 ```
 
-## ifNull
+## ifNull {#ifnull}
 
 Возвращает альтернативное значение, если основной аргумент — `NULL`.
 
-```sql
+``` sql
 ifNull(x,alt)
 ```
 
@@ -139,28 +143,31 @@ ifNull(x,alt)
 
 **Пример**
 
-```sql
+``` sql
 SELECT ifNull('a', 'b')
 ```
-```text
+
+``` text
 ┌─ifNull('a', 'b')─┐
 │ a                │
 └──────────────────┘
 ```
-```sql
+
+``` sql
 SELECT ifNull(NULL, 'b')
 ```
-```text
+
+``` text
 ┌─ifNull(NULL, 'b')─┐
 │ b                 │
 └───────────────────┘
 ```
 
-## nullIf
+## nullIf {#nullif}
 
 Возвращает `NULL`, если аргументы равны.
 
-```sql
+``` sql
 nullIf(x, y)
 ```
 
@@ -175,28 +182,31 @@ nullIf(x, y)
 
 **Пример**
 
-```sql
+``` sql
 SELECT nullIf(1, 1)
 ```
-```text
+
+``` text
 ┌─nullIf(1, 1)─┐
 │         ᴺᵁᴸᴸ │
 └──────────────┘
 ```
-```sql
+
+``` sql
 SELECT nullIf(1, 2)
 ```
-```text
+
+``` text
 ┌─nullIf(1, 2)─┐
 │            1 │
 └──────────────┘
 ```
 
-## assumeNotNull
+## assumeNotNull {#assumenotnull}
 
 Приводит значение типа [Nullable](../../data_types/nullable.md) к не `Nullable`, если значение не `NULL`.
 
-```sql
+``` sql
 assumeNotNull(x)
 ```
 
@@ -213,15 +223,17 @@ assumeNotNull(x)
 
 Рассмотрим таблицу `t_null`.
 
-```sql
+``` sql
 SHOW CREATE TABLE t_null
 ```
-```text
+
+``` text
 ┌─statement─────────────────────────────────────────────────────────────────┐
 │ CREATE TABLE default.t_null ( x Int8,  y Nullable(Int8)) ENGINE = TinyLog │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
-```text
+
+``` text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -230,30 +242,33 @@ SHOW CREATE TABLE t_null
 
 Применим функцию `assumeNotNull` к столбцу `y`.
 
-```sql
+``` sql
 SELECT assumeNotNull(y) FROM t_null
 ```
-```text
+
+``` text
 ┌─assumeNotNull(y)─┐
 │                0 │
 │                3 │
 └──────────────────┘
 ```
-```sql
+
+``` sql
 SELECT toTypeName(assumeNotNull(y)) FROM t_null
 ```
-```text
+
+``` text
 ┌─toTypeName(assumeNotNull(y))─┐
 │ Int8                         │
 │ Int8                         │
 └──────────────────────────────┘
 ```
 
-## toNullable
+## toNullable {#tonullable}
 
 Преобразует тип аргумента к `Nullable`.
 
-```sql
+``` sql
 toNullable(x)
 ```
 
@@ -267,18 +282,21 @@ toNullable(x)
 
 **Пример**
 
-```sql
+``` sql
 SELECT toTypeName(10)
 ```
-```text
+
+``` text
 ┌─toTypeName(10)─┐
 │ UInt8          │
 └────────────────┘
 ```
-```sql
+
+``` sql
 SELECT toTypeName(toNullable(10))
 ```
-```text
+
+``` text
 ┌─toTypeName(toNullable(10))─┐
 │ Nullable(UInt8)            │
 └────────────────────────────┘
