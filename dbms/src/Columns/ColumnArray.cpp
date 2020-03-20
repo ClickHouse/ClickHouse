@@ -238,6 +238,8 @@ void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
             /// But much better then xor which lead to similar hash for arrays like [1], [1, 1, 1], [1, 1, 1, 1, 1], ...
             /// Much better implementation - to add offsets as an optional argument to updateWeakHash32.
             hash_data[i] = intHashCRC32(internal_hash_data[row], hash_data[i]);
+
+        prev_offset = offsets_data[i];
     }
 }
 
