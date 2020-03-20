@@ -90,8 +90,9 @@ void QueryAliasesMatcher<T>::visit(const ASTArrayJoin &, const ASTPtr & ast, Dat
 /// 1) content of subqueries could change after recursive analysis, and auto-generated column names could become incorrect
 /// 2) result of different scalar subqueries can be cached inside expressions compilation cache and must have different names
 template <typename T>
-void QueryAliasesMatcher<T>::visit(const ASTSubquery & const_subquery, const ASTPtr & ast, Data & aliases)
+void QueryAliasesMatcher<T>::visit(const ASTSubquery & const_subquery, const ASTPtr & ast, Data & data)
 {
+    auto & aliases = data;
     ASTSubquery & subquery = const_cast<ASTSubquery &>(const_subquery);
 
     static std::atomic_uint64_t subquery_index = 0;
@@ -115,8 +116,9 @@ void QueryAliasesMatcher<T>::visit(const ASTSubquery & const_subquery, const AST
 }
 
 template <typename T>
-void QueryAliasesMatcher<T>::visitOther(const ASTPtr & ast, Data & aliases)
+void QueryAliasesMatcher<T>::visitOther(const ASTPtr & ast, Data & data)
 {
+    auto & aliases = data;
     String alias = ast->tryGetAlias();
     if (!alias.empty())
     {
