@@ -26,11 +26,11 @@ If you apply this combinator, the aggregate function doesn’t return the result
 
 To work with these states, use:
 
--   [AggregatingMergeTree](../../operations/table_engines/aggregatingmergetree.md) table engine.
--   [finalizeAggregation](../functions/other_functions.md#function-finalizeaggregation) function.
--   [runningAccumulate](../functions/other_functions.md#function-runningaccumulate) function.
--   [-Merge](#aggregate_functions_combinators_merge) combinator.
--   [-MergeState](#aggregate_functions_combinators_mergestate) combinator.
+- [AggregatingMergeTree](../../operations/table_engines/aggregatingmergetree.md) table engine.
+- [finalizeAggregation](../functions/other_functions.md#function-finalizeaggregation) function.
+- [runningAccumulate](../functions/other_functions.md#function-runningaccumulate) function.
+- [-Merge](#aggregate_functions_combinators_merge) combinator.
+- [-MergeState](#aggregate_functions_combinators_mergestate) combinator.
 
 ## -Merge {#aggregate_functions_combinators_merge}
 
@@ -98,15 +98,15 @@ Lets you divide data into groups, and then separately aggregates the data in tho
 
 **Parameters**
 
--   `start` — Starting value of the whole required interval for `resampling_key` values.
--   `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval doesn’t include the `stop` value `[start, stop)`.
--   `step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
--   `resampling_key` — Column whose values are used for separating data into intervals.
--   `aggFunction_params` — `aggFunction` parameters.
+- `start` — Starting value of the whole required interval for `resampling_key` values.
+- `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval doesn’t include the `stop` value `[start, stop)`.
+- `step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
+- `resampling_key` — Column whose values are used for separating data into intervals.
+- `aggFunction_params` — `aggFunction` parameters.
 
 **Returned values**
 
--   Array of `aggFunction` results for each subinterval.
+- Array of `aggFunction` results for each subinterval.
 
 **Example**
 

@@ -110,9 +110,15 @@ def translate_filter(key, value, _format, _):
     except AttributeError:
         return
 
-    if key == 'Para':
-        if value and value[0].get('c') == '!!!' and len(value) > 2:
+    if key == 'Para' and value:
+        marker = value[0].get('c')
+        if isinstance(marker, str) and marker.startswith('!!!') and len(value) > 2:
             # Admonition case
+            if marker != '!!!':
+                # Lost space after !!! case
+                value.insert(1, pandocfilters.Str(marker[3:]))
+                value.insert(1, pandocfilters.Space())
+                value[0]['c'] = '!!!'
             admonition_value = []
             remaining_para_value = []
             in_admonition = True
@@ -155,6 +161,7 @@ def translate_filter(key, value, _format, _):
         value[1] = process_sentence(value[1])
         return cls(*value)
     elif key == 'Header':
+        # TODO: title case header in en
         value[2] = process_sentence(value[2])
         return cls(*value)
     elif key == 'SoftBreak':
