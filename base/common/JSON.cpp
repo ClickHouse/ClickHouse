@@ -776,7 +776,7 @@ JSON::iterator & JSON::iterator::operator++()
     return *this;
 }
 
-JSON::iterator JSON::iterator::operator++(int)
+JSON::iterator JSON::iterator::operator++(int) // NOLINT
 {
     iterator copy(*this);
     ++*this;

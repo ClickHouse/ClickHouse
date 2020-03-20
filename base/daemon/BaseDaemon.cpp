@@ -99,12 +99,12 @@ static void writeSignalIDtoSignalPipe(int sig)
 }
 
 /** Signal handler for HUP / USR1 */
-static void closeLogsSignalHandler(int sig, siginfo_t * info, void * context)
+static void closeLogsSignalHandler(int sig, siginfo_t *, void *)
 {
     writeSignalIDtoSignalPipe(sig);
 }
 
-static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * context)
+static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
 {
     writeSignalIDtoSignalPipe(sig);
 }
@@ -174,6 +174,10 @@ public:
         {
             int sig = 0;
             DB::readBinary(sig, in);
+            // We may log some specific signals afterwards, with different log
+            // levels and more info, but for completeness we log all signals
+            // here at trace level.
+            LOG_TRACE(log, "Received signal " << strsignal(sig) << " (" << sig << ")");
 
             if (sig == Signals::StopThread)
             {
@@ -404,7 +408,7 @@ std::string instructionFailToString(InstructionFail fail)
 
 sigjmp_buf jmpbuf;
 
-void sigIllCheckHandler(int sig, siginfo_t * info, void * context)
+void sigIllCheckHandler(int, siginfo_t *, void *)
 {
     siglongjmp(jmpbuf, 1);
 }
@@ -790,7 +794,9 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 void BaseDaemon::logRevision() const
 {
-    Logger::root().information("Starting " + std::string{VERSION_FULL} + " with revision " + std::to_string(ClickHouseRevision::get()));
+    Logger::root().information("Starting " + std::string{VERSION_FULL}
+        + " with revision " + std::to_string(ClickHouseRevision::get())
+        + ", PID " + std::to_string(getpid()));
 }
 
 /// Makes server shutdown if at least one Poco::Task have failed.

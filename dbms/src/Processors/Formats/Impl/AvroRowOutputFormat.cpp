@@ -52,7 +52,7 @@ namespace ErrorCodes
 class OutputStreamWriteBufferAdapter : public avro::OutputStream
 {
 public:
-    OutputStreamWriteBufferAdapter(WriteBuffer & out_) : out(out_) {}
+    explicit OutputStreamWriteBufferAdapter(WriteBuffer & out_) : out(out_) {}
 
     virtual bool next(uint8_t ** data, size_t * len) override
     {

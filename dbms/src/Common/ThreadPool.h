@@ -33,7 +33,7 @@ public:
     explicit ThreadPoolImpl(size_t max_threads_);
 
     /// queue_size - maximum number of running plus scheduled jobs. It can be greater than max_threads. Zero means unlimited.
-    ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_);
+    ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_, bool shutdown_on_exception_ = true);
 
     /// Add new job. Locks until number of scheduled jobs is less than maximum or exception in one of threads was thrown.
     /// If any thread was throw an exception, first exception will be rethrown from this method,
@@ -79,6 +79,7 @@ private:
 
     size_t scheduled_jobs = 0;
     bool shutdown = false;
+    const bool shutdown_on_exception = true;
 
     struct JobWithPriority
     {
@@ -128,7 +129,7 @@ using FreeThreadPool = ThreadPoolImpl<std::thread>;
 class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
 {
 public:
-    GlobalThreadPool() : FreeThreadPool(10000, 1000, 10000) {}
+    GlobalThreadPool() : FreeThreadPool(10000, 1000, 10000, false) {}
     static GlobalThreadPool & instance();
 };
 
@@ -221,7 +222,7 @@ using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool>;
 class ExceptionHandler
 {
 public:
-    void setException(std::exception_ptr && exception);
+    void setException(std::exception_ptr exception);
     void throwIfException();
 
 private:

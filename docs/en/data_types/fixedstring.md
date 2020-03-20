@@ -50,6 +50,6 @@ WHERE a = 'b\0'
 
 This behaviour differs from MySQL for the `CHAR` type (where strings are padded with spaces, and the spaces are removed for output).
 
-Note that the length of the `FixedString(N)` value is constant. The [length](../query_language/functions/array_functions.md#array_functions-length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](../query_language/functions/string_functions.md#string_functions-empty) function returns `1` in this case.
+Note that the length of the `FixedString(N)` value is constant. The [length](../query_language/functions/array_functions.md#array_functions-length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](../query_language/functions/string_functions.md#empty) function returns `1` in this case.
 
 [Original article](https://clickhouse.tech/docs/en/data_types/fixedstring/) <!--hide-->

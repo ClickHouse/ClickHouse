@@ -748,8 +748,6 @@ void executeQuery(
                 auto executor = pipeline.execute();
                 executor->execute(context.getSettingsRef().max_threads);
             }
-
-            pipeline.finalize();
         }
     }
     catch (...)

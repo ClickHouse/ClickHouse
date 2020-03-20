@@ -114,8 +114,7 @@ protected:
                                 Connection & connection,
                                 const Settings * settings = nullptr);
 
-    ASTPtr getCreateTableForPullShard(const ConnectionTimeouts & timeouts,
-                                      TaskShard & task_shard);
+    ASTPtr getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard);
 
     void createShardInternalTables(const ConnectionTimeouts & timeouts,
                                    TaskShard & task_shard,

@@ -2,7 +2,7 @@
 #include <common/DateLUT.h>
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     /** В DateLUT был глюк - для времён из дня 1970-01-01, возвращался номер часа больше 23. */
     static const time_t TIME = 66130;

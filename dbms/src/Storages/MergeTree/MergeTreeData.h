@@ -226,6 +226,8 @@ public:
         void clear() { precommitted_parts.clear(); }
     };
 
+    using PathWithDisk = std::pair<String, DiskPtr>;
+
     struct PartsTemporaryRename : private boost::noncopyable
     {
         PartsTemporaryRename(
@@ -247,7 +249,7 @@ public:
         const MergeTreeData & storage;
         const String source_dir;
         std::vector<std::pair<String, String>> old_and_new_names;
-        std::unordered_map<String, String> old_part_name_to_full_path;
+        std::unordered_map<String, PathWithDisk> old_part_name_to_path_and_disk;
         bool renamed = false;
     };
 
@@ -619,18 +621,17 @@ public:
     /// Get table path on disk
     String getFullPathOnDisk(const DiskPtr & disk) const;
 
-    /// Get disk for part. Looping through directories on FS because some parts maybe not in
-    /// active dataparts set (detached)
-    DiskPtr getDiskForPart(const String & part_name, const String & relative_path = "") const;
+    /// Get disk where part is located.
+    /// `additional_path` can be set if part is not located directly in table data path (e.g. 'detached/')
+    DiskPtr getDiskForPart(const String & part_name, const String & additional_path = "") const;
 
-    /// Get full path for part. Uses getDiskForPart and returns the full path
-    String getFullPathForPart(const String & part_name, const String & relative_path = "") const;
+    /// Get full path for part. Uses getDiskForPart and returns the full relative path.
+    /// `additional_path` can be set if part is not located directly in table data path (e.g. 'detached/')
+    std::optional<String> getFullRelativePathForPart(const String & part_name, const String & additional_path = "") const;
 
     Strings getDataPaths() const override;
 
-    using PathWithDisk = std::pair<String, DiskPtr>;
     using PathsWithDisks = std::vector<PathWithDisk>;
-    PathsWithDisks getDataPathsWithDisks() const;
     PathsWithDisks getRelativeDataPathsWithDisks() const;
 
     /// Reserves space at least 1MB.
