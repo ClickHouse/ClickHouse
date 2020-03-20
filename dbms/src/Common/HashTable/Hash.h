@@ -78,9 +78,9 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size,  DB::UInt32 u
         auto value = unalignedLoad<DB::UInt64>(pos);
         /// 8 bytes were loaded to UInt64 value, but string size is less then 8 bytes.
         /// We need to zero excessive bytes to remove the garbage.
-        /// But instead we move bits to the right, so that we had zeros at left.
+        /// But instead we move bits, so that we had zeros at left.
         /// It helps to have different hash for strings like 'a' and 'a\0'
-        value >>= UInt8(8 * (8 - size));
+        value <<= UInt8(8 * (8 - size));
         return intHashCRC32(value, updated_value);
     }
 
