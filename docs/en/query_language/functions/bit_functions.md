@@ -198,5 +198,40 @@ Result:
 │                    0 │
 └──────────────────────┘
 ```
+## bitCount {#bitcount}
 
+Calculates the number of bits set to one in the number `x`.
+
+**Syntax** 
+
+```sql
+bitCount(x)
+```
+
+**Parameters** 
+
+- `x` — [Integer](../../data_types/int_uint.md) or [floating point](../../data_types/float.md) number.
+
+**Returned value**
+
+- Number of bits set to one in the input number.
+
+Type: [Integer](../../data_types/int_uint.md).
+
+**Example**
+
+Query:
+
+```
+SELECT bitCount(100)
+```
+
+Result:
+
+```
+┌─bitCount(100)─┐
+│             3 │
+└───────────────┘
+
+```
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/bit_functions/) <!--hide-->
