@@ -2,10 +2,31 @@
 
 ## splitByChar(separator, s) {#splitbycharseparator-s}
 
-Splits a string into substrings separated by ‘separator’.’separator’ must be a string constant consisting of exactly one character.
+Splits a string into substrings separated by a specified character. It uses a constant string `separator` which consisting of exactly one character.
 Returns an array of selected substrings. Empty substrings may be selected if the separator occurs at the beginning or end of the string, or if there are multiple consecutive separators.
 
-**Example:**
+**Syntax**
+
+```sql
+splitByChar(<separator>, <s>)
+```
+
+**Parameters**
+
+- `separator` — The separator which should contain exactly one character. [String](../../data_types/string.md).
+- `s` — The string to split. [String](../../data_types/string.md).
+
+**Returned value(s)**
+
+Returns an array of selected substrings. Empty substrings may be selected when:
+
+* A separator occurs at the beginning or end of the string;
+* There are multiple consecutive separators;
+* The original string `s` is empty.
+
+Type: [Array](../../data_types/array.md) of [String](../../data_types/string.md).
+
+**Example**
 
 ``` sql
 SELECT splitByChar(',', '1,2,3,abcde')
@@ -19,9 +40,30 @@ SELECT splitByChar(',', '1,2,3,abcde')
 
 ## splitByString(separator, s) {#splitbystringseparator-s}
 
-The same as above, but it uses a string of multiple characters as the separator. If the string is empty, it will split the string into an array of single characters.
+Splits a string into substrings separated by a string. It uses a constant string `separator` of multiple characters as the separator. If the string `separator` is empty, it will split the string `s` into an array of single characters.
 
-**Example:**
+**Syntax**
+
+```sql
+splitByString(<separator>, <s>)
+```
+
+**Parameters**
+
+- `separator` — The separator. [String](../../data_types/string.md).
+- `s` — The string to split. [String](../../data_types/string.md).
+
+**Returned value(s)**
+
+Returns an array of selected substrings. Empty substrings may be selected when:
+
+Type: [Array](../../data_types/array.md) of [String](../../data_types/string.md).
+
+* A non-empty separator occurs at the beginning or end of the string;
+* There are multiple consecutive non-empty separators;
+* The original string `s` is empty while the separator is not empty.
+
+**Example**
 
 ``` sql
 SELECT splitByString(', ', '1, 2 3, 4,5, abcde')
@@ -52,7 +94,7 @@ Returns the string.
 
 Selects substrings of consecutive bytes from the ranges a-z and A-Z.Returns an array of substrings.
 
-**Example:**
+**Example**
 
 ``` sql
 SELECT alphaTokens('abca1abc')
