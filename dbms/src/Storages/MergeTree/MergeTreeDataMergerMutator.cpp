@@ -1537,7 +1537,7 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     if (need_remove_expired_values)
     {
         /// Write a file with ttl infos in json format.
-        auto out_ttl = disk->writeFile(new_data_part->getFullPath() + "ttl.txt", 4096);
+        auto out_ttl = disk->writeFile(new_data_part->getFullRelativePath() + "ttl.txt", 4096);
         HashingWriteBuffer out_hashing(*out_ttl);
         new_data_part->ttl_infos.write(out_hashing);
         new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
@@ -1546,14 +1546,14 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
 
     {
         /// Write file with checksums.
-        auto out_checksums = disk->writeFile(new_data_part->getFullPath() + "checksums.txt", 4096);
+        auto out_checksums = disk->writeFile(new_data_part->getFullRelativePath() + "checksums.txt", 4096);
         new_data_part->checksums.write(*out_checksums);
     } /// close fd
 
 
     {
         /// Write a file with a description of columns.
-        auto out_columns = disk->writeFile(new_data_part->getFullPath() + "columns.txt", 4096);
+        auto out_columns = disk->writeFile(new_data_part->getFullRelativePath() + "columns.txt", 4096);
         new_data_part->getColumns().writeText(*out_columns);
     } /// close fd
 
