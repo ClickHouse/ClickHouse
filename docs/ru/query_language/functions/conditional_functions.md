@@ -52,6 +52,22 @@ SELECT if(0, plus(2, 2), plus(2, 6))
 └────────────┘
 ```
 
+## Тернарный оператор {#ternary-operator}
+
+Работает так же, как функция `if`.
+
+Синтаксис: `cond ? then : else`
+
+Возвращает `then`, если `cond` верно (больше нуля), в остальных случаях возвращает `else`.
+
+* `cond` должно быть типа `UInt8`, `then` и `else` должны относиться к наименьшему общему типу.
+
+* `then` и `else` могут быть `NULL`.
+
+**Смотрите также**
+
+- [ifNotFinite](other_functions.md#ifnotfinite).
+
 ## multiIf
 
 Позволяет более компактно записать оператор [CASE](../operators.md#operator_case) в запросе.

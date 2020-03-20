@@ -129,7 +129,7 @@ select
 from
     lineitem
 where
-    l_shipdate <= toDate('1998-12-01') - interval 90 day
+    l_shipdate <= date '1998-12-01' - interval 90 day
 group by
     l_returnflag,
     l_linestatus
@@ -197,8 +197,8 @@ where
     c_mktsegment = 'BUILDING'
     and c_custkey = o_custkey
     and l_orderkey = o_orderkey
-    and o_orderdate < toDate('1995-03-15')
-    and l_shipdate > toDate('1995-03-15')
+    and o_orderdate < date '1995-03-15'
+    and l_shipdate > date '1995-03-15'
 group by
     l_orderkey,
     o_orderdate,
@@ -215,8 +215,8 @@ limit 10;
 -- from
 --     orders
 -- where
---     o_orderdate >= toDate('1993-07-01')
---     and o_orderdate < toDate('1993-07-01') + interval '3' month
+--     o_orderdate >= date '1993-07-01'
+--     and o_orderdate < date '1993-07-01' + interval '3' month
 --     and exists (
 --         select
 --             *
@@ -250,8 +250,8 @@ where
     and s_nationkey = n_nationkey
     and n_regionkey = r_regionkey
     and r_name = 'ASIA'
-    and o_orderdate >= toDate('1994-01-01')
-    and o_orderdate < toDate('1994-01-01') + interval '1' year
+    and o_orderdate >= date '1994-01-01'
+    and o_orderdate < date '1994-01-01' + interval '1' year
 group by
     n_name
 order by
@@ -263,8 +263,8 @@ select
 from
     lineitem
 where
-    l_shipdate >= toDate('1994-01-01')
-    and l_shipdate < toDate('1994-01-01') + interval '1' year
+    l_shipdate >= date '1994-01-01'
+    and l_shipdate < date '1994-01-01' + interval '1' year
     and l_discount between toDecimal32(0.06, 2) - toDecimal32(0.01, 2) 
         and toDecimal32(0.06, 2) + toDecimal32(0.01, 2)
     and l_quantity < 24;
@@ -299,7 +299,7 @@ where
 --                 (n1.n_name = 'FRANCE' and n2.n_name = 'GERMANY')
 --                 or (n1.n_name = 'GERMANY' and n2.n_name = 'FRANCE')
 --             )
---             and l_shipdate between toDate('1995-01-01') and toDate('1996-12-31')
+--             and l_shipdate between date '1995-01-01' and date '1996-12-31'
 --     ) as shipping
 -- group by
 --     supp_nation,
@@ -341,7 +341,7 @@ where
 --             and n1.n_regionkey = r_regionkey
 --             and r_name = 'AMERICA'
 --             and s_nationkey = n2.n_nationkey
---             and o_orderdate between toDate('1995-01-01') and toDate('1996-12-31')
+--             and o_orderdate between date '1995-01-01' and date '1996-12-31'
 --             and p_type = 'ECONOMY ANODIZED STEEL'
 --     ) as all_nations
 -- group by
@@ -401,8 +401,8 @@ from
 where
     c_custkey = o_custkey
     and l_orderkey = o_orderkey
-    and o_orderdate >= toDate('1993-10-01')
-    and o_orderdate < toDate('1993-10-01') + interval '3' month
+    and o_orderdate >= date '1993-10-01'
+    and o_orderdate < date '1993-10-01' + interval '3' month
     and l_returnflag = 'R'
     and c_nationkey = n_nationkey
 group by
@@ -472,8 +472,8 @@ where
     and l_shipmode in ('MAIL', 'SHIP')
     and l_commitdate < l_receiptdate
     and l_shipdate < l_commitdate
-    and l_receiptdate >= toDate('1994-01-01')
-    and l_receiptdate < toDate('1994-01-01') + interval '1' year
+    and l_receiptdate >= date '1994-01-01'
+    and l_receiptdate < date '1994-01-01' + interval '1' year
 group by
     l_shipmode
 order by
@@ -513,8 +513,8 @@ from
     part
 where
     l_partkey = p_partkey
-    and l_shipdate >= toDate('1995-09-01')
-    and l_shipdate < toDate('1995-09-01') + interval '1' month;
+    and l_shipdate >= date '1995-09-01'
+    and l_shipdate < date '1995-09-01' + interval '1' month;
 
 -- select 15;
 -- create view revenue0 as
@@ -524,8 +524,8 @@ where
 --     from
 --         lineitem
 --     where
---         l_shipdate >= toDate('1996-01-01')
---         and l_shipdate < toDate('1996-01-01') + interval '3' month
+--         l_shipdate >= date '1996-01-01'
+--         and l_shipdate < date '1996-01-01' + interval '3' month
 --     group by
 --         l_suppkey;
 -- select
@@ -702,8 +702,8 @@ where
 --                 where
 --                     l_partkey = ps_partkey
 --                     and l_suppkey = ps_suppkey
---                     and l_shipdate >= toDate('1994-01-01')
---                     and l_shipdate < toDate('1994-01-01') + interval '1' year
+--                     and l_shipdate >= date '1994-01-01'
+--                     and l_shipdate < date '1994-01-01' + interval '1' year
 --             )
 --     )
 --     and s_nationkey = n_nationkey

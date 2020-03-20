@@ -1091,8 +1091,10 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         {
             auto merged_processor =
                     std::make_shared<MergingSortedTransform>(header, pipes.size(), sort_description, max_block_size);
-            pipes.emplace_back(std::move(pipes), std::move(merged_processor));
-            break;
+            Pipe pipe(std::move(pipes), std::move(merged_processor));
+            pipes = Pipes();
+            pipes.emplace_back(std::move(pipe));
+            return pipes;
         }
 
         case MergeTreeData::MergingParams::Collapsing:

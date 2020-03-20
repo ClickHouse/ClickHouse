@@ -496,18 +496,17 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             /// If the argument is not a lambda expression, call it recursively and find out its type.
             visit(child, data);
-            std::string name = child_column_name;
-            if (data.hasColumn(name))
+            if (data.hasColumn(child_column_name))
             {
-                argument_types.push_back(data.getSampleBlock().getByName(name).type);
-                argument_names.push_back(name);
+                argument_types.push_back(data.getSampleBlock().getByName(child_column_name).type);
+                argument_names.push_back(child_column_name);
             }
             else
             {
                 if (data.only_consts)
                     arguments_present = false;
                 else
-                    throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
+                    throw Exception("Unknown identifier: " + child_column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
             }
         }
     }

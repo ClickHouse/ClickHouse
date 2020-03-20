@@ -3,7 +3,7 @@
 The family of data types representing time and date intervals. The resulting types of the [INTERVAL](../../query_language/operators.md#operator-interval) operator.
 
 !!! warning "Warning"
-    You can't use `Interval` data types for storing values in tables.
+    `Interval` data type values can't be stored in tables.
 
 Structure:
 

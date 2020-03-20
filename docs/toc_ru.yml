@@ -238,7 +238,11 @@ nav:
   - 'Сторонние библиотеки': 'development/contrib.md'
 
 - 'Что нового':
-  - 'Changelog': 'changelog.md'
+  - 'Changelog':
+    - '2020': 'changelog/index.md'
+    - '2019': 'changelog/2019.md'
+    - '2018': 'changelog/2018.md'
+    - '2017': 'changelog/2017.md'
   - 'Security changelog': 'security_changelog.md'
   - 'Roadmap': 'roadmap.md'
   - 'Подробный roadmap 2020': 'extended_roadmap.md'

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
@@ -21,6 +21,7 @@ from mkdocs.commands import build as mkdocs_build
 from concatenate import concatenate
 
 from website import build_website, minify_website
+
 import mdx_clickhouse
 import test
 import util
@@ -86,6 +87,12 @@ def build_for_lang(lang, args):
         else:
             site_dir = os.path.join(args.docs_output_dir, lang)
 
+        plugins = ['search']
+        if not args.no_docs_macros:
+            plugins.append('macros')
+        if args.htmlproofer:
+            plugins.append('htmlproofer')
+
         cfg = config.load_config(
             config_file=config_path,
             site_name=site_names.get(lang, site_names['en']) % args.version_prefix,
@@ -101,10 +108,14 @@ def build_for_lang(lang, args):
             edit_uri='edit/master/docs/%s' % lang,
             extra_css=['assets/stylesheets/custom.css?%s' % args.rev_short],
             markdown_extensions=[
-                'clickhouse',
+                'mdx_clickhouse',
                 'admonition',
                 'attr_list',
                 'codehilite',
+                'nl2br',
+                'sane_lists',
+                'pymdownx.magiclink',
+                'pymdownx.superfences',
                 'extra',
                 {
                     'toc': {
@@ -113,7 +124,7 @@ def build_for_lang(lang, args):
                     }
                 }
             ],
-            plugins=[],
+            plugins=plugins,
             extra={
                 'stable_releases': args.stable_releases,
                 'version_prefix': args.version_prefix,
@@ -181,7 +192,8 @@ def build_single_page_version(lang, args, cfg):
                     single_page_pdf = single_page_index_html.replace('index.html', 'clickhouse_%s.pdf' % lang)
                     create_pdf_command = ['wkhtmltopdf', '--print-media-type', single_page_index_html, single_page_pdf]
                     logging.debug(' '.join(create_pdf_command))
-                    subprocess.check_call(' '.join(create_pdf_command), shell=True)
+                    with open(os.devnull, 'w') as devnull:
+                        subprocess.check_call(' '.join(create_pdf_command), shell=True, stderr=devnull)
 
                 with util.temp_dir() as test_dir:
                     cfg.load_dict({
@@ -195,10 +207,10 @@ def build_single_page_version(lang, args, cfg):
                         ]
                     })
                     mkdocs_build.build(cfg)
-                    if not args.version_prefix:  # maybe enable in future
-                        test.test_single_page(os.path.join(test_dir, 'single', 'index.html'), lang)
                     if args.save_raw_single_page:
                         shutil.copytree(test_dir, args.save_raw_single_page)
+                    if not args.version_prefix:  # maybe enable in future
+                        test.test_single_page(os.path.join(test_dir, 'single', 'index.html'), lang)
 
 
 def write_redirect_html(out_path, to_url):
@@ -301,19 +313,13 @@ if __name__ == '__main__':
     arg_parser.add_argument('--skip-pdf', action='store_true')
     arg_parser.add_argument('--skip-website', action='store_true')
     arg_parser.add_argument('--minify', action='store_true')
+    arg_parser.add_argument('--htmlproofer', action='store_true')
+    arg_parser.add_argument('--no-docs-macros', action='store_true')
     arg_parser.add_argument('--save-raw-single-page', type=str)
     arg_parser.add_argument('--livereload', type=int, default='0')
     arg_parser.add_argument('--verbose', action='store_true')
 
     args = arg_parser.parse_args()
-    args.docs_output_dir = os.path.join(os.path.abspath(args.output_dir), 'docs')
-
-    from github import choose_latest_releases, get_events
-    args.stable_releases = choose_latest_releases() if args.enable_stable_releases else []
-    args.rev = subprocess.check_output('git rev-parse HEAD', shell=True).strip()
-    args.rev_short = subprocess.check_output('git rev-parse --short HEAD', shell=True).strip()
-    args.rev_url = 'https://github.com/ClickHouse/ClickHouse/commit/%s' % args.rev
-    args.events = get_events(args)
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -321,6 +327,15 @@ if __name__ == '__main__':
     )
 
     logging.getLogger('MARKDOWN').setLevel(logging.INFO)
+
+    args.docs_output_dir = os.path.join(os.path.abspath(args.output_dir), 'docs')
+
+    from github import choose_latest_releases, get_events
+    args.stable_releases = choose_latest_releases() if args.enable_stable_releases else []
+    args.rev = subprocess.check_output('git rev-parse HEAD', shell=True).decode('utf-8').strip()
+    args.rev_short = subprocess.check_output('git rev-parse --short HEAD', shell=True).decode('utf-8').strip()
+    args.rev_url = 'https://github.com/ClickHouse/ClickHouse/commit/%s' % args.rev
+    args.events = get_events(args)
 
     from build import build
     build(args)

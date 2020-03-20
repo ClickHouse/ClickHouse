@@ -263,6 +263,7 @@ public:
     };
 
     using AlterDataPartTransactionPtr = std::unique_ptr<AlterDataPartTransaction>;
+    using PathWithDisk = std::pair<String, DiskPtr>;
 
     struct PartsTemporaryRename : private boost::noncopyable
     {
@@ -285,7 +286,7 @@ public:
         const MergeTreeData & storage;
         const String source_dir;
         std::vector<std::pair<String, String>> old_and_new_names;
-        std::unordered_map<String, String> old_part_name_to_full_path;
+        std::unordered_map<String, PathWithDisk> old_part_name_to_path_and_disk;
         bool renamed = false;
     };
 
@@ -601,7 +602,6 @@ public:
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path);
-    void loadPartAndFixMetadata(MutableDataPartPtr part);
 
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
@@ -671,26 +671,25 @@ public:
     /// Get table path on disk
     String getFullPathOnDisk(const DiskPtr & disk) const;
 
-    /// Get disk for part. Looping through directories on FS because some parts maybe not in
-    /// active dataparts set (detached)
-    DiskPtr getDiskForPart(const String & part_name, const String & relative_path = "") const;
+    /// Get disk where part is located.
+    /// `additional_path` can be set if part is not located directly in table data path (e.g. 'detached/')
+    DiskPtr getDiskForPart(const String & part_name, const String & additional_path = "") const;
 
-    /// Get full path for part. Uses getDiskForPart and returns the full path
-    String getFullPathForPart(const String & part_name, const String & relative_path = "") const;
+    /// Get full path for part. Uses getDiskForPart and returns the full relative path.
+    /// `additional_path` can be set if part is not located directly in table data path (e.g. 'detached/')
+    std::optional<String> getFullRelativePathForPart(const String & part_name, const String & additional_path = "") const;
 
     Strings getDataPaths() const override;
 
-    using PathWithDisk = std::pair<String, DiskPtr>;
     using PathsWithDisks = std::vector<PathWithDisk>;
-    PathsWithDisks getDataPathsWithDisks() const;
     PathsWithDisks getRelativeDataPathsWithDisks() const;
 
     /// Reserves space at least 1MB.
     ReservationPtr reserveSpace(UInt64 expected_size) const;
 
     /// Reserves space at least 1MB on specific disk or volume.
-    ReservationPtr reserveSpace(UInt64 expected_size, SpacePtr space) const;
-    ReservationPtr tryReserveSpace(UInt64 expected_size, SpacePtr space) const;
+    static ReservationPtr reserveSpace(UInt64 expected_size, SpacePtr space);
+    static ReservationPtr tryReserveSpace(UInt64 expected_size, SpacePtr space);
 
     /// Reserves space at least 1MB preferring best destination according to `ttl_infos`.
     ReservationPtr reserveSpacePreferringTTLRules(UInt64 expected_size,

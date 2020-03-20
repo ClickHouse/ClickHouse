@@ -40,15 +40,15 @@ You can also download and install packages manually from here: <https://repo.yan
 #### Packages
 
 - `clickhouse-common-static` — Installs ClickHouse compiled binary files.
-- `clickhouse-server` — Creates symbolic link for `clickhouse-server`. Installs server configuration.
-- `clickhouse-client` — Creates symbolic link for `clickhouse-client` and other client-related tools. Installs client configurations.
+- `clickhouse-server` — Creates a symbolic link for `clickhouse-server`. Installs server configuration.
+- `clickhouse-client` — Creates a symbolic link for `clickhouse-client` and other client-related tools. Installs client configurations.
 - `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
 ### From RPM Packages
 
 It is recommended to use official pre-compiled `rpm` packages for CentOS, RedHat and all other rpm-based Linux distributions.
 
-First you need to add the official repository:
+First, you need to add the official repository:
 
 ```bash
 sudo yum install yum-utils
@@ -58,7 +58,7 @@ sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_6
 
 If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments). The `prestable` tag is sometimes available too.
 
-Then run these commands to actually install packages:
+Then run these commands to install packages:
 
 ```bash
 sudo yum install clickhouse-server clickhouse-client
@@ -70,7 +70,7 @@ You can also download and install packages manually from here: <https://repo.cli
 
 It is recommended to use official pre-compiled `tgz` archives for all Linux distributions, where installation of `deb` or `rpm` packages is not possible.
 
-Required version can be dowloaded with `curl` or `wget` from repository <https://repo.yandex.ru/clickhouse/tgz/>.
+The required version can be downloaded with `curl` or `wget` from repository <https://repo.yandex.ru/clickhouse/tgz/>.
 After that downloaded archives should be unpacked and installed with installation scripts. Example for the latest version:
 ```bash
 export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
@@ -93,7 +93,7 @@ tar -xzvf clickhouse-client-$LATEST_VERSION.tgz
 sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 ```
 
-For production environments it's recommended to use latest `stable`-version. You can find it's number on github page https://github.com/ClickHouse/ClickHouse/tags with postfix `-stable`.
+For production environments, it's recommended to use the latest `stable`-version. You can find its number on GitHub page https://github.com/ClickHouse/ClickHouse/tags with postfix `-stable`.
 
 ### From Docker Image
 
@@ -116,7 +116,7 @@ You'll need to create a data and metadata folders and `chown` them for the desir
 /opt/clickhouse/metadata/default/
 ```
 
-On Gentoo you can just use `emerge clickhouse` to install ClickHouse from sources.
+On Gentoo, you can just use `emerge clickhouse` to install ClickHouse from sources.
 
 ## Launch
 
@@ -156,7 +156,7 @@ After launching server, you can use the command-line client to connect to it:
 $ clickhouse-client
 ```
 
-By default it connects to `localhost:9000` on behalf of the user `default` without a password. It can also be used to connect to a remote server using `--host` argument.
+By default, it connects to `localhost:9000` on behalf of the user `default` without a password. It can also be used to connect to a remote server using `--host` argument.
 
 The terminal must use UTF-8 encoding.
 For more information, see the section ["Command-line client"](../interfaces/cli.md).
@@ -183,7 +183,7 @@ SELECT 1
 
 **Congratulations, the system works!**
 
-To continue experimenting, you can download one of test data sets or go through [tutorial](https://clickhouse.tech/tutorial.html).
+To continue experimenting, you can download one of the test data sets or go through [tutorial](https://clickhouse.tech/tutorial.html).
 
 
 [Original article](https://clickhouse.tech/docs/en/getting_started/install/) <!--hide-->

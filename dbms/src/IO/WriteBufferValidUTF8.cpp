@@ -81,7 +81,7 @@ void WriteBufferValidUTF8::nextImpl()
         size_t len = length_of_utf8_sequence[static_cast<unsigned char>(*p)];
 
         if (len > 4)
-        {
+        { // NOLINT
             /// Invalid start of sequence. Skip one byte.
             putValid(valid_start, p - valid_start);
             putReplacement();

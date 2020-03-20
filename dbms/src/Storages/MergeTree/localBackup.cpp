@@ -1,13 +1,8 @@
 #include "localBackup.h"
 
-#include <Common/createHardLink.h>
 #include <Common/Exception.h>
-#include <Poco/DirectoryIterator.h>
-#include <Poco/Path.h>
-#include <Poco/File.h>
 #include <string>
-#include <iostream>
-#include <errno.h>
+#include <cerrno>
 
 
 namespace DB
@@ -20,7 +15,7 @@ namespace ErrorCodes
 }
 
 
-static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & destination_path, size_t level,
+static void localBackupImpl(const DiskPtr & disk, const String & source_path, const String & destination_path, size_t level,
                             std::optional<size_t> max_level)
 {
     if (max_level && level > *max_level)
@@ -29,34 +24,30 @@ static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & d
     if (level >= 1000)
         throw DB::Exception("Too deep recursion", DB::ErrorCodes::TOO_DEEP_RECURSION);
 
-    Poco::File(destination_path).createDirectories();
+    disk->createDirectories(destination_path);
 
-    Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator dir_it(source_path); dir_it != dir_end; ++dir_it)
+    for (auto it = disk->iterateDirectory(source_path); it->isValid(); it->next())
     {
-        Poco::Path source = dir_it.path();
-        Poco::Path destination = destination_path;
-        destination.append(dir_it.name());
+        auto source = it->path();
+        auto destination = destination_path + "/" + it->name();
 
-        if (!dir_it->isDirectory())
+        if (!disk->isDirectory(source))
         {
-            dir_it->setReadOnly();
-
-            createHardLink(source.toString(), destination.toString());
+            disk->setReadOnly(source);
+            disk->createHardLink(source, destination);
         }
         else
         {
-            localBackupImpl(source, destination, level + 1, max_level);
+            localBackupImpl(disk, source, destination, level + 1, max_level);
         }
     }
 }
 
-void localBackup(const Poco::Path & source_path, const Poco::Path & destination_path, std::optional<size_t> max_level)
+void localBackup(const DiskPtr & disk, const String & source_path, const String & destination_path, std::optional<size_t> max_level)
 {
-    if (Poco::File(destination_path).exists()
-        && Poco::DirectoryIterator(destination_path) != Poco::DirectoryIterator())
+    if (disk->exists(destination_path) && !disk->isDirectoryEmpty(destination_path))
     {
-        throw DB::Exception("Directory " + destination_path.toString() + " already exists and is not empty.", DB::ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+        throw DB::Exception("Directory " + fullPath(disk, destination_path) + " already exists and is not empty.", DB::ErrorCodes::DIRECTORY_ALREADY_EXISTS);
     }
 
     size_t try_no = 0;
@@ -70,7 +61,7 @@ void localBackup(const Poco::Path & source_path, const Poco::Path & destination_
     {
         try
         {
-            localBackupImpl(source_path, destination_path, 0, max_level);
+            localBackupImpl(disk, source_path, destination_path, 0, max_level);
         }
         catch (const DB::ErrnoException & e)
         {

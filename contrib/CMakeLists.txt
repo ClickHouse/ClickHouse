@@ -75,9 +75,7 @@ if (USE_INTERNAL_ZLIB_LIBRARY)
     endif ()
 endif ()
 
-if (USE_INTERNAL_CCTZ_LIBRARY)
-    add_subdirectory (cctz-cmake)
-endif ()
+add_subdirectory (cctz-cmake)
 
 if (ENABLE_JEMALLOC AND USE_INTERNAL_JEMALLOC_LIBRARY)
     add_subdirectory (jemalloc-cmake)
@@ -310,12 +308,13 @@ if (USE_BASE64)
 endif()
 
 if (USE_INTERNAL_HYPERSCAN_LIBRARY)
-    add_subdirectory (hyperscan)
-
     # The library is large - avoid bloat.
     if (USE_STATIC_LIBRARIES)
+        add_subdirectory (hyperscan)
         target_compile_options (hs PRIVATE -g0)
     else ()
+        set(BUILD_SHARED_LIBS 1 CACHE INTERNAL "")
+        add_subdirectory (hyperscan)
         target_compile_options (hs_shared PRIVATE -g0)
     endif ()
 endif()

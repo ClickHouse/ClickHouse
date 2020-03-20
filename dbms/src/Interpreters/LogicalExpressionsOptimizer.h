@@ -81,7 +81,7 @@ private:
     bool mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const;
 
     /// Insert the IN expression into the OR chain.
-    void addInExpression(const DisjunctiveEqualityChain & chain);
+    static void addInExpression(const DisjunctiveEqualityChain & chain);
 
     /// Delete the equalities that were replaced by the IN expressions.
     void cleanupOrExpressions();

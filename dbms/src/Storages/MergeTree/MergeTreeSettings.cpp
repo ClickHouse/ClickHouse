@@ -70,7 +70,7 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
     if (std::find_if(changes.begin(), changes.end(),                                                          \
                   [](const SettingChange & c) { return c.name == #NAME; })                                    \
             == changes.end())                                                                                 \
-        changes.push_back(SettingChange{#NAME, NAME.value});
+        changes.push_back(SettingChange{#NAME, (NAME).value});
 
     APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(ADD_IF_ABSENT)
 #undef ADD_IF_ABSENT

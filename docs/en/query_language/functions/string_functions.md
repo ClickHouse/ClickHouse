@@ -1,66 +1,66 @@
 # Functions for working with strings
 
-## empty {#string_functions-empty}
+## empty {#empty}
 
 Returns 1 for an empty string or 0 for a non-empty string.
 The result type is UInt8.
 A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte.
 The function also works for arrays.
 
-## notEmpty
+## notEmpty {#notempty}
 
 Returns 0 for an empty string or 1 for a non-empty string.
 The result type is UInt8.
 The function also works for arrays.
 
-## length
+## length {#length}
 
 Returns the length of a string in bytes (not in characters, and not in code points).
 The result type is UInt64.
 The function also works for arrays.
 
-## lengthUTF8
+## lengthUTF8 {#lengthutf8}
 
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
 The result type is UInt64.
 
-## char_length, CHAR_LENGTH
+## char_length, CHAR_LENGTH {#char_length}
 
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
 The result type is UInt64.
 
-## character_length, CHARACTER_LENGTH
+## character_length, CHARACTER_LENGTH {#character_length}
 
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
 The result type is UInt64.
 
-## lower, lcase
+## lower, lcase {#lower}
 
 Converts ASCII Latin symbols in a string to lowercase.
 
-## upper, ucase
+## upper, ucase {#upper}
 
 Converts ASCII Latin symbols in a string to uppercase.
 
-## lowerUTF8
+## lowerUTF8 {#lowerutf8}
 
 Converts a string to lowercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text.
 It doesn't detect the language. So for Turkish the result might not be exactly correct.
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
 If the string contains a set of bytes that is not UTF-8, then the behavior is undefined.
 
-## upperUTF8
+## upperUTF8 {#upperutf8}
 
 Converts a string to uppercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text.
 It doesn't detect the language. So for Turkish the result might not be exactly correct.
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
 If the string contains a set of bytes that is not UTF-8, then the behavior is undefined.
 
-## isValidUTF8
+## isValidUTF8 {#isvalidutf8}
 
 Returns 1, if the set of bytes is valid UTF-8 encoded, otherwise 0.
 
-## toValidUTF8
+## toValidUTF8 {#tovalidutf8}
 
 Replaces invalid UTF-8 characters by the `�` (U+FFFD) character. All running in a row invalid characters are collapsed into the one replacement character.
 
@@ -74,7 +74,7 @@ Parameters:
 
 Returned value: Valid UTF-8 string.
 
-### Example
+**Example**
 
 ```sql
 SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
@@ -122,17 +122,17 @@ Result:
 └────────────────────────────────┘
 ```
 
-## reverse
+## reverse {#reverse}
 
 Reverses the string (as a sequence of bytes).
 
-## reverseUTF8
+## reverseUTF8 {#reverseutf8}
 
 Reverses a sequence of Unicode code points, assuming that the string contains a set of bytes representing a UTF-8 text. Otherwise, it does something else (it doesn't throw an exception).
 
-## format(pattern, s0, s1, ...)
+## format(pattern, s0, s1, ...) {#format}
 
-Formatting constant pattern with the string listed in the arguments. `pattern` is a simplified Python format pattern. Format string contains "replacement fields" surrounded by curly braces `{}`. Anything that is not contained in braces is considered literal text, which is copied unchanged to the output. If you need to include a brace character in the literal text, it can be escaped by doubling: `{{` and `}}`. Field names can be numbers (starting from zero) or empty (then they are treated as consequence numbers).
+Formatting constant pattern with the string listed in the arguments. `pattern` is a simplified Python format pattern. Format string contains "replacement fields" surrounded by curly braces `{}`. Anything that is not contained in braces is considered literal text, which is copied unchanged to the output. If you need to include a brace character in the literal text, it can be escaped by doubling: `{{ '{{' }}` and `{{ '}}' }}`. Field names can be numbers (starting from zero) or empty (then they are treated as consequence numbers).
 
 ```sql
 SELECT format('{1} {0} {1}', 'World', 'Hello')
@@ -193,6 +193,22 @@ Same as [concat](#concat), the difference is that you need to ensure that `conca
 
 The function is named "injective" if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
 
+**Syntax** 
+
+```sql
+concatAssumeInjective(s1, s2, ...)
+```
+
+**Parameters**
+
+Values of type String or FixedString.
+
+**Returned values**
+
+Returns the String that results from concatenating the arguments. 
+
+If any of argument values is `NULL`, `concatAssumeInjective` returns `NULL`.
+
 **Example**
 
 Input table:
@@ -228,36 +244,39 @@ Result:
 └────────────────────┴────────────┘
 ```
 
-## substring(s, offset, length), mid(s, offset, length), substr(s, offset, length)
+## substring(s, offset, length), mid(s, offset, length), substr(s, offset, length) {#substring}
 
 Returns a substring starting with the byte from the 'offset' index that is 'length' bytes long. Character indexing starts from one (as in standard SQL). The 'offset' and 'length' arguments must be constants.
 
-## substringUTF8(s, offset, length)
+## substringUTF8(s, offset, length) {#substringutf8}
 
 The same as 'substring', but for Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
 
-## appendTrailingCharIfAbsent(s, c)
+## appendTrailingCharIfAbsent(s, c) {#appendtrailingcharifabsent}
 
 If the 's' string is non-empty and does not contain the 'c' character at the end, it appends the 'c' character to the end.
 
-## convertCharset(s, from, to)
+## convertCharset(s, from, to) {#convertcharset}
 
 Returns the string 's' that was converted from the encoding in 'from' to the encoding in 'to'.
 
-## base64Encode(s)
+## base64Encode(s) {#base64encode}
+
 Encodes 's' string into base64
 
-## base64Decode(s)
+## base64Decode(s) {#base64decode}
+
 Decode base64-encoded string 's' into original string. In case of failure raises an exception.
 
-## tryBase64Decode(s)
+## tryBase64Decode(s) {#trybase64decode}
+
 Similar to base64Decode, but in case of error an empty string would be returned.
 
-## endsWith(s, suffix) {#function-endswith}
+## endsWith(s, suffix) {#endswith}
 
 Returns whether to end with the specified suffix. Returns 1 if the string ends with the specified suffix, otherwise it returns 0.
 
-## startsWith(str, prefix) {#function-startswith}
+## startsWith(str, prefix) {#startswith}
 
 Returns 1 whether string starts with the specified prefix, otherwise it returns 0.
 
@@ -438,19 +457,19 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-## CRC32(s)
+## CRC32(s) {#crc32}
 
 Returns the CRC32 checksum of a string, using CRC-32-IEEE 802.3 polynomial and initial value `0xffffffff` (zlib implementation).
 
 The result type is UInt32.
 
-## CRC32IEEE(s)
+## CRC32IEEE(s) {#crc32ieee}
 
 Returns the CRC32 checksum of a string, using CRC-32-IEEE 802.3 polynomial.
 
 The result type is UInt32.
 
-## CRC64(s)
+## CRC64(s) {#crc64}
 
 Returns the CRC64 checksum of a string, using CRC-64-ECMA polynomial.
 
