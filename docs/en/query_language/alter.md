@@ -208,9 +208,10 @@ The following operations with [partitions](../operations/table_engines/custom_pa
 - [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
 - [FETCH PARTITION](#alter_fetch-partition) – Downloads a partition from another server.
 - [MOVE PARTITION\|PART](#alter_move-partition) – Move partition/data part to another disk or volume.
-  \#\#\#\# DETACH PARTITION {\#alter\_detach-partition}
 
 <!-- -->
+
+#### DETACH PARTITION {#alter\_detach-partition}
 
 ``` sql
 ALTER TABLE table_name DETACH PARTITION partition_expr

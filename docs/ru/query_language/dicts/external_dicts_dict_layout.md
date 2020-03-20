@@ -1,26 +1,26 @@
-# Хранение словарей в памяти {#dicts-external_dicts_dict_layout}
+# Хранение словарей в памяти {#dicts-external-dicts-dict-layout}
 
 Словари можно размещать в памяти множеством способов.
 
-Рекомендуем [flat](#flat), [hashed](#hashed) и [complex_key_hashed](#complex-key-hashed). Скорость обработки словарей при этом максимальна.
+Рекомендуем [flat](#flat), [hashed](#hashed) и [complex\_key\_hashed](#complex-key-hashed). Скорость обработки словарей при этом максимальна.
 
-Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе "[cache](#cache)".
+Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе «[cache](#cache)».
 
 Повысить производительность словарей можно следующими способами:
 
--   Вызывать функцию для работы со словарём после `GROUP BY`.
--   Помечать извлекаемые атрибуты как инъективные. Атрибут называется инъективным, если разным ключам соответствуют разные значения атрибута. Тогда при использовании в `GROUP BY` функции, достающей значение атрибута по ключу, эта функция автоматически выносится из `GROUP BY`.
+- Вызывать функцию для работы со словарём после `GROUP BY`.
+- Помечать извлекаемые атрибуты как инъективные. Атрибут называется инъективным, если разным ключам соответствуют разные значения атрибута. Тогда при использовании в `GROUP BY` функции, достающей значение атрибута по ключу, эта функция автоматически выносится из `GROUP BY`.
 
 При ошибках работы со словарями ClickHouse генерирует исключения. Например, в следующих ситуациях:
 
--   При обращении к словарю, который не удалось загрузить.
--   При ошибке запроса к `cached`-словарю.
+- При обращении к словарю, который не удалось загрузить.
+- При ошибке запроса к `cached`-словарю.
 
 Список внешних словарей и их статус можно посмотреть в таблице `system.dictionaries`.
 
 Общий вид конфигурации:
 
-```xml
+``` xml
 <yandex>
     <dictionary>
         ...
@@ -34,28 +34,27 @@
 </yandex>
 ```
 
-
 Соответствущий [DDL-запрос](../create.md#create-dictionary-query):
 
-```sql
+``` sql
 CREATE DICTIONARY (...)
 ...
 LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 ...
 ```
 
-## Способы размещения словарей в памяти
+## Способы размещения словарей в памяти {#sposoby-razmeshcheniia-slovarei-v-pamiati}
 
 - [flat](#flat)
 - [hashed](#hashed)
-- [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
+- [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 - [cache](#cache)
-- [range_hashed](#range-hashed)
-- [complex_key_hashed](#complex-key-hashed)
-- [complex_key_cache](#complex-key-cache)
-- [ip_trie](#ip-trie)
+- [range\_hashed](#range-hashed)
+- [complex\_key\_hashed](#complex-key-hashed)
+- [complex\_key\_cache](#complex-key-cache)
+- [ip\_trie](#ip-trie)
 
-### flat
+### flat {#flat}
 
 Словарь полностью хранится в оперативной памяти в виде плоских массивов. Объём памяти, занимаемой словарём пропорционален размеру самого большого по размеру ключа.
 
@@ -67,7 +66,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 Пример конфигурации:
 
-```xml
+``` xml
 <layout>
   <flat />
 </layout>
@@ -75,11 +74,11 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 или
 
-```sql
+``` sql
 LAYOUT(FLAT())
 ```
 
-### hashed
+### hashed {#hashed}
 
 Словарь полностью хранится в оперативной памяти в виде хэш-таблиц. Словарь может содержать произвольное количество элементов с произвольными идентификаторами. На практике, количество ключей может достигать десятков миллионов элементов.
 
@@ -87,7 +86,7 @@ LAYOUT(FLAT())
 
 Пример конфигурации:
 
-```xml
+``` xml
 <layout>
   <hashed />
 </layout>
@@ -95,17 +94,17 @@ LAYOUT(FLAT())
 
 или
 
-```sql
+``` sql
 LAYOUT(HASHED())
 ```
 
-### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
+### sparse\_hashed {#dicts-external-dicts-dict-layout-sparse-hashed}
 
 Аналогичен `hashed`, но при этом занимает меньше места в памяти и генерирует более высокую загрузку CPU.
 
 Пример конфигурации:
 
-```xml
+``` xml
 <layout>
   <sparse_hashed />
 </layout>
@@ -113,17 +112,17 @@ LAYOUT(HASHED())
 
 или
 
-```sql
+``` sql
 LAYOUT(SPARSE_HASHED())
 ```
 
-### complex_key_hashed 
+### complex\_key\_hashed {#complex-key-hashed}
 
 Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure.md). Аналогичен `hashed`.
 
 Пример конфигурации:
 
-```xml
+``` xml
 <layout>
   <complex_key_hashed />
 </layout>
@@ -131,12 +130,11 @@ LAYOUT(SPARSE_HASHED())
 
 или
 
-```sql
+``` sql
 LAYOUT(COMPLEX_KEY_HASHED())
 ```
 
-
-### range_hashed
+### range\_hashed {#range-hashed}
 
 Словарь хранится в оперативной памяти в виде хэш-таблицы с упорядоченным массивом диапазонов и соответствующих им значений.
 
@@ -144,7 +142,7 @@ LAYOUT(COMPLEX_KEY_HASHED())
 
 Пример: таблица содержит скидки для каждого рекламодателя в виде:
 
-```text
+``` text
 +---------------+---------------------+-------------------+--------+
 | advertiser id | discount start date | discount end date | amount |
 +===============+=====================+===================+========+
@@ -156,11 +154,11 @@ LAYOUT(COMPLEX_KEY_HASHED())
 +---------------+---------------------+-------------------+--------+
 ```
 
-Чтобы использовать выборку по диапазонам дат, необходимо в [structure](external_dicts_dict_structure.md) определить элементы `range_min`, `range_max`. В этих элементах должны присутствовать элементы `name` и `type` (если `type` не указан, будет использован тип по умолчанию -- Date). `type` может быть любым численным типом (Date/DateTime/UInt64/Int32/др.).
+Чтобы использовать выборку по диапазонам дат, необходимо в [structure](external_dicts_dict_structure.md) определить элементы `range_min`, `range_max`. В этих элементах должны присутствовать элементы `name` и `type` (если `type` не указан, будет использован тип по умолчанию – Date). `type` может быть любым численным типом (Date/DateTime/UInt64/Int32/др.).
 
 Пример:
 
-```xml
+``` xml
 <structure>
     <id>
         <name>Id</name>
@@ -171,14 +169,14 @@ LAYOUT(COMPLEX_KEY_HASHED())
     </range_min>
     <range_max>
         <name>last</name>
-        <type>Date</type>        
+        <type>Date</type>
     </range_max>
     ...
 ```
 
 или
 
-```sql
+``` sql
 CREATE DICTIONARY somedict (
     id UInt64,
     first Date,
@@ -197,13 +195,13 @@ RANGE(MIN first MAX last)
 
 Особенности алгоритма:
 
--   Если не найден `id` или для найденного `id` не найден диапазон, то возвращается значение по умолчанию для словаря.
--   Если есть перекрывающиеся диапазоны, то можно использовать любой подходящий.
--   Если граница диапазона `NULL` или некорректная дата (1900-01-01, 2039-01-01), то диапазон считается открытым. Диапазон может быть открытым с обеих сторон.
+- Если не найден `id` или для найденного `id` не найден диапазон, то возвращается значение по умолчанию для словаря.
+- Если есть перекрывающиеся диапазоны, то можно использовать любой подходящий.
+- Если граница диапазона `NULL` или некорректная дата (1900-01-01, 2039-01-01), то диапазон считается открытым. Диапазон может быть открытым с обеих сторон.
 
 Пример конфигурации:
 
-```xml
+``` xml
 <yandex>
         <dictionary>
 
@@ -219,7 +217,7 @@ RANGE(MIN first MAX last)
                         </id>
                         <range_min>
                                 <name>StartTimeStamp</name>
-                                <type>UInt64</type>   
+                                <type>UInt64</type>
                         </range_min>
                         <range_max>
                                 <name>EndTimeStamp</name>
@@ -238,7 +236,7 @@ RANGE(MIN first MAX last)
 
 или
 
-```sql
+``` sql
 CREATE DICTIONARY somedict(
     Abcdef UInt64,
     StartTimeStamp UInt64,
@@ -249,7 +247,7 @@ PRIMARY KEY Abcdef
 RANGE(MIN StartTimeStamp MAX EndTimeStamp)
 ```
 
-### cache
+### cache {#cache}
 
 Словарь хранится в кэше, состоящем из фиксированного количества ячеек. Ячейки содержат часто используемые элементы.
 
@@ -265,7 +263,7 @@ RANGE(MIN StartTimeStamp MAX EndTimeStamp)
 
 Пример настройки:
 
-```xml
+``` xml
 <layout>
     <cache>
         <!-- Размер кэша в количестве ячеек. Округляется вверх до степени двух. -->
@@ -276,33 +274,31 @@ RANGE(MIN StartTimeStamp MAX EndTimeStamp)
 
 или
 
-```sql
+``` sql
 LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 ```
 
 Укажите достаточно большой размер кэша. Количество ячеек следует подобрать экспериментальным путём:
 
-1. Выставить некоторое значение.
-2. Запросами добиться полной заполненности кэша.
-3. Оценить потребление оперативной памяти с помощью таблицы `system.dictionaries`.
-4. Увеличивать/уменьшать количество ячеек до получения требуемого расхода оперативной памяти.
+1.  Выставить некоторое значение.
+2.  Запросами добиться полной заполненности кэша.
+3.  Оценить потребление оперативной памяти с помощью таблицы `system.dictionaries`.
+4.  Увеличивать/уменьшать количество ячеек до получения требуемого расхода оперативной памяти.
 
-!!! warning
+!!! warning "Warning"
     Не используйте в качестве источника ClickHouse, поскольку он медленно обрабатывает запросы со случайным чтением.
 
-
-### complex_key_cache
+### complex\_key\_cache {#complex-key-cache}
 
 Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure.md). Аналогичен `cache`.
 
-
-### ip_trie
+### ip\_trie {#ip-trie}
 
 Тип размещения предназначен для сопоставления префиксов сети (IP адресов) с метаданными, такими как ASN.
 
 Пример: таблица содержит префиксы сети и соответствующие им номера AS и коды стран:
 
-```text
+``` text
   +-----------------+-------+--------+
   | prefix          | asn   | cca2   |
   +=================+=======+========+
@@ -320,7 +316,7 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 
 Пример:
 
-```xml
+``` xml
 <structure>
     <key>
         <attribute>
@@ -343,7 +339,7 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 
 или
 
-```sql
+``` sql
 CREATE DICTIONARY somedict (
     prefix String,
     asn UInt32,
@@ -356,13 +352,13 @@ PRIMARY KEY prefix
 
 Для запросов необходимо использовать те же функции (`dictGetT` с кортежем), что и для словарей с составными ключами:
 
-```sql
+``` sql
 dictGetT('dict_name', 'attr_name', tuple(ip))
 ```
 
 Функция принимает либо `UInt32` для IPv4, либо `FixedString(16)` для IPv6:
 
-```sql
+``` sql
 dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 ```
 

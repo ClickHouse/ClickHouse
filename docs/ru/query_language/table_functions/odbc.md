@@ -1,8 +1,8 @@
-# odbc {#table_functions-odbc}
+# odbc {#table-functions-odbc}
 
 Возвращает таблицу, подключенную через [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
-```sql
+``` sql
 odbc(connection_settings, external_database, external_table)
 ```
 
@@ -12,11 +12,11 @@ odbc(connection_settings, external_database, external_table)
 - `external_database` — имя базы данных во внешней СУБД.
 - `external_table` — имя таблицы в `external_database`.
 
-Чтобы использование ODBC было безопасным, ClickHouse использует отдельную программу `clickhouse-odbc-bridge`. Если драйвер ODBC подгружать непосредственно из  `clickhouse-server`, то проблемы с драйвером могут привести к аварийной остановке сервера ClickHouse. ClickHouse автоматически запускает `clickhouse-odbc-bridge` по мере необходимости. Программа устанавливается из того же пакета, что и `clickhouse-server`.
+Чтобы использование ODBC было безопасным, ClickHouse использует отдельную программу `clickhouse-odbc-bridge`. Если драйвер ODBC подгружать непосредственно из `clickhouse-server`, то проблемы с драйвером могут привести к аварийной остановке сервера ClickHouse. ClickHouse автоматически запускает `clickhouse-odbc-bridge` по мере необходимости. Программа устанавливается из того же пакета, что и `clickhouse-server`.
 
-Поля из внешней таблицы со значениями `NULL`  получают значение по умолчанию для базового типа данных. Например, если поле в удалённой таблице MySQL имеет тип `INT NULL` оно сконвертируется в 0 (значение по умолчанию для типа данных ClickHouse `Int32`).
+Поля из внешней таблицы со значениями `NULL` получают значение по умолчанию для базового типа данных. Например, если поле в удалённой таблице MySQL имеет тип `INT NULL` оно сконвертируется в 0 (значение по умолчанию для типа данных ClickHouse `Int32`).
 
-## Пример использования
+## Пример использования {#primer-ispolzovaniia}
 
 **Получение данных из локальной установки MySQL через ODBC**
 
@@ -26,17 +26,18 @@ odbc(connection_settings, external_database, external_table)
 
 По умолчанию (если установлен из пакетов) ClickHouse запускается от имени пользователя `clickhouse`. Таким образом, вам нужно создать и настроить этого пользователя на сервере MySQL.
 
-```bash
+``` bash
 $ sudo mysql
 ```
-```sql
+
+``` sql
 mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
 mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'clickhouse' WITH GRANT OPTION;
 ```
 
 Теперь настроим соединение в `/etc/odbc.ini`.
 
-```bash
+``` bash
 $ cat /etc/odbc.ini
 [mysqlconn]
 DRIVER = /usr/local/lib/libmyodbc5w.so
@@ -49,7 +50,7 @@ PASSWORD = clickhouse
 
 Вы можете проверить соединение с помощью утилиты `isql` из установки unixODBC.
 
-```bash
+``` bash
 $ isql -v mysqlconn
 +---------------------------------------+
 | Connected!                            |
@@ -59,7 +60,7 @@ $ isql -v mysqlconn
 
 Таблица в MySQL:
 
-```text
+``` text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -82,17 +83,17 @@ mysql> select * from test;
 
 Получение данных из таблицы MySQL в ClickHouse:
 
-```sql
+``` sql
 SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 ```
 
-```text
+``` text
 ┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
 │      1 │            0 │     2 │              0 │
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
-## Смотрите также
+## Смотрите также {#smotrite-takzhe}
 
 - [Внешние словари ODBC](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
 - [Движок таблиц ODBC](../../operations/table_engines/odbc.md).

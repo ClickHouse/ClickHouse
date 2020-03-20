@@ -1,12 +1,12 @@
-# UUID函数
+# UUID函数 {#uuidhan-shu}
 
 下面列出了所有UUID的相关函数
 
-## generateUUIDv4 {#uuid_function-generate}
+## generateUUIDv4 {#uuid-function-generate}
 
 生成一个UUID（[版本4](https://tools.ietf.org/html/rfc4122#section-4.4)）。
 
-```sql
+``` sql
 generateUUIDv4()
 ```
 
@@ -30,11 +30,11 @@ UUID类型的值。
 └──────────────────────────────────────┘
 ```
 
-## toUUID (x)
+## toUUID (x) {#touuid-x}
 
 将String类型的值转换为UUID类型的值。
 
-```sql
+``` sql
 toUUID(String)
 ```
 
@@ -52,7 +52,7 @@ UUID类型的值
 └──────────────────────────────────────┘
 ```
 
-## UUIDStringToNum
+## UUIDStringToNum {#uuidstringtonum}
 
 接受一个String类型的值，其中包含36个字符且格式为`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`，将其转换为UUID的数值并以[FixedString(16)](../../data_types/fixedstring.md)将其返回。
 
@@ -76,7 +76,7 @@ FixedString(16)
 └──────────────────────────────────────┴──────────────────┘
 ```
 
-## UUIDNumToString
+## UUIDNumToString {#uuidnumtostring}
 
 接受一个[FixedString(16)](../../data_types/fixedstring.md)类型的值，返回其对应的String表现形式。
 
@@ -100,7 +100,7 @@ SELECT
 └──────────────────┴──────────────────────────────────────┘
 ```
 
-## 另请参阅
+## 另请参阅 {#ling-qing-can-yue}
 
 - [dictGetUUID](ext_dict_functions.md)
 

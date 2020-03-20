@@ -10,6 +10,10 @@ import urllib.parse
 import googletrans
 import pandocfilters
 import requests
+import slugify
+
+import typograph_ru
+
 
 
 translator = googletrans.Translator()
@@ -26,20 +30,21 @@ def debug(*args):
 def translate(text):
     if target_language == 'en':
         return text
-    else:
-        if is_yandex:
-            text = urllib.parse.quote(text)
-            url = f'http://translate.yandex.net/api/v1/tr.json/translate?srv=docs&lang=en-{target_language}&text={text}'
-            result = requests.get(url).json()
-            debug(result)
-            if result.get('code') == 200:
-                return result['text'][0]
-            else:
-                print('Failed to translate', str(result), file=sys.stderr)
-                sys.exit(1)
+    elif target_language == 'typograph_ru':
+        return typograph_ru.typograph(text)
+    elif is_yandex:
+        text = urllib.parse.quote(text)
+        url = f'http://translate.yandex.net/api/v1/tr.json/translate?srv=docs&lang=en-{target_language}&text={text}'
+        result = requests.get(url).json()
+        debug(result)
+        if result.get('code') == 200:
+            return result['text'][0]
         else:
-            time.sleep(random.random())
-            return translator.translate(text, target_language).text
+            print('Failed to translate', str(result), file=sys.stderr)
+            sys.exit(1)
+    else:
+        time.sleep(random.random())
+        return translator.translate(text, target_language).text
 
 
 def process_buffer(buffer, new_value, item=None):
@@ -161,6 +166,8 @@ def translate_filter(key, value, _format, _):
         value[1] = process_sentence(value[1])
         return cls(*value)
     elif key == 'Header':
+        # TODO: title case header in en
+        value[1][0] = slugify.slugify(value[1][0], separator='-', word_boundary=True, save_order=True)
         # TODO: title case header in en
         value[2] = process_sentence(value[2])
         return cls(*value)

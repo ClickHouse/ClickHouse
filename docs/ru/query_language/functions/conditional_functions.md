@@ -1,12 +1,12 @@
-# Условные функции
+# Условные функции {#uslovnye-funktsii}
 
 ## if {#if}
 
 Условное выражение. В отличии от большинства систем, ClickHouse всегда считает оба выражения `then` и `else`.
 
-**Синтаксис** 
+**Синтаксис**
 
-```sql
+``` sql
 SELECT if(cond, then, else)
 ```
 
@@ -26,13 +26,13 @@ SELECT if(cond, then, else)
 
 Запрос:
 
-```sql
+``` sql
 SELECT if(1, plus(2, 2), plus(2, 6))
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─plus(2, 2)─┐
 │          4 │
 └────────────┘
@@ -40,13 +40,13 @@ SELECT if(1, plus(2, 2), plus(2, 6))
 
 Запрос:
 
-```sql
+``` sql
 SELECT if(0, plus(2, 2), plus(2, 6))
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─plus(2, 6)─┐
 │          8 │
 └────────────┘
@@ -60,21 +60,19 @@ SELECT if(0, plus(2, 2), plus(2, 6))
 
 Возвращает `then`, если `cond` верно (больше нуля), в остальных случаях возвращает `else`.
 
-* `cond` должно быть типа `UInt8`, `then` и `else` должны относиться к наименьшему общему типу.
+- `cond` должно быть типа `UInt8`, `then` и `else` должны относиться к наименьшему общему типу.
 
-* `then` и `else` могут быть `NULL`.
+- `then` и `else` могут быть `NULL`.
 
 **Смотрите также**
 
 - [ifNotFinite](other_functions.md#ifnotfinite).
 
-## multiIf
+## multiIf {#multiif}
 
 Позволяет более компактно записать оператор [CASE](../operators.md#operator_case) в запросе.
 
-```
-multiIf(cond_1, then_1, cond_2, then_2...else)
-```
+  multiIf(cond_1, then_1, cond_2, then_2...else)
 
 **Параметры**
 
@@ -92,7 +90,7 @@ multiIf(cond_1, then_1, cond_2, then_2...else)
 
 Рассмотрим таблицу
 
-```text
+``` text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -101,7 +99,7 @@ multiIf(cond_1, then_1, cond_2, then_2...else)
 
 Выполним запрос `SELECT multiIf(isNull(y), x, y < 3, y, NULL) FROM t_null`. Результат:
 
-```text
+``` text
 ┌─multiIf(isNull(y), x, less(y, 3), y, NULL)─┐
 │                                          1 │
 │                                       ᴺᵁᴸᴸ │
