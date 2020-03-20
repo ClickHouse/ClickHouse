@@ -9,11 +9,11 @@ The table engine (type of table) determines:
 - Whether multithreaded request execution is possible.
 - Data replication parameters.
 
-## Engine Families
+## Engine Families {#engine-families}
 
-### MergeTree
+### MergeTree {#mergetree}
 
-The most universal and functional table engines for high-load tasks. The property shared by these engines is quick data insertion with subsequent background data processing. `MergeTree` family engines support data replication (with [Replicated*](replication.md) versions of engines), partitioning, and other features not supported in other engines.
+The most universal and functional table engines for high-load tasks. The property shared by these engines is quick data insertion with subsequent background data processing. `MergeTree` family engines support data replication (with [Replicated\*](replication.md) versions of engines), partitioning, and other features not supported in other engines.
 
 Engines in the family:
 
@@ -25,9 +25,9 @@ Engines in the family:
 - [VersionedCollapsingMergeTree](versionedcollapsingmergetree.md)
 - [GraphiteMergeTree](graphitemergetree.md)
 
-### Log
+### Log {#log}
 
-Lightweight [engines](log_family.md) with minimum functionality. They're the most effective when you need to quickly write many small tables (up to approximately 1 million rows) and read them later as a whole.
+Lightweight [engines](log_family.md) with minimum functionality. They’re the most effective when you need to quickly write many small tables (up to approximately 1 million rows) and read them later as a whole.
 
 Engines in the family:
 
@@ -35,7 +35,7 @@ Engines in the family:
 - [StripeLog](stripelog.md)
 - [Log](log.md)
 
-### Intergation engines
+### Intergation engines {#intergation-engines}
 
 Engines for communicating with other data storage and processing systems.
 
@@ -47,7 +47,7 @@ Engines in the family:
 - [JDBC](jdbc.md)
 - [HDFS](hdfs.md)
 
-### Special engines
+### Special engines {#special-engines}
 
 Engines in the family:
 
@@ -68,10 +68,10 @@ Engines in the family:
 
 Virtual column is an integral table engine attribute that is defined in the engine source code.
 
-You shouldn't specify virtual columns in the `CREATE TABLE` query and you can't see them in `SHOW CREATE TABLE` and `DESCRIBE TABLE` query results. Virtual columns are also read-only, so you can't insert data into virtual columns.
+You shouldn’t specify virtual columns in the `CREATE TABLE` query and you can’t see them in `SHOW CREATE TABLE` and `DESCRIBE TABLE` query results. Virtual columns are also read-only, so you can’t insert data into virtual columns.
 
-To select data from a virtual column, you must specify its name in the `SELECT` query. `SELECT *` doesn't return values from virtual columns.
+To select data from a virtual column, you must specify its name in the `SELECT` query. `SELECT *` doesn’t return values from virtual columns.
 
-If you create a table with a column that has the same name as one of the table virtual columns, the virtual column becomes inaccessible. We don't recommend doing this. To help avoid conflicts, virtual column names are usually prefixed with an underscore.
+If you create a table with a column that has the same name as one of the table virtual columns, the virtual column becomes inaccessible. We don’t recommend doing this. To help avoid conflicts, virtual column names are usually prefixed with an underscore.
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/) <!--hide-->

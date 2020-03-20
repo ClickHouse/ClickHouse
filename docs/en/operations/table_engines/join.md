@@ -1,10 +1,10 @@
-# Join
+# Join {#join}
 
 Prepared data structure for using in [JOIN](../../query_language/select.md#select-join) operations.
 
 ## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
@@ -20,36 +20,39 @@ See the detailed description of the [CREATE TABLE](../../query_language/create.m
 - `join_type` – [JOIN type](../../query_language/select.md#select-join-types).
 - `k1[, k2, ...]` – Key columns from the `USING` clause that the `JOIN` operation is made with.
 
-Enter `join_strictness` and `join_type` parameters without quotes, for example, `Join(ANY, LEFT, col1)`. They must match the `JOIN` operation that the table will be used for. If the parameters don't match, ClickHouse doesn't throw an exception and may return incorrect data.
+Enter `join_strictness` and `join_type` parameters without quotes, for example, `Join(ANY, LEFT, col1)`. They must match the `JOIN` operation that the table will be used for. If the parameters don’t match, ClickHouse doesn’t throw an exception and may return incorrect data.
 
-## Table Usage
+## Table Usage {#table-usage}
 
-### Example
+### Example {#example}
 
 Creating the left-side table:
 
-```sql
+``` sql
 CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog
 ```
-```sql
+
+``` sql
 INSERT INTO id_val VALUES (1,11)(2,12)(3,13)
 ```
 
 Creating the right-side `Join` table:
 
-```sql
+``` sql
 CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id)
 ```
-```sql
+
+``` sql
 INSERT INTO id_val_join VALUES (1,21)(1,22)(3,23)
 ```
 
 Joining the tables:
 
-```sql
+``` sql
 SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id) SETTINGS join_use_nulls = 1
 ```
-```text
+
+``` text
 ┌─id─┬─val─┬─id_val_join.val─┐
 │  1 │  11 │              21 │
 │  2 │  12 │            ᴺᵁᴸᴸ │
@@ -59,16 +62,17 @@ SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id) SETTINGS join_use_null
 
 As an alternative, you can retrieve data from the `Join` table, specifying the join key value:
 
-```sql
+``` sql
 SELECT joinGet('id_val_join', 'val', toUInt32(1))
 ```
-```text
+
+``` text
 ┌─joinGet('id_val_join', 'val', toUInt32(1))─┐
 │                                         21 │
 └────────────────────────────────────────────┘
 ```
 
-### Selecting and Inserting Data
+### Selecting and Inserting Data {#selecting-and-inserting-data}
 
 You can use `INSERT` queries to add data to the `Join`-engine tables. If the table was created with the `ANY` strictness, data for duplicate keys are ignored. With the `ALL` strictness, all rows are added.
 
@@ -81,17 +85,17 @@ You cannot perform a `SELECT` query directly from the table. Instead, use one of
 
 When creating a table, the following settings are applied:
 
-- [join_use_nulls](../settings/settings.md#join_use_nulls)
-- [max_rows_in_join](../settings/query_complexity.md#settings-max_rows_in_join)
-- [max_bytes_in_join](../settings/query_complexity.md#settings-max_bytes_in_join)
-- [join_overflow_mode](../settings/query_complexity.md#settings-join_overflow_mode)
-- [join_any_take_last_row](../settings/settings.md#settings-join_any_take_last_row)
+- [join\_use\_nulls](../settings/settings.md#join_use_nulls)
+- [max\_rows\_in\_join](../settings/query_complexity.md#settings-max_rows_in_join)
+- [max\_bytes\_in\_join](../settings/query_complexity.md#settings-max_bytes_in_join)
+- [join\_overflow\_mode](../settings/query_complexity.md#settings-join_overflow_mode)
+- [join\_any\_take\_last\_row](../settings/settings.md#settings-join_any_take_last_row)
 
-The `Join`-engine tables can't be used in `GLOBAL JOIN` operations.
+The `Join`-engine tables can’t be used in `GLOBAL JOIN` operations.
 
-The `Join`-engine allows use [join_use_nulls](../settings/settings.md#join_use_nulls) setting in the `CREATE TABLE` statement. And [SELECT](../../query_language/select.md) query allows use `join_use_nulls` too. If you have different `join_use_nulls` settings, you can get an error joining table. It depends on kind of JOIN. When you use [joinGet](../../query_language/functions/other_functions.md#joinget) function, you have to use the same `join_use_nulls` setting in `CRATE TABLE` and `SELECT` statements.
+The `Join`-engine allows use [join\_use\_nulls](../settings/settings.md#join_use_nulls) setting in the `CREATE TABLE` statement. And [SELECT](../../query_language/select.md) query allows use `join_use_nulls` too. If you have different `join_use_nulls` settings, you can get an error joining table. It depends on kind of JOIN. When you use [joinGet](../../query_language/functions/other_functions.md#joinget) function, you have to use the same `join_use_nulls` setting in `CRATE TABLE` and `SELECT` statements.
 
-## Data Storage
+## Data Storage {#data-storage}
 
 `Join` table data is always located in the RAM. When inserting rows into a table, ClickHouse writes data blocks to the directory on the disk so that they can be restored when the server restarts.
 

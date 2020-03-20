@@ -1,10 +1,10 @@
-# Functions for Working with Geographical Coordinates
+# Functions for Working with Geographical Coordinates {#functions-for-working-with-geographical-coordinates}
 
-## greatCircleDistance
+## greatCircleDistance {#greatcircledistance}
 
-Calculate the distance between two points on the Earth's surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
+Calculate the distance between two points on the Earth’s surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
 
-```sql
+``` sql
 greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 ```
 
@@ -19,28 +19,28 @@ Positive values correspond to North latitude and East longitude, and negative va
 
 **Returned value**
 
-The distance between two points on the Earth's surface, in meters.
+The distance between two points on the Earth’s surface, in meters.
 
 Generates an exception when the input parameter values fall outside of the range.
 
 **Example**
 
-```sql
+``` sql
 SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 ```
 
-```text
+``` text
 ┌─greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)─┐
 │                                                14132374.194975413 │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## pointInEllipses
+## pointInEllipses {#pointinellipses}
 
 Checks whether the point belongs to at least one of the ellipses.
 Coordinates are geometric in the Cartesian coordinate system.
 
-```sql
+``` sql
 pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
 ```
 
@@ -58,27 +58,27 @@ The input parameters must be `2+4⋅n`, where `n` is the number of ellipses.
 
 **Example**
 
-```sql
+``` sql
 SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 ```
 
-```text
+``` text
 ┌─pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)─┐
 │                                               1 │
 └─────────────────────────────────────────────────┘
 ```
 
-## pointInPolygon
+## pointInPolygon {#pointinpolygon}
 
 Checks whether the point belongs to the polygon on the plane.
 
-```sql
+``` sql
 pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 ```
 
 **Input values**
 
-- `(x, y)` — Coordinates of a point on the plane. Data type — [Tuple](../../data_types/tuple.md) —  A tuple of two numbers.
+- `(x, y)` — Coordinates of a point on the plane. Data type — [Tuple](../../data_types/tuple.md) — A tuple of two numbers.
 - `[(a, b), (c, d) ...]` — Polygon vertices. Data type — [Array](../../data_types/array.md). Each vertex is represented by a pair of coordinates `(a, b)`. Vertices should be specified in a clockwise or counterclockwise order. The minimum number of vertices is 3. The polygon must be constant.
 - The function also supports polygons with holes (cut out sections). In this case, add polygons that define the cut out sections using additional arguments of the function. The function does not support non-simply-connected polygons.
 
@@ -89,20 +89,21 @@ If the point is on the polygon boundary, the function may return either 0 or 1.
 
 **Example**
 
-```sql
+``` sql
 SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ```
 
-```text
+``` text
 ┌─res─┐
 │   1 │
 └─────┘
 ```
 
-## geohashEncode
+## geohashEncode {#geohashencode}
 
 Encodes latitude and longitude as a geohash-string, please see (http://geohash.org/, https://en.wikipedia.org/wiki/Geohash).
-```sql
+
+``` sql
 geohashEncode(longitude, latitude, [precision])
 ```
 
@@ -118,17 +119,17 @@ geohashEncode(longitude, latitude, [precision])
 
 **Example**
 
-```sql
+``` sql
 SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res
 ```
 
-```text
+``` text
 ┌─res──────────┐
 │ ezs42d000000 │
 └──────────────┘
 ```
 
-## geohashDecode
+## geohashDecode {#geohashdecode}
 
 Decodes any geohash-encoded string into longitude and latitude.
 
@@ -142,11 +143,11 @@ Decodes any geohash-encoded string into longitude and latitude.
 
 **Example**
 
-```sql
+``` sql
 SELECT geohashDecode('ezs42') AS res
 ```
 
-```text
+``` text
 ┌─res─────────────────────────────┐
 │ (-5.60302734375,42.60498046875) │
 └─────────────────────────────────┘
@@ -156,17 +157,17 @@ SELECT geohashDecode('ezs42') AS res
 
 Returns [H3](https://uber.github.io/h3/#/documentation/overview/introduction) point index `(lon, lat)` with specified resolution.
 
-[H3](https://uber.github.io/h3/#/documentation/overview/introduction) is a geographical indexing system where Earth's surface divided into even hexagonal tiles. This system is hierarchical, i. e. each hexagon on the top level can be splitted into seven even but smaller ones and so on.
+[H3](https://uber.github.io/h3/#/documentation/overview/introduction) is a geographical indexing system where Earth’s surface divided into even hexagonal tiles. This system is hierarchical, i. e. each hexagon on the top level can be splitted into seven even but smaller ones and so on.
 
 This index is used primarily for bucketing locations and other geospatial manipulations.
 
-**Syntax** 
+**Syntax**
 
-```sql
+``` sql
 geoToH3(lon, lat, resolution)
 ```
 
-**Parameters** 
+**Parameters**
 
 - `lon` — Longitude. Type: [Float64](../../data_types/float.md).
 - `lat` — Latitude. Type: [Float64](../../data_types/float.md).
@@ -183,28 +184,28 @@ Type: `UInt64`.
 
 Query:
 
-```sql
+``` sql
 SELECT geoToH3(37.79506683, 55.71290588, 15) as h3Index
 ```
 
 Result:
 
-```text
+``` text
 ┌────────────h3Index─┐
 │ 644325524701193974 │
 └────────────────────┘
 ```
 
-## geohashesInBox
+## geohashesInBox {#geohashesinbox}
 
 Returns an array of geohash-encoded strings of given precision that fall inside and intersect boundaries of given box, basically a 2D grid flattened into array.
 
 **Input values**
 
-- longitude_min - min longitude, floating value in range `[-180°, 180°]`
-- latitude_min - min latitude, floating value in range `[-90°, 90°]`
-- longitude_max - max longitude, floating value in range `[-180°, 180°]`
-- latitude_max - max latitude, floating value in range `[-90°, 90°]`
+- longitude\_min - min longitude, floating value in range `[-180°, 180°]`
+- latitude\_min - min latitude, floating value in range `[-90°, 90°]`
+- longitude\_max - max longitude, floating value in range `[-180°, 180°]`
+- latitude\_max - max latitude, floating value in range `[-90°, 90°]`
 - precision - geohash precision, `UInt8` in range `[1, 12]`
 
 Please note that all coordinate parameters should be of the same type: either `Float32` or `Float64`.
@@ -212,32 +213,33 @@ Please note that all coordinate parameters should be of the same type: either `F
 **Returned values**
 
 - array of precision-long strings of geohash-boxes covering provided area, you should not rely on order of items.
-- [] - empty array if *min* values of *latitude* and *longitude* aren't less than corresponding *max* values.
+- \[\] - empty array if *min* values of *latitude* and *longitude* aren’t less than corresponding *max* values.
 
-Please note that function will throw an exception if resulting array is over 10'000'000 items long.
+Please note that function will throw an exception if resulting array is over 10’000’000 items long.
 
 **Example**
 
-```sql
+``` sql
 SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos
 ```
-```text
+
+``` text
 ┌─thasos──────────────────────────────────────┐
 │ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
 └─────────────────────────────────────────────┘
 ```
 
-## h3GetBaseCell
+## h3GetBaseCell {#h3getbasecell}
 
 Returns the base cell number of the index.
 
 **Syntax**
 
-```sql
+``` sql
 h3GetBaseCell(index)
 ```
 
-**Parameters** 
+**Parameters**
 
 - `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
 
@@ -249,29 +251,29 @@ h3GetBaseCell(index)
 
 Query:
 
-```sql
+``` sql
 SELECT h3GetBaseCell(612916788725809151) as basecell
 ```
 
 Result:
 
-```text
+``` text
 ┌─basecell─┐
 │       12 │
 └──────────┘
 ```
 
-## h3HexAreaM2
+## h3HexAreaM2 {#h3hexaream2}
 
 Average hexagon area in square meters at the given resolution.
 
-**Syntax** 
+**Syntax**
 
-```sql
+``` sql
 h3HexAreaM2(resolution)
 ```
 
-**Parameters** 
+**Parameters**
 
 - `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
 
@@ -283,29 +285,29 @@ h3HexAreaM2(resolution)
 
 Query:
 
-```sql
+``` sql
 SELECT h3HexAreaM2(13) as area
 ```
 
 Result:
 
-```text
+``` text
 ┌─area─┐
 │ 43.9 │
 └──────┘
 ```
 
-## h3IndexesAreNeighbors
+## h3IndexesAreNeighbors {#h3indexesareneighbors}
 
 Returns whether or not the provided H3Indexes are neighbors.
 
 **Syntax**
 
-```sql
+``` sql
 h3IndexesAreNeighbors(index1, index2)
 ```
 
-**Parameters** 
+**Parameters**
 
 - `index1` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
 - `index2` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
@@ -318,30 +320,29 @@ h3IndexesAreNeighbors(index1, index2)
 
 Query:
 
-```sql
+``` sql
 SELECT h3IndexesAreNeighbors(617420388351344639, 617420388352655359) AS n
 ```
 
 Result:
 
-```text
+``` text
 ┌─n─┐
 │ 1 │
 └───┘
 ```
 
-
-## h3ToChildren
+## h3ToChildren {#h3tochildren}
 
 Returns an array with the child indexes of the given index.
 
 **Syntax**
 
-```sql
+``` sql
 h3ToChildren(index, resolution)
 ```
 
-**Parameters** 
+**Parameters**
 
 - `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
 - `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
@@ -354,29 +355,29 @@ h3ToChildren(index, resolution)
 
 Query:
 
-```sql
+``` sql
 SELECT h3ToChildren(599405990164561919, 6) AS children
 ```
 
 Result:
 
-```text
+``` text
 ┌─children───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ [603909588852408319,603909588986626047,603909589120843775,603909589255061503,603909589389279231,603909589523496959,603909589657714687] │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3ToParent
+## h3ToParent {#h3toparent}
 
 Returns the parent (coarser) index containing the given index.
 
 **Syntax**
 
-```sql
+``` sql
 h3ToParent(index, resolution)
 ```
 
-**Parameters** 
+**Parameters**
 
 - `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
 - `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
@@ -389,27 +390,27 @@ h3ToParent(index, resolution)
 
 Query:
 
-```sql
+``` sql
 SELECT h3ToParent(599405990164561919, 3) as parent
 ```
 
 Result:
 
-```text
+``` text
 ┌─────────────parent─┐
 │ 590398848891879423 │
 └────────────────────┘
 ```
 
-## h3ToString
+## h3ToString {#h3tostring}
 
-Converts the H3Index representation of the index to the string representation. 
+Converts the H3Index representation of the index to the string representation.
 
-```sql
+``` sql
 h3ToString(index)
 ```
 
-**Parameters** 
+**Parameters**
 
 - `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
 
@@ -419,29 +420,29 @@ h3ToString(index)
 
 **Example**
 
-Query: 
+Query:
 
-```sql
+``` sql
 SELECT h3ToString(617420388352917503) as h3_string
 ```
 
 Result:
 
-```text
+``` text
 ┌─h3_string───────┐
 │ 89184926cdbffff │
 └─────────────────┘
 ```
 
-## stringToH3
+## stringToH3 {#stringtoh3}
 
 Converts the string representation to H3Index (UInt64) representation.
 
-```sql
+``` sql
 stringToH3(index_str)
 ```
 
-**Parameters** 
+**Parameters**
 
 - `index_str` — String representation of the H3 index. Type: [String](../../data_types/string.md).
 
@@ -453,29 +454,29 @@ stringToH3(index_str)
 
 Query:
 
-```sql
+``` sql
 SELECT stringToH3('89184926cc3ffff') as index
 ```
 
 Result:
 
-```text
+``` text
 ┌──────────────index─┐
 │ 617420388351344639 │
 └────────────────────┘
 ```
 
-## h3GetResolution
+## h3GetResolution {#h3getresolution}
 
 Returns the resolution of the index.
 
 **Syntax**
 
-```sql
+``` sql
 h3GetResolution(index)
 ```
 
-**Parameters** 
+**Parameters**
 
 - `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
 
@@ -487,13 +488,13 @@ h3GetResolution(index)
 
 Query:
 
-```sql
+``` sql
 SELECT h3GetResolution(617420388352917503) as res
 ```
 
 Result:
 
-```text
+``` text
 ┌─res─┐
 │   9 │
 └─────┘
