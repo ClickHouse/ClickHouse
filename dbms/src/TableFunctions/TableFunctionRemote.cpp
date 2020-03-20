@@ -155,6 +155,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
         std::vector<String> shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
         std::vector<std::vector<String>> names;
+        names.reserve(shards.size());
         for (const auto & shard : shards)
             names.push_back(parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses));
 

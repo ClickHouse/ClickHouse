@@ -1,6 +1,7 @@
 #pragma once
 #include <DataStreams/IBlockInputStream.h>
 #include <Processors/Pipe.h>
+#include <Processors/RowsBeforeLimitCounter.h>
 
 namespace DB
 {
@@ -55,6 +56,7 @@ private:
     IProcessor * root = nullptr;
     std::unique_ptr<InputPort> input_port;
     std::unique_ptr<InputPort> input_totals_port;
+    RowsBeforeLimitCounterPtr rows_before_limit_at_least;
 
     /// Remember sources that support progress.
     std::vector<ISourceWithProgress *> sources_with_progress;
@@ -65,7 +67,7 @@ private:
     /// Execute tree step-by-step until root returns next chunk or execution is finished.
     void execute(bool on_totals);
 
-    void calcRowsBeforeLimit();
+    void initRowsBeforeLimit();
 
     /// Moved from pipe.
     std::vector<std::shared_ptr<Context>> interpreter_context;

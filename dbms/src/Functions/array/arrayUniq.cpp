@@ -214,7 +214,7 @@ void FunctionArrayUniq::executeMethodImpl(
         for (ColumnArray::Offset j = prev_off; j < off; ++j)
         {
             if constexpr (has_null_map)
-            {
+            { // NOLINT
                 if ((*null_map)[j])
                 {
                     found_null = true;

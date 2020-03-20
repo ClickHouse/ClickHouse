@@ -98,7 +98,7 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
     /// Insert all data into compressed buf
     source_size -= (compression_methods_size + 1);
 
-    for (long idx = compression_methods_size - 1; idx >= 0; --idx)
+    for (int idx = compression_methods_size - 1; idx >= 0; --idx)
     {
         UInt8 compression_method = source[idx + 1];
         const auto codec = CompressionCodecFactory::instance().get(compression_method);

@@ -51,6 +51,6 @@ WHERE a = 'b\0'
 
 Это поведение отличается от поведения MySQL для типа `CHAR`, где строки дополняются пробелами, а пробелы перед выводом вырезаются.
 
-Обратите внимание, что длина значения `FixedString(N)` постоянна. Функция [length](../query_language/functions/array_functions.md#array_functions-length) возвращает `N` даже если значение `FixedString(N)` заполнено только нулевыми байтами, однако функция [empty](../query_language/functions/string_functions.md#string_functions-empty) в этом же случае возвращает `1`.
+Обратите внимание, что длина значения `FixedString(N)` постоянна. Функция [length](../query_language/functions/array_functions.md#array_functions-length) возвращает `N` даже если значение `FixedString(N)` заполнено только нулевыми байтами, однако функция [empty](../query_language/functions/string_functions.md#empty) в этом же случае возвращает `1`.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/fixedstring/) <!--hide-->

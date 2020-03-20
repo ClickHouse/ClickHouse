@@ -1,4 +1,3 @@
-
 # AggregatingMergeTree
 
 The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](mergetree.md)) with a single row (within a one data part) that stores a combination of states of aggregate functions.
@@ -53,7 +52,7 @@ All of the parameters have the same meaning as in `MergeTree`.
 To insert data, use [INSERT SELECT](../../query_language/insert_into.md) query with aggregate -State- functions.
 When selecting data from `AggregatingMergeTree` table, use `GROUP BY` clause and the same aggregate functions as when inserting data, but using `-Merge` suffix.
 
-In the results of `SELECT` query the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. If dump data into, for example, `TabSeparated` format with `SELECT` query then this dump can be loaded back using `INSERT` query.
+In the results of `SELECT` query, the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. If dump data into, for example, `TabSeparated` format with `SELECT` query then this dump can be loaded back using `INSERT` query.
 
 ## Example of an Aggregated Materialized View
 
@@ -71,7 +70,7 @@ FROM test.visits
 GROUP BY CounterID, StartDate;
 ```
 
-Inserting of data into the `test.visits` table.
+Inserting data into the `test.visits` table.
 
 ```sql
 INSERT INTO test.visits ...

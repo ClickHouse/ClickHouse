@@ -499,7 +499,10 @@ ASTPtr ClusterCopier::removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast
     return new_query_ast;
 }
 
-std::shared_ptr<ASTCreateQuery> ClusterCopier::rewriteCreateQueryStorage(const ASTPtr & create_query_ast, const DatabaseAndTableName & new_table, const ASTPtr & new_storage_ast)
+
+/// Replaces ENGINE and table name in a create query
+static std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(
+    const ASTPtr & create_query_ast, const DatabaseAndTableName & new_table, const ASTPtr & new_storage_ast)
 {
     const auto & create = create_query_ast->as<ASTCreateQuery &>();
     auto res = std::make_shared<ASTCreateQuery>(create);
@@ -1178,7 +1181,7 @@ String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, C
 ASTPtr ClusterCopier::getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard)
 {
     /// Fetch and parse (possibly) new definition
-    auto connection_entry = task_shard.info.pool->get(timeouts, &task_cluster->settings_pull);
+    auto connection_entry = task_shard.info.pool->get(timeouts, &task_cluster->settings_pull, true);
     String create_query_pull_str = getRemoteCreateTable(
         task_shard.task_table.table_pull,
         *connection_entry,

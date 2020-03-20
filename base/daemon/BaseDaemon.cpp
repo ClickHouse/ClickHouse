@@ -99,12 +99,12 @@ static void writeSignalIDtoSignalPipe(int sig)
 }
 
 /** Signal handler for HUP / USR1 */
-static void closeLogsSignalHandler(int sig, siginfo_t * info, void * context)
+static void closeLogsSignalHandler(int sig, siginfo_t *, void *)
 {
     writeSignalIDtoSignalPipe(sig);
 }
 
-static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * context)
+static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
 {
     writeSignalIDtoSignalPipe(sig);
 }
@@ -362,19 +362,8 @@ void BaseDaemon::reloadConfiguration()
 }
 
 
-BaseDaemon::BaseDaemon()
+namespace
 {
-    checkRequiredInstructions();
-}
-
-
-BaseDaemon::~BaseDaemon()
-{
-    writeSignalIDtoSignalPipe(SignalListener::StopThread);
-    signal_listener_thread.join();
-    signal_pipe.close();
-}
-
 
 enum class InstructionFail
 {
@@ -388,7 +377,7 @@ enum class InstructionFail
     AVX512 = 7
 };
 
-static std::string instructionFailToString(InstructionFail fail)
+std::string instructionFailToString(InstructionFail fail)
 {
     switch (fail)
     {
@@ -413,16 +402,16 @@ static std::string instructionFailToString(InstructionFail fail)
 }
 
 
-static sigjmp_buf jmpbuf;
+sigjmp_buf jmpbuf;
 
-static void sigIllCheckHandler(int sig, siginfo_t * info, void * context)
+void sigIllCheckHandler(int, siginfo_t *, void *)
 {
     siglongjmp(jmpbuf, 1);
 }
 
 /// Check if necessary sse extensions are available by trying to execute some sse instructions.
 /// If instruction is unavailable, SIGILL will be sent by kernel.
-static void checkRequiredInstructions(volatile InstructionFail & fail)
+void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
 {
 #if __SSE3__
     fail = InstructionFail::SSE3;
@@ -463,8 +452,9 @@ static void checkRequiredInstructions(volatile InstructionFail & fail)
     fail = InstructionFail::NONE;
 }
 
-
-void BaseDaemon::checkRequiredInstructions()
+/// Check SSE and others instructions availability
+/// Calls exit on fail
+void checkRequiredInstructions()
 {
     struct sigaction sa{};
     struct sigaction sa_old{};
@@ -487,13 +477,29 @@ void BaseDaemon::checkRequiredInstructions()
         exit(1);
     }
 
-    ::checkRequiredInstructions(fail);
+    checkRequiredInstructionsImpl(fail);
 
     if (sigaction(signal, &sa_old, nullptr))
     {
         std::cerr << "Can not set signal handler\n";
         exit(1);
     }
+}
+
+}
+
+
+BaseDaemon::BaseDaemon()
+{
+    checkRequiredInstructions();
+}
+
+
+BaseDaemon::~BaseDaemon()
+{
+    writeSignalIDtoSignalPipe(SignalListener::StopThread);
+    signal_listener_thread.join();
+    signal_pipe.close();
 }
 
 

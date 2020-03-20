@@ -8,49 +8,10 @@
 namespace DB
 {
 
-namespace ErrorCodes
+namespace
 {
-}
 
-bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserKeyword s_drop("DROP");
-    ParserKeyword s_detach("DETACH");
-    ParserKeyword s_truncate("TRUNCATE");
-
-    if (s_drop.ignore(pos, expected))
-        return parseDropQuery(pos, node, expected);
-    else if (s_detach.ignore(pos, expected))
-        return parseDetachQuery(pos, node, expected);
-    else if (s_truncate.ignore(pos, expected))
-        return parseTruncateQuery(pos, node, expected);
-    else
-        return false;
-}
-
-bool ParserDropQuery::parseDetachQuery(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    if (parseDropQuery(pos, node, expected))
-    {
-        auto * drop_query = node->as<ASTDropQuery>();
-        drop_query->kind = ASTDropQuery::Kind::Detach;
-        return true;
-    }
-    return false;
-}
-
-bool ParserDropQuery::parseTruncateQuery(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    if (parseDropQuery(pos, node, expected))
-    {
-        auto * drop_query = node->as<ASTDropQuery>();
-        drop_query->kind = ASTDropQuery::Kind::Truncate;
-        return true;
-    }
-    return false;
-}
-
-bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expected)
+bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
@@ -133,6 +94,46 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
     query->cluster = cluster_str;
 
     return true;
+}
+
+bool parseDetachQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (parseDropQuery(pos, node, expected))
+    {
+        auto * drop_query = node->as<ASTDropQuery>();
+        drop_query->kind = ASTDropQuery::Kind::Detach;
+        return true;
+    }
+    return false;
+}
+
+bool parseTruncateQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (parseDropQuery(pos, node, expected))
+    {
+        auto * drop_query = node->as<ASTDropQuery>();
+        drop_query->kind = ASTDropQuery::Kind::Truncate;
+        return true;
+    }
+    return false;
+}
+
+}
+
+bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_drop("DROP");
+    ParserKeyword s_detach("DETACH");
+    ParserKeyword s_truncate("TRUNCATE");
+
+    if (s_drop.ignore(pos, expected))
+        return parseDropQuery(pos, node, expected);
+    else if (s_detach.ignore(pos, expected))
+        return parseDetachQuery(pos, node, expected);
+    else if (s_truncate.ignore(pos, expected))
+        return parseTruncateQuery(pos, node, expected);
+    else
+        return false;
 }
 
 }

@@ -2,7 +2,7 @@
 
 ## What to Expect from This Tutorial?
 
-By going through this tutorial you'll learn how to set up basic ClickHouse cluster, it'll be small, but fault tolerant and scalable. We will use one of example datasets to fill it with data and execute some demo queries.
+By going through this tutorial you'll learn how to set up basic ClickHouse cluster, it'll be small, but fault-tolerant and scalable. We will use one of the example datasets to fill it with data and execute some demo queries.
 
 ## Single Node Setup
 
@@ -25,9 +25,9 @@ What do we have in the packages that got installed:
 * `clickhouse-common` package contains a ClickHouse executable file.
 * `clickhouse-server` package contains configuration files to run ClickHouse as a server.
 
-Server config files are located in `/etc/clickhouse-server/`. Before going further please notice the `<path>` element in `config.xml`. Path determines the location for data storage, so it should be located on volume with large disk capacity, the default value is `/var/lib/clickhouse/`. If you want to adjust the configuration it's not really handy to directly edit `config.xml` file, considering it might get rewritten on future package updates. Recommended way to override the config elements is to create [files in config.d directory](../operations/configuration_files.md) which serve as "patches" to config.xml.
+Server config files are located in `/etc/clickhouse-server/`. Before going further please notice the `<path>` element in `config.xml`. Path determines the location for data storage, so it should be located on volume with large disk capacity, the default value is `/var/lib/clickhouse/`. If you want to adjust the configuration it's not handy to directly edit `config.xml` file, considering it might get rewritten on future package updates. The recommended way to override the config elements is to create [files in config.d directory](../operations/configuration_files.md) which serve as "patches" to config.xml.
 
-As you might have noticed, `clickhouse-server` is not launched automatically after package installation. It won't be automatically restarted after updates either. The way you start the server depends on your init system, usually it's:
+As you might have noticed, `clickhouse-server` is not launched automatically after package installation. It won't be automatically restarted after updates either. The way you start the server depends on your init system, usually, it's:
 
 ``` bash
 sudo service clickhouse-server start
@@ -38,7 +38,7 @@ or
 sudo /etc/init.d/clickhouse-server start
 ```
 
-The default location for server logs is `/var/log/clickhouse-server/`. Server will be ready to handle client connections once `Ready for connections` message was logged.
+The default location for server logs is `/var/log/clickhouse-server/`. The server will be ready to handle client connections once `Ready for connections` message was logged.
 
 Once the `clickhouse-server` is up and running, we can use `clickhouse-client` to connect to the server and run some test queries like `SELECT "Hello, world!";`.
 
@@ -71,7 +71,7 @@ clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' < data.tsv
 
 ## Import Sample Dataset
 
-Now it's time to fill our ClickHouse server with some sample data. In this tutorial we'll use anonymized data of Yandex.Metrica, the first service that run ClickHouse in production way before it became open-source (more on that in [history section](../introduction/history.md)). There are [multiple ways to import Yandex.Metrica dataset](example_datasets/metrica.md) and for the sake of the tutorial we'll go with the most realistic one.
+Now it's time to fill our ClickHouse server with some sample data. In this tutorial, we'll use anonymized data of Yandex.Metrica, the first service that runs ClickHouse in production way before it became open-source (more on that in [history section](../introduction/history.md)). There are [multiple ways to import Yandex.Metrica dataset](example_datasets/metrica.md) and for the sake of the tutorial, we'll go with the most realistic one.
 
 ### Download and Extract Table Data
 
@@ -96,7 +96,7 @@ Syntax for creating tables is way more complicated compared to databases (see [r
 2. Table schema, i.e. list of columns and their [data types](../data_types/index.md).
 3. [Table engine](../operations/table_engines/index.md) and it's settings, which determines all the details on how queries to this table will be physically executed.
 
-Yandex.Metrica is a web analytics service and sample dataset doesn't cover it's full functionality, so there are only two tables to create:
+Yandex.Metrica is a web analytics service and sample dataset doesn't cover its full functionality, so there are only two tables to create:
 
 * `hits` is a table with each action done by all users on all websites covered by the service.
 * `visits` is a table that contains pre-built sessions instead of individual actions.
@@ -444,7 +444,7 @@ SAMPLE BY intHash32(UserID)
 SETTINGS index_granularity = 8192
 ```
 
-You can execute those queries using interactive mode of `clickhouse-client` (just launch it in terminal without specifying a query in advance) or try some [alternative interface](../interfaces/index.md) if you want.
+You can execute those queries using the interactive mode of `clickhouse-client` (just launch it in a terminal without specifying a query in advance) or try some [alternative interface](../interfaces/index.md) if you want.
 
 As we can see, `hits_v1` uses the [basic MergeTree engine](../operations/table_engines/mergetree.md), while the `visits_v1` uses the [Collapsing](../operations/table_engines/collapsingmergetree.md) variant.
 
@@ -470,7 +470,7 @@ FORMAT TSV
 max_insert_block_size    1048576    0    "The maximum block size for insertion, if we control the creation of blocks for insertion."
 ```
 
-Optionally you can [OPTIMIZE](../query_language/misc/#misc_operations-optimize) the tables after import. Tables that are configured with MergeTree-family engine always do merges of data parts in background to optimize data storage (or at least check if it makes sense). These queries will just force table engine to do storage optimization right now instead of some time later:
+Optionally you can [OPTIMIZE](../query_language/misc/#misc_operations-optimize) the tables after import. Tables that are configured with MergeTree-family engine always do merges of data parts in background to optimize data storage (or at least check if it makes sense). These queries will just force the table engine to do storage optimization right now instead of some time later:
 ``` bash
 clickhouse-client --query "OPTIMIZE TABLE tutorial.hits_v1 FINAL"
 clickhouse-client --query "OPTIMIZE TABLE tutorial.visits_v1 FINAL"
@@ -517,7 +517,7 @@ ClickHouse cluster is a homogenous cluster. Steps to set up:
 
 [Distributed table](../operations/table_engines/distributed.md) is actually a kind of "view" to local tables of ClickHouse cluster. SELECT query from a distributed table will be executed using resources of all cluster's shards. You may specify configs for multiple clusters and create multiple distributed tables providing views to different clusters.
 
-Example config for cluster with three shards, one replica each:
+Example config for a cluster with three shards, one replica each:
 ``` xml
 <remote_servers>
     <perftest_3shards_1replicas>
@@ -543,7 +543,7 @@ Example config for cluster with three shards, one replica each:
 </remote_servers>
 ```
 
-For further demonstration let's create new local table with exactly the same `CREATE TABLE` query that we used for `hits_v1`, but different table name:
+For further demonstration let's create a new local table with the same `CREATE TABLE` query that we used for `hits_v1`, but different table name:
 ``` sql
 CREATE TABLE tutorial.hits_local (...) ENGINE = MergeTree() ...
 ```
@@ -554,9 +554,9 @@ CREATE TABLE tutorial.hits_all AS tutorial.hits_local
 ENGINE = Distributed(perftest_3shards_1replicas, tutorial, hits_local, rand());
 ```
 
-Common practice is to create similar Distributed tables on all machines of the cluster. This would allow to run distributed queries on any machine of the cluster. Also there's an alternative option to create temporary distributed table for a given SELECT query using [remote](../query_language/table_functions/remote.md) table function.
+A common practice is to create similar Distributed tables on all machines of the cluster. This would allow running distributed queries on any machine of the cluster. Also there's an alternative option to create temporary distributed table for a given SELECT query using [remote](../query_language/table_functions/remote.md) table function.
 
-Let's run [INSERT SELECT](../query_language/insert_into.md) into Distributed table to spread the table to multiple servers.
+Let's run [INSERT SELECT](../query_language/insert_into.md) into the Distributed table to spread the table to multiple servers.
 
 ``` sql
 INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
@@ -567,11 +567,11 @@ INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
 
 As you could expect computationally heavy queries are executed N times faster being launched on 3 servers instead of one.
 
-In this case we have used a cluster with 3 shards each contains a single replica.
+In this case, we have used a cluster with 3 shards each contains a single replica.
 
-To provide resilience in production environment we recommend that each shard should contain 2-3 replicas distributed between multiple data-centers. Note that ClickHouse supports unlimited number of replicas.
+To provide resilience in a production environment we recommend that each shard should contain 2-3 replicas distributed between multiple datacenters. Note that ClickHouse supports an unlimited number of replicas.
 
-Example config for cluster of one shard containing three replicas:
+Example config for a cluster of one shard containing three replicas:
 ``` xml
 <remote_servers>
     ...
@@ -597,10 +597,10 @@ Example config for cluster of one shard containing three replicas:
 To enable native replication <a href="http://zookeeper.apache.org/" rel="external nofollow">ZooKeeper</a> is required. ClickHouse will take care of data consistency on all replicas and run restore procedure after failure
         automatically. It's recommended to deploy ZooKeeper cluster to separate servers.
 
-ZooKeeper is not a strict requirement: in some simple cases you can duplicate the data by writing it into all the replicas from your application code. This approach is **not** recommended, in this case ClickHouse won't be able to
+ZooKeeper is not a strict requirement: in some simple cases, you can duplicate the data by writing it into all the replicas from your application code. This approach is **not** recommended, in this case, ClickHouse won't be able to
         guarantee data consistency on all replicas. This remains the responsibility of your application.
 
-ZooKeeper locations need to be specified in configuration file:
+ZooKeeper locations need to be specified in the configuration file:
 ``` xml
 <zookeeper>
     <node>
@@ -618,7 +618,7 @@ ZooKeeper locations need to be specified in configuration file:
 </zookeeper>
 ```
 
-Also we need to set macros for identifying each shard and replica, it will be used on table creation:
+Also, we need to set macros for identifying each shard and replica, it will be used on table creation:
 ``` xml
 <macros>
     <shard>01</shard>
@@ -626,7 +626,7 @@ Also we need to set macros for identifying each shard and replica, it will be us
 </macros>
 ```
 
-If there are no replicas at the moment on replicated table creation, a new first replica will be instantiated. If there are already live replicas, new replica will clone the data from existing ones. You have an option to create all replicated tables first and that insert data to it. Another option is to create some replicas and add the others after or during data insertion.
+If there are no replicas at the moment on replicated table creation, a new first replica will be instantiated. If there are already live replicas, the new replica will clone the data from existing ones. You have an option to create all replicated tables first and that insert data to it. Another option is to create some replicas and add the others after or during data insertion.
 
 ``` sql
 CREATE TABLE tutorial.hits_replica (...)
@@ -642,4 +642,6 @@ Here we use [ReplicatedMergeTree](../operations/table_engines/replication.md) ta
 ``` sql
 INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;
 ```
-Replication operates in multi-master mode. Data can be loaded into any replica and it will be synced with other instances automatically. Replication is asynchronous so at a given moment of time not all replicas may contain recently inserted data. To allow data insertion at least one replica should be up. Others will sync up data and repair consistency once they will become active again. Please notice that such approach allows for the low possibility of loss of just appended data.
+Replication operates in multi-master mode. Data can be loaded into any replica and it will be synced with other instances automatically. Replication is asynchronous so at a given moment, not all replicas may contain recently inserted data. To allow data insertion at least one replica should be up. Others will sync up data and repair consistency once they will become active again. Please notice that such an approach allows for the low possibility of a loss of just appended data.
+
+[Original article](https://clickhouse.tech/docs/en/getting_started/tutorial/) <!--hide-->

@@ -34,6 +34,18 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+static void validateKeyTypes(const DataTypes & key_types)
+{
+    if (key_types.size() != 1)
+        throw Exception{"Expected a single IP address", ErrorCodes::TYPE_MISMATCH};
+
+    const auto & actual_type = key_types[0]->getName();
+
+    if (actual_type != "UInt32" && actual_type != "FixedString(16)")
+        throw Exception{"Key does not match, expected either UInt32 or FixedString(16)", ErrorCodes::TYPE_MISMATCH};
+}
+
+
 TrieDictionary::TrieDictionary(
     const std::string & database_,
     const std::string & name_,
@@ -414,17 +426,6 @@ void TrieDictionary::calculateBytesAllocated()
     }
 
     bytes_allocated += btrie_allocated(trie);
-}
-
-void TrieDictionary::validateKeyTypes(const DataTypes & key_types) const
-{
-    if (key_types.size() != 1)
-        throw Exception{"Expected a single IP address", ErrorCodes::TYPE_MISMATCH};
-
-    const auto & actual_type = key_types[0]->getName();
-
-    if (actual_type != "UInt32" && actual_type != "FixedString(16)")
-        throw Exception{"Key does not match, expected either UInt32 or FixedString(16)", ErrorCodes::TYPE_MISMATCH};
 }
 
 

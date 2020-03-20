@@ -170,7 +170,7 @@ Marks numbers:   0      1      2      3      4      5      6      7      8      
 
 Разреженный индекс допускает чтение лишних строк. При чтении одного диапазона первичного ключа, может быть прочитано до `index_granularity * 2` лишних строк в каждом блоке данных.
 
-Разреженный индекс почти всегда помещаеся в оперативную память и поволяет работать с очень большим количеством строк в таблицах.
+Разреженный индекс почти всегда помещаеся в оперативную память и позволяет работать с очень большим количеством строк в таблицах.
 
 ClickHouse не требует уникального первичного ключа. Можно вставить много строк с одинаковым первичным ключом.
 
@@ -324,8 +324,8 @@ Function (operator) / Index | primary key | minmax | ngrambf_v1 | tokenbf_v1 | b
 [notEquals(!=, <>)](../../query_language/functions/comparison_functions.md#function-notequals) | ✔ | ✔ | ✔ | ✔ | ✔
 [like](../../query_language/functions/string_search_functions.md#function-like) | ✔ | ✔ | ✔ | ✗ |  ✗
 [notLike](../../query_language/functions/string_search_functions.md#function-notlike) | ✔ | ✔ | ✔ | ✔ | ✗
-[startsWith](../../query_language/functions/string_functions.md#function-startswith) | ✔ | ✔ | ✔ | ✔ | ✗
-[endsWith](../../query_language/functions/string_functions.md#function-endswith) | ✗ | ✗ | ✔ | ✔ | ✗
+[startsWith](../../query_language/functions/string_functions.md#startswith) | ✔ | ✔ | ✔ | ✔ | ✗
+[endsWith](../../query_language/functions/string_functions.md#endswith) | ✗ | ✗ | ✔ | ✔ | ✗
 [multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany) | ✗ | ✗ | ✔ | ✔ | ✗
 [in](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
 [notIn](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
