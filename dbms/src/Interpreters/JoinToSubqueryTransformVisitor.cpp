@@ -57,7 +57,7 @@ public:
         std::vector<String> tables_order;
         std::shared_ptr<ASTExpressionList> new_select_expression_list;
 
-        Data(const std::vector<TableWithColumnNamesAndTypes> & tables)
+        explicit Data(const std::vector<TableWithColumnNamesAndTypes> & tables)
         {
             tables_order.reserve(tables.size());
             for (const auto & table : tables)
