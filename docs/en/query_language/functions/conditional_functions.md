@@ -1,4 +1,4 @@
-# Conditional functions
+# Conditional functions {#conditional-functions}
 
 ## if {#if}
 
@@ -6,7 +6,7 @@ Controls conditional branching. Unlike most systems, ClickHouse always evaluate 
 
 **Syntax**
 
-```sql
+``` sql
 SELECT if(cond, then, else)
 ```
 
@@ -26,13 +26,13 @@ The function executes `then` and `else` expressions and returns its result, depe
 
 Query:
 
-```sql
+``` sql
 SELECT if(1, plus(2, 2), plus(2, 6))
 ```
 
 Result:
 
-```text
+``` text
 ┌─plus(2, 2)─┐
 │          4 │
 └────────────┘
@@ -40,25 +40,25 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT if(0, plus(2, 2), plus(2, 6))
 ```
 
 Result:
 
-```text
+``` text
 ┌─plus(2, 6)─┐
 │          8 │
 └────────────┘
 ```
 
-* `then` and `else` must have the lowest common type.
+- `then` and `else` must have the lowest common type.
 
 **Example:**
 
 Take this `LEFT_RIGHT` table:
 
-```sql
+``` sql
 SELECT *
 FROM LEFT_RIGHT
 
@@ -70,9 +70,10 @@ FROM LEFT_RIGHT
 │    4 │  ᴺᵁᴸᴸ │
 └──────┴───────┘
 ```
+
 The following query compares `left` and `right` values:
 
-```sql
+``` sql
 SELECT
     left,
     right,
@@ -86,6 +87,7 @@ WHERE isNotNull(left) AND isNotNull(right)
 │    3 │     1 │ right is greater or equal than left │
 └──────┴───────┴─────────────────────────────────────┘
 ```
+
 Note: `NULL` values are not used in this example, check [NULL values in conditionals](#null-values-in-conditionals) section.
 
 ## Ternary Operator {#ternary-operator}
@@ -96,15 +98,15 @@ Syntax: `cond ? then : else`
 
 Returns `then` if the `cond` evaluates to be true (greater than zero), otherwise returns `else`.
 
-* `cond` must be of type of `UInt8`, and `then` and `else` must have the lowest common type.
+- `cond` must be of type of `UInt8`, and `then` and `else` must have the lowest common type.
 
-* `then` and `else` can be `NULL`
+- `then` and `else` can be `NULL`
 
 **See also**
 
 - [ifNotFinite](other_functions.md#ifnotfinite).
 
-## multiIf
+## multiIf {#multiif}
 
 Allows you to write the [CASE](../operators.md#operator_case) operator more compactly in the query.
 
@@ -126,7 +128,7 @@ The function returns one of the values `then_N` or `else`, depending on the cond
 
 Again using `LEFT_RIGHT` table.
 
-```sql
+``` sql
 SELECT
     left,
     right,
@@ -141,11 +143,12 @@ FROM LEFT_RIGHT
 │    4 │  ᴺᵁᴸᴸ │ Null value      │
 └──────┴───────┴─────────────────┘
 ```
-## Using conditional results directly
+
+## Using conditional results directly {#using-conditional-results-directly}
 
 Conditionals always result to `0`, `1` or `NULL`. So you can use conditional results directly like this:
 
-```sql
+``` sql
 SELECT left < right AS is_small
 FROM LEFT_RIGHT
 
@@ -158,12 +161,11 @@ FROM LEFT_RIGHT
 └──────────┘
 ```
 
-
-## NULL values in conditionals
+## NULL values in conditionals {#null-values-in-conditionals}
 
 When `NULL` values are involved in conditionals, the result will also be `NULL`.
 
-```sql
+``` sql
 SELECT
     NULL < 1,
     2 < NULL,
@@ -179,7 +181,7 @@ So you should construct your queries carefully if the types are `Nullable`.
 
 The following example demonstrates this by failing to add equals condition to `multiIf`.
 
-```sql
+``` sql
 SELECT
     left,
     right,
@@ -194,6 +196,5 @@ FROM LEFT_RIGHT
 │    4 │  ᴺᵁᴸᴸ │ Both equal       │
 └──────┴───────┴──────────────────┘
 ```
-
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/conditional_functions/) <!--hide-->

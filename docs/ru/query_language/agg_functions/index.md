@@ -1,4 +1,4 @@
-# Агрегатные функции {#aggregate_functions}
+# Агрегатные функции {#aggregate-functions}
 
 Агрегатные функции работают в [привычном](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) для специалистов по базам данных смысле.
 
@@ -7,7 +7,7 @@ ClickHouse поддерживает также:
 - [Параметрические агрегатные функции](parametric_functions.md#aggregate_functions_parametric), которые помимо столбцов принимаю и другие параметры.
 - [Комбинаторы](combinators.md#aggregate_functions_combinators), которые изменяют поведение агрегатных функций.
 
-## Обработка NULL
+## Обработка NULL {#obrabotka-null}
 
 При агрегации все `NULL` пропускаются.
 
@@ -15,7 +15,7 @@ ClickHouse поддерживает также:
 
 Рассмотрим таблицу:
 
-```text
+``` text
 ┌─x─┬────y─┐
 │ 1 │    2 │
 │ 2 │ ᴺᵁᴸᴸ │
@@ -27,25 +27,25 @@ ClickHouse поддерживает также:
 
 Выполним суммирование значений в столбце `y`:
 
-```sql
+``` sql
 SELECT sum(y) FROM t_null_big
 ```
-```text
+
+``` text
 ┌─sum(y)─┐
 │      7 │
 └────────┘
-
 ```
 
 Функция `sum` работает с `NULL` как с `0`. В частности, это означает, что если на вход в функцию подать выборку, где все значения `NULL`, то результат будет `0`, а не `NULL`.
 
-
 Теперь с помощью функции `groupArray` сформируем массив из столбца `y`:
 
-```sql
+``` sql
 SELECT groupArray(y) FROM t_null_big
 ```
-```text
+
+``` text
 ┌─groupArray(y)─┐
 │ [2,2,3]       │
 └───────────────┘

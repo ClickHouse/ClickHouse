@@ -2,7 +2,7 @@
 
 If dictionary is configured using xml file, than dictionary configuration has the following structure:
 
-```xml
+``` xml
 <dictionary>
     <name>dict_name</name>
 
@@ -26,7 +26,7 @@ If dictionary is configured using xml file, than dictionary configuration has th
 
 Corresponding [DDL-query](../create.md#create-dictionary-query) has the following structure:
 
-```sql
+``` sql
 CREATE DICTIONARY dict_name
 (
     ... -- attributes

@@ -1,8 +1,8 @@
-# Настройка внешнего словаря {#dicts-external_dicts_dict}
+# Настройка внешнего словаря {#dicts-external-dicts-dict}
 
 XML-конфигурация словаря имеет следующую структуру:
 
-```xml
+``` xml
 <dictionary>
     <name>dict_name</name>
 
@@ -26,7 +26,7 @@ XML-конфигурация словаря имеет следующую стр
 
 Соответствующий [DDL-запрос](../create.md#create-dictionary-query) имеет следующий вид:
 
-```sql
+``` sql
 CREATE DICTIONARY dict_name
 (
     ... -- attributes

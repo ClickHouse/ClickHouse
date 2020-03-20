@@ -1,5 +1,4 @@
-
-# clickhouse-copier
+# clickhouse-copier {#clickhouse-copier}
 
 Copies data from the tables in one cluster to tables in another (or the same) cluster.
 
@@ -8,22 +7,23 @@ You can run multiple `clickhouse-copier` instances on different servers to perfo
 After starting, `clickhouse-copier`:
 
 - Connects to ZooKeeper and receives:
-    - Copying jobs.
-    - The state of the copying jobs.
+
+  - Copying jobs.
+  - The state of the copying jobs.
 
 - It performs the jobs.
 
-    Each running process chooses the "closest" shard of the source cluster and copies the data into the destination cluster, resharding the data if necessary.
+  Each running process chooses the “closest” shard of the source cluster and copies the data into the destination cluster, resharding the data if necessary.
 
 `clickhouse-copier` tracks the changes in ZooKeeper and applies them on the fly.
 
 To reduce network traffic, we recommend running `clickhouse-copier` on the same server where the source data is located.
 
-## Running clickhouse-copier
+## Running clickhouse-copier {#running-clickhouse-copier}
 
 The utility should be run manually:
 
-```bash
+``` bash
 $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
 ```
 
@@ -36,9 +36,9 @@ Parameters:
 - `task-upload-force` — Force upload `task-file` even if node already exists.
 - `base-dir` — The path to logs and auxiliary files. When it starts, `clickhouse-copier` creates `clickhouse-copier_YYYYMMHHSS_<PID>` subdirectories in `$base-dir`. If this parameter is omitted, the directories are created in the directory where `clickhouse-copier` was launched.
 
-## Format of zookeeper.xml
+## Format of zookeeper.xml {#format-of-zookeeper.xml}
 
-```xml
+``` xml
 <yandex>
     <logger>
         <level>trace</level>
@@ -55,9 +55,9 @@ Parameters:
 </yandex>
 ```
 
-## Configuration of copying tasks
+## Configuration of copying tasks {#configuration-of-copying-tasks}
 
-```xml
+``` xml
 <yandex>
     <!-- Configuration of clusters as in an ordinary server config -->
     <remote_servers>
@@ -165,6 +165,5 @@ Parameters:
 ```
 
 `clickhouse-copier` tracks the changes in `/task/path/description` and applies them on the fly. For instance, if you change the value of `max_workers`, the number of processes running tasks will also change.
-
 
 [Original article](https://clickhouse.tech/docs/en/operations/utils/clickhouse-copier/) <!--hide-->

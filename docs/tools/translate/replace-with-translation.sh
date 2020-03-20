@@ -7,6 +7,6 @@ trap 'rm -f -- "${TEMP_FILE}"' INT TERM HUP EXIT
 TARGET_LANGUAGE="$1"
 INPUT="$2"
 cat "${INPUT}" > "${TEMP_FILE}"
-git rm "${INPUT}"
+git rm -f "${INPUT}"
 YANDEX=1 "${BASE_DIR}/translate.sh" "${TARGET_LANGUAGE}" "${TEMP_FILE}" "${INPUT}"
 git add "${INPUT}"

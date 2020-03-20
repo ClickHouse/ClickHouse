@@ -1,4 +1,4 @@
-# ClickHouse历史
+# ClickHouse历史 {#clickhouseli-shi}
 
 ClickHouse最初是为 [Yandex.Metrica](https://metrica.yandex.com/) [世界第二大Web分析平台](http://w3techs.com/technologies/overview/traffic_analysis/all) 而开发的。多年来一直作为该系统的核心组件被该系统持续使用着。目前为止，该系统在ClickHouse中有超过13万亿条记录，并且每天超过200多亿个事件被处理。它允许直接从原始数据中动态查询并生成报告。本文简要介绍了ClickHouse在其早期发展阶段的目标。
 
@@ -6,7 +6,7 @@ Yandex.Metrica基于用户定义的字段，对实时访问、连接会话，生
 
 截至2014年4月，Yandex.Metrica每天跟踪大约120亿个事件（用户的点击和浏览）。为了可以创建自定义的报表，我们必须存储全部这些事件。同时，这些查询可能需要在几百毫秒内扫描数百万行的数据，或在几秒内扫描数亿行的数据。
 
-## Yandex.Metrica以及其他Yandex服务的使用案例
+## Yandex.Metrica以及其他Yandex服务的使用案例 {#yandex-metricayi-ji-qi-ta-yandexfu-wu-de-shi-yong-an-li}
 
 在Yandex.Metrica中，ClickHouse被用于多个场景中。
 它的主要任务是使用原始数据在线的提供各种数据报告。它使用374台服务器的集群，存储了20.3万亿行的数据。在去除重复与副本数据的情况下，压缩后的数据达到了2PB。未压缩前（TSV格式）它大概有17PB。
@@ -21,7 +21,7 @@ ClickHouse还被使用在：
 
 ClickHouse在其他Yandex服务中至少有12个安装：search verticals, Market, Direct, business analytics, mobile development, AdFox, personal services等。
 
-## 聚合与非聚合数据
+## 聚合与非聚合数据 {#ju-he-yu-fei-ju-he-shu-ju}
 
 有一种流行的观点认为，想要有效的计算统计数据，必须要聚合数据，因为聚合将降低数据量。
 
@@ -45,6 +45,5 @@ Yandex.Metrica 有一个专门用于聚合数据的系统，称为Metrage，它�
 OLAPServer可以很好的工作在非聚合数据上，但是它有诸多限制，导致无法根据需要将其用于所有报表中。如，缺少对数据类型的支持（只支持数据），无法实时增量的更新数据（只能通过每天重写数据完成）。OLAPServer不是一个数据库管理系统，它只是一个数据库。
 
 为了消除OLAPServer的这些局限性，解决所有报表使用非聚合数据的问题，我们开发了ClickHouse数据库管理系统。
-
 
 [来源文章](https://clickhouse.tech/docs/en/introduction/ya_metrika_task/) <!--hide-->

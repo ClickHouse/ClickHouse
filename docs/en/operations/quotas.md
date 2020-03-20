@@ -1,18 +1,18 @@
 # Quotas {#quotas}
 
 Quotas allow you to limit resource usage over a period of time, or simply track the use of resources.
-Quotas are set up in the user config. This is usually 'users.xml'.
+Quotas are set up in the user config. This is usually ‘users.xml’.
 
-The system also has a feature for limiting the complexity of a single query. See the section "Restrictions on query complexity").
+The system also has a feature for limiting the complexity of a single query. See the section “Restrictions on query complexity”).
 
 In contrast to query complexity restrictions, quotas:
 
 - Place restrictions on a set of queries that can be run over a period of time, instead of limiting a single query.
 - Account for resources spent on all remote servers for distributed query processing.
 
-Let's look at the section of the 'users.xml' file that defines quotas.
+Let’s look at the section of the ‘users.xml’ file that defines quotas.
 
-```xml
+``` xml
 <!-- Quotas -->
 <quotas>
     <!-- Quota name. -->
@@ -35,7 +35,7 @@ Let's look at the section of the 'users.xml' file that defines quotas.
 By default, the quota just tracks resource consumption for each hour, without limiting usage.
 The resource consumption calculated for each interval is output to the server log after each request.
 
-```xml
+``` xml
 <statbox>
     <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
     <interval>
@@ -61,7 +61,7 @@ The resource consumption calculated for each interval is output to the server lo
 </statbox>
 ```
 
-For the 'statbox' quota, restrictions are set for every hour and for every 24 hours (86,400 seconds). The time interval is counted starting from an implementation-defined fixed moment in time. In other words, the 24-hour interval doesn't necessarily begin at midnight.
+For the ‘statbox’ quota, restrictions are set for every hour and for every 24 hours (86,400 seconds). The time interval is counted starting from an implementation-defined fixed moment in time. In other words, the 24-hour interval doesn’t necessarily begin at midnight.
 
 When the interval ends, all collected values are cleared. For the next hour, the quota calculation starts over.
 
@@ -79,9 +79,9 @@ Here are the amounts that can be restricted:
 
 If the limit is exceeded for at least one time interval, an exception is thrown with a text about which restriction was exceeded, for which interval, and when the new interval begins (when queries can be sent again).
 
-Quotas can use the "quota key" feature in order to report on resources for multiple keys independently. Here is an example of this:
+Quotas can use the “quota key” feature in order to report on resources for multiple keys independently. Here is an example of this:
 
-```xml
+``` xml
 <!-- For the global reports designer. -->
 <web_global>
     <!-- keyed – The quota_key "key" is passed in the query parameter,
@@ -96,11 +96,10 @@ Quotas can use the "quota key" feature in order to report on resources for multi
     <keyed />
 ```
 
-The quota is assigned to users in the 'users' section of the config. See the section "Access rights".
+The quota is assigned to users in the ‘users’ section of the config. See the section “Access rights”.
 
-For distributed query processing, the accumulated amounts are stored on the requestor server. So if the user goes to another server, the quota there will "start over".
+For distributed query processing, the accumulated amounts are stored on the requestor server. So if the user goes to another server, the quota there will “start over”.
 
 When the server is restarted, quotas are reset.
-
 
 [Original article](https://clickhouse.tech/docs/en/operations/quotas/) <!--hide-->
