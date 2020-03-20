@@ -79,8 +79,8 @@ Enables or disables execution of `GROUP BY` clauses in external memory. See [GRO
 
 Possible values:
 
--   Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../query_language/select.md#select-group-by-clause) operation.
--   0 — `GROUP BY` in external memory disabled.
+- Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../query_language/select.md#select-group-by-clause) operation.
+- 0 — `GROUP BY` in external memory disabled.
 
 Default value: 0.
 
@@ -235,8 +235,8 @@ ClickHouse can proceed with different actions when the limit is reached. Use the
 
 Possible values:
 
--   Positive integer.
--   0 — Unlimited number of rows.
+- Positive integer.
+- 0 — Unlimited number of rows.
 
 Default value: 0.
 
@@ -252,8 +252,8 @@ ClickHouse can proceed with different actions when the limit is reached. Use [jo
 
 Possible values:
 
--   Positive integer.
--   0 — Memory control is disabled.
+- Positive integer.
+- 0 — Memory control is disabled.
 
 Default value: 0.
 
@@ -261,27 +261,27 @@ Default value: 0.
 
 Defines what action ClickHouse performs when any of the following join limits is reached:
 
--   [max\_bytes\_in\_join](#settings-max_bytes_in_join)
--   [max\_rows\_in\_join](#settings-max_rows_in_join)
+- [max\_bytes\_in\_join](#settings-max_bytes_in_join)
+- [max\_rows\_in\_join](#settings-max_rows_in_join)
 
 Possible values:
 
--   `THROW` — ClickHouse throws an exception and breaks operation.
--   `BREAK` — ClickHouse breaks operation and doesn’t throw an exception.
+- `THROW` — ClickHouse throws an exception and breaks operation.
+- `BREAK` — ClickHouse breaks operation and doesn’t throw an exception.
 
 Default value: `THROW`.
 
 **See Also**
 
--   [JOIN clause](../../query_language/select.md#select-join)
--   [Join table engine](../table_engines/join.md)
+- [JOIN clause](../../query_language/select.md#select-join)
+- [Join table engine](../table_engines/join.md)
 
 ## max\_partitions\_per\_insert\_block {#max_partitions_per_insert_block}
 
 Limits the maximum number of partitions in a single inserted block.
 
--   Positive integer.
--   0 — Unlimited number of partitions.
+- Positive integer.
+- 0 — Unlimited number of partitions.
 
 Default value: 100.
 

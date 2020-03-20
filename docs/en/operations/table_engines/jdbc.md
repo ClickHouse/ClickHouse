@@ -18,14 +18,14 @@ ENGINE = JDBC(dbms_uri, external_database, external_table)
 
 **Engine Parameters**
 
--   `dbms_uri` — URI of an external DBMS.
+- `dbms_uri` — URI of an external DBMS.
 
-    Format: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
-    Example for MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
+  Format: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
+  Example for MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
--   `external_database` — Database in an external DBMS.
+- `external_database` — Database in an external DBMS.
 
--   `external_table` — Name of the table in `external_database`.
+- `external_table` — Name of the table in `external_database`.
 
 ## Usage Example {#usage-example}
 
@@ -78,6 +78,6 @@ FROM jdbc_table
 
 ## See Also {#see-also}
 
--   [JDBC table function](../../query_language/table_functions/jdbc.md).
+- [JDBC table function](../../query_language/table_functions/jdbc.md).
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/jdbc/) <!--hide-->

@@ -66,10 +66,10 @@ SELECT * FROM url_engine_table
 
 ## Details of Implementation {#details-of-implementation}
 
--   Reads and writes can be parallel
--   Not supported:
-    -   `ALTER` and `SELECT...SAMPLE` operations.
-    -   Indexes.
-    -   Replication.
+- Reads and writes can be parallel
+- Not supported:
+  - `ALTER` and `SELECT...SAMPLE` operations.
+  - Indexes.
+  - Replication.
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/url/) <!--hide-->

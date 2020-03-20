@@ -8,17 +8,17 @@ ClickHouse applies this setting when the query contains the product of distribut
 
 Restrictions:
 
--   Only applied for IN and JOIN subqueries.
--   Only if the FROM section uses a distributed table containing more than one shard.
--   If the subquery concerns a distributed table containing more than one shard.
--   Not used for a table-valued [remote](../../query_language/table_functions/remote.md) function.
+- Only applied for IN and JOIN subqueries.
+- Only if the FROM section uses a distributed table containing more than one shard.
+- If the subquery concerns a distributed table containing more than one shard.
+- Not used for a table-valued [remote](../../query_language/table_functions/remote.md) function.
 
 Possible values:
 
--   `deny` — Default value. Prohibits using these types of subqueries (returns the “Double-distributed in/JOIN subqueries is denied” exception).
--   `local` — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN`/`JOIN.`
--   `global` — Replaces the `IN`/`JOIN` query with `GLOBAL IN`/`GLOBAL JOIN.`
--   `allow` — Allows the use of these types of subqueries.
+- `deny` — Default value. Prohibits using these types of subqueries (returns the “Double-distributed in/JOIN subqueries is denied” exception).
+- `local` — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN`/`JOIN.`
+- `global` — Replaces the `IN`/`JOIN` query with `GLOBAL IN`/`GLOBAL JOIN.`
+- `allow` — Allows the use of these types of subqueries.
 
 ## enable\_optimize\_predicate\_expression {#enable_optimize_predicate_expression}
 
@@ -28,8 +28,8 @@ Predicate pushdown may significantly reduce network traffic for distributed quer
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 1.
 
@@ -88,8 +88,8 @@ For more information, read the [HTTP interface description](../../interfaces/htt
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 0.
 
@@ -109,8 +109,8 @@ For more information, read the [HTTP interface description](../../interfaces/htt
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 0.
 
@@ -122,8 +122,8 @@ For more information, read the [HTTP interface description](../../interfaces/htt
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 0.
 
@@ -133,8 +133,8 @@ Limits the maximum number of HTTP GET redirect hops for [URL](../table_engines/u
 
 Possible values:
 
--   Any positive integer number of hops.
--   0 — No hops allowed.
+- Any positive integer number of hops.
+- 0 — No hops allowed.
 
 Default value: 0.
 
@@ -169,13 +169,13 @@ Enables or disables the full SQL parser if the fast stream parser can’t parse 
 
 Possible values:
 
--   0 — Disabled.
+- 0 — Disabled.
 
-    In this case, you must provide formatted data. See the [Formats](../../interfaces/formats.md) section.
+  In this case, you must provide formatted data. See the [Formats](../../interfaces/formats.md) section.
 
--   1 — Enabled.
+- 1 — Enabled.
 
-    In this case, you can use an SQL expression as a value, but data insertion is much slower this way. If you insert only formatted data, then ClickHouse behaves as if the setting value is 0.
+  In this case, you can use an SQL expression as a value, but data insertion is much slower this way. If you insert only formatted data, then ClickHouse behaves as if the setting value is 0.
 
 Default value: 1.
 
@@ -221,9 +221,9 @@ Enables or disables template deduction for an SQL expressions in [Values](../../
 INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
 ```
 
--   if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=0` expressions will be interpreted separately for each row (this is very slow for large number of rows)
--   if `input_format_values_interpret_expressions=0` and `format_values_deduce_templates_of_expressions=1` expressions in the first, second and third rows will be parsed using template `lower(String)` and interpreted together, expression is the forth row will be parsed with another template (`upper(String)`)
--   if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=1` - the same as in previous case, but also allows fallback to interpreting expressions separately if it’s not possible to deduce template.
+- if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=0` expressions will be interpreted separately for each row (this is very slow for large number of rows)
+- if `input_format_values_interpret_expressions=0` and `format_values_deduce_templates_of_expressions=1` expressions in the first, second and third rows will be parsed using template `lower(String)` and interpreted together, expression is the forth row will be parsed with another template (`upper(String)`)
+- if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=1` - the same as in previous case, but also allows fallback to interpreting expressions separately if it’s not possible to deduce template.
 
 Enabled by default.
 
@@ -250,8 +250,8 @@ When performing `INSERT` queries, replace omitted input column values with defau
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 1.
 
@@ -273,15 +273,15 @@ When writing data, ClickHouse throws an exception if input data contain columns 
 
 Supported formats:
 
--   [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
--   [CSVWithNames](../../interfaces/formats.md#csvwithnames)
--   [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
--   [TSKV](../../interfaces/formats.md#tskv)
+- [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
+- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [TSKV](../../interfaces/formats.md#tskv)
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 0.
 
@@ -291,18 +291,18 @@ Enables or disables the insertion of JSON data with nested objects.
 
 Supported formats:
 
--   [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
+- [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 0.
 
 See also:
 
--   [Usage of Nested Structures](../../interfaces/formats.md#jsoneachrow-nested) with the `JSONEachRow` format.
+- [Usage of Nested Structures](../../interfaces/formats.md#jsoneachrow-nested) with the `JSONEachRow` format.
 
 ## input\_format\_with\_names\_use\_header {#settings-input_format_with_names_use_header}
 
@@ -312,13 +312,13 @@ To improve insert performance, we recommend disabling this check if you are sure
 
 Supported formats:
 
--   [CSVWithNames](../../interfaces/formats.md#csvwithnames)
--   [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 1.
 
@@ -330,20 +330,20 @@ The setting doesn’t apply to [date and time functions](../../query_language/fu
 
 Possible values:
 
--   `'best_effort'` — Enables extended parsing.
+- `'best_effort'` — Enables extended parsing.
 
-    ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
+  ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
 
--   `'basic'` — Use basic parser.
+- `'basic'` — Use basic parser.
 
-    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` format. For example, `'2019-08-20 10:18:56'`.
+  ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` format. For example, `'2019-08-20 10:18:56'`.
 
 Default value: `'basic'`.
 
 See also:
 
--   [DateTime data type.](../../data_types/datetime.md)
--   [Functions for working with dates and times.](../../query_language/functions/date_time_functions.md)
+- [DateTime data type.](../../data_types/datetime.md)
+- [Functions for working with dates and times.](../../query_language/functions/date_time_functions.md)
 
 ## join\_default\_strictness {#settings-join_default_strictness}
 
@@ -351,10 +351,10 @@ Sets default strictness for [JOIN clauses](../../query_language/select.md#select
 
 Possible values:
 
--   `ALL` — If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the normal `JOIN` behaviour from standard SQL.
--   `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
--   `ASOF` — For joining sequences with an uncertain match.
--   `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
+- `ALL` — If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the normal `JOIN` behaviour from standard SQL.
+- `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
+- `ASOF` — For joining sequences with an uncertain match.
+- `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
 
 Default value: `ALL`.
 
@@ -367,16 +367,16 @@ Changes behaviour of join operations with `ANY` strictness.
 
 Possible values:
 
--   0 — If the right table has more than one matching row, only the first one found is joined.
--   1 — If the right table has more than one matching row, only the last one found is joined.
+- 0 — If the right table has more than one matching row, only the first one found is joined.
+- 1 — If the right table has more than one matching row, only the last one found is joined.
 
 Default value: 0.
 
 See also:
 
--   [JOIN clause](../../query_language/select.md#select-join)
--   [Join table engine](../table_engines/join.md)
--   [join\_default\_strictness](#settings-join_default_strictness)
+- [JOIN clause](../../query_language/select.md#select-join)
+- [Join table engine](../table_engines/join.md)
+- [join\_default\_strictness](#settings-join_default_strictness)
 
 ## join\_use\_nulls {#join_use_nulls}
 
@@ -384,8 +384,8 @@ Sets the type of [JOIN](../../query_language/select.md) behavior. When merging t
 
 Possible values:
 
--   0 — The empty cells are filled with the default value of the corresponding field type.
--   1 — `JOIN` behaves the same way as in standard SQL. The type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
+- 0 — The empty cells are filled with the default value of the corresponding field type.
+- 1 — `JOIN` behaves the same way as in standard SQL. The type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
 
 Default value: 0.
 
@@ -409,7 +409,7 @@ If the number of rows to be read from a file of a [MergeTree](../table_engines/m
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 163840.
 
@@ -419,7 +419,7 @@ If the number of bytes to read from one file of a [MergeTree](../table_engines/m
 
 Possible value:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 251658240.
 
@@ -429,7 +429,7 @@ If the distance between two data blocks to be read in one file is less than `mer
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 0.
 
@@ -439,7 +439,7 @@ If the distance between two data blocks to be read in one file is less than `mer
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 0.
 
@@ -449,7 +449,7 @@ When searching for data, ClickHouse checks the data marks in the index file. If 
 
 Possible values:
 
--   Any positive even integer.
+- Any positive even integer.
 
 Default value: 8.
 
@@ -461,7 +461,7 @@ The cache of uncompressed blocks stores data extracted for queries. ClickHouse u
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 128 ✕ 8192.
 
@@ -473,7 +473,7 @@ The cache of uncompressed blocks stores data extracted for queries. ClickHouse u
 
 Possible value:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 2013265920.
 
@@ -485,8 +485,8 @@ ClickHouse uses this setting when reading data from tables. If the total storage
 
 Possible values:
 
--   0 — Direct I/O is disabled.
--   Positive integer.
+- 0 — Direct I/O is disabled.
+- Positive integer.
 
 Default value: 0.
 
@@ -557,8 +557,8 @@ The maximum number of threads to execute the `INSERT SELECT` query.
 
 Possible values:
 
--   0 (or 1) — `INSERT SELECT` no parallel execution.
--   Positive integer. Bigger than 1.
+- 0 (or 1) — `INSERT SELECT` no parallel execution.
+- Positive integer. Bigger than 1.
 
 Default value: 0.
 
@@ -680,10 +680,10 @@ Specifies the algorithm of replicas selection that is used for distributed query
 
 ClickHouse supports the following algorithms of choosing replicas:
 
--   [Random](#load_balancing-random) (by default)
--   [Nearest hostname](#load_balancing-nearest_hostname)
--   [In order](#load_balancing-in_order)
--   [First or random](#load_balancing-first_or_random)
+- [Random](#load_balancing-random) (by default)
+- [Nearest hostname](#load_balancing-nearest_hostname)
+- [In order](#load_balancing-in_order)
+- [First or random](#load_balancing-first_or_random)
 
 ### Random (by default) {#load_balancing-random}
 
@@ -733,8 +733,8 @@ Enables/disables preferable using the localhost replica when processing distribu
 
 Possible values:
 
--   1 — ClickHouse always sends a query to the localhost replica if it exists.
--   0 — ClickHouse uses the balancing strategy specified by the [load\_balancing](#settings-load_balancing) setting.
+- 1 — ClickHouse always sends a query to the localhost replica if it exists.
+- 0 — ClickHouse uses the balancing strategy specified by the [load\_balancing](#settings-load_balancing) setting.
 
 Default value: 1.
 
@@ -797,8 +797,8 @@ Use DOC/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
 
 Enables the quorum writes.
 
--   If `insert_quorum < 2`, the quorum writes are disabled.
--   If `insert_quorum >= 2`, the quorum writes are enabled.
+- If `insert_quorum < 2`, the quorum writes are disabled.
+- If `insert_quorum >= 2`, the quorum writes are enabled.
 
 Default value: 0.
 
@@ -812,13 +812,13 @@ When reading the data written from the `insert_quorum`, you can use the [select\
 
 ClickHouse generates an exception
 
--   If the number of available replicas at the time of the query is less than the `insert_quorum`.
--   At an attempt to write data when the previous block has not yet been inserted in the `insert_quorum` of replicas. This situation may occur if the user tries to perform an `INSERT` before the previous one with the `insert_quorum` is completed.
+- If the number of available replicas at the time of the query is less than the `insert_quorum`.
+- At an attempt to write data when the previous block has not yet been inserted in the `insert_quorum` of replicas. This situation may occur if the user tries to perform an `INSERT` before the previous one with the `insert_quorum` is completed.
 
 See also:
 
--   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
--   [select\_sequential\_consistency](#settings-select_sequential_consistency)
+- [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
+- [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
 ## insert\_quorum\_timeout {#settings-insert_quorum_timeout}
 
@@ -828,8 +828,8 @@ Default value: 60 seconds.
 
 See also:
 
--   [insert\_quorum](#settings-insert_quorum)
--   [select\_sequential\_consistency](#settings-select_sequential_consistency)
+- [insert\_quorum](#settings-insert_quorum)
+- [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
 ## select\_sequential\_consistency {#settings-select_sequential_consistency}
 
@@ -837,8 +837,8 @@ Enables or disables sequential consistency for `SELECT` queries:
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 0.
 
@@ -848,8 +848,8 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 
 See also:
 
--   [insert\_quorum](#settings-insert_quorum)
--   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
+- [insert\_quorum](#settings-insert_quorum)
+- [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
 
 ## insert\_deduplicate {#settings-insert_deduplicate}
 
@@ -857,8 +857,8 @@ Enables or disables block deduplication of `INSERT` (for Replicated\* tables).
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 Default value: 1.
 
@@ -888,8 +888,8 @@ Limits the data volume (in bytes) that is received or transmitted over the netwo
 
 Possible values:
 
--   Positive integer.
--   0 — Data volume control is disabled.
+- Positive integer.
+- 0 — Data volume control is disabled.
 
 Default value: 0.
 
@@ -899,8 +899,8 @@ Limits the speed of the data exchange over the network in bytes per second. This
 
 Possible values:
 
--   Positive integer.
--   0 — Bandwidth control is disabled.
+- Positive integer.
+- 0 — Bandwidth control is disabled.
 
 Default value: 0.
 
@@ -910,8 +910,8 @@ Limits the speed of the data exchange over the network in bytes per second. This
 
 Possible values:
 
--   Positive integer.
--   0 — Control of the data speed is disabled.
+- Positive integer.
+- 0 — Control of the data speed is disabled.
 
 Default value: 0.
 
@@ -921,8 +921,8 @@ Limits the speed that data is exchanged at over the network in bytes per second.
 
 Possible values:
 
--   Positive integer.
--   0 — Control of the data speed is disabled.
+- Positive integer.
+- 0 — Control of the data speed is disabled.
 
 Default value: 0.
 
@@ -932,11 +932,11 @@ Specifies which of the `uniq*` functions should be used to perform the [COUNT(DI
 
 Possible values:
 
--   [uniq](../../query_language/agg_functions/reference.md#agg_function-uniq)
--   [uniqCombined](../../query_language/agg_functions/reference.md#agg_function-uniqcombined)
--   [uniqCombined64](../../query_language/agg_functions/reference.md#agg_function-uniqcombined64)
--   [uniqHLL12](../../query_language/agg_functions/reference.md#agg_function-uniqhll12)
--   [uniqExact](../../query_language/agg_functions/reference.md#agg_function-uniqexact)
+- [uniq](../../query_language/agg_functions/reference.md#agg_function-uniq)
+- [uniqCombined](../../query_language/agg_functions/reference.md#agg_function-uniqcombined)
+- [uniqCombined64](../../query_language/agg_functions/reference.md#agg_function-uniqcombined64)
+- [uniqHLL12](../../query_language/agg_functions/reference.md#agg_function-uniqhll12)
+- [uniqExact](../../query_language/agg_functions/reference.md#agg_function-uniqexact)
 
 Default value: `uniqExact`.
 
@@ -946,27 +946,27 @@ Enables or disables silently skipping of unavailable shards.
 
 Shard is considered unavailable if all its replicas are unavailable. A replica is unavailable in the following cases:
 
--   ClickHouse can’t connect to replica for any reason.
+- ClickHouse can’t connect to replica for any reason.
 
-    When connecting to a replica, ClickHouse performs several attempts. If all these attempts fail, the replica is considered unavailable.
+  When connecting to a replica, ClickHouse performs several attempts. If all these attempts fail, the replica is considered unavailable.
 
--   Replica can’t be resolved through DNS.
+- Replica can’t be resolved through DNS.
 
-    If replica’s hostname can’t be resolved through DNS, it can indicate the following situations:
+  If replica’s hostname can’t be resolved through DNS, it can indicate the following situations:
 
-    -   Replica’s host has no DNS record. It can occur in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
+  - Replica’s host has no DNS record. It can occur in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
 
-    -   Configuration error. ClickHouse configuration file contains a wrong hostname.
+  - Configuration error. ClickHouse configuration file contains a wrong hostname.
 
 Possible values:
 
--   1 — skipping enabled.
+- 1 — skipping enabled.
 
-    If a shard is unavailable, ClickHouse returns a result based on partial data and doesn’t report node availability issues.
+  If a shard is unavailable, ClickHouse returns a result based on partial data and doesn’t report node availability issues.
 
--   0 — skipping disabled.
+- 0 — skipping disabled.
 
-    If a shard is unavailable, ClickHouse throws an exception.
+  If a shard is unavailable, ClickHouse throws an exception.
 
 Default value: 0.
 
@@ -982,9 +982,9 @@ Enables or disables query execution if [`optimize_skip_unused_shards`](#settings
 
 Possible values:
 
--   0 - Disabled (do not throws)
--   1 - Disable query execution only if the table has sharding key
--   2 - Disable query execution regardless sharding key is defined for the table
+- 0 - Disabled (do not throws)
+- 1 - Disable query execution only if the table has sharding key
+- 2 - Disable query execution regardless sharding key is defined for the table
 
 Default value: 0
 
@@ -996,34 +996,34 @@ By default, `OPTIMIZE` returns successfully even if it didn’t do anything. Thi
 
 Possible values:
 
--   1 — Throwing an exception is enabled.
--   0 — Throwing an exception is disabled.
+- 1 — Throwing an exception is enabled.
+- 0 — Throwing an exception is disabled.
 
 Default value: 0.
 
 ## distributed\_replica\_error\_half\_life {#settings-distributed_replica_error_half_life}
 
--   Type: seconds
--   Default value: 60 seconds
+- Type: seconds
+- Default value: 60 seconds
 
 Controls how fast errors in distributed tables are zeroed. If a replica is unavailable for some time, accumulates 5 errors, and distributed\_replica\_error\_half\_life is set to 1 second, then the replica is considered normal 3 seconds after last error.
 
 See also:
 
--   [Table engine Distributed](../../operations/table_engines/distributed.md)
--   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
+- [Table engine Distributed](../../operations/table_engines/distributed.md)
+- [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
 
 ## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
 
--   Type: unsigned int
--   Default value: 1000
+- Type: unsigned int
+- Default value: 1000
 
 Error count of each replica is capped at this value, preventing a single replica from accumulating too many errors.
 
 See also:
 
--   [Table engine Distributed](../../operations/table_engines/distributed.md)
--   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
+- [Table engine Distributed](../../operations/table_engines/distributed.md)
+- [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
 
 ## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
 
@@ -1031,7 +1031,7 @@ Base interval for the [Distributed](../table_engines/distributed.md) table engin
 
 Possible values:
 
--   A positive integer number of milliseconds.
+- A positive integer number of milliseconds.
 
 Default value: 100 milliseconds.
 
@@ -1041,7 +1041,7 @@ Maximum interval for the [Distributed](../table_engines/distributed.md) table en
 
 Possible values:
 
--   A positive integer number of milliseconds.
+- A positive integer number of milliseconds.
 
 Default value: 30000 milliseconds (30 seconds).
 
@@ -1053,8 +1053,8 @@ When batch sending is enabled, the [Distributed](../table_engines/distributed.md
 
 Possible values:
 
--   1 — Enabled.
--   0 — Disabled.
+- 1 — Enabled.
+- 0 — Disabled.
 
 Default value: 0.
 
@@ -1067,7 +1067,7 @@ Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for thread
 
 Possible values:
 
--   You can set values in the range `[-20, 19]`.
+- You can set values in the range `[-20, 19]`.
 
 Lower values mean higher priority. Threads with low `nice` priority values are executed more frequently than threads with high values. High values are preferable for long-running non-interactive queries because it allows them to quickly give up resources in favour of short interactive queries when they arrive.
 
@@ -1079,14 +1079,14 @@ Sets the period for a real clock timer of the [query profiler](../../operations/
 
 Possible values:
 
--   Positive integer number, in nanoseconds.
+- Positive integer number, in nanoseconds.
 
-    Recommended values:
+  Recommended values:
 
-          - 10000000 (100 times a second) nanoseconds and less for single queries.
-          - 1000000000 (once a second) for cluster-wide profiling.
+        - 10000000 (100 times a second) nanoseconds and less for single queries.
+        - 1000000000 (once a second) for cluster-wide profiling.
 
--   0 for turning off the timer.
+- 0 for turning off the timer.
 
 Type: [UInt64](../../data_types/int_uint.md).
 
@@ -1094,7 +1094,7 @@ Default value: 1000000000 nanoseconds (once a second).
 
 See also:
 
--   System table [trace\_log](../system_tables.md#system_tables-trace_log)
+- System table [trace\_log](../system_tables.md#system_tables-trace_log)
 
 ## query\_profiler\_cpu\_time\_period\_ns {#query_profiler_cpu_time_period_ns}
 
@@ -1102,14 +1102,14 @@ Sets the period for a CPU clock timer of the [query profiler](../../operations/p
 
 Possible values:
 
--   A positive integer number of nanoseconds.
+- A positive integer number of nanoseconds.
 
-    Recommended values:
+  Recommended values:
 
-          - 10000000 (100 times a second) nanoseconds and more for single queries.
-          - 1000000000 (once a second) for cluster-wide profiling.
+        - 10000000 (100 times a second) nanoseconds and more for single queries.
+        - 1000000000 (once a second) for cluster-wide profiling.
 
--   0 for turning off the timer.
+- 0 for turning off the timer.
 
 Type: [UInt64](../../data_types/int_uint.md).
 
@@ -1117,7 +1117,7 @@ Default value: 1000000000 nanoseconds.
 
 See also:
 
--   System table [trace\_log](../system_tables.md#system_tables-trace_log)
+- System table [trace\_log](../system_tables.md#system_tables-trace_log)
 
 ## allow\_introspection\_functions {#settings-allow_introspection_functions}
 
@@ -1125,27 +1125,27 @@ Enables of disables [introspections functions](../../query_language/functions/in
 
 Possible values:
 
--   1 — Introspection functions enabled.
--   0 — Introspection functions disabled.
+- 1 — Introspection functions enabled.
+- 0 — Introspection functions disabled.
 
 Default value: 0.
 
 **See Also**
 
--   [Sampling Query Profiler](../performance/sampling_query_profiler.md)
--   System table [trace\_log](../system_tables.md#system_tables-trace_log)
+- [Sampling Query Profiler](../performance/sampling_query_profiler.md)
+- System table [trace\_log](../system_tables.md#system_tables-trace_log)
 
 ## input\_format\_parallel\_parsing {#input_format_parallel_parsing}
 
--   Type: bool
--   Default value: True
+- Type: bool
+- Default value: True
 
 Enable order-preserving parallel parsing of data formats. Supported only for TSV, TKSV, CSV and JSONEachRow formats.
 
 ## min\_chunk\_bytes\_for\_parallel\_parsing {#min_chunk_bytes_for_parallel_parsing}
 
--   Type: unsigned int
--   Default value: 1 MiB
+- Type: unsigned int
+- Default value: 1 MiB
 
 The minimum chunk size in bytes, which each thread will parse in parallel.
 
@@ -1157,9 +1157,9 @@ Type: string
 
 Possible values:
 
--   `null` — No compression
--   `deflate` — Compress with Deflate (zlib)
--   `snappy` — Compress with [Snappy](https://google.github.io/snappy/)
+- `null` — No compression
+- `deflate` — Compress with Deflate (zlib)
+- `snappy` — Compress with [Snappy](https://google.github.io/snappy/)
 
 Default value: `snappy` (if available) or `deflate`.
 

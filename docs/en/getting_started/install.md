@@ -37,10 +37,10 @@ You can also download and install packages manually from here: https://repo.yand
 
 #### Packages {#packages}
 
--   `clickhouse-common-static` — Installs ClickHouse compiled binary files.
--   `clickhouse-server` — Creates a symbolic link for `clickhouse-server`. Installs server configuration.
--   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` and other client-related tools. Installs client configurations.
--   `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
+- `clickhouse-common-static` — Installs ClickHouse compiled binary files.
+- `clickhouse-server` — Creates a symbolic link for `clickhouse-server`. Installs server configuration.
+- `clickhouse-client` — Creates a symbolic link for `clickhouse-client` and other client-related tools. Installs client configurations.
+- `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
 ### From RPM Packages {#from-rpm-packages}
 

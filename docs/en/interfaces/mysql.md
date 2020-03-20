@@ -35,8 +35,8 @@ If user password is specified using [SHA256](../operations/settings/settings_use
 
 Restrictions:
 
--   prepared queries are not supported
+- prepared queries are not supported
 
--   some data types are sent as strings
+- some data types are sent as strings
 
 [Original article](https://clickhouse.tech/docs/en/interfaces/mysql/) <!--hide-->

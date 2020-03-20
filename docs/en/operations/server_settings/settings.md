@@ -36,16 +36,16 @@ Configuration template:
 
 `<case>` fields:
 
--   `min_part_size` – The minimum size of a data part.
--   `min_part_size_ratio` – The ratio of the data part size to the table size.
--   `method` – Compression method. Acceptable values: `lz4` or `zstd`.
+- `min_part_size` – The minimum size of a data part.
+- `min_part_size_ratio` – The ratio of the data part size to the table size.
+- `method` – Compression method. Acceptable values: `lz4` or `zstd`.
 
 You can configure multiple `<case>` sections.
 
 Actions when conditions are met:
 
--   If a data part matches a condition set, ClickHouse uses the specified compression method.
--   If a data part matches multiple condition sets, ClickHouse uses the first matched condition set.
+- If a data part matches a condition set, ClickHouse uses the specified compression method.
+- If a data part matches multiple condition sets, ClickHouse uses the first matched condition set.
 
 If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 
@@ -91,8 +91,8 @@ The path to the config file for external dictionaries.
 
 Path:
 
--   Specify the absolute path or the path relative to the server config file.
--   The path can contain wildcards \* and ?.
+- Specify the absolute path or the path relative to the server config file.
+- The path can contain wildcards \* and ?.
 
 See also “[External dictionaries](../../query_language/dicts/external_dicts.md)”.
 
@@ -135,15 +135,15 @@ Sending data to [Graphite](https://github.com/graphite-project).
 
 Settings:
 
--   host – The Graphite server.
--   port – The port on the Graphite server.
--   interval – The interval for sending, in seconds.
--   timeout – The timeout for sending data, in seconds.
--   root\_path – Prefix for keys.
--   metrics – Sending data from the [system.metrics](../system_tables.md#system_tables-metrics) table.
--   events – Sending deltas data accumulated for the time period from the [system.events](../system_tables.md#system_tables-events) table.
--   events\_cumulative – Sending cumulative data from the [system.events](../system_tables.md#system_tables-events) table.
--   asynchronous\_metrics – Sending data from the [system.asynchronous\_metrics](../system_tables.md#system_tables-asynchronous_metrics) table.
+- host – The Graphite server.
+- port – The port on the Graphite server.
+- interval – The interval for sending, in seconds.
+- timeout – The timeout for sending data, in seconds.
+- root\_path – Prefix for keys.
+- metrics – Sending data from the [system.metrics](../system_tables.md#system_tables-metrics) table.
+- events – Sending deltas data accumulated for the time period from the [system.events](../system_tables.md#system_tables-events) table.
+- events\_cumulative – Sending cumulative data from the [system.events](../system_tables.md#system_tables-events) table.
+- asynchronous\_metrics – Sending data from the [system.asynchronous\_metrics](../system_tables.md#system_tables-asynchronous_metrics) table.
 
 You can configure multiple `<graphite>` clauses. For instance, you can use this for sending different data at different intervals.
 
@@ -263,8 +263,8 @@ By default, the authentication is not used.
 
 This section contains the following parameters:
 
--   `user` — username.
--   `password` — password.
+- `user` — username.
+- `password` — password.
 
 **Example**
 
@@ -302,11 +302,11 @@ Logging settings.
 
 Keys:
 
--   level – Logging level. Acceptable values: `trace`, `debug`, `information`, `warning`, `error`.
--   log – The log file. Contains all the entries according to `level`.
--   errorlog – Error log file.
--   size – Size of the file. Applies to `log`and`errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
--   count – The number of archived log files that ClickHouse stores.
+- level – Logging level. Acceptable values: `trace`, `debug`, `information`, `warning`, `error`.
+- log – The log file. Contains all the entries according to `level`.
+- errorlog – Error log file.
+- size – Size of the file. Applies to `log`and`errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
+- count – The number of archived log files that ClickHouse stores.
 
 **Example**
 
@@ -336,12 +336,12 @@ Writing to the syslog is also supported. Config example:
 
 Keys:
 
--   use\_syslog — Required setting if you want to write to the syslog.
--   address — The host\[:port\] of syslogd. If omitted, the local daemon is used.
--   hostname — Optional. The name of the host that logs are sent from.
--   facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility) in uppercase letters with the “LOG\_” prefix: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, and so on).
-    Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON otherwise.`
--   format – Message format. Possible values: `bsd` and `syslog.`
+- use\_syslog — Required setting if you want to write to the syslog.
+- address — The host\[:port\] of syslogd. If omitted, the local daemon is used.
+- hostname — Optional. The name of the host that logs are sent from.
+- facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility) in uppercase letters with the “LOG\_” prefix: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, and so on).
+  Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON otherwise.`
+- format – Message format. Possible values: `bsd` and `syslog.`
 
 ## macros {#macros}
 
@@ -443,26 +443,26 @@ Support for SSL is provided by the `libpoco` library. The interface is described
 
 Keys for server/client settings:
 
--   privateKeyFile – The path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.
--   certificateFile – The path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` contains the certificate.
--   caConfig – The path to the file or directory that contains trusted root certificates.
--   verificationMode – The method for checking the node’s certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `none`, `relaxed`, `strict`, `once`.
--   verificationDepth – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
--   loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `true`, `false`. \|
--   cipherList – Supported OpenSSL encryptions. For example: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`.
--   cacheSessions – Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.
--   sessionIdContext – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: `${application.name}`.
--   sessionCacheSize – The maximum number of sessions that the server caches. Default value: 1024\*20. 0 – Unlimited sessions.
--   sessionTimeout – Time for caching the session on the server.
--   extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
--   requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
--   requireTLSv1\_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
--   requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
--   fips – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
--   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
--   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
--   disableProtocols – Protocols that are not allowed to use.
--   preferServerCiphers – Preferred server ciphers on the client.
+- privateKeyFile – The path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.
+- certificateFile – The path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` contains the certificate.
+- caConfig – The path to the file or directory that contains trusted root certificates.
+- verificationMode – The method for checking the node’s certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `none`, `relaxed`, `strict`, `once`.
+- verificationDepth – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
+- loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `true`, `false`. \|
+- cipherList – Supported OpenSSL encryptions. For example: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`.
+- cacheSessions – Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.
+- sessionIdContext – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: `${application.name}`.
+- sessionCacheSize – The maximum number of sessions that the server caches. Default value: 1024\*20. 0 – Unlimited sessions.
+- sessionTimeout – Time for caching the session on the server.
+- extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
+- requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
+- requireTLSv1\_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
+- requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
+- fips – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
+- privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
+- invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
+- disableProtocols – Protocols that are not allowed to use.
+- preferServerCiphers – Preferred server ciphers on the client.
 
 **Example of settings:**
 
@@ -502,10 +502,10 @@ Queries are logged in the [system.part\_log](../system_tables.md#system_tables-p
 
 Use the following parameters to configure logging:
 
--   `database` – Name of the database.
--   `table` – Name of the system table.
--   `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md).
--   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+- `database` – Name of the database.
+- `table` – Name of the system table.
+- `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md).
+- `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
 **Example**
 
@@ -539,10 +539,10 @@ Queries are logged in the [system.query\_log](../system_tables.md#system_tables-
 
 Use the following parameters to configure logging:
 
--   `database` – Name of the database.
--   `table` – Name of the system table the queries will be logged in.
--   `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a table.
--   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+- `database` – Name of the database.
+- `table` – Name of the system table the queries will be logged in.
+- `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a table.
+- `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
 If the table doesn’t exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -565,10 +565,10 @@ Queries are logged in the [system.query\_thread\_log](../system_tables.md#system
 
 Use the following parameters to configure logging:
 
--   `database` – Name of the database.
--   `table` – Name of the system table the queries will be logged in.
--   `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a system table.
--   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+- `database` – Name of the database.
+- `table` – Name of the system table the queries will be logged in.
+- `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a system table.
+- `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
 If the table doesn’t exist, ClickHouse will create it. If the structure of the query thread log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -589,10 +589,10 @@ Settings for the [trace\_log](../system_tables.md#system_tables-trace_log) syste
 
 Parameters:
 
--   `database` — Database for storing a table.
--   `table` — Table name.
--   `partition_by` — [Custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a system table.
--   `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+- `database` — Database for storing a table.
+- `table` — Table name.
+- `partition_by` — [Custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a system table.
+- `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
 
 The default server configuration file `config.xml` contains the following settings section:
 
@@ -650,7 +650,7 @@ For the value of the `incl` attribute, see the section “[Configuration files](
 
 **See Also**
 
--   [skip\_unavailable\_shards](../settings/settings.md#settings-skip_unavailable_shards)
+- [skip\_unavailable\_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
 ## timezone {#server_settings-timezone}
 
@@ -756,10 +756,10 @@ The directory with user files. Used in the table function [file()](../../query_l
 
 Path to the file that contains:
 
--   User configurations.
--   Access rights.
--   Settings profiles.
--   Quota settings.
+- User configurations.
+- Access rights.
+- Settings profiles.
+- Quota settings.
 
 **Example**
 
@@ -775,9 +775,9 @@ ClickHouse uses ZooKeeper for storing metadata of replicas when using replicated
 
 This section contains the following parameters:
 
--   `node` — ZooKeeper endpoint. You can set multiple endpoints.
+- `node` — ZooKeeper endpoint. You can set multiple endpoints.
 
-    For example:
+  For example:
 
 <!-- -->
 
@@ -790,9 +790,9 @@ This section contains the following parameters:
 
     The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
 
--   `session_timeout` — Maximum timeout for the client session in milliseconds.
--   `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
--   `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
+- `session_timeout` — Maximum timeout for the client session in milliseconds.
+- `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
+- `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
 
 **Example configuration**
 
@@ -817,8 +817,8 @@ This section contains the following parameters:
 
 **See Also**
 
--   [Replication](../../operations/table_engines/replication.md)
--   [ZooKeeper Programmer’s Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
+- [Replication](../../operations/table_engines/replication.md)
+- [ZooKeeper Programmer’s Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
 ## use\_minimalistic\_part\_header\_in\_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 
@@ -826,18 +826,18 @@ Storage method for data part headers in ZooKeeper.
 
 This setting only applies to the `MergeTree` family. It can be specified:
 
--   Globally in the [merge\_tree](#server_settings-merge_tree) section of the `config.xml` file.
+- Globally in the [merge\_tree](#server_settings-merge_tree) section of the `config.xml` file.
 
-    ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behaviour when the setting changes.
+  ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behaviour when the setting changes.
 
--   For each table.
+- For each table.
 
-    When creating a table, specify the corresponding [engine setting](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). The behaviour of an existing table with this setting does not change, even if the global setting changes.
+  When creating a table, specify the corresponding [engine setting](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). The behaviour of an existing table with this setting does not change, even if the global setting changes.
 
 **Possible values**
 
--   0 — Functionality is turned off.
--   1 — Functionality is turned on.
+- 0 — Functionality is turned off.
+- 1 — Functionality is turned on.
 
 If `use_minimalistic_part_header_in_zookeeper = 1`, then [replicated](../table_engines/replication.md) tables store the headers of the data parts compactly using a single `znode`. If the table contains many columns, this storage method significantly reduces the volume of the data stored in Zookeeper.
 

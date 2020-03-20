@@ -25,9 +25,9 @@ For a description of query parameters, see [query description](../../query_langu
 
 **CollapsingMergeTree Parameters**
 
--   `sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
+- `sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
 
-    Column data type — `Int8`.
+  Column data type — `Int8`.
 
 **Query clauses**
 
@@ -51,9 +51,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `sign` have the same meaning as in `MergeTree`.
 
--   `sign` — Name of the column with the type of row: `1` — “state” row, `-1` — “cancel” row.
+- `sign` — Name of the column with the type of row: `1` — “state” row, `-1` — “cancel” row.
 
-    Column Data Type — `Int8`.
+  Column Data Type — `Int8`.
 
 </details>
 
@@ -119,7 +119,7 @@ For each resulting data part ClickHouse saves:
 
 4.  None of the rows, in all other cases.
 
-    Also when there are at least 2 more “state” rows than “cancel” rows, or at least 2 more “cancel” rows then “state” rows, the merge continues, but ClickHouse treats this situation as a logical error and records it in the server log. This error can occur if the same data were inserted more than once.
+  Also when there are at least 2 more “state” rows than “cancel” rows, or at least 2 more “cancel” rows then “state” rows, the merge continues, but ClickHouse treats this situation as a logical error and records it in the server log. This error can occur if the same data were inserted more than once.
 
 Thus, collapsing should not change the results of calculating statistics.
 Changes gradually collapsed so that in the end only the last state of almost every object left.

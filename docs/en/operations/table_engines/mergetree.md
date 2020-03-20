@@ -6,21 +6,21 @@ Engines in the `MergeTree` family are designed for inserting a very large amount
 
 Main features:
 
--   Stores data sorted by primary key.
+- Stores data sorted by primary key.
 
-    This allows you to create a small sparse index that helps find data faster.
+  This allows you to create a small sparse index that helps find data faster.
 
--   Partitions can be used if the [partitioning key](custom_partitioning_key.md) is specified.
+- Partitions can be used if the [partitioning key](custom_partitioning_key.md) is specified.
 
-    ClickHouse supports certain operations with partitions that are more effective than general operations on the same data with the same result. ClickHouse also automatically cuts off the partition data where the partitioning key is specified in the query. This also improves query performance.
+  ClickHouse supports certain operations with partitions that are more effective than general operations on the same data with the same result. ClickHouse also automatically cuts off the partition data where the partitioning key is specified in the query. This also improves query performance.
 
--   Data replication support.
+- Data replication support.
 
-    The family of `ReplicatedMergeTree` tables provides data replication. For more information, see [Data replication](replication.md).
+  The family of `ReplicatedMergeTree` tables provides data replication. For more information, see [Data replication](replication.md).
 
--   Data sampling support.
+- Data sampling support.
 
-    If necessary, you can set the data sampling method in the table.
+  If necessary, you can set the data sampling method in the table.
 
 !!! info "Info"
     The [Merge](merge.md) engine does not belong to the `*MergeTree` family.
@@ -46,50 +46,50 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of parameters, see the [CREATE query description](../../query_language/create.md).
 
-!!!note “Note”
-`INDEX` is an experimental feature, see [Data Skipping Indexes](#table_engine-mergetree-data_skipping-indexes).
+!!! note "Note"
+    `INDEX` is an experimental feature, see [Data Skipping Indexes](#table_engine-mergetree-data_skipping-indexes).
 
 ### Query Clauses {#mergetree-query-clauses}
 
--   `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine does not have parameters.
+- `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine does not have parameters.
 
--   `PARTITION BY` — The [partitioning key](custom_partitioning_key.md).
+- `PARTITION BY` — The [partitioning key](custom_partitioning_key.md).
 
-    For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](../../data_types/date.md). The partition names here have the `"YYYYMM"` format.
+  For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](../../data_types/date.md). The partition names here have the `"YYYYMM"` format.
 
--   `ORDER BY` — The sorting key.
+- `ORDER BY` — The sorting key.
 
-    A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
+  A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
 
--   `PRIMARY KEY` — The primary key if it [differs from the sorting key](mergetree.md).
+- `PRIMARY KEY` — The primary key if it [differs from the sorting key](mergetree.md).
 
-    By default the primary key is the same as the sorting key (which is specified by the `ORDER BY` clause). Thus in most cases it is unnecessary to specify a separate `PRIMARY KEY` clause.
+  By default the primary key is the same as the sorting key (which is specified by the `ORDER BY` clause). Thus in most cases it is unnecessary to specify a separate `PRIMARY KEY` clause.
 
--   `SAMPLE BY` — An expression for sampling.
+- `SAMPLE BY` — An expression for sampling.
 
-    If a sampling expression is used, the primary key must contain it. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
+  If a sampling expression is used, the primary key must contain it. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
--   `TTL` — A list of rules specifying storage duration of rows and defining logic of automatic parts movement [between disks and volumes](#table_engine-mergetree-multiple-volumes).
+- `TTL` — A list of rules specifying storage duration of rows and defining logic of automatic parts movement [between disks and volumes](#table_engine-mergetree-multiple-volumes).
 
-    Expression must have one `Date` or `DateTime` column as a result. Example:
-    `TTL date + INTERVAL 1 DAY`
+  Expression must have one `Date` or `DateTime` column as a result. Example:
+  `TTL date + INTERVAL 1 DAY`
 
-    Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'` specifies an action to be done with the part if the expression is satisfied (reaches current time): removal of expired rows, moving a part (if expression is satisfied for all rows in a part) to specified disk (`TO DISK 'xxx'`) or to volume (`TO VOLUME 'xxx'`). Default type of the rule is removal (`DELETE`). List of multiple rules can specified, but there should be no more than one `DELETE` rule.
+  Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'` specifies an action to be done with the part if the expression is satisfied (reaches current time): removal of expired rows, moving a part (if expression is satisfied for all rows in a part) to specified disk (`TO DISK 'xxx'`) or to volume (`TO VOLUME 'xxx'`). Default type of the rule is removal (`DELETE`). List of multiple rules can specified, but there should be no more than one `DELETE` rule.
 
-    For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
+  For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
--   `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
+- `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
 
-    -   `index_granularity` — Maximum number of data rows between the marks of an index. Default value: 8192. See [Data Storage](#mergetree-data-storage).
-    -   `index_granularity_bytes` — Maximum size of data granules in bytes. Default value: 10Mb. To restrict the granule size only by number of rows, set to 0 (not recommended). See [Data Storage](#mergetree-data-storage).
-    -   `enable_mixed_granularity_parts` — Enables or disables transitioning to control the granule size with the `index_granularity_bytes` setting. Before version 19.11, there was only the `index_granularity` setting for restricting granule size. The `index_granularity_bytes` setting improves ClickHouse performance when selecting data from tables with big rows (tens and hundreds of megabytes). If you have tables with big rows, you can enable this setting for the tables to improve the efficiency of `SELECT` queries.
-    -   `use_minimalistic_part_header_in_zookeeper` — Storage method of the data parts headers in ZooKeeper. If `use_minimalistic_part_header_in_zookeeper=1`, then ZooKeeper stores less data. For more information, see the [setting description](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) in “Server configuration parameters”.
-    -   `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation that is required for using direct I/O access to the storage disk. When merging data parts, ClickHouse calculates the total storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, ClickHouse reads and writes the data to the storage disk using the direct I/O interface (`O_DIRECT` option). If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
-        <a name="mergetree_setting-merge_with_ttl_timeout"></a>
-    -   `merge_with_ttl_timeout` — Minimum delay in seconds before repeating a merge with TTL. Default value: 86400 (1 day).
-    -   `write_final_mark` — Enables or disables writing the final index mark at the end of data part (after the last byte). Default value: 1. Don’t turn it off.
-    -   `merge_max_block_size` — Maximum number of rows in block for merge operations. Default value: 8192.
-    -   `storage_policy` — Storage policy. See [Using Multiple Block Devices for Data Storage](#table_engine-mergetree-multiple-volumes).
+  - `index_granularity` — Maximum number of data rows between the marks of an index. Default value: 8192. See [Data Storage](#mergetree-data-storage).
+  - `index_granularity_bytes` — Maximum size of data granules in bytes. Default value: 10Mb. To restrict the granule size only by number of rows, set to 0 (not recommended). See [Data Storage](#mergetree-data-storage).
+  - `enable_mixed_granularity_parts` — Enables or disables transitioning to control the granule size with the `index_granularity_bytes` setting. Before version 19.11, there was only the `index_granularity` setting for restricting granule size. The `index_granularity_bytes` setting improves ClickHouse performance when selecting data from tables with big rows (tens and hundreds of megabytes). If you have tables with big rows, you can enable this setting for the tables to improve the efficiency of `SELECT` queries.
+  - `use_minimalistic_part_header_in_zookeeper` — Storage method of the data parts headers in ZooKeeper. If `use_minimalistic_part_header_in_zookeeper=1`, then ZooKeeper stores less data. For more information, see the [setting description](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) in “Server configuration parameters”.
+  - `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation that is required for using direct I/O access to the storage disk. When merging data parts, ClickHouse calculates the total storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, ClickHouse reads and writes the data to the storage disk using the direct I/O interface (`O_DIRECT` option). If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
+    <a name="mergetree_setting-merge_with_ttl_timeout"></a>
+  - `merge_with_ttl_timeout` — Minimum delay in seconds before repeating a merge with TTL. Default value: 86400 (1 day).
+  - `write_final_mark` — Enables or disables writing the final index mark at the end of data part (after the last byte). Default value: 1. Don’t turn it off.
+  - `merge_max_block_size` — Maximum number of rows in block for merge operations. Default value: 8192.
+  - `storage_policy` — Storage policy. See [Using Multiple Block Devices for Data Storage](#table_engine-mergetree-multiple-volumes).
 
 **Example of Sections Setting**
 
@@ -121,10 +121,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **MergeTree() Parameters**
 
--   `date-column` — The name of a column of the [Date](../../data_types/date.md) type. ClickHouse automatically creates partitions by month based on this column. The partition names are in the `"YYYYMM"` format.
--   `sampling_expression` — An expression for sampling.
--   `(primary, key)` — Primary key. Type: [Tuple()](../../data_types/tuple.md)
--   `index_granularity` — The granularity of an index. The number of data rows between the “marks” of an index. The value 8192 is appropriate for most tasks.
+- `date-column` — The name of a column of the [Date](../../data_types/date.md) type. ClickHouse automatically creates partitions by month based on this column. The partition names are in the `"YYYYMM"` format.
+- `sampling_expression` — An expression for sampling.
+- `(primary, key)` — Primary key. Type: [Tuple()](../../data_types/tuple.md)
+- `index_granularity` — The granularity of an index. The number of data rows between the “marks” of an index. The value 8192 is appropriate for most tasks.
 
 **Example**
 
@@ -160,9 +160,9 @@ Take the `(CounterID, Date)` primary key as an example. In this case, the sortin
 
 If the data query specifies:
 
--   `CounterID in ('a', 'h')`, the server reads the data in the ranges of marks `[0, 3)` and `[6, 8)`.
--   `CounterID IN ('a', 'h') AND Date = 3`, the server reads the data in the ranges of marks `[1, 3)` and `[7, 8)`.
--   `Date = 3`, the server reads the data in the range of marks `[1, 10]`.
+- `CounterID in ('a', 'h')`, the server reads the data in the ranges of marks `[0, 3)` and `[6, 8)`.
+- `CounterID IN ('a', 'h') AND Date = 3`, the server reads the data in the ranges of marks `[1, 3)` and `[7, 8)`.
+- `Date = 3`, the server reads the data in the range of marks `[1, 10]`.
 
 The examples above show that it is always more effective to use an index than a full scan.
 
@@ -176,20 +176,20 @@ ClickHouse does not require a unique primary key. You can insert multiple rows w
 
 The number of columns in the primary key is not explicitly limited. Depending on the data structure, you can include more or fewer columns in the primary key. This may:
 
--   Improve the performance of an index.
+- Improve the performance of an index.
 
-    If the primary key is `(a, b)`, then adding another column `c` will improve the performance if the following conditions are met:
+  If the primary key is `(a, b)`, then adding another column `c` will improve the performance if the following conditions are met:
 
-    -   There are queries with a condition on column `c`.
-    -   Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
+  - There are queries with a condition on column `c`.
+  - Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
 
--   Improve data compression.
+- Improve data compression.
 
-    ClickHouse sorts data by primary key, so the higher the consistency, the better the compression.
+  ClickHouse sorts data by primary key, so the higher the consistency, the better the compression.
 
--   Provide additional logic when merging data parts in the [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) and [SummingMergeTree](summingmergetree.md) engines.
+- Provide additional logic when merging data parts in the [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) and [SummingMergeTree](summingmergetree.md) engines.
 
-    In this case it makes sense to specify the *sorting key* that is different from the primary key.
+  In this case it makes sense to specify the *sorting key* that is different from the primary key.
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
 
@@ -280,34 +280,34 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
 #### Available Types of Indices {#available-types-of-indices}
 
--   `minmax`
+- `minmax`
 
-    Stores extremes of the specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of data like the primary key.
+  Stores extremes of the specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of data like the primary key.
 
--   `set(max_rows)`
+- `set(max_rows)`
 
-    Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means “no limits”). Uses the values to check if the `WHERE` expression is not satisfiable on a block of data.
+  Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means “no limits”). Uses the values to check if the `WHERE` expression is not satisfiable on a block of data.
 
--   `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
+- `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
-    Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all ngrams from a block of data. Works only with strings. Can be used for optimization of `equals`, `like` and `in` expressions.
+  Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all ngrams from a block of data. Works only with strings. Can be used for optimization of `equals`, `like` and `in` expressions.
 
-    -   `n` — ngram size,
-    -   `size_of_bloom_filter_in_bytes` — Bloom filter size in bytes (you can use large values here, for example, 256 or 512, because it can be compressed well).
-    -   `number_of_hash_functions` — The number of hash functions used in the Bloom filter.
-    -   `random_seed` — The seed for Bloom filter hash functions.
+  - `n` — ngram size,
+  - `size_of_bloom_filter_in_bytes` — Bloom filter size in bytes (you can use large values here, for example, 256 or 512, because it can be compressed well).
+  - `number_of_hash_functions` — The number of hash functions used in the Bloom filter.
+  - `random_seed` — The seed for Bloom filter hash functions.
 
--   `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
+- `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
-    The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequences separated by non-alphanumeric characters.
+  The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequences separated by non-alphanumeric characters.
 
--   `bloom_filter([false_positive])` — Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
+- `bloom_filter([false_positive])` — Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
 
-    The optional `false_positive` parameter is the probability of receiving a false positive response from the filter. Possible values: (0, 1). Default value: 0.025.
+  The optional `false_positive` parameter is the probability of receiving a false positive response from the filter. Possible values: (0, 1). Default value: 0.025.
 
-    Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`.
+  Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`.
 
-    The following functions can use it: [equals](../../query_language/functions/comparison_functions.md), [notEquals](../../query_language/functions/comparison_functions.md), [in](../../query_language/functions/in_functions.md), [notIn](../../query_language/functions/in_functions.md), [has](../../query_language/functions/array_functions.md).
+  The following functions can use it: [equals](../../query_language/functions/comparison_functions.md), [notEquals](../../query_language/functions/comparison_functions.md), [in](../../query_language/functions/in_functions.md), [notIn](../../query_language/functions/in_functions.md), [has](../../query_language/functions/array_functions.md).
 
 <!-- -->
 
@@ -346,18 +346,18 @@ Functions with a constant argument that is less than ngram size can’t be used 
 
 Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, and `bloom_filter` indexes can’t be used for optimizing queries where the result of a function is expected to be false, for example:
 
--   Can be optimized:
-    -   `s LIKE '%test%'`
-    -   `NOT s NOT LIKE '%test%'`
-    -   `s = 1`
-    -   `NOT s != 1`
-    -   `startsWith(s, 'test')`
--   Can’t be optimized:
-    -   `NOT s LIKE '%test%'`
-    -   `s NOT LIKE '%test%'`
-    -   `NOT s = 1`
-    -   `s != 1`
-    -   `NOT startsWith(s, 'test')`
+- Can be optimized:
+  - `s LIKE '%test%'`
+  - `NOT s NOT LIKE '%test%'`
+  - `s = 1`
+  - `NOT s != 1`
+  - `startsWith(s, 'test')`
+- Can’t be optimized:
+  - `NOT s LIKE '%test%'`
+  - `s NOT LIKE '%test%'`
+  - `NOT s = 1`
+  - `s != 1`
+  - `NOT startsWith(s, 'test')`
 
 ## Concurrent Data Access {#concurrent-data-access}
 
@@ -436,9 +436,9 @@ TTL expr [DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'], ...
 
 Type of TTL rule may follow each TTL expression. It affects an action which is to be done once the expression is satisfied (reaches current time):
 
--   `DELETE` - delete expired rows (default action);
--   `TO DISK 'aaa'` - move part to the disk `aaa`;
--   `TO VOLUME 'bbb'` - move part to the disk `bbb`.
+- `DELETE` - delete expired rows (default action);
+- `TO DISK 'aaa'` - move part to the disk `aaa`;
+- `TO VOLUME 'bbb'` - move part to the disk `bbb`.
 
 Examples:
 
@@ -485,10 +485,10 @@ Data part is the minimum movable unit for `MergeTree`-engine tables. The data be
 
 ### Terms {#terms}
 
--   Disk — Block device mounted to the filesystem.
--   Default disk — Disk that stores the path specified in the [path](../server_settings/settings.md#server_settings-path) server setting.
--   Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
--   Storage policy — Set of volumes and the rules for moving data between them.
+- Disk — Block device mounted to the filesystem.
+- Default disk — Disk that stores the path specified in the [path](../server_settings/settings.md#server_settings-path) server setting.
+- Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
+- Storage policy — Set of volumes and the rules for moving data between them.
 
 The names given to the described entities can be found in the system tables, [system.storage\_policies](../system_tables.md#system_tables-storage_policies) and [system.disks](../system_tables.md#system_tables-disks). To apply one of the configured storage policies for a table, use the `storage_policy` setting of `MergeTree`-engine family tables.
 
@@ -522,9 +522,9 @@ Configuration structure:
 
 Tags:
 
--   `<disk_name_N>` — Disk name. Names must be different for all disks.
--   `path` — path under which a server will store data (`data` and `shadow` folders), should be terminated with ‘/’.
--   `keep_free_space_bytes` — the amount of free disk space to be reserved.
+- `<disk_name_N>` — Disk name. Names must be different for all disks.
+- `path` — path under which a server will store data (`data` and `shadow` folders), should be terminated with ‘/’.
+- `keep_free_space_bytes` — the amount of free disk space to be reserved.
 
 The order of the disk definition is not important.
 
@@ -559,11 +559,11 @@ Storage policies configuration markup:
 
 Tags:
 
--   `policy_name_N` — Policy name. Policy names must be unique.
--   `volume_name_N` — Volume name. Volume names must be unique.
--   `disk` — a disk within a volume.
--   `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks.
--   `move_factor` — when the amount of available space gets lower than this factor, data automatically start to move on the next volume if any (by default, 0.1).
+- `policy_name_N` — Policy name. Policy names must be unique.
+- `volume_name_N` — Volume name. Volume names must be unique.
+- `disk` — a disk within a volume.
+- `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks.
+- `move_factor` — when the amount of available space gets lower than this factor, data automatically start to move on the next volume if any (by default, 0.1).
 
 Cofiguration examples:
 
@@ -624,10 +624,10 @@ The `default` storage policy implies using only one volume, which consists of on
 
 In the case of `MergeTree` tables, data is getting to disk in different ways:
 
--   As a result of an insert (`INSERT` query).
--   During background merges and [mutations](../../query_language/alter.md#alter-mutations).
--   When downloading from another replica.
--   As a result of partition freezing [ALTER TABLE … FREEZE PARTITION](../../query_language/alter.md#alter_freeze-partition).
+- As a result of an insert (`INSERT` query).
+- During background merges and [mutations](../../query_language/alter.md#alter-mutations).
+- When downloading from another replica.
+- As a result of partition freezing [ALTER TABLE … FREEZE PARTITION](../../query_language/alter.md#alter_freeze-partition).
 
 In all these cases except for mutations and partition freezing, a part is stored on a volume and a disk according to the given storage policy:
 

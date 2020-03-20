@@ -239,11 +239,11 @@ X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_ro
 
 Possible header fields:
 
--   `read_rows` — Number of rows read.
--   `read_bytes` — Volume of data read in bytes.
--   `total_rows_to_read` — Total number of rows to be read.
--   `written_rows` — Number of rows written.
--   `written_bytes` — Volume of data written in bytes.
+- `read_rows` — Number of rows read.
+- `read_bytes` — Volume of data read in bytes.
+- `total_rows_to_read` — Total number of rows to be read.
+- `written_rows` — Number of rows written.
+- `written_bytes` — Volume of data written in bytes.
 
 Running requests don’t stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server-side, and using the network might be ineffective.
 The optional ‘query\_id’ parameter can be passed as the query ID (any string). For more information, see the section “Settings, replace\_running\_query”.

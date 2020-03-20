@@ -1,4 +1,4 @@
-# What is ClickHouse?
+# What is ClickHouse? {#what-is-clickhouse}
 
 ClickHouse is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).
 
@@ -33,25 +33,25 @@ Different orders for storing data are better suited to different scenarios. The 
 
 The higher the load on the system, the more important it is to customize the system set up to match the requirements of the usage scenario, and the more fine grained this customization becomes. There is no system that is equally well-suited to significantly different scenarios. If a system is adaptable to a wide set of scenarios, under a high load, the system will handle all the scenarios equally poorly, or will work well for just one or few of possible scenarios.
 
-## Key Properties of OLAP Scenario
+## Key Properties of OLAP Scenario {#key-properties-of-olap-scenario}
 
--   The vast majority of requests are for read access.
--   Data is updated in fairly large batches (\> 1000 rows), not by single rows; or it is not updated at all.
--   Data is added to the DB but is not modified.
--   For reads, quite a large number of rows are extracted from the DB, but only a small subset of columns.
--   Tables are “wide,” meaning they contain a large number of columns.
--   Queries are relatively rare (usually hundreds of queries per server or less per second).
--   For simple queries, latencies around 50 ms are allowed.
--   Column values are fairly small: numbers and short strings (for example, 60 bytes per URL).
--   Requires high throughput when processing a single query (up to billions of rows per second per server).
--   Transactions are not necessary.
--   Low requirements for data consistency.
--   There is one large table per query. All tables are small, except for one.
--   A query result is significantly smaller than the source data. In other words, data is filtered or aggregated, so the result fits in a single server’s RAM.
+- The vast majority of requests are for read access.
+- Data is updated in fairly large batches (\> 1000 rows), not by single rows; or it is not updated at all.
+- Data is added to the DB but is not modified.
+- For reads, quite a large number of rows are extracted from the DB, but only a small subset of columns.
+- Tables are “wide,” meaning they contain a large number of columns.
+- Queries are relatively rare (usually hundreds of queries per server or less per second).
+- For simple queries, latencies around 50 ms are allowed.
+- Column values are fairly small: numbers and short strings (for example, 60 bytes per URL).
+- Requires high throughput when processing a single query (up to billions of rows per second per server).
+- Transactions are not necessary.
+- Low requirements for data consistency.
+- There is one large table per query. All tables are small, except for one.
+- A query result is significantly smaller than the source data. In other words, data is filtered or aggregated, so the result fits in a single server’s RAM.
 
 It is easy to see that the OLAP scenario is very different from other popular scenarios (such as OLTP or Key-Value access). So it doesn’t make sense to try to use OLTP or a Key-Value DB for processing analytical queries if you want to get decent performance. For example, if you try to use MongoDB or Redis for analytics, you will get very poor performance compared to OLAP databases.
 
-## Why Column-Oriented Databases Work Better in the OLAP Scenario
+## Why Column-Oriented Databases Work Better in the OLAP Scenario {#why-column-oriented-databases-work-better-in-the-olap-scenario}
 
 Column-oriented databases are better suited to OLAP scenarios: they are at least 100 times faster in processing most queries. The reasons are explained in detail below, but the fact is easier to demonstrate visually:
 
@@ -65,7 +65,7 @@ Column-oriented databases are better suited to OLAP scenarios: they are at least
 
 See the difference?
 
-### Input/output
+### Input/output {#inputoutput}
 
 1.  For an analytical query, only a small number of table columns need to be read. In a column-oriented database, you can read just the data you need. For example, if you need 5 columns out of 100, you can expect a 20-fold reduction in I/O.
 2.  Since data is read in packets, it is easier to compress. Data in columns is also easier to compress. This further reduces the I/O volume.
@@ -115,7 +115,7 @@ SELECT CounterID, count() FROM hits GROUP BY CounterID ORDER BY count() DESC LIM
 
 </details>
 
-### CPU
+### CPU {#cpu}
 
 Since executing a query requires processing a large number of rows, it helps to dispatch all operations for entire vectors instead of for separate rows, or to implement the query engine so that there is almost no dispatching cost. If you don’t do this, with any half-decent disk subsystem, the query interpreter inevitably stalls the CPU. It makes sense to both store data in columns and process it, when possible, by columns.
 
