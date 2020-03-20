@@ -114,7 +114,7 @@ Configuration example:
 LAYOUT(SPARSE_HASHED())
 ```
 
-### complex\_key\_hashed {#complex_key_hashed}
+### complex\_key\_hashed {#complex-key-hashed}
 
 This type of storage is for use with composite [keys](external_dicts_dict_structure.md). Similar to `hashed`.
 
@@ -130,7 +130,7 @@ Configuration example:
 LAYOUT(COMPLEX_KEY_HASHED())
 ```
 
-### range\_hashed {#range_hashed}
+### range\_hashed {#range-hashed}
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values.
 
@@ -285,11 +285,11 @@ Set a large enough cache size. You need to experiment to select the number of ce
 !!! warning "Warning"
     Do not use ClickHouse as a source, because it is slow to process queries with random reads.
 
-### complex\_key\_cache {#complex_key_cache}
+### complex\_key\_cache {#complex-key-cache}
 
 This type of storage is for use with composite [keys](external_dicts_dict_structure.md). Similar to `cache`.
 
-### ip\_trie {#ip_trie}
+### ip\_trie {#ip-trie}
 
 This type of storage is for mapping network prefixes (IP addresses) to metadata such as ASN.
 

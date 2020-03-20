@@ -1,4 +1,4 @@
-# 自定义分区键
+# 自定义分区键 {#zi-ding-yi-fen-qu-jian}
 
 [MergeTree](mergetree.md) 系列的表（包括 [可复制表](replication.md) ）可以使用分区。基于 MergeTree 表的 [物化视图](materializedview.md) 也支持分区。
 
@@ -9,8 +9,8 @@
 ``` sql
 CREATE TABLE visits
 (
-    VisitDate Date, 
-    Hour UInt8, 
+    VisitDate Date,
+    Hour UInt8,
     ClientID UUID
 )
 ENGINE = MergeTree()
@@ -36,27 +36,25 @@ ORDER BY (CounterID, StartDate, intHash32(UserID));
 可以通过 [system.parts](../system_tables.md#system_tables-parts) 表查看表片段和分区信息。例如，假设我们有一个 `visits` 表，按月分区。对 `system.parts` 表执行 `SELECT`：
 
 ``` sql
-SELECT 
+SELECT
     partition,
-    name, 
+    name,
     active
-FROM system.parts 
+FROM system.parts
 WHERE table = 'visits'
 ```
 
-```
-┌─partition─┬─name───────────┬─active─┐
-│ 201901    │ 201901_1_3_1   │      0 │
-│ 201901    │ 201901_1_9_2   │      1 │
-│ 201901    │ 201901_8_8_0   │      0 │
-│ 201901    │ 201901_9_9_0   │      0 │
-│ 201902    │ 201902_4_6_1   │      1 │
-│ 201902    │ 201902_10_10_0 │      1 │
-│ 201902    │ 201902_11_11_0 │      1 │
-└───────────┴────────────────┴────────┘
-```
+  ┌─partition─┬─name───────────┬─active─┐
+  │ 201901    │ 201901_1_3_1   │      0 │
+  │ 201901    │ 201901_1_9_2   │      1 │
+  │ 201901    │ 201901_8_8_0   │      0 │
+  │ 201901    │ 201901_9_9_0   │      0 │
+  │ 201902    │ 201902_4_6_1   │      1 │
+  │ 201902    │ 201902_10_10_0 │      1 │
+  │ 201902    │ 201902_11_11_0 │      1 │
+  └───────────┴────────────────┴────────┘
 
-`partition` 列存储分区的名称。此示例中有两个分区：`201901` 和 `201902`。在 [ALTER ... PARTITION](#alter_manipulations-with-partitions) 语句中你可以使用该列值来指定分区名称。
+`partition` 列存储分区的名称。此示例中有两个分区：`201901` 和 `201902`。在 [ALTER … PARTITION](#alter_manipulations-with-partitions) 语句中你可以使用该列值来指定分区名称。
 
 `name` 列为分区中数据片段的名称。在 [ALTER ATTACH PART](#alter_attach-partition) 语句中你可以使用此列值中来指定片段名称。
 
@@ -78,24 +76,22 @@ WHERE table = 'visits'
 OPTIMIZE TABLE visits PARTITION 201902;
 ```
 
-```
-┌─partition─┬─name───────────┬─active─┐
-│ 201901    │ 201901_1_3_1   │      0 │
-│ 201901    │ 201901_1_9_2   │      1 │
-│ 201901    │ 201901_8_8_0   │      0 │
-│ 201901    │ 201901_9_9_0   │      0 │
-│ 201902    │ 201902_4_6_1   │      0 │
-│ 201902    │ 201902_4_11_2  │      1 │
-│ 201902    │ 201902_10_10_0 │      0 │
-│ 201902    │ 201902_11_11_0 │      0 │
-└───────────┴────────────────┴────────┘
-```
+  ┌─partition─┬─name───────────┬─active─┐
+  │ 201901    │ 201901_1_3_1   │      0 │
+  │ 201901    │ 201901_1_9_2   │      1 │
+  │ 201901    │ 201901_8_8_0   │      0 │
+  │ 201901    │ 201901_9_9_0   │      0 │
+  │ 201902    │ 201902_4_6_1   │      0 │
+  │ 201902    │ 201902_4_11_2  │      1 │
+  │ 201902    │ 201902_10_10_0 │      0 │
+  │ 201902    │ 201902_11_11_0 │      0 │
+  └───────────┴────────────────┴────────┘
 
 非激活片段会在合并后的10分钟左右删除。
 
 查看片段和分区信息的另一种方法是进入表的目录：`/var/lib/clickhouse/data/<database>/<table>/`。例如：
 
-```bash
+``` bash
 dev:/var/lib/clickhouse/data/default/visits$ ls -l
 total 40
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 201901_1_3_1
@@ -109,7 +105,7 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 12:09 201902_4_6_1
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 ```
 
-文件夹 '201901_1_1_0'，'201901_1_7_1' 等是片段的目录。每个片段都与一个对应的分区相关，并且只包含这个月的数据（本例中的表按月分区）。
+文件夹 ‘201901\_1\_1\_0’，‘201901\_1\_7\_1’ 等是片段的目录。每个片段都与一个对应的分区相关，并且只包含这个月的数据（本例中的表按月分区）。
 
 `detached` 目录存放着使用 [DETACH](#alter_detach-partition) 语句从表中分离的片段。损坏的片段也会移到该目录，而不是删除。服务器不使用`detached`目录中的片段。可以随时添加，删除或修改此目录中的数据 – 在运行 [ATTACH](../../query_language/alter.md#alter_attach-partition) 语句前，服务器不会感知到。
 

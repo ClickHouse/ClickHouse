@@ -1,5 +1,4 @@
-
-# clickhouse-local
+# clickhouse-local {#clickhouse-local}
 
 The `clickhouse-local` program enables you to perform fast processing on local files, without having to deploy and configure the ClickHouse server.
 
@@ -9,11 +8,10 @@ Accepts data that represent tables and queries them using [ClickHouse SQL dialec
 
 By default `clickhouse-local` does not have access to data on the same host, but it supports loading server configuration using `--config-file` argument.
 
-!!! warning
+!!! warning "Warning"
     It is not recommended to load production server configuration into `clickhouse-local` because data can be damaged in case of human error.
 
-
-## Usage
+## Usage {#usage}
 
 Basic usage:
 
@@ -37,14 +35,13 @@ Arguments:
 
 Also there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
 
-
-## Examples
+## Examples {#examples}
 
 ``` bash
 echo -e "1,2\n3,4" | clickhouse-local -S "a Int64, b Int64" -if "CSV" -q "SELECT * FROM table"
 Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
-1	2
-3	4
+1 2
+3 4
 ```
 
 Previous example is the same as:
@@ -52,11 +49,11 @@ Previous example is the same as:
 ``` bash
 $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
 Read 2 rows, 32.00 B in 0.000 sec., 4987 rows/sec., 77.93 KiB/sec.
-1	2
-3	4
+1 2
+3 4
 ```
 
-Now let's output memory user for each Unix user:
+Now let’s output memory user for each Unix user:
 
 ``` bash
 $ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' | clickhouse-local -S "user String, mem Float64" -q "SELECT user, round(sum(mem), 2) as memTotal FROM table GROUP BY user ORDER BY memTotal DESC FORMAT Pretty"

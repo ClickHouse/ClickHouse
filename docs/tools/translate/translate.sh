@@ -14,4 +14,9 @@ pandoc "$2" --filter "${BASE_DIR}/filter.py" -o "${TEMP_FILE}" \
 perl -pi -e 's/{\\#\\#/{##/g' "${TEMP_FILE}"
 perl -pi -e 's/\\#\\#}/##}/g' "${TEMP_FILE}"
 perl -pi -e 's/ *$//gg' "${TEMP_FILE}"
+if [[ "${TARGET_LANGUAGE}" -eq "ru" ]]
+then
+    perl -pi -e 's/“/«/gg' "${TEMP_FILE}"
+    perl -pi -e 's/”/»/gg' "${TEMP_FILE}"
+fi
 cat "${TEMP_FILE}" > "${OUTPUT}"

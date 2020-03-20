@@ -1,8 +1,8 @@
-# Визуальные интерфейсы от сторонних разработчиков
+# Визуальные интерфейсы от сторонних разработчиков {#vizualnye-interfeisy-ot-storonnikh-razrabotchikov}
 
-## С открытым исходным кодом
+## С открытым исходным кодом {#s-otkrytym-iskhodnym-kodom}
 
-### Tabix
+### Tabix {#tabix}
 
 Веб-интерфейс для ClickHouse в проекте [Tabix](https://github.com/tabixio/tabix).
 
@@ -16,7 +16,7 @@
 
 [Документация Tabix](https://tabix.io/doc/).
 
-### HouseOps
+### HouseOps {#houseops}
 
 [HouseOps](https://github.com/HouseOps/HouseOps) — UI/IDE для OSX, Linux и Windows.
 
@@ -41,7 +41,7 @@
 - Управление кластером;
 - Мониторинг реплицированных и Kafka таблиц.
 
-### LightHouse
+### LightHouse {#lighthouse}
 
 [LightHouse](https://github.com/VKCOM/lighthouse) — это легковесный веб-интерфейс для ClickHouse.
 
@@ -51,7 +51,7 @@
 - Предварительный просмотр таблицы с фильтрацией и сортировкой;
 - Выполнение запросов только для чтения.
 
-### Redash
+### Redash {#redash}
 
 [Redash](https://github.com/getredash/redash) — платформа для отображения данных.
 
@@ -63,7 +63,7 @@
 - Проводник по базе данных.
 - Инструменты визуализации, позволяющие представить данные в различных формах.
 
-### DBeaver
+### DBeaver {#dbeaver}
 
 [DBeaver](https://dbeaver.io/) - универсальный desktop клиент баз данных с поддержкой ClickHouse.
 
@@ -74,7 +74,7 @@
 - Автодополнение команд;
 - Полнотекстовый поиск.
 
-### clickhouse-cli
+### clickhouse-cli {#clickhouse-cli}
 
 [clickhouse-cli](https://github.com/hatarist/clickhouse-cli) - это альтернативный клиент командной строки для ClickHouse, написанный на Python 3.
 
@@ -85,13 +85,13 @@
 - Поддержка постраничного просмотра для результирующих данных;
 - Дополнительные PostgreSQL-подобные команды.
 
-### clickhouse-flamegraph
+### clickhouse-flamegraph {#clickhouse-flamegraph}
 
 [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) — специализированный инструмент для визуализации `system.trace_log` в виде [flamegraph](http://www.brendangregg.com/flamegraphs.html).
 
-## Коммерческие
+## Коммерческие {#kommercheskie}
 
-### DataGrip
+### DataGrip {#datagrip}
 
 [DataGrip](https://www.jetbrains.com/datagrip/) — это IDE для баз данных о JetBrains с выделенной поддержкой ClickHouse. Он также встроен в другие инструменты на основе IntelliJ: PyCharm, IntelliJ IDEA, GoLand, PhpStorm и другие.
 
@@ -120,7 +120,7 @@
 - [Документация DataLens](https://cloud.yandex.ru/docs/datalens/).
 - [Пособие по визуализации данных из ClickHouse](https://cloud.yandex.ru/docs/solutions/datalens/data-from-ch-visualization).
 
-### Holistics Software
+### Holistics Software {#holistics-software}
 
 [Holistics](https://www.holistics.io/) — full-stack платформа для обработки данных и бизнес-аналитики.
 
@@ -134,8 +134,9 @@
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/gui/) <!--hide-->
 
-### Looker
-[Looker](https://looker.com) — платформа для обработки данных и бизнес-аналитики. Поддерживает более 50 диалектов баз данных, включая ClickHouse.  Looker можно установить самостоятельно или воспользоваться готовой платформой SaaS. 
+### Looker {#looker}
+
+[Looker](https://looker.com) — платформа для обработки данных и бизнес-аналитики. Поддерживает более 50 диалектов баз данных, включая ClickHouse. Looker можно установить самостоятельно или воспользоваться готовой платформой SaaS.
 
 Просмотр данных, построение отображений и дашбордов, планирование отчётов и обмен данными с коллегами доступны с помощью браузера. Также, Looker предоставляет ряд инструментов, позволяющих встраивать сервис в другие приложения и API для обмена данными.
 

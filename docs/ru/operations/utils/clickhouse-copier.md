@@ -1,5 +1,4 @@
-
-# clickhouse-copier
+# clickhouse-copier {#clickhouse-copier}
 
 Копирует данные из таблиц одного кластера в таблицы другого (или этого же) кластера.
 
@@ -8,21 +7,22 @@
 После запуска, `clickhouse-copier`:
 
 - Соединяется с ZooKeeper и получает:
-    - Задания на копирование.
-    - Состояние заданий на копирование.
+  - Задания на копирование.
+  - Состояние заданий на копирование.
+
 - Выполняет задания.
 
     Каждый запущенный процесс выбирает "ближайший" шард исходного кластера и копирует данные в кластер назначения, при необходимости перешардируя их.
 
-`clickhouse-copier` отслеживает изменения в ZooKeeper и применяет их "на лету".
+`clickhouse-copier` отслеживает изменения в ZooKeeper и применяет их «на лету».
 
 Для снижения сетевого трафика рекомендуем запускать `clickhouse-copier` на том же сервере, где находятся исходные данные.
 
-## Запуск clickhouse-copier
+## Запуск clickhouse-copier {#zapusk-clickhouse-copier}
 
 Утилиту следует запускать вручную следующим образом:
 
-```bash
+``` bash
 $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
 ```
 
@@ -35,9 +35,9 @@ $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/pat
 - `task-upload-force` - Загрузить `task-file` в ZooKeeper даже если уже было загружено.
 - `base-dir` - путь к логам и вспомогательным файлам. При запуске `clickhouse-copier` создает в `$base-dir` подкаталоги `clickhouse-copier_YYYYMMHHSS_<PID>`. Если параметр не указан, то каталоги будут создаваться в каталоге, где `clickhouse-copier` был запущен.
 
-## Формат zookeeper.xml
+## Формат zookeeper.xml {#format-zookeeper-xml}
 
-```xml
+``` xml
 <yandex>
     <logger>
         <level>trace</level>
@@ -54,9 +54,9 @@ $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/pat
 </yandex>
 ```
 
-## Конфигурация заданий на копирование
+## Конфигурация заданий на копирование {#konfiguratsiia-zadanii-na-kopirovanie}
 
-```xml
+``` xml
 <yandex>
     <!-- Configuration of clusters as in an ordinary server config -->
     <remote_servers>
@@ -163,6 +163,6 @@ $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/pat
 </yandex>
 ```
 
-`clickhouse-copier` отслеживает изменения `/task/path/description` и применяет их "на лету". Если вы поменяете, например, значение `max_workers`, то количество процессов, выполняющих задания, также изменится.
+`clickhouse-copier` отслеживает изменения `/task/path/description` и применяет их «на лету». Если вы поменяете, например, значение `max_workers`, то количество процессов, выполняющих задания, также изменится.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/utils/clickhouse-copier/) <!--hide-->

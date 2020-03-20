@@ -1,10 +1,10 @@
-# Join
+# Join {#join}
 
 Подготовленная структура данных для использования в операциях [JOIN](../../query_language/select.md#select-join).
 
 ## Создание таблицы {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
@@ -22,35 +22,37 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Вводите параметры `join_strictness` и `join_type` без кавычек, например, `Join(ANY, LEFT, col1)`. Они должны быть такими же как и в той операции `JOIN`, в которой таблица будет использоваться. Если параметры не совпадают, ClickHouse не генерирует исключение и может возвращать неверные данные.
 
-## Использование таблицы
+## Использование таблицы {#ispolzovanie-tablitsy}
 
-### Пример
+### Пример {#primer}
 
 Создание левой таблицы:
 
-```sql
+``` sql
 CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog
 ```
-```sql
+
+``` sql
 INSERT INTO id_val VALUES (1,11)(2,12)(3,13)
 ```
 
 Создание правой таблицы с движком `Join`:
 
-```sql
+``` sql
 CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id)
 ```
-```sql
+
+``` sql
 INSERT INTO id_val_join VALUES (1,21)(1,22)(3,23)
 ```
 
 Объединение таблиц:
 
-```sql
+``` sql
 SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id) SETTINGS join_use_nulls = 1
 ```
 
-```text
+``` text
 ┌─id─┬─val─┬─id_val_join.val─┐
 │  1 │  11 │              21 │
 │  2 │  12 │            ᴺᵁᴸᴸ │
@@ -60,17 +62,17 @@ SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id) SETTINGS join_use_null
 
 В качестве альтернативы, можно извлечь данные из таблицы `Join`, указав значение ключа объединения:
 
-```sql
+``` sql
 SELECT joinGet('id_val_join', 'val', toUInt32(1))
 ```
 
-```text
+``` text
 ┌─joinGet('id_val_join', 'val', toUInt32(1))─┐
 │                                         21 │
 └────────────────────────────────────────────┘
 ```
 
-### Выборка и вставка данных
+### Выборка и вставка данных {#vyborka-i-vstavka-dannykh}
 
 Для добавления данных в таблицы с движком `Join` используйте запрос `INSERT`. Если таблица создавалась со строгостью `ANY`, то данные с повторяющимися ключами игнорируются. Если задавалась строгость `ALL`, то добавляются все строки.
 
@@ -83,17 +85,17 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 
 При создании таблицы, применяются следующие параметры :
 
-- [join_use_nulls](../settings/settings.md#join_use_nulls)
-- [max_rows_in_join](../settings/query_complexity.md#settings-max_rows_in_join)
-- [max_bytes_in_join](../settings/query_complexity.md#settings-max_bytes_in_join)
-- [join_overflow_mode](../settings/query_complexity.md#settings-join_overflow_mode)
-- [join_any_take_last_row](../settings/settings.md#settings-join_any_take_last_row)
+- [join\_use\_nulls](../settings/settings.md#join_use_nulls)
+- [max\_rows\_in\_join](../settings/query_complexity.md#settings-max_rows_in_join)
+- [max\_bytes\_in\_join](../settings/query_complexity.md#settings-max_bytes_in_join)
+- [join\_overflow\_mode](../settings/query_complexity.md#settings-join_overflow_mode)
+- [join\_any\_take\_last\_row](../settings/settings.md#settings-join_any_take_last_row)
 
 Таблицы с движком `Join` нельзя использовать в операциях `GLOBAL JOIN`.
 
-Движок `Join` позволяет использовать параметр [join_use_nulls](../settings/settings.md#join_use_nulls) в запросе `CREATE TABLE`, который также можно использовать в запросе [SELECT](../../query_language/select.md). Если у вас разные настройки `join_use_nulls`, вы можете получить сообщение об ошибке при объединении таблиц. Это зависит от типа соединения. Когда вы используете функцию [joinGet](../../query_language/functions/other_functions.md#joinget), вам необходимо использовать один и тот же параметр `join_use_nulls` в запросах `CRATE TABLE` и `SELECT`.
+Движок `Join` позволяет использовать параметр [join\_use\_nulls](../settings/settings.md#join_use_nulls) в запросе `CREATE TABLE`, который также можно использовать в запросе [SELECT](../../query_language/select.md). Если у вас разные настройки `join_use_nulls`, вы можете получить сообщение об ошибке при объединении таблиц. Это зависит от типа соединения. Когда вы используете функцию [joinGet](../../query_language/functions/other_functions.md#joinget), вам необходимо использовать один и тот же параметр `join_use_nulls` в запросах `CRATE TABLE` и `SELECT`.
 
-## Хранение данных
+## Хранение данных {#khranenie-dannykh}
 
 Данные таблиц `Join` всегда находятся в RAM. При вставке строк в таблицу ClickHouse записывает блоки данных в каталог на диске, чтобы их можно было восстановить при перезапуске сервера.
 
