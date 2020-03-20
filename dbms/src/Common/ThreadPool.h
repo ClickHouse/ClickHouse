@@ -222,7 +222,7 @@ using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool>;
 class ExceptionHandler
 {
 public:
-    void setException(std::exception_ptr && exception);
+    void setException(std::exception_ptr exception);
     void throwIfException();
 
 private:
