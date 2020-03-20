@@ -5,9 +5,9 @@ formato](../../interfaces/formats.md#formats) (TabSeparated, Native, etc.).
 
 Ejemplos de uso:
 
-- Exportación de datos de ClickHouse a archivo.
-- Convertir datos de un formato a otro.
-- Actualización de datos en ClickHouse mediante la edición de un archivo en un disco.
+-   Exportación de datos de ClickHouse a archivo.
+-   Convertir datos de un formato a otro.
+-   Actualización de datos en ClickHouse mediante la edición de un archivo en un disco.
 
 ## Uso en el servidor ClickHouse {#usage-in-clickhouse-server}
 
@@ -71,13 +71,13 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 ## Detalles de la implementación {#details-of-implementation}
 
-- Multiple `SELECT` las consultas se pueden realizar simultáneamente, pero `INSERT` las consultas se esperarán entre sí.
-- Apoyado la creación de nuevos archivos por `INSERT` consulta.
-- Si el archivo existe, `INSERT` añadiría nuevos valores en él.
-- No soportado:
-  - `ALTER`
-  - `SELECT ... SAMPLE`
-  - Indice
-  - Replicación
+-   Multiple `SELECT` las consultas se pueden realizar simultáneamente, pero `INSERT` las consultas se esperarán entre sí.
+-   Apoyado la creación de nuevos archivos por `INSERT` consulta.
+-   Si el archivo existe, `INSERT` añadiría nuevos valores en él.
+-   No soportado:
+    -   `ALTER`
+    -   `SELECT ... SAMPLE`
+    -   Indice
+    -   Replicación
 
 [Artículo Original](https://clickhouse.tech/docs/es/operations/table_engines/file/) <!--hide-->

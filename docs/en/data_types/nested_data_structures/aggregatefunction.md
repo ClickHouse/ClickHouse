@@ -1,4 +1,4 @@
-# AggregateFunction(name, types\_of\_arguments…) {#data_type-aggregatefunction}
+# AggregateFunction(name, types\_of\_arguments…) {#data-type-aggregatefunction}
 
 The intermediate state of an aggregate function. To get it, use aggregate functions with the `-State` suffix. To get aggregated data in the future, you must use the same aggregate functions with the `-Merge`suffix.
 
@@ -6,11 +6,11 @@ The intermediate state of an aggregate function. To get it, use aggregate functi
 
 **Parameters**
 
-- Name of the aggregate function.
+-   Name of the aggregate function.
 
-    If the function is parametric specify its parameters too.
+        If the function is parametric specify its parameters too.
 
-- Types of the aggregate function arguments.
+-   Types of the aggregate function arguments.
 
 **Example**
 

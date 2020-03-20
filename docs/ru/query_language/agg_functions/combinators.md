@@ -27,11 +27,11 @@
 
 Для работы с промежуточными состояниями предназначены:
 
-- Движок таблиц [AggregatingMergeTree](../../operations/table_engines/aggregatingmergetree.md).
-- Функция [finalizeAggregation](../functions/other_functions.md#function-finalizeaggregation).
-- Функция [runningAccumulate](../functions/other_functions.md#function-runningaccumulate).
-- Комбинатор [-Merge](#aggregate_functions_combinators_merge).
-- Комбинатор [-MergeState](#aggregate_functions_combinators_mergestate).
+-   Движок таблиц [AggregatingMergeTree](../../operations/table_engines/aggregatingmergetree.md).
+-   Функция [finalizeAggregation](../functions/other_functions.md#function-finalizeaggregation).
+-   Функция [runningAccumulate](../functions/other_functions.md#function-runningaccumulate).
+-   Комбинатор [-Merge](#aggregate_functions_combinators_merge).
+-   Комбинатор [-MergeState](#aggregate_functions_combinators_mergestate).
 
 ## -Merge {#aggregate-functions-combinators-merge}
 
@@ -55,15 +55,15 @@
 
 **Параметры**
 
-- `start` — начальное значение для интервала значений `resampling_key`.
-- `stop` — конечное значение для интервала значений `resampling_key`. Интервал не включает значение `stop` (`[start, stop)`).
-- `step` — шаг деления полного интервала на подинтервалы. Функция `aggFunction` выполняется для каждого из подинтервалов независимо.
-- `resampling_key` — столбец, значения которого используются для разделения данных на интервалы.
-- `aggFunction_params` — параметры `aggFunction`.
+-   `start` — начальное значение для интервала значений `resampling_key`.
+-   `stop` — конечное значение для интервала значений `resampling_key`. Интервал не включает значение `stop` (`[start, stop)`).
+-   `step` — шаг деления полного интервала на подинтервалы. Функция `aggFunction` выполняется для каждого из подинтервалов независимо.
+-   `resampling_key` — столбец, значения которого используются для разделения данных на интервалы.
+-   `aggFunction_params` — параметры `aggFunction`.
 
 **Возвращаемые значения**
 
-- Массив результатов `aggFunction` для каждого подинтервала.
+-   Массив результатов `aggFunction` для каждого подинтервала.
 
 **Пример**
 

@@ -10,8 +10,8 @@ INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), .
 
 La consulta puede especificar una lista de columnas para insertar `[(c1, c2, c3)]`. En este caso, el resto de las columnas se llenan con:
 
-- Los valores calculados a partir del `DEFAULT` expresiones especificadas en la definición de la tabla.
-- Ceros y cadenas vacías, si `DEFAULT` expresiones no están definidas.
+-   Los valores calculados a partir del `DEFAULT` expresiones especificadas en la definición de la tabla.
+-   Ceros y cadenas vacías, si `DEFAULT` expresiones no están definidas.
 
 Si [strict\_insert\_defaults=1](../operations/settings/settings.md), columnas que no tienen `DEFAULT` definido debe figurar en la consulta.
 
@@ -62,12 +62,12 @@ Sin embargo, puede eliminar datos antiguos usando `ALTER TABLE ... DROP PARTITIO
 
 `INSERT` ordena los datos de entrada por clave principal y los divide en particiones por una clave de partición. Si inserta datos en varias particiones a la vez, puede reducir significativamente el rendimiento del `INSERT` consulta. Para evitar esto:
 
-- Agregue datos en lotes bastante grandes, como 100.000 filas a la vez.
-- Agrupe los datos por una clave de partición antes de cargarlos en ClickHouse.
+-   Agregue datos en lotes bastante grandes, como 100.000 filas a la vez.
+-   Agrupe los datos por una clave de partición antes de cargarlos en ClickHouse.
 
 El rendimiento no disminuirá si:
 
-- Los datos se agregan en tiempo real.
-- Carga datos que normalmente están ordenados por tiempo.
+-   Los datos se agregan en tiempo real.
+-   Carga datos que normalmente están ordenados por tiempo.
 
 [Artículo Original](https://clickhouse.tech/docs/es/query_language/insert_into/) <!--hide-->

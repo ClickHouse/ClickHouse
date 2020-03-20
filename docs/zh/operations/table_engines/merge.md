@@ -6,7 +6,7 @@
 
 示例：
 
-  Merge(hits, '^WatchLog')
+    Merge(hits, '^WatchLog')
 
 数据会从 `hits` 数据库中表名匹配正则 ‘`^WatchLog`’ 的表中读取。
 
@@ -24,25 +24,25 @@
 
 我们假定你有一个旧表（WatchLog\_old），你想改变数据分区了，但又不想把旧数据转移到新表（WatchLog\_new）里，并且你需要同时能看到这两个表的数据。
 
-  CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64)
-  ENGINE=MergeTree(date, (UserId, EventType), 8192);
-  INSERT INTO WatchLog_old VALUES ('2018-01-01', 1, 'hit', 3);
+    CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64)
+    ENGINE=MergeTree(date, (UserId, EventType), 8192);
+    INSERT INTO WatchLog_old VALUES ('2018-01-01', 1, 'hit', 3);
 
-  CREATE TABLE WatchLog_new(date Date, UserId Int64, EventType String, Cnt UInt64)
-  ENGINE=MergeTree PARTITION BY date ORDER BY (UserId, EventType) SETTINGS index_granularity=8192;
-  INSERT INTO WatchLog_new VALUES ('2018-01-02', 2, 'hit', 3);
+    CREATE TABLE WatchLog_new(date Date, UserId Int64, EventType String, Cnt UInt64)
+    ENGINE=MergeTree PARTITION BY date ORDER BY (UserId, EventType) SETTINGS index_granularity=8192;
+    INSERT INTO WatchLog_new VALUES ('2018-01-02', 2, 'hit', 3);
 
-  CREATE TABLE WatchLog as WatchLog_old ENGINE=Merge(currentDatabase(), '^WatchLog');
+    CREATE TABLE WatchLog as WatchLog_old ENGINE=Merge(currentDatabase(), '^WatchLog');
 
-  SELECT *
-  FROM WatchLog
+    SELECT *
+    FROM WatchLog
 
-  ┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
-  │ 2018-01-01 │      1 │ hit       │   3 │
-  └────────────┴────────┴───────────┴─────┘
-  ┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
-  │ 2018-01-02 │      2 │ hit       │   3 │
-  └────────────┴────────┴───────────┴─────┘
+    ┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+    │ 2018-01-01 │      1 │ hit       │   3 │
+    └────────────┴────────┴───────────┴─────┘
+    ┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+    │ 2018-01-02 │      2 │ hit       │   3 │
+    └────────────┴────────┴───────────┴─────┘
 
 ## 虚拟列 {#xu-ni-lie}
 
@@ -50,11 +50,11 @@
 
 下面列出虚拟列跟普通列的不同点：
 
-- 虚拟列不在表结构定义里指定。
-- 不能用 `INSERT` 向虚拟列写数据。
-- 使用不指定列名的 `INSERT` 语句时，虚拟列要会被忽略掉。
-- 使用星号通配符（ `SELECT *` ）时虚拟列不会包含在里面。
-- 虚拟列不会出现在 `SHOW CREATE TABLE` 和 `DESC TABLE` 的查询结果里。
+-   虚拟列不在表结构定义里指定。
+-   不能用 `INSERT` 向虚拟列写数据。
+-   使用不指定列名的 `INSERT` 语句时，虚拟列要会被忽略掉。
+-   使用星号通配符（ `SELECT *` ）时虚拟列不会包含在里面。
+-   虚拟列不会出现在 `SHOW CREATE TABLE` 和 `DESC TABLE` 的查询结果里。
 
 `Merge` 类型的表包括一个 `String` 类型的 `_table` 虚拟列。（如果该表本来已有了一个 `_table` 的列，那这个虚拟列会命名为 `_table1` ；如果 `_table1` 也本就存在了，那这个虚拟列会被命名为 `_table2` ，依此类推）该列包含被读数据的表名。
 

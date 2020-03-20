@@ -8,7 +8,7 @@ ClickHouse admite funciones especiales para trabajar con diccionarios que se pue
 
 Soporta ClickHouse:
 
-- [Diccionarios incorporados](internal_dicts.md#internal_dicts) con una específica [conjunto de funciones](../functions/ym_dict_functions.md).
-- [Diccionarios complementarios (externos)](external_dicts.md) con un [conjunto de funciones](../functions/ext_dict_functions.md).
+-   [Diccionarios incorporados](internal_dicts.md#internal_dicts) con una específica [conjunto de funciones](../functions/ym_dict_functions.md).
+-   [Diccionarios complementarios (externos)](external_dicts.md) con un [conjunto de funciones](../functions/ext_dict_functions.md).
 
 [Artículo Original](https://clickhouse.tech/docs/es/query_language/dicts/) <!--hide-->

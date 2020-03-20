@@ -55,17 +55,17 @@ python3 server.py
 SELECT * FROM url_engine_table
 ```
 
-  ┌─word──┬─value─┐
-  │ Hello │     1 │
-  │ World │     2 │
-  └───────┴───────┘
+    ┌─word──┬─value─┐
+    │ Hello │     1 │
+    │ World │     2 │
+    └───────┴───────┘
 
 ## 功能实现 {#gong-neng-shi-xian}
 
-- 读写操作都支持并发
-- 不支持：
-  - `ALTER` 和 `SELECT...SAMPLE` 操作。
-  - 索引。
-  - 副本。
+-   读写操作都支持并发
+-   不支持：
+    -   `ALTER` 和 `SELECT...SAMPLE` 操作。
+    -   索引。
+    -   副本。
 
 [来源文章](https://clickhouse.tech/docs/en/operations/table_engines/url/) <!--hide-->

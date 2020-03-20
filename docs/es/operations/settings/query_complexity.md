@@ -79,8 +79,8 @@ Habilita o deshabilita la ejecución de `GROUP BY` en la memoria externa. Ver [G
 
 Valores posibles:
 
-- Volumen máximo de RAM (en bytes) que puede ser utilizado por el único [GRUPO POR](../../query_language/select.md#select-group-by-clause) operación.
-- Cero — `GROUP BY` en la memoria externa deshabilitada.
+-   Volumen máximo de RAM (en bytes) que puede ser utilizado por el único [GRUPO POR](../../query_language/select.md#select-group-by-clause) operación.
+-   Cero — `GROUP BY` en la memoria externa deshabilitada.
 
 Valor predeterminado: 0.
 
@@ -235,8 +235,8 @@ ClickHouse puede proceder con diferentes acciones cuando se alcanza el límite. 
 
 Valores posibles:
 
-- Entero positivo.
-- 0 — Número ilimitado de filas.
+-   Entero positivo.
+-   0 — Número ilimitado de filas.
 
 Valor predeterminado: 0.
 
@@ -252,8 +252,8 @@ ClickHouse puede proceder con diferentes acciones cuando se alcanza el límite. 
 
 Valores posibles:
 
-- Entero positivo.
-- 0 — El control de memoria está desactivado.
+-   Entero positivo.
+-   0 — El control de memoria está desactivado.
 
 Valor predeterminado: 0.
 
@@ -261,27 +261,27 @@ Valor predeterminado: 0.
 
 Define qué acción realiza ClickHouse cuando se alcanza cualquiera de los siguientes límites de combinación:
 
-- [Método de codificación de datos:](#settings-max_bytes_in_join)
-- [Método de codificación de datos:](#settings-max_rows_in_join)
+-   [Método de codificación de datos:](#settings-max_bytes_in_join)
+-   [Método de codificación de datos:](#settings-max_rows_in_join)
 
 Valores posibles:
 
-- `THROW` - ClickHouse lanza una excepción y rompe la operación.
-- `BREAK` - ClickHouse interrumpe la operación y no lanza una excepción.
+-   `THROW` - ClickHouse lanza una excepción y rompe la operación.
+-   `BREAK` - ClickHouse interrumpe la operación y no lanza una excepción.
 
 Valor predeterminado: `THROW`.
 
 **Ver también**
 
-- [Cláusula JOIN](../../query_language/select.md#select-join)
-- [Unirse al motor de tabla](../table_engines/join.md)
+-   [Cláusula JOIN](../../query_language/select.md#select-join)
+-   [Unirse al motor de tabla](../table_engines/join.md)
 
 ## max\_partitions\_per\_insert\_block {#max-partitions-per-insert-block}
 
 Limita el número máximo de particiones en un único bloque insertado.
 
-- Entero positivo.
-- 0 — número Ilimitado de particiones.
+-   Entero positivo.
+-   0 — número Ilimitado de particiones.
 
 Valor predeterminado: 100.
 

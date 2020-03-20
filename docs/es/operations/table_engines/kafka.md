@@ -4,9 +4,9 @@ Este motor funciona con [Acerca de nosotros](http://kafka.apache.org/).
 
 Kafka te permite:
 
-- Publicar o suscribirse a flujos de datos.
-- Organice el almacenamiento tolerante a fallos.
-- Secuencias de proceso a medida que estén disponibles.
+-   Publicar o suscribirse a flujos de datos.
+-   Organice el almacenamiento tolerante a fallos.
+-   Secuencias de proceso a medida que estén disponibles.
 
 ## Creación de una tabla {#table-engine-kafka-creating-a-table}
 
@@ -30,17 +30,17 @@ SETTINGS
 
 Parámetros requeridos:
 
-- `kafka_broker_list` – Una lista separada por comas de corredores (por ejemplo, `localhost:9092`).
-- `kafka_topic_list` – Una lista de temas Kafka.
-- `kafka_group_name` – Un grupo de consumidores Kafka. Los márgenes de lectura se rastrean para cada grupo por separado. Si no desea que los mensajes se dupliquen en el clúster, utilice el mismo nombre de grupo en todas partes.
-- `kafka_format` – Formato de mensaje. Utiliza la misma notación que el SQL `FORMAT` función, tal como `JSONEachRow`. Para obtener más información, consulte [Formato](../../interfaces/formats.md) apartado.
+-   `kafka_broker_list` – Una lista separada por comas de corredores (por ejemplo, `localhost:9092`).
+-   `kafka_topic_list` – Una lista de temas Kafka.
+-   `kafka_group_name` – Un grupo de consumidores Kafka. Los márgenes de lectura se rastrean para cada grupo por separado. Si no desea que los mensajes se dupliquen en el clúster, utilice el mismo nombre de grupo en todas partes.
+-   `kafka_format` – Formato de mensaje. Utiliza la misma notación que el SQL `FORMAT` función, tal como `JSONEachRow`. Para obtener más información, consulte [Formato](../../interfaces/formats.md) apartado.
 
 Parámetros opcionales:
 
-- `kafka_row_delimiter` – Carácter delimitador, que termina el mensaje.
-- `kafka_schema` – Parámetro que debe utilizarse si el formato requiere una definición de esquema. Por ejemplo, [Cap'n Proto](https://capnproto.org/) requiere la ruta de acceso al archivo de esquema y el nombre de la raíz `schema.capnp:Message` objeto.
-- `kafka_num_consumers` – El número de consumidores por tabla. Predeterminado: `1`. Especifique más consumidores si el rendimiento de un consumidor es insuficiente. El número total de consumidores no debe exceder el número de particiones en el tema, ya que solo se puede asignar un consumidor por partición.
-- `kafka_skip_broken_messages` – Tolerancia analizador de mensajes Kafka a los mensajes incompatibles con el esquema por bloque. Predeterminado: `0`. Si `kafka_skip_broken_messages = N` entonces el motor salta *Y* Mensajes de Kafka que no se pueden analizar (un mensaje es igual a una fila de datos).
+-   `kafka_row_delimiter` – Carácter delimitador, que termina el mensaje.
+-   `kafka_schema` – Parámetro que debe utilizarse si el formato requiere una definición de esquema. Por ejemplo, [Cap’n Proto](https://capnproto.org/) requiere la ruta de acceso al archivo de esquema y el nombre de la raíz `schema.capnp:Message` objeto.
+-   `kafka_num_consumers` – El número de consumidores por tabla. Predeterminado: `1`. Especifique más consumidores si el rendimiento de un consumidor es insuficiente. El número total de consumidores no debe exceder el número de particiones en el tema, ya que solo se puede asignar un consumidor por partición.
+-   `kafka_skip_broken_messages` – Tolerancia analizador de mensajes Kafka a los mensajes incompatibles con el esquema por bloque. Predeterminado: `0`. Si `kafka_skip_broken_messages = N` entonces el motor salta *Y* Mensajes de Kafka que no se pueden analizar (un mensaje es igual a una fila de datos).
 
 Ejemplos:
 
@@ -156,14 +156,14 @@ Para obtener una lista de posibles opciones de configuración, consulte [referen
 
 ## Virtual Columnas {#virtual-columns}
 
-- `_topic` — El tema de Kafka.
-- `_key` — Clave del mensaje.
-- `_offset` — Desplazamiento del mensaje.
-- `_timestamp` — Marca de tiempo del mensaje.
-- `_partition` — Partición de Kafka tema.
+-   `_topic` — El tema de Kafka.
+-   `_key` — Clave del mensaje.
+-   `_offset` — Desplazamiento del mensaje.
+-   `_timestamp` — Marca de tiempo del mensaje.
+-   `_partition` — Partición de Kafka tema.
 
 **Ver también**
 
-- [Virtual columnas](index.md#table_engines-virtual_columns)
+-   [Virtual columnas](index.md#table_engines-virtual_columns)
 
 [Artículo Original](https://clickhouse.tech/docs/es/operations/table_engines/kafka/) <!--hide-->

@@ -64,11 +64,11 @@
 
 用`�`（U+FFFD）字符替换无效的UTF-8字符。所有连续的无效字符都会被替换为一个替换字符。
 
-  toValidUTF8( input_string )
+    toValidUTF8( input_string )
 
 参数：
 
-- input\_string — 任何一个[String](../../data_types/string.md)类型的对象。
+-   input\_string — 任何一个[String](../../data_types/string.md)类型的对象。
 
 返回值： 有效的UTF-8字符串。
 

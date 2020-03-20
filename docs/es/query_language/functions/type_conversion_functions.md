@@ -10,14 +10,14 @@ ClickHouse tiene el [mismo comportamiento que los programas de C++](https://en.c
 
 Convierte un valor de entrada en el [En](../../data_types/int_uint.md) tipo de datos. Esta familia de funciones incluye:
 
-- `toInt8(expr)` — Resultados en el `Int8` tipo de datos.
-- `toInt16(expr)` — Resultados en el `Int16` tipo de datos.
-- `toInt32(expr)` — Resultados en el `Int32` tipo de datos.
-- `toInt64(expr)` — Resultados en el `Int64` tipo de datos.
+-   `toInt8(expr)` — Resultados en el `Int8` tipo de datos.
+-   `toInt16(expr)` — Resultados en el `Int16` tipo de datos.
+-   `toInt32(expr)` — Resultados en el `Int32` tipo de datos.
+-   `toInt64(expr)` — Resultados en el `Int64` tipo de datos.
 
 **Parámetros**
 
-- `expr` — [Expresion](../syntax.md#syntax-expressions) devolviendo un número o una cadena con la representación decimal de un número. No se admiten representaciones binarias, octales y hexadecimales de números. Los ceros principales son despojados.
+-   `expr` — [Expresion](../syntax.md#syntax-expressions) devolviendo un número o una cadena con la representación decimal de un número. No se admiten representaciones binarias, octales y hexadecimales de números. Los ceros principales son despojados.
 
 **Valor devuelto**
 
@@ -75,14 +75,14 @@ select toInt64OrNull('123123'), toInt8OrNull('123qwe123')
 
 Convierte un valor de entrada en el [UInt](../../data_types/int_uint.md) tipo de datos. Esta familia de funciones incluye:
 
-- `toUInt8(expr)` — Resultados en el `UInt8` tipo de datos.
-- `toUInt16(expr)` — Resultados en el `UInt16` tipo de datos.
-- `toUInt32(expr)` — Resultados en el `UInt32` tipo de datos.
-- `toUInt64(expr)` — Resultados en el `UInt64` tipo de datos.
+-   `toUInt8(expr)` — Resultados en el `UInt8` tipo de datos.
+-   `toUInt16(expr)` — Resultados en el `UInt16` tipo de datos.
+-   `toUInt32(expr)` — Resultados en el `UInt32` tipo de datos.
+-   `toUInt64(expr)` — Resultados en el `UInt64` tipo de datos.
 
 **Parámetros**
 
-- `expr` — [Expresion](../syntax.md#syntax-expressions) devolviendo un número o una cadena con la representación decimal de un número. No se admiten representaciones binarias, octales y hexadecimales de números. Los ceros principales son despojados.
+-   `expr` — [Expresion](../syntax.md#syntax-expressions) devolviendo un número o una cadena con la representación decimal de un número. No se admiten representaciones binarias, octales y hexadecimales de números. Los ceros principales son despojados.
 
 **Valor devuelto**
 
@@ -130,31 +130,31 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 
 Convertir `value` a la [Decimal](../../data_types/decimal.md) tipo de datos con precisión de `S`. El `value` puede ser un número o una cadena. El `S` (escala) parámetro especifica el número de decimales.
 
-- `toDecimal32(value, S)`
-- `toDecimal64(value, S)`
-- `toDecimal128(value, S)`
+-   `toDecimal32(value, S)`
+-   `toDecimal64(value, S)`
+-   `toDecimal128(value, S)`
 
 ## ¿Cómo puedo hacer esto? {#todecimal3264128ornull}
 
 Convierte una cadena de entrada en un [Información detallada))](../../data_types/decimal.md) valor de tipo de datos. Esta familia de funciones incluye:
 
-- `toDecimal32OrNull(expr, S)` — Resultados en `Nullable(Decimal32(S))` tipo de datos.
-- `toDecimal64OrNull(expr, S)` — Resultados en `Nullable(Decimal64(S))` tipo de datos.
-- `toDecimal128OrNull(expr, S)` — Resultados en `Nullable(Decimal128(S))` tipo de datos.
+-   `toDecimal32OrNull(expr, S)` — Resultados en `Nullable(Decimal32(S))` tipo de datos.
+-   `toDecimal64OrNull(expr, S)` — Resultados en `Nullable(Decimal64(S))` tipo de datos.
+-   `toDecimal128OrNull(expr, S)` — Resultados en `Nullable(Decimal128(S))` tipo de datos.
 
 Estas funciones deben usarse en lugar de `toDecimal*()` funciones, si usted prefiere conseguir un `NULL` valor de entrada en lugar de una excepción en el caso de un error de análisis de valor de entrada.
 
 **Parámetros**
 
-- `expr` — [Expresion](../syntax.md#syntax-expressions), devuelve un valor en el [Cadena](../../data_types/string.md) tipo de datos. ClickHouse espera la representación textual del número decimal. Por ejemplo, `'1.111'`.
-- `S` — Escala, el número de decimales en el valor resultante.
+-   `expr` — [Expresion](../syntax.md#syntax-expressions), devuelve un valor en el [Cadena](../../data_types/string.md) tipo de datos. ClickHouse espera la representación textual del número decimal. Por ejemplo, `'1.111'`.
+-   `S` — Escala, el número de decimales en el valor resultante.
 
 **Valor devuelto**
 
 Un valor en el `Nullable(Decimal(P,S))` tipo de datos. El valor contiene:
 
-- Número con `S` lugares decimales, si ClickHouse interpreta la cadena de entrada como un número.
-- `NULL`, si ClickHouse no puede interpretar la cadena de entrada como un número o si el número de entrada contiene más de `S` lugares decimales.
+-   Número con `S` lugares decimales, si ClickHouse interpreta la cadena de entrada como un número.
+-   `NULL`, si ClickHouse no puede interpretar la cadena de entrada como un número o si el número de entrada contiene más de `S` lugares decimales.
 
 **Ejemplos**
 
@@ -182,23 +182,23 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val)
 
 Convierte un valor de entrada en el [Decimal (P, S)](../../data_types/decimal.md) tipo de datos. Esta familia de funciones incluye:
 
-- `toDecimal32OrZero( expr, S)` — Resultados en `Decimal32(S)` tipo de datos.
-- `toDecimal64OrZero( expr, S)` — Resultados en `Decimal64(S)` tipo de datos.
-- `toDecimal128OrZero( expr, S)` — Resultados en `Decimal128(S)` tipo de datos.
+-   `toDecimal32OrZero( expr, S)` — Resultados en `Decimal32(S)` tipo de datos.
+-   `toDecimal64OrZero( expr, S)` — Resultados en `Decimal64(S)` tipo de datos.
+-   `toDecimal128OrZero( expr, S)` — Resultados en `Decimal128(S)` tipo de datos.
 
 Estas funciones deben usarse en lugar de `toDecimal*()` funciones, si usted prefiere conseguir un `0` valor de entrada en lugar de una excepción en el caso de un error de análisis de valor de entrada.
 
 **Parámetros**
 
-- `expr` — [Expresion](../syntax.md#syntax-expressions), devuelve un valor en el [Cadena](../../data_types/string.md) tipo de datos. ClickHouse espera la representación textual del número decimal. Por ejemplo, `'1.111'`.
-- `S` — Escala, el número de decimales en el valor resultante.
+-   `expr` — [Expresion](../syntax.md#syntax-expressions), devuelve un valor en el [Cadena](../../data_types/string.md) tipo de datos. ClickHouse espera la representación textual del número decimal. Por ejemplo, `'1.111'`.
+-   `S` — Escala, el número de decimales en el valor resultante.
 
 **Valor devuelto**
 
 Un valor en el `Nullable(Decimal(P,S))` tipo de datos. El valor contiene:
 
-- Número con `S` lugares decimales, si ClickHouse interpreta la cadena de entrada como un número.
-- 0 con `S` decimales, si ClickHouse no puede interpretar la cadena de entrada como un número o si el número de entrada contiene más de `S` lugares decimales.
+-   Número con `S` lugares decimales, si ClickHouse interpreta la cadena de entrada como un número.
+-   0 con `S` decimales, si ClickHouse no puede interpretar la cadena de entrada como un número o si el número de entrada contiene más de `S` lugares decimales.
 
 **Ejemplo**
 
@@ -378,11 +378,11 @@ toIntervalYear(number)
 
 **Parámetros**
 
-- `number` — Duración del intervalo. Número entero positivo.
+-   `number` — Duración del intervalo. Número entero positivo.
 
 **Valores devueltos**
 
-- El valor en `Interval` tipo de datos.
+-   El valor en `Interval` tipo de datos.
 
 **Ejemplo**
 

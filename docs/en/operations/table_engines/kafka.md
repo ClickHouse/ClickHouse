@@ -4,11 +4,11 @@ This engine works with [Apache Kafka](http://kafka.apache.org/).
 
 Kafka lets you:
 
-- Publish or subscribe to data flows.
-- Organize fault-tolerant storage.
-- Process streams as they become available.
+-   Publish or subscribe to data flows.
+-   Organize fault-tolerant storage.
+-   Process streams as they become available.
 
-## Creating a Table {#table_engine-kafka-creating-a-table}
+## Creating a Table {#table-engine-kafka-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -30,17 +30,17 @@ SETTINGS
 
 Required parameters:
 
-- `kafka_broker_list` – A comma-separated list of brokers (for example, `localhost:9092`).
-- `kafka_topic_list` – A list of Kafka topics.
-- `kafka_group_name` – A group of Kafka consumers. Reading margins are tracked for each group separately. If you don’t want messages to be duplicated in the cluster, use the same group name everywhere.
-- `kafka_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../interfaces/formats.md) section.
+-   `kafka_broker_list` – A comma-separated list of brokers (for example, `localhost:9092`).
+-   `kafka_topic_list` – A list of Kafka topics.
+-   `kafka_group_name` – A group of Kafka consumers. Reading margins are tracked for each group separately. If you don’t want messages to be duplicated in the cluster, use the same group name everywhere.
+-   `kafka_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../interfaces/formats.md) section.
 
 Optional parameters:
 
-- `kafka_row_delimiter` – Delimiter character, which ends the message.
-- `kafka_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
-- `kafka_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition.
-- `kafka_skip_broken_messages` – Kafka message parser tolerance to schema-incompatible messages per block. Default: `0`. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data).
+-   `kafka_row_delimiter` – Delimiter character, which ends the message.
+-   `kafka_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
+-   `kafka_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition.
+-   `kafka_skip_broken_messages` – Kafka message parser tolerance to schema-incompatible messages per block. Default: `0`. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data).
 
 Examples:
 
@@ -156,14 +156,14 @@ For a list of possible configuration options, see the [librdkafka configuration 
 
 ## Virtual Columns {#virtual-columns}
 
-- `_topic` — Kafka topic.
-- `_key` — Key of the message.
-- `_offset` — Offset of the message.
-- `_timestamp` — Timestamp of the message.
-- `_partition` — Partition of Kafka topic.
+-   `_topic` — Kafka topic.
+-   `_key` — Key of the message.
+-   `_offset` — Offset of the message.
+-   `_timestamp` — Timestamp of the message.
+-   `_partition` — Partition of Kafka topic.
 
 **See Also**
 
-- [Virtual columns](index.md#table_engines-virtual_columns)
+-   [Virtual columns](index.md#table_engines-virtual_columns)
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/kafka/) <!--hide-->

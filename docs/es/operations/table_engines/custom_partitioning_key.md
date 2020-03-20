@@ -62,10 +62,10 @@ El `name` columna contiene los nombres de las partes de datos de partición. Pue
 
 Vamos a desglosar el nombre de la primera parte: `201901_1_3_1`:
 
-- `201901` es el nombre de la partición.
-- `1` es el número mínimo del bloque de datos.
-- `3` es el número máximo del bloque de datos.
-- `1` es el nivel de fragmento (la profundidad del árbol de fusión del que se forma).
+-   `201901` es el nombre de la partición.
+-   `1` es el número mínimo del bloque de datos.
+-   `3` es el número máximo del bloque de datos.
+-   `1` es el nivel de fragmento (la profundidad del árbol de fusión del que se forma).
 
 !!! info "INFO"
     Las partes de las tablas de tipo antiguo tienen el nombre: `20190117_20190123_2_2_0` (fecha mínima - fecha máxima - número de bloque mínimo - número de bloque máximo - nivel).

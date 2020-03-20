@@ -15,15 +15,15 @@ ENGINE = JDBC(dbms_uri, external_database, external_table)
 
 **Параметры движка**
 
-- `dbms_uri` — URI внешней СУБД.
+-   `dbms_uri` — URI внешней СУБД.
 
-    Формат: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
+        Формат: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
 
-  Пример для MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
+    Пример для MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
-- `external_database` — база данных во внешней СУБД.
+-   `external_database` — база данных во внешней СУБД.
 
-- `external_table` — таблица в `external_database`.
+-   `external_table` — таблица в `external_database`.
 
 ## Пример использования {#primer-ispolzovaniia}
 
@@ -82,6 +82,6 @@ FROM jdbc_table
 
 ## Смотрите также {#smotrite-takzhe}
 
-- [Табличная функция JDBC](../../query_language/table_functions/jdbc.md).
+-   [Табличная функция JDBC](../../query_language/table_functions/jdbc.md).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/jdbc/) <!--hide-->

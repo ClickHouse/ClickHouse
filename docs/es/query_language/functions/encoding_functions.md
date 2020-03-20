@@ -12,11 +12,11 @@ char(number_1, [number_2, ..., number_n]);
 
 **Parámetros**
 
-- `number_1, number_2, ..., number_n` — Argumentos numéricos interpretados como enteros. Tipo: [En](../../data_types/int_uint.md), [Flotante](../../data_types/float.md).
+-   `number_1, number_2, ..., number_n` — Argumentos numéricos interpretados como enteros. Tipo: [En](../../data_types/int_uint.md), [Flotante](../../data_types/float.md).
 
 **Valor devuelto**
 
-- una cadena de bytes.
+-   una cadena de bytes.
 
 Tipo: `String`.
 
@@ -104,11 +104,11 @@ Los valores de los tipos de coma flotante y Decimal se codifican como su represe
 
 **Parámetros**
 
-- `arg` — Un valor para convertir a hexadecimal. Tipo: [Cadena](../../data_types/string.md), [UInt](../../data_types/int_uint.md), [Flotante](../../data_types/float.md), [Decimal](../../data_types/decimal.md), [Fecha](../../data_types/date.md) o [FechaHora](../../data_types/datetime.md).
+-   `arg` — Un valor para convertir a hexadecimal. Tipo: [Cadena](../../data_types/string.md), [UInt](../../data_types/int_uint.md), [Flotante](../../data_types/float.md), [Decimal](../../data_types/decimal.md), [Fecha](../../data_types/date.md) o [FechaHora](../../data_types/datetime.md).
 
 **Valor devuelto**
 
-- Una cadena con la representación hexadecimal del argumento.
+-   Una cadena con la representación hexadecimal del argumento.
 
 Tipo: `String`.
 

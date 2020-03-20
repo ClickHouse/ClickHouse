@@ -18,7 +18,7 @@ Esta función no distingue entre mayúsculas y minúsculas.
 
 **Valor devuelto**
 
-- Cadena con el nombre de dominio completo.
+-   Cadena con el nombre de dominio completo.
 
 Tipo: `String`.
 
@@ -48,17 +48,17 @@ basename( expr )
 
 **Parámetros**
 
-- `expr` — Expresión que da como resultado un [Cadena](../../data_types/string.md) valor de tipo. Todas las barras diagonales inversas deben escaparse en el valor resultante.
+-   `expr` — Expresión que da como resultado un [Cadena](../../data_types/string.md) valor de tipo. Todas las barras diagonales inversas deben escaparse en el valor resultante.
 
 **Valor devuelto**
 
 Una cadena que contiene:
 
-- La parte final de una cadena después de la última barra o barra invertida.
+-   La parte final de una cadena después de la última barra o barra invertida.
 
-    If the input string contains a path ending with slash or backslash, for example, `/` or `c:\`, the function returns an empty string.
+        If the input string contains a path ending with slash or backslash, for example, `/` or `c:\`, the function returns an empty string.
 
-- La cadena original si no hay barras diagonales o barras diagonales inversas.
+-   La cadena original si no hay barras diagonales o barras diagonales inversas.
 
 **Ejemplo**
 
@@ -155,8 +155,8 @@ Apodo: `user()`, `USER()`.
 
 **Valores devueltos**
 
-- Inicio de sesión del usuario actual.
-- Inicio de sesión del usuario que inició la consulta en caso de consulta distribuida.
+-   Inicio de sesión del usuario actual.
+-   Inicio de sesión del usuario que inició la consulta en caso de consulta distribuida.
 
 Tipo: `String`.
 
@@ -190,29 +190,29 @@ Comprueba si el valor de punto flotante es finito.
 
 **Sintaxis**
 
-  ifNotFinite(x,y)
+    ifNotFinite(x,y)
 
 **Parámetros**
 
-- `x` — Valor que debe comprobarse para el infinito. Tipo: [Flotante\*](../../data_types/float.md).
-- `y` — Valor de reserva. Tipo: [Flotante\*](../../data_types/float.md).
+-   `x` — Valor que debe comprobarse para el infinito. Tipo: [Flotante\*](../../data_types/float.md).
+-   `y` — Valor de reserva. Tipo: [Flotante\*](../../data_types/float.md).
 
 **Valor devuelto**
 
-- `x` si `x` es finito.
-- `y` si `x` no es finito.
+-   `x` si `x` es finito.
+-   `y` si `x` no es finito.
 
 **Ejemplo**
 
 Consulta:
 
-  SELECT 1/0 as infimum, ifNotFinite(infimum,42)
+    SELECT 1/0 as infimum, ifNotFinite(infimum,42)
 
 Resultado:
 
-  ┌─infimum─┬─ifNotFinite(divide(1, 0), 42)─┐
-  │     inf │                            42 │
-  └─────────┴───────────────────────────────┘
+    ┌─infimum─┬─ifNotFinite(divide(1, 0), 42)─┐
+    │     inf │                            42 │
+    └─────────┴───────────────────────────────┘
 
 Puede obtener un resultado similar usando [operador ternario](conditional_functions.md#ternary-operator): `isFinite(x) ? x : y`.
 
@@ -234,9 +234,9 @@ Permite construir un diagrama unicode-art.
 
 Parámetros:
 
-- `x` — Tamaño para mostrar.
-- `min, max` — Constantes enteras. El valor debe encajar en `Int64`.
-- `width` — Constante, entero positivo, puede ser fraccional.
+-   `x` — Tamaño para mostrar.
+-   `min, max` — Constantes enteras. El valor debe encajar en `Int64`.
+-   `width` — Constante, entero positivo, puede ser fraccional.
 
 La banda se dibuja con precisión a un octavo de un símbolo.
 
@@ -431,14 +431,14 @@ Si realiza una subconsulta con ORDER BY y llama a la función desde fuera de la 
 
 **Parámetros**
 
-- `column` — Un nombre de columna o una expresión escalar.
-- `offset` — El número de filas hacia delante o hacia atrás desde la fila actual de `column`. [Int64](../../data_types/int_uint.md).
-- `default_value` — Opcional. El valor que se devolverá si offset va más allá del alcance del bloque. Tipo de bloques de datos afectados.
+-   `column` — Un nombre de columna o una expresión escalar.
+-   `offset` — El número de filas hacia delante o hacia atrás desde la fila actual de `column`. [Int64](../../data_types/int_uint.md).
+-   `default_value` — Opcional. El valor que se devolverá si offset va más allá del alcance del bloque. Tipo de bloques de datos afectados.
 
 **Valores devueltos**
 
-- Valor para `column` en `offset` distancia de la fila actual si `offset` valor no está fuera de los límites del bloque.
-- Valor predeterminado para `column` si `offset` valor está fuera de los límites del bloque. Si `default_value` se da, entonces será utilizado.
+-   Valor para `column` en `offset` distancia de la fila actual si `offset` valor no está fuera de los límites del bloque.
+-   Valor predeterminado para `column` si `offset` valor está fuera de los límites del bloque. Si `default_value` se da, entonces será utilizado.
 
 Tipo: tipo de bloques de datos afectados o tipo de valor predeterminado.
 
@@ -625,12 +625,12 @@ getSizeOfEnumType(value)
 
 **Parámetros:**
 
-- `value` — Valor del tipo `Enum`.
+-   `value` — Valor del tipo `Enum`.
 
 **Valores devueltos**
 
-- El número de campos con `Enum` valores de entrada.
-- Se produce una excepción si el tipo no es `Enum`.
+-   El número de campos con `Enum` valores de entrada.
+-   Se produce una excepción si el tipo no es `Enum`.
 
 **Ejemplo**
 
@@ -654,11 +654,11 @@ blockSerializedSize(value[, value[, ...]])
 
 **Parámetros:**
 
-- `value` — Cualquier valor.
+-   `value` — Cualquier valor.
 
 **Valores devueltos**
 
-- El número de bytes que se escribirán en el disco para el bloque de valores (sin compresión).
+-   El número de bytes que se escribirán en el disco para el bloque de valores (sin compresión).
 
 **Ejemplo**
 
@@ -682,11 +682,11 @@ toColumnTypeName(value)
 
 **Parámetros:**
 
-- `value` — Cualquier tipo de valor.
+-   `value` — Cualquier tipo de valor.
 
 **Valores devueltos**
 
-- Una cadena con el nombre de la clase que se utiliza para representar la `value` tipo de datos en la memoria RAM.
+-   Una cadena con el nombre de la clase que se utiliza para representar la `value` tipo de datos en la memoria RAM.
 
 **Ejemplo de la diferencia entre`toTypeName ' and ' toColumnTypeName`**
 
@@ -722,11 +722,11 @@ dumpColumnStructure(value)
 
 **Parámetros:**
 
-- `value` — Cualquier tipo de valor.
+-   `value` — Cualquier tipo de valor.
 
 **Valores devueltos**
 
-- Una cadena que describe la estructura que se utiliza para representar el `value` tipo de datos en la memoria RAM.
+-   Una cadena que describe la estructura que se utiliza para representar el `value` tipo de datos en la memoria RAM.
 
 **Ejemplo**
 
@@ -752,13 +752,13 @@ defaultValueOfArgumentType(expression)
 
 **Parámetros:**
 
-- `expression` — Tipo de valor arbitrario o una expresión que da como resultado un valor de tipo arbitrario.
+-   `expression` — Tipo de valor arbitrario o una expresión que da como resultado un valor de tipo arbitrario.
 
 **Valores devueltos**
 
-- `0` para los números.
-- Cadena vacía para cadenas.
-- `ᴺᵁᴸᴸ` para [NULL](../../data_types/nullable.md).
+-   `0` para los números.
+-   Cadena vacía para cadenas.
+-   `ᴺᵁᴸᴸ` para [NULL](../../data_types/nullable.md).
 
 **Ejemplo**
 
@@ -794,8 +794,8 @@ SELECT replicate(x, arr);
 
 **Parámetros:**
 
-- `arr` — Matriz original. ClickHouse crea una nueva matriz de la misma longitud que el original y la llena con el valor `x`.
-- `x` — El valor con el que se llenará la matriz resultante.
+-   `arr` — Matriz original. ClickHouse crea una nueva matriz de la misma longitud que el original y la llena con el valor `x`.
+-   `x` — El valor con el que se llenará la matriz resultante.
 
 **Valor devuelto**
 
@@ -831,7 +831,7 @@ filesystemAvailable()
 
 **Valor devuelto**
 
-- La cantidad de espacio restante disponible en bytes.
+-   La cantidad de espacio restante disponible en bytes.
 
 Tipo: [UInt64](../../data_types/int_uint.md).
 
@@ -863,7 +863,7 @@ filesystemFree()
 
 **Valor devuelto**
 
-- Cantidad de espacio libre en bytes.
+-   Cantidad de espacio libre en bytes.
 
 Tipo: [UInt64](../../data_types/int_uint.md).
 
@@ -895,7 +895,7 @@ filesystemCapacity()
 
 **Valor devuelto**
 
-- Información de capacidad del sistema de archivos en bytes.
+-   Información de capacidad del sistema de archivos en bytes.
 
 Tipo: [UInt64](../../data_types/int_uint.md).
 
@@ -941,9 +941,9 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 **Parámetros**
 
-- `join_storage_table_name` — un [identificador](../syntax.md#syntax-identifiers) indica dónde se realiza la búsqueda. El identificador se busca en la base de datos predeterminada (ver parámetro `default_database` en el archivo de configuración). Para reemplazar la base de datos predeterminada, utilice `USE db_name` o especifique la base de datos y la tabla a través del separador `db_name.db_table`, ver el ejemplo.
-- `value_column` — nombre de la columna de la tabla que contiene los datos necesarios.
-- `join_keys` — lista de claves.
+-   `join_storage_table_name` — un [identificador](../syntax.md#syntax-identifiers) indica dónde se realiza la búsqueda. El identificador se busca en la base de datos predeterminada (ver parámetro `default_database` en el archivo de configuración). Para reemplazar la base de datos predeterminada, utilice `USE db_name` o especifique la base de datos y la tabla a través del separador `db_name.db_table`, ver el ejemplo.
+-   `value_column` — nombre de la columna de la tabla que contiene los datos necesarios.
+-   `join_keys` — lista de claves.
 
 **Valor devuelto**
 
@@ -1045,13 +1045,13 @@ randomPrintableASCII(length)
 
 **Parámetros**
 
-- `length` — Longitud de cadena resultante. Entero positivo.
+-   `length` — Longitud de cadena resultante. Entero positivo.
 
-    If you pass `length < 0`, behavior of the function is undefined.
+        If you pass `length < 0`, behavior of the function is undefined.
 
 **Valor devuelto**
 
-- Cadena con un conjunto aleatorio de [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) caracteres imprimibles.
+-   Cadena con un conjunto aleatorio de [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) caracteres imprimibles.
 
 Tipo: [Cadena](../../data_types/string.md)
 

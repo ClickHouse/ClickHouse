@@ -35,19 +35,19 @@ Cuanto mayor sea la carga en el sistema, más importante es personalizar el sist
 
 ## Propiedades clave del escenario OLAP {#key-properties-of-olap-scenario}
 
-- La gran mayoría de las solicitudes son para acceso de lectura.
-- Los datos se actualizan en lotes bastante grandes (\> 1000 filas), no por filas individuales; o no se actualiza en absoluto.
-- Los datos se agregan a la base de datos pero no se modifican.
-- Para las lecturas, se extrae un número bastante grande de filas de la base de datos, pero solo un pequeño subconjunto de columnas.
-- Las tablas son “wide,” lo que significa que contienen un gran número de columnas.
-- Las consultas son relativamente raras (generalmente cientos de consultas por servidor o menos por segundo).
-- Para consultas simples, se permiten latencias de alrededor de 50 ms.
-- Los valores de columna son bastante pequeños: números y cadenas cortas (por ejemplo, 60 bytes por URL).
-- Requiere un alto rendimiento al procesar una sola consulta (hasta miles de millones de filas por segundo por servidor).
-- Las transacciones no son necesarias.
-- Bajos requisitos para la coherencia de los datos.
-- Hay una tabla grande por consulta. Todas las mesas son pequeñas, excepto una.
-- Un resultado de consulta es significativamente menor que los datos de origen. En otras palabras, los datos se filtran o se agregan, por lo que el resultado se ajusta a la memoria RAM de un solo servidor.
+-   La gran mayoría de las solicitudes son para acceso de lectura.
+-   Los datos se actualizan en lotes bastante grandes (\> 1000 filas), no por filas individuales; o no se actualiza en absoluto.
+-   Los datos se agregan a la base de datos pero no se modifican.
+-   Para las lecturas, se extrae un número bastante grande de filas de la base de datos, pero solo un pequeño subconjunto de columnas.
+-   Las tablas son “wide,” lo que significa que contienen un gran número de columnas.
+-   Las consultas son relativamente raras (generalmente cientos de consultas por servidor o menos por segundo).
+-   Para consultas simples, se permiten latencias de alrededor de 50 ms.
+-   Los valores de columna son bastante pequeños: números y cadenas cortas (por ejemplo, 60 bytes por URL).
+-   Requiere un alto rendimiento al procesar una sola consulta (hasta miles de millones de filas por segundo por servidor).
+-   Las transacciones no son necesarias.
+-   Bajos requisitos para la coherencia de los datos.
+-   Hay una tabla grande por consulta. Todas las mesas son pequeñas, excepto una.
+-   Un resultado de consulta es significativamente menor que los datos de origen. En otras palabras, los datos se filtran o se agregan, por lo que el resultado se ajusta a la memoria RAM de un solo servidor.
 
 Es fácil ver que el escenario OLAP es muy diferente de otros escenarios populares (como el acceso OLTP o Key-Value). Por lo tanto, no tiene sentido intentar usar OLTP o una base de datos de valor clave para procesar consultas analíticas si desea obtener un rendimiento decente. Por ejemplo, si intenta usar MongoDB o Redis para análisis, obtendrá un rendimiento muy bajo en comparación con las bases de datos OLAP.
 

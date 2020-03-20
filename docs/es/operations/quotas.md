@@ -7,8 +7,8 @@ El sistema también tiene una característica para limitar la complejidad de una
 
 A diferencia de las restricciones de complejidad de consultas, las cuotas:
 
-- Coloque restricciones en un conjunto de consultas que se pueden ejecutar durante un período de tiempo, en lugar de limitar una sola consulta.
-- Tenga en cuenta los recursos gastados en todos los servidores remotos para el procesamiento de consultas distribuidas.
+-   Coloque restricciones en un conjunto de consultas que se pueden ejecutar durante un período de tiempo, en lugar de limitar una sola consulta.
+-   Tenga en cuenta los recursos gastados en todos los servidores remotos para el procesamiento de consultas distribuidas.
 
 Echemos un vistazo a la sección de la ‘users.xml’ fichero que define las cuotas.
 

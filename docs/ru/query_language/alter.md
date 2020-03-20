@@ -15,11 +15,11 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 
 Существуют следующие действия:
 
-- [ADD COLUMN](#alter_add-column) — добавляет столбец в таблицу;
-- [DROP COLUMN](#alter_drop-column) — удаляет столбец;
-- [CLEAR COLUMN](#alter_clear-column) — сбрасывает все значения в столбце для заданной партиции;
-- [COMMENT COLUMN](#alter_comment-column) — добавляет комментарий к столбцу;
-- [MODIFY COLUMN](#alter_modify-column) — изменяет тип столбца, выражение для значения по умолчанию и TTL.
+-   [ADD COLUMN](#alter_add-column) — добавляет столбец в таблицу;
+-   [DROP COLUMN](#alter_drop-column) — удаляет столбец;
+-   [CLEAR COLUMN](#alter_clear-column) — сбрасывает все значения в столбце для заданной партиции;
+-   [COMMENT COLUMN](#alter_comment-column) — добавляет комментарий к столбцу;
+-   [MODIFY COLUMN](#alter_modify-column) — изменяет тип столбца, выражение для значения по умолчанию и TTL.
 
 Подробное описание для каждого действия приведено ниже.
 
@@ -101,13 +101,13 @@ MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
 
 Запрос изменяет следующие свойства столбца `name`:
 
-- Тип
+-   Тип
 
-- Значение по умолчанию
+-   Значение по умолчанию
 
-- TTL
+-   TTL
 
-    Примеры изменения TTL столбца смотрите в разделе [TTL столбца](../operations/table_engines/mergetree.md#mergetree-column-ttl).
+        Примеры изменения TTL столбца смотрите в разделе [TTL столбца](../operations/table_engines/mergetree.md#mergetree-column-ttl).
 
 Если указано `IF EXISTS`, запрос не возвращает ошибку, если столбца не существует.
 
@@ -123,10 +123,10 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 
 Выполнение производится в несколько стадий:
 
-- подготовка временных (новых) файлов с изменёнными данными;
-- переименование старых файлов;
-- переименование временных (новых) файлов в старые;
-- удаление старых файлов.
+-   подготовка временных (новых) файлов с изменёнными данными;
+-   переименование старых файлов;
+-   переименование временных (новых) файлов в старые;
+-   удаление старых файлов.
 
 Из них, длительной является только первая стадия. Если на этой стадии возникнет сбой, то данные не поменяются.
 Если на одной из следующих стадий возникнет сбой, то данные будет можно восстановить вручную. За исключением случаев, когда старые файлы удалены из файловой системы, а данные для новых файлов не доехали на диск и потеряны.
@@ -199,17 +199,17 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 
 Для работы с [партициями](../operations/table_engines/custom_partitioning_key.md) доступны следующие операции:
 
-- [DETACH PARTITION](#alter_detach-partition) – перенести партицию в директорию `detached`;
-- [DROP PARTITION](#alter_drop-partition) – удалить партицию;
-- [ATTACH PARTITION\|PART](#alter_attach-partition) – добавить партицию/кусок в таблицу из директории `detached`;
-- [ATTACH PARTITION FROM](#alter_attach-partition-from) – скопировать партицию из другой таблицы;
-- [REPLACE PARTITION](#alter_replace-partition) – скопировать партицию из другой таблицы с заменой;
-- [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) (\#alter\_move\_to\_table-partition) - переместить партицию в другую таблицу;
-- [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) – удалить все значения в столбце для заданной партиции;
-- [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - очистить построенные вторичные индексы для заданной партиции;
-- [FREEZE PARTITION](#alter_freeze-partition) – создать резервную копию партиции;
-- [FETCH PARTITION](#alter_fetch-partition) – скачать партицию с другого сервера;
-- [MOVE PARTITION\|PART](#alter_move-partition) – переместить партицию/кускок на другой диск или том.
+-   [DETACH PARTITION](#alter_detach-partition) – перенести партицию в директорию `detached`;
+-   [DROP PARTITION](#alter_drop-partition) – удалить партицию;
+-   [ATTACH PARTITION\|PART](#alter_attach-partition) – добавить партицию/кусок в таблицу из директории `detached`;
+-   [ATTACH PARTITION FROM](#alter_attach-partition-from) – скопировать партицию из другой таблицы;
+-   [REPLACE PARTITION](#alter_replace-partition) – скопировать партицию из другой таблицы с заменой;
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) (\#alter\_move\_to\_table-partition) - переместить партицию в другую таблицу;
+-   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) – удалить все значения в столбце для заданной партиции;
+-   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - очистить построенные вторичные индексы для заданной партиции;
+-   [FREEZE PARTITION](#alter_freeze-partition) – создать резервную копию партиции;
+-   [FETCH PARTITION](#alter_fetch-partition) – скачать партицию с другого сервера;
+-   [MOVE PARTITION\|PART](#alter_move-partition) – переместить партицию/кускок на другой диск или том.
 
 #### DETACH PARTITION {#alter-detach-partition}
 
@@ -281,8 +281,8 @@ ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
 
 Следует иметь в виду:
 
-- Таблицы должны иметь одинаковую структуру.
-- Для таблиц должен быть задан одинаковый ключ партиционирования.
+-   Таблицы должны иметь одинаковую структуру.
+-   Для таблиц должен быть задан одинаковый ключ партиционирования.
 
 Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
 
@@ -296,8 +296,8 @@ ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 
 Следует иметь в виду:
 
-- Таблицы должны иметь одинаковую структуру.
-- Для таблиц должен быть задан одинаковый ключ партиционирования.
+-   Таблицы должны иметь одинаковую структуру.
+-   Для таблиц должен быть задан одинаковый ключ партиционирования.
 
 Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
 
@@ -311,8 +311,8 @@ ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
 
 Следует иметь в виду:
 
-- Таблицы должны иметь одинаковую структуру.
-- Для таблиц должен быть задан одинаковый ключ партиционирования.
+-   Таблицы должны иметь одинаковую структуру.
+-   Для таблиц должен быть задан одинаковый ключ партиционирования.
 
 #### CLEAR COLUMN IN PARTITION {#alter-clear-column-partition}
 
@@ -351,8 +351,8 @@ ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 
 Запрос делает следующее — для текущего состояния таблицы он формирует жесткие ссылки на данные в этой таблице. Ссылки размещаются в директории `/var/lib/clickhouse/shadow/N/...`, где:
 
-- `/var/lib/clickhouse/` — рабочая директория ClickHouse, заданная в конфигурационном файле;
-- `N` — инкрементальный номер резервной копии.
+-   `/var/lib/clickhouse/` — рабочая директория ClickHouse, заданная в конфигурационном файле;
+-   `N` — инкрементальный номер резервной копии.
 
 !!! note "Примечание"
     При использовании [нескольких дисков для хранения данных таблицы](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes) директория `shadow/N` появляется на каждом из дисков, на которых были куски, попавшие под выражение `PARTITION`.
@@ -397,8 +397,8 @@ ALTER TABLE users ATTACH PARTITION 201902;
 
 Следует иметь в виду:
 
-- Запрос `ALTER TABLE t FETCH PARTITION` не реплицируется. Он загружает партицию в директорию `detached` только на локальном сервере.
-- Запрос `ALTER TABLE t ATTACH` реплицируется — он добавляет данные в таблицу сразу на всех репликах. На одной из реплик данные будут добавлены из директории `detached`, а на других — из соседних реплик.
+-   Запрос `ALTER TABLE t FETCH PARTITION` не реплицируется. Он загружает партицию в директорию `detached` только на локальном сервере.
+-   Запрос `ALTER TABLE t ATTACH` реплицируется — он добавляет данные в таблицу сразу на всех репликах. На одной из реплик данные будут добавлены из директории `detached`, а на других — из соседних реплик.
 
 Перед загрузкой данных система проверяет, существует ли партиция и совпадает ли её структура со структурой таблицы. При этом автоматически выбирается наиболее актуальная реплика среди всех живых реплик.
 
@@ -414,9 +414,9 @@ ALTER TABLE table_name MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_n
 
 Запрос `ALTER TABLE t MOVE`:
 
-- Не реплицируется, т.к. на разных репликах могут быть различные конфигурации политик хранения.
-- Возвращает ошибку, если указан несконфигурированный том или диск. Ошибка также возвращается в случае невыполнения условий перемещения данных, которые указаны в конфигурации политики хранения.
-- Может возвращать ошибку в случае, когда перемещаемые данные уже оказались перемещены в результате фонового процесса, конкурентного запроса `ALTER TABLE t MOVE` или как часть результата фоновой операции слияния. В данном случае никаких дополнительных действий от пользователя не требуется.
+-   Не реплицируется, т.к. на разных репликах могут быть различные конфигурации политик хранения.
+-   Возвращает ошибку, если указан несконфигурированный том или диск. Ошибка также возвращается в случае невыполнения условий перемещения данных, которые указаны в конфигурации политики хранения.
+-   Может возвращать ошибку в случае, когда перемещаемые данные уже оказались перемещены в результате фонового процесса, конкурентного запроса `ALTER TABLE t MOVE` или как часть результата фоновой операции слияния. В данном случае никаких дополнительных действий от пользователя не требуется.
 
 Примеры:
 
@@ -429,10 +429,10 @@ ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 
 Чтобы задать нужную партицию в запросах `ALTER ... PARTITION`, можно использовать:
 
-- Имя партиции. Посмотреть имя партиции можно в столбце `partition` системной таблицы [system.parts](../operations/system_tables.md#system_tables-parts). Например, `ALTER TABLE visits DETACH PARTITION 201901`.
-- Произвольное выражение из столбцов исходной таблицы. Также поддерживаются константы и константные выражения. Например, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
-- Строковый идентификатор партиции. Идентификатор партиции используется для именования кусков партиции на файловой системе и в ZooKeeper. В запросах `ALTER` идентификатор партиции нужно указывать в секции `PARTITION ID`, в одинарных кавычках. Например, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
-- Для запросов [ATTACH PART](#alter_attach-partition) и [DROP DETACHED PART](#alter_drop-detached): чтобы задать имя куска партиции, используйте строковой литерал со значением из столбца `name` системной таблицы [system.detached\_parts](../operations/system_tables.md#system_tables-detached_parts). Например, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
+-   Имя партиции. Посмотреть имя партиции можно в столбце `partition` системной таблицы [system.parts](../operations/system_tables.md#system_tables-parts). Например, `ALTER TABLE visits DETACH PARTITION 201901`.
+-   Произвольное выражение из столбцов исходной таблицы. Также поддерживаются константы и константные выражения. Например, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
+-   Строковый идентификатор партиции. Идентификатор партиции используется для именования кусков партиции на файловой системе и в ZooKeeper. В запросах `ALTER` идентификатор партиции нужно указывать в секции `PARTITION ID`, в одинарных кавычках. Например, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
+-   Для запросов [ATTACH PART](#alter_attach-partition) и [DROP DETACHED PART](#alter_drop-detached): чтобы задать имя куска партиции, используйте строковой литерал со значением из столбца `name` системной таблицы [system.detached\_parts](../operations/system_tables.md#system_tables-detached_parts). Например, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
 Использование кавычек в имени партиций зависит от типа данных столбца, по которому задано партиционирование. Например, для столбца с типом `String` имя партиции необходимо указывать в кавычках (одинарных). Для типов `Date` и `Int*` кавычки указывать не нужно.
 

@@ -20,10 +20,10 @@
 
 **示例：**
 
-  SELECT alphaTokens('abca1abc')
+    SELECT alphaTokens('abca1abc')
 
-  ┌─alphaTokens('abca1abc')─┐
-  │ ['abca','abc']          │
-  └─────────────────────────┘
+    ┌─alphaTokens('abca1abc')─┐
+    │ ['abca','abc']          │
+    └─────────────────────────┘
 
 [来源文章](https://clickhouse.tech/docs/en/query_language/functions/splitting_merging_functions/) <!--hide-->

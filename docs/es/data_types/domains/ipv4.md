@@ -58,9 +58,9 @@ If you want to convert `IPv4` value to a string, you have to do that explicitly 
 SELECT toTypeName(s), IPv4NumToString(from) as s FROM hits LIMIT 1;
 ```
 
-  ┌─toTypeName(IPv4NumToString(from))─┬─s──────────────┐
-  │ String                            │ 183.247.232.58 │
-  └───────────────────────────────────┴────────────────┘
+    ┌─toTypeName(IPv4NumToString(from))─┬─s──────────────┐
+    │ String                            │ 183.247.232.58 │
+    └───────────────────────────────────┴────────────────┘
 
 Or cast to a `UInt32` value:
 

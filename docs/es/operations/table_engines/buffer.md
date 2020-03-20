@@ -8,16 +8,16 @@ Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_
 
 Parámetros del motor:
 
-- `database` – Nombre de la base de datos. En lugar del nombre de la base de datos, puede usar una expresión constante que devuelva una cadena.
-- `table` – Tabla para eliminar los datos.
-- `num_layers` – Capa de paralelismo. Físicamente, la tabla se representará como `num_layers` de búferes independientes. Valor recomendado: 16.
-- `min_time`, `max_time`, `min_rows`, `max_rows`, `min_bytes`, y `max_bytes` – Condiciones para el lavado de datos del búfer.
+-   `database` – Nombre de la base de datos. En lugar del nombre de la base de datos, puede usar una expresión constante que devuelva una cadena.
+-   `table` – Tabla para eliminar los datos.
+-   `num_layers` – Capa de paralelismo. Físicamente, la tabla se representará como `num_layers` de búferes independientes. Valor recomendado: 16.
+-   `min_time`, `max_time`, `min_rows`, `max_rows`, `min_bytes`, y `max_bytes` – Condiciones para el lavado de datos del búfer.
 
 Los datos se vacían del búfer y se escriben en la tabla de destino si `min*` condiciones o al menos una `max*` condición se cumplen.
 
-- `min_time`, `max_time` – Condición para el tiempo en segundos desde el momento de la primera escritura en el búfer.
-- `min_rows`, `max_rows` – Condición para el número de filas en el búfer.
-- `min_bytes`, `max_bytes` – Condición para el número de bytes en el búfer.
+-   `min_time`, `max_time` – Condición para el tiempo en segundos desde el momento de la primera escritura en el búfer.
+-   `min_rows`, `max_rows` – Condición para el número de filas en el búfer.
+-   `min_bytes`, `max_bytes` – Condición para el número de bytes en el búfer.
 
 Durante la operación de escritura, los datos se insertan en un `num_layers` número de búferes aleatorios. O bien, si la parte de datos para insertar es lo suficientemente grande (mayor que `max_rows` o `max_bytes`), se escribe directamente en la tabla de destino, omitiendo el búfer.
 

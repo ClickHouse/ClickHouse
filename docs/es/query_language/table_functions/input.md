@@ -18,9 +18,9 @@ con todos los datos transferidos no se crea.
 
 **Ejemplos**
 
-- Deje que el `test` tiene la siguiente estructura `(a String, b String)`
-  y datos en `data.csv` tiene una estructura diferente `(col1 String, col2 Date, col3 Int32)`. Consulta de inserción
-  datos de la `data.csv` en el `test` con conversión simultánea se ve así:
+-   Deje que el `test` tiene la siguiente estructura `(a String, b String)`
+    y datos en `data.csv` tiene una estructura diferente `(col1 String, col2 Date, col3 Int32)`. Consulta de inserción
+    datos de la `data.csv` en el `test` con conversión simultánea se ve así:
 
 <!-- -->
 
@@ -28,7 +28,7 @@ con todos los datos transferidos no se crea.
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1), col3 * col3 FROM input('col1 String, col2 Date, col3 Int32') FORMAT CSV";
 ```
 
-- Si `data.csv` contiene datos de la misma estructura `test_structure` como la mesa `test` entonces estas dos consultas son iguales:
+-   Si `data.csv` contiene datos de la misma estructura `test_structure` como la mesa `test` entonces estas dos consultas son iguales:
 
 <!-- -->
 

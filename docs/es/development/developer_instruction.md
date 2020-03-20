@@ -22,8 +22,8 @@ Para trabajar con repositorios git, instale `git`.
 
 Para hacer eso en Ubuntu, ejecutaría en la terminal de línea de comandos:
 
-  sudo apt update
-  sudo apt install git
+    sudo apt update
+    sudo apt install git
 
 Puede encontrar un breve manual sobre el uso de Git aquí: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf .
 Para obtener un manual detallado sobre Git, consulte https://git-scm.com/book/ru/v2 .
@@ -34,8 +34,8 @@ A continuación, debe descargar los archivos fuente en su máquina de trabajo. E
 
 En el terminal de línea de comandos, ejecute:
 
-  git clone --recursive git@guthub.com:your_github_username/ClickHouse.git
-  cd ClickHouse
+    git clone --recursive git@guthub.com:your_github_username/ClickHouse.git
+    cd ClickHouse
 
 Nota: por favor, sustituye *your\_github\_username* con lo que es apropiado!
 
@@ -45,30 +45,30 @@ Es importante que la ruta al directorio de trabajo no contenga espacios en blanc
 
 Tenga en cuenta que el repositorio ClickHouse utiliza `submodules`. Así es como se llaman las referencias a repositorios adicionales (es decir, bibliotecas externas de las que depende el proyecto). Significa que al clonar el repositorio debe especificar el `--recursive` como en el ejemplo anterior. Si el repositorio se ha clonado sin submódulos, para descargarlos debe ejecutar lo siguiente:
 
-  git submodule init
-  git submodule update
+    git submodule init
+    git submodule update
 
 Puede verificar el estado con el comando: `git submodule status`.
 
 Si recibe el siguiente mensaje de error:
 
-  Permission denied (publickey).
-  fatal: Could not read from remote repository.
+    Permission denied (publickey).
+    fatal: Could not read from remote repository.
 
-  Please make sure you have the correct access rights
-  and the repository exists.
+    Please make sure you have the correct access rights
+    and the repository exists.
 
 Por lo general, significa que faltan las claves SSH para conectarse a GitHub. Estas teclas se encuentran normalmente en `~/.ssh`. Para que las claves SSH sean aceptadas, debe cargarlas en la sección de configuración de la interfaz de usuario de GitHub.
 
 También puede clonar el repositorio a través del protocolo https:
 
-  git clone https://github.com/ClickHouse/ClickHouse.git
+    git clone https://github.com/ClickHouse/ClickHouse.git
 
 Sin embargo, esto no le permitirá enviar los cambios al servidor. Aún puede usarlo temporalmente y agregar las claves SSH más tarde reemplazando la dirección remota del repositorio con `git remote` comando.
 
 También puede agregar la dirección original del repositorio de ClickHouse a su repositorio local para extraer actualizaciones desde allí:
 
-  git remote add upstream git@github.com:ClickHouse/ClickHouse.git
+    git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 
 Después de ejecutar con éxito este comando, podrá extraer actualizaciones del repositorio principal de ClickHouse ejecutando `git pull upstream master`.
 
@@ -76,31 +76,31 @@ Después de ejecutar con éxito este comando, podrá extraer actualizaciones del
 
 Trabajar con submódulos en git podría ser doloroso. Los siguientes comandos ayudarán a administrarlo:
 
-  # ! each command accepts --recursive
-  # Update remote URLs for submodules. Barely rare case
-  git submodule sync
-  # Add new submodules
-  git submodule init
-  # Update existing submodules to the current state
-  git submodule update
-  # Two last commands could be merged together
-  git submodule update --init
+    # ! each command accepts --recursive
+    # Update remote URLs for submodules. Barely rare case
+    git submodule sync
+    # Add new submodules
+    git submodule init
+    # Update existing submodules to the current state
+    git submodule update
+    # Two last commands could be merged together
+    git submodule update --init
 
 Los siguientes comandos le ayudarían a restablecer todos los submódulos al estado inicial (!¡ADVERTENCIA! - cualquier cambio en el interior será eliminado):
 
-  # Synchronizes submodules' remote URL with .gitmodules
-  git submodule sync --recursive
-  # Update the registered submodules with initialize not yet initialized
-  git submodule update --init --recursive
-  # Reset all changes done after HEAD
-  git submodule foreach git reset --hard
-  # Clean files from .gitignore
-  git submodule foreach git clean -xfd
-  # Repeat last 4 commands for all submodule
-  git submodule foreach git submodule sync --recursive
-  git submodule foreach git submodule update --init --recursive
-  git submodule foreach git submodule foreach git reset --hard
-  git submodule foreach git submodule foreach git clean -xfd
+    # Synchronizes submodules' remote URL with .gitmodules
+    git submodule sync --recursive
+    # Update the registered submodules with initialize not yet initialized
+    git submodule update --init --recursive
+    # Reset all changes done after HEAD
+    git submodule foreach git reset --hard
+    # Clean files from .gitignore
+    git submodule foreach git clean -xfd
+    # Repeat last 4 commands for all submodule
+    git submodule foreach git submodule sync --recursive
+    git submodule foreach git submodule update --init --recursive
+    git submodule foreach git submodule foreach git reset --hard
+    git submodule foreach git submodule foreach git clean -xfd
 
 # Sistema de construcción {#build-system}
 
@@ -117,8 +117,8 @@ Si usa Arch o Gentoo, probablemente lo sepa usted mismo cómo instalar CMake.
 
 Para instalar CMake y Ninja en Mac OS X, primero instale Homebrew y luego instale todo lo demás a través de brew:
 
-  /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
-  brew install cmake ninja
+    /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+    brew install cmake ninja
 
 A continuación, verifique la versión de CMake: `cmake --version`. Si está por debajo de 3.3, debe instalar una versión más reciente desde el sitio web: https://cmake.org/download/.
 
@@ -144,8 +144,8 @@ Si decide utilizar Clang, también puede instalar `libc++` y `lld` si usted sabe
 
 Ahora que está listo para construir ClickHouse, le recomendamos que cree un directorio separado `build` dentro `ClickHouse` que contendrá todos los de la generación de artefactos:
 
-  mkdir build
-  cd build
+    mkdir build
+    cd build
 
 Puede tener varios directorios diferentes (build\_release, build\_debug, etc.) para diferentes tipos de construcción.
 
@@ -153,37 +153,37 @@ Mientras que dentro de la `build` directorio, configure su compilación ejecutan
 
 Linux:
 
-  export CC=gcc-9 CXX=g++-9
-  cmake ..
+    export CC=gcc-9 CXX=g++-9
+    cmake ..
 
 Mac OS X:
 
-  export CC=clang CXX=clang++
-  cmake ..
+    export CC=clang CXX=clang++
+    cmake ..
 
 El `CC` variable especifica el compilador para C (abreviatura de C Compiler), y `CXX` variable indica qué compilador de C ++ se usará para compilar.
 
 Para una construcción más rápida, puede recurrir al `debug` tipo de compilación: una compilación sin optimizaciones. Para ese suministro el siguiente parámetro `-D CMAKE_BUILD_TYPE=Debug`:
 
-  cmake -D CMAKE_BUILD_TYPE=Debug ..
+    cmake -D CMAKE_BUILD_TYPE=Debug ..
 
 Puede cambiar el tipo de compilación ejecutando este comando en el `build` directorio.
 
 Ejecutar ninja para construir:
 
-  ninja clickhouse-server clickhouse-client
+    ninja clickhouse-server clickhouse-client
 
 Solo los binarios requeridos se van a construir en este ejemplo.
 
 Si necesita construir todos los binarios (utilidades y pruebas), debe ejecutar ninja sin parámetros:
 
-  ninja
+    ninja
 
 La compilación completa requiere aproximadamente 30 GB de espacio libre en disco o 15 GB para construir los binarios principales.
 
 Cuando hay una gran cantidad de RAM disponible en la máquina de compilación, debe limitar el número de tareas de compilación que se ejecutan en paralelo con `-j` parámetro:
 
-  ninja -j 1 clickhouse-server clickhouse-client
+    ninja -j 1 clickhouse-server clickhouse-client
 
 En máquinas con 4GB de RAM, se recomienda especificar 1, para 8GB de RAM `-j 2` se recomienda.
 
@@ -195,13 +195,13 @@ Al crear mensajes sobre archivos protobuf en la biblioteca libhdfs2, como `libpr
 
 Tras la compilación exitosa, obtienes un archivo ejecutable `ClickHouse/<build_dir>/dbms/programs/clickhouse`:
 
-  ls -l dbms/programs/clickhouse
+    ls -l dbms/programs/clickhouse
 
 # Ejecutando el ejecutable construido de ClickHouse {#running-the-built-executable-of-clickhouse}
 
 Para ejecutar el servidor bajo el usuario actual, debe navegar hasta `ClickHouse/dbms/programs/server/` (situado fuera de `build`) y ejecutar:
 
-  ../../../build/dbms/programs/clickhouse server
+    ../../../build/dbms/programs/clickhouse server
 
 En este caso, ClickHouse usará archivos de configuración ubicados en el directorio actual. Puede ejecutar `clickhouse server` desde cualquier directorio que especifique la ruta a un archivo de configuración como un parámetro de línea de comandos `--config-file`.
 
@@ -209,20 +209,20 @@ Para conectarse a ClickHouse con clickhouse-client en otro terminal, vaya a `Cli
 
 Si usted consigue `Connection refused` mensaje en Mac OS X o FreeBSD, intente especificar la dirección de host 127.0.0.1:
 
-  clickhouse client --host 127.0.0.1
+    clickhouse client --host 127.0.0.1
 
 Puede reemplazar la versión de producción del binario ClickHouse instalado en su sistema con su binario ClickHouse personalizado. Para ello, instale ClickHouse en su máquina siguiendo las instrucciones del sitio web oficial. A continuación, ejecute lo siguiente:
 
-  sudo service clickhouse-server stop
-  sudo cp ClickHouse/build/dbms/programs/clickhouse /usr/bin/
-  sudo service clickhouse-server start
+    sudo service clickhouse-server stop
+    sudo cp ClickHouse/build/dbms/programs/clickhouse /usr/bin/
+    sudo service clickhouse-server start
 
 Tenga en cuenta que `clickhouse-client`, `clickhouse-server` y otros son enlaces simbólicos a los comúnmente compartidos `clickhouse` binario.
 
 También puede ejecutar su binario ClickHouse personalizado con el archivo de configuración del paquete ClickHouse instalado en su sistema:
 
-  sudo service clickhouse-server stop
-  sudo -u clickhouse ClickHouse/build/dbms/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
+    sudo service clickhouse-server stop
+    sudo -u clickhouse ClickHouse/build/dbms/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
 
 # IDE (entorno de desarrollo integrado) {#ide-integrated-development-environment}
 
@@ -248,22 +248,22 @@ Lista de tareas: https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests
 
 El desarrollo de ClickHouse a menudo requiere cargar conjuntos de datos realistas. Es particularmente importante para las pruebas de rendimiento. Tenemos un conjunto especialmente preparado de datos anónimos de Yandex.Métrica. Se requiere, además, unos 3 GB de espacio libre en disco. Tenga en cuenta que estos datos no son necesarios para realizar la mayoría de las tareas de desarrollo.
 
-  sudo apt install wget xz-utils
+    sudo apt install wget xz-utils
 
-  wget https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz
-  wget https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz
+    wget https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz
+    wget https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz
 
-  xz -v -d hits_v1.tsv.xz
-  xz -v -d visits_v1.tsv.xz
+    xz -v -d hits_v1.tsv.xz
+    xz -v -d visits_v1.tsv.xz
 
-  clickhouse-client
+    clickhouse-client
 
-  CREATE TABLE test.hits ( WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,  EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,  UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,  RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16),  URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8,  FlashMajor UInt8,  FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8,  UserAgentMajor UInt16,  UserAgentMinor FixedString(2),  CookieEnable UInt8,  JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8,  MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8,  SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8,  SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32,  SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8,  FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8,  IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8,  HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16),  RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32,  HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String,  HTTPError UInt16,  SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32,  FetchTiming Int32,  RedirectTiming Int32,  DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32,  LoadEventStartTiming Int32,  LoadEventEndTiming Int32,  NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32,  RedirectCount Int8,  SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64,  ParamOrderID String,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16,  GoalsReached Array(UInt32),  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String,  UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String,  FromTag String,  HasGCLID UInt8,  RefererHash UInt64,  URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,  `ParsedParams.Key1` Array(String),  `ParsedParams.Key2` Array(String),  `ParsedParams.Key3` Array(String),  `ParsedParams.Key4` Array(String),  `ParsedParams.Key5` Array(String),  `ParsedParams.ValueDouble` Array(Float64),  IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8) ENGINE = MergeTree PARTITION BY toYYYYMM(EventDate) SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime);
+    CREATE TABLE test.hits ( WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,  EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,  UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,  RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16),  URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8,  FlashMajor UInt8,  FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8,  UserAgentMajor UInt16,  UserAgentMinor FixedString(2),  CookieEnable UInt8,  JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8,  MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8,  SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8,  SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32,  SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8,  FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8,  IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8,  HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16),  RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32,  HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String,  HTTPError UInt16,  SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32,  FetchTiming Int32,  RedirectTiming Int32,  DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32,  LoadEventStartTiming Int32,  LoadEventEndTiming Int32,  NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32,  RedirectCount Int8,  SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64,  ParamOrderID String,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16,  GoalsReached Array(UInt32),  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String,  UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String,  FromTag String,  HasGCLID UInt8,  RefererHash UInt64,  URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,  `ParsedParams.Key1` Array(String),  `ParsedParams.Key2` Array(String),  `ParsedParams.Key3` Array(String),  `ParsedParams.Key4` Array(String),  `ParsedParams.Key5` Array(String),  `ParsedParams.ValueDouble` Array(Float64),  IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8) ENGINE = MergeTree PARTITION BY toYYYYMM(EventDate) SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime);
 
-  CREATE TABLE test.visits ( CounterID UInt32,  StartDate Date,  Sign Int8,  IsNew UInt8,  VisitID UInt64,  UserID UInt64,  StartTime DateTime,  Duration UInt32,  UTCStartTime DateTime,  PageViews Int32,  Hits Int32,  IsBounce UInt8,  Referer String,  StartURL String,  RefererDomain String,  StartURLDomain String,  EndURL String,  LinkURL String,  IsDownload UInt8,  TraficSourceID Int8,  SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  PlaceID Int32,  RefererCategories Array(UInt16),  URLCategories Array(UInt16),  URLRegions Array(UInt32),  RefererRegions Array(UInt32),  IsYandex UInt8,  GoalReachesDepth Int32,  GoalReachesURL Int32,  GoalReachesAny Int32,  SocialSourceNetworkID UInt8,  SocialSourcePage String,  MobilePhoneModel String,  ClientEventTime DateTime,  RegionID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RemoteIP UInt32,  RemoteIP6 FixedString(16),  IPNetworkID UInt32,  SilverlightVersion3 UInt32,  CodeVersion UInt32,  ResolutionWidth UInt16,  ResolutionHeight UInt16,  UserAgentMajor UInt16,  UserAgentMinor UInt16,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  SilverlightVersion2 UInt8,  SilverlightVersion4 UInt16,  FlashVersion3 UInt16,  FlashVersion4 UInt16,  ClientTimeZone Int16,  OS UInt8,  UserAgent UInt8,  ResolutionDepth UInt8,  FlashMajor UInt8,  FlashMinor UInt8,  NetMajor UInt8,  NetMinor UInt8,  MobilePhone UInt8,  SilverlightVersion1 UInt8,  Age UInt8,  Sex UInt8,  Income UInt8,  JavaEnable UInt8,  CookieEnable UInt8,  JavascriptEnable UInt8,  IsMobile UInt8,  BrowserLanguage UInt16,  BrowserCountry UInt16,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16),  Params Array(String),  `Goals.ID` Array(UInt32),  `Goals.Serial` Array(UInt32),  `Goals.EventTime` Array(DateTime),  `Goals.Price` Array(Int64),  `Goals.OrderID` Array(String),  `Goals.CurrencyID` Array(UInt32),  WatchIDs Array(UInt64),  ParamSumPrice Int64,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16,  ClickLogID UInt64,  ClickEventID Int32,  ClickGoodEvent Int32,  ClickEventTime DateTime,  ClickPriorityID Int32,  ClickPhraseID Int32,  ClickPageID Int32,  ClickPlaceID Int32,  ClickTypeID Int32,  ClickResourceID Int32,  ClickCost UInt32,  ClickClientIP UInt32,  ClickDomainID UInt32,  ClickURL String,  ClickAttempt UInt8,  ClickOrderID UInt32,  ClickBannerID UInt32,  ClickMarketCategoryID UInt32,  ClickMarketPP UInt32,  ClickMarketCategoryName String,  ClickMarketPPName String,  ClickAWAPSCampaignName String,  ClickPageName String,  ClickTargetType UInt16,  ClickTargetPhraseID UInt64,  ClickContextType UInt8,  ClickSelectType Int8,  ClickOptions String,  ClickGroupBannerID Int32,  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String,  UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String,  FromTag String,  HasGCLID UInt8,  FirstVisit DateTime,  PredLastVisit Date,  LastVisit Date,  TotalVisits UInt32,  `TraficSource.ID` Array(Int8),  `TraficSource.SearchEngineID` Array(UInt16),  `TraficSource.AdvEngineID` Array(UInt8),  `TraficSource.PlaceID` Array(UInt16),  `TraficSource.SocialSourceNetworkID` Array(UInt8),  `TraficSource.Domain` Array(String),  `TraficSource.SearchPhrase` Array(String),  `TraficSource.SocialSourcePage` Array(String),  Attendance FixedString(16),  CLID UInt32,  YCLID UInt64,  NormalizedRefererHash UInt64,  SearchPhraseHash UInt64,  RefererDomainHash UInt64,  NormalizedStartURLHash UInt64,  StartURLDomainHash UInt64,  NormalizedEndURLHash UInt64,  TopLevelDomain UInt64,  URLScheme UInt64,  OpenstatServiceNameHash UInt64,  OpenstatCampaignIDHash UInt64,  OpenstatAdIDHash UInt64,  OpenstatSourceIDHash UInt64,  UTMSourceHash UInt64,  UTMMediumHash UInt64,  UTMCampaignHash UInt64,  UTMContentHash UInt64,  UTMTermHash UInt64,  FromHash UInt64,  WebVisorEnabled UInt8,  WebVisorActivity UInt32,  `ParsedParams.Key1` Array(String),  `ParsedParams.Key2` Array(String),  `ParsedParams.Key3` Array(String),  `ParsedParams.Key4` Array(String),  `ParsedParams.Key5` Array(String),  `ParsedParams.ValueDouble` Array(Float64),  `Market.Type` Array(UInt8),  `Market.GoalID` Array(UInt32),  `Market.OrderID` Array(String),  `Market.OrderPrice` Array(Int64),  `Market.PP` Array(UInt32),  `Market.DirectPlaceID` Array(UInt32),  `Market.DirectOrderID` Array(UInt32),  `Market.DirectBannerID` Array(UInt32),  `Market.GoodID` Array(String),  `Market.GoodName` Array(String),  `Market.GoodQuantity` Array(Int32),  `Market.GoodPrice` Array(Int64),  IslandID FixedString(16)) ENGINE = CollapsingMergeTree(Sign) PARTITION BY toYYYYMM(StartDate) SAMPLE BY intHash32(UserID) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID);
+    CREATE TABLE test.visits ( CounterID UInt32,  StartDate Date,  Sign Int8,  IsNew UInt8,  VisitID UInt64,  UserID UInt64,  StartTime DateTime,  Duration UInt32,  UTCStartTime DateTime,  PageViews Int32,  Hits Int32,  IsBounce UInt8,  Referer String,  StartURL String,  RefererDomain String,  StartURLDomain String,  EndURL String,  LinkURL String,  IsDownload UInt8,  TraficSourceID Int8,  SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  PlaceID Int32,  RefererCategories Array(UInt16),  URLCategories Array(UInt16),  URLRegions Array(UInt32),  RefererRegions Array(UInt32),  IsYandex UInt8,  GoalReachesDepth Int32,  GoalReachesURL Int32,  GoalReachesAny Int32,  SocialSourceNetworkID UInt8,  SocialSourcePage String,  MobilePhoneModel String,  ClientEventTime DateTime,  RegionID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RemoteIP UInt32,  RemoteIP6 FixedString(16),  IPNetworkID UInt32,  SilverlightVersion3 UInt32,  CodeVersion UInt32,  ResolutionWidth UInt16,  ResolutionHeight UInt16,  UserAgentMajor UInt16,  UserAgentMinor UInt16,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  SilverlightVersion2 UInt8,  SilverlightVersion4 UInt16,  FlashVersion3 UInt16,  FlashVersion4 UInt16,  ClientTimeZone Int16,  OS UInt8,  UserAgent UInt8,  ResolutionDepth UInt8,  FlashMajor UInt8,  FlashMinor UInt8,  NetMajor UInt8,  NetMinor UInt8,  MobilePhone UInt8,  SilverlightVersion1 UInt8,  Age UInt8,  Sex UInt8,  Income UInt8,  JavaEnable UInt8,  CookieEnable UInt8,  JavascriptEnable UInt8,  IsMobile UInt8,  BrowserLanguage UInt16,  BrowserCountry UInt16,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16),  Params Array(String),  `Goals.ID` Array(UInt32),  `Goals.Serial` Array(UInt32),  `Goals.EventTime` Array(DateTime),  `Goals.Price` Array(Int64),  `Goals.OrderID` Array(String),  `Goals.CurrencyID` Array(UInt32),  WatchIDs Array(UInt64),  ParamSumPrice Int64,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16,  ClickLogID UInt64,  ClickEventID Int32,  ClickGoodEvent Int32,  ClickEventTime DateTime,  ClickPriorityID Int32,  ClickPhraseID Int32,  ClickPageID Int32,  ClickPlaceID Int32,  ClickTypeID Int32,  ClickResourceID Int32,  ClickCost UInt32,  ClickClientIP UInt32,  ClickDomainID UInt32,  ClickURL String,  ClickAttempt UInt8,  ClickOrderID UInt32,  ClickBannerID UInt32,  ClickMarketCategoryID UInt32,  ClickMarketPP UInt32,  ClickMarketCategoryName String,  ClickMarketPPName String,  ClickAWAPSCampaignName String,  ClickPageName String,  ClickTargetType UInt16,  ClickTargetPhraseID UInt64,  ClickContextType UInt8,  ClickSelectType Int8,  ClickOptions String,  ClickGroupBannerID Int32,  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String,  UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String,  FromTag String,  HasGCLID UInt8,  FirstVisit DateTime,  PredLastVisit Date,  LastVisit Date,  TotalVisits UInt32,  `TraficSource.ID` Array(Int8),  `TraficSource.SearchEngineID` Array(UInt16),  `TraficSource.AdvEngineID` Array(UInt8),  `TraficSource.PlaceID` Array(UInt16),  `TraficSource.SocialSourceNetworkID` Array(UInt8),  `TraficSource.Domain` Array(String),  `TraficSource.SearchPhrase` Array(String),  `TraficSource.SocialSourcePage` Array(String),  Attendance FixedString(16),  CLID UInt32,  YCLID UInt64,  NormalizedRefererHash UInt64,  SearchPhraseHash UInt64,  RefererDomainHash UInt64,  NormalizedStartURLHash UInt64,  StartURLDomainHash UInt64,  NormalizedEndURLHash UInt64,  TopLevelDomain UInt64,  URLScheme UInt64,  OpenstatServiceNameHash UInt64,  OpenstatCampaignIDHash UInt64,  OpenstatAdIDHash UInt64,  OpenstatSourceIDHash UInt64,  UTMSourceHash UInt64,  UTMMediumHash UInt64,  UTMCampaignHash UInt64,  UTMContentHash UInt64,  UTMTermHash UInt64,  FromHash UInt64,  WebVisorEnabled UInt8,  WebVisorActivity UInt32,  `ParsedParams.Key1` Array(String),  `ParsedParams.Key2` Array(String),  `ParsedParams.Key3` Array(String),  `ParsedParams.Key4` Array(String),  `ParsedParams.Key5` Array(String),  `ParsedParams.ValueDouble` Array(Float64),  `Market.Type` Array(UInt8),  `Market.GoalID` Array(UInt32),  `Market.OrderID` Array(String),  `Market.OrderPrice` Array(Int64),  `Market.PP` Array(UInt32),  `Market.DirectPlaceID` Array(UInt32),  `Market.DirectOrderID` Array(UInt32),  `Market.DirectBannerID` Array(UInt32),  `Market.GoodID` Array(String),  `Market.GoodName` Array(String),  `Market.GoodQuantity` Array(Int32),  `Market.GoodPrice` Array(Int64),  IslandID FixedString(16)) ENGINE = CollapsingMergeTree(Sign) PARTITION BY toYYYYMM(StartDate) SAMPLE BY intHash32(UserID) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID);
 
-  clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.hits FORMAT TSV" < hits_v1.tsv
-  clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.visits FORMAT TSV" < visits_v1.tsv
+    clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.hits FORMAT TSV" < hits_v1.tsv
+    clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.visits FORMAT TSV" < visits_v1.tsv
 
 # Creación de solicitud de extracción {#creating-pull-request}
 

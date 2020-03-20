@@ -8,9 +8,9 @@
 SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0 + 0 + 0)
 ```
 
-  ┌─toTypeName(0)─┬─toTypeName(plus(0, 0))─┬─toTypeName(plus(plus(0, 0), 0))─┬─toTypeName(plus(plus(plus(0, 0), 0), 0))─┐
-  │ UInt8         │ UInt16                 │ UInt32                          │ UInt64                                   │
-  └───────────────┴────────────────────────┴─────────────────────────────────┴──────────────────────────────────────────┘
+    ┌─toTypeName(0)─┬─toTypeName(plus(0, 0))─┬─toTypeName(plus(plus(0, 0), 0))─┬─toTypeName(plus(plus(plus(0, 0), 0), 0))─┐
+    │ UInt8         │ UInt16                 │ UInt32                          │ UInt64                                   │
+    └───────────────┴────────────────────────┴─────────────────────────────────┴──────────────────────────────────────────┘
 
 算术函数适用于UInt8，UInt16，UInt32，UInt64，Int8，Int16，Int32，Int64，Float32或Float64中的任何类型。
 

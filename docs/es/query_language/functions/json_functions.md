@@ -83,9 +83,9 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0
 
 `indices_or_keys` es una lista de cero o más argumentos, cada uno de ellos puede ser de cadena o entero.
 
-- Cadena = miembro del objeto de acceso por clave.
-- Entero positivo = acceder al n-ésimo miembro / clave desde el principio.
-- Entero negativo = acceder al n-ésimo miembro / clave desde el final.
+-   Cadena = miembro del objeto de acceso por clave.
+-   Entero positivo = acceder al n-ésimo miembro / clave desde el principio.
+-   Entero negativo = acceder al n-ésimo miembro / clave desde el final.
 
 El índice mínimo del elemento es 1. Por lo tanto, el elemento 0 no existe.
 
@@ -187,7 +187,7 @@ SELECT JSONExtract('{"day": "Thursday"}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday
 SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Friday'
 ```
 
-## JSONExtractKeysAndValues(json\[, indices\_or\_keys...\], value\_type) {#jsonextractkeysandvaluesjson-indices-or-keys-value-type}
+## JSONExtractKeysAndValues(json\[, indices\_or\_keys…\], value\_type) {#jsonextractkeysandvaluesjson-indices-or-keys-value-type}
 
 Analizar pares clave-valor de un JSON donde los valores son del tipo de datos ClickHouse dado.
 

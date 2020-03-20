@@ -26,12 +26,12 @@ Para obtener una descripción de los parámetros de solicitud, consulte [descrip
 
 **ReplacingMergeTree Parámetros**
 
-- `ver` — columna con versión. Tipo `UInt*`, `Date` o `DateTime`. Parámetro opcional.
+-   `ver` — columna con versión. Tipo `UInt*`, `Date` o `DateTime`. Parámetro opcional.
 
-  Al fusionar, `ReplacingMergeTree` de todas las filas con la misma clave primaria deja solo una:
+    Al fusionar, `ReplacingMergeTree` de todas las filas con la misma clave primaria deja solo una:
 
-  - Último en la selección, si `ver` no establecido.
-  - Con la versión máxima, si `ver` indicado.
+    -   Último en la selección, si `ver` no establecido.
+    -   Con la versión máxima, si `ver` indicado.
 
 **Cláusulas de consulta**
 
@@ -55,7 +55,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Todos los parámetros excepto `ver` el mismo significado que en `MergeTree`.
 
-- `ver` - columna con la versión. Parámetro opcional. Para una descripción, vea el texto anterior.
+-   `ver` - columna con la versión. Parámetro opcional. Para una descripción, vea el texto anterior.
 
 </details>
 

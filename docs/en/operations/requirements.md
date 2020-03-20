@@ -14,8 +14,8 @@ We recommend to use a minimum of 4GB of RAM in order to perform non-trivial quer
 
 The required volume of RAM depends on:
 
-- The complexity of queries.
-- The amount of data that is processed in queries.
+-   The complexity of queries.
+-   The amount of data that is processed in queries.
 
 To calculate the required volume of RAM, you should estimate the size of temporary data for [GROUP BY](../query_language/select.md#select-group-by-clause), [DISTINCT](../query_language/select.md#select-distinct), [JOIN](../query_language/select.md#select-join) and other operations you use.
 
@@ -31,13 +31,13 @@ You need to have 2GB of free disk space to install ClickHouse.
 
 The volume of storage required for your data should be calculated separately. Assessment should include:
 
-- Estimation of the data volume.
+-   Estimation of the data volume.
 
-  You can take a sample of the data and get the average size of a row from it. Then multiply the value by the number of rows you plan to store.
+    You can take a sample of the data and get the average size of a row from it. Then multiply the value by the number of rows you plan to store.
 
-- The data compression coefficient.
+-   The data compression coefficient.
 
-  To estimate the data compression coefficient, load a sample of your data into ClickHouse and compare the actual size of the data with the size of the table stored. For example, clickstream data is usually compressed by 6-10 times.
+    To estimate the data compression coefficient, load a sample of your data into ClickHouse and compare the actual size of the data with the size of the table stored. For example, clickstream data is usually compressed by 6-10 times.
 
 To calculate the final volume of data to be stored, apply the compression coefficient to the estimated data volume. If you plan to store data in several replicas, then multiply the estimated volume by the number of replicas.
 

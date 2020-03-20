@@ -25,9 +25,9 @@ Para obtener una descripción de los parámetros de consulta, consulte [descripc
 
 **CollapsingMergeTree Parámetros**
 
-- `sign` — Nombre de la columna con el tipo de fila: `1` es una “state” fila, `-1` es una “cancel” fila.
+-   `sign` — Nombre de la columna con el tipo de fila: `1` es una “state” fila, `-1` es una “cancel” fila.
 
-  Tipo de datos de columna — `Int8`.
+    Tipo de datos de columna — `Int8`.
 
 **Cláusulas de consulta**
 
@@ -51,9 +51,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Todos los parámetros excepto `sign` el mismo significado que en `MergeTree`.
 
-- `sign` — Nombre de la columna con el tipo de fila: `1` — “state” fila, `-1` — “cancel” fila.
+-   `sign` — Nombre de la columna con el tipo de fila: `1` — “state” fila, `-1` — “cancel” fila.
 
-  Tipo de datos de columna — `Int8`.
+    Tipo de datos de columna — `Int8`.
 
 </details>
 

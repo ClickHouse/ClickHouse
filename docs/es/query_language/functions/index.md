@@ -31,8 +31,8 @@ Las funciones se pueden implementar de diferentes maneras para argumentos consta
 
 Las funciones tienen los siguientes comportamientos:
 
-- Si al menos uno de los argumentos de la función es `NULL` el resultado de la función es también `NULL`.
-- Comportamiento especial que se especifica individualmente en la descripción de cada función. En el código fuente de ClickHouse, estas funciones tienen `UseDefaultImplementationForNulls=false`.
+-   Si al menos uno de los argumentos de la función es `NULL` el resultado de la función es también `NULL`.
+-   Comportamiento especial que se especifica individualmente en la descripción de cada función. En el código fuente de ClickHouse, estas funciones tienen `UseDefaultImplementationForNulls=false`.
 
 ## Constancia {#constancy}
 
@@ -54,8 +54,8 @@ Para el procesamiento de consultas distribuidas, se realizan tantas etapas de pr
 Esto significa que las funciones se pueden realizar en diferentes servidores.
 Por ejemplo, en la consulta `SELECT f(sum(g(x))) FROM distributed_table GROUP BY h(y),`
 
-- si una `distributed_table` tiene al menos dos fragmentos, las funciones ‘g’ y ‘h’ se realizan en servidores remotos, y la función ‘f’ se realiza en el servidor solicitante.
-- si una `distributed_table` tiene sólo un fragmento, todos los ‘f’, ‘g’, y ‘h’ funciones se realizan en el servidor de este fragmento.
+-   si una `distributed_table` tiene al menos dos fragmentos, las funciones ‘g’ y ‘h’ se realizan en servidores remotos, y la función ‘f’ se realiza en el servidor solicitante.
+-   si una `distributed_table` tiene sólo un fragmento, todos los ‘f’, ‘g’, y ‘h’ funciones se realizan en el servidor de este fragmento.
 
 El resultado de una función generalmente no depende del servidor en el que se realice. Sin embargo, a veces esto es importante.
 Por ejemplo, las funciones que funcionan con diccionarios utilizan el diccionario que existe en el servidor en el que se están ejecutando.

@@ -169,17 +169,17 @@ where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as 
 `column_i` is a name or index of a column whose values are to be selected or inserted (if empty, then column will be skipped),
 `serializeAs_i` is an escaping rule for the column values. The following escaping rules are supported:
 
-- `CSV`, `JSON`, `XML` (similarly to the formats of the same names)
-- `Escaped` (similarly to `TSV`)
-- `Quoted` (similarly to `Values`)
-- `Raw` (without escaping, similarly to `TSVRaw`)
-- `None` (no escaping rule, see further)
+-   `CSV`, `JSON`, `XML` (similarly to the formats of the same names)
+-   `Escaped` (similarly to `TSV`)
+-   `Quoted` (similarly to `Values`)
+-   `Raw` (without escaping, similarly to `TSVRaw`)
+-   `None` (no escaping rule, see further)
 
 If an escaping rule is omitted, then `None` will be used. `XML` and `Raw` are suitable only for output.
 
 So, for the following format string:
 
-    `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
+      `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
 
 the values of `SearchPhrase`, `c` and `price` columns, which are escaped as `Quoted`, `Escaped` and `JSON` will be printed (for select) or will be expected (for insert) between `Search phrase:`, `, count:`, `, ad price: $` and `;` delimiters respectively. For example:
 
@@ -189,15 +189,15 @@ The `format_template_rows_between_delimiter` setting specifies delimiter between
 
 Setting `format_template_resultset` specifies the path to file, which contains a format string for resultset. Format string for resultset has the same syntax as a format string for row and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
 
-- `data` is the rows with data in `format_template_row` format, separated by `format_template_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
-- `totals` is the row with total values in `format_template_row` format (when using WITH TOTALS)
-- `min` is the row with minimum values in `format_template_row` format (when extremes are set to 1)
-- `max` is the row with maximum values in `format_template_row` format (when extremes are set to 1)
-- `rows` is the total number of output rows
-- `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows\_before\_limit\_at\_least is the exact number of rows there would have been without a LIMIT.
-- `time` is the request execution time in seconds
-- `rows_read` is the number of rows has been read
-- `bytes_read` is the number of bytes (uncompressed) has been read
+-   `data` is the rows with data in `format_template_row` format, separated by `format_template_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
+-   `totals` is the row with total values in `format_template_row` format (when using WITH TOTALS)
+-   `min` is the row with minimum values in `format_template_row` format (when extremes are set to 1)
+-   `max` is the row with maximum values in `format_template_row` format (when extremes are set to 1)
+-   `rows` is the total number of output rows
+-   `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows\_before\_limit\_at\_least is the exact number of rows there would have been without a LIMIT.
+-   `time` is the request execution time in seconds
+-   `rows_read` is the number of rows has been read
+-   `bytes_read` is the number of bytes (uncompressed) has been read
 
 The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified (or `None` must be specified explicitly). The remaining placeholders may have any escaping rule specified.
 If the `format_template_resultset` setting is an empty string, `${data}` is used as default value.
@@ -527,8 +527,8 @@ INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021
 
 ClickHouse allows:
 
-- Any order of key-value pairs in the object.
-- Omitting some values.
+-   Any order of key-value pairs in the object.
+-   Omitting some values.
 
 ClickHouse ignores spaces between elements and commas after the objects. You can pass all the objects in one line. You don’t have to separate them with line breaks.
 
@@ -548,8 +548,8 @@ CREATE TABLE IF NOT EXISTS example_table
 ) ENGINE = Memory;
 ```
 
-- If `input_format_defaults_for_omitted_fields = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
-- If `input_format_defaults_for_omitted_fields = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
+-   If `input_format_defaults_for_omitted_fields = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
+-   If `input_format_defaults_for_omitted_fields = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
 
 !!! note "Warning"
     When inserting data with `insert_sample_with_metadata = 1`, ClickHouse consumes more computational resources, compared to insertion with `insert_sample_with_metadata = 0`.
@@ -763,9 +763,9 @@ For [NULL](../query_language/syntax.md#null-literal) support, an additional byte
 
 Similar to [RowBinary](#rowbinary), but with added header:
 
-- [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
-- N `String`s specifying column names
-- N `String`s specifying column types
+-   [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
+-   N `String`s specifying column names
+-   N `String`s specifying column types
 
 ## Values {#data-format-values}
 
@@ -1035,8 +1035,8 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
 
 Column names must:
 
-- start with `[A-Za-z_]`
-- subsequently contain only `[A-Za-z0-9_]`
+-   start with `[A-Za-z_]`
+-   subsequently contain only `[A-Za-z0-9_]`
 
 Output Avro file compression and sync interval can be configured with [output\_format\_avro\_codec](../operations/settings/settings.md#settings-output_format_avro_codec) and [output\_format\_avro\_sync\_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) respectively.
 

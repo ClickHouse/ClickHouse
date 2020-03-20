@@ -220,7 +220,7 @@ javaHashUTF16LE(stringUtf16le)
 
 **Parámetros**
 
-- `stringUtf16le` — una cadena en codificación UTF-16LE.
+-   `stringUtf16le` — una cadena en codificación UTF-16LE.
 
 **Valor devuelto**
 
@@ -325,8 +325,8 @@ Ambas funciones toman un número variable de parámetros de entrada. Los paráme
 
 **Valor devuelto**
 
-- El `murmurHash2_32` función devuelve el valor hash que tiene el [UInt32](../../data_types/int_uint.md) tipo de datos.
-- El `murmurHash2_64` función devuelve el valor hash que tiene el [UInt64](../../data_types/int_uint.md) tipo de datos.
+-   El `murmurHash2_32` función devuelve el valor hash que tiene el [UInt32](../../data_types/int_uint.md) tipo de datos.
+-   El `murmurHash2_64` función devuelve el valor hash que tiene el [UInt64](../../data_types/int_uint.md) tipo de datos.
 
 **Ejemplo**
 
@@ -355,8 +355,8 @@ Ambas funciones toman un número variable de parámetros de entrada. Los paráme
 
 **Valor devuelto**
 
-- El `murmurHash3_32` función devuelve un [UInt32](../../data_types/int_uint.md) tipo de datos valor hash.
-- El `murmurHash3_64` función devuelve un [UInt64](../../data_types/int_uint.md) tipo de datos valor hash.
+-   El `murmurHash3_32` función devuelve un [UInt32](../../data_types/int_uint.md) tipo de datos valor hash.
+-   El `murmurHash3_64` función devuelve un [UInt64](../../data_types/int_uint.md) tipo de datos valor hash.
 
 **Ejemplo**
 
@@ -380,7 +380,7 @@ murmurHash3_128( expr )
 
 **Parámetros**
 
-- `expr` — [Expresiones](../syntax.md#syntax-expressions) devolviendo un [Cadena](../../data_types/string.md)-tipo de valor.
+-   `expr` — [Expresiones](../syntax.md#syntax-expressions) devolviendo un [Cadena](../../data_types/string.md)-tipo de valor.
 
 **Valor devuelto**
 
@@ -434,6 +434,6 @@ Resultado:
 
 **Ver también**
 
-- [xxHash](http://cyan4973.github.io/xxHash/).
+-   [xxHash](http://cyan4973.github.io/xxHash/).
 
 [Artículo Original](https://clickhouse.tech/docs/es/query_language/functions/hash_functions/) <!--hide-->

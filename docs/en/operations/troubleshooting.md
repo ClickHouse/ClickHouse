@@ -1,23 +1,23 @@
 # Troubleshooting {#troubleshooting}
 
-- [Installation](#troubleshooting-installation-errors)
-- [Connecting to the server](#troubleshooting-accepts-no-connections)
-- [Query processing](#troubleshooting-does-not-process-queries)
-- [Efficiency of query processing](#troubleshooting-too-slow)
+-   [Installation](#troubleshooting-installation-errors)
+-   [Connecting to the server](#troubleshooting-accepts-no-connections)
+-   [Query processing](#troubleshooting-does-not-process-queries)
+-   [Efficiency of query processing](#troubleshooting-too-slow)
 
 ## Installation {#troubleshooting-installation-errors}
 
 ### You Cannot Get Deb Packages from ClickHouse Repository With apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
-- Check firewall settings.
-- If you cannot access the repository for any reason, download packages as described in the [Getting started](../getting_started/index.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
+-   Check firewall settings.
+-   If you cannot access the repository for any reason, download packages as described in the [Getting started](../getting_started/index.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
 
 ## Connecting to the Server {#troubleshooting-accepts-no-connections}
 
 Possible issues:
 
-- The server is not running.
-- Unexpected or wrong configuration parameters.
+-   The server is not running.
+-   Unexpected or wrong configuration parameters.
 
 ### Server Is Not Running {#server-is-not-running}
 
@@ -41,8 +41,8 @@ The main log of `clickhouse-server` is in `/var/log/clickhouse-server/clickhouse
 
 If the server started successfully, you should see the strings:
 
-- `<Information> Application: starting up.` — Server started.
-- `<Information> Application: Ready for connections.` — Server is running and ready for connections.
+-   `<Information> Application: starting up.` — Server started.
+-   `<Information> Application: Ready for connections.` — Server is running and ready for connections.
 
 If `clickhouse-server` start failed with a configuration error, you should see the `<Error>` string with an error description. For example:
 
@@ -92,32 +92,32 @@ This command starts the server as an interactive app with standard parameters of
 
 Check:
 
-- Docker settings.
+-   Docker settings.
 
-  If you run ClickHouse in Docker in an IPv6 network, make sure that `network=host` is set.
+    If you run ClickHouse in Docker in an IPv6 network, make sure that `network=host` is set.
 
-- Endpoint settings.
+-   Endpoint settings.
 
-  Check [listen\_host](server_settings/settings.md#server_settings-listen_host) and [tcp\_port](server_settings/settings.md#server_settings-tcp_port) settings.
+    Check [listen\_host](server_settings/settings.md#server_settings-listen_host) and [tcp\_port](server_settings/settings.md#server_settings-tcp_port) settings.
 
-  ClickHouse server accepts localhost connections only by default.
+    ClickHouse server accepts localhost connections only by default.
 
-- HTTP protocol settings.
+-   HTTP protocol settings.
 
-  Check protocol settings for the HTTP API.
+    Check protocol settings for the HTTP API.
 
-- Secure connection settings.
+-   Secure connection settings.
 
-  Check:
+    Check:
 
-  - The [tcp\_port\_secure](server_settings/settings.md#server_settings-tcp_port_secure) setting.
-  - Settings for [SSL sertificates](server_settings/settings.md#server_settings-openssl).
+    -   The [tcp\_port\_secure](server_settings/settings.md#server_settings-tcp_port_secure) setting.
+    -   Settings for [SSL sertificates](server_settings/settings.md#server_settings-openssl).
 
-  Use proper parameters while connecting. For example, use the `port_secure` parameter with `clickhouse_client`.
+    Use proper parameters while connecting. For example, use the `port_secure` parameter with `clickhouse_client`.
 
-- User settings.
+-   User settings.
 
-  You might be using the wrong user name or password.
+    You might be using the wrong user name or password.
 
 ## Query Processing {#troubleshooting-does-not-process-queries}
 

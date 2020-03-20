@@ -105,9 +105,9 @@ El `system.one` table contiene exactamente una fila (esta tabla cumple el mismo 
 
 El `FROM` cláusula especifica la fuente de la que se leen los datos:
 
-- Tabla
-- Subconsultas
-- [Función de la tabla](table_functions/index.md)
+-   Tabla
+-   Subconsultas
+-   [Función de la tabla](table_functions/index.md)
 
 `ARRAY JOIN` y el regular `JOIN` también se pueden incluir (ver más abajo).
 
@@ -127,8 +127,8 @@ También soportado para:
 
 Consultas que usan `FINAL` se ejecutan no tan rápido como las consultas similares que no lo hacen, porque:
 
-- La consulta se ejecuta en un solo subproceso y los datos se combinan durante la ejecución de la consulta.
-- Consultas con `FINAL` leer columnas de clave primaria además de las columnas especificadas en la consulta.
+-   La consulta se ejecuta en un solo subproceso y los datos se combinan durante la ejecución de la consulta.
+-   Consultas con `FINAL` leer columnas de clave primaria además de las columnas especificadas en la consulta.
 
 En la mayoría de los casos, evite usar `FINAL`.
 
@@ -140,18 +140,18 @@ Cuando se habilita el muestreo de datos, la consulta no se realiza en todos los 
 
 El procesamiento de consultas aproximado puede ser útil en los siguientes casos:
 
-- Cuando tiene requisitos de temporización estrictos (como \<100 ms) pero no puede justificar el costo de recursos de hardware adicionales para cumplirlos.
-- Cuando sus datos brutos no son precisos, por lo que la aproximación no degrada notablemente la calidad.
-- Los requisitos comerciales se centran en los resultados aproximados (por rentabilidad o para comercializar los resultados exactos a los usuarios premium).
+-   Cuando tiene requisitos de temporización estrictos (como \<100 ms) pero no puede justificar el costo de recursos de hardware adicionales para cumplirlos.
+-   Cuando sus datos brutos no son precisos, por lo que la aproximación no degrada notablemente la calidad.
+-   Los requisitos comerciales se centran en los resultados aproximados (por rentabilidad o para comercializar los resultados exactos a los usuarios premium).
 
 !!! note "Nota"
     Sólo puede utilizar el muestreo con las tablas en el [Método de codificación de datos:](../operations/table_engines/mergetree.md) familia, y sólo si la expresión de muestreo se especificó durante la creación de la tabla (ver [Motor MergeTree](../operations/table_engines/mergetree.md#table_engine-mergetree-creating-a-table)).
 
 Las características del muestreo de datos se enumeran a continuación:
 
-- El muestreo de datos es un mecanismo determinista. El resultado de la misma `SELECT .. SAMPLE` la consulta es siempre la misma.
-- El muestreo funciona consistentemente para diferentes tablas. Para tablas con una sola clave de muestreo, una muestra con el mismo coeficiente siempre selecciona el mismo subconjunto de datos posibles. Por ejemplo, una muestra de ID de usuario toma filas con el mismo subconjunto de todos los ID de usuario posibles de diferentes tablas. Esto significa que puede utilizar el ejemplo en subconsultas [EN](#select-in-operators) clausula. Además, puede unir muestras usando el [UNIR](#select-join) clausula.
-- El muestreo permite leer menos datos de un disco. Tenga en cuenta que debe especificar la clave de muestreo correctamente. Para obtener más información, consulte [Creación de una tabla MergeTree](../operations/table_engines/mergetree.md#table_engine-mergetree-creating-a-table).
+-   El muestreo de datos es un mecanismo determinista. El resultado de la misma `SELECT .. SAMPLE` la consulta es siempre la misma.
+-   El muestreo funciona consistentemente para diferentes tablas. Para tablas con una sola clave de muestreo, una muestra con el mismo coeficiente siempre selecciona el mismo subconjunto de datos posibles. Por ejemplo, una muestra de ID de usuario toma filas con el mismo subconjunto de todos los ID de usuario posibles de diferentes tablas. Esto significa que puede utilizar el ejemplo en subconsultas [EN](#select-in-operators) clausula. Además, puede unir muestras usando el [UNIR](#select-join) clausula.
+-   El muestreo permite leer menos datos de un disco. Tenga en cuenta que debe especificar la clave de muestreo correctamente. Para obtener más información, consulte [Creación de una tabla MergeTree](../operations/table_engines/mergetree.md#table_engine-mergetree-creating-a-table).
 
 Para el `SAMPLE` cláusula se admite la siguiente sintaxis:
 
@@ -259,8 +259,8 @@ El orden de ejecución de la consulta se optimiza cuando se ejecuta `ARRAY JOIN`
 
 Tipos admitidos de `ARRAY JOIN` se enumeran a continuación:
 
-- `ARRAY JOIN` - En este caso, las matrices vacías no se incluyen en el resultado de `JOIN`.
-- `LEFT ARRAY JOIN` - El resultado de `JOIN` contiene filas con matrices vacías. El valor de una matriz vacía se establece en el valor predeterminado para el tipo de elemento de matriz (normalmente 0, cadena vacía o NULL).
+-   `ARRAY JOIN` - En este caso, las matrices vacías no se incluyen en el resultado de `JOIN`.
+-   `LEFT ARRAY JOIN` - El resultado de `JOIN` contiene filas con matrices vacías. El valor de una matriz vacía se establece en el valor predeterminado para el tipo de elemento de matriz (normalmente 0, cadena vacía o NULL).
 
 Los siguientes ejemplos demuestran el uso de la `ARRAY JOIN` y `LEFT ARRAY JOIN` clausula. Vamos a crear una tabla con un [Matriz](../data_types/array.md) escriba la columna e inserte valores en ella:
 
@@ -529,11 +529,11 @@ Los nombres de tabla se pueden especificar en lugar de `<left_subquery>` y `<rig
 
 #### Tipos admitidos de `JOIN` {#select-join-types}
 
-- `INNER JOIN` (o `JOIN`)
-- `LEFT JOIN` (o `LEFT OUTER JOIN`)
-- `RIGHT JOIN` (o `RIGHT OUTER JOIN`)
-- `FULL JOIN` (o `FULL OUTER JOIN`)
-- `CROSS JOIN` (o `,` )
+-   `INNER JOIN` (o `JOIN`)
+-   `LEFT JOIN` (o `LEFT OUTER JOIN`)
+-   `RIGHT JOIN` (o `RIGHT OUTER JOIN`)
+-   `FULL JOIN` (o `FULL OUTER JOIN`)
+-   `CROSS JOIN` (o `,` )
 
 Ver el estándar [SQL UNIRSE](https://en.wikipedia.org/wiki/Join_(SQL)) descripci.
 
@@ -561,9 +561,9 @@ ClickHouse no admite directamente la sintaxis con comas, por lo que no recomenda
 
 #### Rigor {#select-join-strictness}
 
-- `ALL` — Si la tabla correcta tiene varias filas coincidentes, ClickHouse crea un [Producto cartesiano](https://en.wikipedia.org/wiki/Cartesian_product) de filas coincidentes. Este es el estándar `JOIN` comportamiento en SQL.
-- `ANY` — Si la tabla correcta tiene varias filas coincidentes, solo se une la primera encontrada. Si la tabla correcta solo tiene una fila coincidente, los resultados de las consultas `ANY` y `ALL` palabras clave son las mismas.
-- `ASOF` — Para unir secuencias con una coincidencia no exacta. `ASOF JOIN` el uso se describe a continuación.
+-   `ALL` — Si la tabla correcta tiene varias filas coincidentes, ClickHouse crea un [Producto cartesiano](https://en.wikipedia.org/wiki/Cartesian_product) de filas coincidentes. Este es el estándar `JOIN` comportamiento en SQL.
+-   `ANY` — Si la tabla correcta tiene varias filas coincidentes, solo se une la primera encontrada. Si la tabla correcta solo tiene una fila coincidente, los resultados de las consultas `ANY` y `ALL` palabras clave son las mismas.
+-   `ASOF` — Para unir secuencias con una coincidencia no exacta. `ASOF JOIN` el uso se describe a continuación.
 
 **ASOF JOIN Uso**
 
@@ -687,8 +687,8 @@ Si necesita un `JOIN` para unirse a tablas de dimensión (son tablas relativamen
 
 ClickHouse utiliza el [hash unirse](https://en.wikipedia.org/wiki/Hash_join) algoritmo. ClickHouse toma el `<right_subquery>` y crea una tabla hash para ello en RAM. Si necesita restringir el consumo de memoria de la operación de unión, use la siguiente configuración:
 
-- [Método de codificación de datos:](../operations/settings/query_complexity.md#settings-max_rows_in_join) — Limita el número de filas en la tabla hash.
-- [Método de codificación de datos:](../operations/settings/query_complexity.md#settings-max_bytes_in_join) — Limita el tamaño de la tabla hash.
+-   [Método de codificación de datos:](../operations/settings/query_complexity.md#settings-max_rows_in_join) — Limita el número de filas en la tabla hash.
+-   [Método de codificación de datos:](../operations/settings/query_complexity.md#settings-max_bytes_in_join) — Limita el tamaño de la tabla hash.
 
 Cuando se alcanza cualquiera de estos límites, ClickHouse actúa como el [join\_overflow\_mode](../operations/settings/query_complexity.md#settings-join_overflow_mode) configuración instruye.
 
@@ -702,12 +702,12 @@ Si el `JOIN` las llaves son [NULL](../data_types/nullable.md) campos, las filas 
 
 Para múltiples `JOIN` cláusulas en una sola `SELECT` consulta:
 
-- Tomando todas las columnas a través de `*` está disponible solo si se unen tablas, no subconsultas.
-- El `PREWHERE` cláusula no está disponible.
+-   Tomando todas las columnas a través de `*` está disponible solo si se unen tablas, no subconsultas.
+-   El `PREWHERE` cláusula no está disponible.
 
 Para `ON`, `WHERE`, y `GROUP BY` clausula:
 
-- Las expresiones arbitrarias no se pueden utilizar en `ON`, `WHERE`, y `GROUP BY` cláusulas, pero puede definir una expresión en un `SELECT` cláusula y luego usarla en estas cláusulas a través de un alias.
+-   Las expresiones arbitrarias no se pueden utilizar en `ON`, `WHERE`, y `GROUP BY` cláusulas, pero puede definir una expresión en un `SELECT` cláusula y luego usarla en estas cláusulas a través de un alias.
 
 ### DONDE Cláusula {#select-where}
 
@@ -851,8 +851,8 @@ Una consulta con el `LIMIT n BY expressions` cláusula selecciona la primera `n`
 
 ClickHouse admite la siguiente sintaxis:
 
-- `LIMIT [offset_value, ]n BY expressions`
-- `LIMIT n OFFSET offset_value BY expressions`
+-   `LIMIT [offset_value, ]n BY expressions`
+-   `LIMIT n OFFSET offset_value BY expressions`
 
 Durante el procesamiento de consultas, ClickHouse selecciona los datos ordenados por clave de ordenación. La clave de ordenación se establece explícitamente utilizando un [ORDEN POR](#select-order-by) cláusula o implícitamente como una propiedad del motor de tablas. Entonces se aplica ClickHouse `LIMIT n BY expressions` y devuelve la primera `n` filas para cada combinación distinta de `expressions`. Si `OFFSET` se especifica, a continuación, para cada bloque de datos que pertenece a una combinación distinta de `expressions`, ClickHouse salta `offset_value` número de filas desde el principio del bloque y devuelve un máximo de `n` filas como resultado. Si `offset_value` es mayor que el número de filas en el bloque de datos, ClickHouse devuelve cero filas del bloque.
 
@@ -930,9 +930,9 @@ Si se omite la cláusula ORDER BY, el orden de las filas tampoco está definido 
 
 `NaN` y `NULL` orden de clasificación:
 
-- Con el modificador `NULLS FIRST` — Primero `NULL`, entonces `NaN`, luego otros valores.
-- Con el modificador `NULLS LAST` — Primero los valores, luego `NaN`, entonces `NULL`.
-- Predeterminado: lo mismo que con el `NULLS LAST` modificador.
+-   Con el modificador `NULLS FIRST` — Primero `NULL`, entonces `NaN`, luego otros valores.
+-   Con el modificador `NULLS LAST` — Primero los valores, luego `NaN`, entonces `NULL`.
+-   Predeterminado: lo mismo que con el `NULLS LAST` modificador.
 
 Ejemplo:
 
@@ -1048,9 +1048,9 @@ Columnas que coinciden con el `COLUMNS` expresión puede tener diferentes tipos 
 Si se especifica DISTINCT, sólo quedará una sola fila de todos los conjuntos de filas totalmente coincidentes en el resultado.
 El resultado será el mismo que si GROUP BY se especificara en todos los campos especificados en SELECT sin funciones agregadas. Pero hay varias diferencias con GROUP BY:
 
-- DISTINCT se puede aplicar junto con GROUP BY.
-- Cuando ORDER BY se omite y se define LIMIT, la consulta deja de ejecutarse inmediatamente después de leer el número necesario de filas diferentes.
-- Los bloques de datos se generan a medida que se procesan, sin esperar a que finalice la ejecución de toda la consulta.
+-   DISTINCT se puede aplicar junto con GROUP BY.
+-   Cuando ORDER BY se omite y se define LIMIT, la consulta deja de ejecutarse inmediatamente después de leer el número necesario de filas diferentes.
+-   Los bloques de datos se generan a medida que se procesan, sin esperar a que finalice la ejecución de toda la consulta.
 
 DISTINCT no se admite si SELECT tiene al menos una columna de matriz.
 
@@ -1283,7 +1283,7 @@ Ahora vamos a examinar una consulta con IN:
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
 ```
 
-- Cálculo de la intersección de audiencias de dos sitios.
+-   Cálculo de la intersección de audiencias de dos sitios.
 
 Esta consulta se enviará a todos los servidores remotos como
 
@@ -1364,11 +1364,11 @@ Puedes usar sinónimos (`AS` aliases) en cualquier parte de una consulta.
 
 Puede poner un asterisco en cualquier parte de una consulta en lugar de una expresión. Cuando se analiza la consulta, el asterisco se expande a una lista de todas las columnas de la tabla `MATERIALIZED` y `ALIAS` columna). Solo hay unos pocos casos en los que se justifica el uso de un asterisco:
 
-- Al crear un volcado de tabla.
-- Para tablas que contienen solo unas pocas columnas, como las tablas del sistema.
-- Para obtener información sobre qué columnas están en una tabla. En este caso, establezca `LIMIT 1`. Pero es mejor usar el `DESC TABLE` consulta.
-- Cuando hay una filtración fuerte en un pequeño número de columnas usando `PREWHERE`.
-- En subconsultas (ya que las columnas que no son necesarias para la consulta externa se excluyen de las subconsultas).
+-   Al crear un volcado de tabla.
+-   Para tablas que contienen solo unas pocas columnas, como las tablas del sistema.
+-   Para obtener información sobre qué columnas están en una tabla. En este caso, establezca `LIMIT 1`. Pero es mejor usar el `DESC TABLE` consulta.
+-   Cuando hay una filtración fuerte en un pequeño número de columnas usando `PREWHERE`.
+-   En subconsultas (ya que las columnas que no son necesarias para la consulta externa se excluyen de las subconsultas).
 
 En todos los demás casos, no recomendamos usar el asterisco, ya que solo le da los inconvenientes de un DBMS columnar en lugar de las ventajas. En otras palabras, no se recomienda usar el asterisco.
 

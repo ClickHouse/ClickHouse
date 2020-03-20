@@ -6,14 +6,14 @@ Puede ejecutar varios `clickhouse-copier` instancias en diferentes servidores pa
 
 Después de comenzar, `clickhouse-copier`:
 
-- Se conecta a ZooKeeper y recibe:
+-   Se conecta a ZooKeeper y recibe:
 
-  - Copia de trabajos.
-  - El estado de los trabajos de copia.
+    -   Copia de trabajos.
+    -   El estado de los trabajos de copia.
 
-- Realiza los trabajos.
+-   Realiza los trabajos.
 
-  Cada proceso en ejecución elige el “closest” el fragmento del clúster de origen y copia los datos en el clúster de destino, reafirmando los datos si es necesario.
+    Cada proceso en ejecución elige el “closest” el fragmento del clúster de origen y copia los datos en el clúster de destino, reafirmando los datos si es necesario.
 
 `clickhouse-copier` realiza un seguimiento de los cambios en ZooKeeper y los aplica sobre la marcha.
 
@@ -29,12 +29,12 @@ $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/pat
 
 Parámetros:
 
-- `daemon` — Empezar `clickhouse-copier` en modo daemon.
-- `config` — El camino hacia el `zookeeper.xml` con los parámetros para la conexión a ZooKeeper.
-- `task-path` — La ruta al nodo ZooKeeper. Este nodo se utiliza para la sincronización `clickhouse-copier` procesos y tareas de almacenamiento. Las tareas se almacenan en `$task-path/description`.
-- `task-file` - Ruta opcional al archivo con la configuración de la tarea para la carga inicial a ZooKeeper.
-- `task-upload-force` — Fuerza de carga `task-file` incluso si el nodo ya existe.
-- `base-dir` — La ruta a los registros y archivos auxiliares. Cuando comienza, `clickhouse-copier` crear `clickhouse-copier_YYYYMMHHSS_<PID>` subdirectorios en `$base-dir`. Si se omite este parámetro, los directorios se crean en el directorio donde `clickhouse-copier` se puso en marcha.
+-   `daemon` — Empezar `clickhouse-copier` en modo daemon.
+-   `config` — El camino hacia el `zookeeper.xml` con los parámetros para la conexión a ZooKeeper.
+-   `task-path` — La ruta al nodo ZooKeeper. Este nodo se utiliza para la sincronización `clickhouse-copier` procesos y tareas de almacenamiento. Las tareas se almacenan en `$task-path/description`.
+-   `task-file` - Ruta opcional al archivo con la configuración de la tarea para la carga inicial a ZooKeeper.
+-   `task-upload-force` — Fuerza de carga `task-file` incluso si el nodo ya existe.
+-   `base-dir` — La ruta a los registros y archivos auxiliares. Cuando comienza, `clickhouse-copier` crear `clickhouse-copier_YYYYMMHHSS_<PID>` subdirectorios en `$base-dir`. Si se omite este parámetro, los directorios se crean en el directorio donde `clickhouse-copier` se puso en marcha.
 
 ## Formato de zookeeper.XML {#format-of-zookeeper-xml}
 

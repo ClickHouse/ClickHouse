@@ -111,6 +111,6 @@ SELECT
 
 ## Ver también {#see-also}
 
-- [dictGetUUID](ext_dict_functions.md#ext_dict_functions-other)
+-   [dictGetUUID](ext_dict_functions.md#ext_dict_functions-other)
 
 [Artículo Original](https://clickhouse.tech/docs/es/query_language/functions/uuid_function/) <!--hide-->

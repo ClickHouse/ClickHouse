@@ -220,7 +220,7 @@ javaHashUTF16LE(stringUtf16le)
 
 **Параметры**
 
-- `stringUtf16le` — строка в `UTF-16LE`.
+-   `stringUtf16le` — строка в `UTF-16LE`.
 
 **Возвращаемое значение**
 
@@ -327,8 +327,8 @@ murmurHash2_64(par1, ...)
 
 **Возвращаемое значение**
 
-- Функция `murmurHash2_32` возвращает значение типа [UInt32](../../data_types/int_uint.md).
-- Функция `murmurHash2_64` возвращает значение типа [UInt64](../../data_types/int_uint.md).
+-   Функция `murmurHash2_32` возвращает значение типа [UInt32](../../data_types/int_uint.md).
+-   Функция `murmurHash2_64` возвращает значение типа [UInt64](../../data_types/int_uint.md).
 
 **Пример**
 
@@ -357,8 +357,8 @@ murmurHash3_64(par1, ...)
 
 **Возвращаемое значение**
 
-- Функция `murmurHash3_32` возвращает значение типа [UInt32](../../data_types/int_uint.md).
-- Функция `murmurHash3_64` возвращает значение типа [UInt64](../../data_types/int_uint.md).
+-   Функция `murmurHash3_32` возвращает значение типа [UInt32](../../data_types/int_uint.md).
+-   Функция `murmurHash3_64` возвращает значение типа [UInt64](../../data_types/int_uint.md).
 
 **Пример**
 
@@ -382,7 +382,7 @@ murmurHash3_128( expr )
 
 **Параметры**
 
-- `expr` — [выражение](../syntax.md#syntax-expressions) возвращающее значение типа[String](../../data_types/string.md).
+-   `expr` — [выражение](../syntax.md#syntax-expressions) возвращающее значение типа[String](../../data_types/string.md).
 
 **Возвращаемое значение**
 
@@ -436,6 +436,6 @@ SELECT xxHash32('Hello, world!');
 
 **Смотрите также**
 
-- [xxHash](http://cyan4973.github.io/xxHash/).
+-   [xxHash](http://cyan4973.github.io/xxHash/).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/hash_functions/) <!--hide-->

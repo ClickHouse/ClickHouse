@@ -29,23 +29,23 @@ clickhouse-benchmark [keys] < queries_file
 
 ## Claves {#clickhouse-benchmark-keys}
 
-- `-c N`, `--concurrency=N` — Número de consultas que `clickhouse-benchmark` se envía simultáneamente. Valor predeterminado: 1.
-- `-d N`, `--delay=N` — Intervalo en segundos entre informes intermedios (ajuste 0 para deshabilitar informes). Valor predeterminado: 1.
-- `-h WORD`, `--host=WORD` — Host del servidor. Valor predeterminado: `localhost`. Para el [modo de comparación](#clickhouse-benchmark-comparison-mode) puedes usar múltiples `-h` claves.
-- `-p N`, `--port=N` — Puerto del servidor. Valor predeterminado: 9000. Para el [modo de comparación](#clickhouse-benchmark-comparison-mode) puedes usar múltiples `-p` claves.
-- `-i N`, `--iterations=N` — Número Total de consultas. Valor predeterminado: 0.
-- `-r`, `--randomize` - Orden aleatorio de ejecución de consultas si hay más de una consulta de entrada.
-- `-s`, `--secure` — Usando la conexión TLS.
-- `-t N`, `--timelimit=N` — Límite de tiempo en segundos. `clickhouse-benchmark` detiene el envío de consultas cuando se alcanza el límite de tiempo especificado. Valor predeterminado: 0 (límite de tiempo desactivado).
-- `--confidence=N` — Nivel de confianza para la prueba T. Valores posibles: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99.5%). Valor predeterminado: 5. En el [modo de comparación](#clickhouse-benchmark-comparison-mode) `clickhouse-benchmark` realiza el [Examen t independiente de dos muestras para estudiantes](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) para determinar si las dos distribuciones no son diferentes con el nivel de confianza seleccionado.
-- `--cumulative` — Impresión de datos acumulativos en lugar de datos por intervalo.
-- `--database=DATABASE_NAME` — Nombre de base de datos ClickHouse. Valor predeterminado: `default`.
-- `--json=FILEPATH` — Salida JSON. Cuando se establece la clave, `clickhouse-benchmark` emite un informe al archivo JSON especificado.
-- `--user=USERNAME` — Nombre de usuario de ClickHouse. Valor predeterminado: `default`.
-- `--password=PSWD` — Contraseña de usuario de ClickHouse. Valor predeterminado: cadena vacía.
-- `--stacktrace` — Pila trazas de salida. Cuando se establece la clave, `clickhouse-bencmark` las salidas acumulan rastros de excepciones.
-- `--stage=WORD` - Etapa de procesamiento de consultas en el servidor. ClickHouse detiene el procesamiento de consultas y devuelve la respuesta a `clickhouse-benchmark` en la etapa especificada. Valores posibles: `complete`, `fetch_columns`, `with_mergeable_state`. Valor predeterminado: `complete`.
-- `--help` — Muestra el mensaje de ayuda.
+-   `-c N`, `--concurrency=N` — Número de consultas que `clickhouse-benchmark` se envía simultáneamente. Valor predeterminado: 1.
+-   `-d N`, `--delay=N` — Intervalo en segundos entre informes intermedios (ajuste 0 para deshabilitar informes). Valor predeterminado: 1.
+-   `-h WORD`, `--host=WORD` — Host del servidor. Valor predeterminado: `localhost`. Para el [modo de comparación](#clickhouse-benchmark-comparison-mode) puedes usar múltiples `-h` claves.
+-   `-p N`, `--port=N` — Puerto del servidor. Valor predeterminado: 9000. Para el [modo de comparación](#clickhouse-benchmark-comparison-mode) puedes usar múltiples `-p` claves.
+-   `-i N`, `--iterations=N` — Número Total de consultas. Valor predeterminado: 0.
+-   `-r`, `--randomize` - Orden aleatorio de ejecución de consultas si hay más de una consulta de entrada.
+-   `-s`, `--secure` — Usando la conexión TLS.
+-   `-t N`, `--timelimit=N` — Límite de tiempo en segundos. `clickhouse-benchmark` detiene el envío de consultas cuando se alcanza el límite de tiempo especificado. Valor predeterminado: 0 (límite de tiempo desactivado).
+-   `--confidence=N` — Nivel de confianza para la prueba T. Valores posibles: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99.5%). Valor predeterminado: 5. En el [modo de comparación](#clickhouse-benchmark-comparison-mode) `clickhouse-benchmark` realiza el [Examen t independiente de dos muestras para estudiantes](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) para determinar si las dos distribuciones no son diferentes con el nivel de confianza seleccionado.
+-   `--cumulative` — Impresión de datos acumulativos en lugar de datos por intervalo.
+-   `--database=DATABASE_NAME` — Nombre de base de datos ClickHouse. Valor predeterminado: `default`.
+-   `--json=FILEPATH` — Salida JSON. Cuando se establece la clave, `clickhouse-benchmark` emite un informe al archivo JSON especificado.
+-   `--user=USERNAME` — Nombre de usuario de ClickHouse. Valor predeterminado: `default`.
+-   `--password=PSWD` — Contraseña de usuario de ClickHouse. Valor predeterminado: cadena vacía.
+-   `--stacktrace` — Pila trazas de salida. Cuando se establece la clave, `clickhouse-bencmark` las salidas acumulan rastros de excepciones.
+-   `--stage=WORD` - Etapa de procesamiento de consultas en el servidor. ClickHouse detiene el procesamiento de consultas y devuelve la respuesta a `clickhouse-benchmark` en la etapa especificada. Valores posibles: `complete`, `fetch_columns`, `with_mergeable_state`. Valor predeterminado: `complete`.
+-   `--help` — Muestra el mensaje de ayuda.
 
 Si desea aplicar alguna [configuración](../../operations/settings/index.md) para consultas, páselas como una clave `--<session setting name>= SETTING_VALUE`. Por ejemplo, `--max_memory_usage=1048576`.
 
@@ -78,19 +78,19 @@ localhost:9000, queries 10, QPS: 6.772, RPS: 67904487.440, MiB/s: 518.070, resul
 
 En el informe puedes encontrar:
 
-- Número de consultas en el `Queries executed:` campo.
+-   Número de consultas en el `Queries executed:` campo.
 
-- Cadena de estado que contiene (en orden):
+-   Cadena de estado que contiene (en orden):
 
-  - Punto final del servidor ClickHouse.
-  - Número de consultas procesadas.
-  - QPS: QPS: ¿Cuántas consultas realizó el servidor por segundo durante un período `--delay` argumento.
-  - RPS: ¿Cuántas filas lee el servidor por segundo durante un período `--delay` argumento.
-  - MiB/s: ¿Cuántos mebibytes servidor leído por segundo durante un período especificado en el `--delay` argumento.
-  - resultado RPS: ¿Cuántas filas colocadas por el servidor al resultado de una consulta por segundo durante un período `--delay` argumento.
-  - resultado MiB/s. ¿Cuántos mebibytes colocados por el servidor al resultado de una consulta por segundo durante un período especificado en el `--delay` argumento.
+    -   Punto final del servidor ClickHouse.
+    -   Número de consultas procesadas.
+    -   QPS: QPS: ¿Cuántas consultas realizó el servidor por segundo durante un período `--delay` argumento.
+    -   RPS: ¿Cuántas filas lee el servidor por segundo durante un período `--delay` argumento.
+    -   MiB/s: ¿Cuántos mebibytes servidor leído por segundo durante un período especificado en el `--delay` argumento.
+    -   resultado RPS: ¿Cuántas filas colocadas por el servidor al resultado de una consulta por segundo durante un período `--delay` argumento.
+    -   resultado MiB/s. ¿Cuántos mebibytes colocados por el servidor al resultado de una consulta por segundo durante un período especificado en el `--delay` argumento.
 
-- Percentiles de tiempo de ejecución de consultas.
+-   Percentiles de tiempo de ejecución de consultas.
 
 ## Modo de comparación {#clickhouse-benchmark-comparison-mode}
 

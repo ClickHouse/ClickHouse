@@ -7,19 +7,19 @@ The family of data types representing time and date intervals. The resulting typ
 
 Structure:
 
-- Time interval as an unsigned integer value.
-- Type of an interval.
+-   Time interval as an unsigned integer value.
+-   Type of an interval.
 
 Supported interval types:
 
-- `SECOND`
-- `MINUTE`
-- `HOUR`
-- `DAY`
-- `WEEK`
-- `MONTH`
-- `QUARTER`
-- `YEAR`
+-   `SECOND`
+-   `MINUTE`
+-   `HOUR`
+-   `DAY`
+-   `WEEK`
+-   `MONTH`
+-   `QUARTER`
+-   `YEAR`
 
 For each interval type, there is a separate data type. For example, the `DAY` interval is expressed as the `IntervalDay` data type:
 
@@ -74,5 +74,5 @@ Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argu
 
 ## See Also {#see-also}
 
-- [INTERVAL](../../query_language/operators.md#operator-interval) operator
-- [toInterval](../../query_language/functions/type_conversion_functions.md#function-tointerval) type convertion functions
+-   [INTERVAL](../../query_language/operators.md#operator-interval) operator
+-   [toInterval](../../query_language/functions/type_conversion_functions.md#function-tointerval) type convertion functions

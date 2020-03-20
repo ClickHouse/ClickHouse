@@ -80,7 +80,7 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 ## Sistema abierto.) {#regexpquotemetas}
 
 La función agrega una barra invertida antes de algunos caracteres predefinidos en la cadena.
-Caracteres predefinidos: ‘0’, ‘\\’, ‘\|’, ‘(’, ‘)’, ‘^’, ‘$’, ‘.’, ‘\[’Lugar de origen, ‘?’Acerca de\*‘,’+‘,’{‘,’:‘,’-'.
+Caracteres predefinidos: ‘0’, ‘\\’, ‘\|’, ‘(’, ‘)’, ‘^’, ‘$’, ‘.’, ‘\[’Lugar de origen, ‘?’Acerca de\*‘,’+‘,’{‘,’:‘,’-’.
 Esta implementación difiere ligeramente de re2::RE2::QuoteMeta. Escapa de byte cero como \\0 en lugar de 00 y escapa solo de los caracteres requeridos.
 Para obtener más información, consulte el enlace: [Bienvenido](https://github.com/google/re2/blob/master/re2/re2.cc#L473)
 

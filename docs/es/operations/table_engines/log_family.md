@@ -4,31 +4,31 @@ Estos motores fueron desarrollados para escenarios en los que necesita escribir 
 
 Motores de la familia:
 
-- [StripeLog](stripelog.md)
-- [Registro](log.md)
-- [TinyLog](tinylog.md)
+-   [StripeLog](stripelog.md)
+-   [Registro](log.md)
+-   [TinyLog](tinylog.md)
 
 ## Propiedades comunes {#common-properties}
 
 Motor:
 
-- Almacenar datos en un disco.
+-   Almacenar datos en un disco.
 
-- Agregue datos al final del archivo al escribir.
+-   Agregue datos al final del archivo al escribir.
 
-- Bloqueos de soporte para el acceso a datos simultáneos.
+-   Bloqueos de soporte para el acceso a datos simultáneos.
 
-  Durante `INSERT` consultas, la tabla está bloqueada y otras consultas para leer y escribir datos esperan a que la tabla se desbloquee. Si no hay consultas de escritura de datos, se puede realizar cualquier número de consultas de lectura de datos simultáneamente.
+    Durante `INSERT` consultas, la tabla está bloqueada y otras consultas para leer y escribir datos esperan a que la tabla se desbloquee. Si no hay consultas de escritura de datos, se puede realizar cualquier número de consultas de lectura de datos simultáneamente.
 
-- No apoyo [mutación](../../query_language/alter.md#alter-mutations) operación.
+-   No apoyo [mutación](../../query_language/alter.md#alter-mutations) operación.
 
-- No admite índices.
+-   No admite índices.
 
-  Esto significa que `SELECT` las consultas para rangos de datos no son eficientes.
+    Esto significa que `SELECT` las consultas para rangos de datos no son eficientes.
 
-- No escriba datos atómicamente.
+-   No escriba datos atómicamente.
 
-  Puede obtener una tabla con datos dañados si algo rompe la operación de escritura, por ejemplo, un cierre anormal del servidor.
+    Puede obtener una tabla con datos dañados si algo rompe la operación de escritura, por ejemplo, un cierre anormal del servidor.
 
 ## Diferencia {#differences}
 

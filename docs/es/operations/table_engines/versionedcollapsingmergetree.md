@@ -2,8 +2,8 @@
 
 Este motor:
 
-- Permite la escritura rápida de estados de objetos que cambian continuamente.
-- Elimina los estados de objetos antiguos en segundo plano. Esto reduce significativamente el volumen de almacenamiento.
+-   Permite la escritura rápida de estados de objetos que cambian continuamente.
+-   Elimina los estados de objetos antiguos en segundo plano. Esto reduce significativamente el volumen de almacenamiento.
 
 Vea la sección [Derrumbar](#table_engines_versionedcollapsingmergetree) para más detalles.
 
@@ -32,13 +32,13 @@ Para obtener una descripción de los parámetros de consulta, consulte [descripc
 VersionedCollapsingMergeTree(sign, version)
 ```
 
-- `sign` — Nombre de la columna con el tipo de fila: `1` es una “state” fila, `-1` es una “cancel” fila.
+-   `sign` — Nombre de la columna con el tipo de fila: `1` es una “state” fila, `-1` es una “cancel” fila.
 
-  El tipo de datos de columna debe ser `Int8`.
+    El tipo de datos de columna debe ser `Int8`.
 
-- `version` — Nombre de la columna con la versión del estado del objeto.
+-   `version` — Nombre de la columna con la versión del estado del objeto.
 
-  El tipo de datos de columna debe ser `UInt*`.
+    El tipo de datos de columna debe ser `UInt*`.
 
 **Cláusulas de consulta**
 
@@ -62,13 +62,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Todos los parámetros excepto `sign` y `version` el mismo significado que en `MergeTree`.
 
-- `sign` — Nombre de la columna con el tipo de fila: `1` es una “state” fila, `-1` es una “cancel” fila.
+-   `sign` — Nombre de la columna con el tipo de fila: `1` es una “state” fila, `-1` es una “cancel” fila.
 
-  Tipo de datos de columna — `Int8`.
+    Tipo de datos de columna — `Int8`.
 
-- `version` — Nombre de la columna con la versión del estado del objeto.
+-   `version` — Nombre de la columna con la versión del estado del objeto.
 
-  El tipo de datos de columna debe ser `UInt*`.
+    El tipo de datos de columna debe ser `UInt*`.
 
 </details>
 

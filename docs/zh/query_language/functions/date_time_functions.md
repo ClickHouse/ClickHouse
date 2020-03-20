@@ -12,9 +12,9 @@ SELECT
     toString(time, 'US/Samoa') AS time_samoa
 ```
 
-  ┌────────────────time─┬─date_local─┬─date_yekat─┬─time_samoa──────────┐
-  │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-16 │ 2016-06-15 09:00:00 │
-  └─────────────────────┴────────────┴────────────┴─────────────────────┘
+    ┌────────────────time─┬─date_local─┬─date_yekat─┬─time_samoa──────────┐
+    │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-16 │ 2016-06-15 09:00:00 │
+    └─────────────────────┴────────────┴────────────┴─────────────────────┘
 
 仅支持与UTC相差一整小时的时区。
 
@@ -213,9 +213,9 @@ SELECT
     addYears(date_time, 1) AS add_years_with_date_time
 ```
 
-  ┌─add_years_with_date─┬─add_years_with_date_time─┐
-  │          2019-01-01 │      2019-01-01 00:00:00 │
-  └─────────────────────┴──────────────────────────┘
+    ┌─add_years_with_date─┬─add_years_with_date_time─┐
+    │          2019-01-01 │      2019-01-01 00:00:00 │
+    └─────────────────────┴──────────────────────────┘
 
 ## subtractYears, subtractMonths, subtractWeeks, subtractDays, subtractHours, subtractMinutes, subtractSeconds, subtractQuarters {#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters}
 
@@ -230,9 +230,9 @@ SELECT
     subtractYears(date_time, 1) AS subtract_years_with_date_time
 ```
 
-  ┌─subtract_years_with_date─┬─subtract_years_with_date_time─┐
-  │               2018-01-01 │           2018-01-01 00:00:00 │
-  └──────────────────────────┴───────────────────────────────┘
+    ┌─subtract_years_with_date─┬─subtract_years_with_date_time─┐
+    │               2018-01-01 │           2018-01-01 00:00:00 │
+    └──────────────────────────┴───────────────────────────────┘
 
 ## dateDiff(‘unit’, t1, t2, \[timezone\]) {#datediffunit-t1-t2-timezone}
 

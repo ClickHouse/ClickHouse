@@ -14,6 +14,6 @@ If you use Oracle through ODBC driver as a source of external dictionaries, you 
 
 **Example**
 
-  NLS_LANG=CHINESE_CHINA.ZHS16GBK
+    NLS_LANG=CHINESE_CHINA.ZHS16GBK
 
 [来源文章](https://clickhouse.tech/docs/zh/faq/general/) <!--hide-->

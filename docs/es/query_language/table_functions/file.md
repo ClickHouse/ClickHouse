@@ -8,9 +8,9 @@ file(path, format, structure)
 
 **Parámetros de entrada**
 
-- `path` — La ruta relativa al archivo desde [user\_files\_path](../../operations/server_settings/settings.md#server_settings-user_files_path). Soporte de ruta a archivo siguiendo globs en modo de solo lectura: `*`, `?`, `{abc,def}` y `{N..M}` donde `N`, `M` — numero, \``'abc', 'def'` — cadena.
-- `format` — El [formato](../../interfaces/formats.md#formats) del archivo.
-- `structure` — Estructura de la mesa. Formato `'column1_name column1_type, column2_name column2_type, ...'`.
+-   `path` — La ruta relativa al archivo desde [user\_files\_path](../../operations/server_settings/settings.md#server_settings-user_files_path). Soporte de ruta a archivo siguiendo globs en modo de solo lectura: `*`, `?`, `{abc,def}` y `{N..M}` donde `N`, `M` — numero, \``'abc', 'def'` — cadena.
+-   `format` — El [formato](../../interfaces/formats.md#formats) del archivo.
+-   `structure` — Estructura de la mesa. Formato `'column1_name column1_type, column2_name column2_type, ...'`.
 
 **Valor devuelto**
 
@@ -54,10 +54,10 @@ SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 U
 
 Múltiples componentes de ruta de acceso pueden tener globs. Para ser procesado, el archivo debe existir y coincidir con todo el patrón de ruta (no solo el sufijo o el prefijo).
 
-- `*` — Sustituye cualquier número de caracteres excepto `/` incluyendo cadena vacía.
-- `?` — Sustituye a cualquier carácter individual.
-- `{some_string,another_string,yet_another_one}` — Sustituye cualquiera de las cadenas `'some_string', 'another_string', 'yet_another_one'`.
-- `{N..M}` — Sustituye cualquier número en el intervalo de N a M, incluidas ambas fronteras.
+-   `*` — Sustituye cualquier número de caracteres excepto `/` incluyendo cadena vacía.
+-   `?` — Sustituye a cualquier carácter individual.
+-   `{some_string,another_string,yet_another_one}` — Sustituye cualquiera de las cadenas `'some_string', 'another_string', 'yet_another_one'`.
+-   `{N..M}` — Sustituye cualquier número en el intervalo de N a M, incluidas ambas fronteras.
 
 Construcciones con `{}` son similares a la [función de tabla remota](../../query_language/table_functions/remote.md)).
 
@@ -65,12 +65,12 @@ Construcciones con `{}` son similares a la [función de tabla remota](../../quer
 
 1.  Supongamos que tenemos varios archivos con las siguientes rutas relativas:
 
-- ‘some\_dir/some\_file\_1’
-- ‘some\_dir/some\_file\_2’
-- ‘some\_dir/some\_file\_3’
-- ‘another\_dir/some\_file\_1’
-- ‘another\_dir/some\_file\_2’
-- ‘another\_dir/some\_file\_3’
+-   ‘some\_dir/some\_file\_1’
+-   ‘some\_dir/some\_file\_2’
+-   ‘some\_dir/some\_file\_3’
+-   ‘another\_dir/some\_file\_1’
+-   ‘another\_dir/some\_file\_2’
+-   ‘another\_dir/some\_file\_3’
 
 1.  Consulta la cantidad de filas en estos archivos:
 
@@ -104,11 +104,11 @@ FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
 
 ## Virtual Columnas {#virtual-columns}
 
-- `_path` — Ruta de acceso al archivo.
-- `_file` — Nombre del expediente.
+-   `_path` — Ruta de acceso al archivo.
+-   `_file` — Nombre del expediente.
 
 **Ver también**
 
-- [Virtual columnas](https://clickhouse.tech/docs/es/operations/table_engines/#table_engines-virtual_columns)
+-   [Virtual columnas](https://clickhouse.tech/docs/es/operations/table_engines/#table_engines-virtual_columns)
 
 [Artículo Original](https://clickhouse.tech/docs/es/query_language/table_functions/file/) <!--hide-->

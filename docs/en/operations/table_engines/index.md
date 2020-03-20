@@ -1,13 +1,13 @@
-# Table engines {#table_engines}
+# Table engines {#table-engines}
 
 The table engine (type of table) determines:
 
-- How and where data is stored, where to write it to, and where to read it from.
-- Which queries are supported, and how.
-- Concurrent data access.
-- Use of indexes, if present.
-- Whether multithreaded request execution is possible.
-- Data replication parameters.
+-   How and where data is stored, where to write it to, and where to read it from.
+-   Which queries are supported, and how.
+-   Concurrent data access.
+-   Use of indexes, if present.
+-   Whether multithreaded request execution is possible.
+-   Data replication parameters.
 
 ## Engine Families {#engine-families}
 
@@ -17,13 +17,13 @@ The most universal and functional table engines for high-load tasks. The propert
 
 Engines in the family:
 
-- [MergeTree](mergetree.md)
-- [ReplacingMergeTree](replacingmergetree.md)
-- [SummingMergeTree](summingmergetree.md)
-- [AggregatingMergeTree](aggregatingmergetree.md)
-- [CollapsingMergeTree](collapsingmergetree.md)
-- [VersionedCollapsingMergeTree](versionedcollapsingmergetree.md)
-- [GraphiteMergeTree](graphitemergetree.md)
+-   [MergeTree](mergetree.md)
+-   [ReplacingMergeTree](replacingmergetree.md)
+-   [SummingMergeTree](summingmergetree.md)
+-   [AggregatingMergeTree](aggregatingmergetree.md)
+-   [CollapsingMergeTree](collapsingmergetree.md)
+-   [VersionedCollapsingMergeTree](versionedcollapsingmergetree.md)
+-   [GraphiteMergeTree](graphitemergetree.md)
 
 ### Log {#log}
 
@@ -31,9 +31,9 @@ Lightweight [engines](log_family.md) with minimum functionality. They’re the m
 
 Engines in the family:
 
-- [TinyLog](tinylog.md)
-- [StripeLog](stripelog.md)
-- [Log](log.md)
+-   [TinyLog](tinylog.md)
+-   [StripeLog](stripelog.md)
+-   [Log](log.md)
 
 ### Intergation engines {#intergation-engines}
 
@@ -41,30 +41,30 @@ Engines for communicating with other data storage and processing systems.
 
 Engines in the family:
 
-- [Kafka](kafka.md)
-- [MySQL](mysql.md)
-- [ODBC](odbc.md)
-- [JDBC](jdbc.md)
-- [HDFS](hdfs.md)
+-   [Kafka](kafka.md)
+-   [MySQL](mysql.md)
+-   [ODBC](odbc.md)
+-   [JDBC](jdbc.md)
+-   [HDFS](hdfs.md)
 
 ### Special engines {#special-engines}
 
 Engines in the family:
 
-- [Distributed](distributed.md)
-- [MaterializedView](materializedview.md)
-- [Dictionary](dictionary.md)
-- [Merge](merge.md)
-- [File](file.md)
-- [Null](null.md)
-- [Set](set.md)
-- [Join](join.md)
-- [URL](url.md)
-- [View](view.md)
-- [Memory](memory.md)
-- [Buffer](buffer.md)
+-   [Distributed](distributed.md)
+-   [MaterializedView](materializedview.md)
+-   [Dictionary](dictionary.md)
+-   [Merge](merge.md)
+-   [File](file.md)
+-   [Null](null.md)
+-   [Set](set.md)
+-   [Join](join.md)
+-   [URL](url.md)
+-   [View](view.md)
+-   [Memory](memory.md)
+-   [Buffer](buffer.md)
 
-## Virtual columns {#table_engines-virtual_columns}
+## Virtual columns {#table-engines-virtual-columns}
 
 Virtual column is an integral table engine attribute that is defined in the engine source code.
 

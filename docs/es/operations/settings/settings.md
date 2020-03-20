@@ -8,17 +8,17 @@ ClickHouse aplica esta configuración cuando la consulta contiene el producto de
 
 Restricción:
 
-- Solo se aplica para las subconsultas IN y JOIN.
-- Solo si la sección FROM utiliza una tabla distribuida que contiene más de un fragmento.
-- Si la subconsulta se refiere a una tabla distribuida que contiene más de un fragmento.
-- No se usa para un valor de tabla [remoto](../../query_language/table_functions/remote.md) función.
+-   Solo se aplica para las subconsultas IN y JOIN.
+-   Solo si la sección FROM utiliza una tabla distribuida que contiene más de un fragmento.
+-   Si la subconsulta se refiere a una tabla distribuida que contiene más de un fragmento.
+-   No se usa para un valor de tabla [remoto](../../query_language/table_functions/remote.md) función.
 
 Valores posibles:
 
-- `deny` — Valor predeterminado. Prohíbe el uso de estos tipos de subconsultas (devuelve el “Double-distributed in/JOIN subqueries is denied” salvedad).
-- `local` — Sustituye la base de datos y la tabla de la subconsulta por locales para el servidor de destino (fragmento), dejando `IN`/`JOIN.`
-- `global` — Sustituye el `IN`/`JOIN` consulta con `GLOBAL IN`/`GLOBAL JOIN.`
-- `allow` — Permite la utilización de este tipo de subconsultas.
+-   `deny` — Valor predeterminado. Prohíbe el uso de estos tipos de subconsultas (devuelve el “Double-distributed in/JOIN subqueries is denied” salvedad).
+-   `local` — Sustituye la base de datos y la tabla de la subconsulta por locales para el servidor de destino (fragmento), dejando `IN`/`JOIN.`
+-   `global` — Sustituye el `IN`/`JOIN` consulta con `GLOBAL IN`/`GLOBAL JOIN.`
+-   `allow` — Permite la utilización de este tipo de subconsultas.
 
 ## enable\_optimize\_predicate\_expression {#enable-optimize-predicate-expression}
 
@@ -28,8 +28,8 @@ La extracción de predicados puede reducir significativamente el tráfico de red
 
 Valores posibles:
 
-- 0 — Desactivado.
-- 1 — Habilitado.
+-   0 — Desactivado.
+-   1 — Habilitado.
 
 Valor predeterminado: 1.
 
@@ -72,7 +72,7 @@ Si `force_primary_key=1`, ClickHouse comprueba si la consulta tiene una condici�
 
 ## Formato\_esquema {#format-schema}
 
-Este parámetro es útil cuando se utilizan formatos que requieren una definición de esquema, como [Cap'n Proto](https://capnproto.org/) o [Protobuf](https://developers.google.com/protocol-buffers/). El valor depende del formato.
+Este parámetro es útil cuando se utilizan formatos que requieren una definición de esquema, como [Cap’n Proto](https://capnproto.org/) o [Protobuf](https://developers.google.com/protocol-buffers/). El valor depende del formato.
 
 ## fsync\_metadata {#fsync-metadata}
 
@@ -88,8 +88,8 @@ Para obtener más información, lea el [Descripción de la interfaz HTTP](../../
 
 Valores posibles:
 
-- 0 — Desactivado.
-- 1 — Habilitado.
+-   0 — Desactivado.
+-   1 — Habilitado.
 
 Valor predeterminado: 0.
 
@@ -109,8 +109,8 @@ Para obtener más información, lea el [Descripción de la interfaz HTTP](../../
 
 Valores posibles:
 
-- 0 — Desactivado.
-- 1 — Habilitado.
+-   0 — Desactivado.
+-   1 — Habilitado.
 
 Valor predeterminado: 0.
 
@@ -122,8 +122,8 @@ Para obtener más información, lea el [Descripción de la interfaz HTTP](../../
 
 Valores posibles:
 
-- 0 — Desactivado.
-- 1 — Habilitado.
+-   0 — Desactivado.
+-   1 — Habilitado.
 
 Valor predeterminado: 0.
 
@@ -133,8 +133,8 @@ Limita el número máximo de saltos de redirección HTTP GET para [URL](../table
 
 Valores posibles:
 
-- Cualquier número entero positivo de saltos.
-- 0 — No se permiten saltos.
+-   Cualquier número entero positivo de saltos.
+-   0 — No se permiten saltos.
 
 Valor predeterminado: 0.
 
@@ -169,13 +169,13 @@ Habilita o deshabilita el analizador SQL completo si el analizador de flujo ráp
 
 Valores posibles:
 
-- 0 — Desactivado.
+-   0 — Desactivado.
 
-  En este caso, debe proporcionar datos con formato. Ver el [Formato](../../interfaces/formats.md) apartado.
+    En este caso, debe proporcionar datos con formato. Ver el [Formato](../../interfaces/formats.md) apartado.
 
-- 1 — Habilitado.
+-   1 — Habilitado.
 
-  En este caso, puede usar una expresión SQL como valor, pero la inserción de datos es mucho más lenta de esta manera. Si inserta solo datos con formato, ClickHouse se comporta como si el valor de configuración fuera 0.
+    En este caso, puede usar una expresión SQL como valor, pero la inserción de datos es mucho más lenta de esta manera. Si inserta solo datos con formato, ClickHouse se comporta como si el valor de configuración fuera 0.
 
 Valor predeterminado: 1.
 
@@ -221,9 +221,9 @@ Habilita o deshabilita la deducción de plantilla para expresiones SQL en [Valor
 INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
 ```
 
-- si `input_format_values_interpret_expressions=1` y `format_values_deduce_templates_of_expressions=0` Las expresiones se interpretarán por separado para cada fila (esto es muy lento para un gran número de filas)
-- si `input_format_values_interpret_expressions=0` y `format_values_deduce_templates_of_expressions=1` Las expresiones en la primera, segunda y tercera filas se analizarán usando la plantilla `lower(String)` e interpretados juntos, la expresión es la cuarta fila se analizará con otra plantilla (`upper(String)`)
-- si `input_format_values_interpret_expressions=1` y `format_values_deduce_templates_of_expressions=1` - igual que en el caso anterior, pero también permite la alternativa a la interpretación de expresiones por separado si no es posible deducir la plantilla.
+-   si `input_format_values_interpret_expressions=1` y `format_values_deduce_templates_of_expressions=0` Las expresiones se interpretarán por separado para cada fila (esto es muy lento para un gran número de filas)
+-   si `input_format_values_interpret_expressions=0` y `format_values_deduce_templates_of_expressions=1` Las expresiones en la primera, segunda y tercera filas se analizarán usando la plantilla `lower(String)` e interpretados juntos, la expresión es la cuarta fila se analizará con otra plantilla (`upper(String)`)
+-   si `input_format_values_interpret_expressions=1` y `format_values_deduce_templates_of_expressions=1` - igual que en el caso anterior, pero también permite la alternativa a la interpretación de expresiones por separado si no es posible deducir la plantilla.
 
 Habilitado de forma predeterminada.
 
@@ -250,8 +250,8 @@ Al realizar `INSERT` consultas, reemplace los valores de columna de entrada omit
 
 Valores posibles:
 
-- 0 — Desactivado.
-- 1 — Habilitado.
+-   0 — Desactivado.
+-   1 — Habilitado.
 
 Valor predeterminado: 1.
 
@@ -273,15 +273,15 @@ Al escribir datos, ClickHouse produce una excepción si los datos de entrada con
 
 Formatos soportados:
 
-- [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
-- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
-- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
-- [MOKOENA](../../interfaces/formats.md#tskv)
+-   [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
+-   [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+-   [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+-   [MOKOENA](../../interfaces/formats.md#tskv)
 
 Valores posibles:
 
-- 0 — Desactivado.
-- 1 — Habilitado.
+-   0 — Desactivado.
+-   1 — Habilitado.
 
 Valor predeterminado: 0.
 
@@ -291,18 +291,18 @@ Habilita o deshabilita la inserción de datos JSON con objetos anidados.
 
 Formatos soportados:
 
-- [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
+-   [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
 
 Valores posibles:
 
-- 0 — Desactivado.
-- 1 — Habilitado.
+-   0 — Desactivado.
+-   1 — Habilitado.
 
 Valor predeterminado: 0.
 
 Ver también:
 
-- [Uso de estructuras anidadas](../../interfaces/formats.md#jsoneachrow-nested) con el `JSONEachRow` formato.
+-   [Uso de estructuras anidadas](../../interfaces/formats.md#jsoneachrow-nested) con el `JSONEachRow` formato.
 
 ## Entrada\_format\_with\_names\_use\_header {#settings-input-format-with-names-use-header}
 
@@ -312,13 +312,13 @@ Para mejorar el rendimiento de la inserción, se recomienda deshabilitar esta co
 
 Formatos soportados:
 
-- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
-- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+-   [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+-   [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
 
 Valores posibles:
 
-- 0 — Desactivado.
-- 1 — Habilitado.
+-   0 — Desactivado.
+-   1 — Habilitado.
 
 Valor predeterminado: 1.
 
@@ -330,20 +330,20 @@ La configuración no se aplica a [Funciones de fecha y hora](../../query_languag
 
 Valores posibles:
 
-- `'best_effort'` — Permite el análisis extendido.
+-   `'best_effort'` — Permite el análisis extendido.
 
-  ClickHouse puede analizar el básico `YYYY-MM-DD HH:MM:SS` formato y todo [Descripción](https://en.wikipedia.org/wiki/ISO_8601) formatos de fecha y hora. Por ejemplo, `'2018-06-08T01:02:03.000Z'`.
+    ClickHouse puede analizar el básico `YYYY-MM-DD HH:MM:SS` formato y todo [Descripción](https://en.wikipedia.org/wiki/ISO_8601) formatos de fecha y hora. Por ejemplo, `'2018-06-08T01:02:03.000Z'`.
 
-- `'basic'` — Utilice analizador básico.
+-   `'basic'` — Utilice analizador básico.
 
-  ClickHouse puede analizar solo lo básico `YYYY-MM-DD HH:MM:SS` formato. Por ejemplo, `'2019-08-20 10:18:56'`.
+    ClickHouse puede analizar solo lo básico `YYYY-MM-DD HH:MM:SS` formato. Por ejemplo, `'2019-08-20 10:18:56'`.
 
 Valor predeterminado: `'basic'`.
 
 Ver también:
 
-- [Tipo de datos DateTime.](../../data_types/datetime.md)
-- [Funciones para trabajar con fechas y horas.](../../query_language/functions/date_time_functions.md)
+-   [Tipo de datos DateTime.](../../data_types/datetime.md)
+-   [Funciones para trabajar con fechas y horas.](../../query_language/functions/date_time_functions.md)
 
 ## Por favor, introduzca su dirección de correo electrónico {#settings-join-default-strictness}
 
@@ -351,10 +351,10 @@ Establece el rigor predeterminado para [Cláusulas JOIN](../../query_language/se
 
 Valores posibles:
 
-- `ALL` — Si la tabla correcta tiene varias filas coincidentes, ClickHouse crea un [Producto cartesiano](https://en.wikipedia.org/wiki/Cartesian_product) de filas coincidentes. Esta es la normal `JOIN` comportamiento de SQL estándar.
-- `ANY` — Si la tabla correcta tiene varias filas coincidentes, solo se une la primera encontrada. Si la tabla correcta solo tiene una fila coincidente, los resultados de `ANY` y `ALL` son los mismos.
-- `ASOF` — Para unir secuencias con una coincidencia incierta.
-- `Empty string` — Si `ALL` o `ANY` no se especifica en la consulta, ClickHouse produce una excepción.
+-   `ALL` — Si la tabla correcta tiene varias filas coincidentes, ClickHouse crea un [Producto cartesiano](https://en.wikipedia.org/wiki/Cartesian_product) de filas coincidentes. Esta es la normal `JOIN` comportamiento de SQL estándar.
+-   `ANY` — Si la tabla correcta tiene varias filas coincidentes, solo se une la primera encontrada. Si la tabla correcta solo tiene una fila coincidente, los resultados de `ANY` y `ALL` son los mismos.
+-   `ASOF` — Para unir secuencias con una coincidencia incierta.
+-   `Empty string` — Si `ALL` o `ANY` no se especifica en la consulta, ClickHouse produce una excepción.
 
 Valor predeterminado: `ALL`.
 
@@ -367,16 +367,16 @@ Cambia el comportamiento de las operaciones de unión con `ANY` rigor.
 
 Valores posibles:
 
-- 0 — Si la tabla correcta tiene más de una fila coincidente, solo se une la primera encontrada.
-- 1 — Si la tabla correcta tiene más de una fila coincidente, solo se une la última encontrada.
+-   0 — Si la tabla correcta tiene más de una fila coincidente, solo se une la primera encontrada.
+-   1 — Si la tabla correcta tiene más de una fila coincidente, solo se une la última encontrada.
 
 Valor predeterminado: 0.
 
 Ver también:
 
-- [Cláusula JOIN](../../query_language/select.md#select-join)
-- [Unirse al motor de tabla](../table_engines/join.md)
-- [Por favor, introduzca su dirección de correo electrónico](#settings-join_default_strictness)
+-   [Cláusula JOIN](../../query_language/select.md#select-join)
+-   [Unirse al motor de tabla](../table_engines/join.md)
+-   [Por favor, introduzca su dirección de correo electrónico](#settings-join_default_strictness)
 
 ## Sistema abierto. {#join-use-nulls}
 
@@ -384,8 +384,8 @@ Establece el tipo de [UNIR](../../query_language/select.md) comportamiento. Al f
 
 Valores posibles:
 
-- 0 — Las celdas vacías se rellenan con el valor predeterminado del tipo de campo correspondiente.
-- Uno — `JOIN` se comporta de la misma manera que en SQL estándar. El tipo del campo correspondiente se convierte en [NULL](../../data_types/nullable.md#data_type-nullable), y las celdas vacías se llenan con [NULO](../../query_language/syntax.md).
+-   0 — Las celdas vacías se rellenan con el valor predeterminado del tipo de campo correspondiente.
+-   Uno — `JOIN` se comporta de la misma manera que en SQL estándar. El tipo del campo correspondiente se convierte en [NULL](../../data_types/nullable.md#data_type-nullable), y las celdas vacías se llenan con [NULO](../../query_language/syntax.md).
 
 Valor predeterminado: 0.
 
@@ -409,7 +409,7 @@ Si el número de filas que se leerán de un fichero [Método de codificación de
 
 Valores posibles:
 
-- Cualquier entero positivo.
+-   Cualquier entero positivo.
 
 Valor predeterminado: 163840.
 
@@ -419,7 +419,7 @@ Si el número de bytes a leer de un archivo de un [Método de codificación de d
 
 Valor posible:
 
-- Cualquier entero positivo.
+-   Cualquier entero positivo.
 
 Valor predeterminado: 251658240.
 
@@ -429,7 +429,7 @@ Si la distancia entre dos bloques de datos que se leen en un archivo es menor qu
 
 Valores posibles:
 
-- Cualquier entero positivo.
+-   Cualquier entero positivo.
 
 Valor predeterminado: 0.
 
@@ -439,7 +439,7 @@ Si la distancia entre dos bloques de datos que se leen en un archivo es menor qu
 
 Valores posibles:
 
-- Cualquier entero positivo.
+-   Cualquier entero positivo.
 
 Valor predeterminado: 0.
 
@@ -449,7 +449,7 @@ Al buscar datos, ClickHouse comprueba las marcas de datos en el archivo de índi
 
 Valores posibles:
 
-- Cualquier entero incluso positivo.
+-   Cualquier entero incluso positivo.
 
 Valor predeterminado: 8.
 
@@ -461,7 +461,7 @@ La memoria caché de bloques sin comprimir almacena datos extraídos para consul
 
 Valores posibles:
 
-- Cualquier entero positivo.
+-   Cualquier entero positivo.
 
 Valor predeterminado: 128 ✕ 8192.
 
@@ -473,7 +473,7 @@ La memoria caché de bloques sin comprimir almacena datos extraídos para consul
 
 Valor posible:
 
-- Cualquier entero positivo.
+-   Cualquier entero positivo.
 
 Valor predeterminado: 2013265920.
 
@@ -485,8 +485,8 @@ ClickHouse usa esta configuración al leer datos de tablas. Si el volumen total 
 
 Valores posibles:
 
-- 0 — E/S directa está deshabilitada.
-- Entero positivo.
+-   0 — E/S directa está deshabilitada.
+-   Entero positivo.
 
 Valor predeterminado: 0.
 
@@ -557,8 +557,8 @@ El número máximo de subprocesos para ejecutar el `INSERT SELECT` consulta.
 
 Valores posibles:
 
-- 0 (o 1) — `INSERT SELECT` sin ejecución paralela.
-- Entero positivo. Más grande que 1.
+-   0 (o 1) — `INSERT SELECT` sin ejecución paralela.
+-   Entero positivo. Más grande que 1.
 
 Valor predeterminado: 0.
 
@@ -680,10 +680,10 @@ Especifica el algoritmo de selección de réplicas que se utiliza para el proces
 
 ClickHouse admite los siguientes algoritmos para elegir réplicas:
 
-- [Aleatorio](#load_balancing-random) (predeterminada)
-- [Nombre de host más cercano](#load_balancing-nearest_hostname)
-- [En orden](#load_balancing-in_order)
-- [Primero o aleatorio](#load_balancing-first_or_random)
+-   [Aleatorio](#load_balancing-random) (predeterminada)
+-   [Nombre de host más cercano](#load_balancing-nearest_hostname)
+-   [En orden](#load_balancing-in_order)
+-   [Primero o aleatorio](#load_balancing-first_or_random)
 
 ### Random (por defecto) {#load-balancing-random}
 
@@ -733,8 +733,8 @@ Habilita/deshabilita el uso preferible de la réplica localhost al procesar cons
 
 Valores posibles:
 
-- 1 - ClickHouse siempre envía una consulta a la réplica localhost si existe.
-- 0 — ClickHouse utiliza la estrategia de equilibrio especificada [load\_balancing](#settings-load_balancing) configuración.
+-   1 - ClickHouse siempre envía una consulta a la réplica localhost si existe.
+-   0 — ClickHouse utiliza la estrategia de equilibrio especificada [load\_balancing](#settings-load_balancing) configuración.
 
 Valor predeterminado: 1.
 
@@ -797,8 +797,8 @@ Utilice el separador de línea de estilo DOC / Windows (CRLF) en TSV en lugar de
 
 Habilita las escrituras de quórum.
 
-- Si `insert_quorum < 2`, las escrituras de quórum están deshabilitadas.
-- Si `insert_quorum >= 2`, las escrituras de quórum están habilitadas.
+-   Si `insert_quorum < 2`, las escrituras de quórum están deshabilitadas.
+-   Si `insert_quorum >= 2`, las escrituras de quórum están habilitadas.
 
 Valor predeterminado: 0.
 
@@ -812,13 +812,13 @@ Al leer los datos escritos desde el `insert_quorum` usted puede utilizar el [sel
 
 ClickHouse genera una excepción
 
-- Si el número de réplicas disponibles en el momento de la consulta es `insert_quorum`.
-- En un intento de escribir datos cuando el bloque anterior aún no se ha insertado en el `insert_quorum` de réplicas. Esta situación puede ocurrir si el usuario intenta realizar una `INSERT` antes de la anterior con el `insert_quorum` se ha completado.
+-   Si el número de réplicas disponibles en el momento de la consulta es `insert_quorum`.
+-   En un intento de escribir datos cuando el bloque anterior aún no se ha insertado en el `insert_quorum` de réplicas. Esta situación puede ocurrir si el usuario intenta realizar una `INSERT` antes de la anterior con el `insert_quorum` se ha completado.
 
 Ver también:
 
-- [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
-- [select\_sequential\_consistency](#settings-select_sequential_consistency)
+-   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
+-   [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
 ## insert\_quorum\_timeout {#settings-insert-quorum-timeout}
 
@@ -828,8 +828,8 @@ Valor predeterminado: 60 segundos.
 
 Ver también:
 
-- [insert\_quorum](#settings-insert_quorum)
-- [select\_sequential\_consistency](#settings-select_sequential_consistency)
+-   [insert\_quorum](#settings-insert_quorum)
+-   [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
 ## select\_sequential\_consistency {#settings-select-sequential-consistency}
 
@@ -837,8 +837,8 @@ Habilita o deshabilita la coherencia secuencial para `SELECT` consulta:
 
 Valores posibles:
 
-- 0 — Desactivado.
-- 1 — Habilitado.
+-   0 — Desactivado.
+-   1 — Habilitado.
 
 Valor predeterminado: 0.
 
@@ -848,8 +848,8 @@ Cuando se habilita la coherencia secuencial, ClickHouse permite al cliente ejecu
 
 Ver también:
 
-- [insert\_quorum](#settings-insert_quorum)
-- [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
+-   [insert\_quorum](#settings-insert_quorum)
+-   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
 
 ## insert\_deduplicate {#settings-insert-deduplicate}
 
@@ -857,8 +857,8 @@ Habilita o deshabilita la desduplicación de bloques `INSERT` (para tablas repli
 
 Valores posibles:
 
-- 0 — Desactivado.
-- 1 — Habilitado.
+-   0 — Desactivado.
+-   1 — Habilitado.
 
 Valor predeterminado: 1.
 
@@ -870,8 +870,8 @@ Habilita o deshabilita la comprobación de desduplicación para las vistas mater
 
 Valores posibles:
 
-    0 — Disabled.
-    1 — Enabled.
+      0 — Disabled.
+      1 — Enabled.
 
 Valor predeterminado: 0.
 
@@ -888,8 +888,8 @@ Limita el volumen de datos (en bytes) que se recibe o se transmite a través de 
 
 Valores posibles:
 
-- Entero positivo.
-- 0 — El control de volumen de datos está desactivado.
+-   Entero positivo.
+-   0 — El control de volumen de datos está desactivado.
 
 Valor predeterminado: 0.
 
@@ -899,8 +899,8 @@ Limita la velocidad del intercambio de datos a través de la red en bytes por se
 
 Valores posibles:
 
-- Entero positivo.
-- 0 — El control de ancho de banda está deshabilitado.
+-   Entero positivo.
+-   0 — El control de ancho de banda está deshabilitado.
 
 Valor predeterminado: 0.
 
@@ -910,8 +910,8 @@ Limita la velocidad del intercambio de datos a través de la red en bytes por se
 
 Valores posibles:
 
-- Entero positivo.
-- 0 — El control de la velocidad de los datos está desactivado.
+-   Entero positivo.
+-   0 — El control de la velocidad de los datos está desactivado.
 
 Valor predeterminado: 0.
 
@@ -921,8 +921,8 @@ Limita la velocidad a la que se intercambian datos a través de la red en bytes 
 
 Valores posibles:
 
-- Entero positivo.
-- 0 — El control de la velocidad de los datos está desactivado.
+-   Entero positivo.
+-   0 — El control de la velocidad de los datos está desactivado.
 
 Valor predeterminado: 0.
 
@@ -932,11 +932,11 @@ Especifica cuál de las `uniq*` se deben utilizar para realizar el [COUNT(DISTIN
 
 Valores posibles:
 
-- [uniq](../../query_language/agg_functions/reference.md#agg_function-uniq)
-- [uniqCombined](../../query_language/agg_functions/reference.md#agg_function-uniqcombined)
-- [UniqCombined64](../../query_language/agg_functions/reference.md#agg_function-uniqcombined64)
-- [uniqHLL12](../../query_language/agg_functions/reference.md#agg_function-uniqhll12)
-- [uniqExact](../../query_language/agg_functions/reference.md#agg_function-uniqexact)
+-   [uniq](../../query_language/agg_functions/reference.md#agg_function-uniq)
+-   [uniqCombined](../../query_language/agg_functions/reference.md#agg_function-uniqcombined)
+-   [UniqCombined64](../../query_language/agg_functions/reference.md#agg_function-uniqcombined64)
+-   [uniqHLL12](../../query_language/agg_functions/reference.md#agg_function-uniqhll12)
+-   [uniqExact](../../query_language/agg_functions/reference.md#agg_function-uniqexact)
 
 Valor predeterminado: `uniqExact`.
 
@@ -946,27 +946,27 @@ Habilita o deshabilita la omisión silenciosa de fragmentos no disponibles.
 
 El fragmento se considera no disponible si todas sus réplicas no están disponibles. Una réplica no está disponible en los siguientes casos:
 
-- ClickHouse no se puede conectar a la réplica por ningún motivo.
+-   ClickHouse no se puede conectar a la réplica por ningún motivo.
 
-  Al conectarse a una réplica, ClickHouse realiza varios intentos. Si todos estos intentos fallan, la réplica se considera que no está disponible.
+    Al conectarse a una réplica, ClickHouse realiza varios intentos. Si todos estos intentos fallan, la réplica se considera que no está disponible.
 
-- Replica no se puede resolver a través de DNS.
+-   Replica no se puede resolver a través de DNS.
 
-  Si el nombre de host de la réplica no se puede resolver a través de DNS, puede indicar las siguientes situaciones:
+    Si el nombre de host de la réplica no se puede resolver a través de DNS, puede indicar las siguientes situaciones:
 
-  - El host de réplica no tiene registro DNS. Puede ocurrir en sistemas con DNS dinámico, por ejemplo, [Kubernetes](https://kubernetes.io), donde los nodos pueden ser irresolubles durante el tiempo de inactividad, y esto no es un error.
+    -   El host de réplica no tiene registro DNS. Puede ocurrir en sistemas con DNS dinámico, por ejemplo, [Kubernetes](https://kubernetes.io), donde los nodos pueden ser irresolubles durante el tiempo de inactividad, y esto no es un error.
 
-  - Error de configuración. El archivo de configuración de ClickHouse contiene un nombre de host incorrecto.
+    -   Error de configuración. El archivo de configuración de ClickHouse contiene un nombre de host incorrecto.
 
 Valores posibles:
 
-- 1 — omitir habilitado.
+-   1 — omitir habilitado.
 
-  Si un fragmento no está disponible, ClickHouse devuelve un resultado basado en datos parciales y no informa de problemas de disponibilidad de nodos.
+    Si un fragmento no está disponible, ClickHouse devuelve un resultado basado en datos parciales y no informa de problemas de disponibilidad de nodos.
 
-- 0 — omitiendo deshabilitado.
+-   0 — omitiendo deshabilitado.
 
-  Si un fragmento no está disponible, ClickHouse produce una excepción.
+    Si un fragmento no está disponible, ClickHouse produce una excepción.
 
 Valor predeterminado: 0.
 
@@ -982,9 +982,9 @@ Habilita o deshabilita la ejecución de consultas si [`optimize_skip_unused_shar
 
 Valores posibles:
 
-- 0 - Discapacitados (no lanza)
-- 1: deshabilite la ejecución de consultas solo si la tabla tiene una clave de fragmentación
-- 2: deshabilita la ejecución de consultas independientemente de que se haya definido la clave de fragmentación para la tabla
+-   0 - Discapacitados (no lanza)
+-   1: deshabilite la ejecución de consultas solo si la tabla tiene una clave de fragmentación
+-   2: deshabilita la ejecución de consultas independientemente de que se haya definido la clave de fragmentación para la tabla
 
 Valor predeterminado: 0
 
@@ -996,34 +996,34 @@ Predeterminada, `OPTIMIZE` devuelve con éxito incluso si no hizo nada. Esta con
 
 Valores posibles:
 
-- 1 — Lanzar una excepción está habilitada.
-- 0 — Lanzar una excepción está deshabilitado.
+-   1 — Lanzar una excepción está habilitada.
+-   0 — Lanzar una excepción está deshabilitado.
 
 Valor predeterminado: 0.
 
 ## distributed\_replica\_error\_half\_life {#settings-distributed-replica-error-half-life}
 
-- Tipo: segundos
-- Valor predeterminado: 60 segundos
+-   Tipo: segundos
+-   Valor predeterminado: 60 segundos
 
 Controla la rapidez con la que se ponen a cero los errores en las tablas distribuidas. Si una réplica no está disponible durante algún tiempo, acumula 5 errores y distribut\_replica\_error\_half\_life se establece en 1 segundo, la réplica se considera normal 3 segundos después del último error.
 
 Ver también:
 
-- [Motor de tabla distribuido](../../operations/table_engines/distributed.md)
-- [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
+-   [Motor de tabla distribuido](../../operations/table_engines/distributed.md)
+-   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
 
 ## distributed\_replica\_error\_cap {#settings-distributed-replica-error-cap}
 
-- Tipo: unsigned int
-- Valor predeterminado: 1000
+-   Tipo: unsigned int
+-   Valor predeterminado: 1000
 
 El recuento de errores de cada réplica está limitado a este valor, lo que impide que una sola réplica acumule demasiados errores.
 
 Ver también:
 
-- [Motor de tabla distribuido](../../operations/table_engines/distributed.md)
-- [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
+-   [Motor de tabla distribuido](../../operations/table_engines/distributed.md)
+-   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
 
 ## Distributed\_directory\_monitor\_sleep\_time\_ms {#distributed-directory-monitor-sleep-time-ms}
 
@@ -1031,7 +1031,7 @@ Intervalo base para el [Distribuido](../table_engines/distributed.md) motor de t
 
 Valores posibles:
 
-- Un número entero positivo de milisegundos.
+-   Un número entero positivo de milisegundos.
 
 Valor predeterminado: 100 milisegundos.
 
@@ -1041,7 +1041,7 @@ Intervalo máximo para el [Distribuido](../table_engines/distributed.md) motor d
 
 Valores posibles:
 
-- Un número entero positivo de milisegundos.
+-   Un número entero positivo de milisegundos.
 
 Valor predeterminado: 30000 milisegundos (30 segundos).
 
@@ -1053,8 +1053,8 @@ Cuando el envío por lotes está habilitado, el [Distribuido](../table_engines/d
 
 Valores posibles:
 
-- 1 — Habilitado.
-- 0 — Desactivado.
+-   1 — Habilitado.
+-   0 — Desactivado.
 
 Valor predeterminado: 0.
 
@@ -1067,7 +1067,7 @@ Establece la prioridad ([agradable](https://en.wikipedia.org/wiki/Nice_(Unix))) 
 
 Valores posibles:
 
-- Puede establecer valores en el rango `[-20, 19]`.
+-   Puede establecer valores en el rango `[-20, 19]`.
 
 Los valores más bajos significan mayor prioridad. Hilos con bajo `nice` Los valores de prioridad se ejecutan con más frecuencia que los subprocesos con valores altos. Los valores altos son preferibles para consultas no interactivas de larga ejecución porque les permite renunciar rápidamente a recursos en favor de consultas interactivas cortas cuando llegan.
 
@@ -1079,14 +1079,14 @@ Establece el período para un temporizador de reloj real del [perfilador de cons
 
 Valores posibles:
 
-- Número entero positivo, en nanosegundos.
+-   Número entero positivo, en nanosegundos.
 
-  Valores recomendados:
+    Valores recomendados:
 
-        - 10000000 (100 times a second) nanoseconds and less for single queries.
-        - 1000000000 (once a second) for cluster-wide profiling.
+            - 10000000 (100 times a second) nanoseconds and less for single queries.
+            - 1000000000 (once a second) for cluster-wide profiling.
 
-- 0 para apagar el temporizador.
+-   0 para apagar el temporizador.
 
 Tipo: [UInt64](../../data_types/int_uint.md).
 
@@ -1094,7 +1094,7 @@ Valor predeterminado: 1000000000 nanosegundos (una vez por segundo).
 
 Ver también:
 
-- Tabla del sistema [trace\_log](../system_tables.md#system_tables-trace_log)
+-   Tabla del sistema [trace\_log](../system_tables.md#system_tables-trace_log)
 
 ## Los resultados de la prueba {#query-profiler-cpu-time-period-ns}
 
@@ -1102,14 +1102,14 @@ Establece el período para un temporizador de reloj de CPU [perfilador de consul
 
 Valores posibles:
 
-- Un número entero positivo de nanosegundos.
+-   Un número entero positivo de nanosegundos.
 
-  Valores recomendados:
+    Valores recomendados:
 
-        - 10000000 (100 times a second) nanoseconds and more for single queries.
-        - 1000000000 (once a second) for cluster-wide profiling.
+            - 10000000 (100 times a second) nanoseconds and more for single queries.
+            - 1000000000 (once a second) for cluster-wide profiling.
 
-- 0 para apagar el temporizador.
+-   0 para apagar el temporizador.
 
 Tipo: [UInt64](../../data_types/int_uint.md).
 
@@ -1117,7 +1117,7 @@ Valor predeterminado: 1000000000 nanosegundos.
 
 Ver también:
 
-- Tabla del sistema [trace\_log](../system_tables.md#system_tables-trace_log)
+-   Tabla del sistema [trace\_log](../system_tables.md#system_tables-trace_log)
 
 ## allow\_introspection\_functions {#settings-allow-introspection-functions}
 
@@ -1125,27 +1125,27 @@ Habilita deshabilita [funciones de introspecciones](../../query_language/functio
 
 Valores posibles:
 
-- 1 — Funciones de introspección habilitadas.
-- 0 — Funciones de introspección deshabilitadas.
+-   1 — Funciones de introspección habilitadas.
+-   0 — Funciones de introspección deshabilitadas.
 
 Valor predeterminado: 0.
 
 **Ver también**
 
-- [Analizador de consultas de muestreo](../performance/sampling_query_profiler.md)
-- Tabla del sistema [trace\_log](../system_tables.md#system_tables-trace_log)
+-   [Analizador de consultas de muestreo](../performance/sampling_query_profiler.md)
+-   Tabla del sistema [trace\_log](../system_tables.md#system_tables-trace_log)
 
 ## input\_format\_parallel\_parsing {#input-format-parallel-parsing}
 
-- Tipo: bool
-- Valor predeterminado: True
+-   Tipo: bool
+-   Valor predeterminado: True
 
 Habilitar el análisis paralelo de los formatos de datos para preservar el orden. Solo se admite para los formatos TSV, TKSV, CSV y JSONEachRow.
 
 ## También puede utilizar los siguientes métodos de envío: {#min-chunk-bytes-for-parallel-parsing}
 
-- Tipo: unsigned int
-- Valor predeterminado: 1 MiB
+-   Tipo: unsigned int
+-   Valor predeterminado: 1 MiB
 
 El tamaño mínimo de fragmento en bytes, que cada subproceso analizará en paralelo.
 
@@ -1157,9 +1157,9 @@ Tipo: cadena
 
 Valores posibles:
 
-- `null` — Sin compresión
-- `deflate` — Comprimir con Deflate (zlib)
-- `snappy` — Comprimir con [Rápido](https://google.github.io/snappy/)
+-   `null` — Sin compresión
+-   `deflate` — Comprimir con Deflate (zlib)
+-   `snappy` — Comprimir con [Rápido](https://google.github.io/snappy/)
 
 Valor predeterminado: `snappy` (si está disponible) o `deflate`.
 

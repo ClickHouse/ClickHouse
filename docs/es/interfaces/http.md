@@ -239,11 +239,11 @@ X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_ro
 
 Posibles campos de encabezado:
 
-- `read_rows` — Número de filas leídas.
-- `read_bytes` — Volumen de datos leídos en bytes.
-- `total_rows_to_read` — Número total de filas a leer.
-- `written_rows` — Número de filas escritas.
-- `written_bytes` — Volumen de datos escritos en bytes.
+-   `read_rows` — Número de filas leídas.
+-   `read_bytes` — Volumen de datos leídos en bytes.
+-   `total_rows_to_read` — Número total de filas a leer.
+-   `written_rows` — Número de filas escritas.
+-   `written_bytes` — Volumen de datos escritos en bytes.
 
 Las solicitudes en ejecución no se detienen automáticamente si se pierde la conexión HTTP. El análisis y el formato de datos se realizan en el lado del servidor, y el uso de la red puede ser ineficaz.
 Opcional ‘query\_id’ parámetro se puede pasar como el ID de consulta (cualquier cadena). Para obtener más información, consulte la sección “Settings, replace\_running\_query”.

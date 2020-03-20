@@ -53,18 +53,18 @@ TabSeparated 格式支持输出数据总值（当使用 WITH TOTALS） 以及极
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
 ```
 
-  2014-03-17      1406958
-  2014-03-18      1383658
-  2014-03-19      1405797
-  2014-03-20      1353623
-  2014-03-21      1245779
-  2014-03-22      1031592
-  2014-03-23      1046491
+    2014-03-17      1406958
+    2014-03-18      1383658
+    2014-03-19      1405797
+    2014-03-20      1353623
+    2014-03-21      1245779
+    2014-03-22      1031592
+    2014-03-23      1046491
 
-  0000-00-00      8873898
+    0000-00-00      8873898
 
-  2014-03-17      1031592
-  2014-03-23      1406958
+    2014-03-17      1031592
+    2014-03-23      1406958
 
 ### 数据解析方式 {#shu-ju-jie-xi-fang-shi}
 
@@ -83,10 +83,10 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 字符串以反斜线转义的特殊字符输出。 以下转义序列用于输出：`\b`，`\f`，`\r`，`\n`，`\t`，`\0`，`\'`，`\\`。 解析还支持`\a`，`\v`和`\xHH`（十六进制转义字符）和任何`\c`字符，其中`c`是任何字符（这些序列被转换为`c`）。 因此，读取数据支持可以将换行符写为`\n`或`\`的格式，或者换行。例如，字符串 `Hello world` 在单词之间换行而不是空格可以解析为以下任何形式：
 
-  Hello\nworld
+    Hello\nworld
 
-  Hello\
-  world
+    Hello\
+    world
 
 第二种形式是支持的，因为 MySQL 读取 tab-separated 格式数据集的时候也会使用它。
 
@@ -130,39 +130,39 @@ Format string `format_schema_rows` specifies rows format with the following synt
 
 `delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
 
-  where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as `$$`),
-  `column_i` is a name of a column whose values are to be selected or inserted (if empty, then column will be skipped),
-  `serializeAs_i` is an escaping rule for the column values. The following escaping rules are supported:
+    where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as `$$`),
+    `column_i` is a name of a column whose values are to be selected or inserted (if empty, then column will be skipped),
+    `serializeAs_i` is an escaping rule for the column values. The following escaping rules are supported:
 
-  - `CSV`, `JSON`, `XML` (similarly to the formats of the same names)
-  - `Escaped` (similarly to `TSV`)
-  - `Quoted` (similarly to `Values`)
-  - `Raw` (without escaping, similarly to `TSVRaw`)
-  - `None` (no escaping rule, see further)
+    - `CSV`, `JSON`, `XML` (similarly to the formats of the same names)
+    - `Escaped` (similarly to `TSV`)
+    - `Quoted` (similarly to `Values`)
+    - `Raw` (without escaping, similarly to `TSVRaw`)
+    - `None` (no escaping rule, see further)
 
-  If escaping rule is omitted, then`None` will be used. `XML` and `Raw` are suitable only for output.
+    If escaping rule is omitted, then`None` will be used. `XML` and `Raw` are suitable only for output.
 
-  So, for the following format string:
+    So, for the following format string:
 
-    `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
+      `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
 
-  the values of `SearchPhrase`, `c` and `price` columns, which are escaped as `Quoted`, `Escaped` and `JSON` will be printed (for select) or will be expected (for insert) between `Search phrase: `, `, count: `, `, ad price: $` and `;` delimiters respectively. For example:
+    the values of `SearchPhrase`, `c` and `price` columns, which are escaped as `Quoted`, `Escaped` and `JSON` will be printed (for select) or will be expected (for insert) between `Search phrase: `, `, count: `, `, ad price: $` and `;` delimiters respectively. For example:
 
-  `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
+    `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
 
 The `format_schema_rows_between_delimiter` setting specifies delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
 
 Format string `format_schema` has the same syntax as `format_schema_rows` and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
 
-- `data` is the rows with data in `format_schema_rows` format, separated by `format_schema_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
-- `totals` is the row with total values in `format_schema_rows` format (when using WITH TOTALS)
-- `min` is the row with minimum values in `format_schema_rows` format (when extremes is set to 1)
-- `max` is the row with maximum values in `format_schema_rows` format (when extremes is set to 1)
-- `rows` is the total number of output rows
-- `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows\_before\_limit\_at\_least is the exact number of rows there would have been without a LIMIT.
-- `time` is the request execution time in seconds
-- `rows_read` is the number of rows have been read
-- `bytes_read` is the number of bytes (uncompressed) have been read
+-   `data` is the rows with data in `format_schema_rows` format, separated by `format_schema_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
+-   `totals` is the row with total values in `format_schema_rows` format (when using WITH TOTALS)
+-   `min` is the row with minimum values in `format_schema_rows` format (when extremes is set to 1)
+-   `max` is the row with maximum values in `format_schema_rows` format (when extremes is set to 1)
+-   `rows` is the total number of output rows
+-   `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows\_before\_limit\_at\_least is the exact number of rows there would have been without a LIMIT.
+-   `time` is the request execution time in seconds
+-   `rows_read` is the number of rows have been read
+-   `bytes_read` is the number of bytes (uncompressed) have been read
 
 The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified (or `None` must be specified explicitly). The remaining placeholders may have any escaping rule specified.
 If the `format_schema` setting is an empty string, `${data}` is used as default value.
@@ -212,10 +212,10 @@ format_schema_rows_between_delimiter = '\n    '
 
 `Insert` example:
 
-  Some header
-  Page views: 5, User id: 4324182021466249494, Useless field: hello, Duration: 146, Sign: -1
-  Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185, Sign: 1
-  Total rows: 2
+    Some header
+    Page views: 5, User id: 4324182021466249494, Useless field: hello, Duration: 146, Sign: -1
+    Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185, Sign: 1
+    Total rows: 2
 
 ``` sql
 INSERT INTO UserActivity FORMAT Template SETTINGS
@@ -243,16 +243,16 @@ format_schema_rows_between_delimiter = ','
 
 与 `TabSeparated` 格式类似，但它输出的是 `name=value` 的格式。名称会和 `TabSeparated` 格式一样被转义，`=` 字符也会被转义。
 
-  SearchPhrase=   count()=8267016
-  SearchPhrase=bathroom interior design    count()=2166
-  SearchPhrase=yandex     count()=1655
-  SearchPhrase=2014 spring fashion    count()=1549
-  SearchPhrase=freeform photos       count()=1480
-  SearchPhrase=angelina jolie    count()=1245
-  SearchPhrase=omsk       count()=1112
-  SearchPhrase=photos of dog breeds    count()=1091
-  SearchPhrase=curtain designs        count()=1064
-  SearchPhrase=baku       count()=1000
+    SearchPhrase=   count()=8267016
+    SearchPhrase=bathroom interior design    count()=2166
+    SearchPhrase=yandex     count()=1655
+    SearchPhrase=2014 spring fashion    count()=1549
+    SearchPhrase=freeform photos       count()=1480
+    SearchPhrase=angelina jolie    count()=1245
+    SearchPhrase=omsk       count()=1112
+    SearchPhrase=photos of dog breeds    count()=1091
+    SearchPhrase=curtain designs        count()=1064
+    SearchPhrase=baku       count()=1000
 
 [NULL](../query_language/syntax.md) 输出为 `\N`。
 
@@ -260,7 +260,7 @@ format_schema_rows_between_delimiter = ','
 SELECT * FROM t_null FORMAT TSKV
 ```
 
-  x=1 y=\N
+    x=1 y=\N
 
 当有大量的小列时，这种格式是低效的，通常没有理由使用它。它被用于 Yandex 公司的一些部门。
 
@@ -274,7 +274,7 @@ SELECT * FROM t_null FORMAT TSKV
 
 格式化的时候，行是用双引号括起来的。字符串中的双引号会以两个双引号输出，除此之外没有其他规则来做字符转义了。日期和时间也会以双引号包括。数字的输出不带引号。值由一个单独的字符隔开，这个字符默认是 `,`。行使用 Unix 换行符（LF）分隔。 数组序列化成 CSV 规则如下：首先将数组序列化为 TabSeparated 格式的字符串，然后将结果字符串用双引号包括输出到 CSV。CSV 格式的元组被序列化为单独的列（即它们在元组中的嵌套关系会丢失）。
 
-  clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
+    clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 
 \*默认情况下间隔符是 `,` ，在 [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) 中可以了解更多间隔符配置。
 
@@ -531,9 +531,9 @@ SELECT * FROM json_each_row_nested
 SELECT * FROM t_null
 ```
 
-  ┌─x─┬────y─┐
-  │ 1 │ ᴺᵁᴸᴸ │
-  └───┴──────┘
+    ┌─x─┬────y─┐
+    │ 1 │ ᴺᵁᴸᴸ │
+    └───┴──────┘
 
 为避免将太多数据传输到终端，只打印前10,000行。 如果行数大于或等于10,000，则会显示消息«Showed first 10 000»。
 该格式仅适用于输出查询结果，但不适用于解析输入（将数据插入到表中）。
@@ -544,26 +544,26 @@ Pretty格式支持输出总值（当使用 WITH TOTALS 时）和极值（当 `ex
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
-  ┌──EventDate─┬───────c─┐
-  │ 2014-03-17 │ 1406958 │
-  │ 2014-03-18 │ 1383658 │
-  │ 2014-03-19 │ 1405797 │
-  │ 2014-03-20 │ 1353623 │
-  │ 2014-03-21 │ 1245779 │
-  │ 2014-03-22 │ 1031592 │
-  │ 2014-03-23 │ 1046491 │
-  └────────────┴─────────┘
+    ┌──EventDate─┬───────c─┐
+    │ 2014-03-17 │ 1406958 │
+    │ 2014-03-18 │ 1383658 │
+    │ 2014-03-19 │ 1405797 │
+    │ 2014-03-20 │ 1353623 │
+    │ 2014-03-21 │ 1245779 │
+    │ 2014-03-22 │ 1031592 │
+    │ 2014-03-23 │ 1046491 │
+    └────────────┴─────────┘
 
-  Totals:
-  ┌──EventDate─┬───────c─┐
-  │ 0000-00-00 │ 8873898 │
-  └────────────┴─────────┘
+    Totals:
+    ┌──EventDate─┬───────c─┐
+    │ 0000-00-00 │ 8873898 │
+    └────────────┴─────────┘
 
-  Extremes:
-  ┌──EventDate─┬───────c─┐
-  │ 2014-03-17 │ 1031592 │
-  │ 2014-03-23 │ 1406958 │
-  └────────────┴─────────┘
+    Extremes:
+    ┌──EventDate─┬───────c─┐
+    │ 2014-03-17 │ 1031592 │
+    │ 2014-03-23 │ 1406958 │
+    └────────────┴─────────┘
 
 ## PrettyCompact {#prettycompact}
 
@@ -616,9 +616,9 @@ FixedString 被简单地表示为一个字节序列。
 
 Similar to [RowBinary](#rowbinary), but with added header:
 
-- [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
-- N `String`s specifying column names
-- N `String`s specifying column types
+-   [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
+-   N `String`s specifying column names
+-   N `String`s specifying column types
 
 ## Values {#data-format-values}
 
@@ -640,10 +640,10 @@ Similar to [RowBinary](#rowbinary), but with added header:
 SELECT * FROM t_null FORMAT Vertical
 ```
 
-  Row 1:
-  ──────
-  x: 1
-  y: ᴺᵁᴸᴸ
+    Row 1:
+    ──────
+    x: 1
+    y: ᴺᵁᴸᴸ
 
 该格式仅适用于输出查询结果，但不适用于解析输入（将数据插入到表中）。
 
@@ -654,23 +654,23 @@ SELECT * FROM t_null FORMAT Vertical
 
 示例:
 
-  :) SHOW CREATE TABLE geonames FORMAT VerticalRaw;
-  Row 1:
-  ──────
-  statement: CREATE TABLE default.geonames ( geonameid UInt32, date Date DEFAULT CAST('2017-12-08' AS Date)) ENGINE = MergeTree(date, geonameid, 8192)
+    :) SHOW CREATE TABLE geonames FORMAT VerticalRaw;
+    Row 1:
+    ──────
+    statement: CREATE TABLE default.geonames ( geonameid UInt32, date Date DEFAULT CAST('2017-12-08' AS Date)) ENGINE = MergeTree(date, geonameid, 8192)
 
-  :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT VerticalRaw;
-  Row 1:
-  ──────
-  test: string with 'quotes' and   with some special
-   characters
+    :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT VerticalRaw;
+    Row 1:
+    ──────
+    test: string with 'quotes' and   with some special
+     characters
 
 和 Vertical 格式相比：
 
-  :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical;
-  Row 1:
-  ──────
-  test: string with \'quotes\' and \t with some special \n characters
+    :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical;
+    Row 1:
+    ──────
+    test: string with \'quotes\' and \t with some special \n characters
 
 ## XML {#xml}
 
@@ -758,10 +758,10 @@ SELECT SearchPhrase, count() AS c FROM test.hits
 
 其中 `schema.capnp` 描述如下：
 
-  struct Message {
-    SearchPhrase @0 :Text;
-    c @1 :Uint64;
-  }
+    struct Message {
+      SearchPhrase @0 :Text;
+      c @1 :Uint64;
+    }
 
 格式文件存储的目录可以在服务配置中的 [format\_schema\_path](../operations/server_settings/settings.md) 指定。
 
@@ -891,8 +891,8 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
 
 Column names must:
 
-- start with `[A-Za-z_]`
-- subsequently contain only `[A-Za-z0-9_]`
+-   start with `[A-Za-z_]`
+-   subsequently contain only `[A-Za-z0-9_]`
 
 Output Avro file compression and sync interval can be configured with [output\_format\_avro\_codec](../operations/settings/settings.md#settings-output_format_avro_codec) and [output\_format\_avro\_sync\_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) respectively.
 

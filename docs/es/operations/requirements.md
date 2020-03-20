@@ -14,8 +14,8 @@ Recomendamos utilizar un mínimo de 4 GB de RAM para realizar consultas no trivi
 
 El volumen requerido de RAM depende de:
 
-- La complejidad de las consultas.
-- La cantidad de datos que se procesan en las consultas.
+-   La complejidad de las consultas.
+-   La cantidad de datos que se procesan en las consultas.
 
 Para calcular el volumen requerido de RAM, debe estimar el tamaño de los datos temporales para [GRUPO POR](../query_language/select.md#select-group-by-clause), [DISTINTO](../query_language/select.md#select-distinct), [UNIR](../query_language/select.md#select-join) y otras operaciones que utilice.
 
@@ -31,13 +31,13 @@ Necesita tener 2 GB de espacio libre en disco para instalar ClickHouse.
 
 El volumen de almacenamiento requerido para sus datos debe calcularse por separado. La evaluación debe incluir:
 
-- Estimación del volumen de datos.
+-   Estimación del volumen de datos.
 
-  Puede tomar una muestra de los datos y obtener el tamaño promedio de una fila de ella. Luego multiplique el valor por el número de filas que planea almacenar.
+    Puede tomar una muestra de los datos y obtener el tamaño promedio de una fila de ella. Luego multiplique el valor por el número de filas que planea almacenar.
 
-- El coeficiente de compresión de datos.
+-   El coeficiente de compresión de datos.
 
-  Para estimar el coeficiente de compresión de datos, cargue una muestra de sus datos en ClickHouse y compare el tamaño real de los datos con el tamaño de la tabla almacenada. Por ejemplo, los datos de clickstream generalmente se comprimen de 6 a 10 veces.
+    Para estimar el coeficiente de compresión de datos, cargue una muestra de sus datos en ClickHouse y compare el tamaño real de los datos con el tamaño de la tabla almacenada. Por ejemplo, los datos de clickstream generalmente se comprimen de 6 a 10 veces.
 
 Para calcular el volumen final de datos que se almacenarán, aplique el coeficiente de compresión al volumen de datos estimado. Si planea almacenar datos en varias réplicas, multiplique el volumen estimado por el número de réplicas.
 

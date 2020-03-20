@@ -22,7 +22,7 @@ domain(url)
 
 **Parámetros**
 
-- `url` — URL. Tipo: [Cadena](../../data_types/string.md).
+-   `url` — URL. Tipo: [Cadena](../../data_types/string.md).
 
 La URL se puede especificar con o sin un esquema. Ejemplos:
 
@@ -42,8 +42,8 @@ yandex.com
 
 **Valores devueltos**
 
-- Nombre de host. Si ClickHouse puede analizar la cadena de entrada como una URL.
-- Cadena vacía. Si ClickHouse no puede analizar la cadena de entrada como una URL.
+-   Nombre de host. Si ClickHouse puede analizar la cadena de entrada como una URL.
+-   Cadena vacía. Si ClickHouse no puede analizar la cadena de entrada como una URL.
 
 Tipo: `String`.
 
@@ -73,7 +73,7 @@ topLevelDomain(url)
 
 **Parámetros**
 
-- `url` — URL. Tipo: [Cadena](../../data_types/string.md).
+-   `url` — URL. Tipo: [Cadena](../../data_types/string.md).
 
 La URL se puede especificar con o sin un esquema. Ejemplos:
 
@@ -85,8 +85,8 @@ https://yandex.com/time/
 
 **Valores devueltos**
 
-- Nombre de dominio. Si ClickHouse puede analizar la cadena de entrada como una URL.
-- Cadena vacía. Si ClickHouse no puede analizar la cadena de entrada como una URL.
+-   Nombre de dominio. Si ClickHouse puede analizar la cadena de entrada como una URL.
+-   Cadena vacía. Si ClickHouse no puede analizar la cadena de entrada como una URL.
 
 Tipo: `String`.
 

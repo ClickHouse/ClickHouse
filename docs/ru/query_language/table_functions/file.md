@@ -8,9 +8,9 @@ file(path, format, structure)
 
 **Входные параметры**
 
-- `path` — относительный путь до файла от [user\_files\_path](../../operations/server_settings/settings.md#server_settings-user_files_path). Путь к файлу поддерживает следующие шаблоны в режиме доступа только для чтения `*`, `?`, `{abc,def}` и `{N..M}`, где `N`, `M` — числа, \``'abc', 'def'` — строки.
-- `format` — [формат](../../interfaces/formats.md#formats) файла.
-- `structure` — структура таблицы. Формат `'colunmn1_name column1_ype, column2_name column2_type, ...'`.
+-   `path` — относительный путь до файла от [user\_files\_path](../../operations/server_settings/settings.md#server_settings-user_files_path). Путь к файлу поддерживает следующие шаблоны в режиме доступа только для чтения `*`, `?`, `{abc,def}` и `{N..M}`, где `N`, `M` — числа, \``'abc', 'def'` — строки.
+-   `format` — [формат](../../interfaces/formats.md#formats) файла.
+-   `structure` — структура таблицы. Формат `'colunmn1_name column1_ype, column2_name column2_type, ...'`.
 
 **Возвращаемое значение**
 
@@ -47,10 +47,10 @@ LIMIT 2
 
 Шаблоны могут содержаться в нескольких компонентах пути. Обрабатываются только существующие файлы, название которых целиком удовлетворяет шаблону (не только суффиксом или префиксом).
 
-- `*` — Заменяет любое количество любых символов кроме `/`, включая отсутствие символов.
-- `?` — Заменяет ровно один любой символ.
-- `{some_string,another_string,yet_another_one}` — Заменяет любую из строк `'some_string', 'another_string', 'yet_another_one'`.
-- `{N..M}` — Заменяет любое число в интервале от `N` до `M` включительно.
+-   `*` — Заменяет любое количество любых символов кроме `/`, включая отсутствие символов.
+-   `?` — Заменяет ровно один любой символ.
+-   `{some_string,another_string,yet_another_one}` — Заменяет любую из строк `'some_string', 'another_string', 'yet_another_one'`.
+-   `{N..M}` — Заменяет любое число в интервале от `N` до `M` включительно.
 
 Конструкция с `{}` аналогична табличной функции [remote](remote.md).
 
@@ -58,12 +58,12 @@ LIMIT 2
 
 1.  Предположим у нас есть несколько файлов со следующими относительными путями:
 
-- ‘some\_dir/some\_file\_1’
-- ‘some\_dir/some\_file\_2’
-- ‘some\_dir/some\_file\_3’
-- ‘another\_dir/some\_file\_1’
-- ‘another\_dir/some\_file\_2’
-- ‘another\_dir/some\_file\_3’
+-   ‘some\_dir/some\_file\_1’
+-   ‘some\_dir/some\_file\_2’
+-   ‘some\_dir/some\_file\_3’
+-   ‘another\_dir/some\_file\_1’
+-   ‘another\_dir/some\_file\_2’
+-   ‘another\_dir/some\_file\_3’
 
 1.  Запросим количество строк в этих файлах:
 
@@ -97,11 +97,11 @@ FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
 
 ## Виртуальные столбцы {#virtualnye-stolbtsy}
 
-- `_path` — Путь к файлу.
-- `_file` — Имя файла.
+-   `_path` — Путь к файлу.
+-   `_file` — Имя файла.
 
 **Смотрите также**
 
-- [Виртуальные столбцы](index.md#table_engines-virtual_columns)
+-   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/file/) <!--hide-->

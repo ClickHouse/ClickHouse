@@ -32,8 +32,8 @@ SELECT bitTest(number, index)
 
 **Parámetros**
 
-- `number` – número entero.
-- `index` – posición de bit.
+-   `number` – número entero.
+-   `index` – posición de bit.
 
 **Valores devueltos**
 
@@ -97,8 +97,8 @@ SELECT bitTestAll(number, index1, index2, index3, index4, ...)
 
 **Parámetros**
 
-- `number` – número entero.
-- `index1`, `index2`, `index3`, `index4` – posiciones de bit. Por ejemplo, para un conjunto de posiciones (`index1`, `index2`, `index3`, `index4`) es verdadero si y solo si todas sus posiciones son verdaderas (`index1` ⋀ `index2`, ⋀ `index3` ⋀ `index4`).
+-   `number` – número entero.
+-   `index1`, `index2`, `index3`, `index4` – posiciones de bit. Por ejemplo, para un conjunto de posiciones (`index1`, `index2`, `index3`, `index4`) es verdadero si y solo si todas sus posiciones son verdaderas (`index1` ⋀ `index2`, ⋀ `index3` ⋀ `index4`).
 
 **Valores devueltos**
 
@@ -162,8 +162,8 @@ SELECT bitTestAny(number, index1, index2, index3, index4, ...)
 
 **Parámetros**
 
-- `number` – número entero.
-- `index1`, `index2`, `index3`, `index4` – posiciones de bit.
+-   `number` – número entero.
+-   `index1`, `index2`, `index3`, `index4` – posiciones de bit.
 
 **Valores devueltos**
 

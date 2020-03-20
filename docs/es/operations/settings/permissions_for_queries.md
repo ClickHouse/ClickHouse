@@ -10,8 +10,8 @@ Las consultas en ClickHouse se pueden dividir en varios tipos:
 
 La siguiente configuración regula los permisos de usuario según el tipo de consulta:
 
-- [sólo lectura](#settings_readonly) — Restringe los permisos para todos los tipos de consultas excepto las consultas DDL.
-- [Método de codificación de datos:](#settings_allow_ddl) — Restringe los permisos para consultas DDL.
+-   [sólo lectura](#settings_readonly) — Restringe los permisos para todos los tipos de consultas excepto las consultas DDL.
+-   [Método de codificación de datos:](#settings_allow_ddl) — Restringe los permisos para consultas DDL.
 
 `KILL QUERY` se puede realizar con cualquier configuración.
 
@@ -23,9 +23,9 @@ Vea cómo las consultas se dividen en tipos [arriba](#permissions_for_queries).
 
 Valores posibles:
 
-- 0 — Se permiten todas las consultas.
-- 1 — Sólo se permiten consultas de datos de lectura.
-- 2 — Leer datos y cambiar las consultas de configuración están permitidos.
+-   0 — Se permiten todas las consultas.
+-   1 — Sólo se permiten consultas de datos de lectura.
+-   2 — Leer datos y cambiar las consultas de configuración están permitidos.
 
 Después de configurar `readonly = 1` el usuario no puede cambiar `readonly` y `allow_ddl` configuración en la sesión actual.
 
@@ -44,8 +44,8 @@ Vea cómo las consultas se dividen en tipos [arriba](#permissions_for_queries).
 
 Valores posibles:
 
-- 0 — No se permiten consultas DDL.
-- 1 — Se permiten consultas DDL.
+-   0 — No se permiten consultas DDL.
+-   1 — Se permiten consultas DDL.
 
 No se puede ejecutar `SET allow_ddl = 1` si `allow_ddl = 0` para la sesión actual.
 

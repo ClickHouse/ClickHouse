@@ -66,40 +66,40 @@ Esto creará el `dbms/programs/clickhouse` ejecutable, que se puede usar con `cl
 
 La compilación requiere los siguientes componentes:
 
-- Git (se usa solo para pagar las fuentes, no es necesario para la compilación)
-- CMake 3.10 o más reciente
-- Ninja (recomendado) o Hacer
-- Compilador de C ++: gcc 9 o clang 8 o más reciente
-- Enlazador: lld u oro (el clásico GNU ld no funcionará)
-- Python (solo se usa dentro de la compilación LLVM y es opcional)
+-   Git (se usa solo para pagar las fuentes, no es necesario para la compilación)
+-   CMake 3.10 o más reciente
+-   Ninja (recomendado) o Hacer
+-   Compilador de C ++: gcc 9 o clang 8 o más reciente
+-   Enlazador: lld u oro (el clásico GNU ld no funcionará)
+-   Python (solo se usa dentro de la compilación LLVM y es opcional)
 
 Si todos los componentes están instalados, puede compilar de la misma manera que los pasos anteriores.
 
 Ejemplo para Ubuntu Eoan:
 
-  sudo apt update
-  sudo apt install git cmake ninja-build g++ python
-  git clone --recursive https://github.com/ClickHouse/ClickHouse.git
-  mkdir build && cd build
-  cmake ../ClickHouse
-  ninja
+    sudo apt update
+    sudo apt install git cmake ninja-build g++ python
+    git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+    mkdir build && cd build
+    cmake ../ClickHouse
+    ninja
 
 Ejemplo de OpenSUSE Tumbleweed:
 
-  sudo zypper install git cmake ninja gcc-c++ python lld
-  git clone --recursive https://github.com/ClickHouse/ClickHouse.git
-  mkdir build && cd build
-  cmake ../ClickHouse
-  ninja
+    sudo zypper install git cmake ninja gcc-c++ python lld
+    git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+    mkdir build && cd build
+    cmake ../ClickHouse
+    ninja
 
 Ejemplo de Fedora Rawhide:
 
-  sudo yum update
-  yum --nogpg install git cmake make gcc-c++ python2
-  git clone --recursive https://github.com/ClickHouse/ClickHouse.git
-  mkdir build && cd build
-  cmake ../ClickHouse
-  make -j $(nproc)
+    sudo yum update
+    yum --nogpg install git cmake make gcc-c++ python2
+    git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+    mkdir build && cd build
+    cmake ../ClickHouse
+    make -j $(nproc)
 
 # Usted no tiene que construir ClickHouse {#you-dont-have-to-build-clickhouse}
 

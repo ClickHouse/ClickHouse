@@ -86,8 +86,8 @@ En la mayoría de los casos, el método de lectura solo es responsable de leer l
 
 Pero hay excepciones notables:
 
-- La consulta AST se pasa al `read` y el motor de tablas puede usarlo para derivar el uso del índice y leer menos datos de una tabla.
-- A veces, el motor de tablas puede procesar los datos a una etapa específica. Por ejemplo, `StorageDistributed` puede enviar una consulta a servidores remotos, pedirles que procesen datos a una etapa donde se puedan fusionar datos de diferentes servidores remotos y devolver esos datos preprocesados. El intérprete de consultas termina de procesar los datos.
+-   La consulta AST se pasa al `read` y el motor de tablas puede usarlo para derivar el uso del índice y leer menos datos de una tabla.
+-   A veces, el motor de tablas puede procesar los datos a una etapa específica. Por ejemplo, `StorageDistributed` puede enviar una consulta a servidores remotos, pedirles que procesen datos a una etapa donde se puedan fusionar datos de diferentes servidores remotos y devolver esos datos preprocesados. El intérprete de consultas termina de procesar los datos.
 
 La mesa de `read` método puede devolver múltiples `IBlockInputStream` objetos para permitir el procesamiento de datos en paralelo. Estos flujos de entrada de bloques múltiples pueden leer de una tabla en paralelo. A continuación, puede ajustar estas secuencias con varias transformaciones (como la evaluación de expresiones o el filtrado) que se pueden calcular de forma independiente y crear un `UnionBlockInputStream` encima de ellos, para leer desde múltiples flujos en paralelo.
 
@@ -139,9 +139,9 @@ Los estados de agregación se pueden serializar y deserializar para pasar a trav
 
 El servidor implementa varias interfaces diferentes:
 
-- Una interfaz HTTP para cualquier cliente extranjero.
-- Una interfaz TCP para el cliente nativo de ClickHouse y para la comunicación entre servidores durante la ejecución de consultas distribuidas.
-- Una interfaz para transferir datos para la replicación.
+-   Una interfaz HTTP para cualquier cliente extranjero.
+-   Una interfaz TCP para el cliente nativo de ClickHouse y para la comunicación entre servidores durante la ejecución de consultas distribuidas.
+-   Una interfaz para transferir datos para la replicación.
 
 Internamente, es solo un servidor multiproceso básico sin corutinas, fibras, etc. Dado que el servidor no está diseñado para procesar una alta tasa de consultas simples, sino que está destinado a procesar una tasa relativamente baja de consultas complejas, cada uno de ellos puede procesar una gran cantidad de datos para análisis.
 

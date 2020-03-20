@@ -1,4 +1,4 @@
-<div markdown="1" markdown="1" dir="rtl">
+<div markdown="1" markdown="1" markdown="1" dir="rtl">
 
 # کتابخانه های مشتری شخص ثالث {#khtbkhnh-hy-mshtry-shkhs-thlth}
 

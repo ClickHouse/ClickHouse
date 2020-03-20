@@ -21,7 +21,7 @@ Las funciones utiliza [Un algoritmo de árbol de decisión paralelo de transmisi
 
 -   [Matriz](../../data_types/array.md) de [Tuples](../../data_types/tuple.md) del siguiente formato:
 
-        [(lower_1, upper_1, height_1), ... (lower_N, upper_N, height_N)]
+          [(lower_1, upper_1, height_1), ... (lower_N, upper_N, height_N)]
 
     -   `lower` — Límite inferior del contenedor.
     -   `upper` — Límite superior del contenedor.

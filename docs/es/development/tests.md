@@ -148,11 +148,11 @@ Motivación:
 
 Normalmente lanzamos y ejecutamos todas las pruebas en una sola variante de compilación ClickHouse. Pero hay variantes de construcción alternativas que no se prueban a fondo. Ejemplos:
 
-- construir en FreeBSD;
-- construir en Debian con bibliotecas de paquetes del sistema;
-- construir con enlaces compartidos de bibliotecas;
-- construir en la plataforma AArch64;
-- construir en la plataforma PowerPc.
+-   construir en FreeBSD;
+-   construir en Debian con bibliotecas de paquetes del sistema;
+-   construir con enlaces compartidos de bibliotecas;
+-   construir en la plataforma AArch64;
+-   construir en la plataforma PowerPc.
 
 Por ejemplo, construir con paquetes del sistema es una mala práctica, porque no podemos garantizar qué versión exacta de paquetes tendrá un sistema. Pero esto es realmente necesario para los mantenedores de Debian. Por esta razón, al menos tenemos que admitir esta variante de construcción. Otro ejemplo: la vinculación compartida es una fuente común de problemas, pero es necesaria para algunos entusiastas.
 

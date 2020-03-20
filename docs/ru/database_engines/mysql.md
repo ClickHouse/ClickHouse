@@ -6,11 +6,11 @@
 
 Не поддерживаемые виды запросов:
 
-- `ATTACH`/`DETACH`
-- `DROP`
-- `RENAME`
-- `CREATE TABLE`
-- `ALTER`
+-   `ATTACH`/`DETACH`
+-   `DROP`
+-   `RENAME`
+-   `CREATE TABLE`
+-   `ALTER`
 
 ## Создание базы данных {#sozdanie-bazy-dannykh}
 
@@ -21,10 +21,10 @@ ENGINE = MySQL('host:port', 'database', 'user', 'password')
 
 **Параметры движка**
 
-- `host:port` — адрес сервера MySQL.
-- `database` — имя базы данных на удалённом сервере.
-- `user` — пользователь MySQL.
-- `password` — пароль пользователя.
+-   `host:port` — адрес сервера MySQL.
+-   `database` — имя базы данных на удалённом сервере.
+-   `user` — пользователь MySQL.
+-   `password` — пароль пользователя.
 
 ## Поддержка типов данных {#podderzhka-tipov-dannykh}
 

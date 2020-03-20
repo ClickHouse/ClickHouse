@@ -20,7 +20,7 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 Чтобы установить официальные пакеты, пропишите репозиторий Яндекса в `/etc/apt/sources.list` или в отдельный файл `/etc/apt/sources.list.d/clickhouse.list`:
 
-  deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
+    deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 
 Если вы хотите использовать наиболее свежую тестовую, замените `stable` на `testing` (не рекомендуется для production окружений).
 
@@ -97,13 +97,13 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 
 Можно скомпилировать пакеты и установить их, либо использовать программы без установки пакетов. Также при ручой сборке можно отключить необходимость поддержки набора инструкций SSE 4.2 или собрать под процессоры архитектуры AArch64.
 
-  Client: dbms/programs/clickhouse-client
-  Server: dbms/programs/clickhouse-server
+    Client: dbms/programs/clickhouse-client
+    Server: dbms/programs/clickhouse-server
 
 Для работы собранного вручную сервера необходимо создать директории для данных и метаданных, а также сделать их `chown` для желаемого пользователя. Пути к этим директориям могут быть изменены в конфигурационном файле сервера (src/dbms/programs/server/config.xml), по умолчанию используются следующие:
 
-  /opt/clickhouse/data/default/
-  /opt/clickhouse/metadata/default/
+    /opt/clickhouse/data/default/
+    /opt/clickhouse/metadata/default/
 
 На Gentoo для установки ClickHouse из исходного кода можно использовать просто `emerge clickhouse`.
 

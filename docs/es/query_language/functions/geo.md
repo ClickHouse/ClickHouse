@@ -10,10 +10,10 @@ greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 
 **Parámetros de entrada**
 
-- `lon1Deg` — Longitud del primer punto en grados. Gama: `[-180°, 180°]`.
-- `lat1Deg` — Latitud del primer punto en grados. Gama: `[-90°, 90°]`.
-- `lon2Deg` — Longitud del segundo punto en grados. Gama: `[-180°, 180°]`.
-- `lat2Deg` — Latitud del segundo punto en grados. Gama: `[-90°, 90°]`.
+-   `lon1Deg` — Longitud del primer punto en grados. Gama: `[-180°, 180°]`.
+-   `lat1Deg` — Latitud del primer punto en grados. Gama: `[-90°, 90°]`.
+-   `lon2Deg` — Longitud del segundo punto en grados. Gama: `[-180°, 180°]`.
+-   `lat2Deg` — Latitud del segundo punto en grados. Gama: `[-90°, 90°]`.
 
 Los valores positivos corresponden a latitud norte y longitud este, y los valores negativos corresponden a latitud sur y longitud oeste.
 
@@ -46,9 +46,9 @@ pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
 
 **Parámetros de entrada**
 
-- `x, y` — Coordenadas de un punto en el plano.
-- `xᵢ, yᵢ` — Coordenadas del centro de la `i`-ésimo puntos suspensivos.
-- `aᵢ, bᵢ` — Ejes del `i`-ésimo puntos suspensivos en unidades de coordenadas x, y.
+-   `x, y` — Coordenadas de un punto en el plano.
+-   `xᵢ, yᵢ` — Coordenadas del centro de la `i`-ésimo puntos suspensivos.
+-   `aᵢ, bᵢ` — Ejes del `i`-ésimo puntos suspensivos en unidades de coordenadas x, y.
 
 Los parámetros de entrada deben ser `2+4⋅n`, donde `n` es el número de puntos suspensivos.
 
@@ -78,9 +78,9 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 **Valores de entrada**
 
-- `(x, y)` — Coordenadas de un punto en el plano. Tipo de datos — [Tupla](../../data_types/tuple.md) — Una tupla de dos números.
-- `[(a, b), (c, d) ...]` — Vértices de polígono. Tipo de datos — [Matriz](../../data_types/array.md). Cada vértice está representado por un par de coordenadas `(a, b)`. Los vértices deben especificarse en sentido horario o antihorario. El número mínimo de vértices es 3. El polígono debe ser constante.
-- La función también admite polígonos con agujeros (secciones recortadas). En este caso, agregue polígonos que definan las secciones recortadas utilizando argumentos adicionales de la función. La función no admite polígonos no simplemente conectados.
+-   `(x, y)` — Coordenadas de un punto en el plano. Tipo de datos — [Tupla](../../data_types/tuple.md) — Una tupla de dos números.
+-   `[(a, b), (c, d) ...]` — Vértices de polígono. Tipo de datos — [Matriz](../../data_types/array.md). Cada vértice está representado por un par de coordenadas `(a, b)`. Los vértices deben especificarse en sentido horario o antihorario. El número mínimo de vértices es 3. El polígono debe ser constante.
+-   La función también admite polígonos con agujeros (secciones recortadas). En este caso, agregue polígonos que definan las secciones recortadas utilizando argumentos adicionales de la función. La función no admite polígonos no simplemente conectados.
 
 **Valores devueltos**
 
@@ -109,13 +109,13 @@ geohashEncode(longitude, latitude, [precision])
 
 **Valores de entrada**
 
-- longitud - longitud parte de la coordenada que desea codificar. Flotando en el rango`[-180°, 180°]`
-- latitude : parte de latitud de la coordenada que desea codificar. Flotando en el rango `[-90°, 90°]`
-- precision - Opcional, longitud de la cadena codificada resultante, por defecto es `12`. Entero en el rango `[1, 12]`. Cualquier valor menor que `1` o mayor que `12` se convierte silenciosamente a `12`.
+-   longitud - longitud parte de la coordenada que desea codificar. Flotando en el rango`[-180°, 180°]`
+-   latitude : parte de latitud de la coordenada que desea codificar. Flotando en el rango `[-90°, 90°]`
+-   precision - Opcional, longitud de la cadena codificada resultante, por defecto es `12`. Entero en el rango `[1, 12]`. Cualquier valor menor que `1` o mayor que `12` se convierte silenciosamente a `12`.
 
 **Valores devueltos**
 
-- alfanumérico `String` de coordenadas codificadas (se utiliza la versión modificada del alfabeto de codificación base32).
+-   alfanumérico `String` de coordenadas codificadas (se utiliza la versión modificada del alfabeto de codificación base32).
 
 **Ejemplo**
 
@@ -135,11 +135,11 @@ Decodifica cualquier cadena codificada por geohash en longitud y latitud.
 
 **Valores de entrada**
 
-- encoded string - cadena codificada geohash.
+-   encoded string - cadena codificada geohash.
 
 **Valores devueltos**
 
-- (longitud, latitud) - 2-tupla de `Float64` valores de longitud y latitud.
+-   (longitud, latitud) - 2-tupla de `Float64` valores de longitud y latitud.
 
 **Ejemplo**
 
@@ -169,14 +169,14 @@ geoToH3(lon, lat, resolution)
 
 **Parámetros**
 
-- `lon` — Longitud. Tipo: [Float64](../../data_types/float.md).
-- `lat` — Latitud. Tipo: [Float64](../../data_types/float.md).
-- `resolution` — Resolución del índice. Gama: `[0, 15]`. Tipo: [UInt8](../../data_types/int_uint.md).
+-   `lon` — Longitud. Tipo: [Float64](../../data_types/float.md).
+-   `lat` — Latitud. Tipo: [Float64](../../data_types/float.md).
+-   `resolution` — Resolución del índice. Gama: `[0, 15]`. Tipo: [UInt8](../../data_types/int_uint.md).
 
 **Valores devueltos**
 
-- Número de índice hexagonal.
-- 0 en caso de error.
+-   Número de índice hexagonal.
+-   0 en caso de error.
 
 Tipo: `UInt64`.
 
@@ -202,20 +202,20 @@ Devuelve una matriz de cadenas codificadas por geohash de precisión dada que ca
 
 **Valores de entrada**
 
-- longitude\_min - longitud mínima, valor flotante en el rango `[-180°, 180°]`
-- latitude\_min - latitud mínima, valor flotante en el rango `[-90°, 90°]`
-- longitude\_max - longitud máxima, valor flotante en el rango `[-180°, 180°]`
-- latitude\_max - latitud máxima, valor flotante en el rango `[-90°, 90°]`
-- precisión - precisión del geohash, `UInt8` en el rango `[1, 12]`
+-   longitude\_min - longitud mínima, valor flotante en el rango `[-180°, 180°]`
+-   latitude\_min - latitud mínima, valor flotante en el rango `[-90°, 90°]`
+-   longitude\_max - longitud máxima, valor flotante en el rango `[-180°, 180°]`
+-   latitude\_max - latitud máxima, valor flotante en el rango `[-90°, 90°]`
+-   precisión - precisión del geohash, `UInt8` en el rango `[1, 12]`
 
 Tenga en cuenta que todos los parámetros de coordenadas deben ser del mismo tipo: `Float32` o `Float64`.
 
 **Valores devueltos**
 
-- matriz de cadenas de precisión largas de geohash-cajas que cubren el área proporcionada, no debe confiar en el orden de los artículos.
-- \[\] - matriz vacía si *minuto* valores de *latitud* y *longitud* no son menos que correspondiente *máximo* valor.
+-   matriz de cadenas de precisión largas de geohash-cajas que cubren el área proporcionada, no debe confiar en el orden de los artículos.
+-   \[\] - matriz vacía si *minuto* valores de *latitud* y *longitud* no son menos que correspondiente *máximo* valor.
 
-Tenga en cuenta que la función arrojará una excepción si la matriz resultante tiene más de 10'000'000 elementos de longitud.
+Tenga en cuenta que la función arrojará una excepción si la matriz resultante tiene más de 10’000’000 elementos de longitud.
 
 **Ejemplo**
 
@@ -241,11 +241,11 @@ h3GetBaseCell(index)
 
 **Parámetros**
 
-- `index` — Número de índice hexagonal. Tipo: [UInt64](../../data_types/int_uint.md).
+-   `index` — Número de índice hexagonal. Tipo: [UInt64](../../data_types/int_uint.md).
 
 **Valores devueltos**
 
-- Número de celda base hexagonal. Tipo: [UInt8](../../data_types/int_uint.md).
+-   Número de celda base hexagonal. Tipo: [UInt8](../../data_types/int_uint.md).
 
 **Ejemplo**
 
@@ -275,11 +275,11 @@ h3HexAreaM2(resolution)
 
 **Parámetros**
 
-- `resolution` — Resolución del índice. Gama: `[0, 15]`. Tipo: [UInt8](../../data_types/int_uint.md).
+-   `resolution` — Resolución del índice. Gama: `[0, 15]`. Tipo: [UInt8](../../data_types/int_uint.md).
 
 **Valores devueltos**
 
-- Superficie en m². Tipo: [Float64](../../data_types/float.md).
+-   Superficie en m². Tipo: [Float64](../../data_types/float.md).
 
 **Ejemplo**
 
@@ -309,12 +309,12 @@ h3IndexesAreNeighbors(index1, index2)
 
 **Parámetros**
 
-- `index1` — Número de índice hexagonal. Tipo: [UInt64](../../data_types/int_uint.md).
-- `index2` — Número de índice hexagonal. Tipo: [UInt64](../../data_types/int_uint.md).
+-   `index1` — Número de índice hexagonal. Tipo: [UInt64](../../data_types/int_uint.md).
+-   `index2` — Número de índice hexagonal. Tipo: [UInt64](../../data_types/int_uint.md).
 
 **Valores devueltos**
 
-- Devoluciones `1` si los índices son vecinos, `0` de lo contrario. Tipo: [UInt8](../../data_types/int_uint.md).
+-   Devoluciones `1` si los índices son vecinos, `0` de lo contrario. Tipo: [UInt8](../../data_types/int_uint.md).
 
 **Ejemplo**
 
@@ -344,12 +344,12 @@ h3ToChildren(index, resolution)
 
 **Parámetros**
 
-- `index` — Número de índice hexagonal. Tipo: [UInt64](../../data_types/int_uint.md).
-- `resolution` — Resolución del índice. Gama: `[0, 15]`. Tipo: [UInt8](../../data_types/int_uint.md).
+-   `index` — Número de índice hexagonal. Tipo: [UInt64](../../data_types/int_uint.md).
+-   `resolution` — Resolución del índice. Gama: `[0, 15]`. Tipo: [UInt8](../../data_types/int_uint.md).
 
 **Valores devueltos**
 
-- Matriz con los índices H3 hijo. Matriz de tipo: [UInt64](../../data_types/int_uint.md).
+-   Matriz con los índices H3 hijo. Matriz de tipo: [UInt64](../../data_types/int_uint.md).
 
 **Ejemplo**
 
@@ -379,12 +379,12 @@ h3ToParent(index, resolution)
 
 **Parámetros**
 
-- `index` — Número de índice hexagonal. Tipo: [UInt64](../../data_types/int_uint.md).
-- `resolution` — Resolución del índice. Gama: `[0, 15]`. Tipo: [UInt8](../../data_types/int_uint.md).
+-   `index` — Número de índice hexagonal. Tipo: [UInt64](../../data_types/int_uint.md).
+-   `resolution` — Resolución del índice. Gama: `[0, 15]`. Tipo: [UInt8](../../data_types/int_uint.md).
 
 **Valores devueltos**
 
-- Índice padre H3. Tipo: [UInt64](../../data_types/int_uint.md).
+-   Índice padre H3. Tipo: [UInt64](../../data_types/int_uint.md).
 
 **Ejemplo**
 
@@ -412,11 +412,11 @@ h3ToString(index)
 
 **Parámetros**
 
-- `index` — Número de índice hexagonal. Tipo: [UInt64](../../data_types/int_uint.md).
+-   `index` — Número de índice hexagonal. Tipo: [UInt64](../../data_types/int_uint.md).
 
 **Valores devueltos**
 
-- Representación de cadena del índice H3. Tipo: [Cadena](../../data_types/string.md).
+-   Representación de cadena del índice H3. Tipo: [Cadena](../../data_types/string.md).
 
 **Ejemplo**
 
@@ -444,11 +444,11 @@ stringToH3(index_str)
 
 **Parámetros**
 
-- `index_str` — Representación de cadena del índice H3. Tipo: [Cadena](../../data_types/string.md).
+-   `index_str` — Representación de cadena del índice H3. Tipo: [Cadena](../../data_types/string.md).
 
 **Valores devueltos**
 
-- Número de índice hexagonal. Devuelve 0 en caso de error. Tipo: [UInt64](../../data_types/int_uint.md).
+-   Número de índice hexagonal. Devuelve 0 en caso de error. Tipo: [UInt64](../../data_types/int_uint.md).
 
 **Ejemplo**
 
@@ -478,11 +478,11 @@ h3GetResolution(index)
 
 **Parámetros**
 
-- `index` — Número de índice hexagonal. Tipo: [UInt64](../../data_types/int_uint.md).
+-   `index` — Número de índice hexagonal. Tipo: [UInt64](../../data_types/int_uint.md).
 
 **Valores devueltos**
 
-- Resolución del índice. Gama: `[0, 15]`. Tipo: [UInt8](../../data_types/int_uint.md).
+-   Resolución del índice. Gama: `[0, 15]`. Tipo: [UInt8](../../data_types/int_uint.md).
 
 **Ejemplo**
 

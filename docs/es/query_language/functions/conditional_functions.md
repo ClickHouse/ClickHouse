@@ -14,9 +14,9 @@ Si la condición `cond` evalúa a un valor distinto de cero, devuelve el resulta
 
 **Parámetros**
 
-- `cond` – La condición para la evaluación que puede ser cero o no. El tipo es UInt8, Nullable(UInt8) o NULL.
-- `then` - La expresión que se va a devolver si se cumple la condición.
-- `else` - La expresión a devolver si no se cumple la condición.-
+-   `cond` – La condición para la evaluación que puede ser cero o no. El tipo es UInt8, Nullable(UInt8) o NULL.
+-   `then` - La expresión que se va a devolver si se cumple la condición.
+-   `else` - La expresión a devolver si no se cumple la condición.-
 
 **Valores devueltos**
 
@@ -52,7 +52,7 @@ Resultado:
 └────────────┘
 ```
 
-- `then` y `else` debe tener el tipo común más bajo.
+-   `then` y `else` debe tener el tipo común más bajo.
 
 **Ejemplo:**
 
@@ -98,13 +98,13 @@ Sintaxis: `cond ? then : else`
 
 Devoluciones `then` si el `cond` evalúa que es verdadero (mayor que cero), de lo contrario devuelve `else`.
 
-- `cond` debe ser de tipo de `UInt8`, y `then` y `else` debe tener el tipo común más bajo.
+-   `cond` debe ser de tipo de `UInt8`, y `then` y `else` debe tener el tipo común más bajo.
 
-- `then` y `else` puede ser `NULL`
+-   `then` y `else` puede ser `NULL`
 
 **Ver también**
 
-- [ifNotFinite](other_functions.md#ifnotfinite).
+-   [ifNotFinite](other_functions.md#ifnotfinite).
 
 ## MultiIf {#multiif}
 
@@ -114,9 +114,9 @@ Sintaxis: `multiIf(cond_1, then_1, cond_2, then_2, ..., else)`
 
 **Parámetros:**
 
-- `cond_N` — La condición para que la función regrese `then_N`.
-- `then_N` — El resultado de la función cuando se ejecuta.
-- `else` — El resultado de la función si no se cumple ninguna de las condiciones.
+-   `cond_N` — La condición para que la función regrese `then_N`.
+-   `then_N` — El resultado de la función cuando se ejecuta.
+-   `else` — El resultado de la función si no se cumple ninguna de las condiciones.
 
 La función acepta `2N+1` parámetros.
 

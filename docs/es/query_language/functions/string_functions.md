@@ -70,7 +70,7 @@ toValidUTF8( input_string )
 
 Parámetros:
 
-- input\_string — Cualquier conjunto de bytes representados como el [Cadena](../../data_types/string.md) objeto de tipo de datos.
+-   input\_string — Cualquier conjunto de bytes representados como el [Cadena](../../data_types/string.md) objeto de tipo de datos.
 
 Valor devuelto: cadena UTF-8 válida.
 
@@ -98,8 +98,8 @@ repeat(s, n)
 
 **Parámetros**
 
-- `s` — La cadena de repetir. [Cadena](../../data_types/string.md).
-- `n` — El número de veces para repetir la cadena. [UInt](../../data_types/int_uint.md).
+-   `s` — La cadena de repetir. [Cadena](../../data_types/string.md).
+-   `n` — El número de veces para repetir la cadena. [UInt](../../data_types/int_uint.md).
 
 **Valor devuelto**
 
@@ -290,8 +290,8 @@ SELECT startsWith('Spider-Man', 'Spi');
 
 **Valores devueltos**
 
-- 1, si la cadena comienza con el prefijo especificado.
-- 0, si la cadena no comienza con el prefijo especificado.
+-   1, si la cadena comienza con el prefijo especificado.
+-   0, si la cadena no comienza con el prefijo especificado.
 
 **Ejemplo**
 
@@ -322,8 +322,8 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 
 **Parámetros**
 
-- `trim_character` — caracteres especificados para el recorte. [Cadena](../../data_types/string.md).
-- `input_string` — cuerda para el acabado. [Cadena](../../data_types/string.md).
+-   `trim_character` — caracteres especificados para el recorte. [Cadena](../../data_types/string.md).
+-   `input_string` — cuerda para el acabado. [Cadena](../../data_types/string.md).
 
 **Valor devuelto**
 
@@ -361,7 +361,7 @@ Apodo: `ltrim(input_string)`.
 
 **Parámetros**
 
-- `input_string` — cuerda para recortar. [Cadena](../../data_types/string.md).
+-   `input_string` — cuerda para recortar. [Cadena](../../data_types/string.md).
 
 **Valor devuelto**
 
@@ -399,7 +399,7 @@ Apodo: `rtrim(input_string)`.
 
 **Parámetros**
 
-- `input_string` — cuerda para recortar. [Cadena](../../data_types/string.md).
+-   `input_string` — cuerda para recortar. [Cadena](../../data_types/string.md).
 
 **Valor devuelto**
 
@@ -437,7 +437,7 @@ Apodo: `trim(input_string)`.
 
 **Parámetros**
 
-- `input_string` — cuerda para recortar. [Cadena](../../data_types/string.md).
+-   `input_string` — cuerda para recortar. [Cadena](../../data_types/string.md).
 
 **Valor devuelto**
 

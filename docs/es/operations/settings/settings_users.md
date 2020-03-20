@@ -47,7 +47,7 @@ La contraseña se puede especificar en texto sin formato o en SHA256 (formato he
 
     Ejemplo de cómo generar una contraseña desde el shell:
 
-        PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
+          PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
 
     La primera línea del resultado es la contraseña. La segunda línea es el hash SHA256 correspondiente.
 
@@ -59,7 +59,7 @@ La contraseña se puede especificar en texto sin formato o en SHA256 (formato he
 
     Ejemplo de cómo generar una contraseña desde el shell:
 
-        PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
+          PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
 
     La primera línea del resultado es la contraseña. La segunda línea es el hash SHA1 doble correspondiente.
 

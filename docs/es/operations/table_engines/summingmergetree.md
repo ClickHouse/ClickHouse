@@ -23,10 +23,10 @@ Para obtener una descripción de los parámetros de solicitud, consulte [descrip
 
 **Parámetros de SummingMergeTree**
 
-- `columns` - una tupla con los nombres de las columnas donde se resumirán los valores. Parámetro opcional.
-  Las columnas deben ser de tipo numérico y no deben estar en la clave principal.
+-   `columns` - una tupla con los nombres de las columnas donde se resumirán los valores. Parámetro opcional.
+    Las columnas deben ser de tipo numérico y no deben estar en la clave principal.
 
-  Si `columns` no especificado, ClickHouse resume los valores de todas las columnas con un tipo de datos numérico que no están en la clave principal.
+    Si `columns` no especificado, ClickHouse resume los valores de todas las columnas con un tipo de datos numérico que no están en la clave principal.
 
 **Cláusulas de consulta**
 
@@ -50,7 +50,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Todos los parámetros excepto `columns` el mismo significado que en `MergeTree`.
 
-- `columns` — tupla con nombres de valores de columnas de los cuales se resumirán. Parámetro opcional. Para una descripción, vea el texto anterior.
+-   `columns` — tupla con nombres de valores de columnas de los cuales se resumirán. Parámetro opcional. Para una descripción, vea el texto anterior.
 
 </details>
 
@@ -113,8 +113,8 @@ La tabla puede tener estructuras de datos anidadas que se procesan de una manera
 
 Si el nombre de una tabla anidada termina con `Map` y contiene al menos dos columnas que cumplen los siguientes criterios:
 
-- la primera columna es numérica `(*Int*, Date, DateTime)` o una cadena `(String, FixedString)`, vamos a llamarlo `key`,
-- las otras columnas son aritméticas `(*Int*, Float32/64)`, vamos a llamarlo `(values...)`,
+-   la primera columna es numérica `(*Int*, Date, DateTime)` o una cadena `(String, FixedString)`, vamos a llamarlo `key`,
+-   las otras columnas son aritméticas `(*Int*, Float32/64)`, vamos a llamarlo `(values...)`,
 
 entonces esta tabla anidada se interpreta como una asignación de `key => (values...)`, y al fusionar sus filas, los elementos de dos conjuntos de datos se fusionan por `key` con una suma de los correspondientes `(values...)`.
 

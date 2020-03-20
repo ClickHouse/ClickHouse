@@ -14,10 +14,10 @@
 
 Для функций, перечисленных ниже, лямбда-функцию должна быть указана всегда:
 
-- [arrayMap](#higher_order_functions-array-map)
-- [arrayFilter](#higher_order_functions-array-filter)
-- [arrayFirst](#higher_order_functions-array-first)
-- [arrayFirstIndex](#higher_order_functions-array-first-index)
+-   [arrayMap](#higher_order_functions-array-map)
+-   [arrayFilter](#higher_order_functions-array-filter)
+-   [arrayFirst](#higher_order_functions-array-first)
+-   [arrayFirstIndex](#higher_order_functions-array-first-index)
 
 ### arrayMap(func, arr1, …) {#higher-order-functions-array-map}
 

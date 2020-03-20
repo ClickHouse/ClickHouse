@@ -4,8 +4,8 @@ Números de punto fijo firmados que mantienen la precisión durante las operacio
 
 ## Parámetros {#parameters}
 
-- P - precisión. Rango válido: \[ 1 : 38 \]. Determina cuántos dígitos decimales puede tener el número (incluida la fracción).
-- S - escala. Rango válido: \[ 0 : P \]. Determina cuántos dígitos decimales puede tener la fracción.
+-   P - precisión. Rango válido: \[ 1 : 38 \]. Determina cuántos dígitos decimales puede tener el número (incluida la fracción).
+-   S - escala. Rango válido: \[ 0 : P \]. Determina cuántos dígitos decimales puede tener la fracción.
 
 Dependiendo del valor del parámetro P Decimal(P, S) es un sinónimo de:
 - P de \[ 1 : 9 \] - para Decimal32(S)
@@ -14,9 +14,9 @@ Dependiendo del valor del parámetro P Decimal(P, S) es un sinónimo de:
 
 ## Rangos de valores decimales {#decimal-value-ranges}
 
-- Decimal32(S) - ( -1 \* 10^(9 - S), 1 \* 10^(9 - S) )
-- Decimal64(S) - ( -1 \* 10^(18 - S), 1 \* 10^(18 - S) )
-- Decimal128(S) - ( -1 \* 10^(38 - S), 1 \* 10^(38 - S) )
+-   Decimal32(S) - ( -1 \* 10^(9 - S), 1 \* 10^(9 - S) )
+-   Decimal64(S) - ( -1 \* 10^(18 - S), 1 \* 10^(18 - S) )
+-   Decimal128(S) - ( -1 \* 10^(38 - S), 1 \* 10^(38 - S) )
 
 Por ejemplo, Decimal32(4) puede contener números de -99999.9999 a 99999.9999 con el paso 0.0001.
 
@@ -30,15 +30,15 @@ Debido a que las CPU modernas no admiten enteros de 128 bits de forma nativa, la
 
 Las operaciones binarias en Decimal dan como resultado un tipo de resultado más amplio (con cualquier orden de argumentos).
 
-- Decimal64(S1) <op> Decimal32(S2) -\> Decimal64(S)
-- Decimal128(S1) <op> Decimal32(S2) -\> Decimal128(S)
-- Decimal128(S1) <op> ¿Cómo puedo hacerlo?)
+-   Decimal64(S1) <op> Decimal32(S2) -\> Decimal64(S)
+-   Decimal128(S1) <op> Decimal32(S2) -\> Decimal128(S)
+-   Decimal128(S1) <op> ¿Cómo puedo hacerlo?)
 
 Reglas para la escala:
 
-- Sumar, restar: S = max(S1, S2).
-- multuply: S = S1 + S2.
-- división: S = S1.
+-   Sumar, restar: S = max(S1, S2).
+-   multuply: S = S1 + S2.
+-   división: S = S1.
 
 Para operaciones similares entre Decimal y enteros, el resultado es Decimal del mismo tamaño que un argumento.
 

@@ -7,11 +7,11 @@ Puede utilizar las funciones descritas en este capítulo para [ELFO](https://en.
 
 Para el correcto funcionamiento de las funciones de introspección:
 
-- Instale el `clickhouse-common-static-dbg` paquete.
+-   Instale el `clickhouse-common-static-dbg` paquete.
 
-- Establezca el [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) a 1.
+-   Establezca el [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) a 1.
 
-    For security reasons introspection functions are disabled by default.
+        For security reasons introspection functions are disabled by default.
 
 ClickHouse guarda los informes del generador de perfiles [trace\_log](../../operations/system_tables.md#system_tables-trace_log) tabla del sistema. Asegúrese de que la tabla y el generador de perfiles estén configurados correctamente.
 
@@ -29,17 +29,17 @@ addressToLine(address_of_binary_instruction)
 
 **Parámetros**
 
-- `address_of_binary_instruction` ([UInt64](../../data_types/int_uint.md)) — Dirección de la instrucción en un proceso en ejecución.
+-   `address_of_binary_instruction` ([UInt64](../../data_types/int_uint.md)) — Dirección de la instrucción en un proceso en ejecución.
 
 **Valor devuelto**
 
-- Nombre de archivo del código fuente y el número de línea en este archivo delimitado por dos puntos.
+-   Nombre de archivo del código fuente y el número de línea en este archivo delimitado por dos puntos.
 
-    For example, `/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.cpp:199`, where `199` is a line number.
+        For example, `/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.cpp:199`, where `199` is a line number.
 
-- Nombre de un binario, si la función no pudo encontrar la información de depuración.
+-   Nombre de un binario, si la función no pudo encontrar la información de depuración.
 
-- Cadena vacía, si la dirección no es válida.
+-   Cadena vacía, si la dirección no es válida.
 
 Tipo: [Cadena](../../data_types/string.md).
 
@@ -120,12 +120,12 @@ addressToSymbol(address_of_binary_instruction)
 
 **Parámetros**
 
-- `address_of_binary_instruction` ([UInt64](../../data_types/int_uint.md)) — Dirección de la instrucción en un proceso en ejecución.
+-   `address_of_binary_instruction` ([UInt64](../../data_types/int_uint.md)) — Dirección de la instrucción en un proceso en ejecución.
 
 **Valor devuelto**
 
-- Símbolo de archivos de objetos ClickHouse.
-- Cadena vacía, si la dirección no es válida.
+-   Símbolo de archivos de objetos ClickHouse.
+-   Cadena vacía, si la dirección no es válida.
 
 Tipo: [Cadena](../../data_types/string.md).
 
@@ -217,12 +217,12 @@ demangle(symbol)
 
 **Parámetros**
 
-- `symbol` ([Cadena](../../data_types/string.md)) — Símbolo de un archivo de objeto.
+-   `symbol` ([Cadena](../../data_types/string.md)) — Símbolo de un archivo de objeto.
 
 **Valor devuelto**
 
-- Nombre de la función C++
-- Cadena vacía si un símbolo no es válido.
+-   Nombre de la función C++
+-   Cadena vacía si un símbolo no es válido.
 
 Tipo: [Cadena](../../data_types/string.md).
 

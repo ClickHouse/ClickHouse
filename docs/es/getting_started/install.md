@@ -20,7 +20,7 @@ It is recommended to use official pre-compiled `deb` packages for Debian or Ubun
 
 To install official packages add the Yandex repository in `/etc/apt/sources.list` or in a separate `/etc/apt/sources.list.d/clickhouse.list` file:
 
-    deb http://repo.clickhouse.tech/deb/stable/ main/
+      deb http://repo.clickhouse.tech/deb/stable/ main/
 
 If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments).
 
@@ -37,10 +37,10 @@ You can also download and install packages manually from here: https://repo.yand
 
 #### Packages {#packages}
 
-- `clickhouse-common-static` — Installs ClickHouse compiled binary files.
-- `clickhouse-server` — Creates a symbolic link for `clickhouse-server`. Installs server configuration.
-- `clickhouse-client` — Creates a symbolic link for `clickhouse-client` and other client-related tools. Installs client configurations.
-- `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
+-   `clickhouse-common-static` — Installs ClickHouse compiled binary files.
+-   `clickhouse-server` — Creates a symbolic link for `clickhouse-server`. Installs server configuration.
+-   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` and other client-related tools. Installs client configurations.
+-   `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
 ### From RPM Packages {#from-rpm-packages}
 
@@ -104,13 +104,13 @@ To manually compile ClickHouse, follow the instructions for [Linux](../developme
 
 You can compile packages and install them or use programs without installing packages. Also by building manually you can disable SSE 4.2 requirement or build for AArch64 CPUs.
 
-    Client: dbms/programs/clickhouse-client
-    Server: dbms/programs/clickhouse-server
+      Client: dbms/programs/clickhouse-client
+      Server: dbms/programs/clickhouse-server
 
 You’ll need to create a data and metadata folders and `chown` them for the desired user. Their paths can be changed in server config (src/dbms/programs/server/config.xml), by default they are:
 
-    /opt/clickhouse/data/default/
-    /opt/clickhouse/metadata/default/
+      /opt/clickhouse/data/default/
+      /opt/clickhouse/metadata/default/
 
 On Gentoo, you can just use `emerge clickhouse` to install ClickHouse from sources.
 

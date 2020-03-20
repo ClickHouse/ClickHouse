@@ -15,11 +15,11 @@ Cada acción es una operación en una columna.
 
 Se admiten las siguientes acciones:
 
-- [AÑADIR COLUMNA](#alter_add-column) — Agrega una nueva columna a la tabla.
-- [COLUMNA DE GOTA](#alter_drop-column) — Elimina la columna.
-- [COLUMNA CLARA](#alter_clear-column) — Restablece los valores de las columnas.
-- [COLUMNA DE COMENTARIOS](#alter_comment-column) — Agrega un comentario de texto a la columna.
-- [MODIFICAR COLUMNA](#alter_modify-column) — Cambia el tipo de columna, la expresión predeterminada y el TTL.
+-   [AÑADIR COLUMNA](#alter_add-column) — Agrega una nueva columna a la tabla.
+-   [COLUMNA DE GOTA](#alter_drop-column) — Elimina la columna.
+-   [COLUMNA CLARA](#alter_clear-column) — Restablece los valores de las columnas.
+-   [COLUMNA DE COMENTARIOS](#alter_comment-column) — Agrega un comentario de texto a la columna.
+-   [MODIFICAR COLUMNA](#alter_modify-column) — Cambia el tipo de columna, la expresión predeterminada y el TTL.
 
 Estas acciones se describen en detalle a continuación.
 
@@ -101,13 +101,13 @@ MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
 
 Esta consulta cambia el `name` propiedades de la columna:
 
-- Tipo
+-   Tipo
 
-- Expresión predeterminada
+-   Expresión predeterminada
 
-- TTL
+-   TTL
 
-    For examples of columns TTL modifying, see [Column TTL](../operations/table_engines/mergetree.md#mergetree-column-ttl).
+        For examples of columns TTL modifying, see [Column TTL](../operations/table_engines/mergetree.md#mergetree-column-ttl).
 
 Si el `IF EXISTS` Si se especifica una cláusula, la consulta no devolverá un error si la columna no existe.
 
@@ -123,10 +123,10 @@ Cambiar el tipo de columna es la única acción compleja: cambia el contenido de
 
 Hay varias etapas de procesamiento:
 
-- Preparación de archivos temporales (nuevos) con datos modificados.
-- Cambiar el nombre de los archivos antiguos.
-- Cambiar el nombre de los archivos temporales (nuevos) a los nombres antiguos.
-- Eliminar los archivos antiguos.
+-   Preparación de archivos temporales (nuevos) con datos modificados.
+-   Cambiar el nombre de los archivos antiguos.
+-   Cambiar el nombre de los archivos temporales (nuevos) a los nombres antiguos.
+-   Eliminar los archivos antiguos.
 
 Solo la primera etapa lleva tiempo. Si hay un error en esta etapa, los datos no se cambian.
 Si hay un error durante una de las etapas sucesivas, los datos se pueden restaurar manualmente. La excepción es si los archivos antiguos se eliminaron del sistema de archivos, pero los datos de los nuevos archivos no se escribieron en el disco y se perdieron.
@@ -168,9 +168,9 @@ Solo funciona para tablas en el [`*MergeTree`](../operations/table_engines/merge
 [repetición](../operations/table_engines/replication.md) tabla). Las siguientes operaciones
 están disponibles:
 
-- `ALTER TABLE [db].name ADD INDEX name expression TYPE type GRANULARITY value AFTER name [AFTER name2]` - Agrega la descripción del índice a los metadatos de las tablas.
+-   `ALTER TABLE [db].name ADD INDEX name expression TYPE type GRANULARITY value AFTER name [AFTER name2]` - Agrega la descripción del índice a los metadatos de las tablas.
 
-- `ALTER TABLE [db].name DROP INDEX name` - Elimina la descripción del índice de los metadatos de las tablas y elimina los archivos de índice del disco.
+-   `ALTER TABLE [db].name DROP INDEX name` - Elimina la descripción del índice de los metadatos de las tablas y elimina los archivos de índice del disco.
 
 Estos comandos son livianos en el sentido de que solo cambian los metadatos o eliminan archivos.
 Además, se replican (sincronizando metadatos de índices a través de ZooKeeper).
@@ -196,18 +196,18 @@ Todos los cambios en las tablas replicadas se transmiten a ZooKeeper, por lo que
 
 Las siguientes operaciones con [partición](../operations/table_engines/custom_partitioning_key.md) están disponibles:
 
-- [DETACH PARTITION](#alter_detach-partition) – Mueve una partición a la `detached` directorio y olvidarlo.
-- [PARTICIÓN DE CAÍDA](#alter_drop-partition) – Elimina una partición.
-- [ADJUNTA PARTE\|PARTICIÓN](#alter_attach-partition) – Añade una pieza o partición desde el `detached` directorio a la tabla.
-- [REEMPLAZAR LA PARTICIÓN](#alter_replace-partition) - Copia la partición de datos de una tabla a otra.
-- [ADJUNTA PARTICIÓN DE](#alter_attach-partition-from) – Copia la partición de datos de una tabla a otra y añade.
-- [REEMPLAZAR LA PARTICIÓN](#alter_replace-partition) - Copia la partición de datos de una tabla a otra y reemplaza.
-- [MUEVA LA PARTICIÓN A LA MESA](#alter_move_to_table-partition) (\#alter\_move\_to\_table-partition) - Mover la partición de datos de una tabla a otra.
-- [COLUMNA CLARA EN PARTICIPACIÓN](#alter_clear-column-partition) - Restablece el valor de una columna especificada en una partición.
-- [ÍNDICE CLARO EN PARTICIPACIÓN](#alter_clear-index-partition) - Restablece el índice secundario especificado en una partición.
-- [CONGELAR PARTICIÓN](#alter_freeze-partition) – Crea una copia de seguridad de una partición.
-- [PARTICIÓN FETCH](#alter_fetch-partition) – Descarga una partición de otro servidor.
-- [PARTICIÓN DE MOVIMIENTO\|PARTE](#alter_move-partition) – Mover partición / parte de datos a otro disco o volumen.
+-   [DETACH PARTITION](#alter_detach-partition) – Mueve una partición a la `detached` directorio y olvidarlo.
+-   [PARTICIÓN DE CAÍDA](#alter_drop-partition) – Elimina una partición.
+-   [ADJUNTA PARTE\|PARTICIÓN](#alter_attach-partition) – Añade una pieza o partición desde el `detached` directorio a la tabla.
+-   [REEMPLAZAR LA PARTICIÓN](#alter_replace-partition) - Copia la partición de datos de una tabla a otra.
+-   [ADJUNTA PARTICIÓN DE](#alter_attach-partition-from) – Copia la partición de datos de una tabla a otra y añade.
+-   [REEMPLAZAR LA PARTICIÓN](#alter_replace-partition) - Copia la partición de datos de una tabla a otra y reemplaza.
+-   [MUEVA LA PARTICIÓN A LA MESA](#alter_move_to_table-partition) (\#alter\_move\_to\_table-partition) - Mover la partición de datos de una tabla a otra.
+-   [COLUMNA CLARA EN PARTICIPACIÓN](#alter_clear-column-partition) - Restablece el valor de una columna especificada en una partición.
+-   [ÍNDICE CLARO EN PARTICIPACIÓN](#alter_clear-index-partition) - Restablece el índice secundario especificado en una partición.
+-   [CONGELAR PARTICIÓN](#alter_freeze-partition) – Crea una copia de seguridad de una partición.
+-   [PARTICIÓN FETCH](#alter_fetch-partition) – Descarga una partición de otro servidor.
+-   [PARTICIÓN DE MOVIMIENTO\|PARTE](#alter_move-partition) – Mover partición / parte de datos a otro disco o volumen.
 
 <!-- -->
 
@@ -281,8 +281,8 @@ Esta consulta copia la partición de datos `table1` a `table2` añade datos a lo
 
 Para que la consulta se ejecute correctamente, se deben cumplir las siguientes condiciones:
 
-- Ambas tablas deben tener la misma estructura.
-- Ambas tablas deben tener la misma clave de partición.
+-   Ambas tablas deben tener la misma estructura.
+-   Ambas tablas deben tener la misma clave de partición.
 
 #### REEMPLAZAR LA PARTICIÓN {#alter-replace-partition}
 
@@ -294,8 +294,8 @@ Esta consulta copia la partición de datos `table1` a `table2` y reemplaza la pa
 
 Para que la consulta se ejecute correctamente, se deben cumplir las siguientes condiciones:
 
-- Ambas tablas deben tener la misma estructura.
-- Ambas tablas deben tener la misma clave de partición.
+-   Ambas tablas deben tener la misma estructura.
+-   Ambas tablas deben tener la misma clave de partición.
 
 #### MUEVA LA PARTICIÓN A LA MESA {#alter-move-to-table-partition}
 
@@ -307,10 +307,10 @@ Esta consulta mueve la partición de datos `table_source` a `table_dest` con la 
 
 Para que la consulta se ejecute correctamente, se deben cumplir las siguientes condiciones:
 
-- Ambas tablas deben tener la misma estructura.
-- Ambas tablas deben tener la misma clave de partición.
-- Ambas tablas deben ser de la misma familia de motores. (replicado o no replicado)
-- Ambas tablas deben tener la misma política de almacenamiento.
+-   Ambas tablas deben tener la misma estructura.
+-   Ambas tablas deben tener la misma clave de partición.
+-   Ambas tablas deben ser de la misma familia de motores. (replicado o no replicado)
+-   Ambas tablas deben tener la misma política de almacenamiento.
 
 #### COLUMNA CLARA EN PARTICIPACIÓN {#alter-clear-column-partition}
 
@@ -341,8 +341,8 @@ Tenga en cuenta que para las tablas de estilo antiguo puede especificar el prefi
 
 En el momento de la ejecución, para una instantánea de datos, la consulta crea vínculos rígidos a los datos de una tabla. Los enlaces duros se colocan en el directorio `/var/lib/clickhouse/shadow/N/...`, donde:
 
-- `/var/lib/clickhouse/` es el directorio ClickHouse de trabajo especificado en la configuración.
-- `N` es el número incremental de la copia de seguridad.
+-   `/var/lib/clickhouse/` es el directorio ClickHouse de trabajo especificado en la configuración.
+-   `N` es el número incremental de la copia de seguridad.
 
 !!! note "Nota"
     Si usted usa [un conjunto de discos para el almacenamiento de datos en una tabla](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes), el `shadow/N` directorio aparece en cada disco, almacenando partes de datos que coinciden con el `PARTITION` expresion.
@@ -395,8 +395,8 @@ ALTER TABLE users ATTACH PARTITION 201902;
 
 Tenga en cuenta que:
 
-- El `ALTER ... FETCH PARTITION` la consulta no está replicada. Coloca la partición en el `detached` sólo en el servidor local.
-- El `ALTER TABLE ... ATTACH` consulta se replica. Agrega los datos a todas las réplicas. Los datos se agregan a una de las réplicas desde el `detached` directorio, y para los demás - de réplicas vecinas.
+-   El `ALTER ... FETCH PARTITION` la consulta no está replicada. Coloca la partición en el `detached` sólo en el servidor local.
+-   El `ALTER TABLE ... ATTACH` consulta se replica. Agrega los datos a todas las réplicas. Los datos se agregan a una de las réplicas desde el `detached` directorio, y para los demás - de réplicas vecinas.
 
 Antes de descargar, el sistema verifica si la partición existe y la estructura de la tabla coincide. La réplica más adecuada se selecciona automáticamente de las réplicas en buen estado.
 
@@ -412,9 +412,9 @@ ALTER TABLE table_name MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_n
 
 El `ALTER TABLE t MOVE` consulta:
 
-- No replicado, porque diferentes réplicas pueden tener diferentes directivas de almacenamiento.
-- Devuelve un error si el disco o volumen especificado no está configurado. La consulta también devuelve un error si no se pueden aplicar las condiciones de movimiento de datos especificadas en la directiva de almacenamiento.
-- Puede devolver un error en el caso, cuando los datos que se moverán ya se mueven por un proceso en segundo plano, concurrente `ALTER TABLE t MOVE` consulta o como resultado de la fusión de datos de fondo. Un usuario no debe realizar ninguna acción adicional en este caso.
+-   No replicado, porque diferentes réplicas pueden tener diferentes directivas de almacenamiento.
+-   Devuelve un error si el disco o volumen especificado no está configurado. La consulta también devuelve un error si no se pueden aplicar las condiciones de movimiento de datos especificadas en la directiva de almacenamiento.
+-   Puede devolver un error en el caso, cuando los datos que se moverán ya se mueven por un proceso en segundo plano, concurrente `ALTER TABLE t MOVE` consulta o como resultado de la fusión de datos de fondo. Un usuario no debe realizar ninguna acción adicional en este caso.
 
 Ejemplo:
 
@@ -427,10 +427,10 @@ ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 
 Puede especificar la expresión de partición en `ALTER ... PARTITION` de diferentes maneras:
 
-- Como valor de la `partition` columna de la `system.parts` tabla. Por ejemplo, `ALTER TABLE visits DETACH PARTITION 201901`.
-- Como la expresión de la columna de la tabla. Se admiten constantes y expresiones constantes. Por ejemplo, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
-- Usando el ID de partición. El ID de partición es un identificador de cadena de la partición (legible por humanos, si es posible) que se usa como nombres de particiones en el sistema de archivos y en ZooKeeper. El ID de partición debe especificarse en el `PARTITION ID` cláusula, entre comillas simples. Por ejemplo, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
-- En el [ALTERAR PIEZA DE ADJUNTO](#alter_attach-partition) y [PARTE DESMONTADA DE GOTA](#alter_drop-detached) consulta, para especificar el nombre de una parte, utilice un literal de cadena con un valor `name` columna de la [sistema.detached\_parts](../operations/system_tables.md#system_tables-detached_parts) tabla. Por ejemplo, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
+-   Como valor de la `partition` columna de la `system.parts` tabla. Por ejemplo, `ALTER TABLE visits DETACH PARTITION 201901`.
+-   Como la expresión de la columna de la tabla. Se admiten constantes y expresiones constantes. Por ejemplo, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
+-   Usando el ID de partición. El ID de partición es un identificador de cadena de la partición (legible por humanos, si es posible) que se usa como nombres de particiones en el sistema de archivos y en ZooKeeper. El ID de partición debe especificarse en el `PARTITION ID` cláusula, entre comillas simples. Por ejemplo, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
+-   En el [ALTERAR PIEZA DE ADJUNTO](#alter_attach-partition) y [PARTE DESMONTADA DE GOTA](#alter_drop-detached) consulta, para especificar el nombre de una parte, utilice un literal de cadena con un valor `name` columna de la [sistema.detached\_parts](../operations/system_tables.md#system_tables-detached_parts) tabla. Por ejemplo, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
 El uso de comillas al especificar la partición depende del tipo de expresión de partición. Por ejemplo, para el `String` tipo, debe especificar su nombre entre comillas (`'`). Para el `Date` y `Int*` tipos no se necesitan comillas.
 

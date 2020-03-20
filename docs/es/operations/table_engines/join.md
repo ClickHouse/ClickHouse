@@ -16,9 +16,9 @@ Vea la descripción detallada del [CREAR TABLA](../../query_language/create.md#c
 
 **Parámetros del motor**
 
-- `join_strictness` – [ÚNETE a la rigurosidad](../../query_language/select.md#select-join-strictness).
-- `join_type` – [Tipo de unión](../../query_language/select.md#select-join-types).
-- `k1[, k2, ...]` – Columnas clave de la `USING` cláusula que el `JOIN` operación se hace con.
+-   `join_strictness` – [ÚNETE a la rigurosidad](../../query_language/select.md#select-join-strictness).
+-   `join_type` – [Tipo de unión](../../query_language/select.md#select-join-types).
+-   `k1[, k2, ...]` – Columnas clave de la `USING` cláusula que el `JOIN` operación se hace con.
 
 Entrar `join_strictness` y `join_type` parámetros sin comillas, por ejemplo, `Join(ANY, LEFT, col1)`. Deben coincidir con el `JOIN` operación para la que se utilizará la tabla. Si los parámetros no coinciden, ClickHouse no produce una excepción y puede devolver datos incorrectos.
 
@@ -78,18 +78,18 @@ Usted puede utilizar `INSERT` consultas para agregar datos al `Join`-mesas de mo
 
 No se puede realizar una `SELECT` consulta directamente desde la tabla. En su lugar, use uno de los siguientes métodos:
 
-- Coloque la mesa hacia el lado derecho en un `JOIN` clausula.
-- Llame al [joinGet](../../query_language/functions/other_functions.md#joinget) función, que le permite extraer datos de la tabla de la misma manera que de un diccionario.
+-   Coloque la mesa hacia el lado derecho en un `JOIN` clausula.
+-   Llame al [joinGet](../../query_language/functions/other_functions.md#joinget) función, que le permite extraer datos de la tabla de la misma manera que de un diccionario.
 
 ### Limitaciones y ajustes {#join-limitations-and-settings}
 
 Al crear una tabla, se aplican los siguientes valores:
 
-- [Sistema abierto.](../settings/settings.md#join_use_nulls)
-- [Método de codificación de datos:](../settings/query_complexity.md#settings-max_rows_in_join)
-- [Método de codificación de datos:](../settings/query_complexity.md#settings-max_bytes_in_join)
-- [join\_overflow\_mode](../settings/query_complexity.md#settings-join_overflow_mode)
-- [join\_any\_take\_last\_row](../settings/settings.md#settings-join_any_take_last_row)
+-   [Sistema abierto.](../settings/settings.md#join_use_nulls)
+-   [Método de codificación de datos:](../settings/query_complexity.md#settings-max_rows_in_join)
+-   [Método de codificación de datos:](../settings/query_complexity.md#settings-max_bytes_in_join)
+-   [join\_overflow\_mode](../settings/query_complexity.md#settings-join_overflow_mode)
+-   [join\_any\_take\_last\_row](../settings/settings.md#settings-join_any_take_last_row)
 
 El `Join`-las tablas del motor no se pueden utilizar adentro `GLOBAL JOIN` operación.
 

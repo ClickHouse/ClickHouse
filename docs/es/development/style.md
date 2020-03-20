@@ -50,7 +50,7 @@ memcpy(&buf[place_value], &x, sizeof(x));
 for (size_t i = 0; i < rows; i += storage.index_granularity)
 ```
 
-**7.** Agregar espacios alrededor de los operadores binarios (`+`, `-`, `*`, `/`, `%`, ...) y el operador ternario `?:`.
+**7.** Agregar espacios alrededor de los operadores binarios (`+`, `-`, `*`, `/`, `%`, …) y el operador ternario `?:`.
 
 ``` cpp
 UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
@@ -363,8 +363,8 @@ Si el archivo contiene una sola función, nombre el archivo de la misma manera q
 
 **11.** Si el nombre contiene una abreviatura, :
 
-- Para los nombres de variables, la abreviatura debe usar letras minúsculas `mysql_connection` (ni `mySQL_connection`).
-- Para los nombres de clases y funciones, mantenga las letras mayúsculas en la abreviatura`MySQLConnection` (ni `MySqlConnection`).
+-   Para los nombres de variables, la abreviatura debe usar letras minúsculas `mysql_connection` (ni `mySQL_connection`).
+-   Para los nombres de clases y funciones, mantenga las letras mayúsculas en la abreviatura`MySQLConnection` (ni `MySqlConnection`).
 
 **12.** Los argumentos del constructor que se usan solo para inicializar los miembros de la clase deben nombrarse de la misma manera que los miembros de la clase, pero con un guión bajo al final.
 
@@ -401,13 +401,13 @@ enum class CompressionMethod
 
 **15.** Todos los nombres deben estar en inglés. La transliteración de palabras rusas no está permitida.
 
-  not Stroka
+    not Stroka
 
 **16.** Las abreviaturas son aceptables si son bien conocidas (cuando puede encontrar fácilmente el significado de la abreviatura en Wikipedia o en un motor de búsqueda).
 
-  `AST`, `SQL`.
+    `AST`, `SQL`.
 
-  Not `NVDH` (some random letters)
+    Not `NVDH` (some random letters)
 
 Las palabras incompletas son aceptables si la versión abreviada es de uso común.
 
@@ -427,9 +427,9 @@ En el código de la aplicación, la memoria debe ser liberada por el objeto que 
 
 Ejemplos:
 
-- La forma más fácil es colocar un objeto en la pila o convertirlo en miembro de otra clase.
-- Para una gran cantidad de objetos pequeños, use contenedores.
-- Para la desasignación automática de un pequeño número de objetos que residen en el montón, use `shared_ptr/unique_ptr`.
+-   La forma más fácil es colocar un objeto en la pila o convertirlo en miembro de otra clase.
+-   Para una gran cantidad de objetos pequeños, use contenedores.
+-   Para la desasignación automática de un pequeño número de objetos que residen en el montón, use `shared_ptr/unique_ptr`.
 
 **2.** Gestión de recursos.
 
@@ -497,10 +497,10 @@ Esto no es recomendable, pero está permitido.
 
 Utilice las siguientes opciones:
 
-- Crear una función (`done()` o `finalize()`) que hará todo el trabajo de antemano que podría conducir a una excepción. Si se llamó a esa función, no debería haber excepciones en el destructor más adelante.
-- Las tareas que son demasiado complejas (como enviar mensajes a través de la red) se pueden poner en un método separado al que el usuario de la clase tendrá que llamar antes de la destrucción.
-- Si hay una excepción en el destructor, es mejor registrarla que ocultarla (si el registrador está disponible).
-- En aplicaciones simples, es aceptable confiar en `std::terminate` (para los casos de `noexcept` de forma predeterminada en C ++ 11) para manejar excepciones.
+-   Crear una función (`done()` o `finalize()`) que hará todo el trabajo de antemano que podría conducir a una excepción. Si se llamó a esa función, no debería haber excepciones en el destructor más adelante.
+-   Las tareas que son demasiado complejas (como enviar mensajes a través de la red) se pueden poner en un método separado al que el usuario de la clase tendrá que llamar antes de la destrucción.
+-   Si hay una excepción en el destructor, es mejor registrarla que ocultarla (si el registrador está disponible).
+-   En aplicaciones simples, es aceptable confiar en `std::terminate` (para los casos de `noexcept` de forma predeterminada en C ++ 11) para manejar excepciones.
 
 **6.** Bloques de código anónimos.
 
@@ -522,11 +522,11 @@ ready_any.set();
 
 En programas de procesamiento de datos fuera de línea:
 
-- Trate de obtener el mejor rendimiento posible en un solo núcleo de CPU. A continuación, puede paralelizar su código si es necesario.
+-   Trate de obtener el mejor rendimiento posible en un solo núcleo de CPU. A continuación, puede paralelizar su código si es necesario.
 
 En aplicaciones de servidor:
 
-- Utilice el grupo de subprocesos para procesar solicitudes. En este punto, no hemos tenido ninguna tarea que requiera el cambio de contexto de espacio de usuario.
+-   Utilice el grupo de subprocesos para procesar solicitudes. En este punto, no hemos tenido ninguna tarea que requiera el cambio de contexto de espacio de usuario.
 
 La horquilla no se usa para la paralelización.
 

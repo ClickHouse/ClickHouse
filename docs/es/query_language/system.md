@@ -1,18 +1,18 @@
 # Consultas del sistema {#query-language-system}
 
-- [RELOAD DICCIONARIOS](#query_language-system-reload-dictionaries)
-- [RELOAD DICCIONARIO](#query_language-system-reload-dictionary)
-- [CATEGORÍA](#query_language-system-drop-dns-cache)
-- [CACHÉ DE LA MARCA DE LA GOTA](#query_language-system-drop-mark-cache)
-- [REGISTROS DE FLUSH](#query_language-system-flush_logs)
-- [CONFIGURACIÓN DE Carga](#query_language-system-reload-config)
-- [APAGADO](#query_language-system-shutdown)
-- [MATAR](#query_language-system-kill)
-- [PARADA DE SENTIDOS DISTRIBUIDOS](#query_language-system-stop-distributed-sends)
-- [FLUSH DISTRIBUIDO](#query_language-system-flush-distributed)
-- [COMIENZAR SENTIDOS DISTRIBUIDOS](#query_language-system-start-distributed-sends)
-- [PARADA DE FUSIONES](#query_language-system-stop-merges)
-- [COMIENZAR FUSIONES](#query_language-system-start-merges)
+-   [RELOAD DICCIONARIOS](#query_language-system-reload-dictionaries)
+-   [RELOAD DICCIONARIO](#query_language-system-reload-dictionary)
+-   [CATEGORÍA](#query_language-system-drop-dns-cache)
+-   [CACHÉ DE LA MARCA DE LA GOTA](#query_language-system-drop-mark-cache)
+-   [REGISTROS DE FLUSH](#query_language-system-flush_logs)
+-   [CONFIGURACIÓN DE Carga](#query_language-system-reload-config)
+-   [APAGADO](#query_language-system-shutdown)
+-   [MATAR](#query_language-system-kill)
+-   [PARADA DE SENTIDOS DISTRIBUIDOS](#query_language-system-stop-distributed-sends)
+-   [FLUSH DISTRIBUIDO](#query_language-system-flush-distributed)
+-   [COMIENZAR SENTIDOS DISTRIBUIDOS](#query_language-system-start-distributed-sends)
+-   [PARADA DE FUSIONES](#query_language-system-stop-merges)
+-   [COMIENZAR FUSIONES](#query_language-system-start-merges)
 
 ## RELOAD DICCIONARIOS {#query-language-system-reload-dictionaries}
 

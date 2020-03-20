@@ -4,14 +4,14 @@
 
 Los tipos son equivalentes a los tipos de C:
 
-- `Float32` - `float`
-- `Float64` - `double`
+-   `Float32` - `float`
+-   `Float64` - `double`
 
 Le recomendamos que almacene los datos en formato entero siempre que sea posible. Por ejemplo, convierta números de precisión fija en valores enteros, como importes monetarios o tiempos de carga de página en milisegundos.
 
 ## Uso de números de punto flotante {#using-floating-point-numbers}
 
-- Los cálculos con números de punto flotante pueden producir un error de redondeo.
+-   Los cálculos con números de punto flotante pueden producir un error de redondeo.
 
 <!-- -->
 
@@ -25,15 +25,15 @@ SELECT 1 - 0.9
 └─────────────────────┘
 ```
 
-- El resultado del cálculo depende del método de cálculo (el tipo de procesador y la arquitectura del sistema informático).
-- Los cálculos de puntos flotantes pueden dar como resultado números como el infinito (`Inf`) y “not-a-number” (`NaN`). Esto debe tenerse en cuenta al procesar los resultados de los cálculos.
-- Al analizar números de punto flotante a partir de texto, el resultado puede no ser el número representable por máquina más cercano.
+-   El resultado del cálculo depende del método de cálculo (el tipo de procesador y la arquitectura del sistema informático).
+-   Los cálculos de puntos flotantes pueden dar como resultado números como el infinito (`Inf`) y “not-a-number” (`NaN`). Esto debe tenerse en cuenta al procesar los resultados de los cálculos.
+-   Al analizar números de punto flotante a partir de texto, el resultado puede no ser el número representable por máquina más cercano.
 
 ## NaN y Inf {#data-type-float-nan-inf}
 
 A diferencia de SQL estándar, ClickHouse admite las siguientes categorías de números de punto flotante:
 
-- `Inf` – Infinito.
+-   `Inf` – Infinito.
 
 <!-- -->
 
@@ -47,7 +47,7 @@ SELECT 0.5 / 0
 └────────────────┘
 ```
 
-- `-Inf` – Infinito negativo.
+-   `-Inf` – Infinito negativo.
 
 <!-- -->
 
@@ -61,7 +61,7 @@ SELECT -0.5 / 0
 └─────────────────┘
 ```
 
-- `NaN` – No es un número.
+-   `NaN` – No es un número.
 
 <!-- -->
 
@@ -75,6 +75,6 @@ SELECT 0 / 0
 └──────────────┘
 ```
 
-  See the rules for `NaN` sorting in the section [ORDER BY clause](../query_language/select.md).
+    See the rules for `NaN` sorting in the section [ORDER BY clause](../query_language/select.md).
 
 [Artículo Original](https://clickhouse.tech/docs/es/data_types/float/) <!--hide-->

@@ -22,9 +22,9 @@ sudo apt-get install -y clickhouse-server clickhouse-client
 
 What do we have in the packages that got installed:
 
-- `clickhouse-client` package contains [clickhouse-client](../interfaces/cli.md) application, interactive ClickHouse console client.
-- `clickhouse-common` package contains a ClickHouse executable file.
-- `clickhouse-server` package contains configuration files to run ClickHouse as a server.
+-   `clickhouse-client` package contains [clickhouse-client](../interfaces/cli.md) application, interactive ClickHouse console client.
+-   `clickhouse-common` package contains a ClickHouse executable file.
+-   `clickhouse-server` package contains configuration files to run ClickHouse as a server.
 
 Server config files are located in `/etc/clickhouse-server/`. Before going further please notice the `<path>` element in `config.xml`. Path determines the location for data storage, so it should be located on volume with large disk capacity, the default value is `/var/lib/clickhouse/`. If you want to adjust the configuration it’s not handy to directly edit `config.xml` file, considering it might get rewritten on future package updates. The recommended way to override the config elements is to create [files in config.d directory](../operations/configuration_files.md) which serve as “patches” to config.xml.
 
@@ -107,8 +107,8 @@ Syntax for creating tables is way more complicated compared to databases (see [r
 
 Yandex.Metrica is a web analytics service and sample dataset doesn’t cover its full functionality, so there are only two tables to create:
 
-- `hits` is a table with each action done by all users on all websites covered by the service.
-- `visits` is a table that contains pre-built sessions instead of individual actions.
+-   `hits` is a table with each action done by all users on all websites covered by the service.
+-   `visits` is a table that contains pre-built sessions instead of individual actions.
 
 Let’s see and execute the real create table queries for these tables:
 

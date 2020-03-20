@@ -10,7 +10,7 @@ bitmapBuild(array)
 
 **Параметры**
 
-- `array` – массив типа `UInt*`.
+-   `array` – массив типа `UInt*`.
 
 **Пример**
 
@@ -34,7 +34,7 @@ bitmapToArray(bitmap)
 
 **Параметры**
 
-- `bitmap` – битовый массив.
+-   `bitmap` – битовый массив.
 
 **Пример**
 
@@ -60,9 +60,9 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **Параметры**
 
-- `bitmap` – Битмап. [Bitmap object](#bitmap_functions-bitmapbuild).
-- `range_start` – Начальная точка подмножества. [UInt32](../../data_types/int_uint.md).
-- `cardinality_limit` – Верхний предел подмножества. [UInt32](../../data_types/int_uint.md).
+-   `bitmap` – Битмап. [Bitmap object](#bitmap_functions-bitmapbuild).
+-   `range_start` – Начальная точка подмножества. [UInt32](../../data_types/int_uint.md).
+-   `cardinality_limit` – Верхний предел подмножества. [UInt32](../../data_types/int_uint.md).
 
 **Возвращаемое значение**
 
@@ -96,13 +96,13 @@ bitmapContains(haystack, needle)
 
 **Параметры**
 
-- `haystack` – [объект Bitmap](#bitmap_functions-bitmapbuild), в котором функция ищет значение.
-- `needle` – значение, которое функция ищет. Тип — [UInt32](../../data_types/int_uint.md).
+-   `haystack` – [объект Bitmap](#bitmap_functions-bitmapbuild), в котором функция ищет значение.
+-   `needle` – значение, которое функция ищет. Тип — [UInt32](../../data_types/int_uint.md).
 
 **Возвращаемые значения**
 
-- 0 — если в `haystack` нет `needle`.
-- 1 — если в `haystack` есть `needle`.
+-   0 — если в `haystack` нет `needle`.
+-   1 — если в `haystack` есть `needle`.
 
 Тип — `UInt8`.
 
@@ -130,12 +130,12 @@ bitmapHasAny(bitmap1, bitmap2)
 
 **Параметры**
 
-- `bitmap*` – массив любого типа с набором элементов.
+-   `bitmap*` – массив любого типа с набором элементов.
 
 **Возвращаемые значения**
 
-- `1`, если `bitmap1` и `bitmap2` имеют хотя бы один одинаковый элемент.
-- `0`, в противном случае.
+-   `1`, если `bitmap1` и `bitmap2` имеют хотя бы один одинаковый элемент.
+-   `0`, в противном случае.
 
 **Пример**
 
@@ -160,7 +160,7 @@ bitmapHasAll(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битовый массив.
+-   `bitmap` – битовый массив.
 
 **Пример**
 
@@ -184,7 +184,7 @@ bitmapAnd(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битовый массив.
+-   `bitmap` – битовый массив.
 
 **Пример**
 
@@ -208,7 +208,7 @@ bitmapOr(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битовый массив.
+-   `bitmap` – битовый массив.
 
 **Пример**
 
@@ -232,7 +232,7 @@ bitmapXor(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битовый массив.
+-   `bitmap` – битовый массив.
 
 **Пример**
 
@@ -256,7 +256,7 @@ bitmapAndnot(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битовый массив.
+-   `bitmap` – битовый массив.
 
 **Пример**
 
@@ -280,7 +280,7 @@ bitmapCardinality(bitmap)
 
 **Параметры**
 
-- `bitmap` – битовый массив.
+-   `bitmap` – битовый массив.
 
 **Пример**
 
@@ -304,7 +304,7 @@ bitmapAndCardinality(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битовый массив.
+-   `bitmap` – битовый массив.
 
 **Пример**
 
@@ -328,7 +328,7 @@ bitmapOrCardinality(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битовый массив.
+-   `bitmap` – битовый массив.
 
 **Пример**
 
@@ -352,7 +352,7 @@ bitmapXorCardinality(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битовый массив.
+-   `bitmap` – битовый массив.
 
 **Пример**
 
@@ -376,7 +376,7 @@ bitmapAndnotCardinality(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битовый массив.
+-   `bitmap` – битовый массив.
 
 **Пример**
 

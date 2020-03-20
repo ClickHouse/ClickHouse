@@ -7,19 +7,19 @@
 
 Структура:
 
-- Интервал времени в виде положительного целого числа.
-- Тип интервала.
+-   Интервал времени в виде положительного целого числа.
+-   Тип интервала.
 
 Поддержанные типы интервалов:
 
-- `SECOND`
-- `MINUTE`
-- `HOUR`
-- `DAY`
-- `WEEK`
-- `MONTH`
-- `QUARTER`
-- `YEAR`
+-   `SECOND`
+-   `MINUTE`
+-   `HOUR`
+-   `DAY`
+-   `WEEK`
+-   `MONTH`
+-   `QUARTER`
+-   `YEAR`
 
 Каждому типу интервала соответствует отдельный тип данных. Например, тип данных `IntervalDay` соответствует интервалу `DAY`:
 
@@ -74,5 +74,5 @@ Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argu
 
 ## Смотрите также {#smotrite-takzhe}
 
-- Оператор[INTERVAL](../../query_language/operators.md#operator-interval)
-- Функция приведения типа [toInterval](../../query_language/functions/type_conversion_functions.md#function-tointerval)
+-   Оператор[INTERVAL](../../query_language/operators.md#operator-interval)
+-   Функция приведения типа [toInterval](../../query_language/functions/type_conversion_functions.md#function-tointerval)

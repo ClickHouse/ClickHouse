@@ -12,8 +12,8 @@
 
 Столбцы:
 
-- `metric` ([String](../data_types/string.md)) — название метрики.
-- `value` ([Float64](../data_types/float.md)) — значение метрики.
+-   `metric` ([String](../data_types/string.md)) — название метрики.
+-   `value` ([Float64](../data_types/float.md)) — значение метрики.
 
 **Пример**
 
@@ -38,10 +38,10 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 
 **Смотрите также**
 
-- [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
-- [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
-- [system.events](#system_tables-events) — таблица с количеством произошедших событий.
-- [system.metric\_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
+-   [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
+-   [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
+-   [system.events](#system_tables-events) — таблица с количеством произошедших событий.
+-   [system.metric\_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
 
 ## system.clusters {#system-clusters}
 
@@ -67,20 +67,20 @@ user String — имя пользователя, которого использ
 
 Таблица `system.columns` содержит столбцы (тип столбца указан в скобках):
 
-- `database` (String) — имя базы данных.
-- `table` (String) — имя таблицы.
-- `name` (String) — имя столбца.
-- `type` (String) — тип столбца.
-- `default_kind` (String) — тип выражения (`DEFAULT`, `MATERIALIZED`, `ALIAS`) значения по умолчанию, или пустая строка.
-- `default_expression` (String) — выражение для значения по умолчанию или пустая строка.
-- `data_compressed_bytes` (UInt64) — размер сжатых данных в байтах.
-- `data_uncompressed_bytes` (UInt64) — размер распакованных данных в байтах.
-- `marks_bytes` (UInt64) — размер засечек в байтах.
-- `comment` (String) — комментарий к столбцу или пустая строка.
-- `is_in_partition_key` (UInt8) — флаг, показывающий включение столбца в ключ партиционирования.
-- `is_in_sorting_key` (UInt8) — флаг, показывающий включение столбца в ключ сортировки.
-- `is_in_primary_key` (UInt8) — флаг, показывающий включение столбца в первичный ключ.
-- `is_in_sampling_key` (UInt8) — флаг, показывающий включение столбца в ключ выборки.
+-   `database` (String) — имя базы данных.
+-   `table` (String) — имя таблицы.
+-   `name` (String) — имя столбца.
+-   `type` (String) — тип столбца.
+-   `default_kind` (String) — тип выражения (`DEFAULT`, `MATERIALIZED`, `ALIAS`) значения по умолчанию, или пустая строка.
+-   `default_expression` (String) — выражение для значения по умолчанию или пустая строка.
+-   `data_compressed_bytes` (UInt64) — размер сжатых данных в байтах.
+-   `data_uncompressed_bytes` (UInt64) — размер распакованных данных в байтах.
+-   `marks_bytes` (UInt64) — размер засечек в байтах.
+-   `comment` (String) — комментарий к столбцу или пустая строка.
+-   `is_in_partition_key` (UInt8) — флаг, показывающий включение столбца в ключ партиционирования.
+-   `is_in_sorting_key` (UInt8) — флаг, показывающий включение столбца в ключ сортировки.
+-   `is_in_primary_key` (UInt8) — флаг, показывающий включение столбца в первичный ключ.
+-   `is_in_sampling_key` (UInt8) — флаг, показывающий включение столбца в ключ выборки.
 
 ## system.contributors {#system-contributors}
 
@@ -88,7 +88,7 @@ user String — имя пользователя, которого использ
 
 Столбцы:
 
-- `name` (String) — Имя контрибьютера (автора коммита) из git log.
+-   `name` (String) — Имя контрибьютера (автора коммита) из git log.
 
 **Пример**
 
@@ -141,19 +141,19 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 
 Столбцы:
 
-- `name String` — Имя словаря.
-- `type String` — Тип словаря: Flat, Hashed, Cache.
-- `origin String` — Путь к конфигурационному файлу, в котором описан словарь.
-- `attribute.names Array(String)` — Массив имён атрибутов, предоставляемых словарём.
-- `attribute.types Array(String)` — Соответствующий массив типов атрибутов, предоставляемых словарём.
-- `has_hierarchy UInt8` — Является ли словарь иерархическим.
-- `bytes_allocated UInt64` — Количество оперативной памяти, которое использует словарь.
-- `hit_rate Float64` — Для cache-словарей - доля использований, для которых значение было в кэше.
-- `element_count UInt64` — Количество хранящихся в словаре элементов.
-- `load_factor Float64` — Доля заполненности словаря (для hashed словаря - доля заполнения хэш-таблицы).
-- `creation_time DateTime` — Время создания или последней успешной перезагрузки словаря.
-- `last_exception String` — Текст ошибки, возникшей при создании или перезагрузке словаря, если словарь не удалось создать.
-- `source String` - Текст, описывающий источник данных для словаря.
+-   `name String` — Имя словаря.
+-   `type String` — Тип словаря: Flat, Hashed, Cache.
+-   `origin String` — Путь к конфигурационному файлу, в котором описан словарь.
+-   `attribute.names Array(String)` — Массив имён атрибутов, предоставляемых словарём.
+-   `attribute.types Array(String)` — Соответствующий массив типов атрибутов, предоставляемых словарём.
+-   `has_hierarchy UInt8` — Является ли словарь иерархическим.
+-   `bytes_allocated UInt64` — Количество оперативной памяти, которое использует словарь.
+-   `hit_rate Float64` — Для cache-словарей - доля использований, для которых значение было в кэше.
+-   `element_count UInt64` — Количество хранящихся в словаре элементов.
+-   `load_factor Float64` — Доля заполненности словаря (для hashed словаря - доля заполнения хэш-таблицы).
+-   `creation_time DateTime` — Время создания или последней успешной перезагрузки словаря.
+-   `last_exception String` — Текст ошибки, возникшей при создании или перезагрузке словаря, если словарь не удалось создать.
+-   `source String` - Текст, описывающий источник данных для словаря.
 
 Заметим, что количество оперативной памяти, которое использует словарь, не является пропорциональным количеству элементов, хранящихся в словаре. Так, для flat и cached словарей, все ячейки памяти выделяются заранее, независимо от реальной заполненности словаря.
 
@@ -163,9 +163,9 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 
 Столбцы:
 
-- `event` ([String](../data_types/string.md)) — имя события.
-- `value` ([UInt64](../data_types/int_uint.md)) — количество произошедших событий.
-- `description` ([String](../data_types/string.md)) — описание события.
+-   `event` ([String](../data_types/string.md)) — имя события.
+-   `value` ([UInt64](../data_types/int_uint.md)) — количество произошедших событий.
+-   `description` ([String](../data_types/string.md)) — описание события.
 
 **Пример**
 
@@ -185,10 +185,10 @@ SELECT * FROM system.events LIMIT 5
 
 **Смотрите также**
 
-- [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
-- [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
-- [system.metric\_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
-- [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
+-   [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
+-   [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
+-   [system.metric\_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
+-   [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
 
 ## system.functions {#system-functions}
 
@@ -196,8 +196,8 @@ SELECT * FROM system.events LIMIT 5
 
 Столбцы:
 
-- `name` (`String`) – Имя функции.
-- `is_aggregate` (`UInt8`) – Признак, является ли функция агрегатной.
+-   `name` (`String`) – Имя функции.
+-   `is_aggregate` (`UInt8`) – Признак, является ли функция агрегатной.
 
 ## system.graphite\_retentions {#system-graphite-retentions}
 
@@ -205,15 +205,15 @@ SELECT * FROM system.events LIMIT 5
 
 Столбцы:
 
-- `config_name` (String) - Имя параметра, используемого для `graphite_rollup`.
-- `regexp` (String) - Шаблон имени метрики.
-- `function` (String) - Имя агрегирующей функции.
-- `age` (UInt64) - Минимальный возраст данных в секундах.
-- `precision` (UInt64) - Точность определения возраста данных в секундах.
-- `priority` (UInt16) - Приоритет раздела pattern.
-- `is_default` (UInt8) - Является ли раздел pattern дефолтным.
-- `Tables.database` (Array(String)) - Массив имён баз данных таблиц, использующих параметр `config_name`.
-- `Tables.table` (Array(String)) - Массив имён таблиц, использующих параметр `config_name`.
+-   `config_name` (String) - Имя параметра, используемого для `graphite_rollup`.
+-   `regexp` (String) - Шаблон имени метрики.
+-   `function` (String) - Имя агрегирующей функции.
+-   `age` (UInt64) - Минимальный возраст данных в секундах.
+-   `precision` (UInt64) - Точность определения возраста данных в секундах.
+-   `priority` (UInt16) - Приоритет раздела pattern.
+-   `is_default` (UInt8) - Является ли раздел pattern дефолтным.
+-   `Tables.database` (Array(String)) - Массив имён баз данных таблиц, использующих параметр `config_name`.
+-   `Tables.table` (Array(String)) - Массив имён таблиц, использующих параметр `config_name`.
 
 ## system.merges {#system-merges}
 
@@ -221,19 +221,19 @@ SELECT * FROM system.events LIMIT 5
 
 Столбцы:
 
-- `database String` — Имя базы данных, в которой находится таблица.
-- `table String` — Имя таблицы.
-- `elapsed Float64` — Время в секундах, прошедшее от начала выполнения слияния.
-- `progress Float64` — Доля выполненной работы от 0 до 1.
-- `num_parts UInt64` — Количество сливаемых кусков.
-- `result_part_name String` — Имя куска, который будет образован в результате слияния.
-- `is_mutation UInt8` - Является ли данный процесс мутацией куска.
-- `total_size_bytes_compressed UInt64` — Суммарный размер сжатых данных сливаемых кусков.
-- `total_size_marks UInt64` — Суммарное количество засечек в сливаемых кусках.
-- `bytes_read_uncompressed UInt64` — Количество прочитанных байт, разжатых.
-- `rows_read UInt64` — Количество прочитанных строк.
-- `bytes_written_uncompressed UInt64` — Количество записанных байт, несжатых.
-- `rows_written UInt64` — Количество записанных строк.
+-   `database String` — Имя базы данных, в которой находится таблица.
+-   `table String` — Имя таблицы.
+-   `elapsed Float64` — Время в секундах, прошедшее от начала выполнения слияния.
+-   `progress Float64` — Доля выполненной работы от 0 до 1.
+-   `num_parts UInt64` — Количество сливаемых кусков.
+-   `result_part_name String` — Имя куска, который будет образован в результате слияния.
+-   `is_mutation UInt8` - Является ли данный процесс мутацией куска.
+-   `total_size_bytes_compressed UInt64` — Суммарный размер сжатых данных сливаемых кусков.
+-   `total_size_marks UInt64` — Суммарное количество засечек в сливаемых кусках.
+-   `bytes_read_uncompressed UInt64` — Количество прочитанных байт, разжатых.
+-   `rows_read UInt64` — Количество прочитанных строк.
+-   `bytes_written_uncompressed UInt64` — Количество записанных байт, несжатых.
+-   `rows_written UInt64` — Количество записанных строк.
 
 ## system.metrics {#system-tables-metrics}
 
@@ -241,9 +241,9 @@ SELECT * FROM system.events LIMIT 5
 
 Столбцы:
 
-- `metric` ([String](../data_types/string.md)) — название метрики.
-- `value` ([Int64](../data_types/int_uint.md)) — значение метрики.
-- `description` ([String](../data_types/string.md)) — описание метрики.
+-   `metric` ([String](../data_types/string.md)) — название метрики.
+-   `value` ([Int64](../data_types/int_uint.md)) — значение метрики.
+-   `description` ([String](../data_types/string.md)) — описание метрики.
 
 Список поддержанных метрик смотрите в файле [dbms/src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Common/CurrentMetrics.cpp).
 
@@ -270,10 +270,10 @@ SELECT * FROM system.metrics LIMIT 10
 
 **Смотрите также**
 
-- [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
-- [system.events](#system_tables-events) — таблица с количеством произошедших событий.
-- [system.metric\_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
-- [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
+-   [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
+-   [system.events](#system_tables-events) — таблица с количеством произошедших событий.
+-   [system.metric\_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
+-   [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
 
 ## system.metric\_log {#system-tables-metric-log}
 
@@ -326,10 +326,10 @@ CurrentMetric_ReplicatedChecks:                             0
 
 **Смотрите также**
 
-- [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
-- [system.events](#system_tables-events) — таблица с количеством произошедших событий.
-- [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
-- [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
+-   [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
+-   [system.events](#system_tables-events) — таблица с количеством произошедших событий.
+-   [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
+-   [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
 
 ## system.numbers {#system-numbers}
 
@@ -356,78 +356,78 @@ CurrentMetric_ReplicatedChecks:                             0
 
 Столбцы:
 
-- `partition` (`String`) – Имя партиции. Что такое партиция можно узнать из описания запроса [ALTER](../query_language/alter.md#query_language_queries_alter).
+-   `partition` (`String`) – Имя партиции. Что такое партиция можно узнать из описания запроса [ALTER](../query_language/alter.md#query_language_queries_alter).
 
-  Форматы:
+    Форматы:
 
-  - `YYYYMM` для автоматической схемы партиционирования по месяцам.
-  - `any_string` при партиционировании вручную.
+    -   `YYYYMM` для автоматической схемы партиционирования по месяцам.
+    -   `any_string` при партиционировании вручную.
 
-- `name` (`String`) – имя куска.
+-   `name` (`String`) – имя куска.
 
-- `active` (`UInt8`) – признак активности. Если кусок активен, то он используется таблицей, в противном случает он будет удален. Неактивные куски остаются после слияний.
+-   `active` (`UInt8`) – признак активности. Если кусок активен, то он используется таблицей, в противном случает он будет удален. Неактивные куски остаются после слияний.
 
-- `marks` (`UInt64`) – количество засечек. Чтобы получить примерное количество строк в куске, умножьте `marks` на гранулированность индекса (обычно 8192).
+-   `marks` (`UInt64`) – количество засечек. Чтобы получить примерное количество строк в куске, умножьте `marks` на гранулированность индекса (обычно 8192).
 
-- `rows` (`UInt64`) – количество строк.
+-   `rows` (`UInt64`) – количество строк.
 
-- `bytes_on_disk` (`UInt64`) – общий размер всех файлов кусков данных в байтах.
+-   `bytes_on_disk` (`UInt64`) – общий размер всех файлов кусков данных в байтах.
 
-- `data_compressed_bytes` (`UInt64`) – общий размер сжатой информации в куске данных. Размер всех дополнительных файлов (например, файлов с засечками) не учитывается.
+-   `data_compressed_bytes` (`UInt64`) – общий размер сжатой информации в куске данных. Размер всех дополнительных файлов (например, файлов с засечками) не учитывается.
 
-- `data_uncompressed_bytes` (`UInt64`) – общий размер распакованной информации куска данных. Размер всех дополнительных файлов (например, файлов с засечками) не учитывается.
+-   `data_uncompressed_bytes` (`UInt64`) – общий размер распакованной информации куска данных. Размер всех дополнительных файлов (например, файлов с засечками) не учитывается.
 
-- `marks_bytes` (`UInt64`) – размер файла с засечками.
+-   `marks_bytes` (`UInt64`) – размер файла с засечками.
 
-- `modification_time` (`DateTime`) – время модификации директории с куском данных. Обычно соответствует времени создания куска.
+-   `modification_time` (`DateTime`) – время модификации директории с куском данных. Обычно соответствует времени создания куска.
 
-- `remove_time` (`DateTime`) – время, когда кусок стал неактивным.
+-   `remove_time` (`DateTime`) – время, когда кусок стал неактивным.
 
-- `refcount` (`UInt32`) – количество мест, в котором кусок используется. Значение больше 2 говорит о том, что кусок участвует в запросах или в слияниях.
+-   `refcount` (`UInt32`) – количество мест, в котором кусок используется. Значение больше 2 говорит о том, что кусок участвует в запросах или в слияниях.
 
-- `min_date` (`Date`) – минимальное значение ключа даты в куске данных.
+-   `min_date` (`Date`) – минимальное значение ключа даты в куске данных.
 
-- `max_date` (`Date`) – максимальное значение ключа даты в куске данных.
+-   `max_date` (`Date`) – максимальное значение ключа даты в куске данных.
 
-- `min_time` (`DateTime`) – минимальное значение даты и времени в куске данных.
+-   `min_time` (`DateTime`) – минимальное значение даты и времени в куске данных.
 
-- `max_time`(`DateTime`) – максимальное значение даты и времени в куске данных.
+-   `max_time`(`DateTime`) – максимальное значение даты и времени в куске данных.
 
-- `partition_id` (`String`) – ID партиции.
+-   `partition_id` (`String`) – ID партиции.
 
-- `min_block_number` (`UInt64`) – минимальное число кусков, из которых состоит текущий после слияния.
+-   `min_block_number` (`UInt64`) – минимальное число кусков, из которых состоит текущий после слияния.
 
-- `max_block_number` (`UInt64`) – максимальное число кусков, из которых состоит текущий после слияния.
+-   `max_block_number` (`UInt64`) – максимальное число кусков, из которых состоит текущий после слияния.
 
-- `level` (`UInt32`) - глубина дерева слияний. Если слияний не было, то `level=0`.
+-   `level` (`UInt32`) - глубина дерева слияний. Если слияний не было, то `level=0`.
 
-- `data_version` (`UInt64`) – число, которое используется для определения того, какие мутации необходимо применить к куску данных (мутации с версией большей, чем `data_version`).
+-   `data_version` (`UInt64`) – число, которое используется для определения того, какие мутации необходимо применить к куску данных (мутации с версией большей, чем `data_version`).
 
-- `primary_key_bytes_in_memory` (`UInt64`) – объём памяти (в байтах), занимаемой значениями первичных ключей.
+-   `primary_key_bytes_in_memory` (`UInt64`) – объём памяти (в байтах), занимаемой значениями первичных ключей.
 
-- `primary_key_bytes_in_memory_allocated` (`UInt64`) – объём памяти (в байтах) выделенный для размещения первичных ключей.
+-   `primary_key_bytes_in_memory_allocated` (`UInt64`) – объём памяти (в байтах) выделенный для размещения первичных ключей.
 
-- `is_frozen` (`UInt8`) – Признак, показывающий существование бэкапа партиции. 1, бэкап есть. 0, бэкапа нет. Смотрите раздел [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition).
+-   `is_frozen` (`UInt8`) – Признак, показывающий существование бэкапа партиции. 1, бэкап есть. 0, бэкапа нет. Смотрите раздел [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition).
 
-- `database` (`String`) – имя базы данных.
+-   `database` (`String`) – имя базы данных.
 
-- `table` (`String`) – имя таблицы.
+-   `table` (`String`) – имя таблицы.
 
-- `engine` (`String`) – имя движка таблицы, без параметров.
+-   `engine` (`String`) – имя движка таблицы, без параметров.
 
-- `path` (`String`) – абсолютный путь к папке с файлами кусков данных.
+-   `path` (`String`) – абсолютный путь к папке с файлами кусков данных.
 
-- `disk` (`String`) – имя диска, на котором находится кусок данных.
+-   `disk` (`String`) – имя диска, на котором находится кусок данных.
 
-- `hash_of_all_files` (`String`) – значение [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) для сжатых файлов.
+-   `hash_of_all_files` (`String`) – значение [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) для сжатых файлов.
 
-- `hash_of_uncompressed_files` (`String`) – значение [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) несжатых файлов (файлы с засечками, первичным ключом и пр.)
+-   `hash_of_uncompressed_files` (`String`) – значение [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) несжатых файлов (файлы с засечками, первичным ключом и пр.)
 
-- `uncompressed_hash_of_compressed_files` (`String`) – значение [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) данных в сжатых файлах как если бы они были разжатыми.
+-   `uncompressed_hash_of_compressed_files` (`String`) – значение [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) данных в сжатых файлах как если бы они были разжатыми.
 
-- `bytes` (`UInt64`) – алиас для `bytes_on_disk`.
+-   `bytes` (`UInt64`) – алиас для `bytes_on_disk`.
 
-- `marks_size` (`UInt64`) – алиас для `marks_bytes`.
+-   `marks_size` (`UInt64`) – алиас для `marks_bytes`.
 
 ## system.part\_log {#system-tables-part-log}
 
@@ -437,28 +437,28 @@ CurrentMetric_ReplicatedChecks:                             0
 
 Столбцы:
 
-- `event_type` (Enum) — тип события. Столбец может содержать одно из следующих значений:
-  - `NEW_PART` — вставка нового куска.
-  - `MERGE_PARTS` — слияние кусков.
-  - `DOWNLOAD_PART` — загрузка с реплики.
-  - `REMOVE_PART` — удаление или отсоединение из таблицы с помощью [DETACH PARTITION](../query_language/alter.md#alter_detach-partition).
-  - `MUTATE_PART` — изменение куска.
-  - `MOVE_PART` — перемещение куска между дисками.
-- `event_date` (Date) — дата события.
-- `event_time` (DateTime) — время события.
-- `duration_ms` (UInt64) — длительность.
-- `database` (String) — имя базы данных, в которой находится кусок.
-- `table` (String) — имя таблицы, в которой находится кусок.
-- `part_name` (String) — имя куска.
-- `partition_id` (String) — идентификатор партиции, в которую был добавлен кусок. В столбце будет значение ‘all’, если таблица партициируется по выражению `tuple()`.
-- `rows` (UInt64) — число строк в куске.
-- `size_in_bytes` (UInt64) — размер куска данных в байтах.
-- `merged_from` (Array(String)) — массив имён кусков, из которых образован текущий кусок в результате слияния (также столбец заполняется в случае скачивания уже смерженного куска).
-- `bytes_uncompressed` (UInt64) — количество прочитанных разжатых байт.
-- `read_rows` (UInt64) — сколько было прочитано строк при слиянии кусков.
-- `read_bytes` (UInt64) — сколько было прочитано байт при слиянии кусков.
-- `error` (UInt16) — код ошибки, возникшей при текущем событии.
-- `exception` (String) — текст ошибки.
+-   `event_type` (Enum) — тип события. Столбец может содержать одно из следующих значений:
+    -   `NEW_PART` — вставка нового куска.
+    -   `MERGE_PARTS` — слияние кусков.
+    -   `DOWNLOAD_PART` — загрузка с реплики.
+    -   `REMOVE_PART` — удаление или отсоединение из таблицы с помощью [DETACH PARTITION](../query_language/alter.md#alter_detach-partition).
+    -   `MUTATE_PART` — изменение куска.
+    -   `MOVE_PART` — перемещение куска между дисками.
+-   `event_date` (Date) — дата события.
+-   `event_time` (DateTime) — время события.
+-   `duration_ms` (UInt64) — длительность.
+-   `database` (String) — имя базы данных, в которой находится кусок.
+-   `table` (String) — имя таблицы, в которой находится кусок.
+-   `part_name` (String) — имя куска.
+-   `partition_id` (String) — идентификатор партиции, в которую был добавлен кусок. В столбце будет значение ‘all’, если таблица партициируется по выражению `tuple()`.
+-   `rows` (UInt64) — число строк в куске.
+-   `size_in_bytes` (UInt64) — размер куска данных в байтах.
+-   `merged_from` (Array(String)) — массив имён кусков, из которых образован текущий кусок в результате слияния (также столбец заполняется в случае скачивания уже смерженного куска).
+-   `bytes_uncompressed` (UInt64) — количество прочитанных разжатых байт.
+-   `read_rows` (UInt64) — сколько было прочитано строк при слиянии кусков.
+-   `read_bytes` (UInt64) — сколько было прочитано байт при слиянии кусков.
+-   `error` (UInt16) — код ошибки, возникшей при текущем событии.
+-   `exception` (String) — текст ошибки.
 
 Системная таблица `system.part_log` будет создана после первой вставки данных в таблицу `MergeTree`.
 
@@ -468,15 +468,15 @@ CurrentMetric_ReplicatedChecks:                             0
 
 Столбцы:
 
-- `user` (String) – пользователь, инициировавший запрос. При распределённом выполнении запросы отправляются на удалённые серверы от имени пользователя `default`. Поле содержит имя пользователя для конкретного запроса, а не для запроса, который иницировал этот запрос.
-- `address` (String) – IP-адрес, с которого пришёл запрос. При распределённой обработке запроса аналогично. Чтобы определить откуда запрос пришел изначально, необходимо смотреть таблицу `system.processes` на сервере-источнике запроса.
-- `elapsed` (Float64) – время в секундах с начала обработки запроса.
-- `rows_read` (UInt64) – количество прочитанных строк. При распределённой обработке запроса на сервере-инициаторе запроса представляет собой сумму по всем удалённым серверам.
-- `bytes_read` (UInt64) – количество прочитанных из таблиц байт, в несжатом виде. При распределённой обработке запроса на сервере-инициаторе запроса представляет собой сумму по всем удалённым серверам.
-- `total_rows_approx` (UInt64) – приблизительная оценка общего количества строк, которые должны быть прочитаны. При распределённой обработке запроса, на сервере-инициаторе запроса, представляет собой сумму по всем удалённым серверам. Может обновляться в процессе выполнения запроса, когда становятся известны новые источники для обработки.
-- `memory_usage` (UInt64) – потребление памяти запросом. Может не учитывать некоторые виды выделенной памяти. Смотрите описание настройки [max\_memory\_usage](../operations/settings/query_complexity.md#settings_max_memory_usage).
-- `query` (String) – текст запроса. Для запросов `INSERT` не содержит встаявляемые данные.
-- `query_id` (String) – идентификатор запроса, если был задан.
+-   `user` (String) – пользователь, инициировавший запрос. При распределённом выполнении запросы отправляются на удалённые серверы от имени пользователя `default`. Поле содержит имя пользователя для конкретного запроса, а не для запроса, который иницировал этот запрос.
+-   `address` (String) – IP-адрес, с которого пришёл запрос. При распределённой обработке запроса аналогично. Чтобы определить откуда запрос пришел изначально, необходимо смотреть таблицу `system.processes` на сервере-источнике запроса.
+-   `elapsed` (Float64) – время в секундах с начала обработки запроса.
+-   `rows_read` (UInt64) – количество прочитанных строк. При распределённой обработке запроса на сервере-инициаторе запроса представляет собой сумму по всем удалённым серверам.
+-   `bytes_read` (UInt64) – количество прочитанных из таблиц байт, в несжатом виде. При распределённой обработке запроса на сервере-инициаторе запроса представляет собой сумму по всем удалённым серверам.
+-   `total_rows_approx` (UInt64) – приблизительная оценка общего количества строк, которые должны быть прочитаны. При распределённой обработке запроса, на сервере-инициаторе запроса, представляет собой сумму по всем удалённым серверам. Может обновляться в процессе выполнения запроса, когда становятся известны новые источники для обработки.
+-   `memory_usage` (UInt64) – потребление памяти запросом. Может не учитывать некоторые виды выделенной памяти. Смотрите описание настройки [max\_memory\_usage](../operations/settings/query_complexity.md#settings_max_memory_usage).
+-   `query` (String) – текст запроса. Для запросов `INSERT` не содержит встаявляемые данные.
+-   `query_id` (String) – идентификатор запроса, если был задан.
 
 ## system.query\_log {#system-tables-query-log}
 
@@ -496,58 +496,58 @@ ClickHouse создаёт таблицу только в том случае, к
 
 Столбцы:
 
-- `type` (`Enum8`) — тип события, произошедшего при выполнении запроса. Значения:
-  - `'QueryStart' = 1` — успешное начало выполнения запроса.
-  - `'QueryFinish' = 2` — успешное завершение выполнения запроса.
-  - `'ExceptionBeforeStart' = 3` — исключение перед началом обработки запроса.
-  - `'ExceptionWhileProcessing' = 4` — исключение во время обработки запроса.
-- `event_date` (Date) — дата начала запроса.
-- `event_time` (DateTime) — время начала запроса.
-- `query_start_time` (DateTime) — время начала обработки запроса.
-- `query_duration_ms` (UInt64) — длительность обработки запроса.
-- `read_rows` (UInt64) — количество прочитанных строк.
-- `read_bytes` (UInt64) — количество прочитанных байтов.
-- `written_rows` (UInt64) — количество записанных строк для запросов `INSERT`. Для других запросов, значение столбца 0.
-- `written_bytes` (UInt64) — объём записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
-- `result_rows` (UInt64) — количество строк в результате.
-- `result_bytes` (UInt64) — объём результата в байтах.
-- `memory_usage` (UInt64) — потребление RAM запросом.
-- `query` (String) — текст запроса.
-- `exception` (String) — сообщение исключения, если запрос завершился по исключению.
-- `stack_trace` (String) — трассировка (список функций, последовательно вызванных перед ошибкой). Пустая строка, если запрос успешно завершен.
-- `is_initial_query` (UInt8) — вид запроса. Возможные значения:
-  - 1 — запрос был инициирован клиентом.
-  - 0 — запрос был инициирован другим запросом при распределенном запросе.
-- `user` (String) — пользователь, запустивший текущий запрос.
-- `query_id` (String) — ID запроса.
-- `address` (IPv6) — IP адрес, с которого пришел запрос.
-- `port` (UInt16) — порт, с которого клиент сделал запрос
-- `initial_user` (String) — пользователь, запустивший первоначальный запрос (для распределенных запросов).
-- `initial_query_id` (String) — ID родительского запроса.
-- `initial_address` (IPv6) — IP адрес, с которого пришел родительский запрос.
-- `initial_port` (UInt16) — порт, с которого клиент сделал родительский запрос.
-- `interface` (UInt8) — интерфейс, с которого ушёл запрос. Возможные значения:
-  - 1 — TCP.
-  - 2 — HTTP.
-- `os_user` (String) — имя пользователя в OS, который запустил [clickhouse-client](../interfaces/cli.md).
-- `client_hostname` (String) — имя сервера, с которого присоединился [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
-- `client_name` (String) — [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
-- `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
-- `client_version_major` (UInt32) — старшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
-- `client_version_minor` (UInt32) — младшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
-- `client_version_patch` (UInt32) — патч [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
-- `http_method` (UInt8) — HTTP метод, инициировавший запрос. Возможные значения:
-  - 0 — запрос запущен с интерфейса TCP.
-  - 1 — `GET`.
-  - 2 — `POST`.
-- `http_user_agent` (String) — HTTP заголовок `UserAgent`.
-- `quota_key` (String) — «ключ квоты» из настроек [квот](quotas.md) (см. `keyed`).
-- `revision` (UInt32) — ревизия ClickHouse.
-- `thread_numbers` (Array(UInt32)) — количество потоков, участвующих в обработке запросов.
-- `ProfileEvents.Names` (Array(String)) — Счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(\#system\_tables-events
-- `ProfileEvents.Values` (Array(UInt64)) — метрики, перечисленные в столбце `ProfileEvents.Names`.
-- `Settings.Names` (Array(String)) — имена настроек, которые меняются, когда клиент выполняет запрос. Чтобы разрешить логирование изменений настроек, установите параметр `log_query_settings` равным 1.
-- `Settings.Values` (Array(String)) — Значения настроек, которые перечислены в столбце `Settings.Names`.
+-   `type` (`Enum8`) — тип события, произошедшего при выполнении запроса. Значения:
+    -   `'QueryStart' = 1` — успешное начало выполнения запроса.
+    -   `'QueryFinish' = 2` — успешное завершение выполнения запроса.
+    -   `'ExceptionBeforeStart' = 3` — исключение перед началом обработки запроса.
+    -   `'ExceptionWhileProcessing' = 4` — исключение во время обработки запроса.
+-   `event_date` (Date) — дата начала запроса.
+-   `event_time` (DateTime) — время начала запроса.
+-   `query_start_time` (DateTime) — время начала обработки запроса.
+-   `query_duration_ms` (UInt64) — длительность обработки запроса.
+-   `read_rows` (UInt64) — количество прочитанных строк.
+-   `read_bytes` (UInt64) — количество прочитанных байтов.
+-   `written_rows` (UInt64) — количество записанных строк для запросов `INSERT`. Для других запросов, значение столбца 0.
+-   `written_bytes` (UInt64) — объём записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
+-   `result_rows` (UInt64) — количество строк в результате.
+-   `result_bytes` (UInt64) — объём результата в байтах.
+-   `memory_usage` (UInt64) — потребление RAM запросом.
+-   `query` (String) — текст запроса.
+-   `exception` (String) — сообщение исключения, если запрос завершился по исключению.
+-   `stack_trace` (String) — трассировка (список функций, последовательно вызванных перед ошибкой). Пустая строка, если запрос успешно завершен.
+-   `is_initial_query` (UInt8) — вид запроса. Возможные значения:
+    -   1 — запрос был инициирован клиентом.
+    -   0 — запрос был инициирован другим запросом при распределенном запросе.
+-   `user` (String) — пользователь, запустивший текущий запрос.
+-   `query_id` (String) — ID запроса.
+-   `address` (IPv6) — IP адрес, с которого пришел запрос.
+-   `port` (UInt16) — порт, с которого клиент сделал запрос
+-   `initial_user` (String) — пользователь, запустивший первоначальный запрос (для распределенных запросов).
+-   `initial_query_id` (String) — ID родительского запроса.
+-   `initial_address` (IPv6) — IP адрес, с которого пришел родительский запрос.
+-   `initial_port` (UInt16) — порт, с которого клиент сделал родительский запрос.
+-   `interface` (UInt8) — интерфейс, с которого ушёл запрос. Возможные значения:
+    -   1 — TCP.
+    -   2 — HTTP.
+-   `os_user` (String) — имя пользователя в OS, который запустил [clickhouse-client](../interfaces/cli.md).
+-   `client_hostname` (String) — имя сервера, с которого присоединился [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+-   `client_name` (String) — [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+-   `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+-   `client_version_major` (UInt32) — старшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+-   `client_version_minor` (UInt32) — младшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+-   `client_version_patch` (UInt32) — патч [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+-   `http_method` (UInt8) — HTTP метод, инициировавший запрос. Возможные значения:
+    -   0 — запрос запущен с интерфейса TCP.
+    -   1 — `GET`.
+    -   2 — `POST`.
+-   `http_user_agent` (String) — HTTP заголовок `UserAgent`.
+-   `quota_key` (String) — «ключ квоты» из настроек [квот](quotas.md) (см. `keyed`).
+-   `revision` (UInt32) — ревизия ClickHouse.
+-   `thread_numbers` (Array(UInt32)) — количество потоков, участвующих в обработке запросов.
+-   `ProfileEvents.Names` (Array(String)) — Счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(\#system\_tables-events
+-   `ProfileEvents.Values` (Array(UInt64)) — метрики, перечисленные в столбце `ProfileEvents.Names`.
+-   `Settings.Names` (Array(String)) — имена настроек, которые меняются, когда клиент выполняет запрос. Чтобы разрешить логирование изменений настроек, установите параметр `log_query_settings` равным 1.
+-   `Settings.Values` (Array(String)) — Значения настроек, которые перечислены в столбце `Settings.Names`.
 
 Каждый запрос создаёт одну или две строки в таблице `query_log`, в зависимости от статуса запроса:
 
@@ -582,58 +582,58 @@ The `system.query_log` table registers two kinds of queries:
 
 Columns:
 
-- `type` (`Enum8`) — Type of event that occurred when executing the query. Values:
-  - `'QueryStart' = 1` — Successful start of query execution.
-  - `'QueryFinish' = 2` — Successful end of query execution.
-  - `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
-  - `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
-- `event_date` (Date) — Query starting date.
-- `event_time` (DateTime) — Query starting time.
-- `query_start_time` (DateTime) — Start time of query execution.
-- `query_duration_ms` (UInt64) — Duration of query execution.
-- `read_rows` (UInt64) — Number of read rows.
-- `read_bytes` (UInt64) — Number of read bytes.
-- `written_rows` (UInt64) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
-- `written_bytes` (UInt64) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
-- `result_rows` (UInt64) — Number of rows in the result.
-- `result_bytes` (UInt64) — Number of bytes in the result.
-- `memory_usage` (UInt64) — Memory consumption by the query.
-- `query` (String) — Query string.
-- `exception` (String) — Exception message.
-- `stack_trace` (String) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
-- `is_initial_query` (UInt8) — Query type. Possible values:
-  - 1 — Query was initiated by the client.
-  - 0 — Query was initiated by another query for distributed query execution.
-- `user` (String) — Name of the user who initiated the current query.
-- `query_id` (String) — ID of the query.
-- `address` (IPv6) — IP address that was used to make the query.
-- `port` (UInt16) — The client port that was used to make the query.
-- `initial_user` (String) — Name of the user who ran the initial query (for distributed query execution).
-- `initial_query_id` (String) — ID of the initial query (for distributed query execution).
-- `initial_address` (IPv6) — IP address that the parent query was launched from.
-- `initial_port` (UInt16) — The client port that was used to make the parent query.
-- `interface` (UInt8) — Interface that the query was initiated from. Possible values:
-  - 1 — TCP.
-  - 2 — HTTP.
-- `os_user` (String) — OS’s username who runs [clickhouse-client](../interfaces/cli.md).
-- `client_hostname` (String) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
-- `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
-- `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
-- `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
-- `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
-- `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
-- `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
-  - 0 — The query was launched from the TCP interface.
-  - 1 — `GET` method was used.
-  - 2 — `POST` method was used.
-- `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
-- `quota_key` (String) — The «quota key» specified in the [quotas](quotas.md) setting (see `keyed`).
-- `revision` (UInt32) — ClickHouse revision.
-- `thread_numbers` (Array(UInt32)) — Number of threads that are participating in query execution.
-- `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [system.events](#system_tables-events)
-- `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the `ProfileEvents.Names` column.
-- `Settings.Names` (Array(String)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parameter to 1.
-- `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` column.
+-   `type` (`Enum8`) — Type of event that occurred when executing the query. Values:
+    -   `'QueryStart' = 1` — Successful start of query execution.
+    -   `'QueryFinish' = 2` — Successful end of query execution.
+    -   `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
+    -   `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
+-   `event_date` (Date) — Query starting date.
+-   `event_time` (DateTime) — Query starting time.
+-   `query_start_time` (DateTime) — Start time of query execution.
+-   `query_duration_ms` (UInt64) — Duration of query execution.
+-   `read_rows` (UInt64) — Number of read rows.
+-   `read_bytes` (UInt64) — Number of read bytes.
+-   `written_rows` (UInt64) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
+-   `written_bytes` (UInt64) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
+-   `result_rows` (UInt64) — Number of rows in the result.
+-   `result_bytes` (UInt64) — Number of bytes in the result.
+-   `memory_usage` (UInt64) — Memory consumption by the query.
+-   `query` (String) — Query string.
+-   `exception` (String) — Exception message.
+-   `stack_trace` (String) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
+-   `is_initial_query` (UInt8) — Query type. Possible values:
+    -   1 — Query was initiated by the client.
+    -   0 — Query was initiated by another query for distributed query execution.
+-   `user` (String) — Name of the user who initiated the current query.
+-   `query_id` (String) — ID of the query.
+-   `address` (IPv6) — IP address that was used to make the query.
+-   `port` (UInt16) — The client port that was used to make the query.
+-   `initial_user` (String) — Name of the user who ran the initial query (for distributed query execution).
+-   `initial_query_id` (String) — ID of the initial query (for distributed query execution).
+-   `initial_address` (IPv6) — IP address that the parent query was launched from.
+-   `initial_port` (UInt16) — The client port that was used to make the parent query.
+-   `interface` (UInt8) — Interface that the query was initiated from. Possible values:
+    -   1 — TCP.
+    -   2 — HTTP.
+-   `os_user` (String) — OS’s username who runs [clickhouse-client](../interfaces/cli.md).
+-   `client_hostname` (String) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
+-   `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
+-   `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+-   `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+-   `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+-   `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
+-   `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
+    -   0 — The query was launched from the TCP interface.
+    -   1 — `GET` method was used.
+    -   2 — `POST` method was used.
+-   `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
+-   `quota_key` (String) — The «quota key» specified in the [quotas](quotas.md) setting (see `keyed`).
+-   `revision` (UInt32) — ClickHouse revision.
+-   `thread_numbers` (Array(UInt32)) — Number of threads that are participating in query execution.
+-   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [system.events](#system_tables-events)
+-   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the `ProfileEvents.Names` column.
+-   `Settings.Names` (Array(String)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parameter to 1.
+-   `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` column.
 
 Each query creates one or two rows in the `query_log` table, depending on the status of the query:
 
@@ -659,50 +659,50 @@ ClickHouse создаёт таблицу только в том случае, к
 
 Столбцы:
 
-- `event_date` (Date) — дата завершения выполнения запроса потоком.
-- `event_time` (DateTime) — дата и время завершения выполнения запроса потоком.
-- `query_start_time` (DateTime) — время начала обработки запроса.
-- `query_duration_ms` (UInt64) — длительность обработки запроса в миллисекундах.
-- `read_rows` (UInt64) — количество прочитанных строк.
-- `read_bytes` (UInt64) — количество прочитанных байтов.
-- `written_rows` (UInt64) — количество записанных строк для запросов `INSERT`. Для других запросов, значение столбца 0.
-- `written_bytes` (UInt64) — объём записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
-- `memory_usage` (Int64) — разница между выделенной и освобождённой памятью в контексте потока.
-- `peak_memory_usage` (Int64) — максимальная разница между выделенной и освобождённой памятью в контексте потока.
-- `thread_name` (String) — Имя потока.
-- `thread_id` (UInt64) — tid (ID потока операционной системы).
-- `master_thread_id` (UInt64) — tid (ID потока операционной системы) главного потока.
-- `query` (String) — текст запроса.
-- `is_initial_query` (UInt8) — вид запроса. Возможные значения:
-  - 1 — запрос был инициирован клиентом.
-  - 0 — запрос был инициирован другим запросом при распределенном запросе.
-- `user` (String) — пользователь, запустивший текущий запрос.
-- `query_id` (String) — ID запроса.
-- `address` (IPv6) — IP адрес, с которого пришел запрос.
-- `port` (UInt16) — порт, с которого пришел запрос.
-- `initial_user` (String) — пользователь, запустивший первоначальный запрос (для распределенных запросов).
-- `initial_query_id` (String) — ID родительского запроса.
-- `initial_address` (IPv6) — IP адрес, с которого пришел родительский запрос.
-- `initial_port` (UInt16) — порт, пришел родительский запрос.
-- `interface` (UInt8) — интерфейс, с которого ушёл запрос. Возможные значения:
-  - 1 — TCP.
-  - 2 — HTTP.
-- `os_user` (String) — имя пользователя в OS, который запустил [clickhouse-client](../interfaces/cli.md).
-- `client_hostname` (String) — hostname клиентской машины, с которой присоединился [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
-- `client_name` (String) — [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
-- `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
-- `client_version_major` (UInt32) — старшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
-- `client_version_minor` (UInt32) — младшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
-- `client_version_patch` (UInt32) — патч [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
-- `http_method` (UInt8) — HTTP метод, инициировавший запрос. Возможные значения:
-  - 0 — запрос запущен с интерфейса TCP.
-  - 1 — `GET`.
-  - 2 — `POST`.
-- `http_user_agent` (String) — HTTP заголовок `UserAgent`.
-- `quota_key` (String) — «ключ квоты» из настроек [квот](quotas.md) (см. `keyed`).
-- `revision` (UInt32) — ревизия ClickHouse.
-- `ProfileEvents.Names` (Array(String)) — Счетчики для изменения различных метрик для данного потока. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(\#system\_tables-events
-- `ProfileEvents.Values` (Array(UInt64)) — метрики для данного потока, перечисленные в столбце `ProfileEvents.Names`.
+-   `event_date` (Date) — дата завершения выполнения запроса потоком.
+-   `event_time` (DateTime) — дата и время завершения выполнения запроса потоком.
+-   `query_start_time` (DateTime) — время начала обработки запроса.
+-   `query_duration_ms` (UInt64) — длительность обработки запроса в миллисекундах.
+-   `read_rows` (UInt64) — количество прочитанных строк.
+-   `read_bytes` (UInt64) — количество прочитанных байтов.
+-   `written_rows` (UInt64) — количество записанных строк для запросов `INSERT`. Для других запросов, значение столбца 0.
+-   `written_bytes` (UInt64) — объём записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
+-   `memory_usage` (Int64) — разница между выделенной и освобождённой памятью в контексте потока.
+-   `peak_memory_usage` (Int64) — максимальная разница между выделенной и освобождённой памятью в контексте потока.
+-   `thread_name` (String) — Имя потока.
+-   `thread_id` (UInt64) — tid (ID потока операционной системы).
+-   `master_thread_id` (UInt64) — tid (ID потока операционной системы) главного потока.
+-   `query` (String) — текст запроса.
+-   `is_initial_query` (UInt8) — вид запроса. Возможные значения:
+    -   1 — запрос был инициирован клиентом.
+    -   0 — запрос был инициирован другим запросом при распределенном запросе.
+-   `user` (String) — пользователь, запустивший текущий запрос.
+-   `query_id` (String) — ID запроса.
+-   `address` (IPv6) — IP адрес, с которого пришел запрос.
+-   `port` (UInt16) — порт, с которого пришел запрос.
+-   `initial_user` (String) — пользователь, запустивший первоначальный запрос (для распределенных запросов).
+-   `initial_query_id` (String) — ID родительского запроса.
+-   `initial_address` (IPv6) — IP адрес, с которого пришел родительский запрос.
+-   `initial_port` (UInt16) — порт, пришел родительский запрос.
+-   `interface` (UInt8) — интерфейс, с которого ушёл запрос. Возможные значения:
+    -   1 — TCP.
+    -   2 — HTTP.
+-   `os_user` (String) — имя пользователя в OS, который запустил [clickhouse-client](../interfaces/cli.md).
+-   `client_hostname` (String) — hostname клиентской машины, с которой присоединился [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+-   `client_name` (String) — [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+-   `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+-   `client_version_major` (UInt32) — старшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+-   `client_version_minor` (UInt32) — младшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+-   `client_version_patch` (UInt32) — патч [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+-   `http_method` (UInt8) — HTTP метод, инициировавший запрос. Возможные значения:
+    -   0 — запрос запущен с интерфейса TCP.
+    -   1 — `GET`.
+    -   2 — `POST`.
+-   `http_user_agent` (String) — HTTP заголовок `UserAgent`.
+-   `quota_key` (String) — «ключ квоты» из настроек [квот](quotas.md) (см. `keyed`).
+-   `revision` (UInt32) — ревизия ClickHouse.
+-   `ProfileEvents.Names` (Array(String)) — Счетчики для изменения различных метрик для данного потока. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(\#system\_tables-events
+-   `ProfileEvents.Values` (Array(UInt64)) — метрики для данного потока, перечисленные в столбце `ProfileEvents.Names`.
 
 По умолчанию, строки добавляются в таблицу логирования с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query\_thread\_log](server_settings/settings.md#server_settings-query-thread-log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос `SYSTEM FLUSH LOGS`.
 
@@ -723,24 +723,24 @@ To analyze logs, use the `addressToLine`, `addressToSymbol` and `demangle` intro
 
 Columns:
 
-- `event_date`([Date](../data_types/date.md)) — Date of sampling moment.
+-   `event_date`([Date](../data_types/date.md)) — Date of sampling moment.
 
-- `event_time`([DateTime](../data_types/datetime.md)) — Timestamp of sampling moment.
+-   `event_time`([DateTime](../data_types/datetime.md)) — Timestamp of sampling moment.
 
-- `revision`([UInt32](../data_types/int_uint.md)) — ClickHouse server build revision.
+-   `revision`([UInt32](../data_types/int_uint.md)) — ClickHouse server build revision.
 
-    When connecting to server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
+        When connecting to server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
 
-- `timer_type`([Enum8](../data_types/enum.md)) — Timer type:
+-   `timer_type`([Enum8](../data_types/enum.md)) — Timer type:
 
-    - `Real` represents wall-clock time.
-    - `CPU` represents CPU time.
+        - `Real` represents wall-clock time.
+        - `CPU` represents CPU time.
 
-- `thread_number`([UInt32](../data_types/int_uint.md)) — Thread identifier.
+-   `thread_number`([UInt32](../data_types/int_uint.md)) — Thread identifier.
 
-- `query_id`([String](../data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) system table.
+-   `query_id`([String](../data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) system table.
 
-- `trace`([Array(UInt64)](../data_types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
+-   `trace`([Array(UInt64)](../data_types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
 **Example**
 
@@ -811,39 +811,39 @@ active_replicas:            2
 
 Столбцы:
 
-- `database` (`String`) - имя БД.
-- `table` (`String`) - имя таблицы.
-- `engine` (`String`) - имя движка таблицы.
-- `is_leader` (`UInt8`) - является ли реплика лидером.
-  В один момент времени, не более одной из реплик является лидером. Лидер отвечает за выбор фоновых слияний, которые следует произвести.
-  Замечу, что запись можно осуществлять на любую реплику (доступную и имеющую сессию в ZK), независимо от лидерства.
-- `can_become_leader` (`UInt8`) - может ли реплика быть выбрана лидером.
-- `is_readonly` (`UInt8`) - находится ли реплика в режиме «только для чтения»
-  Этот режим включается, если в конфиге нет секции с ZK; если при переинициализации сессии в ZK произошла неизвестная ошибка; во время переинициализации сессии с ZK.
-- `is_session_expired` (`UInt8`) - истекла ли сессия с ZK. В основном, то же самое, что и `is_readonly`.
-- `future_parts` (`UInt32`) - количество кусков с данными, которые появятся в результате INSERT-ов или слияний, которых ещё предстоит сделать
-- `parts_to_check` (`UInt32`) - количество кусков с данными в очереди на проверку. Кусок помещается в очередь на проверку, если есть подозрение, что он может быть битым.
-- `zookeeper_path` (`String`) - путь к данным таблицы в ZK.
-- `replica_name` (`String`) - имя реплики в ZK; разные реплики одной таблицы имеют разное имя.
-- `replica_path` (`String`) - путь к данным реплики в ZK. То же самое, что конкатенация zookeeper\_path/replicas/replica\_path.
-- `columns_version` (`Int32`) - номер версии структуры таблицы. Обозначает, сколько раз был сделан ALTER. Если на репликах разные версии, значит некоторые реплики сделали ещё не все ALTER-ы.
-- `queue_size` (`UInt32`) - размер очереди действий, которые предстоит сделать. К действиям относятся вставки блоков данных, слияния, и некоторые другие действия. Как правило, совпадает с future\_parts.
-- `inserts_in_queue` (`UInt32`) - количество вставок блоков данных, которые предстоит сделать. Обычно вставки должны быстро реплицироваться. Если величина большая - значит что-то не так.
-- `merges_in_queue` (`UInt32`) - количество слияний, которые предстоит сделать. Бывают длинные слияния - то есть, это значение может быть больше нуля продолжительное время.
-- `part_mutations_in_queue` (`UInt32`) - количество мутаций, которые предстоит сделать.
-- `queue_oldest_time` (`DateTime`) - если `queue_size` больше 0, показывает, когда была добавлена в очередь самая старая операция.
-- `inserts_oldest_time` (`DateTime`) - см. `queue_oldest_time`.
-- `merges_oldest_time` (`DateTime`) - см. `queue_oldest_time`.
-- `part_mutations_oldest_time` (`DateTime`) - см. `queue_oldest_time`.
+-   `database` (`String`) - имя БД.
+-   `table` (`String`) - имя таблицы.
+-   `engine` (`String`) - имя движка таблицы.
+-   `is_leader` (`UInt8`) - является ли реплика лидером.
+    В один момент времени, не более одной из реплик является лидером. Лидер отвечает за выбор фоновых слияний, которые следует произвести.
+    Замечу, что запись можно осуществлять на любую реплику (доступную и имеющую сессию в ZK), независимо от лидерства.
+-   `can_become_leader` (`UInt8`) - может ли реплика быть выбрана лидером.
+-   `is_readonly` (`UInt8`) - находится ли реплика в режиме «только для чтения»
+    Этот режим включается, если в конфиге нет секции с ZK; если при переинициализации сессии в ZK произошла неизвестная ошибка; во время переинициализации сессии с ZK.
+-   `is_session_expired` (`UInt8`) - истекла ли сессия с ZK. В основном, то же самое, что и `is_readonly`.
+-   `future_parts` (`UInt32`) - количество кусков с данными, которые появятся в результате INSERT-ов или слияний, которых ещё предстоит сделать
+-   `parts_to_check` (`UInt32`) - количество кусков с данными в очереди на проверку. Кусок помещается в очередь на проверку, если есть подозрение, что он может быть битым.
+-   `zookeeper_path` (`String`) - путь к данным таблицы в ZK.
+-   `replica_name` (`String`) - имя реплики в ZK; разные реплики одной таблицы имеют разное имя.
+-   `replica_path` (`String`) - путь к данным реплики в ZK. То же самое, что конкатенация zookeeper\_path/replicas/replica\_path.
+-   `columns_version` (`Int32`) - номер версии структуры таблицы. Обозначает, сколько раз был сделан ALTER. Если на репликах разные версии, значит некоторые реплики сделали ещё не все ALTER-ы.
+-   `queue_size` (`UInt32`) - размер очереди действий, которые предстоит сделать. К действиям относятся вставки блоков данных, слияния, и некоторые другие действия. Как правило, совпадает с future\_parts.
+-   `inserts_in_queue` (`UInt32`) - количество вставок блоков данных, которые предстоит сделать. Обычно вставки должны быстро реплицироваться. Если величина большая - значит что-то не так.
+-   `merges_in_queue` (`UInt32`) - количество слияний, которые предстоит сделать. Бывают длинные слияния - то есть, это значение может быть больше нуля продолжительное время.
+-   `part_mutations_in_queue` (`UInt32`) - количество мутаций, которые предстоит сделать.
+-   `queue_oldest_time` (`DateTime`) - если `queue_size` больше 0, показывает, когда была добавлена в очередь самая старая операция.
+-   `inserts_oldest_time` (`DateTime`) - см. `queue_oldest_time`.
+-   `merges_oldest_time` (`DateTime`) - см. `queue_oldest_time`.
+-   `part_mutations_oldest_time` (`DateTime`) - см. `queue_oldest_time`.
 
 Следующие 4 столбца имеют ненулевое значение только если активна сессия с ZK.
 
-- `log_max_index` (`UInt64`) - максимальный номер записи в общем логе действий.
-- `log_pointer` (`UInt64`) - максимальный номер записи из общего лога действий, которую реплика скопировала в свою очередь для выполнения, плюс единица. Если log\_pointer сильно меньше log\_max\_index, значит что-то не так.
-- `last_queue_update` (`DateTime`) - When the queue was updated last time.
-- `absolute_delay` (`UInt64`) - How big lag in seconds the current replica has.
-- `total_replicas` (`UInt8`) - общее число известных реплик этой таблицы.
-- `active_replicas` (`UInt8`) - число реплик этой таблицы, имеющих сессию в ZK; то есть, число работающих реплик.
+-   `log_max_index` (`UInt64`) - максимальный номер записи в общем логе действий.
+-   `log_pointer` (`UInt64`) - максимальный номер записи из общего лога действий, которую реплика скопировала в свою очередь для выполнения, плюс единица. Если log\_pointer сильно меньше log\_max\_index, значит что-то не так.
+-   `last_queue_update` (`DateTime`) - When the queue was updated last time.
+-   `absolute_delay` (`UInt64`) - How big lag in seconds the current replica has.
+-   `total_replicas` (`UInt8`) - общее число известных реплик этой таблицы.
+-   `active_replicas` (`UInt8`) - число реплик этой таблицы, имеющих сессию в ZK; то есть, число работающих реплик.
 
 Если запрашивать все столбцы, то таблица может работать слегка медленно, так как на каждую строчку делается несколько чтений из ZK.
 Если не запрашивать последние 4 столбца (log\_max\_index, log\_pointer, total\_replicas, active\_replicas), то таблица работает быстро.
@@ -918,13 +918,13 @@ WHERE changed
 
 Эта таблица содержит следующие столбцы (тип столбца показан в скобках):
 
-- `name` (String) — имя движка.
-- `supports_settings` (UInt8) — флаг, показывающий поддержку секции `SETTINGS`.
-- `supports_skipping_indices` (UInt8) — флаг, показывающий поддержку [индексов пропуска данных](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes).
-- `supports_ttl` (UInt8) — флаг, показывающий поддержку [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
-- `supports_sort_order` (UInt8) — флаг, показывающий поддержку секций `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` и `SAMPLE_BY`.
-- `supports_replication` (UInt8) — флаг, показвыающий поддержку [репликации](table_engines/replication/).
-- `supports_duduplication` (UInt8) — флаг, показывающий наличие в движке дедупликации данных.
+-   `name` (String) — имя движка.
+-   `supports_settings` (UInt8) — флаг, показывающий поддержку секции `SETTINGS`.
+-   `supports_skipping_indices` (UInt8) — флаг, показывающий поддержку [индексов пропуска данных](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes).
+-   `supports_ttl` (UInt8) — флаг, показывающий поддержку [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
+-   `supports_sort_order` (UInt8) — флаг, показывающий поддержку секций `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` и `SAMPLE_BY`.
+-   `supports_replication` (UInt8) — флаг, показвыающий поддержку [репликации](table_engines/replication/).
+-   `supports_duduplication` (UInt8) — флаг, показывающий наличие в движке дедупликации данных.
 
 Пример:
 
@@ -944,9 +944,9 @@ WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 
 **Смотрите также**
 
-- [Секции движка](table_engines/mergetree/#mergetree-query-clauses) семейства MergeTree
-- [Настройки](table_engines/kafka.md#table_engine-kafka-creating-a-table) Kafka
-- [Настройки](table_engines/join/#join-limitations-and-settings) Join
+-   [Секции движка](table_engines/mergetree/#mergetree-query-clauses) семейства MergeTree
+-   [Настройки](table_engines/kafka.md#table_engine-kafka-creating-a-table) Kafka
+-   [Настройки](table_engines/join/#join-limitations-and-settings) Join
 
 ## system.tables {#system-tables}
 
@@ -954,21 +954,21 @@ WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 
 Эта таблица содержит следующие столбцы (тип столбца показан в скобках):
 
-- `database String` — имя базы данных, в которой находится таблица.
-- `name` (String) — имя таблицы.
-- `engine` (String) — движок таблицы (без параметров).
-- `is_temporary` (UInt8) — флаг, указывающий на то, временная это таблица или нет.
-- `data_path` (String) — путь к данным таблицы в файловой системе.
-- `metadata_path` (String) — путь к табличным метаданным в файловой системе.
-- `metadata_modification_time` (DateTime) — время последней модификации табличных метаданных.
-- `dependencies_database` (Array(String)) — зависимости базы данных.
-- `dependencies_table` (Array(String)) — табличные зависимости (таблицы [MaterializedView](table_engines/materializedview.md), созданные на базе текущей таблицы).
-- `create_table_query` (String) — запрос, которым создавалась таблица.
-- `engine_full` (String) — параметры табличного движка.
-- `partition_key` (String) — ключ партиционирования таблицы.
-- `sorting_key` (String) — ключ сортировки таблицы.
-- `primary_key` (String) - первичный ключ таблицы.
-- `sampling_key` (String) — ключ сэмплирования таблицы.
+-   `database String` — имя базы данных, в которой находится таблица.
+-   `name` (String) — имя таблицы.
+-   `engine` (String) — движок таблицы (без параметров).
+-   `is_temporary` (UInt8) — флаг, указывающий на то, временная это таблица или нет.
+-   `data_path` (String) — путь к данным таблицы в файловой системе.
+-   `metadata_path` (String) — путь к табличным метаданным в файловой системе.
+-   `metadata_modification_time` (DateTime) — время последней модификации табличных метаданных.
+-   `dependencies_database` (Array(String)) — зависимости базы данных.
+-   `dependencies_table` (Array(String)) — табличные зависимости (таблицы [MaterializedView](table_engines/materializedview.md), созданные на базе текущей таблицы).
+-   `create_table_query` (String) — запрос, которым создавалась таблица.
+-   `engine_full` (String) — параметры табличного движка.
+-   `partition_key` (String) — ключ партиционирования таблицы.
+-   `sorting_key` (String) — ключ сортировки таблицы.
+-   `primary_key` (String) - первичный ключ таблицы.
+-   `sampling_key` (String) — ключ сэмплирования таблицы.
 
 Таблица `system.tables` используется при выполнении запроса `SHOW TABLES`.
 
@@ -983,20 +983,20 @@ WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 
 Столбцы:
 
-- `name String` — Имя узла.
-- `path String` — Путь к узлу.
-- `value String` — Значение узла.
-- `dataLength Int32` — Размер значения.
-- `numChildren Int32` — Количество детей.
-- `czxid Int64` — Идентификатор транзакции, в которой узел был создан.
-- `mzxid Int64` — Идентификатор транзакции, в которой узел был последний раз изменён.
-- `pzxid Int64` — Идентификатор транзакции, последний раз удаливший или добавивший детей.
-- `ctime DateTime` — Время создания узла.
-- `mtime DateTime` — Время последней модификации узла.
-- `version Int32` — Версия узла - количество раз, когда узел был изменён.
-- `cversion Int32` — Количество добавлений или удалений детей.
-- `aversion Int32` — Количество изменений ACL.
-- `ephemeralOwner Int64` — Для эфемерных узлов - идентификатор сессии, которая владеет этим узлом.
+-   `name String` — Имя узла.
+-   `path String` — Путь к узлу.
+-   `value String` — Значение узла.
+-   `dataLength Int32` — Размер значения.
+-   `numChildren Int32` — Количество детей.
+-   `czxid Int64` — Идентификатор транзакции, в которой узел был создан.
+-   `mzxid Int64` — Идентификатор транзакции, в которой узел был последний раз изменён.
+-   `pzxid Int64` — Идентификатор транзакции, последний раз удаливший или добавивший детей.
+-   `ctime DateTime` — Время создания узла.
+-   `mtime DateTime` — Время последней модификации узла.
+-   `version Int32` — Версия узла - количество раз, когда узел был изменён.
+-   `cversion Int32` — Количество добавлений или удалений детей.
+-   `aversion Int32` — Количество изменений ACL.
+-   `ephemeralOwner Int64` — Для эфемерных узлов - идентификатор сессии, которая владеет этим узлом.
 
 Пример:
 
@@ -1075,11 +1075,11 @@ Cодержит информацию о дисках, заданных в [ко�
 
 Столбцы:
 
-- `name` ([String](../data_types/string.md)) — имя диска в конфигурации сервера.
-- `path` ([String](../data_types/string.md)) — путь к точке монтирования в файловой системе.
-- `free_space` ([UInt64](../data_types/int_uint.md)) — свободное место на диске в байтах.
-- `total_space` ([UInt64](../data_types/int_uint.md)) — объём диска в байтах.
-- `keep_free_space` ([UInt64](../data_types/int_uint.md)) — место, которое должно остаться свободным на диске в байтах. Задаётся значением параметра `keep_free_space_bytes` конфигурации дисков.
+-   `name` ([String](../data_types/string.md)) — имя диска в конфигурации сервера.
+-   `path` ([String](../data_types/string.md)) — путь к точке монтирования в файловой системе.
+-   `free_space` ([UInt64](../data_types/int_uint.md)) — свободное место на диске в байтах.
+-   `total_space` ([UInt64](../data_types/int_uint.md)) — объём диска в байтах.
+-   `keep_free_space` ([UInt64](../data_types/int_uint.md)) — место, которое должно остаться свободным на диске в байтах. Задаётся значением параметра `keep_free_space_bytes` конфигурации дисков.
 
 ## system.storage\_policies {#system-tables-storage-policies}
 
@@ -1087,12 +1087,12 @@ Cодержит информацию о дисках, заданных в [ко�
 
 Столбцы:
 
-- `policy_name` ([String](../data_types/string.md)) — имя политики хранения.
-- `volume_name` ([String](../data_types/string.md)) — имя тома, который содержится в политике хранения.
-- `volume_priority` ([UInt64](../data_types/int_uint.md)) — порядковый номер тома согласно конфигурации.
-- `disks` ([Array(String)](../data_types/array.md)) — имена дисков, содержащихся в политике хранения.
-- `max_data_part_size` ([UInt64](../data_types/int_uint.md)) — максимальный размер куска данных, который может храниться на дисках тома (0 — без ограничений).
-- `move_factor` ([Float64](../data_types/float.md))\` — доля свободного места, при превышении которой данные начинают перемещаться на следующий том.
+-   `policy_name` ([String](../data_types/string.md)) — имя политики хранения.
+-   `volume_name` ([String](../data_types/string.md)) — имя тома, который содержится в политике хранения.
+-   `volume_priority` ([UInt64](../data_types/int_uint.md)) — порядковый номер тома согласно конфигурации.
+-   `disks` ([Array(String)](../data_types/array.md)) — имена дисков, содержащихся в политике хранения.
+-   `max_data_part_size` ([UInt64](../data_types/int_uint.md)) — максимальный размер куска данных, который может храниться на дисках тома (0 — без ограничений).
+-   `move_factor` ([Float64](../data_types/float.md))\` — доля свободного места, при превышении которой данные начинают перемещаться на следующий том.
 
 Если политика хранения содержит несколько томов, то каждому тому соответствует отдельная запись в таблице.
 

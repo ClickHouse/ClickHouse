@@ -7,9 +7,9 @@
 
 Для правильной работы функций интроспекции:
 
-- Установите пакет `clickhouse-common-static-dbg`.
+-   Установите пакет `clickhouse-common-static-dbg`.
 
-- Установите настройку [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) в 1.
+-   Установите настройку [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) в 1.
 
 Из соображений безопасности данные функции отключены по умолчанию.
 
@@ -29,17 +29,17 @@ addressToLine(address_of_binary_instruction)
 
 **Параметры**
 
-- `address_of_binary_instruction` ([Тип UInt64](../../data_types/int_uint.md))- Адрес инструкции в запущенном процессе.
+-   `address_of_binary_instruction` ([Тип UInt64](../../data_types/int_uint.md))- Адрес инструкции в запущенном процессе.
 
 **Возвращаемое значение**
 
-- Имя файла исходного кода и номер строки в этом файле разделяются двоеточием.
+-   Имя файла исходного кода и номер строки в этом файле разделяются двоеточием.
 
-    Например, `/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.cpp:199`, где `199` — номер строки.
+        Например, `/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.cpp:199`, где `199` — номер строки.
 
-- Имя бинарного файла, если функция не может найти отладочную информацию.
+-   Имя бинарного файла, если функция не может найти отладочную информацию.
 
-- Пустая строка, если адрес не является допустимым.
+-   Пустая строка, если адрес не является допустимым.
 
 Тип: [String](../../data_types/string.md).
 
@@ -120,12 +120,12 @@ addressToSymbol(address_of_binary_instruction)
 
 **Параметры**
 
-- `address_of_binary_instruction` ([Тип uint64](../../data_types/int_uint.md)) — Адрес инструкции в запущенном процессе.
+-   `address_of_binary_instruction` ([Тип uint64](../../data_types/int_uint.md)) — Адрес инструкции в запущенном процессе.
 
 **Возвращаемое значение**
 
-- Символ из объектных файлов ClickHouse.
-- Пустая строка, если адрес не является допустимым.
+-   Символ из объектных файлов ClickHouse.
+-   Пустая строка, если адрес не является допустимым.
 
 Тип: [String](../../data_types/string.md).
 
@@ -217,12 +217,12 @@ demangle(symbol)
 
 **Параметры**
 
-- `symbol` ([Строка](../../data_types/string.md)) - Символ из объектного файла.
+-   `symbol` ([Строка](../../data_types/string.md)) - Символ из объектного файла.
 
 **Возвращаемое значение**
 
-- Имя функции C++.
-- Пустая строка, если символ не является допустимым.
+-   Имя функции C++.
+-   Пустая строка, если символ не является допустимым.
 
 Тип: [Строка](../../data_types/string.md).
 

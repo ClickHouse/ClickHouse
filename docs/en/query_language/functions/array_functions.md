@@ -12,7 +12,7 @@ Returns 0 for an empty array, or 1 for a non-empty array.
 The result type is UInt8.
 The function also works for strings.
 
-## length {#array_functions-length}
+## length {#array-functions-length}
 
 Returns the number of items in the array.
 The result type is UInt64.
@@ -58,8 +58,8 @@ arrayConcat(arrays)
 
 **Parameters**
 
-- `arrays` – Arbitrary number of arguments of [Array](../../data_types/array.md) type.
-  **Example**
+-   `arrays` – Arbitrary number of arguments of [Array](../../data_types/array.md) type.
+    **Example**
 
 <!-- -->
 
@@ -108,19 +108,19 @@ hasAll(set, subset)
 
 **Parameters**
 
-- `set` – Array of any type with a set of elements.
-- `subset` – Array of any type with elements that should be tested to be a subset of `set`.
+-   `set` – Array of any type with a set of elements.
+-   `subset` – Array of any type with elements that should be tested to be a subset of `set`.
 
 **Return values**
 
-- `1`, if `set` contains all of the elements from `subset`.
-- `0`, otherwise.
+-   `1`, if `set` contains all of the elements from `subset`.
+-   `0`, otherwise.
 
 **Peculiar properties**
 
-- An empty array is a subset of any array.
-- `Null` processed as a value.
-- Order of values in both of arrays doesn’t matter.
+-   An empty array is a subset of any array.
+-   `Null` processed as a value.
+-   Order of values in both of arrays doesn’t matter.
 
 **Examples**
 
@@ -146,18 +146,18 @@ hasAny(array1, array2)
 
 **Parameters**
 
-- `array1` – Array of any type with a set of elements.
-- `array2` – Array of any type with a set of elements.
+-   `array1` – Array of any type with a set of elements.
+-   `array2` – Array of any type with a set of elements.
 
 **Return values**
 
-- `1`, if `array1` and `array2` have one similar element at least.
-- `0`, otherwise.
+-   `1`, if `array1` and `array2` have one similar element at least.
+-   `0`, otherwise.
 
 **Peculiar properties**
 
-- `Null` processed as a value.
-- Order of values in both of arrays doesn’t matter.
+-   `Null` processed as a value.
+-   Order of values in both of arrays doesn’t matter.
 
 **Examples**
 
@@ -208,7 +208,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 └──────────────────────────────────────┘
 ```
 
-## arrayEnumerate(arr) {#array_functions-arrayenumerate}
+## arrayEnumerate(arr) {#array-functions-arrayenumerate}
 
 Returns the array \[1, 2, 3, …, length (arr) \]
 
@@ -314,7 +314,7 @@ arrayPopBack(array)
 
 **Parameters**
 
-- `array` – Array.
+-   `array` – Array.
 
 **Example**
 
@@ -338,7 +338,7 @@ arrayPopFront(array)
 
 **Parameters**
 
-- `array` – Array.
+-   `array` – Array.
 
 **Example**
 
@@ -362,8 +362,8 @@ arrayPushBack(array, single_value)
 
 **Parameters**
 
-- `array` – Array.
-- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see “[Data types](../../data_types/index.md#data_types)”. Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
+-   `array` – Array.
+-   `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see “[Data types](../../data_types/index.md#data_types)”. Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 **Example**
 
@@ -387,8 +387,8 @@ arrayPushFront(array, single_value)
 
 **Parameters**
 
-- `array` – Array.
-- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see “[Data types](../../data_types/index.md#data_types)”. Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
+-   `array` – Array.
+-   `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see “[Data types](../../data_types/index.md#data_types)”. Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 **Example**
 
@@ -412,11 +412,11 @@ arrayResize(array, size[, extender])
 
 **Parameters:**
 
-- `array` — Array.
-- `size` — Required length of the array.
-  - If `size` is less than the original size of the array, the array is truncated from the right.
-- If `size` is larger than the initial size of the array, the array is extended to the right with `extender` values or default values for the data type of the array items.
-- `extender` — Value for extending an array. Can be `NULL`.
+-   `array` — Array.
+-   `size` — Required length of the array.
+    -   If `size` is less than the original size of the array, the array is truncated from the right.
+-   If `size` is larger than the initial size of the array, the array is extended to the right with `extender` values or default values for the data type of the array items.
+-   `extender` — Value for extending an array. Can be `NULL`.
 
 **Returned value:**
 
@@ -454,9 +454,9 @@ arraySlice(array, offset[, length])
 
 **Parameters**
 
-- `array` – Array of data.
-- `offset` – Indent from the edge of the array. A positive value indicates an offset on the left, and a negative value is an indent on the right. Numbering of the array items begins with 1.
-- `length` - The length of the required slice. If you specify a negative value, the function returns an open slice `[offset, array_length - length)`. If you omit the value, the function returns the slice `[offset, the_end_of_array]`.
+-   `array` – Array of data.
+-   `offset` – Indent from the edge of the array. A positive value indicates an offset on the left, and a negative value is an indent on the right. Numbering of the array items begins with 1.
+-   `length` - The length of the required slice. If you specify a negative value, the function returns an open slice `[offset, array_length - length)`. If you omit the value, the function returns the slice `[offset, the_end_of_array]`.
 
 **Example**
 
@@ -472,7 +472,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 
 Array elements set to `NULL` are handled as normal values.
 
-## arraySort(\[func,\] arr, …) {#array_functions-sort}
+## arraySort(\[func,\] arr, …) {#array-functions-sort}
 
 Sorts the elements of the `arr` array in ascending order. If the `func` function is specified, sorting order is determined by the result of the `func` function applied to the elements of the array. If `func` accepts multiple arguments, the `arraySort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arraySort` description.
 
@@ -512,10 +512,10 @@ SELECT arraySort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]);
 └───────────────────────────────────────────────────────────┘
 ```
 
-- `-Inf` values are first in the array.
-- `NULL` values are last in the array.
-- `NaN` values are right before `NULL`.
-- `Inf` values are right before `NaN`.
+-   `-Inf` values are first in the array.
+-   `NULL` values are last in the array.
+-   `NaN` values are right before `NULL`.
+-   `Inf` values are right before `NaN`.
 
 Note that `arraySort` is a [higher-order function](higher_order_functions.md). You can pass a lambda function to it as the first argument. In this case, sorting order is determined by the result of the lambda function applied to the elements of the array.
 
@@ -572,7 +572,7 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 !!! note "Note"
     To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used.
 
-## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
+## arrayReverseSort(\[func,\] arr, …) {#array-functions-reverse-sort}
 
 Sorts the elements of the `arr` array in descending order. If the `func` function is specified, `arr` is sorted according to the result of the `func` function applied to the elements of the array, and then the sorted array is reversed. If `func` accepts multiple arguments, the `arrayReverseSort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arrayReverseSort` description.
 
@@ -612,10 +612,10 @@ SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]) as res;
 └───────────────────────────────────────┘
 ```
 
-- `Inf` values are first in the array.
-- `NULL` values are last in the array.
-- `NaN` values are right before `NULL`.
-- `-Inf` values are right before `NaN`.
+-   `Inf` values are first in the array.
+-   `NULL` values are last in the array.
+-   `NaN` values are right before `NULL`.
+-   `-Inf` values are right before `NaN`.
 
 Note that the `arrayReverseSort` is a [higher-order function](higher_order_functions.md). You can pass a lambda function to it as the first argument. Example is shown below.
 
@@ -680,7 +680,7 @@ If multiple arguments are passed, it counts the number of different tuples of el
 
 If you want to get a list of unique items in an array, you can use arrayReduce(‘groupUniqArray’, arr).
 
-## arrayJoin(arr) {#array_functions-join}
+## arrayJoin(arr) {#array-functions-join}
 
 A special function. See the section [“ArrayJoin function”](array_join.md#functions_arrayjoin).
 
@@ -696,7 +696,7 @@ arrayDifference(array)
 
 **Parameters**
 
-- `array` – [Array](https://clickhouse.yandex/docs/en/data_types/array/).
+-   `array` – [Array](https://clickhouse.yandex/docs/en/data_types/array/).
 
 **Returned values**
 
@@ -748,7 +748,7 @@ arrayDistinct(array)
 
 **Parameters**
 
-- `array` – [Array](https://clickhouse.yandex/docs/en/data_types/array/).
+-   `array` – [Array](https://clickhouse.yandex/docs/en/data_types/array/).
 
 **Returned values**
 
@@ -770,7 +770,7 @@ Result:
 └────────────────────────────────┘
 ```
 
-## arrayEnumerateDense(arr) {#array_functions-arrayenumeratedense}
+## arrayEnumerateDense(arr) {#array-functions-arrayenumeratedense}
 
 Returns an array of the same size as the source array, indicating where each element first appears in the source array.
 
@@ -786,7 +786,7 @@ SELECT arrayEnumerateDense([10, 20, 10, 30])
 └───────────────────────────────────────┘
 ```
 
-## arrayIntersect(arr) {#array_functions-arrayintersect}
+## arrayIntersect(arr) {#array-functions-arrayintersect}
 
 Takes multiple arrays, returns an array with elements that are present in all source arrays. Elements order in the resulting array is the same as in the first array.
 
@@ -804,7 +804,7 @@ SELECT
 └──────────────┴───────────┘
 ```
 
-## arrayReduce(agg\_func, arr1, …) {#array_functions-arrayreduce}
+## arrayReduce(agg\_func, arr1, …) {#array-functions-arrayreduce}
 
 Applies an aggregate function to array elements and returns its result. The name of the aggregation function is passed as a string in single quotes `'max'`, `'sum'`. When using parametric aggregate functions, the parameter is indicated after the function name in parentheses `'uniqUpTo(6)'`.
 
@@ -846,7 +846,7 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## arrayReverse(arr) {#array_functions-arrayreverse}
+## arrayReverse(arr) {#array-functions-arrayreverse}
 
 Returns an array of the same size as the original array containing the elements in reverse order.
 
@@ -862,7 +862,7 @@ SELECT arrayReverse([1, 2, 3])
 └─────────────────────────┘
 ```
 
-## reverse(arr) {#array_functions-reverse}
+## reverse(arr) {#array-functions-reverse}
 
 Synonym for [“arrayReverse”](#array_functions-arrayreverse)
 
@@ -872,8 +872,8 @@ Converts an array of arrays to a flat array.
 
 Function:
 
-- Applies to any depth of nested arrays.
-- Does not change arrays that are already flat.
+-   Applies to any depth of nested arrays.
+-   Does not change arrays that are already flat.
 
 The flattened array contains all the elements from all source arrays.
 
@@ -887,7 +887,7 @@ Alias: `flatten`.
 
 **Parameters**
 
-- `array_of_arrays` — [Array](../../data_types/array.md) of arrays. For example, `[[1,2,3], [4,5]]`.
+-   `array_of_arrays` — [Array](../../data_types/array.md) of arrays. For example, `[[1,2,3], [4,5]]`.
 
 **Examples**
 

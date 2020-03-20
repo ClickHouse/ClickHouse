@@ -77,12 +77,12 @@ Extracts a part from a given date. For example, you can retrieve a month from a 
 
 The `part` parameter specifies which part of the date to retrieve. The following values are available:
 
-- `DAY` — The day of the month. Possible values: 1–31.
-- `MONTH` — The number of a month. Possible values: 1–12.
-- `YEAR` — The year.
-- `SECOND` — The second. Possible values: 0–59.
-- `MINUTE` — The minute. Possible values: 0–59.
-- `HOUR` — The hour. Possible values: 0–23.
+-   `DAY` — The day of the month. Possible values: 1–31.
+-   `MONTH` — The number of a month. Possible values: 1–12.
+-   `YEAR` — The year.
+-   `SECOND` — The second. Possible values: 0–59.
+-   `MINUTE` — The minute. Possible values: 0–59.
+-   `HOUR` — The hour. Possible values: 0–23.
 
 The `part` parameter is case-insensitive.
 
@@ -162,8 +162,8 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 
 **See Also**
 
-- [Interval](../data_types/special_data_types/interval.md) data type
-- [toInterval](functions/type_conversion_functions.md#function-tointerval) type convertion functions
+-   [Interval](../data_types/special_data_types/interval.md) data type
+-   [toInterval](functions/type_conversion_functions.md#function-tointerval) type convertion functions
 
 ## Logical Negation Operator {#logical-negation-operator}
 
@@ -185,7 +185,7 @@ Note:
 
 The conditional operator calculates the values of b and c, then checks whether condition a is met, and then returns the corresponding value. If `b` or `C` is an [arrayJoin()](functions/array_join.md#functions_arrayjoin) function, each row will be replicated regardless of the “a” condition.
 
-## Conditional Expression {#operator_case}
+## Conditional Expression {#operator-case}
 
 ``` sql
 CASE [x]
@@ -232,10 +232,10 @@ ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
 
 ### IS NULL {#operator-is-null}
 
-- For [Nullable](../data_types/nullable.md) type values, the `IS NULL` operator returns:
-  - `1`, if the value is `NULL`.
-  - `0` otherwise.
-- For other values, the `IS NULL` operator always returns `0`.
+-   For [Nullable](../data_types/nullable.md) type values, the `IS NULL` operator returns:
+    -   `1`, if the value is `NULL`.
+    -   `0` otherwise.
+-   For other values, the `IS NULL` operator always returns `0`.
 
 <!-- -->
 
@@ -251,10 +251,10 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 
 ### IS NOT NULL {#is-not-null}
 
-- For [Nullable](../data_types/nullable.md) type values, the `IS NOT NULL` operator returns:
-  - `0`, if the value is `NULL`.
-  - `1` otherwise.
-- For other values, the `IS NOT NULL` operator always returns `1`.
+-   For [Nullable](../data_types/nullable.md) type values, the `IS NOT NULL` operator returns:
+    -   `0`, if the value is `NULL`.
+    -   `1` otherwise.
+-   For other values, the `IS NOT NULL` operator always returns `1`.
 
 <!-- -->
 

@@ -4,10 +4,10 @@ Las funciones de comparación siempre devuelven 0 o 1 (Uint8).
 
 Se pueden comparar los siguientes tipos:
 
-- numero
-- cuerdas y cuerdas fijas
-- fechas
-- fechas con tiempos
+-   numero
+-   cuerdas y cuerdas fijas
+-   fechas
+-   fechas con tiempos
 
 dentro de cada grupo, pero no entre diferentes grupos.
 

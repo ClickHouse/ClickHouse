@@ -1,13 +1,13 @@
-# Internal dictionaries {#internal_dicts}
+# Internal dictionaries {#internal-dicts}
 
 ClickHouse contains a built-in feature for working with a geobase.
 
 This allows you to:
 
-- Use a region’s ID to get its name in the desired language.
-- Use a region’s ID to get the ID of a city, area, federal district, country, or continent.
-- Check whether a region is part of another region.
-- Get a chain of parent regions.
+-   Use a region’s ID to get its name in the desired language.
+-   Use a region’s ID to get the ID of a city, area, federal district, country, or continent.
+-   Check whether a region is part of another region.
+-   Get a chain of parent regions.
 
 All the functions support “translocality,” the ability to simultaneously use different perspectives on region ownership. For more information, see the section “Functions for working with Yandex.Metrica dictionaries”.
 
@@ -24,15 +24,15 @@ You can also create these files yourself. The file format is as follows:
 
 `regions_hierarchy*.txt`: TabSeparated (no header), columns:
 
-- region ID (`UInt32`)
-- parent region ID (`UInt32`)
-- region type (`UInt8`): 1 - continent, 3 - country, 4 - federal district, 5 - region, 6 - city; other types don’t have values
-- population (`UInt32`) — optional column
+-   region ID (`UInt32`)
+-   parent region ID (`UInt32`)
+-   region type (`UInt8`): 1 - continent, 3 - country, 4 - federal district, 5 - region, 6 - city; other types don’t have values
+-   population (`UInt32`) — optional column
 
 `regions_names_*.txt`: TabSeparated (no header), columns:
 
-- region ID (`UInt32`)
-- region name (`String`) — Can’t contain tabs or line feeds, even escaped ones.
+-   region ID (`UInt32`)
+-   region name (`String`) — Can’t contain tabs or line feeds, even escaped ones.
 
 A flat array is used for storing in RAM. For this reason, IDs shouldn’t be more than a million.
 

@@ -73,7 +73,7 @@ Ejemplo de uso:
 create table products (product_id UInt64, title String) Engine = Dictionary(products);
 ```
 
-    Ok
+      Ok
 
 Echa un vistazo a lo que hay en la mesa.
 

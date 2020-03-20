@@ -1,4 +1,4 @@
-# ODBC {#table_engine-odbc}
+# ODBC {#table-engine-odbc}
 
 Allows ClickHouse to connect to external databases via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
@@ -22,14 +22,14 @@ See a detailed description of the [CREATE TABLE](../../query_language/create.md#
 
 The table structure can differ from the source table structure:
 
-- Column names should be the same as in the source table, but you can use just some of these columns and in any order.
-- Column types may differ from those in the source table. ClickHouse tries to [cast](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) values to the ClickHouse data types.
+-   Column names should be the same as in the source table, but you can use just some of these columns and in any order.
+-   Column types may differ from those in the source table. ClickHouse tries to [cast](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) values to the ClickHouse data types.
 
 **Engine Parameters**
 
-- `connection_settings` — Name of the section with connection settings in the `odbc.ini` file.
-- `external_database` — Name of a database in an external DBMS.
-- `external_table` — Name of a table in the `external_database`.
+-   `connection_settings` — Name of the section with connection settings in the `odbc.ini` file.
+-   `external_database` — Name of a database in an external DBMS.
+-   `external_table` — Name of a table in the `external_database`.
 
 ## Usage Example {#usage-example}
 
@@ -119,7 +119,7 @@ SELECT * FROM odbc_t
 
 ## See Also {#see-also}
 
-- [ODBC external dictionaries](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
-- [ODBC table function](../../query_language/table_functions/odbc.md)
+-   [ODBC external dictionaries](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
+-   [ODBC table function](../../query_language/table_functions/odbc.md)
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/odbc/) <!--hide-->

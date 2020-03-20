@@ -10,12 +10,12 @@ isNull(x)
 
 **Parámetros**
 
-- `x` — Un valor con un tipo de datos no compuesto.
+-   `x` — Un valor con un tipo de datos no compuesto.
 
 **Valor devuelto**
 
-- `1` si `x` ser `NULL`.
-- `0` si `x` no es `NULL`.
+-   `1` si `x` ser `NULL`.
+-   `0` si `x` no es `NULL`.
 
 **Ejemplo**
 
@@ -50,12 +50,12 @@ isNotNull(x)
 
 **Parámetros:**
 
-- `x` — Un valor con un tipo de datos no compuesto.
+-   `x` — Un valor con un tipo de datos no compuesto.
 
 **Valor devuelto**
 
-- `0` si `x` ser `NULL`.
-- `1` si `x` no es `NULL`.
+-   `0` si `x` ser `NULL`.
+-   `1` si `x` no es `NULL`.
 
 **Ejemplo**
 
@@ -90,12 +90,12 @@ coalesce(x,...)
 
 **Parámetros:**
 
-- Cualquier número de parámetros de un tipo no compuesto. Todos los parámetros deben ser compatibles por tipo de datos.
+-   Cualquier número de parámetros de un tipo no compuesto. Todos los parámetros deben ser compatibles por tipo de datos.
 
 **Valores devueltos**
 
-- El primer no-`NULL` argumento.
-- `NULL` si todos los argumentos son `NULL`.
+-   El primer no-`NULL` argumento.
+-   `NULL` si todos los argumentos son `NULL`.
 
 **Ejemplo**
 
@@ -133,13 +133,13 @@ ifNull(x,alt)
 
 **Parámetros:**
 
-- `x` — El valor que se debe comprobar `NULL`.
-- `alt` — El valor que devuelve la función si `x` ser `NULL`.
+-   `x` — El valor que se debe comprobar `NULL`.
+-   `alt` — El valor que devuelve la función si `x` ser `NULL`.
 
 **Valores devueltos**
 
-- Valor `x`, si `x` no es `NULL`.
-- Valor `alt`, si `x` ser `NULL`.
+-   Valor `x`, si `x` no es `NULL`.
+-   Valor `alt`, si `x` ser `NULL`.
 
 **Ejemplo**
 
@@ -177,8 +177,8 @@ nullIf(x, y)
 
 **Valores devueltos**
 
-- `NULL` si los argumentos son iguales.
-- El `x` valor, si los argumentos no son iguales.
+-   `NULL` si los argumentos son iguales.
+-   El `x` valor, si los argumentos no son iguales.
 
 **Ejemplo**
 
@@ -212,12 +212,12 @@ assumeNotNull(x)
 
 **Parámetros:**
 
-- `x` — El valor original.
+-   `x` — El valor original.
 
 **Valores devueltos**
 
-- El valor original del-`Nullable` tipo, si no es `NULL`.
-- El valor predeterminado para el-`Nullable` tipo si el valor original fue `NULL`.
+-   El valor original del-`Nullable` tipo, si no es `NULL`.
+-   El valor predeterminado para el-`Nullable` tipo si el valor original fue `NULL`.
 
 **Ejemplo**
 
@@ -274,11 +274,11 @@ toNullable(x)
 
 **Parámetros:**
 
-- `x` — El valor de cualquier tipo no compuesto.
+-   `x` — El valor de cualquier tipo no compuesto.
 
 **Valor devuelto**
 
-- El valor de entrada con un `Nullable` tipo.
+-   El valor de entrada con un `Nullable` tipo.
 
 **Ejemplo**
 

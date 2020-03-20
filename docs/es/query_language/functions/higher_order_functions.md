@@ -14,14 +14,14 @@ Para algunas funciones, tales como [arrayCount](#higher_order_functions-array-co
 
 No se puede omitir una función lambda para las siguientes funciones:
 
-- [arrayMap](#higher_order_functions-array-map)
-- [arrayFilter](#higher_order_functions-array-filter)
-- [arrayFill](#higher_order_functions-array-fill)
-- [arrayReverseFill](#higher_order_functions-array-reverse-fill)
-- [arraySplit](#higher_order_functions-array-split)
-- [arrayReverseSplit](#higher_order_functions-array-reverse-split)
-- [arrayFirst](#higher_order_functions-array-first)
-- [arrayFirstIndex](#higher_order_functions-array-first-index)
+-   [arrayMap](#higher_order_functions-array-map)
+-   [arrayFilter](#higher_order_functions-array-filter)
+-   [arrayFill](#higher_order_functions-array-fill)
+-   [arrayReverseFill](#higher_order_functions-array-reverse-fill)
+-   [arraySplit](#higher_order_functions-array-split)
+-   [arrayReverseSplit](#higher_order_functions-array-reverse-split)
+-   [arrayFirst](#higher_order_functions-array-first)
+-   [arrayFirstIndex](#higher_order_functions-array-first-index)
 
 ### ¿Cómo puedo hacerlo?, …) {#higher-order-functions-array-map}
 

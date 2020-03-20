@@ -10,12 +10,12 @@ generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_stri
 
 **Parameters**
 
-- `name` — Name of corresponding column.
-- `TypeName` — Type of corresponding column.
-- `limit` — Number of rows to generate.
-- `max_array_length` — Maximum array length for all generated arrays. Defaults to `10`.
-- `max_string_length` — Maximum string length for all generated strings. Defaults to `10`.
-- `random_seed` — Specify random seed manually to produce stable results. If NULL — seed is randomly generated.
+-   `name` — Name of corresponding column.
+-   `TypeName` — Type of corresponding column.
+-   `limit` — Number of rows to generate.
+-   `max_array_length` — Maximum array length for all generated arrays. Defaults to `10`.
+-   `max_string_length` — Maximum string length for all generated strings. Defaults to `10`.
+-   `random_seed` — Specify random seed manually to produce stable results. If NULL — seed is randomly generated.
 
 **Returned Value**
 

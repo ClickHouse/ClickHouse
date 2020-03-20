@@ -63,10 +63,10 @@ Uso de la `remote` función de la tabla es menos óptima que la creación de un 
 
 El `remote` puede ser útil en los siguientes casos:
 
-- Acceder a un servidor específico para la comparación de datos, la depuración y las pruebas.
-- Consultas entre varios clústeres de ClickHouse con fines de investigación.
-- Solicitudes distribuidas poco frecuentes que se realizan manualmente.
-- Solicitudes distribuidas donde el conjunto de servidores se redefine cada vez.
+-   Acceder a un servidor específico para la comparación de datos, la depuración y las pruebas.
+-   Consultas entre varios clústeres de ClickHouse con fines de investigación.
+-   Solicitudes distribuidas poco frecuentes que se realizan manualmente.
+-   Solicitudes distribuidas donde el conjunto de servidores se redefine cada vez.
 
 Si el usuario no está especificado, `default` se utiliza.
 Si no se especifica la contraseña, se utiliza una contraseña vacía.

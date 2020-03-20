@@ -6,11 +6,11 @@ MySQL引擎用于将远程的MySQL服务器中的表映射到ClickHouse中，并
 
 但您无法对其执行以下操作：
 
-- `ATTACH`/`DETACH`
-- `DROP`
-- `RENAME`
-- `CREATE TABLE`
-- `ALTER`
+-   `ATTACH`/`DETACH`
+-   `DROP`
+-   `RENAME`
+-   `CREATE TABLE`
+-   `ALTER`
 
 ## CREATE DATABASE {#create-database}
 
@@ -21,10 +21,10 @@ ENGINE = MySQL('host:port', 'database', 'user', 'password')
 
 **MySQL数据库引擎参数**
 
-- `host:port` — 链接的MySQL地址。
-- `database` — 链接的MySQL数据库。
-- `user` — 链接的MySQL用户。
-- `password` — 链接的MySQL用户密码。
+-   `host:port` — 链接的MySQL地址。
+-   `database` — 链接的MySQL数据库。
+-   `user` — 链接的MySQL用户。
+-   `password` — 链接的MySQL用户密码。
 
 ## 支持的类型对应 {#zhi-chi-de-lei-xing-dui-ying}
 
@@ -52,25 +52,25 @@ ENGINE = MySQL('host:port', 'database', 'user', 'password')
 
 在MySQL中创建表:
 
-  mysql> USE test;
-  Database changed
+    mysql> USE test;
+    Database changed
 
-  mysql> CREATE TABLE `mysql_table` (
-      ->   `int_id` INT NOT NULL AUTO_INCREMENT,
-      ->   `float` FLOAT NOT NULL,
-      ->   PRIMARY KEY (`int_id`));
-  Query OK, 0 rows affected (0,09 sec)
+    mysql> CREATE TABLE `mysql_table` (
+        ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+        ->   `float` FLOAT NOT NULL,
+        ->   PRIMARY KEY (`int_id`));
+    Query OK, 0 rows affected (0,09 sec)
 
-  mysql> insert into mysql_table (`int_id`, `float`) VALUES (1,2);
-  Query OK, 1 row affected (0,00 sec)
+    mysql> insert into mysql_table (`int_id`, `float`) VALUES (1,2);
+    Query OK, 1 row affected (0,00 sec)
 
-  mysql> select * from mysql_table;
-  +--------+-------+
-  | int_id | value |
-  +--------+-------+
-  |      1 |     2 |
-  +--------+-------+
-  1 row in set (0,00 sec)
+    mysql> select * from mysql_table;
+    +--------+-------+
+    | int_id | value |
+    +--------+-------+
+    |      1 |     2 |
+    +--------+-------+
+    1 row in set (0,00 sec)
 
 在ClickHouse中创建MySQL类型的数据库，同时与MySQL服务器交换数据：
 

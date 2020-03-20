@@ -6,6 +6,6 @@
 
 除此之外，您还可以选择使用以下的数据库引擎：
 
-- [MySQL](mysql.md)
+-   [MySQL](mysql.md)
 
 [来源文章](https://clickhouse.tech/docs/en/database_engines/) <!--hide-->

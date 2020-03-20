@@ -27,21 +27,21 @@ Vea una descripción detallada del [CREAR TABLA](../../query_language/create.md#
 
 Una tabla para los datos de grafito debe tener las siguientes columnas para los siguientes datos:
 
-- Nombre métrico (sensor de grafito). Tipo de datos: `String`.
+-   Nombre métrico (sensor de grafito). Tipo de datos: `String`.
 
-- Tiempo de medición de la métrica. Tipo de datos: `DateTime`.
+-   Tiempo de medición de la métrica. Tipo de datos: `DateTime`.
 
-- Valor de la métrica. Tipo de datos: cualquier numérico.
+-   Valor de la métrica. Tipo de datos: cualquier numérico.
 
-- Versión de la métrica. Tipo de datos: cualquier numérico.
+-   Versión de la métrica. Tipo de datos: cualquier numérico.
 
-  ClickHouse guarda las filas con la versión más alta o la última escrita si las versiones son las mismas. Otras filas se eliminan durante la fusión de partes de datos.
+    ClickHouse guarda las filas con la versión más alta o la última escrita si las versiones son las mismas. Otras filas se eliminan durante la fusión de partes de datos.
 
 Los nombres de estas columnas deben establecerse en la configuración acumulativa.
 
 **GraphiteMergeTree parámetros**
 
-- `config_section` — Nombre de la sección en el archivo de configuración, donde se establecen las reglas de acumulación.
+-   `config_section` — Nombre de la sección en el archivo de configuración, donde se establecen las reglas de acumulación.
 
 **Cláusulas de consulta**
 
@@ -68,7 +68,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Todos los parámetros excepto `config_section` el mismo significado que en `MergeTree`.
 
-- `config_section` — Nombre de la sección en el archivo de configuración, donde se establecen las reglas de acumulación.
+-   `config_section` — Nombre de la sección en el archivo de configuración, donde se establecen las reglas de acumulación.
 
 </details>
 
@@ -78,15 +78,15 @@ La configuración del paquete acumulativo está definida por [graphite\_rollup](
 
 Estructura de configuración Rollup:
 
-    required-columns
-    patterns
+      required-columns
+      patterns
 
 ### Columnas requeridas {#required-columns}
 
-- `path_column_name` — El nombre de la columna que almacena el nombre de la métrica (sensor de grafito). Valor predeterminado: `Path`.
-- `time_column_name` — El nombre de la columna que almacena el tiempo de medición de la métrica. Valor predeterminado: `Time`.
-- `value_column_name` — El nombre de la columna que almacena el valor de la métrica a la hora establecida en `time_column_name`. Valor predeterminado: `Value`.
-- `version_column_name` — El nombre de la columna que almacena la versión de la métrica. Valor predeterminado: `Timestamp`.
+-   `path_column_name` — El nombre de la columna que almacena el nombre de la métrica (sensor de grafito). Valor predeterminado: `Path`.
+-   `time_column_name` — El nombre de la columna que almacena el tiempo de medición de la métrica. Valor predeterminado: `Time`.
+-   `value_column_name` — El nombre de la columna que almacena el valor de la métrica a la hora establecida en `time_column_name`. Valor predeterminado: `Value`.
+-   `version_column_name` — El nombre de la columna que almacena la versión de la métrica. Valor predeterminado: `Timestamp`.
 
 ### Patrón {#patterns}
 
@@ -116,18 +116,18 @@ default
 !!! warning "Atención"
     Los patrones deben ser estrictamente ordenados:
 
-    1. Patterns without `function` or `retention`.
-    1. Patterns with both `function` and `retention`.
-    1. Pattern `default`.
+      1. Patterns without `function` or `retention`.
+      1. Patterns with both `function` and `retention`.
+      1. Pattern `default`.
 
 Al procesar una fila, ClickHouse comprueba las reglas en el `pattern` apartado. Cada uno de `pattern` (incluir `default` secciones pueden contener `function` parámetro para la agregación, `retention` parámetros o ambos. Si el nombre de la métrica coincide con `regexp`, las reglas de la `pattern` sección (o secciones); de lo contrario, las reglas de la `default` sección se utilizan.
 
 Campos para `pattern` y `default` apartado:
 
-- `regexp`– Un patrón para el nombre de la métrica.
-- `age` – La edad mínima de los datos en segundos.
-- `precision`– Cómo definir con precisión la edad de los datos en segundos. Debe ser un divisor para 86400 (segundos en un día).
-- `function` – El nombre de la función de agregación que se aplicará a los datos cuya antigüedad se encuentra dentro del intervalo `[age, age + precision]`.
+-   `regexp`– Un patrón para el nombre de la métrica.
+-   `age` – La edad mínima de los datos en segundos.
+-   `precision`– Cómo definir con precisión la edad de los datos en segundos. Debe ser un divisor para 86400 (segundos en un día).
+-   `function` – El nombre de la función de agregación que se aplicará a los datos cuya antigüedad se encuentra dentro del intervalo `[age, age + precision]`.
 
 ### Ejemplo de configuración {#configuration-example}
 

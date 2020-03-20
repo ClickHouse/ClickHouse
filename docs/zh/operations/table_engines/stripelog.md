@@ -6,12 +6,12 @@
 
 ## 建表 {#table-engines-stripelog-creating-a-table}
 
-  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
-  (
-      column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-      column2_name [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
-      ...
-  ) ENGINE = StripeLog
+    CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+    (
+        column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+        column2_name [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+        ...
+    ) ENGINE = StripeLog
 
 查看[建表](../../query_language/create.md#create-table-query)请求的详细说明。
 
@@ -21,8 +21,8 @@
 
 ClickHouse 为每张表写入以下文件：
 
-- `data.bin` — 数据文件。
-- `index.mrk` — 带标记的文件。标记包含了已插入的每个数据块中每列的偏移量。
+-   `data.bin` — 数据文件。
+-   `index.mrk` — 带标记的文件。标记包含了已插入的每个数据块中每列的偏移量。
 
 `StripeLog` 引擎不支持 `ALTER UPDATE` 和 `ALTER DELETE` 操作。
 
@@ -59,13 +59,13 @@ ClickHouse 在查询数据时使用多线程。每个线程读取单独的数据
 SELECT * FROM stripe_log_table
 ```
 
-  ┌───────────timestamp─┬─message_type─┬─message────────────────────┐
-  │ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
-  │ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
-  └─────────────────────┴──────────────┴────────────────────────────┘
-  ┌───────────timestamp─┬─message_type─┬─message───────────────────┐
-  │ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message │
-  └─────────────────────┴──────────────┴───────────────────────────┘
+    ┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+    │ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+    │ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+    └─────────────────────┴──────────────┴────────────────────────────┘
+    ┌───────────timestamp─┬─message_type─┬─message───────────────────┐
+    │ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message │
+    └─────────────────────┴──────────────┴───────────────────────────┘
 
 对结果排序（默认增序）：
 
@@ -73,10 +73,10 @@ SELECT * FROM stripe_log_table
 SELECT * FROM stripe_log_table ORDER BY timestamp
 ```
 
-  ┌───────────timestamp─┬─message_type─┬─message────────────────────┐
-  │ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message  │
-  │ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
-  │ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
-  └─────────────────────┴──────────────┴────────────────────────────┘
+    ┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+    │ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message  │
+    │ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+    │ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+    └─────────────────────┴──────────────┴────────────────────────────┘
 
 [来源文章](https://clickhouse.tech/docs/en/operations/table_engines/stripelog/) <!--hide-->

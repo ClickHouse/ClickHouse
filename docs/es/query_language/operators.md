@@ -77,12 +77,12 @@ Extrae una parte de una fecha determinada. Por ejemplo, puede recuperar un mes a
 
 El `part` parámetro especifica qué parte de la fecha se va a recuperar. Los siguientes valores están disponibles:
 
-- `DAY` — El día del mes. Valores posibles: 1-31.
-- `MONTH` — El número de un mes. Valores posibles: 1-12.
-- `YEAR` — Año.
-- `SECOND` — Segundo. Valores posibles: 0–59.
-- `MINUTE` — Minuto. Valores posibles: 0–59.
-- `HOUR` — Hora. Valores posibles: 0–23.
+-   `DAY` — El día del mes. Valores posibles: 1-31.
+-   `MONTH` — El número de un mes. Valores posibles: 1-12.
+-   `YEAR` — Año.
+-   `SECOND` — Segundo. Valores posibles: 0–59.
+-   `MINUTE` — Minuto. Valores posibles: 0–59.
+-   `HOUR` — Hora. Valores posibles: 0–23.
 
 El `part` El parámetro no distingue entre mayúsculas y minúsculas.
 
@@ -162,8 +162,8 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 
 **Ver también**
 
-- [Intervalo](../data_types/special_data_types/interval.md) tipo de datos
-- [ToInterval](functions/type_conversion_functions.md#function-tointerval) funciones de conversión de tipo
+-   [Intervalo](../data_types/special_data_types/interval.md) tipo de datos
+-   [ToInterval](functions/type_conversion_functions.md#function-tointerval) funciones de conversión de tipo
 
 ## Operador de Negación Lógica {#logical-negation-operator}
 
@@ -232,10 +232,10 @@ ClickHouse soporta el `IS NULL` y `IS NOT NULL` operador.
 
 ### ES NULO {#operator-is-null}
 
-- Para [NULL](../data_types/nullable.md) valores de tipo, el `IS NULL` operador devuelve:
-  - `1` si el valor es `NULL`.
-  - `0` de lo contrario.
-- Para otros valores, el `IS NULL` operador siempre devuelve `0`.
+-   Para [NULL](../data_types/nullable.md) valores de tipo, el `IS NULL` operador devuelve:
+    -   `1` si el valor es `NULL`.
+    -   `0` de lo contrario.
+-   Para otros valores, el `IS NULL` operador siempre devuelve `0`.
 
 <!-- -->
 
@@ -251,10 +251,10 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 
 ### NO ES NULO {#is-not-null}
 
-- Para [NULL](../data_types/nullable.md) valores de tipo, el `IS NOT NULL` operador devuelve:
-  - `0` si el valor es `NULL`.
-  - `1` de lo contrario.
-- Para otros valores, el `IS NOT NULL` operador siempre devuelve `1`.
+-   Para [NULL](../data_types/nullable.md) valores de tipo, el `IS NOT NULL` operador devuelve:
+    -   `0` si el valor es `NULL`.
+    -   `1` de lo contrario.
+-   Para otros valores, el `IS NOT NULL` operador siempre devuelve `1`.
 
 <!-- -->
 

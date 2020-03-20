@@ -66,10 +66,10 @@ SELECT * FROM url_engine_table
 
 ## Detalles de la implementación {#details-of-implementation}
 
-- Las lecturas y escrituras pueden ser paralelas
-- No soportado:
-  - `ALTER` y `SELECT...SAMPLE` operación.
-  - Índices.
-  - Replicación.
+-   Las lecturas y escrituras pueden ser paralelas
+-   No soportado:
+    -   `ALTER` y `SELECT...SAMPLE` operación.
+    -   Índices.
+    -   Replicación.
 
 [Artículo Original](https://clickhouse.tech/docs/es/operations/table_engines/url/) <!--hide-->

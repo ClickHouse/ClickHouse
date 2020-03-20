@@ -1,6 +1,6 @@
 # Function Reference {#function-reference}
 
-## count {#agg_function-count}
+## count {#agg-function-count}
 
 Counts the number of rows or not-NULL values.
 
@@ -12,13 +12,13 @@ ClickHouse supports the following syntaxes for `count`:
 
 The function can take:
 
-- Zero parameters.
-- One [expression](../syntax.md#syntax-expressions).
+-   Zero parameters.
+-   One [expression](../syntax.md#syntax-expressions).
 
 **Returned value**
 
-- If the function is called without parameters it counts the number of rows.
-- If the [expression](../syntax.md#syntax-expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a [Nullable](../../data_types/nullable.md)-type value, then the result of `count` stays not `Nullable`. The function returns 0 if the expression returned `NULL` for all the rows.
+-   If the function is called without parameters it counts the number of rows.
+-   If the [expression](../syntax.md#syntax-expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a [Nullable](../../data_types/nullable.md)-type value, then the result of `count` stays not `Nullable`. The function returns 0 if the expression returned `NULL` for all the rows.
 
 In both cases the type of the returned value is [UInt64](../../data_types/int_uint.md).
 
@@ -66,7 +66,7 @@ SELECT count(DISTINCT num) FROM t
 
 This example shows that `count(DISTINCT num)` is performed by the `uniqExact` function according to the `count_distinct_implementation` setting value.
 
-## any(x) {#agg_function-any}
+## any(x) {#agg-function-any}
 
 Selects the first encountered value.
 The query can be executed in any order and even in a different order each time, so the result of this function is indeterminate.
@@ -86,7 +86,7 @@ anyHeavy(column)
 
 **Arguments**
 
-- `column` – The column name.
+-   `column` – The column name.
 
 **Example**
 
@@ -278,15 +278,15 @@ num
 3
 ```
 
-## min(x) {#agg_function-min}
+## min(x) {#agg-function-min}
 
 Calculates the minimum.
 
-## max(x) {#agg_function-max}
+## max(x) {#agg-function-max}
 
 Calculates the maximum.
 
-## argMin(arg, val) {#agg_function-argMin}
+## argMin(arg, val) {#agg-function-argmin}
 
 Calculates the ‘arg’ value for a minimal ‘val’ value. If there are several different values of ‘arg’ for minimal values of ‘val’, the first of these values encountered is output.
 
@@ -310,11 +310,11 @@ SELECT argMin(user, salary) FROM salary
 └──────────────────────┘
 ```
 
-## argMax(arg, val) {#agg_function-argMax}
+## argMax(arg, val) {#agg-function-argmax}
 
 Calculates the ‘arg’ value for a maximum ‘val’ value. If there are several different values of ‘arg’ for maximum values of ‘val’, the first of these values encountered is output.
 
-## sum(x) {#agg_function-sum}
+## sum(x) {#agg-function-sum}
 
 Calculates the sum.
 Only works for numbers.
@@ -325,7 +325,7 @@ Computes the sum of the numbers, using the same data type for the result as for 
 
 Only works for numbers.
 
-## sumMap(key, value) {#agg_functions-summap}
+## sumMap(key, value) {#agg-functions-summap}
 
 Totals the ‘value’ array according to the keys specified in the ‘key’ array.
 The number of elements in ‘key’ and ‘value’ must be the same for each row that is totaled.
@@ -453,14 +453,14 @@ The kurtosis of the given distribution. Type — [Float64](../../data_types/floa
 SELECT kurtSamp(value) FROM series_with_value_column
 ```
 
-## timeSeriesGroupSum(uid, timestamp, value) {#agg_function-timeseriesgroupsum}
+## timeSeriesGroupSum(uid, timestamp, value) {#agg-function-timeseriesgroupsum}
 
 `timeSeriesGroupSum` can aggregate different time series that sample timestamp not alignment.
 It will use linear interpolation between two sample timestamp and then sum time-series together.
 
-- `uid` is the time series unique id, `UInt64`.
-- `timestamp` is Int64 type in order to support millisecond or microsecond.
-- `value` is the metric.
+-   `uid` is the time series unique id, `UInt64`.
+-   `timestamp` is Int64 type in order to support millisecond or microsecond.
+-   `value` is the metric.
 
 The function returns array of tuples with `(timestamp, aggregated_value)` pairs.
 
@@ -505,7 +505,7 @@ And the result will be:
 [(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
 ```
 
-## timeSeriesGroupRateSum(uid, ts, val) {#agg_function-timeseriesgroupratesum}
+## timeSeriesGroupRateSum(uid, ts, val) {#agg-function-timeseriesgroupratesum}
 
 Similarly timeSeriesGroupRateSum, timeSeriesGroupRateSum will Calculate the rate of time-series and then sum rates together.
 Also, timestamp should be in ascend order before use this function.
@@ -516,13 +516,13 @@ Use this function, the result above case will be:
 [(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
 ```
 
-## avg(x) {#agg_function-avg}
+## avg(x) {#agg-function-avg}
 
 Calculates the average.
 Only works for numbers.
 The result is always Float64.
 
-## uniq {#agg_function-uniq}
+## uniq {#agg-function-uniq}
 
 Calculates the approximate number of different values of the argument.
 
@@ -536,30 +536,30 @@ The function takes a variable number of parameters. Parameters can be `Tuple`, `
 
 **Returned value**
 
-- A [UInt64](../../data_types/int_uint.md)-type number.
+-   A [UInt64](../../data_types/int_uint.md)-type number.
 
 **Implementation details**
 
 Function:
 
-- Calculates a hash for all parameters in the aggregate, then uses it in calculations.
+-   Calculates a hash for all parameters in the aggregate, then uses it in calculations.
 
-- Uses an adaptive sampling algorithm. For the calculation state, the function uses a sample of element hash values up to 65536.
+-   Uses an adaptive sampling algorithm. For the calculation state, the function uses a sample of element hash values up to 65536.
 
-    This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
+        This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
 
-- Provides the result deterministically (it doesn’t depend on the query processing order).
+-   Provides the result deterministically (it doesn’t depend on the query processing order).
 
 We recommend using this function in almost all scenarios.
 
 **See Also**
 
-- [uniqCombined](#agg_function-uniqcombined)
-- [uniqCombined64](#agg_function-uniqcombined64)
-- [uniqHLL12](#agg_function-uniqhll12)
-- [uniqExact](#agg_function-uniqexact)
+-   [uniqCombined](#agg_function-uniqcombined)
+-   [uniqCombined64](#agg_function-uniqcombined64)
+-   [uniqHLL12](#agg_function-uniqhll12)
+-   [uniqExact](#agg_function-uniqexact)
 
-## uniqCombined {#agg_function-uniqcombined}
+## uniqCombined {#agg-function-uniqcombined}
 
 Calculates the approximate number of different argument values.
 
@@ -577,41 +577,41 @@ The function takes a variable number of parameters. Parameters can be `Tuple`, `
 
 **Returned value**
 
-- A number [UInt64](../../data_types/int_uint.md)-type number.
+-   A number [UInt64](../../data_types/int_uint.md)-type number.
 
 **Implementation details**
 
 Function:
 
-- Calculates a hash (64-bit hash for `String` and 32-bit otherwise) for all parameters in the aggregate, then uses it in calculations.
+-   Calculates a hash (64-bit hash for `String` and 32-bit otherwise) for all parameters in the aggregate, then uses it in calculations.
 
-- Uses a combination of three algorithms: array, hash table, and HyperLogLog with an error correction table.
+-   Uses a combination of three algorithms: array, hash table, and HyperLogLog with an error correction table.
 
-    For a small number of distinct elements, an array is used. When the set size is larger, a hash table is used. For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory.
+        For a small number of distinct elements, an array is used. When the set size is larger, a hash table is used. For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory.
 
-- Provides the result deterministically (it doesn’t depend on the query processing order).
+-   Provides the result deterministically (it doesn’t depend on the query processing order).
 
 !!! note "Note"
     Since it uses 32-bit hash for non-`String` type, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (error will raise quickly after a few tens of billions of distinct values), hence in this case you should use [uniqCombined64](#agg_function-uniqcombined64)
 
 Compared to the [uniq](#agg_function-uniq) function, the `uniqCombined`:
 
-- Consumes several times less memory.
-- Calculates with several times higher accuracy.
-- Usually has slightly lower performance. In some scenarios, `uniqCombined` can perform better than `uniq`, for example, with distributed queries that transmit a large number of aggregation states over the network.
+-   Consumes several times less memory.
+-   Calculates with several times higher accuracy.
+-   Usually has slightly lower performance. In some scenarios, `uniqCombined` can perform better than `uniq`, for example, with distributed queries that transmit a large number of aggregation states over the network.
 
 **See Also**
 
-- [uniq](#agg_function-uniq)
-- [uniqCombined64](#agg_function-uniqcombined64)
-- [uniqHLL12](#agg_function-uniqhll12)
-- [uniqExact](#agg_function-uniqexact)
+-   [uniq](#agg_function-uniq)
+-   [uniqCombined64](#agg_function-uniqcombined64)
+-   [uniqHLL12](#agg_function-uniqhll12)
+-   [uniqExact](#agg_function-uniqexact)
 
-## uniqCombined64 {#agg_function-uniqcombined64}
+## uniqCombined64 {#agg-function-uniqcombined64}
 
 Same as [uniqCombined](#agg_function-uniqcombined), but uses 64-bit hash for all data types.
 
-## uniqHLL12 {#agg_function-uniqhll12}
+## uniqHLL12 {#agg-function-uniqhll12}
 
 Calculates the approximate number of different argument values, using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
 
@@ -625,29 +625,29 @@ The function takes a variable number of parameters. Parameters can be `Tuple`, `
 
 **Returned value**
 
-- A [UInt64](../../data_types/int_uint.md)-type number.
+-   A [UInt64](../../data_types/int_uint.md)-type number.
 
 **Implementation details**
 
 Function:
 
-- Calculates a hash for all parameters in the aggregate, then uses it in calculations.
+-   Calculates a hash for all parameters in the aggregate, then uses it in calculations.
 
-- Uses the HyperLogLog algorithm to approximate the number of different argument values.
+-   Uses the HyperLogLog algorithm to approximate the number of different argument values.
 
-    212 5-bit cells are used. The size of the state is slightly more than 2.5 KB. The result is not very accurate (up to ~10% error) for small data sets (<10K elements). However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%. Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
+        212 5-bit cells are used. The size of the state is slightly more than 2.5 KB. The result is not very accurate (up to ~10% error) for small data sets (<10K elements). However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%. Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
 
-- Provides the determinate result (it doesn’t depend on the query processing order).
+-   Provides the determinate result (it doesn’t depend on the query processing order).
 
 We don’t recommend using this function. In most cases, use the [uniq](#agg_function-uniq) or [uniqCombined](#agg_function-uniqcombined) function.
 
 **See Also**
 
-- [uniq](#agg_function-uniq)
-- [uniqCombined](#agg_function-uniqcombined)
-- [uniqExact](#agg_function-uniqexact)
+-   [uniq](#agg_function-uniq)
+-   [uniqCombined](#agg_function-uniqcombined)
+-   [uniqExact](#agg_function-uniqexact)
 
-## uniqExact {#agg_function-uniqexact}
+## uniqExact {#agg-function-uniqexact}
 
 Calculates the exact number of different argument values.
 
@@ -665,11 +665,11 @@ The function takes a variable number of parameters. Parameters can be `Tuple`, `
 
 **See Also**
 
-- [uniq](#agg_function-uniq)
-- [uniqCombined](#agg_function-uniqcombined)
-- [uniqHLL12](#agg_function-uniqhll12)
+-   [uniq](#agg_function-uniq)
+-   [uniqCombined](#agg_function-uniqcombined)
+-   [uniqHLL12](#agg_function-uniqhll12)
 
-## groupArray(x), groupArray(max\_size)(x) {#agg_function-grouparray}
+## groupArray(x), groupArray(max\_size)(x) {#agg-function-grouparray}
 
 Creates an array of argument values.
 Values can be added to the array in any (indeterminate) order.
@@ -690,10 +690,10 @@ Accepts the value and position as input. If several values ​​are inserted in
 
 Optional parameters:
 
-- The default value for substituting in empty positions.
-- The length of the resulting array. This allows you to receive arrays of the same size for all the aggregate keys. When using this parameter, the default value must be specified.
+-   The default value for substituting in empty positions.
+-   The length of the resulting array. This allows you to receive arrays of the same size for all the aggregate keys. When using this parameter, the default value must be specified.
 
-## groupArrayMovingSum {#agg_function-grouparraymovingsum}
+## groupArrayMovingSum {#agg-function-grouparraymovingsum}
 
 Calculates the moving sum of input values.
 
@@ -706,12 +706,12 @@ The function can take the window size as a parameter. If left unspecified, the f
 
 **Parameters**
 
-- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
-- `window_size` — Size of the calculation window.
+-   `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
+-   `window_size` — Size of the calculation window.
 
 **Returned values**
 
-- Array of the same size and type as the input data.
+-   Array of the same size and type as the input data.
 
 **Example**
 
@@ -766,7 +766,7 @@ FROM t
 └────────────┴─────────────────────────────────┴────────────────────────┘
 ```
 
-## groupArrayMovingAvg {#agg_function-grouparraymovingavg}
+## groupArrayMovingAvg {#agg-function-grouparraymovingavg}
 
 Calculates the moving average of input values.
 
@@ -779,12 +779,12 @@ The function can take the window size as a parameter. If left unspecified, the f
 
 **Parameters**
 
-- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
-- `window_size` — Size of the calculation window.
+-   `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
+-   `window_size` — Size of the calculation window.
 
 **Returned values**
 
-- Array of the same size and type as the input data.
+-   Array of the same size and type as the input data.
 
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). It truncates the decimal places insignificant for the resulting data type.
 
@@ -841,7 +841,7 @@ FROM t
 └───────────┴──────────────────────────────────┴───────────────────────┘
 ```
 
-## groupUniqArray(x), groupUniqArray(max\_size)(x) {#groupuniqarrayx-groupuniqarraymax_sizex}
+## groupUniqArray(x), groupUniqArray(max\_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
 
 Creates an array from different argument values. Memory consumption is the same as for the `uniqExact` function.
 
@@ -866,18 +866,18 @@ Alias: `median`.
 
 **Parameters**
 
-- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
-- `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
 
 **Returned value**
 
-- Approximate quantile of the specified level.
+-   Approximate quantile of the specified level.
 
 Type:
 
-- [Float64](../../data_types/float.md) for numeric data type input.
-- [Date](../../data_types/date.md) if input values have the `Date` type.
-- [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../data_types/float.md) for numeric data type input.
+-   [Date](../../data_types/date.md) if input values have the `Date` type.
+-   [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
 
 **Example**
 
@@ -908,8 +908,8 @@ Result:
 
 **See Also**
 
-- [median](#median)
-- [quantiles](#quantiles)
+-   [median](#median)
+-   [quantiles](#quantiles)
 
 ## quantileDeterministic {#quantiledeterministic}
 
@@ -929,19 +929,19 @@ Alias: `medianDeterministic`.
 
 **Parameters**
 
-- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
-- `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
-- `determinator` — Number whose hash is used instead of a random number generator in the reservoir sampling algorithm to make the result of sampling deterministic. As a determinator you can use any deterministic positive number, for example, a user id or an event id. If the same determinator value occures too often, the function works incorrectly.
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+-   `determinator` — Number whose hash is used instead of a random number generator in the reservoir sampling algorithm to make the result of sampling deterministic. As a determinator you can use any deterministic positive number, for example, a user id or an event id. If the same determinator value occures too often, the function works incorrectly.
 
 **Returned value**
 
-- Approximate quantile of the specified level.
+-   Approximate quantile of the specified level.
 
 Type:
 
-- [Float64](../../data_types/float.md) for numeric data type input.
-- [Date](../../data_types/date.md) if input values have the `Date` type.
-- [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../data_types/float.md) for numeric data type input.
+-   [Date](../../data_types/date.md) if input values have the `Date` type.
+-   [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
 
 **Example**
 
@@ -972,8 +972,8 @@ Result:
 
 **See Also**
 
-- [median](#median)
-- [quantiles](#quantiles)
+-   [median](#median)
+-   [quantiles](#quantiles)
 
 ## quantileExact {#quantileexact}
 
@@ -993,18 +993,18 @@ Alias: `medianExact`.
 
 **Parameters**
 
-- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
-- `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
 
 **Returned value**
 
-- Quantile of the specified level.
+-   Quantile of the specified level.
 
 Type:
 
-- [Float64](../../data_types/float.md) for numeric data type input.
-- [Date](../../data_types/date.md) if input values have the `Date` type.
-- [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../data_types/float.md) for numeric data type input.
+-   [Date](../../data_types/date.md) if input values have the `Date` type.
+-   [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
 
 **Example**
 
@@ -1024,8 +1024,8 @@ Result:
 
 **See Also**
 
-- [median](#median)
-- [quantiles](#quantiles)
+-   [median](#median)
+-   [quantiles](#quantiles)
 
 ## quantileExactWeighted {#quantileexactweighted}
 
@@ -1045,19 +1045,19 @@ Alias: `medianExactWeighted`.
 
 **Parameters**
 
-- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
-- `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
-- `weight` — Column with weights of sequence members. Weight is a number of value occurrences.
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+-   `weight` — Column with weights of sequence members. Weight is a number of value occurrences.
 
 **Returned value**
 
-- Quantile of the specified level.
+-   Quantile of the specified level.
 
 Type:
 
-- [Float64](../../data_types/float.md) for numeric data type input.
-- [Date](../../data_types/date.md) if input values have the `Date` type.
-- [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../data_types/float.md) for numeric data type input.
+-   [Date](../../data_types/date.md) if input values have the `Date` type.
+-   [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
 
 **Example**
 
@@ -1088,8 +1088,8 @@ Result:
 
 **See Also**
 
-- [median](#median)
-- [quantiles](#quantiles)
+-   [median](#median)
+-   [quantiles](#quantiles)
 
 ## quantileTiming {#quantiletiming}
 
@@ -1109,19 +1109,19 @@ Alias: `medianTiming`.
 
 **Parameters**
 
-- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
 
-- `expr` — [Expression](../syntax.md#syntax-expressions) over a column values returning a [Float\*](../../data_types/float.md)-type number.
+-   `expr` — [Expression](../syntax.md#syntax-expressions) over a column values returning a [Float\*](../../data_types/float.md)-type number.
 
-    - If negative values are passed to the function, the behavior is undefined.
-    - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
+        - If negative values are passed to the function, the behavior is undefined.
+        - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
 
 **Accuracy**
 
 The calculation is accurate if:
 
-- Total number of values doesn’t exceed 5670.
-- Total number of values exceeds 5670, but the page loading time is less than 1024ms.
+-   Total number of values doesn’t exceed 5670.
+-   Total number of values exceeds 5670, but the page loading time is less than 1024ms.
 
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
@@ -1130,7 +1130,7 @@ Otherwise, the result of the calculation is rounded to the nearest multiple of 1
 
 **Returned value**
 
-- Quantile of the specified level.
+-   Quantile of the specified level.
 
 Type: `Float32`.
 
@@ -1171,8 +1171,8 @@ Result:
 
 **See Also**
 
-- [median](#median)
-- [quantiles](#quantiles)
+-   [median](#median)
+-   [quantiles](#quantiles)
 
 ## quantileTimingWeighted {#quantiletimingweighted}
 
@@ -1192,21 +1192,21 @@ Alias: `medianTimingWeighted`.
 
 **Parameters**
 
-- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
 
-- `expr` — [Expression](../syntax.md#syntax-expressions) over a column values returning a [Float\*](../../data_types/float.md)-type number.
+-   `expr` — [Expression](../syntax.md#syntax-expressions) over a column values returning a [Float\*](../../data_types/float.md)-type number.
 
-    - If negative values are passed to the function, the behavior is undefined.
-    - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
+        - If negative values are passed to the function, the behavior is undefined.
+        - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
 
-- `weight` — Column with weights of sequence elements. Weight is a number of value occurrences.
+-   `weight` — Column with weights of sequence elements. Weight is a number of value occurrences.
 
 **Accuracy**
 
 The calculation is accurate if:
 
-- Total number of values doesn’t exceed 5670.
-- Total number of values exceeds 5670, but the page loading time is less than 1024ms.
+-   Total number of values doesn’t exceed 5670.
+-   Total number of values exceeds 5670, but the page loading time is less than 1024ms.
 
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
@@ -1215,7 +1215,7 @@ Otherwise, the result of the calculation is rounded to the nearest multiple of 1
 
 **Returned value**
 
-- Quantile of the specified level.
+-   Quantile of the specified level.
 
 Type: `Float32`.
 
@@ -1253,8 +1253,8 @@ Result:
 
 **See Also**
 
-- [median](#median)
-- [quantiles](#quantiles)
+-   [median](#median)
+-   [quantiles](#quantiles)
 
 ## quantileTDigest {#quantiletdigest}
 
@@ -1276,18 +1276,18 @@ Alias: `medianTDigest`.
 
 **Parameters**
 
-- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
-- `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
 
 **Returned value**
 
-- Approximate quantile of the specified level.
+-   Approximate quantile of the specified level.
 
 Type:
 
-- [Float64](../../data_types/float.md) for numeric data type input.
-- [Date](../../data_types/date.md) if input values have the `Date` type.
-- [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../data_types/float.md) for numeric data type input.
+-   [Date](../../data_types/date.md) if input values have the `Date` type.
+-   [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
 
 **Example**
 
@@ -1307,8 +1307,8 @@ Result:
 
 **See Also**
 
-- [median](#median)
-- [quantiles](#quantiles)
+-   [median](#median)
+-   [quantiles](#quantiles)
 
 ## quantileTDigestWeighted {#quantiletdigestweighted}
 
@@ -1330,19 +1330,19 @@ Alias: `medianTDigest`.
 
 **Parameters**
 
-- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
-- `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
-- `weight` — Column with weights of sequence elements. Weight is a number of value occurrences.
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [data types](../../data_types/index.md#data_types), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+-   `weight` — Column with weights of sequence elements. Weight is a number of value occurrences.
 
 **Returned value**
 
-- Approximate quantile of the specified level.
+-   Approximate quantile of the specified level.
 
 Type:
 
-- [Float64](../../data_types/float.md) for numeric data type input.
-- [Date](../../data_types/date.md) if input values have the `Date` type.
-- [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../data_types/float.md) for numeric data type input.
+-   [Date](../../data_types/date.md) if input values have the `Date` type.
+-   [DateTime](../../data_types/datetime.md) if input values have the `DateTime` type.
 
 **Example**
 
@@ -1362,8 +1362,8 @@ Result:
 
 **See Also**
 
-- [median](#median)
-- [quantiles](#quantiles)
+-   [median](#median)
+-   [quantiles](#quantiles)
 
 ## median {#median}
 
@@ -1371,14 +1371,14 @@ The `median*` functions are the aliases for the corresponding `quantile*` functi
 
 Functions:
 
-- `median` — Alias for [quantile](#quantile).
-- `medianDeterministic` — Alias for [quantileDeterministic](#quantiledeterministic).
-- `medianExact` — Alias for [quantileExact](#quantileexact).
-- `medianExactWeighted` — Alias for [quantileExactWeighted](#quantileexactweighted).
-- `medianTiming` — Alias for [quantileTiming](#quantiletiming).
-- `medianTimingWeighted` — Alias for [quantileTimingWeighted](#quantiletimingweighted).
-- `medianTDigest` — Alias for [quantileTDigest](#quantiletdigest).
-- `medianTDigestWeighted` — Alias for [quantileTDigestWeighted](#quantiletdigestweighted).
+-   `median` — Alias for [quantile](#quantile).
+-   `medianDeterministic` — Alias for [quantileDeterministic](#quantiledeterministic).
+-   `medianExact` — Alias for [quantileExact](#quantileexact).
+-   `medianExactWeighted` — Alias for [quantileExactWeighted](#quantileexactweighted).
+-   `medianTiming` — Alias for [quantileTiming](#quantiletiming).
+-   `medianTimingWeighted` — Alias for [quantileTimingWeighted](#quantiletimingweighted).
+-   `medianTDigest` — Alias for [quantileTDigest](#quantiletdigest).
+-   `medianTDigestWeighted` — Alias for [quantileTDigestWeighted](#quantiletdigestweighted).
 
 **Example**
 
@@ -1449,13 +1449,13 @@ We recommend using the `N < 10` value; performance is reduced with large `N` val
 
 **Parameters**
 
-- ‘N’ is the number of elements to return.
+-   ‘N’ is the number of elements to return.
 
 If the parameter is omitted, default value 10 is used.
 
 **Arguments**
 
-- ’ x ’ – The value to calculate frequency.
+-   ’ x ’ – The value to calculate frequency.
 
 **Example**
 
@@ -1484,12 +1484,12 @@ topKWeighted(N)(x, weight)
 
 **Parameters**
 
-- `N` — The number of elements to return.
+-   `N` — The number of elements to return.
 
 **Arguments**
 
-- `x` – The value.
-- `weight` — The weight. [UInt8](../../data_types/int_uint.md).
+-   `x` – The value.
+-   `weight` — The weight. [UInt8](../../data_types/int_uint.md).
 
 **Returned value**
 
@@ -1545,8 +1545,8 @@ simpleLinearRegression(x, y)
 
 Parameters:
 
-- `x` — Column with dependent variable values.
-- `y` — Column with explanatory variable values.
+-   `x` — Column with dependent variable values.
+-   `y` — Column with explanatory variable values.
 
 Returned values:
 
@@ -1574,11 +1574,11 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
+## stochasticLinearRegression {#agg-functions-stochasticlinearregression}
 
 This function implements stochastic linear regression. It supports custom parameters for learning rate, L2 regularization coefficient, mini-batch size and has few methods for updating weights ([Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) (used by default), [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
 
-### Parameters {#agg_functions-stochasticlinearregression-parameters}
+### Parameters {#agg-functions-stochasticlinearregression-parameters}
 
 There are 4 customizable parameters. They are passed to the function sequentially, but there is no need to pass all four - default values will be used, however good model required some parameter tuning.
 
@@ -1591,7 +1591,7 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 3.  `mini-batch size` sets the number of elements, which gradients will be computed and summed to perform one step of gradient descent. Pure stochastic descent uses one element, however having small batches(about 10 elements) make gradient steps more stable. Default is `15`.
 4.  `method for updating weights`, they are: `Adam` (by default), `SGD`, `Momentum`, `Nesterov`. `Momentum` and `Nesterov` require little bit more computations and memory, however they happen to be useful in terms of speed of convergance and stability of stochastic gradient methods.
 
-### Usage {#agg_functions-stochasticlinearregression-usage}
+### Usage {#agg-functions-stochasticlinearregression-usage}
 
 `stochasticLinearRegression` is used in two steps: fitting the model and predicting on new data. In order to fit the model and save its state for later usage we use `-State` combinator, which basically saves the state (model weights, etc).
 To predict we use function [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
@@ -1631,26 +1631,26 @@ The query will return a column of predicted values. Note that first argument of 
 
 `test_data` is a table like `train_data` but may not contain target value.
 
-### Notes {#agg_functions-stochasticlinearregression-notes}
+### Notes {#agg-functions-stochasticlinearregression-notes}
 
 1.  To merge two models user may create such query:
-  `sql  SELECT state1 + state2 FROM your_models`
-  where `your_models` table contains both models. This query will return new `AggregateFunctionState` object.
+    `sql  SELECT state1 + state2 FROM your_models`
+    where `your_models` table contains both models. This query will return new `AggregateFunctionState` object.
 
 2.  User may fetch weights of the created model for its own purposes without saving the model if no `-State` combinator is used.
-  `sql  SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data`
-  Such query will fit the model and return its weights - first are weights, which correspond to the parameters of the model, the last one is bias. So in the example above the query will return a column with 3 values.
+    `sql  SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data`
+    Such query will fit the model and return its weights - first are weights, which correspond to the parameters of the model, the last one is bias. So in the example above the query will return a column with 3 values.
 
 **See Also**
 
-- [stochasticLogisticRegression](#agg_functions-stochasticlogisticregression)
-- [Difference between linear and logistic regressions](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
+-   [stochasticLogisticRegression](#agg_functions-stochasticlogisticregression)
+-   [Difference between linear and logistic regressions](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
 
-## stochasticLogisticRegression {#agg_functions-stochasticlogisticregression}
+## stochasticLogisticRegression {#agg-functions-stochasticlogisticregression}
 
 This function implements stochastic logistic regression. It can be used for binary classification problem, supports the same custom parameters as stochasticLinearRegression and works the same way.
 
-### Parameters {#agg_functions-stochasticlogisticregression-parameters}
+### Parameters {#agg-functions-stochasticlogisticregression-parameters}
 
 Parameters are exactly the same as in stochasticLinearRegression:
 `learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
@@ -1664,39 +1664,39 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 <!-- -->
 
-  See the `Fitting` section in the [stochasticLinearRegression](#stochasticlinearregression-usage-fitting) description.
+    See the `Fitting` section in the [stochasticLinearRegression](#stochasticlinearregression-usage-fitting) description.
 
-  Predicted labels have to be in \[-1, 1\].
+    Predicted labels have to be in \[-1, 1\].
 
 1.  Predicting
 
 <!-- -->
 
-  Using saved state we can predict probability of object having label `1`.
+    Using saved state we can predict probability of object having label `1`.
 
-  ``` sql
-  WITH (SELECT state FROM your_model) AS model SELECT
-  evalMLMethod(model, param1, param2) FROM test_data
-  ```
+    ``` sql
+    WITH (SELECT state FROM your_model) AS model SELECT
+    evalMLMethod(model, param1, param2) FROM test_data
+    ```
 
-  The query will return a column of probabilities. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
+    The query will return a column of probabilities. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
 
-  We can also set a bound of probability, which assigns elements to different labels.
+    We can also set a bound of probability, which assigns elements to different labels.
 
-  ``` sql
-  SELECT ans < 1.1 AND ans > 0.5 FROM
-  (WITH (SELECT state FROM your_model) AS model SELECT
-  evalMLMethod(model, param1, param2) AS ans FROM test_data)
-  ```
+    ``` sql
+    SELECT ans < 1.1 AND ans > 0.5 FROM
+    (WITH (SELECT state FROM your_model) AS model SELECT
+    evalMLMethod(model, param1, param2) AS ans FROM test_data)
+    ```
 
-  Then the result will be labels.
+    Then the result will be labels.
 
-  `test_data` is a table like `train_data` but may not contain target value.
+    `test_data` is a table like `train_data` but may not contain target value.
 
 **See Also**
 
-- [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
-- [Difference between linear and logistic regressions.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
+-   [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
+-   [Difference between linear and logistic regressions.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
 
 ## groupBitmapAnd {#groupbitmapand}
 

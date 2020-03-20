@@ -17,28 +17,28 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Структура таблицы может отличаться от исходной структуры таблицы MySQL:
 
-- Имена столбцов должны быть такими же, как в исходной таблице MySQL, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
-- Типы столбцов могут отличаться от типов в исходной таблице MySQL. ClickHouse пытается [приводить](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) значения к типам данных ClickHouse.
+-   Имена столбцов должны быть такими же, как в исходной таблице MySQL, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
+-   Типы столбцов могут отличаться от типов в исходной таблице MySQL. ClickHouse пытается [приводить](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) значения к типам данных ClickHouse.
 
 **Параметры движка**
 
-- `host:port` — адрес сервера MySQL.
+-   `host:port` — адрес сервера MySQL.
 
-- `database` — имя базы данных на удалённом сервере.
+-   `database` — имя базы данных на удалённом сервере.
 
-- `table` — имя таблицы на удалённом сервере.
+-   `table` — имя таблицы на удалённом сервере.
 
-- `user` — пользователь MySQL.
+-   `user` — пользователь MySQL.
 
-- `password` — пароль пользователя.
+-   `password` — пароль пользователя.
 
-- `replace_query` — флаг, отвечающий за преобразование запросов `INSERT INTO` в `REPLACE INTO`. Если `replace_query=1`, то запрос заменяется.
+-   `replace_query` — флаг, отвечающий за преобразование запросов `INSERT INTO` в `REPLACE INTO`. Если `replace_query=1`, то запрос заменяется.
 
-- `on_duplicate_clause` — выражение `ON DUPLICATE KEY on_duplicate_clause`, добавляемое к запросу `INSERT`.
+-   `on_duplicate_clause` — выражение `ON DUPLICATE KEY on_duplicate_clause`, добавляемое к запросу `INSERT`.
 
-    Пример: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, где `on_duplicate_clause` это `UPDATE c2 = c2 + 1`. Чтобы узнать какие `on_duplicate_clause` можно использовать с секцией `ON DUPLICATE KEY`  обратитесь к [документации MySQL](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html).
+        Пример: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, где `on_duplicate_clause` это `UPDATE c2 = c2 + 1`. Чтобы узнать какие `on_duplicate_clause` можно использовать с секцией `ON DUPLICATE KEY`  обратитесь к [документации MySQL](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html).
 
-    Чтобы указать `on_duplicate_clause` необходимо передать `0` в параметр `replace_query`. Если одновременно передать `replace_query = 1` и `on_duplicate_clause`, то ClickHouse сгенерирует исключение.
+        Чтобы указать `on_duplicate_clause` необходимо передать `0` в параметр `replace_query`. Если одновременно передать `replace_query = 1` и `on_duplicate_clause`, то ClickHouse сгенерирует исключение.
 
 Простые условия `WHERE` такие как `=, !=, >, >=, <, =` выполняются на стороне сервера MySQL.
 
@@ -92,7 +92,7 @@ SELECT * FROM mysql_table
 
 ## Смотрите также {#smotrite-takzhe}
 
-- [Табличная функция ‘mysql’](../../query_language/table_functions/mysql.md)
-- [Использование MySQL в качестве источника для внешнего словаря](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
+-   [Табличная функция ‘mysql’](../../query_language/table_functions/mysql.md)
+-   [Использование MySQL в качестве источника для внешнего словаря](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/mysql/) <!--hide-->

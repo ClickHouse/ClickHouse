@@ -1,4 +1,4 @@
-# CollapsingMergeTree {#table_engine-collapsingmergetree}
+# CollapsingMergeTree {#table-engine-collapsingmergetree}
 
 The engine inherits from [MergeTree](mergetree.md) and adds the logic of rows collapsing to data parts merge algorithm.
 
@@ -25,9 +25,9 @@ For a description of query parameters, see [query description](../../query_langu
 
 **CollapsingMergeTree Parameters**
 
-- `sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
+-   `sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
 
-  Column data type — `Int8`.
+    Column data type — `Int8`.
 
 **Query clauses**
 
@@ -51,13 +51,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `sign` have the same meaning as in `MergeTree`.
 
-- `sign` — Name of the column with the type of row: `1` — “state” row, `-1` — “cancel” row.
+-   `sign` — Name of the column with the type of row: `1` — “state” row, `-1` — “cancel” row.
 
-  Column Data Type — `Int8`.
+    Column Data Type — `Int8`.
 
 </details>
 
-## Collapsing {#table_engine-collapsingmergetree-collapsing}
+## Collapsing {#table-engine-collapsingmergetree-collapsing}
 
 ### Data {#data}
 
@@ -105,7 +105,7 @@ Why we need 2 rows for each change read in the [Algorithm](#table_engine-collaps
 2.  Long growing arrays in columns reduce the efficiency of the engine due to load for writing. The more straightforward data, the higher the efficiency.
 3.  The `SELECT` results depend strongly on the consistency of object changes history. Be accurate when preparing data for inserting. You can get unpredictable results in inconsistent data, for example, negative values for non-negative metrics such as session depth.
 
-### Algorithm {#table_engine-collapsingmergetree-collapsing-algorithm}
+### Algorithm {#table-engine-collapsingmergetree-collapsing-algorithm}
 
 When ClickHouse merges data parts, each group of consecutive rows with the same sorting key (`ORDER BY`) is reduced to not more than two rows, one with `Sign = 1` (“state” row) and another with `Sign = -1` (“cancel” row). In other words, entries collapse.
 

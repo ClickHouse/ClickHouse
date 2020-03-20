@@ -18,7 +18,7 @@ bitmapBuild(array)
 
 **Parámetros**
 
-- `array` – matriz entera sin signo.
+-   `array` – matriz entera sin signo.
 
 **Ejemplo**
 
@@ -42,7 +42,7 @@ bitmapToArray(bitmap)
 
 **Parámetros**
 
-- `bitmap` – objeto de mapa de bits.
+-   `bitmap` – objeto de mapa de bits.
 
 **Ejemplo**
 
@@ -66,9 +66,9 @@ bitmapSubsetInRange(bitmap, range_start, range_end)
 
 **Parámetros**
 
-- `bitmap` – [Objeto de mapa de bits](#bitmap_functions-bitmapbuild).
-- `range_start` – punto de inicio de la gama. Tipo: [UInt32](../../data_types/int_uint.md).
-- `range_end` – punto final de rango(excluido). Tipo: [UInt32](../../data_types/int_uint.md).
+-   `bitmap` – [Objeto de mapa de bits](#bitmap_functions-bitmapbuild).
+-   `range_start` – punto de inicio de la gama. Tipo: [UInt32](../../data_types/int_uint.md).
+-   `range_end` – punto final de rango(excluido). Tipo: [UInt32](../../data_types/int_uint.md).
 
 **Ejemplo**
 
@@ -94,9 +94,9 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **Parámetros**
 
-- `bitmap` – [Objeto de mapa de bits](#bitmap_functions-bitmapbuild).
-- `range_start` – El punto de partida del subconjunto. Tipo: [UInt32](../../data_types/int_uint.md).
-- `cardinality_limit` – El subconjunto cardinalidad límite superior. Tipo: [UInt32](../../data_types/int_uint.md).
+-   `bitmap` – [Objeto de mapa de bits](#bitmap_functions-bitmapbuild).
+-   `range_start` – El punto de partida del subconjunto. Tipo: [UInt32](../../data_types/int_uint.md).
+-   `cardinality_limit` – El subconjunto cardinalidad límite superior. Tipo: [UInt32](../../data_types/int_uint.md).
 
 **Valor devuelto**
 
@@ -130,13 +130,13 @@ bitmapContains(haystack, needle)
 
 **Parámetros**
 
-- `haystack` – [Objeto de mapa de bits](#bitmap_functions-bitmapbuild), donde la función busca.
-- `needle` – Valor que busca la función. Tipo: [UInt32](../../data_types/int_uint.md).
+-   `haystack` – [Objeto de mapa de bits](#bitmap_functions-bitmapbuild), donde la función busca.
+-   `needle` – Valor que busca la función. Tipo: [UInt32](../../data_types/int_uint.md).
 
 **Valores devueltos**
 
-- 0 — Si `haystack` no contiene `needle`.
-- 1 — Si `haystack` contener `needle`.
+-   0 — Si `haystack` no contiene `needle`.
+-   1 — Si `haystack` contener `needle`.
 
 Tipo: `UInt8`.
 
@@ -164,12 +164,12 @@ Si está seguro de que `bitmap2` contiene estrictamente un elemento, considere u
 
 **Parámetros**
 
-- `bitmap*` – objeto de mapa de bits.
+-   `bitmap*` – objeto de mapa de bits.
 
 **Valores de retorno**
 
-- `1`, si `bitmap1` y `bitmap2` tienen un elemento similar al menos.
-- `0`, de lo contrario.
+-   `1`, si `bitmap1` y `bitmap2` tienen un elemento similar al menos.
+-   `0`, de lo contrario.
 
 **Ejemplo**
 
@@ -194,7 +194,7 @@ bitmapHasAll(bitmap,bitmap)
 
 **Parámetros**
 
-- `bitmap` – objeto de mapa de bits.
+-   `bitmap` – objeto de mapa de bits.
 
 **Ejemplo**
 
@@ -218,7 +218,7 @@ bitmapCardinality(bitmap)
 
 **Parámetros**
 
-- `bitmap` – objeto de mapa de bits.
+-   `bitmap` – objeto de mapa de bits.
 
 **Ejemplo**
 
@@ -236,11 +236,11 @@ SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 Vuelva a ejecutar el valor más pequeño de tipo UInt64 en el conjunto, UINT32\_MAX si el conjunto está vacío.
 
-  bitmapMin(bitmap)
+    bitmapMin(bitmap)
 
 **Parámetros**
 
-- `bitmap` – objeto de mapa de bits.
+-   `bitmap` – objeto de mapa de bits.
 
 **Ejemplo**
 
@@ -248,19 +248,19 @@ Vuelva a ejecutar el valor más pequeño de tipo UInt64 en el conjunto, UINT32\_
 SELECT bitmapMin(bitmapBuild([1, 2, 3, 4, 5])) AS res
 ```
 
-  ┌─res─┐
-  │   1 │
-  └─────┘
+    ┌─res─┐
+    │   1 │
+    └─────┘
 
 ## bitmapMax {#bitmapmax}
 
 Vuelva a ejecutar el mayor valor de tipo UInt64 en el conjunto, 0 si el conjunto está vacío.
 
-  bitmapMax(bitmap)
+    bitmapMax(bitmap)
 
 **Parámetros**
 
-- `bitmap` – objeto de mapa de bits.
+-   `bitmap` – objeto de mapa de bits.
 
 **Ejemplo**
 
@@ -268,21 +268,21 @@ Vuelva a ejecutar el mayor valor de tipo UInt64 en el conjunto, 0 si el conjunto
 SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res
 ```
 
-  ┌─res─┐
-  │   5 │
-  └─────┘
+    ┌─res─┐
+    │   5 │
+    └─────┘
 
 ## bitmapTransform {#bitmaptransform}
 
 Transformar una matriz de valores en un mapa de bits a otra matriz de valores, el resultado es un nuevo mapa de bits.
 
-  bitmapTransform(bitmap, from_array, to_array)
+    bitmapTransform(bitmap, from_array, to_array)
 
 **Parámetros**
 
-- `bitmap` – objeto de mapa de bits.
-- `from_array` – matriz UInt32. Para idx en el rango \[0, from\_array .size()), si el mapa de bits contiene from\_array\[idx\] , luego reemplácelo con to\_array\[idx\] . Tenga en cuenta que el resultado depende del orden de la matriz si hay elementos comunes entre from\_array y to\_array .
-- `to_array` – Matriz UInt32, su tamaño será el mismo que from\_array.
+-   `bitmap` – objeto de mapa de bits.
+-   `from_array` – matriz UInt32. Para idx en el rango \[0, from\_array .size()), si el mapa de bits contiene from\_array\[idx\] , luego reemplácelo con to\_array\[idx\] . Tenga en cuenta que el resultado depende del orden de la matriz si hay elementos comunes entre from\_array y to\_array .
+-   `to_array` – Matriz UInt32, su tamaño será el mismo que from\_array.
 
 **Ejemplo**
 
@@ -290,9 +290,9 @@ Transformar una matriz de valores en un mapa de bits a otra matriz de valores, e
 SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), cast([5,999,2] as Array(UInt32)), cast([2,888,20] as Array(UInt32)))) AS res
 ```
 
-  ┌─res───────────────────┐
-  │ [1,3,4,6,7,8,9,10,20] │
-  └───────────────────────┘
+    ┌─res───────────────────┐
+    │ [1,3,4,6,7,8,9,10,20] │
+    └───────────────────────┘
 
 ## bitmapAnd {#bitmapand}
 
@@ -304,7 +304,7 @@ bitmapAnd(bitmap,bitmap)
 
 **Parámetros**
 
-- `bitmap` – objeto de mapa de bits.
+-   `bitmap` – objeto de mapa de bits.
 
 **Ejemplo**
 
@@ -328,7 +328,7 @@ bitmapOr(bitmap,bitmap)
 
 **Parámetros**
 
-- `bitmap` – objeto de mapa de bits.
+-   `bitmap` – objeto de mapa de bits.
 
 **Ejemplo**
 
@@ -352,7 +352,7 @@ bitmapXor(bitmap,bitmap)
 
 **Parámetros**
 
-- `bitmap` – objeto de mapa de bits.
+-   `bitmap` – objeto de mapa de bits.
 
 **Ejemplo**
 
@@ -376,7 +376,7 @@ bitmapAndnot(bitmap,bitmap)
 
 **Parámetros**
 
-- `bitmap` – objeto de mapa de bits.
+-   `bitmap` – objeto de mapa de bits.
 
 **Ejemplo**
 
@@ -400,7 +400,7 @@ bitmapAndCardinality(bitmap,bitmap)
 
 **Parámetros**
 
-- `bitmap` – objeto de mapa de bits.
+-   `bitmap` – objeto de mapa de bits.
 
 **Ejemplo**
 
@@ -424,7 +424,7 @@ bitmapOrCardinality(bitmap,bitmap)
 
 **Parámetros**
 
-- `bitmap` – objeto de mapa de bits.
+-   `bitmap` – objeto de mapa de bits.
 
 **Ejemplo**
 
@@ -448,7 +448,7 @@ bitmapXorCardinality(bitmap,bitmap)
 
 **Parámetros**
 
-- `bitmap` – objeto de mapa de bits.
+-   `bitmap` – objeto de mapa de bits.
 
 **Ejemplo**
 
@@ -472,7 +472,7 @@ bitmapAndnotCardinality(bitmap,bitmap)
 
 **Parámetros**
 
-- `bitmap` – objeto de mapa de bits.
+-   `bitmap` – objeto de mapa de bits.
 
 **Ejemplo**
 

@@ -8,9 +8,9 @@ odbc(connection_settings, external_database, external_table)
 
 Parámetros:
 
-- `connection_settings` — Nombre de la sección con ajustes de conexión en el `odbc.ini` file.
-- `external_database` — Nombre de una base de datos en un DBMS externo.
-- `external_table` — Nombre de una tabla en el `external_database`.
+-   `connection_settings` — Nombre de la sección con ajustes de conexión en el `odbc.ini` file.
+-   `external_database` — Nombre de una base de datos en un DBMS externo.
+-   `external_table` — Nombre de una tabla en el `external_database`.
 
 Para implementar con seguridad conexiones ODBC, ClickHouse usa un programa separado `clickhouse-odbc-bridge`. Si el controlador ODBC se carga directamente desde `clickhouse-server`, problemas de controlador pueden bloquear el servidor ClickHouse. ClickHouse se inicia automáticamente `clickhouse-odbc-bridge` cuando se requiere. El programa de puente ODBC se instala desde el mismo paquete que el `clickhouse-server`.
 
@@ -95,7 +95,7 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 
 ## Ver también {#see-also}
 
-- [Diccionarios externos ODBC](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
-- [Motor de tabla ODBC](../../operations/table_engines/odbc.md).
+-   [Diccionarios externos ODBC](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
+-   [Motor de tabla ODBC](../../operations/table_engines/odbc.md).
 
 [Artículo Original](https://clickhouse.tech/docs/es/query_language/table_functions/jdbc/) <!--hide-->

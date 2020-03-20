@@ -72,11 +72,11 @@
 
 与上面相同，但结果不包含协议和host部分。 /element(root)不包括在内。该函数用于在Yandex.Metric中实现导出URL的树形结构。
 
-  URLPathHierarchy('https://example.com/browse/CONV-6788') =
-  [
-      '/browse/',
-      '/browse/CONV-6788'
-  ]
+    URLPathHierarchy('https://example.com/browse/CONV-6788') =
+    [
+        '/browse/',
+        '/browse/CONV-6788'
+    ]
 
 ### decodeURLComponent(URL) {#decodeurlcomponenturl}
 
@@ -87,9 +87,9 @@
 SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS DecodedURL;
 ```
 
-  ┌─DecodedURL─────────────────────────────┐
-  │ http://127.0.0.1:8123/?query=SELECT 1; │
-  └────────────────────────────────────────┘
+    ┌─DecodedURL─────────────────────────────┐
+    │ http://127.0.0.1:8123/?query=SELECT 1; │
+    └────────────────────────────────────────┘
 
 ## 删除URL中的部分内容 {#shan-chu-urlzhong-de-bu-fen-nei-rong}
 

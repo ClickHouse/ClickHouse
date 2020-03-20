@@ -2,13 +2,13 @@
 
 La replicación solo se admite para tablas de la familia MergeTree:
 
-- ReplicatedMergeTree
-- ReplicatedSummingMergeTree
-- ReplicatedReplacingMergeTree
-- ReplicatedAggregatingMergeTree
-- ReplicatedCollapsingMergeTree
-- ReplicatedVersionedCollapsingMergetree
-- ReplicatedGraphiteMergeTree
+-   ReplicatedMergeTree
+-   ReplicatedSummingMergeTree
+-   ReplicatedReplacingMergeTree
+-   ReplicatedAggregatingMergeTree
+-   ReplicatedCollapsingMergeTree
+-   ReplicatedVersionedCollapsingMergetree
+-   ReplicatedGraphiteMergeTree
 
 La replicación funciona a nivel de una tabla individual, no de todo el servidor. Un servidor puede almacenar tablas replicadas y no replicadas al mismo tiempo.
 
@@ -18,9 +18,9 @@ Datos comprimidos para `INSERT` y `ALTER` se replica (para obtener más informac
 
 `CREATE`, `DROP`, `ATTACH`, `DETACH` y `RENAME` las consultas se ejecutan en un único servidor y no se replican:
 
-- El `CREATE TABLE` query crea una nueva tabla replicable en el servidor donde se ejecuta la consulta. Si esta tabla ya existe en otros servidores, agrega una nueva réplica.
-- El `DROP TABLE` query elimina la réplica ubicada en el servidor donde se ejecuta la consulta.
-- El `RENAME` query cambia el nombre de la tabla en una de las réplicas. En otras palabras, las tablas replicadas pueden tener diferentes nombres en diferentes réplicas.
+-   El `CREATE TABLE` query crea una nueva tabla replicable en el servidor donde se ejecuta la consulta. Si esta tabla ya existe en otros servidores, agrega una nueva réplica.
+-   El `DROP TABLE` query elimina la réplica ubicada en el servidor donde se ejecuta la consulta.
+-   El `RENAME` query cambia el nombre de la tabla en una de las réplicas. En otras palabras, las tablas replicadas pueden tener diferentes nombres en diferentes réplicas.
 
 Uso de ClickHouse [Apache ZooKeeper](https://zookeeper.apache.org) para almacenar metainformación de réplicas. Utilice ZooKeeper versión 3.4.5 o posterior.
 
@@ -78,8 +78,8 @@ El `Replicated` prefijo se agrega al nombre del motor de tabla. Por ejemplo:`Rep
 
 **Replicated\*MergeTree parámetros**
 
-- `zoo_path` — El camino a la mesa en ZooKeeper.
-- `replica_name` — El nombre de la réplica en ZooKeeper.
+-   `zoo_path` — El camino a la mesa en ZooKeeper.
+-   `replica_name` — El nombre de la réplica en ZooKeeper.
 
 Ejemplo:
 
@@ -199,8 +199,8 @@ Cree una tabla MergeTree con un nombre diferente. Mueva todos los datos del dire
 
 Si desea deshacerse de un `ReplicatedMergeTree` sin iniciar el servidor:
 
-- Eliminar el correspondiente `.sql` archivo en el directorio de metadatos (`/var/lib/clickhouse/metadata/`).
-- Eliminar la ruta correspondiente en ZooKeeper (`/path_to_table/replica_name`).
+-   Eliminar el correspondiente `.sql` archivo en el directorio de metadatos (`/var/lib/clickhouse/metadata/`).
+-   Eliminar la ruta correspondiente en ZooKeeper (`/path_to_table/replica_name`).
 
 Después de esto, puede iniciar el servidor, crear un `MergeTree` tabla, mueva los datos a su directorio y, a continuación, reinicie el servidor.
 

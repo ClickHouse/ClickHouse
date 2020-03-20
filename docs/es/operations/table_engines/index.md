@@ -2,12 +2,12 @@
 
 El motor de tabla (tipo de tabla) determina:
 
-- Cómo y dónde se almacenan los datos, dónde escribirlos y dónde leerlos.
-- Qué consultas son compatibles y cómo.
-- Acceso a datos simultáneos.
-- Uso de índices, si está presente.
-- Si es posible la ejecución de solicitudes multiproceso.
-- Parámetros de replicación de datos.
+-   Cómo y dónde se almacenan los datos, dónde escribirlos y dónde leerlos.
+-   Qué consultas son compatibles y cómo.
+-   Acceso a datos simultáneos.
+-   Uso de índices, si está presente.
+-   Si es posible la ejecución de solicitudes multiproceso.
+-   Parámetros de replicación de datos.
 
 ## Familias de motores {#engine-families}
 
@@ -17,13 +17,13 @@ Los motores de mesa más universales y funcionales para tareas de alta carga. La
 
 Motores en la familia:
 
-- [Método de codificación de datos:](mergetree.md)
-- [ReplacingMergeTree](replacingmergetree.md)
-- [SummingMergeTree](summingmergetree.md)
-- [AgregaciónMergeTree](aggregatingmergetree.md)
-- [ColapsarMergeTree](collapsingmergetree.md)
-- [VersionedCollapsingMergeTree](versionedcollapsingmergetree.md)
-- [GraphiteMergeTree](graphitemergetree.md)
+-   [Método de codificación de datos:](mergetree.md)
+-   [ReplacingMergeTree](replacingmergetree.md)
+-   [SummingMergeTree](summingmergetree.md)
+-   [AgregaciónMergeTree](aggregatingmergetree.md)
+-   [ColapsarMergeTree](collapsingmergetree.md)
+-   [VersionedCollapsingMergeTree](versionedcollapsingmergetree.md)
+-   [GraphiteMergeTree](graphitemergetree.md)
 
 ### Registro {#log}
 
@@ -31,9 +31,9 @@ Ligero [motor](log_family.md) con funcionalidad mínima. Son los más efectivos 
 
 Motores en la familia:
 
-- [TinyLog](tinylog.md)
-- [StripeLog](stripelog.md)
-- [Registro](log.md)
+-   [TinyLog](tinylog.md)
+-   [StripeLog](stripelog.md)
+-   [Registro](log.md)
 
 ### Motores de intergación {#intergation-engines}
 
@@ -41,28 +41,28 @@ Motores para comunicarse con otros sistemas de almacenamiento y procesamiento de
 
 Motores en la familia:
 
-- [Kafka](kafka.md)
-- [MySQL](mysql.md)
-- [ODBC](odbc.md)
-- [JDBC](jdbc.md)
-- [HDFS](hdfs.md)
+-   [Kafka](kafka.md)
+-   [MySQL](mysql.md)
+-   [ODBC](odbc.md)
+-   [JDBC](jdbc.md)
+-   [HDFS](hdfs.md)
 
 ### Motores especiales {#special-engines}
 
 Motores en la familia:
 
-- [Distribuido](distributed.md)
-- [Método de codificación de datos:](materializedview.md)
-- [Diccionario](dictionary.md)
-- [Fusionar](merge.md)
-- [File](file.md)
-- [Nulo](null.md)
-- [Establecer](set.md)
-- [Unir](join.md)
-- [URL](url.md)
-- [Vista](view.md)
-- [Memoria](memory.md)
-- [Búfer](buffer.md)
+-   [Distribuido](distributed.md)
+-   [Método de codificación de datos:](materializedview.md)
+-   [Diccionario](dictionary.md)
+-   [Fusionar](merge.md)
+-   [File](file.md)
+-   [Nulo](null.md)
+-   [Establecer](set.md)
+-   [Unir](join.md)
+-   [URL](url.md)
+-   [Vista](view.md)
+-   [Memoria](memory.md)
+-   [Búfer](buffer.md)
 
 ## Virtual columnas {#table-engines-virtual-columns}
 

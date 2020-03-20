@@ -4,9 +4,9 @@
 
 Esta consulta es exactamente la misma que `CREATE`, pero
 
-- En lugar de la palabra `CREATE` utiliza la palabra `ATTACH`.
-- La consulta no crea datos en el disco, pero supone que los datos ya están en los lugares apropiados, y simplemente agrega información sobre la tabla al servidor.
-  Después de ejecutar una consulta ATTACH, el servidor sabrá sobre la existencia de la tabla.
+-   En lugar de la palabra `CREATE` utiliza la palabra `ATTACH`.
+-   La consulta no crea datos en el disco, pero supone que los datos ya están en los lugares apropiados, y simplemente agrega información sobre la tabla al servidor.
+    Después de ejecutar una consulta ATTACH, el servidor sabrá sobre la existencia de la tabla.
 
 Si la tabla se separó previamente (`DETACH`), lo que significa que su estructura es conocida, puede usar taquigrafía sin definir la estructura.
 
@@ -29,15 +29,15 @@ El `CHECK TABLE` query compara los tamaños de archivo reales con los valores es
 La respuesta de consulta contiene el `result` columna con una sola fila. La fila tiene un valor de
 [Booleana](../data_types/boolean.md) tipo:
 
-- 0 - Los datos de la tabla están dañados.
-- 1 - Los datos mantienen la integridad.
+-   0 - Los datos de la tabla están dañados.
+-   1 - Los datos mantienen la integridad.
 
 El `CHECK TABLE` query admite los siguientes motores de tablas:
 
-- [Registro](../operations/table_engines/log.md)
-- [TinyLog](../operations/table_engines/tinylog.md)
-- [StripeLog](../operations/table_engines/stripelog.md)
-- [Familia MergeTree](../operations/table_engines/mergetree.md)
+-   [Registro](../operations/table_engines/log.md)
+-   [TinyLog](../operations/table_engines/tinylog.md)
+-   [StripeLog](../operations/table_engines/stripelog.md)
+-   [Familia MergeTree](../operations/table_engines/mergetree.md)
 
 Realizado sobre las tablas con otros motores de tabla causa una excepción.
 
@@ -62,11 +62,11 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
 Devuelve lo siguiente `String` tipo columnas:
 
-- `name` — Nombre de la columna.
-- `type`— Tipo de columna.
-- `default_type` — Cláusula utilizada en [expresión predeterminada](create.md#create-default-values) (`DEFAULT`, `MATERIALIZED` o `ALIAS`). La columna contiene una cadena vacía, si no se especifica la expresión predeterminada.
-- `default_expression` — Valor especificado en el `DEFAULT` clausula.
-- `comment_expression` — Texto de comentario.
+-   `name` — Nombre de la columna.
+-   `type`— Tipo de columna.
+-   `default_type` — Cláusula utilizada en [expresión predeterminada](create.md#create-default-values) (`DEFAULT`, `MATERIALIZED` o `ALIAS`). La columna contiene una cadena vacía, si no se especifica la expresión predeterminada.
+-   `default_expression` — Valor especificado en el `DEFAULT` clausula.
+-   `comment_expression` — Texto de comentario.
 
 Las estructuras de datos anidadas se generan en “expanded” formato. Cada columna se muestra por separado, con el nombre después de un punto.
 
@@ -101,7 +101,7 @@ DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 Elimina la tabla.
 Si `IF EXISTS` se especifica, no devuelve un error si la tabla no existe o la base de datos no existe.
 
-  DROP DICTIONARY [IF EXISTS] [db.]name
+    DROP DICTIONARY [IF EXISTS] [db.]name
 
 Elimina el diccionario.
 Si `IF EXISTS` se especifica, no devuelve un error si la tabla no existe o la base de datos no existe.
@@ -188,10 +188,10 @@ El `OPTMIZE` consulta también es compatible con el [Método de codificación de
 
 Cuando `OPTIMIZE` se utiliza con el [ReplicatedMergeTree](../operations/table_engines/replication.md) la familia de motores de tablas, ClickHouse crea una tarea para fusionar y espera la ejecución en todos los nodos (si `replication_alter_partitions_sync` está habilitada la configuración).
 
-- Si `OPTIMIZE` no realiza una fusión por ningún motivo, no notifica al cliente. Para habilitar las notificaciones, [Optize\_throw\_if\_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop) configuración.
-- Si especifica un `PARTITION`, sólo la partición especificada está optimizada. [Cómo establecer la expresión de partición](alter.md#alter-how-to-specify-part-expr).
-- Si especifica `FINAL`, la optimización se realiza incluso cuando todos los datos ya están en una parte.
-- Si especifica `DEDUPLICATE`, luego se deduplicarán filas completamente idénticas (se comparan todas las columnas), tiene sentido solo para el motor MergeTree.
+-   Si `OPTIMIZE` no realiza una fusión por ningún motivo, no notifica al cliente. Para habilitar las notificaciones, [Optize\_throw\_if\_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop) configuración.
+-   Si especifica un `PARTITION`, sólo la partición especificada está optimizada. [Cómo establecer la expresión de partición](alter.md#alter-how-to-specify-part-expr).
+-   Si especifica `FINAL`, la optimización se realiza incluso cuando todos los datos ya están en una parte.
+-   Si especifica `DEDUPLICATE`, luego se deduplicarán filas completamente idénticas (se comparan todas las columnas), tiene sentido solo para el motor MergeTree.
 
 !!! warning "Advertencia"
     `OPTIMIZE` no se puede arreglar el “Too many parts” error.

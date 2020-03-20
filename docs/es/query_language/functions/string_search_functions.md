@@ -20,13 +20,13 @@ Apodo: `locate(haystack, needle)`.
 
 **Parámetros**
 
-- `haystack` — cadena, en la que se buscará la subcadena. [Cadena](../syntax.md#syntax-string-literal).
-- `needle` — subcadena que se va a buscar. [Cadena](../syntax.md#syntax-string-literal).
+-   `haystack` — cadena, en la que se buscará la subcadena. [Cadena](../syntax.md#syntax-string-literal).
+-   `needle` — subcadena que se va a buscar. [Cadena](../syntax.md#syntax-string-literal).
 
 **Valores devueltos**
 
-- Posición inicial en bytes (contando desde 1), si se encontró subcadena.
-- 0, si no se encontró la subcadena.
+-   Posición inicial en bytes (contando desde 1), si se encontró subcadena.
+-   0, si no se encontró la subcadena.
 
 Tipo: `Integer`.
 
@@ -78,13 +78,13 @@ positionCaseInsensitive(haystack, needle)
 
 **Parámetros**
 
-- `haystack` — cadena, en la que se buscará la subcadena. [Cadena](../syntax.md#syntax-string-literal).
-- `needle` — subcadena que se va a buscar. [Cadena](../syntax.md#syntax-string-literal).
+-   `haystack` — cadena, en la que se buscará la subcadena. [Cadena](../syntax.md#syntax-string-literal).
+-   `needle` — subcadena que se va a buscar. [Cadena](../syntax.md#syntax-string-literal).
 
 **Valores devueltos**
 
-- Posición inicial en bytes (contando desde 1), si se encontró subcadena.
-- 0, si no se encontró la subcadena.
+-   Posición inicial en bytes (contando desde 1), si se encontró subcadena.
+-   0, si no se encontró la subcadena.
 
 Tipo: `Integer`.
 
@@ -120,13 +120,13 @@ positionUTF8(haystack, needle)
 
 **Parámetros**
 
-- `haystack` — cadena, en la que se buscará la subcadena. [Cadena](../syntax.md#syntax-string-literal).
-- `needle` — subcadena que se va a buscar. [Cadena](../syntax.md#syntax-string-literal).
+-   `haystack` — cadena, en la que se buscará la subcadena. [Cadena](../syntax.md#syntax-string-literal).
+-   `needle` — subcadena que se va a buscar. [Cadena](../syntax.md#syntax-string-literal).
 
 **Valores devueltos**
 
-- Posición inicial en puntos Unicode (contando desde 1), si se encontró subcadena.
-- 0, si no se encontró la subcadena.
+-   Posición inicial en puntos Unicode (contando desde 1), si se encontró subcadena.
+-   0, si no se encontró la subcadena.
 
 Tipo: `Integer`.
 
@@ -192,13 +192,13 @@ positionCaseInsensitiveUTF8(haystack, needle)
 
 **Parámetros**
 
-- `haystack` — cadena, en la que se buscará la subcadena. [Cadena](../syntax.md#syntax-string-literal).
-- `needle` — subcadena que se va a buscar. [Cadena](../syntax.md#syntax-string-literal).
+-   `haystack` — cadena, en la que se buscará la subcadena. [Cadena](../syntax.md#syntax-string-literal).
+-   `needle` — subcadena que se va a buscar. [Cadena](../syntax.md#syntax-string-literal).
 
 **Valor devuelto**
 
-- Posición inicial en puntos Unicode (contando desde 1), si se encontró subcadena.
-- 0, si no se encontró la subcadena.
+-   Posición inicial en puntos Unicode (contando desde 1), si se encontró subcadena.
+-   0, si no se encontró la subcadena.
 
 Tipo: `Integer`.
 
@@ -224,9 +224,9 @@ Lo mismo que [posición](string_search_functions.md#position) pero devuelve `Arr
 
 La búsqueda se realiza en secuencias de bytes sin respecto a la codificación de cadenas y la intercalación.
 
-- Para la búsqueda ASCII sin distinción de mayúsculas y minúsculas, utilice la función `multiSearchAllPositionsCaseInsensitive`.
-- Para buscar en UTF-8, use la función [MultiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
-- Para la búsqueda UTF-8 sin distinción de mayúsculas y minúsculas, utilice la función multiSearchAllPositionsCaseInsensitiveUTF8.
+-   Para la búsqueda ASCII sin distinción de mayúsculas y minúsculas, utilice la función `multiSearchAllPositionsCaseInsensitive`.
+-   Para buscar en UTF-8, use la función [MultiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
+-   Para la búsqueda UTF-8 sin distinción de mayúsculas y minúsculas, utilice la función multiSearchAllPositionsCaseInsensitiveUTF8.
 
 **Sintaxis**
 
@@ -236,12 +236,12 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 
 **Parámetros**
 
-- `haystack` — cadena, en la que se buscará la subcadena. [Cadena](../syntax.md#syntax-string-literal).
-- `needle` — subcadena que se va a buscar. [Cadena](../syntax.md#syntax-string-literal).
+-   `haystack` — cadena, en la que se buscará la subcadena. [Cadena](../syntax.md#syntax-string-literal).
+-   `needle` — subcadena que se va a buscar. [Cadena](../syntax.md#syntax-string-literal).
 
 **Valores devueltos**
 
-- Matriz de posiciones iniciales en bytes (contando desde 1), si se encontró la subcadena correspondiente y 0 si no se encuentra.
+-   Matriz de posiciones iniciales en bytes (contando desde 1), si se encontró la subcadena correspondiente y 0 si no se encuentra.
 
 **Ejemplo**
 

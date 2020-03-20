@@ -23,8 +23,8 @@ El `StripeLog` el motor almacena todas las columnas en un archivo. Para cada `IN
 
 Para cada tabla, ClickHouse escribe los archivos:
 
-- `data.bin` — Archivo de datos.
-- `index.mrk` — Archivo con marcas. Las marcas contienen compensaciones para cada columna de cada bloque de datos insertado.
+-   `data.bin` — Archivo de datos.
+-   `index.mrk` — Archivo con marcas. Las marcas contienen compensaciones para cada columna de cada bloque de datos insertado.
 
 El `StripeLog` el motor no soporta el `ALTER UPDATE` y `ALTER DELETE` operación.
 

@@ -22,14 +22,14 @@ Vea una descripción detallada del [CREAR TABLA](../../query_language/create.md#
 
 La estructura de la tabla puede diferir de la estructura de la tabla de origen:
 
-- Los nombres de columna deben ser los mismos que en la tabla de origen, pero puede usar solo algunas de estas columnas y en cualquier orden.
-- Los tipos de columna pueden diferir de los de la tabla de origen. ClickHouse intenta [elenco](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) valores a los tipos de datos ClickHouse.
+-   Los nombres de columna deben ser los mismos que en la tabla de origen, pero puede usar solo algunas de estas columnas y en cualquier orden.
+-   Los tipos de columna pueden diferir de los de la tabla de origen. ClickHouse intenta [elenco](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) valores a los tipos de datos ClickHouse.
 
 **Parámetros del motor**
 
-- `connection_settings` — Nombre de la sección con ajustes de conexión en el `odbc.ini` file.
-- `external_database` — Nombre de una base de datos en un DBMS externo.
-- `external_table` — Nombre de una tabla en el `external_database`.
+-   `connection_settings` — Nombre de la sección con ajustes de conexión en el `odbc.ini` file.
+-   `external_database` — Nombre de una base de datos en un DBMS externo.
+-   `external_table` — Nombre de una tabla en el `external_database`.
 
 ## Ejemplo de uso {#usage-example}
 
@@ -119,7 +119,7 @@ SELECT * FROM odbc_t
 
 ## Ver también {#see-also}
 
-- [Diccionarios externos ODBC](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
-- [Tabla ODBC función](../../query_language/table_functions/odbc.md)
+-   [Diccionarios externos ODBC](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
+-   [Tabla ODBC función](../../query_language/table_functions/odbc.md)
 
 [Artículo Original](https://clickhouse.tech/docs/es/operations/table_engines/odbc/) <!--hide-->

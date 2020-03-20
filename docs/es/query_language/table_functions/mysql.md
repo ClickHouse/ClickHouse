@@ -8,23 +8,23 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 
 **Parámetros**
 
-- `host:port` — Dirección del servidor MySQL.
+-   `host:port` — Dirección del servidor MySQL.
 
-- `database` — Nombre de base de datos remota.
+-   `database` — Nombre de base de datos remota.
 
-- `table` — Nombre de la tabla remota.
+-   `table` — Nombre de la tabla remota.
 
-- `user` — Usuario de MySQL.
+-   `user` — Usuario de MySQL.
 
-- `password` — Contraseña de usuario.
+-   `password` — Contraseña de usuario.
 
-- `replace_query` — Bandera que convierte `INSERT INTO` consultas a `REPLACE INTO`. Si `replace_query=1`, la consulta se reemplaza.
+-   `replace_query` — Bandera que convierte `INSERT INTO` consultas a `REPLACE INTO`. Si `replace_query=1`, la consulta se reemplaza.
 
-- `on_duplicate_clause` — El `ON DUPLICATE KEY on_duplicate_clause` expresión que se añade a la `INSERT` consulta.
+-   `on_duplicate_clause` — El `ON DUPLICATE KEY on_duplicate_clause` expresión que se añade a la `INSERT` consulta.
 
-    Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, where `on_duplicate_clause` is `UPDATE c2 = c2 + 1`. See the MySQL documentation to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
+        Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, where `on_duplicate_clause` is `UPDATE c2 = c2 + 1`. See the MySQL documentation to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
 
-    To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
+        To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
 
 Simple `WHERE` cláusulas tales como `=, !=, >, >=, <, <=` se ejecutan actualmente en el servidor MySQL.
 
@@ -73,7 +73,7 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123')
 
 ## Ver también {#see-also}
 
-- [El ‘MySQL’ motor de mesa](../../operations/table_engines/mysql.md)
-- [Uso de MySQL como fuente de diccionario externo](../dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
+-   [El ‘MySQL’ motor de mesa](../../operations/table_engines/mysql.md)
+-   [Uso de MySQL como fuente de diccionario externo](../dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
 
 [Artículo Original](https://clickhouse.tech/docs/es/query_language/table_functions/mysql/) <!--hide-->

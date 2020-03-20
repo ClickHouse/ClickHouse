@@ -36,16 +36,16 @@ Plantilla de configuración:
 
 `<case>` campo:
 
-- `min_part_size` – El tamaño mínimo de una parte de datos.
-- `min_part_size_ratio` – La relación entre el tamaño de la parte de datos y el tamaño de la tabla.
-- `method` – Método de compresión. Valores aceptables: `lz4` o `zstd`.
+-   `min_part_size` – El tamaño mínimo de una parte de datos.
+-   `min_part_size_ratio` – La relación entre el tamaño de la parte de datos y el tamaño de la tabla.
+-   `method` – Método de compresión. Valores aceptables: `lz4` o `zstd`.
 
 Puede configurar múltiples `<case>` apartado.
 
 Acciones cuando se cumplen las condiciones:
 
-- Si un elemento de datos coincide con un conjunto de condiciones, ClickHouse utiliza el método de compresión especificado.
-- Si un elemento de datos coincide con varios conjuntos de condiciones, ClickHouse utiliza el primer conjunto de condiciones coincidente.
+-   Si un elemento de datos coincide con un conjunto de condiciones, ClickHouse utiliza el método de compresión especificado.
+-   Si un elemento de datos coincide con varios conjuntos de condiciones, ClickHouse utiliza el primer conjunto de condiciones coincidente.
 
 Si no se cumplen condiciones para un elemento de datos, ClickHouse utiliza el `lz4` compresión.
 
@@ -91,8 +91,8 @@ La ruta de acceso al archivo de configuración para diccionarios externos.
 
 Camino:
 
-- Especifique la ruta absoluta o la ruta relativa al archivo de configuración del servidor.
-- La ruta puede contener comodines \* y ?.
+-   Especifique la ruta absoluta o la ruta relativa al archivo de configuración del servidor.
+-   La ruta puede contener comodines \* y ?.
 
 Ver también “[Diccionarios externos](../../query_language/dicts/external_dicts.md)”.
 
@@ -135,15 +135,15 @@ Envío de datos a [Grafito](https://github.com/graphite-project).
 
 Configuración:
 
-- host – El servidor de grafito.
-- port: el puerto del servidor Graphite.
-- intervalo – El intervalo para el envío, en segundos.
-- timeout – El tiempo de espera para el envío de datos, en segundos.
-- root\_path – Prefijo para las claves.
-- métricas – Envío de datos desde el [sistema.métricas](../system_tables.md#system_tables-metrics) tabla.
-- eventos – Envío de datos deltas acumulados para el período de tiempo [sistema.evento](../system_tables.md#system_tables-events) tabla.
-- events\_cumulative: envío de datos acumulativos desde el [sistema.evento](../system_tables.md#system_tables-events) tabla.
-- asynchronous\_metrics – Envío de datos desde el [sistema.asynchronous\_metrics](../system_tables.md#system_tables-asynchronous_metrics) tabla.
+-   host – El servidor de grafito.
+-   port: el puerto del servidor Graphite.
+-   intervalo – El intervalo para el envío, en segundos.
+-   timeout – El tiempo de espera para el envío de datos, en segundos.
+-   root\_path – Prefijo para las claves.
+-   métricas – Envío de datos desde el [sistema.métricas](../system_tables.md#system_tables-metrics) tabla.
+-   eventos – Envío de datos deltas acumulados para el período de tiempo [sistema.evento](../system_tables.md#system_tables-events) tabla.
+-   events\_cumulative: envío de datos acumulativos desde el [sistema.evento](../system_tables.md#system_tables-events) tabla.
+-   asynchronous\_metrics – Envío de datos desde el [sistema.asynchronous\_metrics](../system_tables.md#system_tables-asynchronous_metrics) tabla.
 
 Puede configurar múltiples `<graphite>` clausula. Por ejemplo, puede usar esto para enviar datos diferentes a intervalos diferentes.
 
@@ -263,8 +263,8 @@ De forma predeterminada, la autenticación no se utiliza.
 
 Esta sección contiene los siguientes parámetros:
 
-- `user` — nombre de usuario.
-- `password` — contraseña.
+-   `user` — nombre de usuario.
+-   `password` — contraseña.
 
 **Ejemplo**
 
@@ -302,11 +302,11 @@ Configuración de registro.
 
 Claves:
 
-- level – Nivel de registro. Valores aceptables: `trace`, `debug`, `information`, `warning`, `error`.
-- log – El archivo de registro. Contiene todas las entradas según `level`.
-- errorlog – Archivo de registro de errores.
-- size – Tamaño del archivo. Se aplica a `log`y`errorlog`. Una vez que el archivo alcanza `size`, ClickHouse archiva y cambia el nombre, y crea un nuevo archivo de registro en su lugar.
-- count: el número de archivos de registro archivados que almacena ClickHouse.
+-   level – Nivel de registro. Valores aceptables: `trace`, `debug`, `information`, `warning`, `error`.
+-   log – El archivo de registro. Contiene todas las entradas según `level`.
+-   errorlog – Archivo de registro de errores.
+-   size – Tamaño del archivo. Se aplica a `log`y`errorlog`. Una vez que el archivo alcanza `size`, ClickHouse archiva y cambia el nombre, y crea un nuevo archivo de registro en su lugar.
+-   count: el número de archivos de registro archivados que almacena ClickHouse.
 
 **Ejemplo**
 
@@ -336,12 +336,12 @@ También se admite la escritura en el syslog. Config ejemplo:
 
 Claves:
 
-- use\_syslog — Ajuste requerido si desea escribir en el syslog.
-- address — El host\[:port\] de syslogd. Si se omite, se utiliza el daemon local.
-- hostname — Opcional. El nombre del host desde el que se envían los registros.
-- instalación — [La palabra clave syslog facility](https://en.wikipedia.org/wiki/Syslog#Facility) en letras mayúsculas con el “LOG\_” prefijo: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` y así sucesivamente).
-  Valor predeterminado: `LOG_USER` si `address` se especifica, `LOG_DAEMON otherwise.`
-- format – Formato de mensaje. Valores posibles: `bsd` y `syslog.`
+-   use\_syslog — Ajuste requerido si desea escribir en el syslog.
+-   address — El host\[:port\] de syslogd. Si se omite, se utiliza el daemon local.
+-   hostname — Opcional. El nombre del host desde el que se envían los registros.
+-   instalación — [La palabra clave syslog facility](https://en.wikipedia.org/wiki/Syslog#Facility) en letras mayúsculas con el “LOG\_” prefijo: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` y así sucesivamente).
+    Valor predeterminado: `LOG_USER` si `address` se especifica, `LOG_DAEMON otherwise.`
+-   format – Formato de mensaje. Valores posibles: `bsd` y `syslog.`
 
 ## macro {#macros}
 
@@ -443,26 +443,26 @@ El soporte para SSL es proporcionado por el `libpoco` biblioteca. La interfaz se
 
 Claves para la configuración del servidor/cliente:
 
-- privateKeyFile: la ruta de acceso al archivo con la clave secreta del certificado PEM. El archivo puede contener una clave y un certificado al mismo tiempo.
-- certificateFile: la ruta de acceso al archivo de certificado cliente/servidor en formato PEM. Puede omitirlo si `privateKeyFile` contiene el certificado.
-- caConfig: la ruta de acceso al archivo o directorio que contiene certificados raíz de confianza.
-- verificationMode: el método para verificar los certificados del nodo. Los detalles están en la descripción del [Contexto](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) clase. Valores posibles: `none`, `relaxed`, `strict`, `once`.
-- Profundidad de verificación: la longitud máxima de la cadena de verificación. La verificación fallará si la longitud de la cadena del certificado supera el valor establecido.
-- loadDefaultCAFile: indica que se usarán certificados de CA integrados para OpenSSL. Valores aceptables: `true`, `false`. \|
-- cipherList: encriptaciones OpenSSL compatibles. Por ejemplo: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`.
-- cacheSessions: habilita o deshabilita las sesiones de almacenamiento en caché. Debe usarse en combinación con `sessionIdContext`. Valores aceptables: `true`, `false`.
-- sessionIdContext: un conjunto único de caracteres aleatorios que el servidor agrega a cada identificador generado. La longitud de la cuerda no debe exceder `SSL_MAX_SSL_SESSION_ID_LENGTH`. Este parámetro siempre se recomienda ya que ayuda a evitar problemas tanto si el servidor almacena en caché la sesión como si el cliente solicita el almacenamiento en caché. Valor predeterminado: `${application.name}`.
-- sessionCacheSize: el número máximo de sesiones que el servidor almacena en caché. Valor predeterminado: 1024\*20. 0 – Sesiones ilimitadas.
-- sessionTimeout - Tiempo para almacenar en caché la sesión en el servidor.
-- extendedVerification : la verificación extendida automáticamente de los certificados después de que finalice la sesión. Valores aceptables: `true`, `false`.
-- requireTLSv1: requiere una conexión TLSv1. Valores aceptables: `true`, `false`.
-- requireTLSv1\_1: requiere una conexión TLSv1.1. Valores aceptables: `true`, `false`.
-- requireTLSv1: requiere una conexión TLSv1.2. Valores aceptables: `true`, `false`.
-- fips: activa el modo FIPS OpenSSL. Se admite si la versión OpenSSL de la biblioteca admite FIPS.
-- privateKeyPassphraseHandler: clase (subclase PrivateKeyPassphraseHandler) que solicita la frase de contraseña para acceder a la clave privada. Por ejemplo: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
-- invalidCertificateHandler: clase (una subclase de CertificateHandler) para verificar certificados no válidos. Por ejemplo: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
-- disableProtocols: protocolos que no pueden usarse.
-- preferServerCiphers: cifras de servidor preferidas en el cliente.
+-   privateKeyFile: la ruta de acceso al archivo con la clave secreta del certificado PEM. El archivo puede contener una clave y un certificado al mismo tiempo.
+-   certificateFile: la ruta de acceso al archivo de certificado cliente/servidor en formato PEM. Puede omitirlo si `privateKeyFile` contiene el certificado.
+-   caConfig: la ruta de acceso al archivo o directorio que contiene certificados raíz de confianza.
+-   verificationMode: el método para verificar los certificados del nodo. Los detalles están en la descripción del [Contexto](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) clase. Valores posibles: `none`, `relaxed`, `strict`, `once`.
+-   Profundidad de verificación: la longitud máxima de la cadena de verificación. La verificación fallará si la longitud de la cadena del certificado supera el valor establecido.
+-   loadDefaultCAFile: indica que se usarán certificados de CA integrados para OpenSSL. Valores aceptables: `true`, `false`. \|
+-   cipherList: encriptaciones OpenSSL compatibles. Por ejemplo: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`.
+-   cacheSessions: habilita o deshabilita las sesiones de almacenamiento en caché. Debe usarse en combinación con `sessionIdContext`. Valores aceptables: `true`, `false`.
+-   sessionIdContext: un conjunto único de caracteres aleatorios que el servidor agrega a cada identificador generado. La longitud de la cuerda no debe exceder `SSL_MAX_SSL_SESSION_ID_LENGTH`. Este parámetro siempre se recomienda ya que ayuda a evitar problemas tanto si el servidor almacena en caché la sesión como si el cliente solicita el almacenamiento en caché. Valor predeterminado: `${application.name}`.
+-   sessionCacheSize: el número máximo de sesiones que el servidor almacena en caché. Valor predeterminado: 1024\*20. 0 – Sesiones ilimitadas.
+-   sessionTimeout - Tiempo para almacenar en caché la sesión en el servidor.
+-   extendedVerification : la verificación extendida automáticamente de los certificados después de que finalice la sesión. Valores aceptables: `true`, `false`.
+-   requireTLSv1: requiere una conexión TLSv1. Valores aceptables: `true`, `false`.
+-   requireTLSv1\_1: requiere una conexión TLSv1.1. Valores aceptables: `true`, `false`.
+-   requireTLSv1: requiere una conexión TLSv1.2. Valores aceptables: `true`, `false`.
+-   fips: activa el modo FIPS OpenSSL. Se admite si la versión OpenSSL de la biblioteca admite FIPS.
+-   privateKeyPassphraseHandler: clase (subclase PrivateKeyPassphraseHandler) que solicita la frase de contraseña para acceder a la clave privada. Por ejemplo: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
+-   invalidCertificateHandler: clase (una subclase de CertificateHandler) para verificar certificados no válidos. Por ejemplo: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
+-   disableProtocols: protocolos que no pueden usarse.
+-   preferServerCiphers: cifras de servidor preferidas en el cliente.
 
 **Ejemplo de configuración:**
 
@@ -502,10 +502,10 @@ Las consultas se registran en el [sistema.part\_log](../system_tables.md#system_
 
 Utilice los siguientes parámetros para configurar el registro:
 
-- `database` – Nombre de la base de datos.
-- `table` – Nombre de la tabla del sistema.
-- `partition_by` – Establece un [clave de partición personalizada](../../operations/table_engines/custom_partitioning_key.md).
-- `flush_interval_milliseconds` – Intervalo para el vaciado de datos desde el búfer en la memoria a la tabla.
+-   `database` – Nombre de la base de datos.
+-   `table` – Nombre de la tabla del sistema.
+-   `partition_by` – Establece un [clave de partición personalizada](../../operations/table_engines/custom_partitioning_key.md).
+-   `flush_interval_milliseconds` – Intervalo para el vaciado de datos desde el búfer en la memoria a la tabla.
 
 **Ejemplo**
 
@@ -539,10 +539,10 @@ Las consultas se registran en el [sistema.query\_log](../system_tables.md#system
 
 Utilice los siguientes parámetros para configurar el registro:
 
-- `database` – Nombre de la base de datos.
-- `table` – Nombre de la tabla del sistema en la que se registrarán las consultas.
-- `partition_by` – Establece un [clave de partición personalizada](../../operations/table_engines/custom_partitioning_key.md) para una mesa.
-- `flush_interval_milliseconds` – Intervalo para el vaciado de datos desde el búfer en la memoria a la tabla.
+-   `database` – Nombre de la base de datos.
+-   `table` – Nombre de la tabla del sistema en la que se registrarán las consultas.
+-   `partition_by` – Establece un [clave de partición personalizada](../../operations/table_engines/custom_partitioning_key.md) para una mesa.
+-   `flush_interval_milliseconds` – Intervalo para el vaciado de datos desde el búfer en la memoria a la tabla.
 
 Si la tabla no existe, ClickHouse la creará. Si la estructura del registro de consultas cambió cuando se actualizó el servidor ClickHouse, se cambia el nombre de la tabla con la estructura anterior y se crea una nueva tabla automáticamente.
 
@@ -565,10 +565,10 @@ Las consultas se registran en el [sistema.Sistema abierto.](../system_tables.md#
 
 Utilice los siguientes parámetros para configurar el registro:
 
-- `database` – Nombre de la base de datos.
-- `table` – Nombre de la tabla del sistema en la que se registrarán las consultas.
-- `partition_by` – Establece un [clave de partición personalizada](../../operations/table_engines/custom_partitioning_key.md) para una tabla del sistema.
-- `flush_interval_milliseconds` – Intervalo para el vaciado de datos desde el búfer en la memoria a la tabla.
+-   `database` – Nombre de la base de datos.
+-   `table` – Nombre de la tabla del sistema en la que se registrarán las consultas.
+-   `partition_by` – Establece un [clave de partición personalizada](../../operations/table_engines/custom_partitioning_key.md) para una tabla del sistema.
+-   `flush_interval_milliseconds` – Intervalo para el vaciado de datos desde el búfer en la memoria a la tabla.
 
 Si la tabla no existe, ClickHouse la creará. Si la estructura del registro de subprocesos de consulta cambió cuando se actualizó el servidor ClickHouse, se cambia el nombre de la tabla con la estructura anterior y se crea una nueva tabla automáticamente.
 
@@ -589,10 +589,10 @@ Ajustes para el [trace\_log](../system_tables.md#system_tables-trace_log) operac
 
 Parámetros:
 
-- `database` — Base de datos para almacenar una tabla.
-- `table` — Nombre de la tabla.
-- `partition_by` — [Clave de partición personalizada](../../operations/table_engines/custom_partitioning_key.md) para una tabla del sistema.
-- `flush_interval_milliseconds` — Intervalo para el vaciado de datos del búfer en la memoria a la tabla.
+-   `database` — Base de datos para almacenar una tabla.
+-   `table` — Nombre de la tabla.
+-   `partition_by` — [Clave de partición personalizada](../../operations/table_engines/custom_partitioning_key.md) para una tabla del sistema.
+-   `flush_interval_milliseconds` — Intervalo para el vaciado de datos del búfer en la memoria a la tabla.
 
 El archivo de configuración del servidor predeterminado `config.xml` contiene la siguiente sección de configuración:
 
@@ -650,7 +650,7 @@ Para el valor de la `incl` atributo, consulte la sección “[Archivos de config
 
 **Ver también**
 
-- [skip\_unavailable\_shards](../settings/settings.md#settings-skip_unavailable_shards)
+-   [skip\_unavailable\_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
 ## Zona horaria {#server-settings-timezone}
 
@@ -756,10 +756,10 @@ El directorio con archivos de usuario. Utilizado en la función de tabla [file()
 
 Ruta de acceso al archivo que contiene:
 
-- Configuraciones de usuario.
-- Derechos de acceso.
-- Perfiles de configuración.
-- Configuración de cuota.
+-   Configuraciones de usuario.
+-   Derechos de acceso.
+-   Perfiles de configuración.
+-   Configuración de cuota.
 
 **Ejemplo**
 
@@ -775,9 +775,9 @@ ClickHouse utiliza ZooKeeper para almacenar metadatos de réplicas cuando se uti
 
 Esta sección contiene los siguientes parámetros:
 
-- `node` — Punto final ZooKeeper. Puede establecer varios puntos finales.
+-   `node` — Punto final ZooKeeper. Puede establecer varios puntos finales.
 
-  Por ejemplo:
+    Por ejemplo:
 
 <!-- -->
 
@@ -788,11 +788,11 @@ Esta sección contiene los siguientes parámetros:
     </node>
 ```
 
-    The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
+      The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
 
-- `session_timeout` — Tiempo de espera máximo para la sesión del cliente en milisegundos.
-- `root` — El [Znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) que se utiliza como la raíz de los znodes utilizados por el servidor ClickHouse. Opcional.
-- `identity` — Usuario y contraseña, que puede ser requerido por ZooKeeper para dar acceso a los znodes solicitados. Opcional.
+-   `session_timeout` — Tiempo de espera máximo para la sesión del cliente en milisegundos.
+-   `root` — El [Znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) que se utiliza como la raíz de los znodes utilizados por el servidor ClickHouse. Opcional.
+-   `identity` — Usuario y contraseña, que puede ser requerido por ZooKeeper para dar acceso a los znodes solicitados. Opcional.
 
 **Ejemplo de configuración**
 
@@ -817,8 +817,8 @@ Esta sección contiene los siguientes parámetros:
 
 **Ver también**
 
-- [Replicación](../../operations/table_engines/replication.md)
-- [Guía del programador ZooKeeper](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
+-   [Replicación](../../operations/table_engines/replication.md)
+-   [Guía del programador ZooKeeper](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
 ## use\_minimalistic\_part\_header\_in\_zookeeper {#server-settings-use-minimalistic-part-header-in-zookeeper}
 
@@ -826,25 +826,25 @@ Método de almacenamiento para encabezados de parte de datos en ZooKeeper.
 
 Esta configuración sólo se aplica a `MergeTree` familia. Se puede especificar:
 
-- A nivel mundial en el [merge\_tree](#server_settings-merge_tree) sección de la `config.xml` file.
+-   A nivel mundial en el [merge\_tree](#server_settings-merge_tree) sección de la `config.xml` file.
 
-  ClickHouse utiliza la configuración para todas las tablas del servidor. Puede cambiar la configuración en cualquier momento. Las tablas existentes cambian su comportamiento cuando cambia la configuración.
+    ClickHouse utiliza la configuración para todas las tablas del servidor. Puede cambiar la configuración en cualquier momento. Las tablas existentes cambian su comportamiento cuando cambia la configuración.
 
-- Para cada tabla.
+-   Para cada tabla.
 
-  Al crear una tabla, especifique la correspondiente [ajuste del motor](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). El comportamiento de una tabla existente con esta configuración no cambia, incluso si la configuración global cambia.
+    Al crear una tabla, especifique la correspondiente [ajuste del motor](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). El comportamiento de una tabla existente con esta configuración no cambia, incluso si la configuración global cambia.
 
 **Valores posibles**
 
-- 0 — Funcionalidad está desactivada.
-- 1 — Funcionalidad está activada.
+-   0 — Funcionalidad está desactivada.
+-   1 — Funcionalidad está activada.
 
 Si `use_minimalistic_part_header_in_zookeeper = 1`, entonces [repetición](../table_engines/replication.md) las tablas almacenan los encabezados de las partes de datos de forma compacta `znode`. Si la tabla contiene muchas columnas, este método de almacenamiento reduce significativamente el volumen de los datos almacenados en Zookeeper.
 
 !!! attention "Atención"
     Después de aplicar `use_minimalistic_part_header_in_zookeeper = 1`, no puede degradar el servidor ClickHouse a una versión que no admite esta configuración. Tenga cuidado al actualizar ClickHouse en servidores de un clúster. No actualice todos los servidores a la vez. Es más seguro probar nuevas versiones de ClickHouse en un entorno de prueba o solo en unos pocos servidores de un clúster.
 
-    Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
+      Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
 
 **Valor predeterminado:** 0.
 

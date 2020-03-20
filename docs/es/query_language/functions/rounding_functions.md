@@ -32,11 +32,11 @@ round(expression [, decimal_places])
 
 **Parámetros:**
 
-- `expression` — Un número que se redondeará. Puede ser cualquier [expresion](../syntax.md#syntax-expressions) devolviendo el numérico [tipo de datos](../../data_types/index.md#data_types).
-- `decimal-places` — Un valor entero.
-  - Si `decimal-places > 0` luego la función redondea el valor a la derecha del punto decimal.
-  - Si `decimal-places < 0` luego la función redondea el valor a la izquierda del punto decimal.
-  - Si `decimal-places = 0` entonces la función redondea el valor a entero. En este caso, el argumento puede omitirse.
+-   `expression` — Un número que se redondeará. Puede ser cualquier [expresion](../syntax.md#syntax-expressions) devolviendo el numérico [tipo de datos](../../data_types/index.md#data_types).
+-   `decimal-places` — Un valor entero.
+    -   Si `decimal-places > 0` luego la función redondea el valor a la derecha del punto decimal.
+    -   Si `decimal-places < 0` luego la función redondea el valor a la izquierda del punto decimal.
+    -   Si `decimal-places = 0` entonces la función redondea el valor a entero. En este caso, el argumento puede omitirse.
 
 **Valor devuelto:**
 
@@ -81,27 +81,27 @@ round(3.65, 1) = 3.6
 
 **Ver también**
 
-- [roundBankers](#roundbankers)
+-   [roundBankers](#roundbankers)
 
 ## roundBankers {#roundbankers}
 
 Redondea un número a una posición decimal especificada.
 
-- Si el número de redondeo está a medio camino entre dos números, la función utiliza el redondeo de banquero.
+-   Si el número de redondeo está a medio camino entre dos números, la función utiliza el redondeo de banquero.
 
-    Banker's rounding is a method of rounding fractional numbers. When the rounding number is halfway between two numbers, it's rounded to the nearest even digit at the specified decimal position. For example: 3.5 rounds up to 4, 2.5 rounds down to 2.
+        Banker's rounding is a method of rounding fractional numbers. When the rounding number is halfway between two numbers, it's rounded to the nearest even digit at the specified decimal position. For example: 3.5 rounds up to 4, 2.5 rounds down to 2.
 
-    It's the default rounding method for floating point numbers defined in [IEEE 754](https://en.wikipedia.org/wiki/IEEE_754#Roundings_to_nearest). The [round](#rounding_functions-round) function performs the same rounding for floating point numbers. The `roundBankers` function also rounds integers the same way, for example, `roundBankers(45, -1) = 40`.
+        It's the default rounding method for floating point numbers defined in [IEEE 754](https://en.wikipedia.org/wiki/IEEE_754#Roundings_to_nearest). The [round](#rounding_functions-round) function performs the same rounding for floating point numbers. The `roundBankers` function also rounds integers the same way, for example, `roundBankers(45, -1) = 40`.
 
-- En otros casos, la función redondea los números al entero más cercano.
+-   En otros casos, la función redondea los números al entero más cercano.
 
 Usando el redondeo del banquero, puede reducir el efecto que tiene el redondeo de números en los resultados de sumar o restar estos números.
 
 Por ejemplo, suma números 1.5, 2.5, 3.5, 4.5 con redondeo diferente:
 
-- Sin redondeo: 1.5 + 2.5 + 3.5 + 4.5 = 12.
-- Redondeo del banquero: 2 + 2 + 4 + 4 = 12.
-- Redondeando al entero más cercano: 2 + 3 + 4 + 5 = 14.
+-   Sin redondeo: 1.5 + 2.5 + 3.5 + 4.5 = 12.
+-   Redondeo del banquero: 2 + 2 + 4 + 4 = 12.
+-   Redondeando al entero más cercano: 2 + 3 + 4 + 5 = 14.
 
 **Sintaxis**
 
@@ -111,11 +111,11 @@ roundBankers(expression [, decimal_places])
 
 **Parámetros**
 
-- `expression` — Un número que se redondeará. Puede ser cualquier [expresion](../syntax.md#syntax-expressions) devolviendo el numérico [tipo de datos](../../data_types/index.md#data_types).
-- `decimal-places` — Lugares decimales. Un número entero.
-  - `decimal-places > 0` — La función redondea el número a la derecha del punto decimal. Ejemplo: `roundBankers(3.55, 1) = 3.6`.
-  - `decimal-places < 0` — La función redondea el número a la izquierda del punto decimal. Ejemplo: `roundBankers(24.55, -1) = 20`.
-  - `decimal-places = 0` — La función redondea el número a un entero. En este caso, el argumento puede omitirse. Ejemplo: `roundBankers(2.5) = 2`.
+-   `expression` — Un número que se redondeará. Puede ser cualquier [expresion](../syntax.md#syntax-expressions) devolviendo el numérico [tipo de datos](../../data_types/index.md#data_types).
+-   `decimal-places` — Lugares decimales. Un número entero.
+    -   `decimal-places > 0` — La función redondea el número a la derecha del punto decimal. Ejemplo: `roundBankers(3.55, 1) = 3.6`.
+    -   `decimal-places < 0` — La función redondea el número a la izquierda del punto decimal. Ejemplo: `roundBankers(24.55, -1) = 20`.
+    -   `decimal-places = 0` — La función redondea el número a un entero. En este caso, el argumento puede omitirse. Ejemplo: `roundBankers(2.5) = 2`.
 
 **Valor devuelto**
 
@@ -162,7 +162,7 @@ roundBankers(10.755, 2) = 11,76
 
 **Ver también**
 
-- [ronda](#rounding_functions-round)
+-   [ronda](#rounding_functions-round)
 
 ## ¿Cómo puedo hacerlo?) {#roundtoexp2num}
 

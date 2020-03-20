@@ -63,10 +63,10 @@ Using the `remote` table function is less optimal than creating a `Distributed` 
 
 The `remote` table function can be useful in the following cases:
 
-- Accessing a specific server for data comparison, debugging, and testing.
-- Queries between various ClickHouse clusters for research purposes.
-- Infrequent distributed requests that are made manually.
-- Distributed requests where the set of servers is re-defined each time.
+-   Accessing a specific server for data comparison, debugging, and testing.
+-   Queries between various ClickHouse clusters for research purposes.
+-   Infrequent distributed requests that are made manually.
+-   Distributed requests where the set of servers is re-defined each time.
 
 If the user is not specified, `default` is used.
 If the password is not specified, an empty password is used.

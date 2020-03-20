@@ -20,9 +20,9 @@ All the dictionaries are re-loaded in runtime (once every certain number of seco
 All functions for working with regions have an optional argument at the end – the dictionary key. It is referred to as the geobase.
 Example:
 
-  regionToCountry(RegionID) – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
-  regionToCountry(RegionID, '') – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
-  regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/geo/regions_hierarchy_ua.txt
+    regionToCountry(RegionID) – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
+    regionToCountry(RegionID, '') – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
+    regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/geo/regions_hierarchy_ua.txt
 
 ### regionToCity(id\[, geobase\]) {#regiontocityid-geobase}
 
@@ -38,23 +38,23 @@ FROM system.numbers
 LIMIT 15
 ```
 
-  ┌─regionToName(regionToArea(toUInt32(number), \'ua\'))─┐
-  │                                                      │
-  │ Moscow and Moscow region                             │
-  │ St. Petersburg and Leningrad region                  │
-  │ Belgorod region                                      │
-  │ Ivanovsk region                                      │
-  │ Kaluga region                                        │
-  │ Kostroma region                                      │
-  │ Kursk region                                         │
-  │ Lipetsk region                                       │
-  │ Orlov region                                         │
-  │ Ryazan region                                        │
-  │ Smolensk region                                      │
-  │ Tambov region                                        │
-  │ Tver region                                          │
-  │ Tula region                                          │
-  └──────────────────────────────────────────────────────┘
+    ┌─regionToName(regionToArea(toUInt32(number), \'ua\'))─┐
+    │                                                      │
+    │ Moscow and Moscow region                             │
+    │ St. Petersburg and Leningrad region                  │
+    │ Belgorod region                                      │
+    │ Ivanovsk region                                      │
+    │ Kaluga region                                        │
+    │ Kostroma region                                      │
+    │ Kursk region                                         │
+    │ Lipetsk region                                       │
+    │ Orlov region                                         │
+    │ Ryazan region                                        │
+    │ Smolensk region                                      │
+    │ Tambov region                                        │
+    │ Tver region                                          │
+    │ Tula region                                          │
+    └──────────────────────────────────────────────────────┘
 
 ### regionToDistrict(id\[, geobase\]) {#regiontodistrictid-geobase}
 
@@ -66,23 +66,23 @@ FROM system.numbers
 LIMIT 15
 ```
 
-  ┌─regionToName(regionToDistrict(toUInt32(number), \'ua\'))─┐
-  │                                                          │
-  │ Central federal district                                 │
-  │ Northwest federal district                               │
-  │ South federal district                                   │
-  │ North Caucases federal district                          │
-  │ Privolga federal district                                │
-  │ Ural federal district                                    │
-  │ Siberian federal district                                │
-  │ Far East federal district                                │
-  │ Scotland                                                 │
-  │ Faroe Islands                                            │
-  │ Flemish region                                           │
-  │ Brussels capital region                                  │
-  │ Wallonia                                                 │
-  │ Federation of Bosnia and Herzegovina                     │
-  └──────────────────────────────────────────────────────────┘
+    ┌─regionToName(regionToDistrict(toUInt32(number), \'ua\'))─┐
+    │                                                          │
+    │ Central federal district                                 │
+    │ Northwest federal district                               │
+    │ South federal district                                   │
+    │ North Caucases federal district                          │
+    │ Privolga federal district                                │
+    │ Ural federal district                                    │
+    │ Siberian federal district                                │
+    │ Far East federal district                                │
+    │ Scotland                                                 │
+    │ Faroe Islands                                            │
+    │ Flemish region                                           │
+    │ Brussels capital region                                  │
+    │ Wallonia                                                 │
+    │ Federation of Bosnia and Herzegovina                     │
+    └──────────────────────────────────────────────────────────┘
 
 ### regionToCountry(id\[, geobase\]) {#regiontocountryid-geobase}
 

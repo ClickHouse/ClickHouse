@@ -2,8 +2,8 @@
 
 This dataset can be obtained in two ways:
 
-- import from raw data
-- download of prepared partitions
+-   import from raw data
+-   download of prepared partitions
 
 ## How to Import The Raw Data {#how-to-import-the-raw-data}
 

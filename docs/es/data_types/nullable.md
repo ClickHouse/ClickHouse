@@ -1,4 +1,4 @@
-# Nullable(TypeName) {#data_type-nullable}
+# Nullable(TypeName) {#data-type-nullable}
 
 Allows to store special marker ([NULL](../query_language/syntax.md)) that denotes “missing value” alongside normal values allowed by `TypeName`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that don’t have a value will store `NULL`.
 

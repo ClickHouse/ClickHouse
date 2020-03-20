@@ -10,12 +10,12 @@ generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_stri
 
 **Parámetros**
 
-- `name` — Nombre de la columna correspondiente.
-- `TypeName` — Tipo de columna correspondiente.
-- `limit` — Número de filas a generar.
-- `max_array_length` — Longitud máxima de matriz para todas las matrices generadas. Por defecto `10`.
-- `max_string_length` — Longitud máxima de cadena para todas las cadenas generadas. Por defecto `10`.
-- `random_seed` — Especifique manualmente la semilla aleatoria para producir resultados estables. Si NULL — semilla se genera aleatoriamente.
+-   `name` — Nombre de la columna correspondiente.
+-   `TypeName` — Tipo de columna correspondiente.
+-   `limit` — Número de filas a generar.
+-   `max_array_length` — Longitud máxima de matriz para todas las matrices generadas. Por defecto `10`.
+-   `max_string_length` — Longitud máxima de cadena para todas las cadenas generadas. Por defecto `10`.
+-   `random_seed` — Especifique manualmente la semilla aleatoria para producir resultados estables. Si NULL — semilla se genera aleatoriamente.
 
 **Valor devuelto**
 

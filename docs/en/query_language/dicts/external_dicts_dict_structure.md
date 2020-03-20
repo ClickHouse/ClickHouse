@@ -23,8 +23,8 @@ XML description:
 
 Attributes are described in the elements:
 
-- `<id>` — [Key column](external_dicts_dict_structure.md#ext_dict_structure-key).
-- `<attribute>` — [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes). There can be a multiple number of attributes.
+-   `<id>` — [Key column](external_dicts_dict_structure.md#ext_dict_structure-key).
+-   `<attribute>` — [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes). There can be a multiple number of attributes.
 
 DDL query:
 
@@ -39,22 +39,22 @@ PRIMARY KEY Id
 
 Attributes are described in the query body:
 
-- `PRIMARY KEY` — [Key column](external_dicts_dict_structure.md#ext_dict_structure-key)
-- `AttrName AttrType` — [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes). There can be a multiple number of attributes.
+-   `PRIMARY KEY` — [Key column](external_dicts_dict_structure.md#ext_dict_structure-key)
+-   `AttrName AttrType` — [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes). There can be a multiple number of attributes.
 
-## Key {#ext_dict_structure-key}
+## Key {#ext-dict-structure-key}
 
 ClickHouse supports the following types of keys:
 
-- Numeric key. `UInt64`. Defined in the `<id>` tag or using `PRIMARY KEY` keyword.
-- Composite key. Set of values of different types. Defined in the tag `<key>` or `PRIMARY KEY` keyword.
+-   Numeric key. `UInt64`. Defined in the `<id>` tag or using `PRIMARY KEY` keyword.
+-   Composite key. Set of values of different types. Defined in the tag `<key>` or `PRIMARY KEY` keyword.
 
 An xml structure can contain either `<id>` or `<key>`. DDL-query must contain single `PRIMARY KEY`.
 
 !!! warning "Warning"
     You must not describe key as an attribute.
 
-### Numeric Key {#ext_dict-numeric-key}
+### Numeric Key {#ext-dict-numeric-key}
 
 Type: `UInt64`.
 
@@ -68,7 +68,7 @@ Configuration example:
 
 Configuration fields:
 
-- `name` – The name of the column with keys.
+-   `name` – The name of the column with keys.
 
 For DDL-query:
 
@@ -81,7 +81,7 @@ PRIMARY KEY Id
 ...
 ```
 
-- `PRIMARY KEY` – The name of the column with keys.
+-   `PRIMARY KEY` – The name of the column with keys.
 
 ### Composite Key {#composite-key}
 
@@ -122,7 +122,7 @@ PRIMARY KEY field1, field2
 
 For a query to the `dictGet*` function, a tuple is passed as the key. Example: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
-## Attributes {#ext_dict_structure-attributes}
+## Attributes {#ext-dict-structure-attributes}
 
 Configuration example:
 
@@ -163,6 +163,6 @@ Configuration fields:
 
 ## See Also {#see-also}
 
-- [Functions for working with external dictionaries](../functions/ext_dict_functions.md).
+-   [Functions for working with external dictionaries](../functions/ext_dict_functions.md).
 
 [Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

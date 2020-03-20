@@ -17,28 +17,28 @@ Vea una descripción detallada del [CREAR TABLA](../../query_language/create.md#
 
 La estructura de la tabla puede diferir de la estructura de la tabla MySQL original:
 
-- Los nombres de columna deben ser los mismos que en la tabla MySQL original, pero puede usar solo algunas de estas columnas y en cualquier orden.
-- Los tipos de columna pueden diferir de los de la tabla MySQL original. ClickHouse intenta [elenco](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) valores a los tipos de datos ClickHouse.
+-   Los nombres de columna deben ser los mismos que en la tabla MySQL original, pero puede usar solo algunas de estas columnas y en cualquier orden.
+-   Los tipos de columna pueden diferir de los de la tabla MySQL original. ClickHouse intenta [elenco](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) valores a los tipos de datos ClickHouse.
 
 **Parámetros del motor**
 
-- `host:port` — Dirección del servidor MySQL.
+-   `host:port` — Dirección del servidor MySQL.
 
-- `database` — Nombre de base de datos remota.
+-   `database` — Nombre de base de datos remota.
 
-- `table` — Nombre de la tabla remota.
+-   `table` — Nombre de la tabla remota.
 
-- `user` — Usuario de MySQL.
+-   `user` — Usuario de MySQL.
 
-- `password` — Contraseña de usuario.
+-   `password` — Contraseña de usuario.
 
-- `replace_query` — Bandera que convierte `INSERT INTO` consultas a `REPLACE INTO`. Si `replace_query=1`, la consulta se sustituye.
+-   `replace_query` — Bandera que convierte `INSERT INTO` consultas a `REPLACE INTO`. Si `replace_query=1`, la consulta se sustituye.
 
-- `on_duplicate_clause` — El `ON DUPLICATE KEY on_duplicate_clause` expresión que se añade a la `INSERT` consulta.
+-   `on_duplicate_clause` — El `ON DUPLICATE KEY on_duplicate_clause` expresión que se añade a la `INSERT` consulta.
 
-  Ejemplo: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, donde `on_duplicate_clause` ser `UPDATE c2 = c2 + 1`. Ver el [Documentación de MySQL](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) para encontrar qué `on_duplicate_clause` se puede utilizar con el `ON DUPLICATE KEY` clausula.
+    Ejemplo: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, donde `on_duplicate_clause` ser `UPDATE c2 = c2 + 1`. Ver el [Documentación de MySQL](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) para encontrar qué `on_duplicate_clause` se puede utilizar con el `ON DUPLICATE KEY` clausula.
 
-  Especificar `on_duplicate_clause` tienes que pasar `0` a la `replace_query` parámetro. Si pasa simultáneamente `replace_query = 1` y `on_duplicate_clause`, ClickHouse genera una excepción.
+    Especificar `on_duplicate_clause` tienes que pasar `0` a la `replace_query` parámetro. Si pasa simultáneamente `replace_query = 1` y `on_duplicate_clause`, ClickHouse genera una excepción.
 
 Simple `WHERE` cláusulas tales como `=, !=, >, >=, <, <=` se ejecutan en el servidor MySQL.
 
@@ -92,7 +92,7 @@ SELECT * FROM mysql_table
 
 ## Ver también {#see-also}
 
-- [El ‘mysql’ función de la tabla](../../query_language/table_functions/mysql.md)
-- [Uso de MySQL como fuente de diccionario externo](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
+-   [El ‘mysql’ función de la tabla](../../query_language/table_functions/mysql.md)
+-   [Uso de MySQL como fuente de diccionario externo](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
 
 [Artículo Original](https://clickhouse.tech/docs/es/operations/table_engines/mysql/) <!--hide-->

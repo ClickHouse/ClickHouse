@@ -58,8 +58,8 @@ arrayConcat(arrays)
 
 **Parámetros**
 
-- `arrays` – Número arbitrario de argumentos de [Matriz](../../data_types/array.md) tipo.
-  **Ejemplo**
+-   `arrays` – Número arbitrario de argumentos de [Matriz](../../data_types/array.md) tipo.
+    **Ejemplo**
 
 <!-- -->
 
@@ -108,19 +108,19 @@ hasAll(set, subset)
 
 **Parámetros**
 
-- `set` – Matriz de cualquier tipo con un conjunto de elementos.
-- `subset` – Matriz de cualquier tipo con elementos que deben probarse para ser un subconjunto de `set`.
+-   `set` – Matriz de cualquier tipo con un conjunto de elementos.
+-   `subset` – Matriz de cualquier tipo con elementos que deben probarse para ser un subconjunto de `set`.
 
 **Valores de retorno**
 
-- `1`, si `set` contiene todos los elementos de `subset`.
-- `0`, de lo contrario.
+-   `1`, si `set` contiene todos los elementos de `subset`.
+-   `0`, de lo contrario.
 
 **Propiedades peculiares**
 
-- Una matriz vacía es un subconjunto de cualquier matriz.
-- `Null` procesado como un valor.
-- El orden de los valores en ambas matrices no importa.
+-   Una matriz vacía es un subconjunto de cualquier matriz.
+-   `Null` procesado como un valor.
+-   El orden de los valores en ambas matrices no importa.
 
 **Ejemplos**
 
@@ -146,18 +146,18 @@ hasAny(array1, array2)
 
 **Parámetros**
 
-- `array1` – Matriz de cualquier tipo con un conjunto de elementos.
-- `array2` – Matriz de cualquier tipo con un conjunto de elementos.
+-   `array1` – Matriz de cualquier tipo con un conjunto de elementos.
+-   `array2` – Matriz de cualquier tipo con un conjunto de elementos.
 
 **Valores de retorno**
 
-- `1`, si `array1` y `array2` tienen un elemento similar al menos.
-- `0`, de lo contrario.
+-   `1`, si `array1` y `array2` tienen un elemento similar al menos.
+-   `0`, de lo contrario.
 
 **Propiedades peculiares**
 
-- `Null` procesado como un valor.
-- El orden de los valores en ambas matrices no importa.
+-   `Null` procesado como un valor.
+-   El orden de los valores en ambas matrices no importa.
 
 **Ejemplos**
 
@@ -314,7 +314,7 @@ arrayPopBack(array)
 
 **Parámetros**
 
-- `array` – Matriz.
+-   `array` – Matriz.
 
 **Ejemplo**
 
@@ -338,7 +338,7 @@ arrayPopFront(array)
 
 **Parámetros**
 
-- `array` – Matriz.
+-   `array` – Matriz.
 
 **Ejemplo**
 
@@ -362,8 +362,8 @@ arrayPushBack(array, single_value)
 
 **Parámetros**
 
-- `array` – Matriz.
-- `single_value` – Un único valor. Solo se pueden agregar números a una matriz con números, y solo se pueden agregar cadenas a una matriz de cadenas. Al agregar números, ClickHouse establece automáticamente el `single_value` tipo para el tipo de datos de la matriz. Para obtener más información sobre los tipos de datos en ClickHouse, consulte «[Tipos de datos](../../data_types/index.md#data_types)». Puede ser `NULL`. La función agrega un `NULL` elemento de matriz a una matriz, y el tipo de elementos de matriz se convierte en `Nullable`.
+-   `array` – Matriz.
+-   `single_value` – Un único valor. Solo se pueden agregar números a una matriz con números, y solo se pueden agregar cadenas a una matriz de cadenas. Al agregar números, ClickHouse establece automáticamente el `single_value` tipo para el tipo de datos de la matriz. Para obtener más información sobre los tipos de datos en ClickHouse, consulte «[Tipos de datos](../../data_types/index.md#data_types)». Puede ser `NULL`. La función agrega un `NULL` elemento de matriz a una matriz, y el tipo de elementos de matriz se convierte en `Nullable`.
 
 **Ejemplo**
 
@@ -387,8 +387,8 @@ arrayPushFront(array, single_value)
 
 **Parámetros**
 
-- `array` – Matriz.
-- `single_value` – Un único valor. Solo se pueden agregar números a una matriz con números, y solo se pueden agregar cadenas a una matriz de cadenas. Al agregar números, ClickHouse establece automáticamente el `single_value` tipo para el tipo de datos de la matriz. Para obtener más información sobre los tipos de datos en ClickHouse, consulte «[Tipos de datos](../../data_types/index.md#data_types)». Puede ser `NULL`. La función agrega un `NULL` elemento de matriz a una matriz, y el tipo de elementos de matriz se convierte en `Nullable`.
+-   `array` – Matriz.
+-   `single_value` – Un único valor. Solo se pueden agregar números a una matriz con números, y solo se pueden agregar cadenas a una matriz de cadenas. Al agregar números, ClickHouse establece automáticamente el `single_value` tipo para el tipo de datos de la matriz. Para obtener más información sobre los tipos de datos en ClickHouse, consulte «[Tipos de datos](../../data_types/index.md#data_types)». Puede ser `NULL`. La función agrega un `NULL` elemento de matriz a una matriz, y el tipo de elementos de matriz se convierte en `Nullable`.
 
 **Ejemplo**
 
@@ -412,11 +412,11 @@ arrayResize(array, size[, extender])
 
 **Parámetros:**
 
-- `array` — Matriz.
-- `size` — Longitud requerida de la matriz.
-  - Si `size` es menor que el tamaño original de la matriz, la matriz se trunca desde la derecha.
-- Si `size` es mayor que el tamaño inicial de la matriz, la matriz se extiende a la derecha con `extender` valores predeterminados para el tipo de datos de los elementos de la matriz.
-- `extender` — Valor para extender una matriz. Puede ser `NULL`.
+-   `array` — Matriz.
+-   `size` — Longitud requerida de la matriz.
+    -   Si `size` es menor que el tamaño original de la matriz, la matriz se trunca desde la derecha.
+-   Si `size` es mayor que el tamaño inicial de la matriz, la matriz se extiende a la derecha con `extender` valores predeterminados para el tipo de datos de los elementos de la matriz.
+-   `extender` — Valor para extender una matriz. Puede ser `NULL`.
 
 **Valor devuelto:**
 
@@ -454,9 +454,9 @@ arraySlice(array, offset[, length])
 
 **Parámetros**
 
-- `array` – Matriz de datos.
-- `offset` – Sangría desde el borde de la matriz. Un valor positivo indica un desplazamiento a la izquierda, y un valor negativo es una sangría a la derecha. La numeración de los elementos de la matriz comienza con 1.
-- `length` - La longitud de la porción requerida. Si especifica un valor negativo, la función devuelve un segmento abierto `[offset, array_length - length)`. Si omite el valor, la función devuelve el sector `[offset, the_end_of_array]`.
+-   `array` – Matriz de datos.
+-   `offset` – Sangría desde el borde de la matriz. Un valor positivo indica un desplazamiento a la izquierda, y un valor negativo es una sangría a la derecha. La numeración de los elementos de la matriz comienza con 1.
+-   `length` - La longitud de la porción requerida. Si especifica un valor negativo, la función devuelve un segmento abierto `[offset, array_length - length)`. Si omite el valor, la función devuelve el sector `[offset, the_end_of_array]`.
 
 **Ejemplo**
 
@@ -512,10 +512,10 @@ SELECT arraySort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]);
 └───────────────────────────────────────────────────────────┘
 ```
 
-- `-Inf` los valores son los primeros en la matriz.
-- `NULL` los valores son los últimos en la matriz.
-- `NaN` los valores están justo antes `NULL`.
-- `Inf` los valores están justo antes `NaN`.
+-   `-Inf` los valores son los primeros en la matriz.
+-   `NULL` los valores son los últimos en la matriz.
+-   `NaN` los valores están justo antes `NULL`.
+-   `Inf` los valores están justo antes `NaN`.
 
 Tenga en cuenta que `arraySort` es una [función de orden superior](higher_order_functions.md). Puede pasarle una función lambda como primer argumento. En este caso, el orden de clasificación está determinado por el resultado de la función lambda aplicada a los elementos de la matriz.
 
@@ -612,10 +612,10 @@ SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]) as res;
 └───────────────────────────────────────┘
 ```
 
-- `Inf` los valores son los primeros en la matriz.
-- `NULL` los valores son los últimos en la matriz.
-- `NaN` los valores están justo antes `NULL`.
-- `-Inf` los valores están justo antes `NaN`.
+-   `Inf` los valores son los primeros en la matriz.
+-   `NULL` los valores son los últimos en la matriz.
+-   `NaN` los valores están justo antes `NULL`.
+-   `-Inf` los valores están justo antes `NaN`.
 
 Tenga en cuenta que el `arrayReverseSort` es una [función de orden superior](higher_order_functions.md). Puede pasarle una función lambda como primer argumento. Ejemplo se muestra a continuación.
 
@@ -696,7 +696,7 @@ arrayDifference(array)
 
 **Parámetros**
 
-- `array` – [Matriz](https://clickhouse.yandex/docs/es/data_types/array/).
+-   `array` – [Matriz](https://clickhouse.yandex/docs/es/data_types/array/).
 
 **Valores devueltos**
 
@@ -748,7 +748,7 @@ arrayDistinct(array)
 
 **Parámetros**
 
-- `array` – [Matriz](https://clickhouse.yandex/docs/es/data_types/array/).
+-   `array` – [Matriz](https://clickhouse.yandex/docs/es/data_types/array/).
 
 **Valores devueltos**
 
@@ -872,8 +872,8 @@ Convierte una matriz de matrices en una matriz plana.
 
 Función:
 
-- Se aplica a cualquier profundidad de matrices anidadas.
-- No cambia las matrices que ya son planas.
+-   Se aplica a cualquier profundidad de matrices anidadas.
+-   No cambia las matrices que ya son planas.
 
 La matriz aplanada contiene todos los elementos de todas las matrices de origen.
 
@@ -887,7 +887,7 @@ Apodo: `flatten`.
 
 **Parámetros**
 
-- `array_of_arrays` — [Matriz](../../data_types/array.md) de matrices. Por ejemplo, `[[1,2,3], [4,5]]`.
+-   `array_of_arrays` — [Matriz](../../data_types/array.md) de matrices. Por ejemplo, `[[1,2,3], [4,5]]`.
 
 **Ejemplos**
 

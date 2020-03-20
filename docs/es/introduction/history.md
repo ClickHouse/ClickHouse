@@ -13,11 +13,11 @@ Su tarea principal es crear informes en modo en línea utilizando datos no agreg
 
 ClickHouse también se utiliza para:
 
-- Almacenamiento de datos para Session Replay de Yandex.Métrica.
-- Procesamiento de datos intermedios.
-- Creación de informes globales con Analytics.
-- Ejecutar consultas para depurar el Yandex.Motor Metrica.
-- Análisis de registros desde la API y la interfaz de usuario.
+-   Almacenamiento de datos para Session Replay de Yandex.Métrica.
+-   Procesamiento de datos intermedios.
+-   Creación de informes globales con Analytics.
+-   Ejecutar consultas para depurar el Yandex.Motor Metrica.
+-   Análisis de registros desde la API y la interfaz de usuario.
 
 ClickHouse tiene al menos una docena de instalaciones en otros servicios de Yandex: en verticales de búsqueda, Market, Direct, análisis de negocios, desarrollo móvil, AdFox, servicios personales y otros.
 
@@ -27,14 +27,14 @@ Existe una opinión popular de que para calcular efectivamente las estadísticas
 
 Pero la agregación de datos es una solución muy limitada, por las siguientes razones:
 
-- Debe tener una lista predefinida de informes que el usuario necesitará.
-- El usuario no puede hacer informes personalizados.
-- Al agregar una gran cantidad de claves, el volumen de datos no se reduce y la agregación es inútil.
-- Para un gran número de informes, hay demasiadas variaciones de agregación (explosión combinatoria).
-- Al agregar claves con alta cardinalidad (como las URL), el volumen de datos no se reduce en mucho (menos del doble).
-- Por esta razón, el volumen de datos con agregación podría crecer en lugar de reducirse.
-- Los usuarios no ven todos los informes que generamos para ellos. Una gran parte de esos cálculos es inútil.
-- La integridad lógica de los datos puede ser violada para varias agregaciones.
+-   Debe tener una lista predefinida de informes que el usuario necesitará.
+-   El usuario no puede hacer informes personalizados.
+-   Al agregar una gran cantidad de claves, el volumen de datos no se reduce y la agregación es inútil.
+-   Para un gran número de informes, hay demasiadas variaciones de agregación (explosión combinatoria).
+-   Al agregar claves con alta cardinalidad (como las URL), el volumen de datos no se reduce en mucho (menos del doble).
+-   Por esta razón, el volumen de datos con agregación podría crecer en lugar de reducirse.
+-   Los usuarios no ven todos los informes que generamos para ellos. Una gran parte de esos cálculos es inútil.
+-   La integridad lógica de los datos puede ser violada para varias agregaciones.
 
 Si no agregamos nada y trabajamos con datos no agregados, esto podría reducir el volumen de cálculos.
 

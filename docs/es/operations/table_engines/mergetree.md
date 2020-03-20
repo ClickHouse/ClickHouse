@@ -6,21 +6,21 @@ Motores en el `MergeTree` familia están diseñados para insertar una gran canti
 
 Principales características:
 
-- Almacena datos ordenados por clave principal.
+-   Almacena datos ordenados por clave principal.
 
-  Esto le permite crear un pequeño índice disperso que ayuda a encontrar datos más rápido.
+    Esto le permite crear un pequeño índice disperso que ayuda a encontrar datos más rápido.
 
-- Las particiones se pueden utilizar si [clave de partición](custom_partitioning_key.md) se especifica.
+-   Las particiones se pueden utilizar si [clave de partición](custom_partitioning_key.md) se especifica.
 
-  ClickHouse admite ciertas operaciones con particiones que son más efectivas que las operaciones generales en los mismos datos con el mismo resultado. ClickHouse también corta automáticamente los datos de partición donde se especifica la clave de partición en la consulta. Esto también mejora el rendimiento de las consultas.
+    ClickHouse admite ciertas operaciones con particiones que son más efectivas que las operaciones generales en los mismos datos con el mismo resultado. ClickHouse también corta automáticamente los datos de partición donde se especifica la clave de partición en la consulta. Esto también mejora el rendimiento de las consultas.
 
-- Soporte de replicación de datos.
+-   Soporte de replicación de datos.
 
-  La familia de `ReplicatedMergeTree` proporciona la replicación de datos. Para obtener más información, consulte [Replicación de datos](replication.md).
+    La familia de `ReplicatedMergeTree` proporciona la replicación de datos. Para obtener más información, consulte [Replicación de datos](replication.md).
 
-- Soporte de muestreo de datos.
+-   Soporte de muestreo de datos.
 
-  Si es necesario, puede establecer el método de muestreo de datos en la tabla.
+    Si es necesario, puede establecer el método de muestreo de datos en la tabla.
 
 !!! info "INFO"
     El [Fusionar](merge.md) el motor no pertenece al `*MergeTree` familia.
@@ -51,45 +51,45 @@ Para obtener una descripción de los parámetros, consulte [Descripción de la c
 
 ### Cláusulas de consulta {#mergetree-query-clauses}
 
-- `ENGINE` — Nombre y parámetros del motor. `ENGINE = MergeTree()`. El `MergeTree` el motor no tiene parámetros.
+-   `ENGINE` — Nombre y parámetros del motor. `ENGINE = MergeTree()`. El `MergeTree` el motor no tiene parámetros.
 
-- `PARTITION BY` — El [clave de partición](custom_partitioning_key.md).
+-   `PARTITION BY` — El [clave de partición](custom_partitioning_key.md).
 
-  Para particionar por mes, utilice el `toYYYYMM(date_column)` expresión, donde `date_column` es una columna con una fecha del tipo [Fecha](../../data_types/date.md). Los nombres de partición aquí tienen el `"YYYYMM"` formato.
+    Para particionar por mes, utilice el `toYYYYMM(date_column)` expresión, donde `date_column` es una columna con una fecha del tipo [Fecha](../../data_types/date.md). Los nombres de partición aquí tienen el `"YYYYMM"` formato.
 
-- `ORDER BY` — La clave de clasificación.
+-   `ORDER BY` — La clave de clasificación.
 
-  Una tupla de columnas o expresiones arbitrarias. Ejemplo: `ORDER BY (CounterID, EventDate)`.
+    Una tupla de columnas o expresiones arbitrarias. Ejemplo: `ORDER BY (CounterID, EventDate)`.
 
-- `PRIMARY KEY` — La clave principal si [difiere de la clave de clasificación](mergetree.md).
+-   `PRIMARY KEY` — La clave principal si [difiere de la clave de clasificación](mergetree.md).
 
-  De forma predeterminada, la clave principal es la misma que la clave de ordenación (que se especifica `ORDER BY` clausula). Por lo tanto, en la mayoría de los casos no es necesario especificar un `PRIMARY KEY` clausula.
+    De forma predeterminada, la clave principal es la misma que la clave de ordenación (que se especifica `ORDER BY` clausula). Por lo tanto, en la mayoría de los casos no es necesario especificar un `PRIMARY KEY` clausula.
 
-- `SAMPLE BY` — Una expresión para el muestreo.
+-   `SAMPLE BY` — Una expresión para el muestreo.
 
-  Si se utiliza una expresión de muestreo, la clave principal debe contenerla. Ejemplo: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
+    Si se utiliza una expresión de muestreo, la clave principal debe contenerla. Ejemplo: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
-- `TTL` — Una lista de reglas que especifican la duración de almacenamiento de las filas y definen la lógica del movimiento automático de piezas [entre discos y volúmenes](#table_engine-mergetree-multiple-volumes).
+-   `TTL` — Una lista de reglas que especifican la duración de almacenamiento de las filas y definen la lógica del movimiento automático de piezas [entre discos y volúmenes](#table_engine-mergetree-multiple-volumes).
 
-  La expresión debe tener una `Date` o `DateTime` columna como resultado. Ejemplo:
-  `TTL date + INTERVAL 1 DAY`
+    La expresión debe tener una `Date` o `DateTime` columna como resultado. Ejemplo:
+    `TTL date + INTERVAL 1 DAY`
 
-  Tipo de regla `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'` especifica una acción que debe realizarse con la pieza si la expresión está satisfecha (alcanza la hora actual): eliminación de filas caducadas, mover una pieza (si la expresión está satisfecha para todas las filas de una pieza) al disco especificado (`TO DISK 'xxx'`) o al volumen (`TO VOLUME 'xxx'`). El tipo predeterminado de la regla es la eliminación (`DELETE`). Se puede especificar una lista de varias reglas, pero no debe haber más de una `DELETE` regla.
+    Tipo de regla `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'` especifica una acción que debe realizarse con la pieza si la expresión está satisfecha (alcanza la hora actual): eliminación de filas caducadas, mover una pieza (si la expresión está satisfecha para todas las filas de una pieza) al disco especificado (`TO DISK 'xxx'`) o al volumen (`TO VOLUME 'xxx'`). El tipo predeterminado de la regla es la eliminación (`DELETE`). Se puede especificar una lista de varias reglas, pero no debe haber más de una `DELETE` regla.
 
-  Para obtener más información, consulte [TTL para columnas y tablas](#table_engine-mergetree-ttl)
+    Para obtener más información, consulte [TTL para columnas y tablas](#table_engine-mergetree-ttl)
 
-- `SETTINGS` — Parámetros adicionales que controlan el comportamiento del `MergeTree`:
+-   `SETTINGS` — Parámetros adicionales que controlan el comportamiento del `MergeTree`:
 
-  - `index_granularity` — Número máximo de filas de datos entre las marcas de un índice. Valor predeterminado: 8192. Ver [Almacenamiento de datos](#mergetree-data-storage).
-  - `index_granularity_bytes` — Tamaño máximo de los gránulos de datos en bytes. Valor predeterminado: 10 MB. Para restringir el tamaño del gránulo solo por el número de filas, establezca en 0 (no recomendado). Ver [Almacenamiento de datos](#mergetree-data-storage).
-  - `enable_mixed_granularity_parts` — Habilita o deshabilita la transición para controlar el tamaño del gránulo `index_granularity_bytes` configuración. Antes de la versión 19.11, sólo existía el `index_granularity` ajuste para restringir el tamaño del gránulo. El `index_granularity_bytes` mejora el rendimiento de ClickHouse al seleccionar datos de tablas con filas grandes (decenas y cientos de megabytes). Si tiene tablas con filas grandes, puede habilitar esta configuración para que las tablas mejoren la eficiencia de `SELECT` consulta.
-  - `use_minimalistic_part_header_in_zookeeper` — Método de almacenamiento de los encabezados de partes de datos en ZooKeeper. Si `use_minimalistic_part_header_in_zookeeper=1`, entonces ZooKeeper almacena menos datos. Para obtener más información, consulte [descripción del ajuste](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) en “Server configuration parameters”.
-  - `min_merge_bytes_to_use_direct_io` — El volumen mínimo de datos para la operación de fusión que se necesita para utilizar el acceso directo de E/S al disco de almacenamiento. Al fusionar partes de datos, ClickHouse calcula el volumen total de almacenamiento de todos los datos que se van a fusionar. Si el volumen excede `min_merge_bytes_to_use_direct_io` bytes, ClickHouse lee y escribe los datos en el disco de almacenamiento utilizando la interfaz de E / S directa (`O_DIRECT` opcion). Si `min_merge_bytes_to_use_direct_io = 0`, entonces la E/S directa está deshabilitada. Valor predeterminado: `10 * 1024 * 1024 * 1024` byte.
-    <a name="mergetree_setting-merge_with_ttl_timeout"></a>
-  - `merge_with_ttl_timeout` — Retraso mínimo en segundos antes de repetir una fusión con TTL. Valor predeterminado: 86400 (1 día).
-  - `write_final_mark` — Habilita o deshabilita la escritura de la marca de índice final al final de la parte de datos (después del último byte). Valor predeterminado: 1. No lo apague.
-  - `merge_max_block_size` — Número máximo de filas en el bloque para operaciones de fusión. Valor predeterminado: 8192.
-  - `storage_policy` — Política de almacenamiento. Ver [Uso de varios dispositivos de bloque para el almacenamiento de datos](#table_engine-mergetree-multiple-volumes).
+    -   `index_granularity` — Número máximo de filas de datos entre las marcas de un índice. Valor predeterminado: 8192. Ver [Almacenamiento de datos](#mergetree-data-storage).
+    -   `index_granularity_bytes` — Tamaño máximo de los gránulos de datos en bytes. Valor predeterminado: 10 MB. Para restringir el tamaño del gránulo solo por el número de filas, establezca en 0 (no recomendado). Ver [Almacenamiento de datos](#mergetree-data-storage).
+    -   `enable_mixed_granularity_parts` — Habilita o deshabilita la transición para controlar el tamaño del gránulo `index_granularity_bytes` configuración. Antes de la versión 19.11, sólo existía el `index_granularity` ajuste para restringir el tamaño del gránulo. El `index_granularity_bytes` mejora el rendimiento de ClickHouse al seleccionar datos de tablas con filas grandes (decenas y cientos de megabytes). Si tiene tablas con filas grandes, puede habilitar esta configuración para que las tablas mejoren la eficiencia de `SELECT` consulta.
+    -   `use_minimalistic_part_header_in_zookeeper` — Método de almacenamiento de los encabezados de partes de datos en ZooKeeper. Si `use_minimalistic_part_header_in_zookeeper=1`, entonces ZooKeeper almacena menos datos. Para obtener más información, consulte [descripción del ajuste](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) en “Server configuration parameters”.
+    -   `min_merge_bytes_to_use_direct_io` — El volumen mínimo de datos para la operación de fusión que se necesita para utilizar el acceso directo de E/S al disco de almacenamiento. Al fusionar partes de datos, ClickHouse calcula el volumen total de almacenamiento de todos los datos que se van a fusionar. Si el volumen excede `min_merge_bytes_to_use_direct_io` bytes, ClickHouse lee y escribe los datos en el disco de almacenamiento utilizando la interfaz de E / S directa (`O_DIRECT` opcion). Si `min_merge_bytes_to_use_direct_io = 0`, entonces la E/S directa está deshabilitada. Valor predeterminado: `10 * 1024 * 1024 * 1024` byte.
+        <a name="mergetree_setting-merge_with_ttl_timeout"></a>
+    -   `merge_with_ttl_timeout` — Retraso mínimo en segundos antes de repetir una fusión con TTL. Valor predeterminado: 86400 (1 día).
+    -   `write_final_mark` — Habilita o deshabilita la escritura de la marca de índice final al final de la parte de datos (después del último byte). Valor predeterminado: 1. No lo apague.
+    -   `merge_max_block_size` — Número máximo de filas en el bloque para operaciones de fusión. Valor predeterminado: 8192.
+    -   `storage_policy` — Política de almacenamiento. Ver [Uso de varios dispositivos de bloque para el almacenamiento de datos](#table_engine-mergetree-multiple-volumes).
 
 **Ejemplo de configuración de secciones**
 
@@ -121,10 +121,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **Parámetros MergeTree()**
 
-- `date-column` — El nombre de una columna del [Fecha](../../data_types/date.md) tipo. ClickHouse crea automáticamente particiones por mes en función de esta columna. Los nombres de partición están en el `"YYYYMM"` formato.
-- `sampling_expression` — Una expresión para el muestreo.
-- `(primary, key)` — Clave principal. Tipo: [Tupla()](../../data_types/tuple.md)
-- `index_granularity` — La granularidad de un índice. El número de filas de datos entre “marks” de un índice. El valor 8192 es apropiado para la mayoría de las tareas.
+-   `date-column` — El nombre de una columna del [Fecha](../../data_types/date.md) tipo. ClickHouse crea automáticamente particiones por mes en función de esta columna. Los nombres de partición están en el `"YYYYMM"` formato.
+-   `sampling_expression` — Una expresión para el muestreo.
+-   `(primary, key)` — Clave principal. Tipo: [Tupla()](../../data_types/tuple.md)
+-   `index_granularity` — La granularidad de un índice. El número de filas de datos entre “marks” de un índice. El valor 8192 es apropiado para la mayoría de las tareas.
 
 **Ejemplo**
 
@@ -151,18 +151,18 @@ El tamaño del gránulo es restringido por `index_granularity` y `index_granular
 
 Tome el `(CounterID, Date)` clave primaria como ejemplo. En este caso, la clasificación y el índice se pueden ilustrar de la siguiente manera:
 
-    Whole data:     [-------------------------------------------------------------------------]
-    CounterID:      [aaaaaaaaaaaaaaaaaabbbbcdeeeeeeeeeeeeefgggggggghhhhhhhhhiiiiiiiiikllllllll]
-    Date:           [1111111222222233331233211111222222333211111112122222223111112223311122333]
-    Marks:           |      |      |      |      |      |      |      |      |      |      |
-                    a,1    a,2    a,3    b,3    e,2    e,3    g,1    h,2    i,1    i,3    l,3
-    Marks numbers:   0      1      2      3      4      5      6      7      8      9      10
+      Whole data:     [-------------------------------------------------------------------------]
+      CounterID:      [aaaaaaaaaaaaaaaaaabbbbcdeeeeeeeeeeeeefgggggggghhhhhhhhhiiiiiiiiikllllllll]
+      Date:           [1111111222222233331233211111222222333211111112122222223111112223311122333]
+      Marks:           |      |      |      |      |      |      |      |      |      |      |
+                      a,1    a,2    a,3    b,3    e,2    e,3    g,1    h,2    i,1    i,3    l,3
+      Marks numbers:   0      1      2      3      4      5      6      7      8      9      10
 
 Si la consulta de datos especifica:
 
-- `CounterID in ('a', 'h')`, el servidor lee los datos en los rangos de marcas `[0, 3)` y `[6, 8)`.
-- `CounterID IN ('a', 'h') AND Date = 3`, el servidor lee los datos en los rangos de marcas `[1, 3)` y `[7, 8)`.
-- `Date = 3`, el servidor lee los datos en el rango de marcas `[1, 10]`.
+-   `CounterID in ('a', 'h')`, el servidor lee los datos en los rangos de marcas `[0, 3)` y `[6, 8)`.
+-   `CounterID IN ('a', 'h') AND Date = 3`, el servidor lee los datos en los rangos de marcas `[1, 3)` y `[7, 8)`.
+-   `Date = 3`, el servidor lee los datos en el rango de marcas `[1, 10]`.
 
 Los ejemplos anteriores muestran que siempre es más efectivo usar un índice que un análisis completo.
 
@@ -176,20 +176,20 @@ ClickHouse no requiere una clave principal única. Puede insertar varias filas c
 
 El número de columnas en la clave principal no está explícitamente limitado. Dependiendo de la estructura de datos, puede incluir más o menos columnas en la clave principal. Esto puede:
 
-- Mejorar el rendimiento de un índice.
+-   Mejorar el rendimiento de un índice.
 
-  Si la clave principal es `(a, b)`, a continuación, añadir otra columna `c` mejorará el rendimiento si se cumplen las siguientes condiciones:
+    Si la clave principal es `(a, b)`, a continuación, añadir otra columna `c` mejorará el rendimiento si se cumplen las siguientes condiciones:
 
-  - Hay consultas con una condición en la columna `c`.
-  - Rangos de datos largos (varias veces más `index_granularity`) con valores idénticos para `(a, b)` son comunes. En otras palabras, al agregar otra columna le permite omitir rangos de datos bastante largos.
+    -   Hay consultas con una condición en la columna `c`.
+    -   Rangos de datos largos (varias veces más `index_granularity`) con valores idénticos para `(a, b)` son comunes. En otras palabras, al agregar otra columna le permite omitir rangos de datos bastante largos.
 
-- Mejorar la compresión de datos.
+-   Mejorar la compresión de datos.
 
-  ClickHouse ordena los datos por clave principal, por lo que cuanto mayor sea la consistencia, mejor será la compresión.
+    ClickHouse ordena los datos por clave principal, por lo que cuanto mayor sea la consistencia, mejor será la compresión.
 
-- Proporcione una lógica adicional al fusionar partes de datos en el [ColapsarMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) y [SummingMergeTree](summingmergetree.md) motor.
+-   Proporcione una lógica adicional al fusionar partes de datos en el [ColapsarMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) y [SummingMergeTree](summingmergetree.md) motor.
 
-  En este caso tiene sentido especificar el *clave de clasificación* que es diferente de la clave principal.
+    En este caso tiene sentido especificar el *clave de clasificación* que es diferente de la clave principal.
 
 Una clave principal larga afectará negativamente al rendimiento de la inserción y al consumo de memoria, pero las columnas adicionales de la clave principal no afectarán al rendimiento de ClickHouse durante `SELECT` consulta.
 
@@ -212,7 +212,7 @@ Por lo tanto, es posible ejecutar rápidamente consultas en uno o varios rangos 
 
 Veamos el motor configurado de la siguiente manera:
 
-    ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate) SETTINGS index_granularity=8192
+      ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate) SETTINGS index_granularity=8192
 
 En este caso, en consultas:
 
@@ -280,34 +280,34 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
 #### Tipos de índices disponibles {#available-types-of-indices}
 
-- `minmax`
+-   `minmax`
 
-  Almacena los extremos de la expresión especificada (si la expresión `tuple`, entonces almacena extremos para cada elemento de `tuple`), utiliza información almacenada para omitir bloques de datos como la clave principal.
+    Almacena los extremos de la expresión especificada (si la expresión `tuple`, entonces almacena extremos para cada elemento de `tuple`), utiliza información almacenada para omitir bloques de datos como la clave principal.
 
-- `set(max_rows)`
+-   `set(max_rows)`
 
-  Almacena valores únicos de la expresión especificada (no más de `max_rows` filas, `max_rows=0` medio “no limits”). Utiliza los valores para comprobar si `WHERE` expresión no es satisfactorio en un bloque de datos.
+    Almacena valores únicos de la expresión especificada (no más de `max_rows` filas, `max_rows=0` medio “no limits”). Utiliza los valores para comprobar si `WHERE` expresión no es satisfactorio en un bloque de datos.
 
-- `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
+-   `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
-  Tiendas a [Filtro de floración](https://en.wikipedia.org/wiki/Bloom_filter) que contiene todos los ngrams de un bloque de datos. Funciona solo con cadenas. Puede ser utilizado para la optimización de `equals`, `like` y `in` expresiones.
+    Tiendas a [Filtro de floración](https://en.wikipedia.org/wiki/Bloom_filter) que contiene todos los ngrams de un bloque de datos. Funciona solo con cadenas. Puede ser utilizado para la optimización de `equals`, `like` y `in` expresiones.
 
-  - `n` — tamaño del ngram,
-  - `size_of_bloom_filter_in_bytes` — Tamaño del filtro Bloom en bytes (puede usar valores grandes aquí, por ejemplo, 256 o 512, porque se puede comprimir bien).
-  - `number_of_hash_functions` — El número de funciones hash utilizadas en el filtro Bloom.
-  - `random_seed` — La semilla para las funciones hash de filtro Bloom.
+    -   `n` — tamaño del ngram,
+    -   `size_of_bloom_filter_in_bytes` — Tamaño del filtro Bloom en bytes (puede usar valores grandes aquí, por ejemplo, 256 o 512, porque se puede comprimir bien).
+    -   `number_of_hash_functions` — El número de funciones hash utilizadas en el filtro Bloom.
+    -   `random_seed` — La semilla para las funciones hash de filtro Bloom.
 
-- `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
+-   `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
-  Lo mismo que `ngrambf_v1`, pero almacena tokens en lugar de ngrams. Los tokens son secuencias separadas por caracteres no alfanuméricos.
+    Lo mismo que `ngrambf_v1`, pero almacena tokens en lugar de ngrams. Los tokens son secuencias separadas por caracteres no alfanuméricos.
 
-- `bloom_filter([false_positive])` — Almacena un [Filtro de floración](https://en.wikipedia.org/wiki/Bloom_filter) para las columnas especificadas.
+-   `bloom_filter([false_positive])` — Almacena un [Filtro de floración](https://en.wikipedia.org/wiki/Bloom_filter) para las columnas especificadas.
 
-  Opcional `false_positive` parámetro es la probabilidad de recibir una respuesta falsa positiva del filtro. Valores posibles: (0, 1). Valor predeterminado: 0.025.
+    Opcional `false_positive` parámetro es la probabilidad de recibir una respuesta falsa positiva del filtro. Valores posibles: (0, 1). Valor predeterminado: 0.025.
 
-  Tipos de datos admitidos: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`.
+    Tipos de datos admitidos: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`.
 
-  Las siguientes funciones pueden usarlo: [igual](../../query_language/functions/comparison_functions.md), [notEquals](../../query_language/functions/comparison_functions.md), [en](../../query_language/functions/in_functions.md), [noEn](../../query_language/functions/in_functions.md), [tener](../../query_language/functions/array_functions.md).
+    Las siguientes funciones pueden usarlo: [igual](../../query_language/functions/comparison_functions.md), [notEquals](../../query_language/functions/comparison_functions.md), [en](../../query_language/functions/in_functions.md), [noEn](../../query_language/functions/in_functions.md), [tener](../../query_language/functions/array_functions.md).
 
 <!-- -->
 
@@ -346,18 +346,18 @@ Las funciones con un argumento constante que es menor que el tamaño de ngram no
 
 Los filtros Bloom pueden tener coincidencias falsas positivas, por lo que `ngrambf_v1`, `tokenbf_v1`, y `bloom_filter` los índices no se pueden usar para optimizar consultas donde se espera que el resultado de una función sea falso, por ejemplo:
 
-- Puede ser optimizado:
-  - `s LIKE '%test%'`
-  - `NOT s NOT LIKE '%test%'`
-  - `s = 1`
-  - `NOT s != 1`
-  - `startsWith(s, 'test')`
-- No se puede optimizar:
-  - `NOT s LIKE '%test%'`
-  - `s NOT LIKE '%test%'`
-  - `NOT s = 1`
-  - `s != 1`
-  - `NOT startsWith(s, 'test')`
+-   Puede ser optimizado:
+    -   `s LIKE '%test%'`
+    -   `NOT s NOT LIKE '%test%'`
+    -   `s = 1`
+    -   `NOT s != 1`
+    -   `startsWith(s, 'test')`
+-   No se puede optimizar:
+    -   `NOT s LIKE '%test%'`
+    -   `s NOT LIKE '%test%'`
+    -   `NOT s = 1`
+    -   `s != 1`
+    -   `NOT startsWith(s, 'test')`
 
 ## Acceso a datos simultáneos {#concurrent-data-access}
 
@@ -436,9 +436,9 @@ TTL expr [DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'], ...
 
 El tipo de regla TTL puede seguir cada expresión TTL. Afecta a una acción que debe realizarse una vez que se satisface la expresión (alcanza la hora actual):
 
-- `DELETE` - Eliminar filas caducadas (acción predeterminada);
-- `TO DISK 'aaa'` - mover parte al disco `aaa`;
-- `TO VOLUME 'bbb'` - mover parte al disco `bbb`.
+-   `DELETE` - Eliminar filas caducadas (acción predeterminada);
+-   `TO DISK 'aaa'` - mover parte al disco `aaa`;
+-   `TO VOLUME 'bbb'` - mover parte al disco `bbb`.
 
 Ejemplos:
 
@@ -485,10 +485,10 @@ La parte de datos es la unidad móvil mínima para `MergeTree`-mesas de motor. L
 
 ### Plazo {#terms}
 
-- Disco: bloquea el dispositivo montado en el sistema de archivos.
-- Disco predeterminado: disco que almacena la ruta especificada en el [camino](../server_settings/settings.md#server_settings-path) configuración del servidor.
-- Volumen — Conjunto ordenado de discos iguales (similar a [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
-- Política de almacenamiento: conjunto de volúmenes y reglas para mover datos entre ellos.
+-   Disco: bloquea el dispositivo montado en el sistema de archivos.
+-   Disco predeterminado: disco que almacena la ruta especificada en el [camino](../server_settings/settings.md#server_settings-path) configuración del servidor.
+-   Volumen — Conjunto ordenado de discos iguales (similar a [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
+-   Política de almacenamiento: conjunto de volúmenes y reglas para mover datos entre ellos.
 
 Los nombres dados a las entidades descritas se pueden encontrar en las tablas del sistema, [sistema.almacenamiento\_policies](../system_tables.md#system_tables-storage_policies) y [sistema.disco](../system_tables.md#system_tables-disks). Para aplicar una de las directivas de almacenamiento configuradas para una tabla, `storage_policy` establecimiento de `MergeTree`-mesas de la familia del motor.
 
@@ -522,9 +522,9 @@ Estructura de configuración:
 
 Tags:
 
-- `<disk_name_N>` — Nombre del disco. Los nombres deben ser diferentes para todos los discos.
-- `path` — ruta bajo la cual un servidor almacenará datos (`data` y `shadow` carpetas), debe terminarse con ‘/’.
-- `keep_free_space_bytes` — la cantidad de espacio libre en disco que debe reservarse.
+-   `<disk_name_N>` — Nombre del disco. Los nombres deben ser diferentes para todos los discos.
+-   `path` — ruta bajo la cual un servidor almacenará datos (`data` y `shadow` carpetas), debe terminarse con ‘/’.
+-   `keep_free_space_bytes` — la cantidad de espacio libre en disco que debe reservarse.
 
 El orden de la definición del disco no es importante.
 
@@ -559,11 +559,11 @@ Marcado de configuración de directivas de almacenamiento:
 
 Tags:
 
-- `policy_name_N` — Nombre de la póliza. Los nombres de directiva deben ser únicos.
-- `volume_name_N` — Nombre del volumen. Los nombres de volumen deben ser únicos.
-- `disk` — un disco dentro de un volumen.
-- `max_data_part_size_bytes` — el tamaño máximo de una pieza que puede almacenarse en cualquiera de los discos del volumen.
-- `move_factor` — cuando la cantidad de espacio disponible es inferior a este factor, los datos comienzan a moverse automáticamente en el siguiente volumen si los hay (por defecto, 0.1).
+-   `policy_name_N` — Nombre de la póliza. Los nombres de directiva deben ser únicos.
+-   `volume_name_N` — Nombre del volumen. Los nombres de volumen deben ser únicos.
+-   `disk` — un disco dentro de un volumen.
+-   `max_data_part_size_bytes` — el tamaño máximo de una pieza que puede almacenarse en cualquiera de los discos del volumen.
+-   `move_factor` — cuando la cantidad de espacio disponible es inferior a este factor, los datos comienzan a moverse automáticamente en el siguiente volumen si los hay (por defecto, 0.1).
 
 Cofiguration ejemplos:
 
@@ -624,10 +624,10 @@ El `default` política de almacenamiento implica el uso de un solo volumen, que 
 
 En el caso de `MergeTree` tablas, los datos están llegando al disco de diferentes maneras:
 
-- Como resultado de un inserto (`INSERT` consulta).
-- Durante las fusiones de fondo y [mutación](../../query_language/alter.md#alter-mutations).
-- Al descargar desde otra réplica.
-- Como resultado de la congelación de particiones [ALTER TABLE … CONGELAR LA PARTICIÓN](../../query_language/alter.md#alter_freeze-partition).
+-   Como resultado de un inserto (`INSERT` consulta).
+-   Durante las fusiones de fondo y [mutación](../../query_language/alter.md#alter-mutations).
+-   Al descargar desde otra réplica.
+-   Como resultado de la congelación de particiones [ALTER TABLE … CONGELAR LA PARTICIÓN](../../query_language/alter.md#alter_freeze-partition).
 
 En todos estos casos, excepto las mutaciones y la congelación de particiones, una pieza se almacena en un volumen y un disco de acuerdo con la política de almacenamiento dada:
 

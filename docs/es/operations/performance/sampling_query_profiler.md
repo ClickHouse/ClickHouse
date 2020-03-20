@@ -4,25 +4,25 @@ ClickHouse ejecuta el generador de perfiles de muestreo que permite analizar la 
 
 Para usar el generador de perfiles:
 
-- Configurar el [trace\_log](../server_settings/settings.md#server_settings-trace_log) sección de la configuración del servidor.
+-   Configurar el [trace\_log](../server_settings/settings.md#server_settings-trace_log) sección de la configuración del servidor.
 
-  Esta sección configura la [trace\_log](../system_tables.md#system_tables-trace_log) tabla del sistema que contiene los resultados del funcionamiento del generador de perfiles. Está configurado de forma predeterminada. Recuerde que los datos de esta tabla solo son válidos para un servidor en ejecución. Después de reiniciar el servidor, ClickHouse no limpia la tabla y toda la dirección de memoria virtual almacenada puede dejar de ser válida.
+    Esta sección configura la [trace\_log](../system_tables.md#system_tables-trace_log) tabla del sistema que contiene los resultados del funcionamiento del generador de perfiles. Está configurado de forma predeterminada. Recuerde que los datos de esta tabla solo son válidos para un servidor en ejecución. Después de reiniciar el servidor, ClickHouse no limpia la tabla y toda la dirección de memoria virtual almacenada puede dejar de ser válida.
 
-- Configurar el [Los resultados de la prueba](../settings/settings.md#query_profiler_cpu_time_period_ns) o [query\_profiler\_real\_time\_period\_ns](../settings/settings.md#query_profiler_real_time_period_ns) configuración. Ambos ajustes se pueden utilizar simultáneamente.
+-   Configurar el [Los resultados de la prueba](../settings/settings.md#query_profiler_cpu_time_period_ns) o [query\_profiler\_real\_time\_period\_ns](../settings/settings.md#query_profiler_real_time_period_ns) configuración. Ambos ajustes se pueden utilizar simultáneamente.
 
-  Estas opciones le permiten configurar temporizadores del generador de perfiles. Como estos son los ajustes de sesión, puede obtener diferentes frecuencias de muestreo para todo el servidor, usuarios individuales o perfiles de usuario, para su sesión interactiva y para cada consulta individual.
+    Estas opciones le permiten configurar temporizadores del generador de perfiles. Como estos son los ajustes de sesión, puede obtener diferentes frecuencias de muestreo para todo el servidor, usuarios individuales o perfiles de usuario, para su sesión interactiva y para cada consulta individual.
 
 La frecuencia de muestreo predeterminada es una muestra por segundo y tanto la CPU como los temporizadores reales están habilitados. Esta frecuencia permite recopilar suficiente información sobre el clúster ClickHouse. Al mismo tiempo, al trabajar con esta frecuencia, el generador de perfiles no afecta el rendimiento del servidor ClickHouse. Si necesita perfilar cada consulta individual, intente usar una mayor frecuencia de muestreo.
 
 Para analizar el `trace_log` tabla del sistema:
 
-- Instale el `clickhouse-common-static-dbg` paquete. Ver [Instalar desde paquetes DEB](../../getting_started/install.md#install-from-deb-packages).
+-   Instale el `clickhouse-common-static-dbg` paquete. Ver [Instalar desde paquetes DEB](../../getting_started/install.md#install-from-deb-packages).
 
-- Permitir funciones de introspección [allow\_introspection\_functions](../settings/settings.md#settings-allow_introspection_functions) configuración.
+-   Permitir funciones de introspección [allow\_introspection\_functions](../settings/settings.md#settings-allow_introspection_functions) configuración.
 
-  Por razones de seguridad, las funciones de introspección están deshabilitadas de forma predeterminada.
+    Por razones de seguridad, las funciones de introspección están deshabilitadas de forma predeterminada.
 
-- Utilice el `addressToLine`, `addressToSymbol` y `demangle` [funciones de la introspección](../../query_language/functions/introspection.md) para obtener nombres de funciones y sus posiciones en el código ClickHouse. Para obtener un perfil para alguna consulta, debe agregar datos del `trace_log` tabla. Puede agregar datos por funciones individuales o por los seguimientos de pila completos.
+-   Utilice el `addressToLine`, `addressToSymbol` y `demangle` [funciones de la introspección](../../query_language/functions/introspection.md) para obtener nombres de funciones y sus posiciones en el código ClickHouse. Para obtener un perfil para alguna consulta, debe agregar datos del `trace_log` tabla. Puede agregar datos por funciones individuales o por los seguimientos de pila completos.
 
 Si necesita visualizar `trace_log` información, intente [Flamegraph](../../interfaces/third-party/gui/#clickhouse-flamegraph) y [Nivel de Cifrado WEP](https://github.com/laplab/clickhouse-speedscope).
 
@@ -30,14 +30,14 @@ Si necesita visualizar `trace_log` información, intente [Flamegraph](../../inte
 
 En este ejemplo nos:
 
-- Filtrado `trace_log` datos por un identificador de consulta y la fecha actual.
+-   Filtrado `trace_log` datos por un identificador de consulta y la fecha actual.
 
-- Agregando por seguimiento de pila.
+-   Agregando por seguimiento de pila.
 
-- Usando funciones de introspección, obtendremos un informe de:
+-   Usando funciones de introspección, obtendremos un informe de:
 
-  - Nombres de símbolos y funciones de código fuente correspondientes.
-  - Ubicaciones del código fuente de estas funciones.
+    -   Nombres de símbolos y funciones de código fuente correspondientes.
+    -   Ubicaciones del código fuente de estas funciones.
 
 <!-- -->
 

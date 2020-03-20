@@ -5,20 +5,20 @@ La lectura se paralela automáticamente. Durante una lectura, se utilizan los í
 
 El motor distribuido acepta parámetros:
 
-- el nombre del clúster en el archivo de configuración del servidor
+-   el nombre del clúster en el archivo de configuración del servidor
 
-- el nombre de una base de datos remota
+-   el nombre de una base de datos remota
 
-- el nombre de una tabla remota
+-   el nombre de una tabla remota
 
-- (opcionalmente) clave de fragmentación
+-   (opcionalmente) clave de fragmentación
 
-- nombre de política (opcionalmente), se usará para almacenar archivos temporales para el envío asíncrono
+-   nombre de política (opcionalmente), se usará para almacenar archivos temporales para el envío asíncrono
 
-  Ver también:
+    Ver también:
 
-  - `insert_distributed_sync` configuración
-  - [Método de codificación de datos:](mergetree.md#table_engine-mergetree-multiple-volumes) para los ejemplos
+    -   `insert_distributed_sync` configuración
+    -   [Método de codificación de datos:](mergetree.md#table_engine-mergetree-multiple-volumes) para los ejemplos
 
 Ejemplo:
 
@@ -124,8 +124,8 @@ Las consultas SELECT se envían a todos los fragmentos y funcionan independiente
 
 Debería preocuparse por el esquema de fragmentación en los siguientes casos:
 
-- Se utilizan consultas que requieren unir datos (IN o JOIN) mediante una clave específica. Si esta clave fragmenta datos, puede usar IN local o JOIN en lugar de GLOBAL IN o GLOBAL JOIN, que es mucho más eficiente.
-- Se usa una gran cantidad de servidores (cientos o más) con una gran cantidad de consultas pequeñas (consultas de clientes individuales: sitios web, anunciantes o socios). Para que las pequeñas consultas no afecten a todo el clúster, tiene sentido ubicar datos para un solo cliente en un solo fragmento. Alternativamente, como lo hemos hecho en Yandex.Metrica, puede configurar sharding de dos niveles: divida todo el clúster en “layers”, donde una capa puede consistir en varios fragmentos. Los datos de un único cliente se encuentran en una sola capa, pero los fragmentos se pueden agregar a una capa según sea necesario y los datos se distribuyen aleatoriamente dentro de ellos. Las tablas distribuidas se crean para cada capa y se crea una única tabla distribuida compartida para consultas globales.
+-   Se utilizan consultas que requieren unir datos (IN o JOIN) mediante una clave específica. Si esta clave fragmenta datos, puede usar IN local o JOIN en lugar de GLOBAL IN o GLOBAL JOIN, que es mucho más eficiente.
+-   Se usa una gran cantidad de servidores (cientos o más) con una gran cantidad de consultas pequeñas (consultas de clientes individuales: sitios web, anunciantes o socios). Para que las pequeñas consultas no afecten a todo el clúster, tiene sentido ubicar datos para un solo cliente en un solo fragmento. Alternativamente, como lo hemos hecho en Yandex.Metrica, puede configurar sharding de dos niveles: divida todo el clúster en “layers”, donde una capa puede consistir en varios fragmentos. Los datos de un único cliente se encuentran en una sola capa, pero los fragmentos se pueden agregar a una capa según sea necesario y los datos se distribuyen aleatoriamente dentro de ellos. Las tablas distribuidas se crean para cada capa y se crea una única tabla distribuida compartida para consultas globales.
 
 Los datos se escriben de forma asíncrona. Cuando se inserta en la tabla, el bloque de datos se acaba de escribir en el sistema de archivos local. Los datos se envían a los servidores remotos en segundo plano tan pronto como sea posible. El período de envío de datos está gestionado por el [Distributed\_directory\_monitor\_sleep\_time\_ms](../settings/settings.md#distributed_directory_monitor_sleep_time_ms) y [Distributed\_directory\_monitor\_max\_sleep\_time\_ms](../settings/settings.md#distributed_directory_monitor_max_sleep_time_ms) configuración. El `Distributed` el motor envía cada archivo con datos insertados por separado, pero puede habilitar el envío por lotes de archivos [distributed\_directory\_monitor\_batch\_inserts](../settings/settings.md#distributed_directory_monitor_batch_inserts) configuración. Esta configuración mejora el rendimiento del clúster al utilizar mejor los recursos de red y servidor local. Debe comprobar si los datos se envían correctamente comprobando la lista de archivos (datos en espera de ser enviados) en el directorio de la tabla: `/var/lib/clickhouse/data/database/table/`.
 
@@ -135,13 +135,13 @@ Cuando la opción max\_parallel\_replicas está habilitada, el procesamiento de 
 
 ## Virtual Columnas {#virtual-columns}
 
-- `_shard_num` — Contiene el `shard_num` (de `system.clusters`). Tipo: [UInt32](../../data_types/int_uint.md).
+-   `_shard_num` — Contiene el `shard_num` (de `system.clusters`). Tipo: [UInt32](../../data_types/int_uint.md).
 
 !!! note "Nota"
     Ya [`remote`](../../query_language/table_functions/remote.md)/`cluster` funciones de tabla crean internamente instancia temporal del mismo motor distribuido, `_shard_num` está disponible allí también.
 
 **Ver también**
 
-- [Virtual columnas](index.md#table_engines-virtual_columns)
+-   [Virtual columnas](index.md#table_engines-virtual_columns)
 
 [Artículo Original](https://clickhouse.tech/docs/es/operations/table_engines/distributed/) <!--hide-->

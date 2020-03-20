@@ -22,15 +22,15 @@
 
 该函数按顺序返回最近的数字。如果给定数字包含多个最近数字，则函数返回其中最接近偶数的数字（银行的取整方式）。
 
-  round(expression [, decimal_places])
+    round(expression [, decimal_places])
 
 **参数：**
 
-- `expression` — 要进行取整的数字。可以是任何返回数字[类型](../../data_types/index.md#data_types)的[表达式](../syntax.md#syntax-expressions)。
-- `decimal-places` — 整数类型。
-  - 如果`decimal-places > 0`，则该函数将值舍入小数点右侧。
-  - 如果`decimal-places < 0`，则该函数将小数点左侧的值四舍五入。
-  - 如果`decimal-places = 0`，则该函数将该值舍入为整数。在这种情况下，可以省略参数。
+-   `expression` — 要进行取整的数字。可以是任何返回数字[类型](../../data_types/index.md#data_types)的[表达式](../syntax.md#syntax-expressions)。
+-   `decimal-places` — 整数类型。
+    -   如果`decimal-places > 0`，则该函数将值舍入小数点右侧。
+    -   如果`decimal-places < 0`，则该函数将小数点左侧的值四舍五入。
+    -   如果`decimal-places = 0`，则该函数将该值舍入为整数。在这种情况下，可以省略参数。
 
 **返回值：**
 
@@ -44,28 +44,28 @@
 SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3
 ```
 
-  ┌───x─┬─round(divide(number, 2))─┐
-  │   0 │                        0 │
-  │ 0.5 │                        0 │
-  │   1 │                        1 │
-  └─────┴──────────────────────────┘
+    ┌───x─┬─round(divide(number, 2))─┐
+    │   0 │                        0 │
+    │ 0.5 │                        0 │
+    │   1 │                        1 │
+    └─────┴──────────────────────────┘
 
 **取整的示例**
 
 取整到最近的数字。
 
-  round(3.2, 0) = 3
-  round(4.1267, 2) = 4.13
-  round(22,-1) = 20
-  round(467,-2) = 500
-  round(-467,-2) = -500
+    round(3.2, 0) = 3
+    round(4.1267, 2) = 4.13
+    round(22,-1) = 20
+    round(467,-2) = 500
+    round(-467,-2) = -500
 
 银行的取整。
 
-  round(3.5) = 4
-  round(4.5) = 4
-  round(3.55, 1) = 3.6
-  round(3.65, 1) = 3.6
+    round(3.5) = 4
+    round(4.5) = 4
+    round(3.55, 1) = 3.6
+    round(3.65, 1) = 3.6
 
 ## roundToExp2(num) {#roundtoexp2num}
 

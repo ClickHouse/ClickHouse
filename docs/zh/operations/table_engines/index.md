@@ -2,12 +2,12 @@
 
 表引擎（即表的类型）决定了：
 
-- 数据的存储方式和位置，写到哪里以及从哪里读取数据
-- 支持哪些查询以及如何支持。
-- 并发数据访问。
-- 索引的使用（如果存在）。
-- 是否可以执行多线程请求。
-- 数据复制参数。
+-   数据的存储方式和位置，写到哪里以及从哪里读取数据
+-   支持哪些查询以及如何支持。
+-   并发数据访问。
+-   索引的使用（如果存在）。
+-   是否可以执行多线程请求。
+-   数据复制参数。
 
 # 引擎类型 {#yin-qing-lei-xing}
 
@@ -30,37 +30,37 @@
 
 该类型的引擎：
 
-- \[TinyLog\](tinylog/）
-- \[StripeLog\](stripelog/）
-- [Log](#log)(log/）
+-   \[TinyLog\](tinylog/）
+-   \[StripeLog\](stripelog/）
+-   [Log](#log)(log/）
 
 ## Intergation engines {#intergation-engines}
 
 用于与其他的数据存储与处理系统集成的引擎。
 该类型的引擎：
 
-- [Kafka](kafka.md)
-- [MySQL](mysql.md)
-- [ODBC](odbc.md)
-- [JDBC](jdbc.md)
-- [HDFS](hdfs.md)
+-   [Kafka](kafka.md)
+-   [MySQL](mysql.md)
+-   [ODBC](odbc.md)
+-   [JDBC](jdbc.md)
+-   [HDFS](hdfs.md)
 
 ## 用于其他特定功能的引擎 {#yong-yu-qi-ta-te-ding-gong-neng-de-yin-qing}
 
 该类型的引擎：
 
-- [Distributed](distributed.md)
-- [MaterializedView](materializedview.md)
-- [Dictionary](dictionary.md)
-- [Merge](merge.md)
-- [File](file.md)
-- [Null](null.md)
-- [Set](set.md)
-- [Join](join.md)
-- [URL](url.md)
-- [View](view.md)
-- [Memory](memory.md)
-- [Buffer](buffer.md)
+-   [Distributed](distributed.md)
+-   [MaterializedView](materializedview.md)
+-   [Dictionary](dictionary.md)
+-   [Merge](merge.md)
+-   [File](file.md)
+-   [Null](null.md)
+-   [Set](set.md)
+-   [Join](join.md)
+-   [URL](url.md)
+-   [View](view.md)
+-   [Memory](memory.md)
+-   [Buffer](buffer.md)
 
 # 虚拟列 {#xu-ni-lie}
 

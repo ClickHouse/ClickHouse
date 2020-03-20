@@ -10,24 +10,24 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 
 ### Clausula {#clauses}
 
-- `IF NOT EXISTS`
+-   `IF NOT EXISTS`
 
-    If the `db_name` database already exists, then ClickHouse doesn't create a new database and:
+        If the `db_name` database already exists, then ClickHouse doesn't create a new database and:
 
-    - Doesn't throw an exception if clause is specified.
-    - Throws an exception if clause isn't specified.
+        - Doesn't throw an exception if clause is specified.
+        - Throws an exception if clause isn't specified.
 
-- `ON CLUSTER`
+-   `ON CLUSTER`
 
-    ClickHouse creates the `db_name` database on all the servers of a specified cluster.
+        ClickHouse creates the `db_name` database on all the servers of a specified cluster.
 
-- `ENGINE`
+-   `ENGINE`
 
-    - [MySQL](../database_engines/mysql.md)
+        - [MySQL](../database_engines/mysql.md)
 
-        Allows you to retrieve data from the remote MySQL server.
+            Allows you to retrieve data from the remote MySQL server.
 
-    By default, ClickHouse uses its own [database engine](../database_engines/index.md).
+        By default, ClickHouse uses its own [database engine](../database_engines/index.md).
 
 ## CREAR TABLA {#create-table-query}
 
@@ -151,10 +151,10 @@ Si se especifica un códec, el códec predeterminado no se aplica. Los códecs s
 
 La compresión es compatible con los siguientes motores de tablas:
 
-- [Método de codificación de datos:](../operations/table_engines/mergetree.md) familia. Admite códecs de compresión de columnas y selecciona el método de compresión predeterminado mediante [compresión](../operations/server_settings/settings.md#server-settings-compression) configuración.
-- [Registro](../operations/table_engines/log_family.md) familia. Utiliza el `lz4` método de compresión por defecto y soporta códecs de compresión de columna.
-- [Establecer](../operations/table_engines/set.md). Solo admite la compresión predeterminada.
-- [Unir](../operations/table_engines/join.md). Solo admite la compresión predeterminada.
+-   [Método de codificación de datos:](../operations/table_engines/mergetree.md) familia. Admite códecs de compresión de columnas y selecciona el método de compresión predeterminado mediante [compresión](../operations/server_settings/settings.md#server-settings-compression) configuración.
+-   [Registro](../operations/table_engines/log_family.md) familia. Utiliza el `lz4` método de compresión por defecto y soporta códecs de compresión de columna.
+-   [Establecer](../operations/table_engines/set.md). Solo admite la compresión predeterminada.
+-   [Unir](../operations/table_engines/join.md). Solo admite la compresión predeterminada.
 
 ClickHouse admite códecs de propósito común y códecs especializados.
 
@@ -164,10 +164,10 @@ Estos códecs están diseñados para hacer que la compresión sea más efectiva 
 
 Especializados codecs:
 
-- `Delta(delta_bytes)` — Enfoque de compresión en el que los valores brutos se sustituyen por la diferencia de dos valores vecinos, excepto el primer valor que permanece sin cambios. Hasta `delta_bytes` se utilizan para almacenar valores delta, por lo que `delta_bytes` es el tamaño máximo de los valores brutos. Posible `delta_bytes` valores: 1, 2, 4, 8. El valor predeterminado para `delta_bytes` ser `sizeof(type)` si es igual a 1, 2, 4 u 8. En todos los demás casos, es 1.
-- `DoubleDelta` — Calcula delta de deltas y lo escribe en forma binaria compacta. Las tasas de compresión óptimas se logran para secuencias monotónicas con una zancada constante, como los datos de series de tiempo. Se puede utilizar con cualquier tipo de ancho fijo. Implementa el algoritmo utilizado en Gorilla TSDB, extendiéndolo para admitir tipos de 64 bits. Utiliza 1 bit adicional para deltas de 32 bytes: prefijos de 5 bits en lugar de prefijos de 4 bits. Para obtener información adicional, consulte Compresión de sellos de tiempo en [Gorila: Una base de datos de series temporales rápida, escalable y en memoria](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
-- `Gorilla` - Calcula XOR entre el valor actual y el anterior y lo escribe en forma binaria compacta. Eficiente al almacenar una serie de valores de coma flotante que cambian lentamente, porque la mejor tasa de compresión se logra cuando los valores vecinos son binarios iguales. Implementa el algoritmo utilizado en Gorilla TSDB, extendiéndolo para admitir tipos de 64 bits. Para obtener información adicional, consulte Comprimir valores en [Gorila: Una base de datos de series temporales rápida, escalable y en memoria](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
-- `T64` — Enfoque de compresión que recorta bits altos no utilizados de valores en tipos de datos enteros (incluidos `Enum`, `Date` y `DateTime`). En cada paso de su algoritmo, el códec toma un bloque de 64 valores, los coloca en una matriz de 64x64 bits, lo transpone, recorta los bits de valores no utilizados y devuelve el resto como una secuencia. Los bits no utilizados son los bits, que no difieren entre los valores máximo y mínimo en toda la parte de datos para la que se utiliza la compresión.
+-   `Delta(delta_bytes)` — Enfoque de compresión en el que los valores brutos se sustituyen por la diferencia de dos valores vecinos, excepto el primer valor que permanece sin cambios. Hasta `delta_bytes` se utilizan para almacenar valores delta, por lo que `delta_bytes` es el tamaño máximo de los valores brutos. Posible `delta_bytes` valores: 1, 2, 4, 8. El valor predeterminado para `delta_bytes` ser `sizeof(type)` si es igual a 1, 2, 4 u 8. En todos los demás casos, es 1.
+-   `DoubleDelta` — Calcula delta de deltas y lo escribe en forma binaria compacta. Las tasas de compresión óptimas se logran para secuencias monotónicas con una zancada constante, como los datos de series de tiempo. Se puede utilizar con cualquier tipo de ancho fijo. Implementa el algoritmo utilizado en Gorilla TSDB, extendiéndolo para admitir tipos de 64 bits. Utiliza 1 bit adicional para deltas de 32 bytes: prefijos de 5 bits en lugar de prefijos de 4 bits. Para obtener información adicional, consulte Compresión de sellos de tiempo en [Gorila: Una base de datos de series temporales rápida, escalable y en memoria](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
+-   `Gorilla` - Calcula XOR entre el valor actual y el anterior y lo escribe en forma binaria compacta. Eficiente al almacenar una serie de valores de coma flotante que cambian lentamente, porque la mejor tasa de compresión se logra cuando los valores vecinos son binarios iguales. Implementa el algoritmo utilizado en Gorilla TSDB, extendiéndolo para admitir tipos de 64 bits. Para obtener información adicional, consulte Comprimir valores en [Gorila: Una base de datos de series temporales rápida, escalable y en memoria](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
+-   `T64` — Enfoque de compresión que recorta bits altos no utilizados de valores en tipos de datos enteros (incluidos `Enum`, `Date` y `DateTime`). En cada paso de su algoritmo, el códec toma un bloque de 64 valores, los coloca en una matriz de 64x64 bits, lo transpone, recorta los bits de valores no utilizados y devuelve el resto como una secuencia. Los bits no utilizados son los bits, que no difieren entre los valores máximo y mínimo en toda la parte de datos para la que se utiliza la compresión.
 
 `DoubleDelta` y `Gorilla` códecs se utilizan en Gorilla TSDB como los componentes de su algoritmo de compresión. El enfoque de gorila es efectivo en escenarios en los que hay una secuencia de valores que cambian lentamente con sus marcas de tiempo. Las marcas de tiempo se comprimen efectivamente por el `DoubleDelta` códec, y los valores son efectivamente comprimidos por el `Gorilla` códec. Por ejemplo, para obtener una tabla almacenada efectivamente, puede crearla en la siguiente configuración:
 
@@ -184,10 +184,10 @@ ENGINE = MergeTree()
 
 Códecs:
 
-- `NONE` — Sin compresión.
-- `LZ4` — Lossless [algoritmo de compresión de datos](https://github.com/lz4/lz4) utilizado por defecto. Aplica compresión rápida LZ4.
-- `LZ4HC[(level)]` — Algoritmo LZ4 HC (alta compresión) con nivel configurable. Nivel predeterminado: 9. Configuración `level <= 0` aplica el nivel predeterminado. Niveles posibles: \[1, 12\]. Rango de nivel recomendado: \[4, 9\].
-- `ZSTD[(level)]` — [Algoritmo de compresión ZSTD](https://en.wikipedia.org/wiki/Zstandard) con configurable `level`. Niveles posibles: \[1, 22\]. Valor predeterminado: 1.
+-   `NONE` — Sin compresión.
+-   `LZ4` — Lossless [algoritmo de compresión de datos](https://github.com/lz4/lz4) utilizado por defecto. Aplica compresión rápida LZ4.
+-   `LZ4HC[(level)]` — Algoritmo LZ4 HC (alta compresión) con nivel configurable. Nivel predeterminado: 9. Configuración `level <= 0` aplica el nivel predeterminado. Niveles posibles: \[1, 12\]. Rango de nivel recomendado: \[4, 9\].
+-   `ZSTD[(level)]` — [Algoritmo de compresión ZSTD](https://en.wikipedia.org/wiki/Zstandard) con configurable `level`. Niveles posibles: \[1, 22\]. Valor predeterminado: 1.
 
 Los altos niveles de compresión son útiles para escenarios asimétricos, como comprimir una vez, descomprimir repetidamente. Los niveles más altos significan una mejor compresión y un mayor uso de la CPU.
 
@@ -195,12 +195,12 @@ Los altos niveles de compresión son útiles para escenarios asimétricos, como 
 
 ClickHouse admite tablas temporales que tienen las siguientes características:
 
-- Las tablas temporales desaparecen cuando finaliza la sesión, incluso si se pierde la conexión.
-- Una tabla temporal solo utiliza el motor de memoria.
-- No se puede especificar la base de datos para una tabla temporal. Se crea fuera de las bases de datos.
-- Imposible crear una tabla temporal con consulta DDL distribuida en todos los servidores de clúster (mediante `ON CLUSTER`): esta tabla sólo existe en la sesión actual.
-- Si una tabla temporal tiene el mismo nombre que otra y una consulta especifica el nombre de la tabla sin especificar la base de datos, se utilizará la tabla temporal.
-- Para el procesamiento de consultas distribuidas, las tablas temporales utilizadas en una consulta se pasan a servidores remotos.
+-   Las tablas temporales desaparecen cuando finaliza la sesión, incluso si se pierde la conexión.
+-   Una tabla temporal solo utiliza el motor de memoria.
+-   No se puede especificar la base de datos para una tabla temporal. Se crea fuera de las bases de datos.
+-   Imposible crear una tabla temporal con consulta DDL distribuida en todos los servidores de clúster (mediante `ON CLUSTER`): esta tabla sólo existe en la sesión actual.
+-   Si una tabla temporal tiene el mismo nombre que otra y una consulta especifica el nombre de la tabla sin especificar la base de datos, se utilizará la tabla temporal.
+-   Para el procesamiento de consultas distribuidas, las tablas temporales utilizadas en una consulta se pasan a servidores remotos.
 
 Para crear una tabla temporal, utilice la siguiente sintaxis:
 

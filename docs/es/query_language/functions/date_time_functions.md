@@ -77,7 +77,7 @@ toUnixTimestamp(str, [timezone])
 
 **Valor devuelto**
 
-- Devuelve la marca de tiempo de Unix.
+-   Devuelve la marca de tiempo de Unix.
 
 Tipo: `UInt32`.
 
@@ -229,9 +229,9 @@ La siguiente tabla describe cómo funciona el argumento mode.
 
 Para valores de modo con un significado de “with 4 or more days this year,” semanas están numeradas según ISO 8601:1988:
 
-- Si la semana que contiene el 1 de enero tiene 4 o más días en el nuevo año, es la semana 1.
+-   Si la semana que contiene el 1 de enero tiene 4 o más días en el nuevo año, es la semana 1.
 
-- De lo contrario, es la última semana del año anterior, y la semana siguiente es la semana 1.
+-   De lo contrario, es la última semana del año anterior, y la semana siguiente es la semana 1.
 
 Para valores de modo con un significado de “contains January 1”, la semana contiene 1 de enero es la semana 1. No importa cuántos días en el nuevo año la semana contenía, incluso si contenía sólo un día.
 
@@ -241,9 +241,9 @@ toWeek(date, [, mode][, Timezone])
 
 **Parámetros**
 
-- `date` – Fecha o DateTime.
-- `mode` – Parámetro opcional, Rango de valores es \[0,9\], por defecto es 0.
-- `Timezone` – Parámetro opcional, se comporta como cualquier otra función de conversión.
+-   `date` – Fecha o DateTime.
+-   `mode` – Parámetro opcional, Rango de valores es \[0,9\], por defecto es 0.
+-   `Timezone` – Parámetro opcional, se comporta como cualquier otra función de conversión.
 
 **Ejemplo**
 
@@ -359,26 +359,26 @@ dateDiff('unit', startdate, enddate, [timezone])
 
 **Parámetros**
 
-- `unit` — Unidad de tiempo, en la que se expresa el valor devuelto. [Cadena](../syntax.md#syntax-string-literal).
+-   `unit` — Unidad de tiempo, en la que se expresa el valor devuelto. [Cadena](../syntax.md#syntax-string-literal).
 
-    Supported values:
+        Supported values:
 
-    | unit   |
-    | ------ |
-    |second  |
-    |minute  |
-    |hour    |
-    |day     |
-    |week    |
-    |month   |
-    |quarter |
-    |year    |
+        | unit   |
+        | ------ |
+        |second  |
+        |minute  |
+        |hour    |
+        |day     |
+        |week    |
+        |month   |
+        |quarter |
+        |year    |
 
-- `startdate` — El primer valor de tiempo para comparar. [Fecha](../../data_types/date.md) o [FechaHora](../../data_types/datetime.md).
+-   `startdate` — El primer valor de tiempo para comparar. [Fecha](../../data_types/date.md) o [FechaHora](../../data_types/datetime.md).
 
-- `enddate` — El segundo valor de tiempo para comparar. [Fecha](../../data_types/date.md) o [FechaHora](../../data_types/datetime.md).
+-   `enddate` — El segundo valor de tiempo para comparar. [Fecha](../../data_types/date.md) o [FechaHora](../../data_types/datetime.md).
 
-- `timezone` — Parámetro opcional. Si se especifica, se aplica a ambos `startdate` y `enddate`. Si no se especifica, las zonas horarias `startdate` y `enddate` se utilizan. Si no son lo mismo, el resultado no está especificado.
+-   `timezone` — Parámetro opcional. Si se especifica, se aplica a ambos `startdate` y `enddate`. Si no se especifica, las zonas horarias `startdate` y `enddate` se utilizan. Si no son lo mismo, el resultado no está especificado.
 
 **Valor devuelto**
 

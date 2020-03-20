@@ -4,8 +4,8 @@ El motor de tabla GenerateRandom produce datos aleatorios para el esquema de tab
 
 Ejemplos de uso:
 
-- Se usa en la prueba para poblar una tabla grande reproducible.
-- Generar entrada aleatoria para pruebas de fuzzing.
+-   Se usa en la prueba para poblar una tabla grande reproducible.
+-   Generar entrada aleatoria para pruebas de fuzzing.
 
 ## Uso en el servidor ClickHouse {#usage-in-clickhouse-server}
 
@@ -44,11 +44,11 @@ SELECT * FROM generate_engine_table LIMIT 3
 
 ## Detalles de la implementación {#details-of-implementation}
 
-- No soportado:
-  - `ALTER`
-  - `SELECT ... SAMPLE`
-  - `INSERT`
-  - Indice
-  - Replicación
+-   No soportado:
+    -   `ALTER`
+    -   `SELECT ... SAMPLE`
+    -   `INSERT`
+    -   Indice
+    -   Replicación
 
 [Artículo Original](https://clickhouse.tech/docs/es/operations/table_engines/generate/) <!--hide-->

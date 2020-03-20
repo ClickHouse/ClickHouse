@@ -21,17 +21,17 @@ $ clickhouse-local --structure "table_structure" --input-format "format_of_incom
 
 Argumento:
 
-- `-S`, `--structure` — estructura de tabla para los datos de entrada.
-- `-if`, `--input-format` — formato de entrada, `TSV` predeterminada.
-- `-f`, `--file` — ruta de acceso a los datos, `stdin` predeterminada.
-- `-q` `--query` — consultas para ejecutar con `;` como delimitador.
-- `-N`, `--table` — nombre de la tabla dónde colocar los datos de salida, `table` predeterminada.
-- `-of`, `--format`, `--output-format` — formato de salida, `TSV` predeterminada.
-- `--stacktrace` — si volcar la salida de depuración en caso de excepción.
-- `--verbose` — más detalles sobre la ejecución de la consulta.
-- `-s` — desactivar `stderr` tala.
-- `--config-file` — ruta al archivo de configuración en el mismo formato que para el servidor ClickHouse, por defecto la configuración vacía.
-- `--help` — argumentos referencias para `clickhouse-local`.
+-   `-S`, `--structure` — estructura de tabla para los datos de entrada.
+-   `-if`, `--input-format` — formato de entrada, `TSV` predeterminada.
+-   `-f`, `--file` — ruta de acceso a los datos, `stdin` predeterminada.
+-   `-q` `--query` — consultas para ejecutar con `;` como delimitador.
+-   `-N`, `--table` — nombre de la tabla dónde colocar los datos de salida, `table` predeterminada.
+-   `-of`, `--format`, `--output-format` — formato de salida, `TSV` predeterminada.
+-   `--stacktrace` — si volcar la salida de depuración en caso de excepción.
+-   `--verbose` — más detalles sobre la ejecución de la consulta.
+-   `-s` — desactivar `stderr` tala.
+-   `--config-file` — ruta al archivo de configuración en el mismo formato que para el servidor ClickHouse, por defecto la configuración vacía.
+-   `--help` — argumentos referencias para `clickhouse-local`.
 
 También hay argumentos para cada variable de configuración de ClickHouse que se usan más comúnmente en lugar de `--config-file`.
 

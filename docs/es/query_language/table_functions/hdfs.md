@@ -8,9 +8,9 @@ hdfs(URI, format, structure)
 
 **Parámetros de entrada**
 
-- `URI` — El URI relativo al archivo en HDFS. Soporte de ruta a archivo siguiendo globs en modo de solo lectura: `*`, `?`, `{abc,def}` y `{N..M}` donde `N`, `M` — numero, \``'abc', 'def'` — cadena.
-- `format` — El [formato](../../interfaces/formats.md#formats) del archivo.
-- `structure` — Estructura de la mesa. Formato `'column1_name column1_type, column2_name column2_type, ...'`.
+-   `URI` — El URI relativo al archivo en HDFS. Soporte de ruta a archivo siguiendo globs en modo de solo lectura: `*`, `?`, `{abc,def}` y `{N..M}` donde `N`, `M` — numero, \``'abc', 'def'` — cadena.
+-   `format` — El [formato](../../interfaces/formats.md#formats) del archivo.
+-   `structure` — Estructura de la mesa. Formato `'column1_name column1_type, column2_name column2_type, ...'`.
 
 **Valor devuelto**
 
@@ -37,10 +37,10 @@ LIMIT 2
 
 Múltiples componentes de ruta de acceso pueden tener globs. Para ser procesado, el archivo debe existir y coincidir con todo el patrón de ruta (no solo el sufijo o el prefijo).
 
-- `*` — Sustituye cualquier número de caracteres excepto `/` incluyendo cadena vacía.
-- `?` — Sustituye a cualquier carácter individual.
-- `{some_string,another_string,yet_another_one}` — Sustituye cualquiera de las cadenas `'some_string', 'another_string', 'yet_another_one'`.
-- `{N..M}` — Sustituye cualquier número en el intervalo de N a M, incluidas ambas fronteras.
+-   `*` — Sustituye cualquier número de caracteres excepto `/` incluyendo cadena vacía.
+-   `?` — Sustituye a cualquier carácter individual.
+-   `{some_string,another_string,yet_another_one}` — Sustituye cualquiera de las cadenas `'some_string', 'another_string', 'yet_another_one'`.
+-   `{N..M}` — Sustituye cualquier número en el intervalo de N a M, incluidas ambas fronteras.
 
 Construcciones con `{}` son similares a la [función de tabla remota](../../query_language/table_functions/remote.md)).
 
@@ -48,12 +48,12 @@ Construcciones con `{}` son similares a la [función de tabla remota](../../quer
 
 1.  Supongamos que tenemos varios archivos con los siguientes URI en HDFS:
 
-- ‘hdfs://hdfs1:9000/some\_dir/some\_file\_1’
-- ‘hdfs://hdfs1:9000/some\_dir/some\_file\_2’
-- ‘hdfs://hdfs1:9000/some\_dir/some\_file\_3’
-- ‘hdfs://hdfs1:9000/another\_dir/some\_file\_1’
-- ‘hdfs://hdfs1:9000/another\_dir/some\_file\_2’
-- ‘hdfs://hdfs1:9000/another\_dir/some\_file\_3’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_1’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_2’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_3’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_1’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_2’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_3’
 
 1.  Consulta la cantidad de filas en estos archivos:
 
@@ -87,11 +87,11 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 
 ## Virtual Columnas {#virtual-columns}
 
-- `_path` — Ruta de acceso al archivo.
-- `_file` — Nombre del expediente.
+-   `_path` — Ruta de acceso al archivo.
+-   `_file` — Nombre del expediente.
 
 **Ver también**
 
-- [Virtual columnas](https://clickhouse.tech/docs/es/operations/table_engines/#table_engines-virtual_columns)
+-   [Virtual columnas](https://clickhouse.tech/docs/es/operations/table_engines/#table_engines-virtual_columns)
 
 [Artículo Original](https://clickhouse.tech/docs/es/query_language/table_functions/hdfs/) <!--hide-->
