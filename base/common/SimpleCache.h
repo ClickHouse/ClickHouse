@@ -1,9 +1,10 @@
 #pragma once
 
-#include <map>
-#include <tuple>
-#include <mutex>
 #include <ext/function_traits.h>
+
+#include <map>
+#include <mutex>
+#include <tuple>
 
 
 /** The simplest cache for a free function.

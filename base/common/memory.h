@@ -1,23 +1,24 @@
 #pragma once
 
-#include <new>
 #include "defines.h"
 
 #if __has_include(<common/config_common.h>)
-#include <common/config_common.h>
+#    include <common/config_common.h>
 #endif
 
 #if USE_JEMALLOC
-#include <jemalloc/jemalloc.h>
+#    include <jemalloc/jemalloc.h>
 
-#if JEMALLOC_VERSION_MAJOR < 4
-    #undef USE_JEMALLOC
-    #define USE_JEMALLOC 0
-    #include <cstdlib>
-#endif
+#    if JEMALLOC_VERSION_MAJOR < 4
+#        undef USE_JEMALLOC
+#        define USE_JEMALLOC 0
+#        include <cstdlib>
+#    endif
 #else
-#include <cstdlib>
+#    include <cstdlib>
 #endif
+
+#include <new>
 
 
 namespace Memory

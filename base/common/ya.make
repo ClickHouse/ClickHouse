@@ -40,6 +40,7 @@ SRCS(
     setTerminalEcho.cpp
     shift10.cpp
     sleep.cpp
+    StringRef.cpp
     terminalColors.cpp
 )
 

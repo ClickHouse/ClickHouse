@@ -61,4 +61,4 @@ namespace std
 
 #define STRONG_TYPEDEF(T, D) \
     struct D ## Tag {}; \
-    using D = StrongTypedef<T, D ## Tag>; \
+    using D = StrongTypedef<T, D ## Tag>;

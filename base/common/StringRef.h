@@ -8,8 +8,6 @@
 #include <string>
 #include <vector>
 
-#include <city.h>
-
 #if defined(__SSE2__)
 #    include <emmintrin.h>
 #endif
@@ -172,26 +170,14 @@ inline bool operator> (StringRef lhs, StringRef rhs)
 
 struct StringRefHash64
 {
-    size_t operator() (StringRef x) const
-    {
-#if !defined(ARCADIA_BUILD)
-        using namespace CityHash_v1_0_2;
-#endif
-        return CityHash64(x.data, x.size);
-    }
+    size_t operator() (StringRef x) const;
 };
 
 #if defined(__SSE4_2__)
 
 /// Parts are taken from CityHash.
 
-inline UInt64 hashLen16(UInt64 u, UInt64 v)
-{
-#if !defined(ARCADIA_BUILD)
-    using namespace CityHash_v1_0_2;
-#endif
-    return Hash128to64(uint128(u, v));
-}
+UInt64 hashLen16(UInt64 u, UInt64 v);
 
 inline UInt64 shiftMix(UInt64 val)
 {

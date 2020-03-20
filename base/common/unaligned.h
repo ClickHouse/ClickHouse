@@ -1,7 +1,8 @@
 #pragma once
 
-#include <string.h>
 #include <type_traits>
+
+#include <string.h>
 
 
 template <typename T>
