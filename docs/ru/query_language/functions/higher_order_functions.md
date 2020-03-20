@@ -1,6 +1,6 @@
-# Функции высшего порядка {#higher_order_functions}
+# Функции высшего порядка {#higher-order-functions}
 
-## Оператор `->`, функция lambda(params, expr)
+## Оператор `->`, функция lambda(params, expr) {#operator-funktsiia-lambdaparams-expr}
 
 Позволяет описать лямбда-функцию для передачи в функцию высшего порядка. Слева от стрелочки стоит формальный параметр - произвольный идентификатор, или несколько формальных параметров - произвольные идентификаторы в кортеже. Справа от стрелочки стоит выражение, в котором могут использоваться эти формальные параметры, а также любые столбцы таблицы.
 
@@ -19,16 +19,17 @@
 - [arrayFirst](#higher_order_functions-array-first)
 - [arrayFirstIndex](#higher_order_functions-array-first-index)
 
-### arrayMap(func, arr1, ...) {#higher_order_functions-array-map}
+### arrayMap(func, arr1, …) {#higher-order-functions-array-map}
 
 Вернуть массив, полученный на основе результатов применения функции `func` к каждому элементу массива `arr`.
 
 Примеры:
 
-```sql
+``` sql
 SELECT arrayMap(x -> (x + 2), [1, 2, 3]) as res;
 ```
-```text
+
+``` text
 ┌─res─────┐
 │ [3,4,5] │
 └─────────┘
@@ -36,10 +37,11 @@ SELECT arrayMap(x -> (x + 2), [1, 2, 3]) as res;
 
 Следующий пример показывает, как создать кортежи из элементов разных массивов:
 
-```sql
+``` sql
 SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 ```
-```text
+
+``` text
 ┌─res─────────────────┐
 │ [(1,4),(2,5),(3,6)] │
 └─────────────────────┘
@@ -47,23 +49,23 @@ SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 
 Обратите внимание, что у функции `arrayMap` первый аргумент (лямбда-функция) не может быть опущен.
 
-### arrayFilter(func, arr1, ...) {#higher_order_functions-array-filter}
+### arrayFilter(func, arr1, …) {#higher-order-functions-array-filter}
 
-Вернуть массив, содержащий только те элементы массива `arr1`, для которых функция `func`  возвращает не 0.
+Вернуть массив, содержащий только те элементы массива `arr1`, для которых функция `func` возвращает не 0.
 
 Примеры:
 
-```sql
+``` sql
 SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res
 ```
 
-```text
+``` text
 ┌─res───────────┐
 │ ['abc World'] │
 └───────────────┘
 ```
 
-```sql
+``` sql
 SELECT
     arrayFilter(
         (i, x) -> x LIKE '%World%',
@@ -72,7 +74,7 @@ SELECT
     AS res
 ```
 
-```text
+``` text
 ┌─res─┐
 │ [2] │
 └─────┘
@@ -80,59 +82,63 @@ SELECT
 
 Обратите внимание, что у функции `arrayFilter` первый аргумент (лямбда-функция) не может быть опущен.
 
-### arrayCount(\[func,\] arr1, ...) {#higher_order_functions-array-count}
+### arrayCount(\[func,\] arr1, …) {#higher-order-functions-array-count}
+
 Вернуть количество элементов массива `arr`, для которых функция func возвращает не 0. Если func не указана - вернуть количество ненулевых элементов массива.
 
-### arrayExists(\[func,\] arr1, ...)
+### arrayExists(\[func,\] arr1, …) {#arrayexistsfunc-arr1}
+
 Вернуть 1, если существует хотя бы один элемент массива `arr`, для которого функция func возвращает не 0. Иначе вернуть 0.
 
-### arrayAll(\[func,\] arr1, ...)
+### arrayAll(\[func,\] arr1, …) {#arrayallfunc-arr1}
+
 Вернуть 1, если для всех элементов массива `arr`, функция `func` возвращает не 0. Иначе вернуть 0.
 
-### arraySum(\[func,\] arr1, ...) {#higher_order_functions-array-sum}
+### arraySum(\[func,\] arr1, …) {#higher-order-functions-array-sum}
+
 Вернуть сумму значений функции `func`. Если функция не указана - просто вернуть сумму элементов массива.
 
-### arrayFirst(func, arr1, ...) {#higher_order_functions-array-first}
+### arrayFirst(func, arr1, …) {#higher-order-functions-array-first}
+
 Вернуть первый элемент массива `arr1`, для которого функция func возвращает не 0.
 
 Обратите внимание, что у функции `arrayFirst` первый аргумент (лямбда-функция) не может быть опущен.
 
-### arrayFirstIndex(func, arr1, ...) {#higher_order_functions-array-first-index}
+### arrayFirstIndex(func, arr1, …) {#higher-order-functions-array-first-index}
 
 Вернуть индекс первого элемента массива `arr1`, для которого функция func возвращает не 0.
 
 Обратите внимание, что у функции `arrayFirstFilter` первый аргумент (лямбда-функция) не может быть опущен.
 
-### arrayCumSum(\[func,\] arr1, ...)
+### arrayCumSum(\[func,\] arr1, …) {#arraycumsumfunc-arr1}
 
 Возвращает массив из частичных сумм элементов исходного массива (сумма с накоплением). Если указана функция `func`, то значения элементов массива преобразуются этой функцией перед суммированием.
 
 Пример:
 
-```sql
+``` sql
 SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ```
 
-```text
+``` text
 ┌─res──────────┐
 │ [1, 2, 3, 4] │
 └──────────────┘
 ```
 
+### arraySort(\[func,\] arr1, …) {#arraysortfunc-arr1}
 
-### arraySort(\[func,\] arr1, ...)
-
-Возвращает отсортированный в восходящем порядке массив `arr1`. Если задана функция `func`, то порядок сортировки определяется результатом применения функции `func` на элементы массива (массивов).  
+Возвращает отсортированный в восходящем порядке массив `arr1`. Если задана функция `func`, то порядок сортировки определяется результатом применения функции `func` на элементы массива (массивов).
 
 Для улучшения эффективности сортировки применяется [Преобразование Шварца](https://ru.wikipedia.org/wiki/%D0%9F%D1%80%D0%B5%D0%BE%D0%B1%D1%80%D0%B0%D0%B7%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5_%D0%A8%D0%B2%D0%B0%D1%80%D1%86%D0%B0).
 
 Пример:
 
-```sql
+``` sql
 SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 ```
 
-```text
+``` text
 ┌─res────────────────┐
 │ ['world', 'hello'] │
 └────────────────────┘
@@ -140,16 +146,17 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 
 Подробная информация о методе `arraySort` приведена в разделе [Функции по работе с массивами](array_functions.md#array_functions-sort).
 
-### arrayReverseSort(\[func,\] arr1, ...)
+### arrayReverseSort(\[func,\] arr1, …) {#arrayreversesortfunc-arr1}
 
-Возвращает отсортированный в нисходящем порядке массив `arr1`. Если задана функция `func`, то порядок сортировки определяется результатом применения функции `func` на элементы массива (массивов).  
+Возвращает отсортированный в нисходящем порядке массив `arr1`. Если задана функция `func`, то порядок сортировки определяется результатом применения функции `func` на элементы массива (массивов).
 
 Пример:
 
-```sql
+``` sql
 SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 ```
-```text
+
+``` text
 ┌─res───────────────┐
 │ ['hello','world'] │
 └───────────────────┘

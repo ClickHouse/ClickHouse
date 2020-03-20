@@ -8,7 +8,7 @@
 
 ## Создание таблицы {#creating-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     Path String,
@@ -47,12 +47,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 При создании таблицы `GraphiteMergeTree` используются те же [секции](mergetree.md#table_engine-mergetree-creating-a-table) запроса, что и при создании таблицы `MergeTree`.
 
-<details markdown="1"><summary>Устаревший способ создания таблицы</summary>
+<details markdown="1">
 
-!!! attention
+<summary>Устаревший способ создания таблицы</summary>
+
+!!! attention "Attention"
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     EventDate Date,
@@ -72,11 +74,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ## Конфигурация rollup {#rollup-configuration}
 
-Настройки прореживания данных задаются параметром [graphite_rollup](../server_settings/settings.md#server_settings-graphite_rollup) в конфигурации сервера . Имя параметра может быть любым. Можно создать несколько конфигураций и использовать их для разных таблиц.
+Настройки прореживания данных задаются параметром [graphite\_rollup](../server_settings/settings.md#server_settings-graphite_rollup) в конфигурации сервера . Имя параметра может быть любым. Можно создать несколько конфигураций и использовать их для разных таблиц.
 
 Структура конфигурации rollup:
 
-```text
+``` text
 required-columns
 patterns
 ```
@@ -92,7 +94,7 @@ patterns
 
 Структура раздела `patterns`:
 
-```text
+``` text
 pattern
     regexp
     function
@@ -131,7 +133,7 @@ default
 
 ### Пример конфигурации {#configuration-example}
 
-```xml
+``` xml
 <graphite_rollup>
     <version_column_name>Version</version_column_name>
     <pattern>

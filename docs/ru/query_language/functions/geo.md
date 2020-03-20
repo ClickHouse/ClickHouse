@@ -1,10 +1,10 @@
-# Функции для работы с географическими координатами
+# Функции для работы с географическими координатами {#funktsii-dlia-raboty-s-geograficheskimi-koordinatami}
 
-## greatCircleDistance
+## greatCircleDistance {#greatcircledistance}
 
 Вычисляет расстояние между двумя точками на поверхности Земли по [формуле большого круга](https://en.wikipedia.org/wiki/Great-circle_distance).
 
-```sql
+``` sql
 greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 ```
 
@@ -25,21 +25,21 @@ greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 
 **Пример**
 
-```sql
+``` sql
 SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 ```
 
-```text
+``` text
 ┌─greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)─┐
 │                                                14132374.194975413 │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## greatCircleAngle
+## greatCircleAngle {#greatcircleangle}
 
 Вычисляет угловое расстояние на сфере по [формуле большого круга](https://en.wikipedia.org/wiki/Great-circle_distance).
 
-```sql
+``` sql
 greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 ```
 
@@ -56,25 +56,22 @@ greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 
 **Пример**
 
-```sql
+``` sql
 SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 ```
 
-```text
+``` text
 ┌─arc─┐
 │  45 │
 └─────┘
 ```
 
-
-## pointInEllipses
+## pointInEllipses {#pointinellipses}
 
 Проверяет, принадлежит ли точка хотя бы одному из эллипсов.
 Координаты — геометрические в декартовой системе координат.
 
-```
-pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
-```
+  pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
 
 **Входные параметры**
 
@@ -90,27 +87,27 @@ pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
 
 **Пример**
 
-```sql
+``` sql
 SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 ```
 
-```text
+``` text
 ┌─pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)─┐
 │                                               1 │
 └─────────────────────────────────────────────────┘
 ```
 
-## pointInPolygon
+## pointInPolygon {#pointinpolygon}
 
 Проверяет, принадлежит ли точка многоугольнику на плоскости.
 
-```sql
+``` sql
 pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 ```
 
 **Входные значения**
 
-- `(x, y)` — координаты точки на плоскости. Тип данных — [Tuple](../../data_types/tuple.md) —  кортеж из двух чисел.
+- `(x, y)` — координаты точки на плоскости. Тип данных — [Tuple](../../data_types/tuple.md) — кортеж из двух чисел.
 - `[(a, b), (c, d) ...]` — вершины многоугольника. Тип данных — [Array](../../data_types/array.md). Каждая вершина представлена парой координат `(a, b)`. Вершины следует указывать в порядке обхода по или против часовой стрелки. Минимальное количество вершин — 3. Многоугольник должен быть константным.
 - функция поддерживает также многоугольники с дырками (вырезанными кусками). Для этого случая, добавьте многоугольники, описывающие вырезанные куски, дополнительными аргументами функции. Функция не поддерживает не односвязные многоугольники.
 
@@ -121,21 +118,21 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 **Пример**
 
-```sql
+``` sql
 SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ```
 
-```text
+``` text
 ┌─res─┐
 │   1 │
 └─────┘
 ```
 
-## geohashEncode
+## geohashEncode {#geohashencode}
 
-Кодирует широту и долготу в строку geohash, смотрите [http://geohash.org/](http://geohash.org/), [https://en.wikipedia.org/wiki/Geohash](https://en.wikipedia.org/wiki/Geohash).
+Кодирует широту и долготу в строку geohash, смотрите http://geohash.org/, https://en.wikipedia.org/wiki/Geohash.
 
-```sql
+``` sql
 geohashEncode(longitude, latitude, [precision])
 ```
 
@@ -151,21 +148,21 @@ geohashEncode(longitude, latitude, [precision])
 
 **Пример**
 
-```sql
+``` sql
 SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res
 ```
 
-```text
+``` text
 ┌─res──────────┐
 │ ezs42d000000 │
 └──────────────┘
 ```
 
-## geohashDecode
+## geohashDecode {#geohashdecode}
 
 Декодирует любую строку, закодированную в geohash, на долготу и широту.
 
-```sql
+``` sql
 geohashDecode(geohash_string)
 ```
 
@@ -179,11 +176,11 @@ geohashDecode(geohash_string)
 
 **Пример**
 
-```sql
+``` sql
 SELECT geohashDecode('ezs42') AS res
 ```
 
-```text
+``` text
 ┌─res─────────────────────────────┐
 │ (-5.60302734375,42.60498046875) │
 └─────────────────────────────────┘
@@ -193,7 +190,7 @@ SELECT geohashDecode('ezs42') AS res
 
 Проверяет корректность H3-индекса.
 
-```sql
+``` sql
 h3IsValid(h3index)
 ```
 
@@ -210,20 +207,21 @@ h3IsValid(h3index)
 
 **Пример**
 
-```sql
+``` sql
 SELECT h3IsValid(630814730351855103) as h3IsValid
 ```
-```text
+
+``` text
 ┌─h3IsValid─┐
 │         1 │
 └───────────┘
 ```
 
-## h3GetResolution
+## h3GetResolution {#h3getresolution}
 
 Извлекает разрешение H3-индекса.
 
-```sql
+``` sql
 h3GetResolution(h3index)
 ```
 
@@ -240,20 +238,21 @@ h3GetResolution(h3index)
 
 **Пример**
 
-```sql
+``` sql
 SELECT h3GetResolution(639821929606596015) as resolution
 ```
-```text
+
+``` text
 ┌─resolution─┐
 │         14 │
 └────────────┘
 ```
 
-## h3EdgeAngle
+## h3EdgeAngle {#h3edgeangle}
 
 Информирует о среднем размере стороны шестигранника H3 в градусах
 
-```sql
+``` sql
 h3EdgeAngle(resolution)
 ```
 
@@ -267,21 +266,21 @@ h3EdgeAngle(resolution)
 
 **Пример**
 
-```sql
+``` sql
 SELECT h3EdgeAngle(10) as edgeAngle
 ```
-```text
+
+``` text
 ┌─────────h3EdgeAngle(10)─┐
 │ 0.0005927224846720883 │
 └───────────────────────┘
 ```
 
-
-## h3EdgeLengthM
+## h3EdgeLengthM {#h3edgelengthm}
 
 Информирует о среднем размере стороны шестигранника H3 в метрах
 
-```sql
+``` sql
 h3EdgeLengthM(resolution)
 ```
 
@@ -295,10 +294,11 @@ h3EdgeLengthM(resolution)
 
 **Пример**
 
-```sql
+``` sql
 SELECT h3EdgeLengthM(15) as edgeLengthM
 ```
-```text
+
+``` text
 ┌─edgeLengthM─┐
 │ 0.509713273 │
 └─────────────┘
@@ -312,9 +312,9 @@ SELECT h3EdgeLengthM(15) as edgeLengthM
 
 H3 индекс используется в основном для определения местоположения с помощью карт и других геопространственных манипуляций.
 
-**Синтаксис** 
+**Синтаксис**
 
-```sql
+``` sql
 geoToH3(lon, lat, resolution)
 ```
 
@@ -335,25 +335,26 @@ geoToH3(lon, lat, resolution)
 
 Запрос:
 
-```sql
+``` sql
 SELECT geoToH3(37.79506683, 55.71290588, 15) as h3Index
 ```
 
 Ответ:
 
-```text
+``` text
 ┌────────────h3Index─┐
 │ 644325524701193974 │
 └────────────────────┘
 ```
 
-## h3kRing
+## h3kRing {#h3kring}
 
 Возвращает H3-индексы шестиугольников в радиусе `k` от данного в произвольном порядке
 
-```sql
+``` sql
 h3kRing(h3index, k)
 ```
+
 **Входные значения**
 
 - `h3index` — идентификатор шестиугольника. Тип данных — [UInt64](../../data_types/int_uint.md).
@@ -365,10 +366,11 @@ h3kRing(h3index, k)
 
 **Пример**
 
-```sql
+``` sql
 SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index
 ```
-```text
+
+``` text
 ┌────────────h3index─┐
 │ 644325529233966508 │
 │ 644325529233966497 │
@@ -379,6 +381,5 @@ SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index
 │ 644325529233966354 │
 └────────────────────┘
 ```
-
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/geo/) <!--hide-->
