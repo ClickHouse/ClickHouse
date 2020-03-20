@@ -93,7 +93,7 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size,  DB::UInt32 u
         pos += 8;
     }
 
-    auto word = unalignedLoad<UInt64>(pos - 8);
+    auto word = unalignedLoad<UInt64>(end - 8);
     return intHashCRC32(word, updated_value);
 }
 
