@@ -172,7 +172,8 @@ public:
     /// Delete the table from the database, drop table and delete the metadata.
     virtual void dropTable(
         const Context & /*context*/,
-        const String & /*name*/)
+        const String & /*name*/,
+        [[maybe_unused]] bool no_delay = false)
     {
         throw Exception("There is no DROP TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }

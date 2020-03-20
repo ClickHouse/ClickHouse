@@ -38,7 +38,7 @@ BlockIO InterpreterDropQuery::execute()
     if (!drop.table.empty())
     {
         if (!drop.is_dictionary)
-            return executeToTable(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
+            return executeToTable({drop.database, drop.table, drop.uuid}, drop);
         else
             return executeToDictionary(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
     }
@@ -50,46 +50,42 @@ BlockIO InterpreterDropQuery::execute()
 
 
 BlockIO InterpreterDropQuery::executeToTable(
-    const String & database_name_,
-    const String & table_name,
-    ASTDropQuery::Kind kind,
-    bool if_exists,
-    bool is_temporary,
-    bool no_ddl_lock)
+    const StorageID & table_id_,
+    const ASTDropQuery & query)
 {
-    if (is_temporary || database_name_.empty())
+    if (query.temporary || table_id_.database_name.empty())
     {
-        if (context.tryResolveStorageID({"", table_name}, Context::ResolveExternal))
-            return executeToTemporaryTable(table_name, kind);
+        if (context.tryResolveStorageID(table_id_, Context::ResolveExternal))
+            return executeToTemporaryTable(table_id_.getTableName(), query.kind);
     }
 
-    if (is_temporary)
+    if (query.temporary)
     {
-        if (if_exists)
+        if (query.if_exists)
             return {};
-        throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " doesn't exist.",
+        throw Exception("Temporary table " + backQuoteIfNeed(table_id_.getTableName()) + " doesn't exist.",
                         ErrorCodes::UNKNOWN_TABLE);
     }
 
-    String database_name = context.resolveDatabase(database_name_);
+    auto table_id = context.resolveStorageID(table_id_, Context::ResolveOrdinary);
 
-    auto ddl_guard = (!no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(database_name, table_name) : nullptr);
+    auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
 
-    auto [database, table] = tryGetDatabaseAndTable(database_name, table_name, if_exists);
+    auto [database, table] = tryGetDatabaseAndTable(table_id.database_name, table_id.table_name, query.if_exists);
 
     if (database && table)
     {
-        auto table_id = table->getStorageID();
-        if (kind == ASTDropQuery::Kind::Detach)
+        table_id = table->getStorageID();
+        if (query.kind == ASTDropQuery::Kind::Detach)
         {
             context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
             table->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
             auto table_lock = table->lockExclusively(context.getCurrentQueryId());
             /// Drop table from memory, don't touch data and metadata
-            database->detachTable(table_name);
+            database->detachTable(table_id.table_name);
         }
-        else if (kind == ASTDropQuery::Kind::Truncate)
+        else if (query.kind == ASTDropQuery::Kind::Truncate)
         {
             context.checkAccess(table->isView() ? AccessType::TRUNCATE_VIEW : AccessType::TRUNCATE_TABLE, table_id);
             table->checkTableCanBeDropped();
@@ -99,7 +95,7 @@ BlockIO InterpreterDropQuery::executeToTable(
             /// Drop table data, don't touch metadata
             table->truncate(query_ptr, context, table_lock);
         }
-        else if (kind == ASTDropQuery::Kind::Drop)
+        else if (query.kind == ASTDropQuery::Kind::Drop)
         {
             context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
             table->checkTableCanBeDropped();
@@ -111,7 +107,7 @@ BlockIO InterpreterDropQuery::executeToTable(
             if (database->getEngineName() != "Atomic")
                 table_lock = table->lockExclusively(context.getCurrentQueryId());
 
-            database->dropTable(context, table_name);
+            database->dropTable(context, table_id.table_name, query.no_delay);
         }
     }
 
@@ -214,10 +210,13 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
             context.checkAccess(AccessType::DROP_DATABASE, database_name);
 
             /// DETACH or DROP all tables and dictionaries inside database
+            ASTDropQuery query;
+            query.kind = kind;
+            query.database = database_name;
             for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
-                String current_table_name = iterator->name();
-                executeToTable(database_name, current_table_name, kind, false, false, false);
+                query.table = iterator->name();
+                executeToTable({query.database, query.table}, query);
             }
 
             for (auto iterator = database->getDictionariesIterator(context); iterator->isValid(); iterator->next())

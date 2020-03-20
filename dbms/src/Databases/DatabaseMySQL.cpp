@@ -431,7 +431,7 @@ void DatabaseMySQL::loadStoredObjects(Context &, bool)
     }
 }
 
-void DatabaseMySQL::dropTable(const Context &, const String & table_name)
+void DatabaseMySQL::dropTable(const Context &, const String & table_name, bool /*no_delay*/)
 {
     std::lock_guard<std::mutex> lock{mutex};
 

@@ -34,7 +34,8 @@ public:
 
     void dropTable(
         const Context & context,
-        const String & table_name) override;
+        const String & table_name,
+        bool no_delay = false) override;
 
     void renameTable(
         const Context & context,
