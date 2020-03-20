@@ -1,10 +1,10 @@
 # GRANT
 
-Grants privileges to a ClickHouse [user account](../operations/settings/settings_profiles.md).
+Grants [privileges](#grant-privileges) to a ClickHouse user account or a role.
 
-To revoke privileges, use the [REVOKE](revoke.md) statement. Also you can list privileges by the [SHOW GRANTS](show.md#show-grants) statement.
+To revoke privileges, use the [REVOKE](revoke.md) statement. Also you can list granted privileges by the [SHOW GRANTS](show.md#show-grants) statement.
 
-## Syntax
+## Syntax {#grant-syntax}
 
 ```sql
 GRANT privilege TO user|role [WITH GRANT OPTION]
@@ -17,7 +17,7 @@ GRANT privilege TO user|role [WITH GRANT OPTION]
 The `WITH GRANT OPTION` clause sets `GRANT OPTION` privilege for `user`.
 
 
-## Usage
+## Usage {#grant-usage}
 
 To use `GRANT`, your account must have the `GRANT OPTION` privilege. You can grant privileges only inside the scope of your account privileges.
 
@@ -37,92 +37,236 @@ It means that `vasya` has the permission to perform:
 
 Also `vasya` has the `GRANT OPTION` privilege, so it can grant other users with privileges of the same or the smaller scope.
 
-Instead of a table or a database name you can use asterisk. For example, the `GRANT SELECT ON db.* TO vasya` query allows `vasia` to perform the `SELECT` query over all the tables in `db` database. Also, you can omit database name. In this case privileges are granted for current database.
+Specifying privileges you can use asterisk (`*`) instead of a table or a database name. For example, the `GRANT SELECT ON db.* TO vasya` query allows `vasia` to perform the `SELECT` query over all the tables in `db` database. Also, you can omit database name. In this case privileges are granted for current database.
 
 You can grant multiple privileges to multiple accounts in one query. The query `GRANT SELECT, INSERT ON *.* TO vasya, petya` allows accounts `vasia` and `petya` to perform the `INSERT` and `SELECT` queries over all the tables in all the databases on the server.
 
 
-## Privileges {#privileges-grant}
+## Privileges {#grant-privileges}
 
-- `SELECT ON db.table`
-- `INSERT ON db.table`
-- `ALL PRIVILEGES`
+Privilege is a permission to perform queries.
 
-Здесь как раз таки вся та таблица и есть.
+Privileges have hierarchic structure. A set of permitted queries depends on the privilege scope.
+
+Top scope privileges:
+
+- [SELECT](#grant-select)
+- [INSERT](#grant-insert)
+- [ALTER](#grant-alter)
+- [CREATE](#grant-create)
+- [DROP](#grant-drop)
+- [TRUNCATE](#grant-truncate)
+- [OPTIMIZE](#grant-optimize)
+- [SHOW](#grant-show)
+- [EXISTS](#grant-exists)
+- [KILL](#grant-kill)
+- [CREATE USER](#grant-create-user)
+- [ROLE ADMIN](#grant-role-admin)
+- [SYSTEM](#grant-system)
+- [INTROSPECTION](#grant-introspection)
+- [dictGet](#grant-dictget)
+- [Table Functions](#grant-table-functions)
+
+The special privilege [ALL](#grant-all) grants all the privileges to a user account or a role.
+
+By default, a user account or a role has no privileges.
+
+Some queries by their implementation require a set of privileges. For example, to perform the [RENAME](misc.md#misc_operations-rename) query you need the following privileges: `SELECT`, `CREATE TABLE`, `INSERT` and `DROP TABLE`.
 
 
-А вариантов прав множество:
+### SELECT {#grant-select}
 
-![Слайд](all-privileges.png)
+Allows to perform [SELECT](select.md) queries.
 
-То есть я прошелся по функционалу ClickHouse-а, посмотрел, где какие права нужно дать и перевел это в такую форму. 
+**Syntax**
 
-Привилегии в какой-то степени получаются иерархические: часто одни включают другие.
+```sql
+SELECT (list, of, columns) ON db.table
+```
 
-Например, можно дать право на `ALTER`, и получатся все `ALTER`. Причем есть некоторое отличие от стандарта: у нас право на `ALTER` будет также давать право на `UPDATE` и `DELETE`, потому что это одна команда. В других СУБД это не так.
+**Description**
 
-Отличие от стандарта имеет место быть, потому что у нас нет `UPDATE` и `DELETE`, а есть `ALTER UPDATE` и `ALTER DELETE`. Тем не менее, `ALTER UPDATE` и `ALTER DELETE` я назвал стандартным образом: `UPDATE` и `DELETE` соответственно.
+User granted with this privilege can perform `SELECT` queries over a specified list of columns in the specified table and database. If user includes other columns then specified a query returns no data. 
 
-Следовательно, форма записи такая: `GRANT UPDATE(<столбцы, какие можно апдейтить>)`.
+Consider the following privilege:
 
-Передачу права на добавление столбца можно написать двумя способами:
+```sql
+GRANT SELECT(x,y) ON db.table TO vasya
+```
 
-- `GRANT ALTER COLUMN`
-- `GRANT ADD COLUMN`
+This privilege allows `vasya` to perform any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`. For example, `SELECT x FROM db.table`. `vasya` can't perform `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. ClickHouse doesn't return any data, even `x` and `y`.
 
-`ALTER COLUMN` включает все, которые ниже написаны (см. слайд). То есть права можно указывать с разной степенью детализации. Можно просто дать право на `ALTER` и не заморачиваться с `ALTER/ADD COLUMN`. Можно дать право `ALTER COLUMN` - это означает, что пользователь может выполнять и `ADD COLUMN`, и `DROP COLUMN`, то есть все пять.
+### INSERT {#grant-insert}
 
-Некоторые права имеют неконсистентные названия. Например, `GRANT INDEX` и `GRANT ALTER CONSTRAINT`. Я эти названия придумывал в какой-то степени сам. Потому что `GRANT INDEX` - это было где-то в MySQL (не помню), я поэтому оттуда скопировал. Мне казалось, что можно это расценивать как "дать право индексировать", INDEX как глагол рассматривать. CONSTRAINT как глагол рассматривать не получится, поэтому оно со словом ALTER. Можно сделать `ALTER INDEX`, чтобы стало более консистентно.
+Allows to perform [INSERT](insert.md) queries.
 
-Уже реализован механизм, позволяющий накручивать синонимы к этим правам. Например, вместо `ALL PRIVILEGES` можно писать просто `ALL`. То есть `GRANT ALL` и `GRANT ALL PRIVILEGES` - это одно и то же.
+**Syntax**
 
-В отношении `MODIFY SETTING` не сразу очевидно, что это вообще относится к таблице, поскольку сеттинги у нас еще в другом месте фигурируют.
+```sql
+INSERT (list, of, columns) ON db.table
+```
 
-Предложение: чтобы дать права на какую-нибудь часть `ALTER`, эти права должны начинаться со слова `ALTER`. Чтобы нельзя было писать `GRANT ADD COLUMN`, а надо было писать `GRANT ALTER ADD COLUMN`. На этот случай можно добавить синонимы, но слишком длинные надписи тоже не хочется писать.
+**Description**
 
-`GRANT UPDATE/DELETE` - это точно грабли, потому что у нас, может быть, будут когда-нибудь настоящие `UPDATE` и `DELETE`, и они попадут под те же права. Представь, что у нас будут настоящие `UPDATE` и `DELETE`, но по своему принципу работы они будут сильно отличаться. И поэтому мы захотим, чтобы, допустим, настоящие можно было разрешить, а такие, которые через `ALTER`, - нет. То есть лучше их разделить. Сейчас `ALTER UPDATE` и `ALTER DELETE` специально рассматриваются как принципиально другая операция. У нас стандартных `UPDATE` и `DELETE` нет, поэтому стандартные названия могут быть не применимы в нашем случае.
+User granted with this privilege can perform `INSERT` queries over a specified list of columns in the specified table and database. If user includes other columns then specified a query doesn't insert any data. 
+
+Consider the following privilege:
+
+```sql
+GRANT INSERT(x,y) ON db.table TO vasya
+```
+
+This privilege allows `vasya` to perform any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`. For example, `SELECT x FROM db.table`. `vasya` can't perform `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. ClickHouse doesn't return any data, even `x` and `y`.
+
+### ALTER {#grant-alter}
+
+Allows to perform [ALTER](alter.md) queries corresponding to the following hierarchy of privileges:
+
+- `ALTER`
+  - `ALTER TABLE`
+    - `UPDATE`
+    - `DELETE`
+    - `ALTER COLUMN`
+      - `ADD COLUMN`
+      - `DROP COLUMN`
+      - `MODIFY COLUMN`
+      - `COMMENT COLUMN`
+    - `INDEX`
+      - `ALTER ORDER BY`
+      - `ADD INDEX`
+      - `DROP INDEX`
+      - `MATERIALIZE INDEX`
+      - `CLEAR INDEX`
+    - `ALTER CONSTRAINT`
+      - `ADD CONSTRAINT`
+      - `DROP CONSTRAINT`
+    - `MODIFY TTL`
+    - `MODIFY SETTING`
+    - `MOVE PARTITION`
+    - `FETCH PARTITION`
+    - `FREEZE PARTITION`
+    - `ALTER VIEW`
+      - `REFRESH VIEW`
+      - `MODIFY VIEW QUERY`
+
+The `ALTER` privilege includes all other privileges. `ALTER CONSTRAINT` includes only `ADD CONSTRAINT` and `DROP CONSTRAINT`.
+
+**Syntax**
+
+```sql
+GRANT UPDATE(list, of, columns) ON db.table
+```
+
+**Notes**
+
+- The `MODIFY SETTING` privilege allows to modify table engine settings. In doesn't affect session or server settings.
+
+### CREATE {#grant-create}
+
+- CREATE
+    - CREATE DATABASE
+    - CREATE TABLE
+      - CREATE VIEW
+    - CREATE TEMPORARY TABLE
+    - CREATE DICTIONARY
+
 
 Остальные права написаны на слайде, часто одни включают другие. Например, право `CREATE` дает право создавать, соответственно, хоть базу данных, хоть таблицу, хоть словарь. То есть если нужно указать более детализировано, можно указать более детализировано.
 
-Некоторые команды требуют, на самом деле, несколько прав сразу. В соответствии с тем, как это сделано в других СУБД. Например, у нас есть команда `RENAME` таблицы. Но здесь такого права нет. Это сделано намеренно. Хотя `RENAME` реализовано иначе, оно сводится к тому, что можно селектом выбрать данные из первой таблицы, вставить во вторую, создать вторую и удалить первую. Соответственно, права проверяются так, как если бы у нас выполнялись <span style="color: red;">`RENAME` и четыре этих операции</span>. То есть как будто бы мы создаем вторую таблицу, селектом выбираем данные из первой, инсертим их во вторую и потом дропаем первую. Операции часто как бы декомпозируются для того, чтобы проверять права. Мне показалось, это разумно, потому что иначе получается слишком много прав и достаточно путаная система. 
+`CREATE`, которое наверху написано, дает право создавать базы данных, таблицы, словари, но не дает право создавать пользователей, потому что это явно сущность другого рода. Про них, соответственно, написано внизу. То есть право создавать пользователей, роли, <span style="color: red;">политики строк</span>, но я про это попозже поговорю. 
 
 `ATTACH` и `DETACH` - их тоже тут нет. Они вошли в `CREATE` и `DROP`. Чтобы делать `DETACH`, нужно иметь право, соответственно, на `DROP` этого объекта.
 
-Что касается `KILL`: `KILL QUERY`, `KILL MUTATION`.
+
+### DROP {#grant-drop}
+
+- DROP
+  - DROP DATABASE
+  - DROP TABLE
+    - DROP VIEW
+  - DROP DICTIONARY
+
+`ATTACH` и `DETACH` - их тоже тут нет. Они вошли в `CREATE` и `DROP`. Чтобы делать `DETACH`, нужно иметь право, соответственно, на `DROP` этого объекта.
+
+Право на удаление таблицы есть, его можно дать явно: `GRANT DROP <имя таблицы>`. Но оно не дается вместе с `CREATE`.
+Администратор может написать команду `GRANT ALL PRIVILEGES ON db.table TO vasya`, и ты, соответственно, сможешь и создать таблицу, и удалить ее.
+
+У нас эта неконсистентность есть еще с запросами `DROP DICTIONARY`. У меня был тест написан, я как раз у Саши спрашивал по поводу этой неконсистентности. Но Саши сейчас нет. Спрашивал по поводу текущей базы данных: указывать ее или нет для словарей.
+
+
+
+### TRUNCATE {#grant-truncate}
+
+- TRUNCATE
+  - TRUNCATE TABLE
+    - TRUNCATE VIEW
+
+### OPTIMIZE {#grant-optimize}
+
+
+### SHOW {#grant-show}
+
+`SHOW` и `EXISTS` - это особые права. `SHOW` дается автоматически, если у тебя есть любое другое право, относящееся к данной таблице или к данному столбцу. То есть если ты даешь пользователю право `SELECT` столбцов `x`, `y` из какой-нибудь таблицы, это означает, что `SHOW` по отношению к этим столбцам у пользователя тоже есть. Это влияет, например, на то, что в таблице <span style="color: red;">system.columns</span> он эти столбцы тоже увидит. И с другими командами тоже так работает. Если пользователю дано хоть какое-нибудь право, относящееся к таблице, он получает право `SHOW` к этой таблице автоматом.
+
+### EXISTS {#grant-exists}
+
+### KILL {#grant-kill}
+
+- KILL
+  - KILL QUERY
+  - KILL MUTATION
+
 
 `KILL QUERY` соответствует тому, что было до этого. То есть это, по сути, право убивать запросы, созданные другим пользователем, потому что убивать свои собственные запросы вроде бы кто угодно может.
 
 `KILL MUTATION` я сделал так, но не уверен, что это правильно. Может быть, это стоило куда-то в `ALTER` загнать. В том плане, чтобы давать право убивать мутацию, если пользователь имеет право запускать `ALTER` соответствующей <span style="color: red;">коммутации</span> (не уверен, на самом деле). Просто много получается прав, хочется по возможности их ужимать.
 
-`CREATE`, которое наверху написано, дает право создавать базы данных, таблицы, словари, но не дает право создавать пользователей, потому что это явно сущность другого рода. Про них, соответственно, написано внизу. То есть право создавать пользователей, роли, <span style="color: red;">политики строк</span>, но я про это попозже поговорю. 
+
+### CREATE USER {#grant-create-user}
+
+- CREATE USER
+  - DROP USER
+  - CREATE ROLE
+    - DROP ROLE
+  - CREATE ROW POLICY
+    - DROP ROW POLICY
+  - CREATE QUOTA
+    - DROP QUOTA
+
+### ROLE ADMIN {#grant-role-admin}
+
+???
+
+### SYSTEM {#grant-system}
+
+- SYSTEM
+  - SHUTDOWN
+  - DROP CACHE
+  - RELOAD CONFIG
+  - RELOAD DICTIONARY
+  - STOP MERGES
+  - STOP TTL MERGES
+  - STOP FETCHES
+  - STOP MOVES
+  - STOP DISTRIBUTED_SENDS
+  - STOP REPLICATED_SENDS
+  - SYNC REPLICA
+  - RESTART REPLICA
+  - FLUSH DISTRIBUTED
+  - FLUSH LOGS
 
 `SYSTEM` - это, я думаю, понятно. То есть все это относится к команде `SYSTEM`, <span style="color: red;">которая начинается с `SYSTEM`</span>. Дальше пошли функции. 
 
-Создавать права на все функции вообще показалось неразумным
+### INTROSPECTION {#grant-introspection}
+
+- INTROSPECTION
+  - addressToLine()
+  - addressToSymbol()
+  - demangle()
+
+### dictGet {#grant-dictget}
 
 dictGet() - у нас так сложилось, что она используется для словарей. Причем там форма такая, что мы пишем, из какого словаря мы можем читать данные.
-
-Остальные - либо табличные функции, либо функции интроспекции. Пока этим ограничился.
-
-Еще про права на табличные функции. Это, по сути, права на создание временного storage с определенным движком. А есть еще `CREATE TEMPORARY TABLE`. Может быть, например, что кому-то запретили использовать табличную функцию <span style="color: red;">url()</span>. Сейчас они никак не связаны, то есть `CREATE TEMPORARY TABLE` управляет только командой `CREATE TEMPORARY TABLE`. Те временные таблицы, которые создаются табличными функциями, сейчас на них `CREATE TEMPORARY TABLE` никакого воздействия не оказывает.
-
-В деталях. Если мы даем GRANT на `CREATE TEMPORARY TABLE`, то мы эти таблицы можем создавать в тех базах данных, на которые у нас есть доступ. Вроде логично.
-
-`SHOW` и `EXISTS` - это особые права. `SHOW` дается автоматически, если у тебя есть любое другое право, относящееся к данной таблице или к данному столбцу. То есть если ты даешь пользователю право `SELECT` столбцов `x`, `y` из какой-нибудь таблицы, это означает, что `SHOW` по отношению к этим столбцам у пользователя тоже есть. Это влияет, например, на то, что в таблице <span style="color: red;">system.columns</span> он эти столбцы тоже увидит. И с другими командами тоже так работает. Если пользователю дано хоть какое-нибудь право, относящееся к таблице, он получает право `SHOW` к этой таблице автоматом.
-
-Право на удаление таблицы есть, его можно дать явно: `GRANT DROP <имя таблицы>`. Но оно не дается вместе с `CREATE`.
-
-
-Администратор может написать команду `GRANT ALL PRIVILEGES ON db.table TO vasya`, и ты, соответственно, сможешь и создать таблицу, и удалить ее.
-
-Автоматически запускать `GRANT ALL PRIVILEGES ON db.table TO <текущий юзер>` не стоит, потому что права не должны браться из ниоткуда. Если есть потребность, то можно сделать такую сущность, как владелец. То есть владелец получает права, которые не прописаны в гранте, но система об этом знает, и ты получаешь все права.
-
-GRANT автоматически делать нельзя, потому что это та сущность, под которой подразумевается, что ей управляет администратор или пользователи. Они не должны браться из ниоткуда. Чуть позже я до этого дойду, GRANT - это не единственная команда.
-
-Сейчас никакой проверки на существование таблицы нет. То есть чтобы выполнить `GRANT SELECT ON db.table`, не проверяется ни то, что у тебя есть table, ни даже то, что у тебя есть database.
-
-Эти права не хранятся в метаданных таблицы.
-
 Особая история, потому что я, на самом деле, до конца, может быть, не очень хорошо сделал пока. То есть вот сейчас она работает именно так, как тут написано:
 
 - `GRANT dictGet() ON mydb.mydictionary TO vasya;`
@@ -133,6 +277,29 @@ GRANT автоматически делать нельзя, потому что 
 
 Если сделать наоборот, то оно немного неконсистентно. Потому что кроме `dictGet()` существует ведь еще тот же `SELECT` для таблицы, там вот так. Можно сделать, например, так, что при выполнении `GRANT` проверяется, есть ли у тебя словарь без базы данных. В зависимости от этого, оно либо так выполняется, либо эдак.
 
-У нас эта неконсистентность есть еще с запросами `DROP DICTIONARY`. У меня был тест написан, я как раз у Саши спрашивал по поводу этой неконсистентности. Но Саши сейчас нет. Спрашивал по поводу текущей базы данных: указывать ее или нет для словарей.
 
-То, что спрашивали как раз: время жизни прав не привязано к таблицам. То есть можно дропнуть таблицу, создать ее снова, и права вернуться обратно. Но они, на самом деле, никуда и не пропадали. Но если дропнуть, допустим, пользователя, у которого были права, а потом создать точно такого же, то у него этих прав, конечно, не будет.
+
+
+### Table Functions {#grant-table-functions}
+
+- TABLE FUNCTIONS
+  - file()
+  - url()
+  - input()
+  - values()
+  - numbers()
+  - merge()
+  - remote()
+  - mysql()
+  - odbc()
+  - jdbc()
+  - jdfs()
+  - s3()
+
+Еще про права на табличные функции. Это, по сути, права на создание временного storage с определенным движком. А есть еще `CREATE TEMPORARY TABLE`. Может быть, например, что кому-то запретили использовать табличную функцию <span style="color: red;">url()</span>. Сейчас они никак не связаны, то есть `CREATE TEMPORARY TABLE` управляет только командой `CREATE TEMPORARY TABLE`. Те временные таблицы, которые создаются табличными функциями, сейчас на них `CREATE TEMPORARY TABLE` никакого воздействия не оказывает.
+
+В деталях. Если мы даем GRANT на `CREATE TEMPORARY TABLE`, то мы эти таблицы можем создавать в тех базах данных, на которые у нас есть доступ. Вроде логично.
+
+### ALL {#grant-all}
+
+Уже реализован механизм, позволяющий накручивать синонимы к этим правам. Например, вместо `ALL PRIVILEGES` можно писать просто `ALL`. То есть `GRANT ALL` и `GRANT ALL PRIVILEGES` - это одно и то же.
