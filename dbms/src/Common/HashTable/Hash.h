@@ -85,7 +85,7 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size,  DB::UInt32 u
     }
 
     const auto * end = pos + size;
-    while (pos + 8 < end)
+    while (pos + 8 <= end)
     {
         auto word = unalignedLoad<UInt64>(pos);
         updated_value = intHashCRC32(word, updated_value);
@@ -93,9 +93,16 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size,  DB::UInt32 u
         pos += 8;
     }
 
-    auto word = unalignedLoad<UInt64>(end - 8);
-    word &= (~UInt64(0)) << DB::UInt8(8 * (8 - (end - pos)));
-    return intHashCRC32(word, updated_value);
+    if (pos < end)
+    {
+        DB::UInt8 tail_size = end - pos;
+        auto word = unalignedLoad<UInt64>(end - 8);
+        word &= (~UInt64(0)) << DB::UInt8(8 * (8 - tail_size));
+        word |= tail_size;
+        updated_value = intHashCRC32(word, updated_value);
+    }
+
+    return updated_value;
 }
 
 template <typename T>
