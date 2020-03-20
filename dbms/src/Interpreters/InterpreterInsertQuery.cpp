@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -123,7 +124,7 @@ BlockIO InterpreterInsertQuery::execute()
         // Distributed INSERT SELECT
         std::shared_ptr<StorageDistributed> storage_src;
         auto & select_ = query.select->as<ASTSelectWithUnionQuery &>();
-        auto new_query = dynamic_pointer_cast<ASTInsertQuery>(query.clone());
+        auto new_query = std::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
         if (select_.list_of_selects->children.size() == 1)
         {
             auto & select_query = select_.list_of_selects->children.at(0)->as<ASTSelectQuery &>();
@@ -131,13 +132,13 @@ BlockIO InterpreterInsertQuery::execute()
 
             if (joined_tables.tablesCount() == 1)
             {
-                storage_src = dynamic_pointer_cast<StorageDistributed>(joined_tables.getLeftTableStorage());
+                storage_src = std::dynamic_pointer_cast<StorageDistributed>(joined_tables.getLeftTableStorage());
                 if (storage_src)
                 {
                     const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
                     select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
 
-                    auto new_select_query = dynamic_pointer_cast<ASTSelectQuery>(select_query.clone());
+                    auto new_select_query = std::dynamic_pointer_cast<ASTSelectQuery>(select_query.clone());
                     select_with_union_query->list_of_selects->children.push_back(new_select_query);
 
                     new_select_query->replaceDatabaseAndTable(storage_src->getRemoteDatabaseName(), storage_src->getRemoteTableName());
@@ -147,7 +148,7 @@ BlockIO InterpreterInsertQuery::execute()
             }
         }
 
-        auto storage_dst = dynamic_pointer_cast<StorageDistributed>(table);
+        auto storage_dst = std::dynamic_pointer_cast<StorageDistributed>(table);
 
         if (storage_src && storage_dst && storage_src->cluster_name == storage_dst->cluster_name)
         {
