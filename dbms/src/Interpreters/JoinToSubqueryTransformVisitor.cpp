@@ -4,8 +4,6 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/AsteriskSemantic.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/getTableExpressions.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -31,10 +29,12 @@ namespace ErrorCodes
 namespace
 {
 
+/// @note we use `--` prefix for unique short names and `--.` for subqueries.
+/// It expects that user do not use names starting with `--` and column names starting with dot.
 ASTPtr makeSubqueryTemplate()
 {
     ParserTablesInSelectQueryElement parser(true);
-    ASTPtr subquery_template = parseQuery(parser, "(select * from _t) as `--s`", 0);
+    ASTPtr subquery_template = parseQuery(parser, "(select * from _t) as `--.s`", 0);
     if (!subquery_template)
         throw Exception("Cannot parse subquery template", ErrorCodes::LOGICAL_ERROR);
     return subquery_template;
@@ -43,7 +43,7 @@ ASTPtr makeSubqueryTemplate()
 ASTPtr makeSubqueryQualifiedAsterisk()
 {
     auto asterisk = std::make_shared<ASTQualifiedAsterisk>();
-    asterisk->children.emplace_back(std::make_shared<ASTIdentifier>("--s"));
+    asterisk->children.emplace_back(std::make_shared<ASTIdentifier>("--.s"));
     return asterisk;
 }
 
@@ -57,27 +57,6 @@ public:
         std::vector<String> tables_order;
         std::shared_ptr<ASTExpressionList> new_select_expression_list;
 
-        /// V1
-        Data(const Context & context, const std::vector<const ASTTableExpression *> & table_expressions)
-        {
-            tables_order.reserve(table_expressions.size());
-            for (const auto & expr : table_expressions)
-            {
-                if (expr->subquery)
-                {
-                    table_columns.clear();
-                    tables_order.clear();
-                    break;
-                }
-
-                String table_name = DatabaseAndTableWithAlias(*expr, context.getCurrentDatabase()).getQualifiedNamePrefix(false);
-                NamesAndTypesList columns = getColumnsFromTableExpression(*expr, context);
-                tables_order.push_back(table_name);
-                table_columns.emplace(std::move(table_name), std::move(columns));
-            }
-        }
-
-        /// V2
         Data(const std::vector<TableWithColumnNamesAndTypes> & tables)
         {
             tables_order.reserve(tables.size());
@@ -309,23 +288,6 @@ struct RewriteTablesVisitorData
     }
 };
 
-/// Attach alias to the first visited subquery
-struct SetSubqueryAliasVisitorData
-{
-    using TypeToVisit = ASTSubquery;
-
-    const String & alias;
-    bool done = false;
-
-    void visit(ASTSubquery &, ASTPtr & ast)
-    {
-        if (done)
-            return;
-        ast->setAlias(alias);
-        done = true;
-    }
-};
-
 template <size_t version = 1>
 bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *> & table_expressions)
 {
@@ -386,8 +348,6 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
 
 using RewriteMatcher = OneTypeMatcher<RewriteTablesVisitorData>;
 using RewriteVisitor = InDepthNodeVisitor<RewriteMatcher, true>;
-using SetSubqueryAliasMatcher = OneTypeMatcher<SetSubqueryAliasVisitorData>;
-using SetSubqueryAliasVisitor = InDepthNodeVisitor<SetSubqueryAliasMatcher, true>;
 using ExtractAsterisksVisitor = ConstInDepthNodeVisitor<ExtractAsterisksMatcher, true>;
 using ColumnAliasesVisitor = ConstInDepthNodeVisitor<ColumnAliasesMatcher, true>;
 using AppendSemanticMatcher = OneTypeMatcher<AppendSemanticVisitorData>;
@@ -530,25 +490,27 @@ struct TableNeededColumns
 class UniqueShortNames
 {
 public:
-    String get(const String & long_name)
+    /// We know that long names are unique (do not clashes with others).
+    /// So we could make unique names base on this knolage by adding some unused prefix.
+    static constexpr const char * pattern = "--";
+
+    String longToShort(const String & long_name)
     {
-        auto it = names.find(long_name);
-        if (it != names.end())
+        auto it = long_to_short.find(long_name);
+        if (it != long_to_short.end())
             return it->second;
 
-        String unique_name = generateUniqueName();
-        names.emplace(long_name, unique_name);
-        return unique_name;
+        String short_name = generateUniqueName(long_name);
+        long_to_short.emplace(long_name, short_name);
+        return short_name;
     }
 
 private:
-    std::unordered_map<String, String> names;
-    size_t counter = 0;
+    std::unordered_map<String, String> long_to_short;
 
-    String generateUniqueName()
+    String generateUniqueName(const String & long_name)
     {
-        static constexpr const char * pattern = "--x";
-        return String(pattern) + std::to_string(counter++);
+        return String(pattern) + long_name;
     }
 };
 
@@ -561,6 +523,23 @@ size_t countSuchColumns(const std::vector<TableWithColumnNamesAndTypes> & tables
     return count;
 }
 
+/// 'select `--t.x`, `--t.x`, ...' -> 'select `--t.x` as `t.x`, `t.x`, ...'
+void restoreName(ASTIdentifier & ident, const String & original_name, NameSet & restored_names)
+{
+    if (!ident.tryGetAlias().empty())
+        return;
+    if (original_name.empty())
+        return;
+
+    if (!restored_names.count(original_name))
+    {
+        ident.setAlias(original_name);
+        restored_names.emplace(original_name);
+    }
+    else
+        ident.setShortName(original_name);
+}
+
 /// Find clashes and normalize names
 /// 1. If column name has no clashes make all its occurrences short: 'table.column' -> 'column', 'table_alias.column' -> 'column'.
 /// 2. If column name can't be short cause of alias with same name generate and use unique name for it.
@@ -570,11 +549,13 @@ size_t countSuchColumns(const std::vector<TableWithColumnNamesAndTypes> & tables
 std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
     const std::vector<TableWithColumnNamesAndTypes> & tables,
     const Aliases & aliases,
-    std::vector<ASTIdentifier *> & identifiers)
+    const std::vector<ASTIdentifier *> & identifiers,
+    const std::unordered_set<ASTIdentifier *> & public_identifiers,
+    UniqueShortNames & unique_names)
 {
-    UniqueShortNames unique_names;
     size_t last_table_pos = tables.size() - 1;
 
+    NameSet restored_names;
     std::vector<TableNeededColumns> needed_columns;
     needed_columns.reserve(tables.size());
     for (auto & table : tables)
@@ -592,18 +573,22 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                     throw Exception("Alias clashes with qualified column '" + ident->name + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
 
                 String short_name = ident->shortName();
+                String original_long_name;
+                if (public_identifiers.count(ident))
+                    original_long_name = ident->name;
+
                 size_t count = countSuchColumns(tables, short_name);
 
                 if (count > 1 || aliases.count(short_name))
                 {
                     auto & table = tables[*table_pos];
                     IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
+                    auto & unique_long_name = ident->name;
 
                     /// For tables moved into subselects we need unique short names for clashed names
                     if (*table_pos != last_table_pos)
                     {
-                        auto & unique_long_name = ident->name;
-                        String unique_short_name = unique_names.get(unique_long_name);
+                        String unique_short_name = unique_names.longToShort(unique_long_name);
                         ident->setShortName(unique_short_name);
                         needed_columns[*table_pos].column_clashes.emplace(short_name, unique_short_name);
                     }
@@ -611,8 +596,10 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 else
                 {
                     ident->setShortName(short_name); /// table.column -> column
-                    needed_columns[*table_pos].no_clashes.emplace(std::move(short_name));
+                    needed_columns[*table_pos].no_clashes.emplace(short_name);
                 }
+
+                restoreName(*ident, original_long_name, restored_names);
             }
             else if (got_alias)
                 needed_columns[*table_pos].alias_clashes.emplace(ident->shortName());
@@ -755,8 +742,15 @@ void JoinToSubqueryTransformMatcher::visitV2(ASTSelectQuery & select, ASTPtr & a
     RewriteWithAliasVisitor(on_aliases).visit(ast);
     on_aliases.clear();
 
+    /// We need to know if identifier is public. If so we have too keep its output name.
+    std::unordered_set<ASTIdentifier *> public_identifiers;
+    for (auto & top_level_child : select.select()->children)
+        if (auto * ident = top_level_child->as<ASTIdentifier>())
+            public_identifiers.insert(ident);
+
+    UniqueShortNames unique_names;
     std::vector<TableNeededColumns> needed_columns =
-        normalizeColumnNamesExtractNeeded(data.tables, data.aliases, identifiers);
+        normalizeColumnNamesExtractNeeded(data.tables, data.aliases, identifiers, public_identifiers, unique_names);
 
     /// Rewrite JOINs with subselects
 
@@ -789,9 +783,17 @@ void JoinToSubqueryTransformMatcher::visitV1(ASTSelectQuery & select, ASTPtr &, 
     if (!needRewrite(select, table_expressions))
         return;
 
-    ExtractAsterisksVisitor::Data asterisks_data(data.context, table_expressions);
-    if (!asterisks_data.table_columns.empty())
+    if (table_expressions.size() != data.tables.size())
+        throw Exception("Inconsistent tables count in JOIN rewriter", ErrorCodes::LOGICAL_ERROR);
+
+    bool has_subquery = false;
+    for (const auto & expr : table_expressions)
+        if (expr->subquery)
+            has_subquery = true;
+
+    if (!has_subquery)
     {
+        ExtractAsterisksVisitor::Data asterisks_data(data.tables);
         ExtractAsterisksVisitor(asterisks_data).visit(select.select());
         if (asterisks_data.new_select_expression_list)
             select.setExpression(ASTSelectQuery::Expression::SELECT, std::move(asterisks_data.new_select_expression_list));
@@ -800,6 +802,7 @@ void JoinToSubqueryTransformMatcher::visitV1(ASTSelectQuery & select, ASTPtr &, 
     ColumnAliasesVisitor::Data aliases_data(getDatabaseAndTables(select, ""));
     if (select.select())
     {
+        /// TODO: there's a bug here. We need to publish only top-level ASTIdentifiers but visitor extracts all.
         aliases_data.public_names = true;
         ColumnAliasesVisitor(aliases_data).visit(select.select());
         aliases_data.public_names = false;
@@ -842,14 +845,6 @@ void JoinToSubqueryTransformMatcher::visitV1(ASTSelectQuery & select, ASTPtr &, 
         left_table = replaceJoin(left_table, src_tables[i], subquery_template->clone());
         if (!left_table)
             throw Exception("Cannot replace tables with subselect", ErrorCodes::LOGICAL_ERROR);
-
-        /// attach an alias to subquery.
-        /// TODO: remove setting check after testing period
-        if (data.context.getSettingsRef().joined_subquery_requires_alias)
-        {
-            SetSubqueryAliasVisitor::Data alias_data{String("--.join") + std::to_string(i)};
-            SetSubqueryAliasVisitor(alias_data).visit(left_table);
-        }
 
         /// attach data to generated asterisk
         AppendSemanticVisitor::Data semantic_data{rev_aliases, false};
