@@ -5,6 +5,13 @@
 #include <errno.h>
 #include <IO/ReadHelpers.h>
 #include <boost/program_options.hpp>
+
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
+// It doesn't make much sense to build this bridge without ODBC, but we
+// still do this.
+#include <Poco/Data/ODBC/Connector.h>
+#endif
+
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/String.h>
@@ -126,6 +133,8 @@ void ODBCBridge::initialize(Application & self)
 
     buildLoggers(config(), logger(), self.commandName());
 
+    BaseDaemon::logRevision();
+
     log = &logger();
     hostname = config().getString("listen-host", "localhost");
     port = config().getUInt("http-port");
@@ -137,6 +146,12 @@ void ODBCBridge::initialize(Application & self)
     keep_alive_timeout = config().getUInt("keep-alive-timeout", 10);
 
     initializeTerminationAndSignalProcessing();
+
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
+    // It doesn't make much sense to build this bridge without ODBC, but we
+    // still do this.
+    Poco::Data::ODBC::Connector::registerConnector();
+#endif
 
     ServerApplication::initialize(self); // NOLINT
 }

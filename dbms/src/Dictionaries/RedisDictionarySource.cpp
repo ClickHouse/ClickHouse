@@ -96,7 +96,10 @@ namespace DB
         if (db_index != 0)
         {
             RedisCommand command("SELECT");
-            command << static_cast<Int64>(db_index);
+            // Use poco's Int64, because it is defined as long long, and on
+            // MacOS, for the purposes of template instantiation, this type is
+            // distinct from int64_t, which is our Int64.
+            command << static_cast<Poco::Int64>(db_index);
             String reply = client->execute<String>(command);
             if (reply != "+OK\r\n")
                 throw Exception{"Selecting database with index " + DB::toString(db_index)
