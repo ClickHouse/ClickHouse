@@ -15,6 +15,7 @@ import slugify
 import typograph_ru
 
 
+
 translator = googletrans.Translator()
 target_language = os.environ.get('TARGET_LANGUAGE', 'ru')
 is_debug = os.environ.get('DEBUG') is not None
@@ -167,6 +168,7 @@ def translate_filter(key, value, _format, _):
     elif key == 'Header':
         # TODO: title case header in en
         value[1][0] = slugify.slugify(value[1][0], separator='-', word_boundary=True, save_order=True)
+        # TODO: title case header in en
         value[2] = process_sentence(value[2])
         return cls(*value)
     elif key == 'SoftBreak':
