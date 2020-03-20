@@ -1043,7 +1043,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         need_remove_expired_values = true;
 
     /// All columns from part are changed and may be some more that were missing before in part
-    if (source_part->getColumns().isSubsetOf(updated_header.getNamesAndTypesList()))
+    if (isCompactPart(source_part) || source_part->getColumns().isSubsetOf(updated_header.getNamesAndTypesList()))
     {
         /// All columns are modified, proceed to write a new part from scratch.
         if (data.hasPrimaryKey() || data.hasSkipIndices())
