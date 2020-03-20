@@ -39,7 +39,14 @@ public:
         throw Exception{"Method loadKeys is unsupported for FileDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
     }
 
-    bool isModified() const override { return getLastModification() > last_modification; }
+    bool isModified() const override
+    {
+        // We can't count on that the mtime increases or that it has
+        // a particular relation to system time, so just check for strict
+        // equality.
+        return getLastModification() != last_modification;
+    }
+
     bool supportsSelectiveLoad() const override { return false; }
 
     ///Not supported for FileDictionarySource

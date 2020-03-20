@@ -3,16 +3,13 @@
 #include <optional>
 #include <Core/Defines.h>
 #include <IO/HashingWriteBuffer.h>
-#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Poco/File.h>
-#include <Poco/Path.h>
+#include <Storages/MergeTree/localBackup.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <Common/localBackup.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
 
@@ -30,7 +27,6 @@ namespace ErrorCodes
     extern const int NOT_FOUND_EXPECTED_DATA_PART;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int BAD_TTL_FILE;
-    extern const int CANNOT_UNLINK;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -251,7 +247,7 @@ void IMergeTreeDataPart::removeIfNeeded()
 
             if (is_temp)
             {
-                String file_name = Poco::Path(relative_path).getFileName();
+                String file_name = fileName(relative_path);
 
                 if (file_name.empty())
                     throw Exception("relative_path " + relative_path + " of part " + name + " is invalid or not set", ErrorCodes::LOGICAL_ERROR);
@@ -699,33 +695,33 @@ void IMergeTreeDataPart::remove() const
       * And a race condition can happen that will lead to "File not found" error here.
       */
 
-    String from_ = storage.relative_data_path + relative_path;
-    String to_ = storage.relative_data_path + "delete_tmp_" + name;
+    String from = storage.relative_data_path + relative_path;
+    String to = storage.relative_data_path + "delete_tmp_" + name;
     // TODO directory delete_tmp_<name> is never removed if server crashes before returning from this function
 
-    if (disk->exists(to_))
+    if (disk->exists(to))
     {
-        LOG_WARNING(storage.log, "Directory " << fullPath(disk, to_) << " (to which part must be renamed before removing) already exists."
+        LOG_WARNING(storage.log, "Directory " << fullPath(disk, to) << " (to which part must be renamed before removing) already exists."
             " Most likely this is due to unclean restart. Removing it.");
 
         try
         {
-            disk->removeRecursive(to_);
+            disk->removeRecursive(to);
         }
         catch (...)
         {
-            LOG_ERROR(storage.log, "Cannot recursively remove directory " << fullPath(disk, to_) << ". Exception: " << getCurrentExceptionMessage(false));
+            LOG_ERROR(storage.log, "Cannot recursively remove directory " << fullPath(disk, to) << ". Exception: " << getCurrentExceptionMessage(false));
             throw;
         }
     }
 
     try
     {
-        disk->moveFile(from_, to_);
+        disk->moveFile(from, to);
     }
     catch (const Poco::FileNotFoundException &)
     {
-        LOG_ERROR(storage.log, "Directory " << fullPath(disk, to_) << " (part to remove) doesn't exist or one of nested files has gone."
+        LOG_ERROR(storage.log, "Directory " << fullPath(disk, to) << " (part to remove) doesn't exist or one of nested files has gone."
             " Most likely this is due to manual removing. This should be discouraged. Ignoring.");
 
         return;
@@ -739,37 +735,25 @@ void IMergeTreeDataPart::remove() const
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wunused-variable"
 #endif
-        /// TODO: IDisk doesn't support `unlink()` and `rmdir()` functionality.
-        auto to = fullPath(disk, to_);
-
         for (const auto & [file, _] : checksums.files)
-        {
-            String path_to_remove = to + "/" + file;
-            if (0 != unlink(path_to_remove.c_str()))
-                throwFromErrnoWithPath("Cannot unlink file " + path_to_remove, path_to_remove, ErrorCodes::CANNOT_UNLINK);
-        }
+            disk->remove(to + "/" + file);
 #if !__clang__
 #    pragma GCC diagnostic pop
 #endif
 
         for (const auto & file : {"checksums.txt", "columns.txt"})
-        {
-            String path_to_remove = to + "/" + file;
-            if (0 != unlink(path_to_remove.c_str()))
-                throwFromErrnoWithPath("Cannot unlink file " + path_to_remove, path_to_remove, ErrorCodes::CANNOT_UNLINK);
-        }
+            disk->remove(to + "/" + file);
 
-        if (0 != rmdir(to.c_str()))
-            throwFromErrnoWithPath("Cannot rmdir file " + to, to, ErrorCodes::CANNOT_UNLINK);
+        disk->remove(to);
     }
     catch (...)
     {
         /// Recursive directory removal does many excessive "stat" syscalls under the hood.
 
-        LOG_ERROR(storage.log, "Cannot quickly remove directory " << fullPath(disk, to_) << " by removing files; fallback to recursive removal. Reason: "
+        LOG_ERROR(storage.log, "Cannot quickly remove directory " << fullPath(disk, to) << " by removing files; fallback to recursive removal. Reason: "
             << getCurrentExceptionMessage(false));
 
-        disk->removeRecursive(to_ + "/");
+        disk->removeRecursive(to + "/");
     }
 }
 
@@ -789,7 +773,7 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
     {
         res = "detached/" + (prefix.empty() ? "" : prefix + "_") + name + (try_no ? "_try" + DB::toString(try_no) : "");
 
-        if (!Poco::File(storage.getFullPathOnDisk(disk) + res).exists())
+        if (!disk->exists(getFullRelativePath() + res))
             return res;
 
         LOG_WARNING(storage.log, "Directory " << res << " (to detach to) already exists."
@@ -810,10 +794,8 @@ void IMergeTreeDataPart::makeCloneInDetached(const String & prefix) const
     assertOnDisk();
     LOG_INFO(storage.log, "Detaching " << relative_path);
 
-    Poco::Path src(getFullPath());
-    Poco::Path dst(storage.getFullPathOnDisk(disk) + getRelativePathForDetachedPart(prefix));
     /// Backup is not recursive (max_level is 0), so do not copy inner directories
-    localBackup(src, dst, 0);
+    localBackup(disk, getFullRelativePath(), storage.relative_data_path + getRelativePathForDetachedPart(prefix), 0);
 }
 
 void IMergeTreeDataPart::makeCloneOnDiskDetached(const ReservationPtr & reservation) const
@@ -823,14 +805,13 @@ void IMergeTreeDataPart::makeCloneOnDiskDetached(const ReservationPtr & reservat
     if (reserved_disk->getName() == disk->getName())
         throw Exception("Can not clone data part " + name + " to same disk " + disk->getName(), ErrorCodes::LOGICAL_ERROR);
 
-    String path_to_clone = storage.getFullPathOnDisk(reserved_disk) + "detached/";
+    String path_to_clone = storage.relative_data_path + "detached/";
 
-    if (Poco::File(path_to_clone + relative_path).exists())
-        throw Exception("Path " + path_to_clone + relative_path + " already exists. Can not clone ", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
-    Poco::File(path_to_clone).createDirectory();
+    if (reserved_disk->exists(path_to_clone + relative_path))
+        throw Exception("Path " + fullPath(reserved_disk, path_to_clone + relative_path) + " already exists. Can not clone ", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+    reserved_disk->createDirectory(path_to_clone);
 
-    Poco::File cloning_directory(getFullPath());
-    cloning_directory.copyTo(path_to_clone);
+    disk->copy(getFullRelativePath(), reserved_disk, path_to_clone);
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const

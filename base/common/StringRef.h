@@ -5,7 +5,7 @@
 #include <functional>
 #include <ostream>
 
-#include <common/Types.h>
+#include <common/types.h>
 #include <common/unaligned.h>
 
 #include <city.h>
