@@ -1,33 +1,33 @@
-<div dir="rtl" markdown="1">
+<div markdown="1" dir="rtl">
 
-# بنچمارک Star Schema
+# بنچمارک Star Schema {#bnchmrkh-star-schema}
 
-از لینک روبرو dbgen رو کامپایل کنید. <https://github.com/vadimtk/ssb-dbgen>
+از لینک روبرو dbgen رو کامپایل کنید. https://github.com/vadimtk/ssb-dbgen
 
 </div>
 
-```bash
+``` bash
 git clone git@github.com:vadimtk/ssb-dbgen.git
 cd ssb-dbgen
 make
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" dir="rtl">
 
 در هنگام پردازش چند warnings نمایش داده می شود که مشکلی نیست و طبیعی است.
 
-`dbgen` و ` dists.dss` را در یک جا با 800 گیگابایت فضای حالی دیسک قرار دهید.
+`dbgen` و `dists.dss` را در یک جا با 800 گیگابایت فضای حالی دیسک قرار دهید.
 
 تولید داده ها:
 
 </div>
 
-```bash
+``` bash
 ./dbgen -s 1000 -T c
 ./dbgen -s 1000 -T l
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" dir="rtl">
 
 ساخت جداول در ClickHouse
 
@@ -84,7 +84,7 @@ CREATE TABLE customerd AS customer ENGINE = Distributed(perftest_3shards_1replic
 CREATE TABLE partd AS part ENGINE = Distributed(perftest_3shards_1replicas, default, part, rand());
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" dir="rtl">
 
 برای تست بر روی یک سرور، فقط از جداول MergeTree استفاده کنید. برای تست توزیع شده، شما نیاز به کانفیگ `perftest_3shards_1replicas` در فایل کانفیگ را دارید. در ادامه جداول MergeTree را در هر سرور ایجاد کنید و موارد بالا را توزیع کنید.
 
@@ -92,7 +92,7 @@ CREATE TABLE partd AS part ENGINE = Distributed(perftest_3shards_1replicas, defa
 
 </div>
 
-```bash
+``` bash
 cat customer.tbl | sed 's/$/2000-01-01/' | clickhouse-client --query "INSERT INTO customer FORMAT CSV"
 cat lineorder.tbl | clickhouse-client --query "INSERT INTO lineorder FORMAT CSV"
 ```

@@ -1,8 +1,8 @@
-# Visual Interfaces from Third-party Developers
+# Visual Interfaces from Third-party Developers {#visual-interfaces-from-third-party-developers}
 
-## Open-Source
+## Open-Source {#open-source}
 
-### Tabix
+### Tabix {#tabix}
 
 Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) project.
 
@@ -16,7 +16,7 @@ Features:
 
 [Tabix documentation](https://tabix.io/doc/).
 
-### HouseOps
+### HouseOps {#houseops}
 
 [HouseOps](https://github.com/HouseOps/HouseOps) is a UI/IDE for OSX, Linux and Windows.
 
@@ -38,7 +38,7 @@ The following features are planned for development:
 - Cluster management.
 - Monitoring replicated and Kafka tables.
 
-### LightHouse
+### LightHouse {#lighthouse}
 
 [LightHouse](https://github.com/VKCOM/lighthouse) is a lightweight web interface for ClickHouse.
 
@@ -48,7 +48,7 @@ Features:
 - Table preview with filtering and sorting.
 - Read-only queries execution.
 
-### Redash
+### Redash {#redash}
 
 [Redash](https://github.com/getredash/redash) is a platform for data visualization.
 
@@ -60,7 +60,7 @@ Features:
 - Database explorer.
 - Visualization tools, that allow you to represent data in different forms.
 
-### DBeaver
+### DBeaver {#dbeaver}
 
 [DBeaver](https://dbeaver.io/) - universal desktop database client with ClickHouse support.
 
@@ -71,7 +71,7 @@ Features:
 - Table data preview.
 - Full-text search.
 
-### clickhouse-cli
+### clickhouse-cli {#clickhouse-cli}
 
 [clickhouse-cli](https://github.com/hatarist/clickhouse-cli) is an alternative command-line client for ClickHouse, written in Python 3.
 
@@ -82,13 +82,13 @@ Features:
 - Pager support for the data output.
 - Custom PostgreSQL-like commands.
 
-### clickhouse-flamegraph
+### clickhouse-flamegraph {#clickhouse-flamegraph}
 
 [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) is a specialized tool to visualize the `system.trace_log` as [flamegraph](http://www.brendangregg.com/flamegraphs.html).
 
-## Commercial
+## Commercial {#commercial}
 
-### DataGrip
+### DataGrip {#datagrip}
 
 [DataGrip](https://www.jetbrains.com/datagrip/) is a database IDE from JetBrains with dedicated support for ClickHouse. It is also embedded in other IntelliJ-based tools: PyCharm, IntelliJ IDEA, GoLand, PhpStorm and others.
 
@@ -115,11 +115,11 @@ Features:
 DataLens is [available for free](https://cloud.yandex.com/docs/datalens/pricing) for low-load projects, even for commercial use.
 
 - [DataLens documentation](https://cloud.yandex.com/docs/datalens/).
-- [Tutorial](https://cloud.yandex.com/docs/datalens/solutions/data-from-db-visualization) on visualizing data from a ClickHouse database.
+- [Tutorial](https://cloud.yandex.com/docs/solutions/datalens/data-from-ch-visualization) on visualizing data from a ClickHouse database.
 
-### Holistics Software
+### Holistics Software {#holistics-software}
 
-[Holistics](https://www.holistics.io/) is a full-stack data platform and business intelligence tool. 
+[Holistics](https://www.holistics.io/) is a full-stack data platform and business intelligence tool.
 
 Features:
 
@@ -129,16 +129,16 @@ Features:
 - Data preparation and ETL capabilities.
 - SQL data modelling support for relational mapping of data.
 
-### Looker
+### Looker {#looker}
+
 [Looker](https://looker.com) is a data platform and business intelligence tool with support for 50+ database dialects including ClickHouse. Looker is available as a SaaS platform and self-hosted. Users can use Looker via the browser to explore data, build visualizations and dashboards, schedule reports, and share their insights with colleagues. Looker provides a rich set of tools to embed these features in other applications, and an API
 to integrate data with other applications.
 
 Features:
 
-- Easy and agile development using LookML, a language which supports curated 
-[Data Modeling](https://looker.com/platform/data-modeling) to support report writers and end-users.
-- Powerful workflow integration via Looker's [Data Actions](https://looker.com/platform/actions).
-
+- Easy and agile development using LookML, a language which supports curated
+  [Data Modeling](https://looker.com/platform/data-modeling) to support report writers and end-users.
+- Powerful workflow integration via Looker’s [Data Actions](https://looker.com/platform/actions).
 
 [How to configure ClickHouse in Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 

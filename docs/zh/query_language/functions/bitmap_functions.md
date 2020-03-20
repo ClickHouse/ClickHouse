@@ -1,4 +1,4 @@
-# 位图函数
+# 位图函数 {#wei-tu-han-shu}
 
 位图函数用于对两个位图对象进行计算，对于任何一个位图函数，它都将返回一个位图对象，例如and，or，xor，not等等。
 
@@ -8,14 +8,11 @@
 
 有关RoaringBitmap的更多信息，请参阅：[CRoaring](https://github.com/RoaringBitmap/CRoaring)。
 
-
-## bitmapBuild
+## bitmapBuild {#bitmapbuild}
 
 从无符号整数数组构建位图对象。
 
-```
-bitmapBuild(array)
-```
+  bitmapBuild(array)
 
 **参数**
 
@@ -27,13 +24,11 @@ bitmapBuild(array)
 SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res
 ```
 
-## bitmapToArray
+## bitmapToArray {#bitmaptoarray}
 
 将位图转换为整数数组。
 
-```
-bitmapToArray(bitmap)
-```
+  bitmapToArray(bitmap)
 
 **参数**
 
@@ -45,19 +40,15 @@ bitmapToArray(bitmap)
 SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 ```
 
-```
-┌─res─────────┐
-│ [1,2,3,4,5] │
-└─────────────┘
-```
+  ┌─res─────────┐
+  │ [1,2,3,4,5] │
+  └─────────────┘
 
-## bitmapSubsetInRange
+## bitmapSubsetInRange {#bitmapsubsetinrange}
 
-将位图指定范围（不包含range_end）转换为另一个位图。
+将位图指定范围（不包含range\_end）转换为另一个位图。
 
-```
-bitmapSubsetInRange(bitmap, range_start, range_end)
-```
+  bitmapSubsetInRange(bitmap, range_start, range_end)
 
 **参数**
 
@@ -71,19 +62,15 @@ bitmapSubsetInRange(bitmap, range_start, range_end)
 SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
 ```
 
-```
-┌─res───────────────┐
-│ [30,31,32,33,100] │
-└───────────────────┘
-```
+  ┌─res───────────────┐
+  │ [30,31,32,33,100] │
+  └───────────────────┘
 
-## bitmapSubsetLimit
+## bitmapSubsetLimit {#bitmapsubsetlimit}
 
 将位图指定范围（起始点和数目上限）转换为另一个位图。
 
-```
-bitmapSubsetLimit(bitmap, range_start, limit)
-```
+  bitmapSubsetLimit(bitmap, range_start, limit)
 
 **参数**
 
@@ -97,19 +84,15 @@ bitmapSubsetLimit(bitmap, range_start, limit)
 SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
 ```
 
-```
-┌─res───────────────────────┐
-│ [30,31,32,33,100,200,500] │
-└───────────────────────────┘
-```
+  ┌─res───────────────────────┐
+  │ [30,31,32,33,100,200,500] │
+  └───────────────────────────┘
 
-## bitmapContains
+## bitmapContains {#bitmapcontains}
 
 检查位图是否包含指定元素。
 
-```
-bitmapContains(haystack, needle)
-```
+  bitmapContains(haystack, needle)
 
 **参数**
 
@@ -121,20 +104,19 @@ bitmapContains(haystack, needle)
 ``` sql
 SELECT bitmapContains(bitmapBuild([1,5,7,9]), toUInt32(9)) AS res
 ```
-```text
+
+``` text
 ┌─res─┐
 │  1  │
 └─────┘
 ```
 
-## bitmapHasAny
+## bitmapHasAny {#bitmaphasany}
 
 与`hasAny(array，array)`类似，如果位图有任何公共元素则返回1，否则返回0。
 对于空位图，返回0。
 
-```
-bitmapHasAny(bitmap,bitmap)
-```
+  bitmapHasAny(bitmap,bitmap)
 
 **参数**
 
@@ -146,20 +128,16 @@ bitmapHasAny(bitmap,bitmap)
 SELECT bitmapHasAny(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 ```
 
-```
-┌─res─┐
-│  1  │
-└─────┘
-```
+  ┌─res─┐
+  │  1  │
+  └─────┘
 
-## bitmapHasAll
+## bitmapHasAll {#bitmaphasall}
 
 与`hasAll(array，array)`类似，如果第一个位图包含第二个位图的所有元素，则返回1，否则返回0。
 如果第二个参数是空位图，则返回1。
 
-```
-bitmapHasAll(bitmap,bitmap)
-```
+  bitmapHasAll(bitmap,bitmap)
 
 **参数**
 
@@ -171,19 +149,15 @@ bitmapHasAll(bitmap,bitmap)
 SELECT bitmapHasAll(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 ```
 
-```
-┌─res─┐
-│  0  │
-└─────┘
-```
+  ┌─res─┐
+  │  0  │
+  └─────┘
 
-## bitmapAnd
+## bitmapAnd {#bitmapand}
 
 为两个位图对象进行与操作，返回一个新的位图对象。
 
-```
-bitmapAnd(bitmap1,bitmap2)
-```
+  bitmapAnd(bitmap1,bitmap2)
 
 **参数**
 
@@ -196,20 +170,15 @@ bitmapAnd(bitmap1,bitmap2)
 SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
 ```
 
-```
-┌─res─┐
-│ [3] │
-└─────┘
-```
+  ┌─res─┐
+  │ [3] │
+  └─────┘
 
-
-## bitmapOr
+## bitmapOr {#bitmapor}
 
 为两个位图对象进行或操作，返回一个新的位图对象。
 
-```
-bitmapOr(bitmap1,bitmap2)
-```
+  bitmapOr(bitmap1,bitmap2)
 
 **Parameters**
 
@@ -222,19 +191,15 @@ bitmapOr(bitmap1,bitmap2)
 SELECT bitmapToArray(bitmapOr(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
 ```
 
-```
-┌─res─────────┐
-│ [1,2,3,4,5] │
-└─────────────┘
-```
+  ┌─res─────────┐
+  │ [1,2,3,4,5] │
+  └─────────────┘
 
-## bitmapXor
+## bitmapXor {#bitmapxor}
 
 为两个位图对象进行异或操作，返回一个新的位图对象。
 
-```
-bitmapXor(bitmap1,bitmap2)
-```
+  bitmapXor(bitmap1,bitmap2)
 
 **参数**
 
@@ -247,19 +212,15 @@ bitmapXor(bitmap1,bitmap2)
 SELECT bitmapToArray(bitmapXor(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
 ```
 
-```
-┌─res───────┐
-│ [1,2,4,5] │
-└───────────┘
-```
+  ┌─res───────┐
+  │ [1,2,4,5] │
+  └───────────┘
 
-## bitmapAndnot
+## bitmapAndnot {#bitmapandnot}
 
 计算两个位图的差异，返回一个新的位图对象。
 
-```
-bitmapAndnot(bitmap1,bitmap2)
-```
+  bitmapAndnot(bitmap1,bitmap2)
 
 **参数**
 
@@ -272,19 +233,15 @@ bitmapAndnot(bitmap1,bitmap2)
 SELECT bitmapToArray(bitmapAndnot(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
 ```
 
-```
-┌─res───┐
-│ [1,2] │
-└───────┘
-```
+  ┌─res───┐
+  │ [1,2] │
+  └───────┘
 
-## bitmapCardinality
+## bitmapCardinality {#bitmapcardinality}
 
 返回一个UInt64类型的数值，表示位图对象的基数。
 
-```
-bitmapCardinality(bitmap)
-```
+  bitmapCardinality(bitmap)
 
 **Parameters**
 
@@ -296,19 +253,15 @@ bitmapCardinality(bitmap)
 SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
 ```
 
-```
-┌─res─┐
-│   5 │
-└─────┘
-```
+  ┌─res─┐
+  │   5 │
+  └─────┘
 
-## bitmapMin
+## bitmapMin {#bitmapmin}
 
-返回一个UInt64类型的数值，表示位图中的最小值。如果位图为空则返回UINT32_MAX。
+返回一个UInt64类型的数值，表示位图中的最小值。如果位图为空则返回UINT32\_MAX。
 
-```
-bitmapMin(bitmap)
-```
+  bitmapMin(bitmap)
 
 **Parameters**
 
@@ -320,19 +273,15 @@ bitmapMin(bitmap)
 SELECT bitmapMin(bitmapBuild([1, 2, 3, 4, 5])) AS res
 ```
 
-```
-┌─res─┐
-│   1 │
-└─────┘
-```
+  ┌─res─┐
+  │   1 │
+  └─────┘
 
-## bitmapMax
+## bitmapMax {#bitmapmax}
 
 返回一个UInt64类型的数值，表示位图中的最大值。如果位图为空则返回0。
 
-```
-bitmapMax(bitmap)
-```
+  bitmapMax(bitmap)
 
 **Parameters**
 
@@ -344,19 +293,15 @@ bitmapMax(bitmap)
 SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res
 ```
 
-```
-┌─res─┐
-│   5 │
-└─────┘
-```
+  ┌─res─┐
+  │   5 │
+  └─────┘
 
-## bitmapAndCardinality
+## bitmapAndCardinality {#bitmapandcardinality}
 
 为两个位图对象进行与操作，返回结果位图的基数。
 
-```
-bitmapAndCardinality(bitmap1,bitmap2)
-```
+  bitmapAndCardinality(bitmap1,bitmap2)
 
 **参数**
 
@@ -369,20 +314,15 @@ bitmapAndCardinality(bitmap1,bitmap2)
 SELECT bitmapAndCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
-```
-┌─res─┐
-│   1 │
-└─────┘
-```
+  ┌─res─┐
+  │   1 │
+  └─────┘
 
-
-## bitmapOrCardinality
+## bitmapOrCardinality {#bitmaporcardinality}
 
 为两个位图进行或运算，返回结果位图的基数。
 
-```
-bitmapOrCardinality(bitmap1,bitmap2)
-```
+  bitmapOrCardinality(bitmap1,bitmap2)
 
 **参数**
 
@@ -395,19 +335,15 @@ bitmapOrCardinality(bitmap1,bitmap2)
 SELECT bitmapOrCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
-```
-┌─res─┐
-│   5 │
-└─────┘
-```
+  ┌─res─┐
+  │   5 │
+  └─────┘
 
-## bitmapXorCardinality
+## bitmapXorCardinality {#bitmapxorcardinality}
 
 为两个位图进行异或运算，返回结果位图的基数。
 
-```
-bitmapXorCardinality(bitmap1,bitmap2)
-```
+  bitmapXorCardinality(bitmap1,bitmap2)
 
 **参数**
 
@@ -420,20 +356,15 @@ bitmapXorCardinality(bitmap1,bitmap2)
 SELECT bitmapXorCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
-```
-┌─res─┐
-│   4 │
-└─────┘
-```
+  ┌─res─┐
+  │   4 │
+  └─────┘
 
-
-## bitmapAndnotCardinality
+## bitmapAndnotCardinality {#bitmapandnotcardinality}
 
 计算两个位图的差异，返回结果位图的基数。
 
-```
-bitmapAndnotCardinality(bitmap1,bitmap2)
-```
+  bitmapAndnotCardinality(bitmap1,bitmap2)
 
 **参数**
 
@@ -446,11 +377,8 @@ bitmapAndnotCardinality(bitmap1,bitmap2)
 SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
-```
-┌─res─┐
-│   2 │
-└─────┘
-```
-
+  ┌─res─┐
+  │   2 │
+  └─────┘
 
 [来源文章](https://clickhouse.tech/docs/en/query_language/functions/bitmap_functions/) <!--hide-->

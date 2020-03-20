@@ -1,15 +1,13 @@
-# Параметрические агрегатные функции {#aggregate_functions_parametric}
+# Параметрические агрегатные функции {#aggregate-functions-parametric}
 
 Некоторые агрегатные функции могут принимать не только столбцы-аргументы (по которым производится свёртка), но и набор параметров - констант для инициализации. Синтаксис - две пары круглых скобок вместо одной. Первая - для параметров, вторая - для аргументов.
 
-## histogram
+## histogram {#histogram}
 
 Рассчитывает адаптивную гистограмму. Не гарантирует точного результата.
 
-```
-histogram(number_of_bins)(values)
-```
- 
+  histogram(number_of_bins)(values)
+
 Функция использует [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). Границы столбцов устанавливаются по мере поступления новых данных в функцию. В общем случае столбцы имею разную ширину.
 
 **Параметры**
@@ -31,15 +29,16 @@ histogram(number_of_bins)(values)
 
 **Пример**
 
-```sql
-SELECT histogram(5)(number + 1) 
+``` sql
+SELECT histogram(5)(number + 1)
 FROM (
-    SELECT * 
-    FROM system.numbers 
+    SELECT *
+    FROM system.numbers
     LIMIT 20
 )
 ```
-```text
+
+``` text
 ┌─histogram(5)(plus(number, 1))───────────────────────────────────────────┐
 │ [(1,4.5,4),(4.5,8.5,4),(8.5,12.75,4.125),(12.75,17,4.625),(17,20,3.25)] │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -47,19 +46,20 @@ FROM (
 
 С помощью функции [bar](../functions/other_functions.md#function-bar) можно визуализировать гистограмму, например:
 
-```sql
+``` sql
 WITH histogram(5)(rand() % 100) AS hist
-SELECT 
-    arrayJoin(hist).3 AS height, 
+SELECT
+    arrayJoin(hist).3 AS height,
     bar(height, 0, 6, 5) AS bar
-FROM 
+FROM
 (
     SELECT *
     FROM system.numbers
     LIMIT 20
 )
 ```
-```text
+
+``` text
 ┌─height─┬─bar───┐
 │  2.125 │ █▋    │
 │   3.25 │ ██▌   │
@@ -71,17 +71,16 @@ FROM
 
 В этом случае необходимо помнить, что границы корзин гистограммы не известны.
 
-## sequenceMatch(pattern)(timestamp, cond1, cond2, ...) {#function-sequencematch}
+## sequenceMatch(pattern)(timestamp, cond1, cond2, …) {#function-sequencematch}
 
 Проверяет, содержит ли последовательность событий цепочку, которая соответствует указанному шаблону.
 
-```sql
+``` sql
 sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 ```
 
 !!! warning "Предупреждение"
     События, произошедшие в одну и ту же секунду, располагаются в последовательности в неопределенном порядке, что может повлиять на результат работы функции.
-
 
 **Параметры**
 
@@ -90,7 +89,6 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 - `timestamp` — столбец, содержащий метки времени. Типичный тип данных столбца — `Date` или `DateTime`. Также можно использовать любой из поддержанных типов данных [UInt](../../data_types/int_uint.md).
 
 - `cond1`, `cond2` — условия, описывающие цепочку событий. Тип данных — `UInt8`. Можно использовать до 32 условий. Функция учитывает только те события, которые указаны в условиях. Функция пропускает данные из последовательности, если они не описаны ни в одном из условий.
-
 
 **Возвращаемые значения**
 
@@ -112,7 +110,7 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 
 Пусть таблица `t` содержит следующие данные:
 
-```text
+``` text
 ┌─time─┬─number─┐
 │    1 │      1 │
 │    2 │      3 │
@@ -122,10 +120,11 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 
 Выполним запрос:
 
-```sql
+``` sql
 SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2) FROM t
 ```
-```text
+
+``` text
 ┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2))─┐
 │                                                                     1 │
 └───────────────────────────────────────────────────────────────────────┘
@@ -133,10 +132,11 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2) FROM t
 
 Функция нашла цепочку событий, в которой число 2 следует за числом 1. Число 3 между ними было пропущено, поскольку оно не было использовано ни в одном из условий.
 
-```sql
+``` sql
 SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 3) FROM t
 ```
-```text
+
+``` text
 ┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2), equals(number, 3))─┐
 │                                                                                        0 │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
@@ -144,29 +144,28 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 3) FROM 
 
 В этом случае функция не может найти цепочку событий, соответствующую шаблону, поскольку событие для числа 3 произошло между 1 и 2. Если бы в этом же случае мы бы проверяли условие на событие для числа 4, то цепочка бы соответствовала шаблону.
 
-```sql
+``` sql
 SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM t
 ```
-```text
+
+``` text
 ┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2), equals(number, 4))─┐
 │                                                                                        1 │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-
 **Смотрите также**
 
 - [sequenceCount](#function-sequencecount)
 
-
-## sequenceCount(pattern)(time, cond1, cond2, ...) {#function-sequencecount}
+## sequenceCount(pattern)(time, cond1, cond2, …) {#function-sequencecount}
 
 Вычисляет количество цепочек событий, соответствующих шаблону. Функция обнаруживает только непересекающиеся цепочки событий. Она начитает искать следующую цепочку только после того, как полностью совпала текущая цепочка событий.
 
 !!! warning "Предупреждение"
     События, произошедшие в одну и ту же секунду, располагаются в последовательности в неопределенном порядке, что может повлиять на результат работы функции.
 
-```sql
+``` sql
 sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 ```
 
@@ -188,7 +187,7 @@ sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 
 Пусть таблица `t` содержит следующие данные:
 
-```text
+``` text
 ┌─time─┬─number─┐
 │    1 │      1 │
 │    2 │      3 │
@@ -201,10 +200,11 @@ sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 
 Вычислим сколько раз число 2 стоит после числа 1, причем между 1 и 2 могут быть любые числа:
 
-```sql
+``` sql
 SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 ```
-```text
+
+``` text
 ┌─sequenceCount('(?1).*(?2)')(time, equals(number, 1), equals(number, 2))─┐
 │                                                                       2 │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -228,7 +228,7 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 
 **Синтаксис**
 
-```sql
+``` sql
 windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
 ```
 
@@ -236,8 +236,8 @@ windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
 
 - `window` — ширина скользящего окна по времени в секундах. [UInt](../../data_types/int_uint.md).
 - `mode` - необязательный параметр. Если установлено значение `'strict'`, то функция `windowFunnel()` применяет условия только для уникальных значений.
-- `timestamp` — имя столбца, содержащего временные отметки. [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md#data_type-datetime)  и другие параметры с типом `Integer`. В случае хранения меток времени в столбцах с типом `UInt64`, максимально допустимое значение соответствует ограничению для типа `Int64`, т.е. равно `2^63-1`.
-- `cond` — условия или данные, описывающие цепочку событий. [UInt8](../../data_types/int_uint.md). 
+- `timestamp` — имя столбца, содержащего временные отметки. [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md#data_type-datetime) и другие параметры с типом `Integer`. В случае хранения меток времени в столбцах с типом `UInt64`, максимально допустимое значение соответствует ограничению для типа `Int64`, т.е. равно `2^63-1`.
+- `cond` — условия или данные, описывающие цепочку событий. [UInt8](../../data_types/int_uint.md).
 
 **Возвращаемое значение**
 
@@ -251,14 +251,14 @@ windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
 
 Зададим следующую цепочку событий:
 
-1. Пользователь вошел в личный кабинет (`eventID = 1001`).
-2. Пользователь ищет телефон (`eventID = 1003, product = 'phone'`).
-3. Пользователь сделал заказ (`eventID = 1009`)
-4. Пользователь сделал повторный заказ (`eventID = 1010`).
+1.  Пользователь вошел в личный кабинет (`eventID = 1001`).
+2.  Пользователь ищет телефон (`eventID = 1003, product = 'phone'`).
+3.  Пользователь сделал заказ (`eventID = 1009`)
+4.  Пользователь сделал повторный заказ (`eventID = 1010`).
 
 Входная таблица:
 
-```text
+``` text
 ┌─event_date─┬─user_id─┬───────────timestamp─┬─eventID─┬─product─┐
 │ 2019-01-28 │       1 │ 2019-01-29 10:00:00 │    1003 │ phone   │
 └────────────┴─────────┴─────────────────────┴─────────┴─────────┘
@@ -277,7 +277,7 @@ windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
 
 Запрос:
 
-```sql
+``` sql
 SELECT
     level,
     count() AS c
@@ -296,20 +296,20 @@ ORDER BY level ASC
 
 ## retention {#retention}
 
-Аналитическая функция, которая показывает, насколько 
+Аналитическая функция, которая показывает, насколько
 выдерживаются те или иные условия, например, удержание динамики/уровня [посещаемости сайта](https://yandex.ru/support/partner2/statistics/metrika-visitors-statistics.html?lang=ru).
 
 Функция принимает набор (от 1 до 32) логических условий, как в [WHERE](../select.md#select-where), и применяет их к заданному набору данных.
 
 Условия, кроме первого, применяются попарно: результат второго будет истинным, если истинно первое и второе, третьего - если истинно первое и третье и т. д.
 
-**Синтаксис** 
+**Синтаксис**
 
-```sql
+``` sql
 retention(cond1, cond2, ..., cond32)
 ```
 
-**Параметры** 
+**Параметры**
 
 - `cond` — вычисляемое условие или выражение, которое возвращает `UInt8` результат (1/0).
 
@@ -326,9 +326,9 @@ retention(cond1, cond2, ..., cond32)
 
 Рассмотрим пример расчета функции `retention` для определения посещаемости сайта.
 
-**1.**  Создадим таблицу для илюстрации примера.
+**1.** Создадим таблицу для илюстрации примера.
 
-```sql
+``` sql
 CREATE TABLE retention_test(date Date, uid Int32)ENGINE = Memory;
 
 INSERT INTO retention_test SELECT '2020-01-01', number FROM numbers(5);
@@ -340,13 +340,13 @@ INSERT INTO retention_test SELECT '2020-01-03', number FROM numbers(15);
 
 Запрос:
 
-```sql
+``` sql
 SELECT * FROM retention_test
 ```
 
 Ответ:
 
-```text
+``` text
 ┌───────date─┬─uid─┐
 │ 2020-01-01 │   0 │
 │ 2020-01-01 │   1 │
@@ -389,7 +389,7 @@ SELECT * FROM retention_test
 
 Запрос:
 
-```sql
+``` sql
 SELECT
     uid,
     retention(date = '2020-01-01', date = '2020-01-02', date = '2020-01-03') AS r
@@ -401,7 +401,7 @@ ORDER BY uid ASC
 
 Результат:
 
-```text
+``` text
 ┌─uid─┬─r───────┐
 │   0 │ [1,1,1] │
 │   1 │ [1,1,1] │
@@ -425,7 +425,7 @@ ORDER BY uid ASC
 
 Запрос:
 
-```sql
+``` sql
 SELECT
     sum(r[1]) AS r1,
     sum(r[2]) AS r2,
@@ -443,7 +443,7 @@ FROM
 
 Результат:
 
-```text
+``` text
 ┌─r1─┬─r2─┬─r3─┐
 │  5 │  5 │  5 │
 └────┴────┴────┘
@@ -455,7 +455,7 @@ FROM
 - `r2` - количество уникальных посетителей в период между 2020-01-01 и 2020-01-02 (`cond1` и `cond2`).
 - `r3` - количество уникальных посетителей в период между 2020-01-01 и 2020-01-03 (`cond1` и `cond3`).
 
-## uniqUpTo(N)(x)
+## uniqUpTo(N)(x) {#uniquptonx}
 
 Вычисляет количество различных значений аргумента, если оно меньше или равно N.
 В случае, если количество различных значений аргумента больше N, возвращает N + 1.
@@ -471,7 +471,7 @@ FROM
 
 Пример применения:
 
-```text
+``` text
 Задача: показывать в отчёте только поисковые фразы, по которым было хотя бы 5 уникальных посетителей.
 Решение: пишем в запросе GROUP BY SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```

@@ -1,4 +1,4 @@
-# AggregatingMergeTree
+# AggregatingMergeTree {#aggregatingmergetree}
 
 The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](mergetree.md)) with a single row (within a one data part) that stores a combination of states of aggregate functions.
 
@@ -8,9 +8,9 @@ The engine processes all columns with [AggregateFunction](../../data_types/neste
 
 It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows by orders.
 
-## Creating a Table
+## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -30,12 +30,14 @@ For a description of request parameters, see [request description](../../query_l
 
 When creating a `AggregatingMergeTree` table the same [clauses](mergetree.md) are required, as when creating a `MergeTree` table.
 
-<details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
+<details markdown="1">
 
-!!! attention
+<summary>Deprecated Method for Creating a Table</summary>
+
+!!! attention "Attention"
     Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -47,18 +49,18 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 All of the parameters have the same meaning as in `MergeTree`.
 </details>
 
-## SELECT and INSERT
+## SELECT and INSERT {#select-and-insert}
 
 To insert data, use [INSERT SELECT](../../query_language/insert_into.md) query with aggregate -State- functions.
 When selecting data from `AggregatingMergeTree` table, use `GROUP BY` clause and the same aggregate functions as when inserting data, but using `-Merge` suffix.
 
 In the results of `SELECT` query, the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. If dump data into, for example, `TabSeparated` format with `SELECT` query then this dump can be loaded back using `INSERT` query.
 
-## Example of an Aggregated Materialized View
+## Example of an Aggregated Materialized View {#example-of-an-aggregated-materialized-view}
 
 `AggregatingMergeTree` materialized view that watches the `test.visits` table:
 
-```sql
+``` sql
 CREATE MATERIALIZED VIEW test.basic
 ENGINE = AggregatingMergeTree() PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate)
 AS SELECT
@@ -72,7 +74,7 @@ GROUP BY CounterID, StartDate;
 
 Inserting data into the `test.visits` table.
 
-```sql
+``` sql
 INSERT INTO test.visits ...
 ```
 
@@ -80,7 +82,7 @@ The data are inserted in both the table and view `test.basic` that will perform 
 
 To get the aggregated data, we need to execute a query such as `SELECT ... GROUP BY ...` from the view `test.basic`:
 
-```sql
+``` sql
 SELECT
     StartDate,
     sumMerge(Visits) AS Visits,

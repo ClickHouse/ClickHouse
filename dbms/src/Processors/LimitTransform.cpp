@@ -185,7 +185,9 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
     data.current_chunk = input.pull(true);
 
     auto rows = data.current_chunk.getNumRows();
-    rows_before_limit_at_least += rows;
+
+    if (rows_before_limit_at_least)
+        rows_before_limit_at_least->add(rows);
 
     /// Skip block (for 'always_read_till_end' case).
     if (is_limit_reached || output_finished)

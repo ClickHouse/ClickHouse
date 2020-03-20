@@ -1,4 +1,4 @@
-# Функции кодирования
+# Функции кодирования {#funktsii-kodirovaniia}
 
 ## char {#char}
 
@@ -6,7 +6,7 @@
 
 **Синтаксис**
 
-```sql
+``` sql
 char(number_1, [number_2, ..., number_n]);
 ```
 
@@ -24,13 +24,13 @@ char(number_1, [number_2, ..., number_n]);
 
 Запрос:
 
-```sql
+``` sql
 SELECT char(104.1, 101, 108.9, 108.9, 111) AS hello
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─hello─┐
 │ hello │
 └───────┘
@@ -39,13 +39,14 @@ SELECT char(104.1, 101, 108.9, 108.9, 111) AS hello
 Вы можете создать строку в произвольной кодировке, передав соответствующие байты. Пример для UTF-8:
 
 Запрос:
-```sql
+
+``` sql
 SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x82) AS hello;
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─hello──┐
 │ привет │
 └────────┘
@@ -53,13 +54,13 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
 
 Запрос:
 
-```sql
+``` sql
 SELECT char(0xE4, 0xBD, 0xA0, 0xE5, 0xA5, 0xBD) AS hello;
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─hello─┐
 │ 你好  │
 └───────┘
@@ -67,17 +68,17 @@ SELECT char(0xE4, 0xBD, 0xA0, 0xE5, 0xA5, 0xBD) AS hello;
 
 ## hex {#hex}
 
-Returns a string containing the argument's hexadecimal representation. 
+Returns a string containing the argument’s hexadecimal representation.
 
 **Syntax**
 
-```sql
+``` sql
 hex(arg)
 ```
 
 The function is using uppercase letters `A-F` and not using any prefixes (like `0x`) or suffixes (like `h`).
 
-For integer arguments, it prints hex digits ("nibbles") from the most significant to least significant (big endian or "human readable" order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints both digits of every byte even if leading digit is zero.
+For integer arguments, it prints hex digits («nibbles») from the most significant to least significant (big endian or «human readable» order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints both digits of every byte even if leading digit is zero.
 
 Example:
 
@@ -85,13 +86,13 @@ Example:
 
 Query:
 
-```sql
+``` sql
 SELECT hex(1);
 ```
 
 Result:
 
-```text
+``` text
 01
 ```
 
@@ -115,13 +116,13 @@ Type: `String`.
 
 Query:
 
-```sql
+``` sql
 SELECT hex(toFloat32(number)) as hex_presentation FROM numbers(15, 2);
 ```
 
 Result:
 
-```text
+``` text
 ┌─hex_presentation─┐
 │ 00007041         │
 │ 00008041         │
@@ -130,34 +131,38 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT hex(toFloat64(number)) as hex_presentation FROM numbers(15, 2);
 ```
 
 Result:
 
-```text
+``` text
 ┌─hex_presentation─┐
 │ 0000000000002E40 │
 │ 0000000000003040 │
 └──────────────────┘
 ```
 
-## unhex(str)
+## unhex(str) {#unhexstr}
 
-Accepts a string containing any number of hexadecimal digits, and returns a string containing the corresponding bytes. Supports both uppercase and lowercase letters A-F. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the 00-0F byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn't thrown).
-If you want to convert the result to a number, you can use the 'reverse' and 'reinterpretAsType' functions.
+Accepts a string containing any number of hexadecimal digits, and returns a string containing the corresponding bytes. Supports both uppercase and lowercase letters A-F. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the 00-0F byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn’t thrown).
+If you want to convert the result to a number, you can use the ‘reverse’ and ‘reinterpretAsType’ functions.
 
-## UUIDStringToNum(str)
+## UUIDStringToNum(str) {#uuidstringtonumstr}
+
 Принимает строку, содержащую 36 символов в формате `123e4567-e89b-12d3-a456-426655440000`, и возвращает в виде набора байт в FixedString(16).
 
-## UUIDNumToString(str)
+## UUIDNumToString(str) {#uuidnumtostringstr}
+
 Принимает значение типа FixedString(16). Возвращает строку из 36 символов в текстовом виде.
 
-## bitmaskToList(num)
+## bitmaskToList(num) {#bitmasktolistnum}
+
 Принимает целое число. Возвращает строку, содержащую список степеней двойки, в сумме дающих исходное число; по возрастанию, в текстовом виде, через запятую, без пробелов.
 
-## bitmaskToArray(num)
+## bitmaskToArray(num) {#bitmasktoarraynum}
+
 Принимает целое число. Возвращает массив чисел типа UInt64, содержащий степени двойки, в сумме дающих исходное число; числа в массиве идут по возрастанию.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/encoding_functions/) <!--hide-->

@@ -2,11 +2,11 @@
 
 For information on connecting and configuring external dictionaries, see [External dictionaries](../dicts/external_dicts.md).
 
-## dictGet
+## dictGet {#dictget}
 
 Retrieves a value from an external dictionary.
 
-```sql
+``` sql
 dictGet('dict_name', 'attr_name', id_expr)
 dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 ```
@@ -16,23 +16,24 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 - `dict_name` — Name of the dictionary. [String literal](../syntax.md#syntax-string-literal).
 - `attr_name` — Name of the column of the dictionary. [String literal](../syntax.md#syntax-string-literal).
 - `id_expr` — Key value. [Expression](../syntax.md#syntax-expressions) returning a [UInt64](../../data_types/int_uint.md) or [Tuple](../../data_types/tuple.md)-type value depending on the dictionary configuration.
-- `default_value_expr` — Value returned if the dictionary doesn't contain a row with the `id_expr` key. [Expression](../syntax.md#syntax-expressions) returning the value in the data type configured for the `attr_name` attribute.
+- `default_value_expr` — Value returned if the dictionary doesn’t contain a row with the `id_expr` key. [Expression](../syntax.md#syntax-expressions) returning the value in the data type configured for the `attr_name` attribute.
 
 **Returned value**
 
-- If ClickHouse parses the attribute successfully in the [attribute's data type](../../query_language/dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
+- If ClickHouse parses the attribute successfully in the [attribute’s data type](../../query_language/dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
+
 - If there is no the key, corresponding to `id_expr`, in the dictionary, then:
 
     - `dictGet` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
     - `dictGetOrDefault` returns the value passed as the `default_value_expr` parameter.
 
-ClickHouse throws an exception if it cannot parse the value of the attribute or the value doesn't match the attribute data type.
+ClickHouse throws an exception if it cannot parse the value of the attribute or the value doesn’t match the attribute data type.
 
 **Example**
 
 Create a text file `ext-dict-text.csv` containing the following:
 
-```text
+``` text
 1,1
 2,2
 ```
@@ -41,7 +42,7 @@ The first column is `id`, the second column is `c1`.
 
 Configure the external dictionary:
 
-```xml
+``` xml
 <yandex>
     <dictionary>
         <name>ext-dict-test</name>
@@ -71,14 +72,15 @@ Configure the external dictionary:
 
 Perform the query:
 
-```sql
+``` sql
 SELECT
     dictGetOrDefault('ext-dict-test', 'c1', number + 1, toUInt32(number * 10)) AS val,
     toTypeName(val) AS type
 FROM system.numbers
 LIMIT 3
 ```
-```text
+
+``` text
 ┌─val─┬─type───┐
 │   1 │ UInt32 │
 │   2 │ UInt32 │
@@ -90,12 +92,11 @@ LIMIT 3
 
 - [External Dictionaries](../dicts/external_dicts.md)
 
-
-## dictHas
+## dictHas {#dicthas}
 
 Checks whether a key is present in a dictionary.
 
-```sql
+``` sql
 dictHas('dict_name', id_expr)
 ```
 
@@ -117,7 +118,7 @@ Creates an array, containing all the parents of a key in the [hierarchical dicti
 
 **Syntax**
 
-```sql
+``` sql
 dictGetHierarchy('dict_name', key)
 ```
 
@@ -132,12 +133,11 @@ dictGetHierarchy('dict_name', key)
 
 Type: [Array(UInt64)](../../data_types/array.md).
 
-
-## dictIsIn
+## dictIsIn {#dictisin}
 
 Checks the ancestor of a key through the whole hierarchical chain in the dictionary.
 
-```sql
+``` sql
 dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
 ```
 
@@ -172,7 +172,7 @@ All these functions have the `OrDefault` modification. For example, `dictGetDate
 
 Syntax:
 
-```sql
+``` sql
 dictGet[Type]('dict_name', 'attr_name', id_expr)
 dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 ```
@@ -182,16 +182,17 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 - `dict_name` — Name of the dictionary. [String literal](../syntax.md#syntax-string-literal).
 - `attr_name` — Name of the column of the dictionary. [String literal](../syntax.md#syntax-string-literal).
 - `id_expr` — Key value. [Expression](../syntax.md#syntax-expressions) returning a [UInt64](../../data_types/int_uint.md)-type value.
-- `default_value_expr` — Value which is returned if the dictionary doesn't contain a row with the `id_expr` key. [Expression](../syntax.md#syntax-expressions) returning a value in the data type configured for the `attr_name` attribute.
+- `default_value_expr` — Value which is returned if the dictionary doesn’t contain a row with the `id_expr` key. [Expression](../syntax.md#syntax-expressions) returning a value in the data type configured for the `attr_name` attribute.
 
 **Returned value**
 
-- If ClickHouse parses the attribute successfully in the [attribute's data type](../../query_language/dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
+- If ClickHouse parses the attribute successfully in the [attribute’s data type](../../query_language/dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
+
 - If there is no requested `id_expr` in the dictionary then:
 
     - `dictGet[Type]` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
     - `dictGet[Type]OrDefault` returns the value passed as the `default_value_expr` parameter.
 
-ClickHouse throws an exception if it cannot parse the value of the attribute or the value doesn't match the attribute data type.
+ClickHouse throws an exception if it cannot parse the value of the attribute or the value doesn’t match the attribute data type.
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/ext_dict_functions/) <!--hide-->

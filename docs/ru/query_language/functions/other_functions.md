@@ -1,6 +1,6 @@
-# Прочие функции
+# Прочие функции {#prochie-funktsii}
 
-## hostName()
+## hostName() {#hostname}
 
 Возвращает строку - имя хоста, на котором эта функция была выполнена. При распределённой обработке запроса, это будет имя хоста удалённого сервера, если функция выполняется на удалённом сервере.
 
@@ -10,7 +10,7 @@
 
 **Синтаксис**
 
-```sql
+``` sql
 fqdn();
 ```
 
@@ -26,23 +26,23 @@ fqdn();
 
 Запрос:
 
-```sql
+``` sql
 SELECT FQDN();
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─FQDN()──────────────────────────┐
 │ clickhouse.ru-central1.internal │
 └─────────────────────────────────┘
 ```
 
-## basename
+## basename {#basename}
 
 Извлекает конечную часть строки после последнего слэша или бэкслэша. Функция часто используется для извлечения имени файла из пути.
 
-```sql
+``` sql
 basename( expr )
 ```
 
@@ -62,82 +62,88 @@ basename( expr )
 
 **Пример**
 
-```sql
+``` sql
 SELECT 'some/long/path/to/file' AS a, basename(a)
 ```
 
-```text
+``` text
 ┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
 │ some\long\path\to\file │ file                                   │
 └────────────────────────┴────────────────────────────────────────┘
 ```
 
-```sql
+``` sql
 SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
 ```
 
-```text
+``` text
 ┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
 │ some\long\path\to\file │ file                                   │
 └────────────────────────┴────────────────────────────────────────┘
 ```
 
-```sql
+``` sql
 SELECT 'some-file-name' AS a, basename(a)
 ```
 
-```text
+``` text
 ┌─a──────────────┬─basename('some-file-name')─┐
 │ some-file-name │ some-file-name             │
 └────────────────┴────────────────────────────┘
 ```
 
-## visibleWidth(x)
+## visibleWidth(x) {#visiblewidthx}
 
 Вычисляет приблизительную ширину при выводе значения в текстовом (tab-separated) виде на консоль.
 Функция используется системой для реализации Pretty форматов.
 
 `NULL` представляется как строка, соответствующая отображению `NULL` в форматах `Pretty`.
 
-```sql
+``` sql
 SELECT visibleWidth(NULL)
 ```
 
-```text
+``` text
 ┌─visibleWidth(NULL)─┐
 │                  4 │
 └────────────────────┘
 ```
 
-## toTypeName(x)
+## toTypeName(x) {#totypenamex}
+
 Возвращает строку, содержащую имя типа переданного аргумента.
 
 Если на вход функции передать `NULL`, то она вернёт тип `Nullable(Nothing)`, что соответствует внутреннему представлению `NULL` в ClickHouse.
 
 ## blockSize() {#function-blocksize}
+
 Получить размер блока.
 В ClickHouse выполнение запроса всегда идёт по блокам (наборам кусочков столбцов). Функция позволяет получить размер блока, для которого её вызвали.
 
-## materialize(x)
+## materialize(x) {#materializex}
+
 Превращает константу в полноценный столбец, содержащий только одно значение.
 В ClickHouse полноценные столбцы и константы представлены в памяти по-разному. Функции по-разному работают для аргументов-констант и обычных аргументов (выполняется разный код), хотя результат почти всегда должен быть одинаковым. Эта функция предназначена для отладки такого поведения.
 
-## ignore(...)
+## ignore(…) {#ignore}
+
 Принимает любые аргументы, в т.ч. `NULL`, всегда возвращает 0.
 При этом, аргумент всё равно вычисляется. Это может использоваться для бенчмарков.
 
-## sleep(seconds)
+## sleep(seconds) {#sleepseconds}
+
 Спит seconds секунд на каждый блок данных. Можно указать как целое число, так и число с плавающей запятой.
 
-## currentDatabase()
+## currentDatabase() {#currentdatabase}
+
 Возвращает имя текущей базы данных.
 Эта функция может использоваться в параметрах движка таблицы в запросе CREATE TABLE там, где нужно указать базу данных.
 
-## currentUser() {#other_function-currentuser}
+## currentUser() {#other-function-currentuser}
 
 Возвращает логин текущего пользователя. При распределенном запросе, возвращается имя пользователя, инициировавшего запрос.
 
-```sql
+``` sql
 SELECT currentUser();
 ```
 
@@ -154,35 +160,34 @@ SELECT currentUser();
 
 Запрос:
 
-```sql
+``` sql
 SELECT currentUser();
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─currentUser()─┐
 │ default       │
 └───────────────┘
 ```
 
-## isFinite(x)
+## isFinite(x) {#isfinitex}
+
 Принимает Float32 или Float64 и возвращает UInt8, равный 1, если аргумент не бесконечный и не NaN, иначе 0.
 
 ## ifNotFinite {#ifnotfinite}
 
 Проверяет, является ли значение дробного числа с плавающей точкой конечным.
 
-**Синтаксис** 
+**Синтаксис**
 
-```
-ifNotFinite(x,y)
-```
+  ifNotFinite(x,y)
 
 **Параметры**
 
-- `x` — Значение, которое нужно проверить на бесконечность. Тип: [Float*](../../data_types/float.md).
-- `y` — Запасное значение. Тип: [Float*](../../data_types/float.md).
+- `x` — Значение, которое нужно проверить на бесконечность. Тип: [Float\*](../../data_types/float.md).
+- `y` — Запасное значение. Тип: [Float\*](../../data_types/float.md).
 
 **Возвращаемые значения**
 
@@ -193,27 +198,26 @@ ifNotFinite(x,y)
 
 Запрос:
 
-```
-SELECT 1/0 as infimum, ifNotFinite(infimum,42)
-```
+  SELECT 1/0 as infimum, ifNotFinite(infimum,42)
 
 Результат:
 
-```
-┌─infimum─┬─ifNotFinite(divide(1, 0), 42)─┐
-│     inf │                            42 │
-└─────────┴───────────────────────────────┘
-```
+  ┌─infimum─┬─ifNotFinite(divide(1, 0), 42)─┐
+  │     inf │                            42 │
+  └─────────┴───────────────────────────────┘
 
 Аналогичный результат можно получить с помощью [тернарного оператора](conditional_functions.md#ternary-operator) `isFinite(x) ? x : y`.
 
-## isInfinite(x)
+## isInfinite(x) {#isinfinitex}
+
 Принимает Float32 или Float64 и возвращает UInt8, равный 1, если аргумент бесконечный, иначе 0. Отметим, что в случае NaN возвращается 0.
 
-## isNaN(x)
+## isNaN(x) {#isnanx}
+
 Принимает Float32 или Float64 и возвращает UInt8, равный 1, если аргумент является NaN, иначе 0.
 
-## hasColumnInTable(\['hostname'\[, 'username'\[, 'password'\]\],\] 'database', 'table', 'column')
+## hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘database’, ‘table’, ‘column’) {#hascolumnintablehostname-username-password-database-table-column}
+
 Принимает константные строки - имя базы данных, имя таблицы и название столбца. Возвращает константное выражение типа UInt8, равное 1,
 если есть столбец, иначе 0. Если задан параметр hostname, проверка будет выполнена на удалённом сервере.
 Функция кидает исключение, если таблица не существует.
@@ -235,7 +239,7 @@ SELECT 1/0 as infimum, ifNotFinite(infimum,42)
 
 Пример:
 
-```sql
+``` sql
 SELECT
     toHour(EventTime) AS h,
     count() AS c,
@@ -245,7 +249,7 @@ GROUP BY h
 ORDER BY h ASC
 ```
 
-```text
+``` text
 ┌──h─┬──────c─┬─bar────────────────┐
 │  0 │ 292907 │ █████████▋         │
 │  1 │ 180563 │ ██████             │
@@ -274,12 +278,12 @@ ORDER BY h ASC
 └────┴────────┴────────────────────┘
 ```
 
+## transform {#transform}
 
-## transform
 Преобразовать значение согласно явно указанному отображению одних элементов на другие.
 Имеется два варианта функции:
 
-### transform(x, array_from, array_to, default)
+### transform(x, array\_from, array\_to, default) {#transformx-array-from-array-to-default}
 
 `x` - что преобразовывать.
 
@@ -299,11 +303,11 @@ ORDER BY h ASC
 При этом, где обозначена одна и та же буква (T или U), могут быть, в случае числовых типов, не совпадающие типы, а типы, для которых есть общий тип.
 Например, первый аргумент может иметь тип Int64, а второй - Array(UInt16).
 
-Если значение x равно одному из элементов массива array_from, то возвращает соответствующий (такой же по номеру) элемент массива array_to; иначе возвращает default. Если имеется несколько совпадающих элементов в array_from, то возвращает какой-нибудь из соответствующих.
+Если значение x равно одному из элементов массива array\_from, то возвращает соответствующий (такой же по номеру) элемент массива array\_to; иначе возвращает default. Если имеется несколько совпадающих элементов в array\_from, то возвращает какой-нибудь из соответствующих.
 
 Пример:
 
-```sql
+``` sql
 SELECT
     transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other') AS title,
     count() AS c
@@ -313,7 +317,7 @@ GROUP BY title
 ORDER BY c DESC
 ```
 
-```text
+``` text
 ┌─title─────┬──────c─┐
 │ Yandex    │ 498635 │
 │ Google    │ 229872 │
@@ -321,10 +325,10 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-### transform(x, array_from, array_to)
+### transform(x, array\_from, array\_to) {#transformx-array-from-array-to}
 
 Отличается от первого варианта отсутствующим аргументом default.
-Если значение x равно одному из элементов массива array_from, то возвращает соответствующий (такой же по номеру) элемент массива array_to; иначе возвращает x.
+Если значение x равно одному из элементов массива array\_from, то возвращает соответствующий (такой же по номеру) элемент массива array\_to; иначе возвращает x.
 
 Типы:
 
@@ -332,7 +336,7 @@ ORDER BY c DESC
 
 Пример:
 
-```sql
+``` sql
 SELECT
     transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
     count() AS c
@@ -342,7 +346,7 @@ ORDER BY count() DESC
 LIMIT 10
 ```
 
-```text
+``` text
 ┌─s──────────────┬───────c─┐
 │                │ 2906259 │
 │ www.yandex     │  867767 │
@@ -356,18 +360,19 @@ LIMIT 10
 └────────────────┴─────────┘
 ```
 
-## formatReadableSize(x)
+## formatReadableSize(x) {#formatreadablesizex}
+
 Принимает размер (число байт). Возвращает округленный размер с суффиксом (KiB, MiB и т.д.) в виде строки.
 
 Пример:
 
-```sql
+``` sql
 SELECT
     arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
     formatReadableSize(filesize_bytes) AS filesize
 ```
 
-```text
+``` text
 ┌─filesize_bytes─┬─filesize───┐
 │              1 │ 1.00 B     │
 │           1024 │ 1.00 KiB   │
@@ -376,23 +381,28 @@ SELECT
 └────────────────┴────────────┘
 ```
 
-## least(a, b)
+## least(a, b) {#leasta-b}
+
 Возвращает наименьшее значение из a и b.
 
-## greatest(a, b)
+## greatest(a, b) {#greatesta-b}
+
 Возвращает наибольшее значение из a и b.
 
-## uptime()
+## uptime() {#uptime}
+
 Возвращает аптайм сервера в секундах.
 
-## version()
+## version() {#version}
+
 Возвращает версию сервера в виде строки.
 
 ## rowNumberInBlock {#function-rownumberinblock}
 
 Возвращает порядковый номер строки в блоке данных. Для каждого блока данных нумерация начинается с 0.
 
-## rowNumberInAllBlocks()
+## rowNumberInAllBlocks() {#rownumberinallblocks}
+
 Возвращает порядковый номер строки в блоке данных. Функция учитывает только задействованные блоки данных.
 
 ## neighbor {#neighbor}
@@ -401,7 +411,7 @@ SELECT
 
 **Синтаксис**
 
-```sql
+``` sql
 neighbor(column, offset[, default_value])
 ```
 
@@ -416,7 +426,7 @@ neighbor(column, offset[, default_value])
 **Возвращаемое значение**
 
 - Значение `column` в смещении от текущей строки, если значение `offset` не выходит за пределы блока.
-- Значение по умолчанию для `column`, если значение `offset`  выходит за пределы блока данных. Если передан параметр `default_value`, то значение берется из него.
+- Значение по умолчанию для `column`, если значение `offset` выходит за пределы блока данных. Если передан параметр `default_value`, то значение берется из него.
 
 Тип: зависит от данных в `column` или переданного значения по умолчанию в `default_value`.
 
@@ -424,13 +434,13 @@ neighbor(column, offset[, default_value])
 
 Запрос:
 
-```sql
+``` sql
 SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─number─┬─neighbor(number, 2)─┐
 │      0 │                   2 │
 │      1 │                   3 │
@@ -447,13 +457,13 @@ SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
 
 Запрос:
 
-```sql
+``` sql
 SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─number─┬─neighbor(number, 2, 999)─┐
 │      0 │                        2 │
 │      1 │                        3 │
@@ -472,7 +482,7 @@ SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
 
 Запрос:
 
-```sql
+``` sql
 WITH toDate('2018-01-01') AS start_date
 SELECT
     toStartOfMonth(start_date + (number * 32)) AS month,
@@ -484,7 +494,7 @@ FROM numbers(16)
 
 Ответ:
 
-```text
+``` text
 ┌──────month─┬─money─┬─prev_year─┬─year_over_year─┐
 │ 2018-01-01 │    32 │         0 │              0 │
 │ 2018-02-01 │    63 │         0 │              0 │
@@ -505,7 +515,8 @@ FROM numbers(16)
 └────────────┴───────┴───────────┴────────────────┘
 ```
 
-## runningDifference(x)
+## runningDifference(x) {#runningdifferencex}
+
 Считает разницу между последовательными значениями строк в блоке данных.
 Возвращает 0 для первой строки и разницу с предыдущей строкой для каждой последующей строки.
 
@@ -514,7 +525,7 @@ FROM numbers(16)
 
 Пример:
 
-```sql
+``` sql
 SELECT
     EventID,
     EventTime,
@@ -531,7 +542,7 @@ FROM
 )
 ```
 
-```text
+``` text
 ┌─EventID─┬───────────EventTime─┬─delta─┐
 │    1106 │ 2016-11-24 00:00:04 │     0 │
 │    1107 │ 2016-11-24 00:00:05 │     1 │
@@ -543,14 +554,15 @@ FROM
 
 Обратите внимание — размер блока влияет на результат. С каждым новым блоком состояние `runningDifference` сбрасывается.
 
-```sql
+``` sql
 SELECT
     number,
     runningDifference(number + 1) AS diff
 FROM numbers(100000)
 WHERE diff != 1
 ```
-```text
+
+``` text
 ┌─number─┬─diff─┐
 │      0 │    0 │
 └────────┴──────┘
@@ -558,45 +570,48 @@ WHERE diff != 1
 │  65536 │    0 │
 └────────┴──────┘
 ```
-```
-set max_block_size=100000 -- по умолчанию 65536!
 
-SELECT
-    number,
-    runningDifference(number + 1) AS diff
-FROM numbers(100000)
-WHERE diff != 1
-```
-```text
+  set max_block_size=100000 -- по умолчанию 65536!
+
+  SELECT
+      number,
+      runningDifference(number + 1) AS diff
+  FROM numbers(100000)
+  WHERE diff != 1
+
+``` text
 ┌─number─┬─diff─┐
 │      0 │    0 │
 └────────┴──────┘
 ```
 
-## runningDifferenceStartingWithFirstValue
-То же, что и [runningDifference] (./other_functions.md # other_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
+## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
-## MACNumToString(num)
+То же, что и \[runningDifference\] (./other\_functions.md \# other\_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
+
+## MACNumToString(num) {#macnumtostringnum}
+
 Принимает число типа UInt64. Интерпретирует его, как MAC-адрес в big endian. Возвращает строку, содержащую соответствующий MAC-адрес в формате AA:BB:CC:DD:EE:FF (числа в шестнадцатеричной форме через двоеточие).
 
-## MACStringToNum(s)
+## MACStringToNum(s) {#macstringtonums}
+
 Функция, обратная к MACNumToString. Если MAC адрес в неправильном формате, то возвращает 0.
 
-## MACStringToOUI(s)
+## MACStringToOUI(s) {#macstringtoouis}
+
 Принимает MAC адрес в формате AA:BB:CC:DD:EE:FF (числа в шестнадцатеричной форме через двоеточие). Возвращает первые три октета как число в формате UInt64. Если MAC адрес в неправильном формате, то возвращает 0.
 
-## getSizeOfEnumType
+## getSizeOfEnumType {#getsizeofenumtype}
 
 Возвращает количество полей в [Enum](../../data_types/enum.md).
 
-```sql
+``` sql
 getSizeOfEnumType(value)
 ```
 
 **Параметры**
 
 - `value` — Значение типа `Enum`.
-
 
 **Возвращаемые значения**
 
@@ -605,21 +620,21 @@ getSizeOfEnumType(value)
 
 **Пример**
 
-```sql
+``` sql
 SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
 ```
 
-```text
+``` text
 ┌─x─┐
 │ 2 │
 └───┘
 ```
 
-## toColumnTypeName
+## toColumnTypeName {#tocolumntypename}
 
 Возвращает имя класса, которым представлен тип данных столбца в оперативной памяти.
 
-```sql
+``` sql
 toColumnTypeName(value)
 ```
 
@@ -633,20 +648,21 @@ toColumnTypeName(value)
 
 **Пример разницы между `toTypeName` и `toColumnTypeName`**
 
-```sql
+``` sql
 SELECT toTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
 ```
 
-```text
+``` text
 ┌─toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
 │ DateTime                                            │
 └─────────────────────────────────────────────────────┘
 ```
-```sql
+
+``` sql
 SELECT toColumnTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
 ```
 
-```text
+``` text
 ┌─toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
 │ Const(UInt32)                                             │
 └───────────────────────────────────────────────────────────┘
@@ -654,11 +670,11 @@ SELECT toColumnTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
 
 В примере видно, что тип данных `DateTime` хранится в памяти как `Const(UInt32)`.
 
-## dumpColumnStructure
+## dumpColumnStructure {#dumpcolumnstructure}
 
 Выводит развернутое описание структур данных в оперативной памяти
 
-```sql
+``` sql
 dumpColumnStructure(value)
 ```
 
@@ -672,23 +688,23 @@ dumpColumnStructure(value)
 
 **Пример**
 
-```sql
+``` sql
 SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))
 ```
 
-```text
+``` text
 ┌─dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
 │ DateTime, Const(size = 1, UInt32(size = 1))                  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## defaultValueOfArgumentType
+## defaultValueOfArgumentType {#defaultvalueofargumenttype}
 
 Выводит значение по умолчанию для типа данных.
 
 Не учитывает значения по умолчанию для столбцов, заданные пользователем.
 
-```sql
+``` sql
 defaultValueOfArgumentType(expression)
 ```
 
@@ -704,33 +720,33 @@ defaultValueOfArgumentType(expression)
 
 **Пример**
 
-```sql
+``` sql
 SELECT defaultValueOfArgumentType( CAST(1 AS Int8) )
 ```
 
-```text
+``` text
 ┌─defaultValueOfArgumentType(CAST(1, 'Int8'))─┐
 │                                           0 │
 └─────────────────────────────────────────────┘
 ```
-```sql
+
+``` sql
 SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 ```
 
-```text
+``` text
 ┌─defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))─┐
 │                                                  ᴺᵁᴸᴸ │
 └───────────────────────────────────────────────────────┘
 ```
 
-
-## replicate {#other_functions-replicate}
+## replicate {#other-functions-replicate}
 
 Создает массив, заполненный одним значением.
 
 Используется для внутренней реализации [arrayJoin](array_join.md#functions_arrayjoin).
 
-```sql
+``` sql
 SELECT replicate(x, arr);
 ```
 
@@ -749,13 +765,13 @@ SELECT replicate(x, arr);
 
 Запрос:
 
-```sql
+``` sql
 SELECT replicate(1, ['a', 'b', 'c']);
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─replicate(1, ['a', 'b', 'c'])─┐
 │ [1,1,1]                       │
 └───────────────────────────────┘
@@ -767,7 +783,7 @@ SELECT replicate(1, ['a', 'b', 'c']);
 
 **Синтаксис**
 
-```sql
+``` sql
 filesystemAvailable()
 ```
 
@@ -781,13 +797,13 @@ filesystemAvailable()
 
 Запрос:
 
-```sql
+``` sql
 SELECT formatReadableSize(filesystemAvailable()) AS "Available space", toTypeName(filesystemAvailable()) AS "Type";
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─Available space─┬─Type───┐
 │ 30.75 GiB       │ UInt64 │
 └─────────────────┴────────┘
@@ -799,7 +815,7 @@ SELECT formatReadableSize(filesystemAvailable()) AS "Available space", toTypeNam
 
 **Синтаксис**
 
-```sql
+``` sql
 filesystemFree()
 ```
 
@@ -813,13 +829,13 @@ filesystemFree()
 
 Запрос:
 
-```sql
+``` sql
 SELECT formatReadableSize(filesystemFree()) AS "Free space", toTypeName(filesystemFree()) AS "Type";
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─Free space─┬─Type───┐
 │ 32.39 GiB  │ UInt64 │
 └────────────┴────────┘
@@ -831,7 +847,7 @@ SELECT formatReadableSize(filesystemFree()) AS "Free space", toTypeName(filesyst
 
 **Синтаксис**
 
-```sql
+``` sql
 filesystemCapacity()
 ```
 
@@ -845,13 +861,13 @@ filesystemCapacity()
 
 Запрос:
 
-```sql
+``` sql
 SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesystemCapacity()) AS "Type"
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─Capacity──┬─Type───┐
 │ 39.32 GiB │ UInt64 │
 └───────────┴────────┘
@@ -863,7 +879,7 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesy
 
 ## runningAccumulate {#function-runningaccumulate}
 
-Принимает на вход состояния агрегатной функции и возвращает столбец со значениями, которые представляют собой результат мёржа этих состояний для выборки строк из блока от первой до текущей строки. Например, принимает состояние агрегатной функции (например,  `runningAccumulate(uniqState(UserID))`), и для каждой строки блока возвращает результат агрегатной функции после мёржа состояний функции для всех предыдущих строк и текущей. Таким образом, результат зависит от разбиения данных по блокам и от порядка данных в блоке.
+Принимает на вход состояния агрегатной функции и возвращает столбец со значениями, которые представляют собой результат мёржа этих состояний для выборки строк из блока от первой до текущей строки. Например, принимает состояние агрегатной функции (например, `runningAccumulate(uniqState(UserID))`), и для каждой строки блока возвращает результат агрегатной функции после мёржа состояний функции для всех предыдущих строк и текущей. Таким образом, результат зависит от разбиения данных по блокам и от порядка данных в блоке.
 
 ## joinGet {#joinget}
 
@@ -875,7 +891,7 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesy
 
 **Синтаксис**
 
-```sql
+``` sql
 joinGet(join_storage_table_name, `value_column`, join_keys)
 ```
 
@@ -889,7 +905,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Возвращает значение по списку ключей.
 
-Если значения не существует в исходной таблице, вернется `0` или `null` в соответствии с настройками [join_use_nulls](../../operations/settings/settings.md#join_use_nulls).
+Если значения не существует в исходной таблице, вернется `0` или `null` в соответствии с настройками [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls).
 
 Подробнее о настройке `join_use_nulls` в [операциях Join](../../operations/table_engines/join.md).
 
@@ -897,13 +913,13 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Входная таблица:
 
-```sql
+``` sql
 CREATE DATABASE db_test
 CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id) SETTINGS join_use_nulls = 1
 INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
 ```
 
-```text
+``` text
 ┌─id─┬─val─┐
 │  4 │  13 │
 │  2 │  12 │
@@ -913,13 +929,13 @@ INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
 
 Запрос:
 
-```sql
+``` sql
 SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS join_use_nulls = 1
 ```
 
 Результат:
 
-```text
+``` text
 ┌─joinGet(db_test.id_val, 'val', toUInt32(number))─┐
 │                                                0 │
 │                                               11 │
@@ -928,33 +944,33 @@ SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS j
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model_name, ...) {#function-modelevaluate}
+## modelEvaluate(model\_name, …) {#function-modelevaluate}
 
 Оценивает внешнюю модель.
 
 Принимает на вход имя и аргументы модели. Возвращает Float64.
 
-
-## throwIf(x\[, custom_message\])
+## throwIf(x\[, custom\_message\]) {#throwifx-custom-message}
 
 Бросает исключение, если аргумент не равен нулю.
-custom_message - необязательный параметр, константная строка, задает текст сообщения об ошибке.
+custom\_message - необязательный параметр, константная строка, задает текст сообщения об ошибке.
 
-```sql
+``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
 ```
-```text
+
+``` text
 ↙ Progress: 0.00 rows, 0.00 B (0.00 rows/s., 0.00 B/s.) Received exception from server (version 19.14.1):
 Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 ```
 
 ## identity {#identity}
 
-Возвращает свой аргумент. Используется для отладки и тестирования, позволяет отменить использование индекса, и получить результат и производительность полного сканирования таблицы. Это работает, потому что оптимизатор запросов не может "заглянуть" внутрь функции `identity`.
+Возвращает свой аргумент. Используется для отладки и тестирования, позволяет отменить использование индекса, и получить результат и производительность полного сканирования таблицы. Это работает, потому что оптимизатор запросов не может «заглянуть» внутрь функции `identity`.
 
 **Синтаксис**
 
-```sql
+``` sql
 identity(x)
 ```
 
@@ -962,13 +978,13 @@ identity(x)
 
 Query:
 
-```sql
+``` sql
 SELECT identity(42)
 ```
 
 Результат:
 
-```text
+``` text
 ┌─identity(42)─┐
 │           42 │
 └──────────────┘
@@ -980,7 +996,7 @@ SELECT identity(42)
 
 **Синтаксис**
 
-```sql
+``` sql
 randomPrintableASCII(length)
 ```
 
@@ -992,16 +1008,17 @@ randomPrintableASCII(length)
 
 **Возвращаемое значение**
 
- - Строка со случайным набором печатных символов [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters).
+- Строка со случайным набором печатных символов [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters).
 
 Тип: [String](../../data_types/string.md)
 
 **Пример**
 
-```sql
+``` sql
 SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers LIMIT 3
 ```
-```text
+
+``` text
 ┌─number─┬─str────────────────────────────┬─length(randomPrintableASCII(30))─┐
 │      0 │ SuiCOSTvC0csfABSw=UcSzp2.`rv8x │                               30 │
 │      1 │ 1Ag NlJ &RCN:*>HVPG;PE-nO"SUFD │                               30 │

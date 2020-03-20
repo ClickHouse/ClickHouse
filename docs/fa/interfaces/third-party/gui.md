@@ -1,10 +1,10 @@
-<div dir="rtl" markdown="1">
+<div markdown="1" dir="rtl">
 
-# interface های visual توسعه دهندگان third-party
+# interface های visual توسعه دهندگان third-party {#interface-hy-visual-tws-h-dhndgn-third-party}
 
-## متن باز
+## متن باز {#mtn-bz}
 
-### Tabix
+### Tabix {#tabix}
 
 interface تحت وب برای ClickHouse در پروژه [Tabix](https://github.com/tabixio/tabix).
 
@@ -18,8 +18,7 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 
 [مستندات Tabix](https://tabix.io/doc/).
 
-
-### HouseOps
+### HouseOps {#houseops}
 
 [HouseOps](https://github.com/HouseOps/HouseOps) نرم افزار Desktop برای سیستم عامل های Linux و OSX و Windows می باشد..
 
@@ -39,7 +38,7 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 - مانیتورینگ کافکا و جداول replicate (بزودی);
 - و بسیاری از ویژگی های دیگر برای شما.
 
-### LightHouse
+### LightHouse {#lighthouse}
 
 [LightHouse](https://github.com/VKCOM/lighthouse) رابط کاربری سبک وزن برای ClickHouse است.
 
@@ -49,7 +48,7 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 - پیش نمایش جدول با فیلتر کردن و مرتب سازی.
 - اعداد نمایش داده شده فقط خواندنی
 
-### DBeaver
+### DBeaver {#dbeaver}
 
 [DBeaver](https://dbeaver.io/) - مشتری دسکتاپ دسکتاپ دسکتاپ با پشتیبانی ClickHouse.
 
@@ -59,7 +58,7 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 - پیش نمایش جدول
 - تکمیل خودکار
 
-### clickhouse-cli
+### clickhouse-cli {#clickhouse-cli}
 
 [clickhouse-cli](https://github.com/hatarist/clickhouse-cli) یک مشتری خط فرمان برای ClickHouse است که در پایتون 3 نوشته شده است.
 
@@ -69,13 +68,13 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 - پشتیبانی از Pager برای خروجی داده.
 - دستورات پست سفارشی مانند PostgreSQL.
 
-### clickhouse-flamegraph
+### clickhouse-flamegraph {#clickhouse-flamegraph}
 
 [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) یک ابزار تخصصی برای تجسم است `system.trace_log`مانند[flamegraph](http://www.brendangregg.com/flamegraphs.html).
 
-## تجاری
+## تجاری {#tjry}
 
-### DataGrip
+### DataGrip {#datagrip}
 
 [DataGrip](https://www.jetbrains.com/datagrip/) IDE پایگاه داده از JetBrains با پشتیبانی اختصاصی برای ClickHouse است. این ابزار همچنین به سایر ابزارهای مبتنی بر IntelliJ تعبیه شده است: PyCharm، IntelliJ IDEA، GoLand، PhpStorm و دیگران.
 
@@ -89,4 +88,5 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 - جستجو و ناوبری
 
 </div>
+
 [مقاله اصلی](https://clickhouse.tech/docs/fa/interfaces/third-party/gui/) <!--hide-->
