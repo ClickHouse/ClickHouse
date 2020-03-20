@@ -603,10 +603,16 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
                                                                   original_table.second + "_piece_" +
                                                                   toString(current_piece_number));
 
+        Settings settings_push = task_cluster->settings_push;
+
+        /// It is important, ALTER ATTACH PARTITION must be done synchronously
+        /// And we will execute this ALTER query on each replica of a shard.
+        /// It is correct, because this query is idempotent.
+        settings_push.replication_alter_partitions_sync = 2;
+
         query_alter_ast_string += " ALTER TABLE " + getQuotedTable(original_table) +
                                   " ATTACH PARTITION " + partition_name +
-                                  " FROM " + getQuotedTable(helping_table) +
-                                  " SETTINGS replication_alter_partitions_sync=2;";
+                                  " FROM " + getQuotedTable(helping_table);
 
         LOG_DEBUG(log, "Executing ALTER query: " << query_alter_ast_string);
 
@@ -616,7 +622,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
                     task_table.cluster_push,
                     query_alter_ast_string,
                     nullptr,
-                    &task_cluster->settings_push,
+                    &settings_push,
                     PoolMode::GET_MANY,
                     ClusterExecutionMode::ON_EACH_NODE);
 
