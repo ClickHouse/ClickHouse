@@ -1,12 +1,12 @@
-# System tables
+# System tables {#system-tables}
 
-System tables are used for implementing part of the system's functionality, and for providing access to information about how the system is working.
-You can't delete a system table (but you can perform DETACH).
-System tables don't have files with data on the disk or files with metadata. The server creates all the system tables when it starts.
+System tables are used for implementing part of the system’s functionality, and for providing access to information about how the system is working.
+You can’t delete a system table (but you can perform DETACH).
+System tables don’t have files with data on the disk or files with metadata. The server creates all the system tables when it starts.
 System tables are read-only.
-They are located in the 'system' database.
+They are located in the ‘system’ database.
 
-## system.asynchronous_metrics {#system_tables-asynchronous_metrics}
+## system.asynchronous\_metrics {#system_tables-asynchronous_metrics}
 
 Contains metrics that are calculated periodically in the background. For example, the amount of RAM in use.
 
@@ -17,11 +17,11 @@ Columns:
 
 **Example**
 
-```sql
+``` sql
 SELECT * FROM system.asynchronous_metrics LIMIT 10
 ```
 
-```text
+``` text
 ┌─metric──────────────────────────────────┬──────value─┐
 │ jemalloc.background_thread.run_interval │          0 │
 │ jemalloc.background_thread.num_runs     │          0 │
@@ -41,9 +41,9 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 - [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 - [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
 - [system.events](#system_tables-events) — Contains a number of events that have occurred.
-- [system.metric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+- [system.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 
-## system.clusters
+## system.clusters {#system.clusters}
 
 Contains information about clusters available in the config file and the servers in them.
 
@@ -60,16 +60,15 @@ Columns:
 - `errors_count` (UInt32) - number of times this host failed to reach replica.
 - `estimated_recovery_time` (UInt32) - seconds left until replica error count is zeroed and it is considered to be back to normal.
 
-
 Please note that `errors_count` is updated once per query to the cluster, but `estimated_recovery_time` is recalculated on-demand. So there could be a case of non-zero `errors_count` and zero `estimated_recovery_time`, that next query will zero `errors_count` and try to use replica as if it has no errors.
 
 **See also**
 
 - [Table engine Distributed](table_engines/distributed.md)
-- [distributed_replica_error_cap setting](settings/settings.md#settings-distributed_replica_error_cap)
-- [distributed_replica_error_half_life setting](settings/settings.md#settings-distributed_replica_error_half_life)
+- [distributed\_replica\_error\_cap setting](settings/settings.md#settings-distributed_replica_error_cap)
+- [distributed\_replica\_error\_half\_life setting](settings/settings.md#settings-distributed_replica_error_half_life)
 
-## system.columns
+## system.columns {#system.columns}
 
 Contains information about columns in all the tables.
 
@@ -102,11 +101,11 @@ Columns:
 
 **Example**
 
-```sql
+``` sql
 SELECT * FROM system.contributors LIMIT 10
 ```
 
-```text
+``` text
 ┌─name─────────────┐
 │ Olga Khvostikova │
 │ Max Vetrov       │
@@ -123,26 +122,27 @@ SELECT * FROM system.contributors LIMIT 10
 
 To find out yourself in the table, use a query:
 
-```sql
+``` sql
 SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 ```
-```text
+
+``` text
 ┌─name─────────────┐
 │ Olga Khvostikova │
 └──────────────────┘
 ```
 
-## system.databases
+## system.databases {#system.databases}
 
-This table contains a single String column called 'name' – the name of a database.
+This table contains a single String column called ‘name’ – the name of a database.
 Each database that the server knows about has a corresponding entry in the table.
 This system table is used for implementing the `SHOW DATABASES` query.
 
-## system.detached_parts {#system_tables-detached_parts}
+## system.detached\_parts {#system_tables-detached_parts}
 
-Contains information about detached parts of [MergeTree](table_engines/mergetree.md) tables. The `reason` column specifies why the part was detached. For user-detached parts, the reason is empty. Such parts can be attached with [ALTER TABLE ATTACH PARTITION|PART](../query_language/query_language/alter/#alter_attach-partition) command. For the description of other columns, see [system.parts](#system_tables-parts). If part name is invalid, values of some columns may be `NULL`. Such parts can be deleted with [ALTER TABLE DROP DETACHED PART](../query_language/query_language/alter/#alter_drop-detached).
+Contains information about detached parts of [MergeTree](table_engines/mergetree.md) tables. The `reason` column specifies why the part was detached. For user-detached parts, the reason is empty. Such parts can be attached with [ALTER TABLE ATTACH PARTITION\|PART](../query_language/query_language/alter/#alter_attach-partition) command. For the description of other columns, see [system.parts](#system_tables-parts). If part name is invalid, values of some columns may be `NULL`. Such parts can be deleted with [ALTER TABLE DROP DETACHED PART](../query_language/query_language/alter/#alter_drop-detached).
 
-## system.dictionaries
+## system.dictionaries {#system.dictionaries}
 
 Contains information about external dictionaries.
 
@@ -159,7 +159,7 @@ Columns:
 - `element_count` (UInt64) — The number of items stored in the dictionary.
 - `load_factor` (Float64) — The percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table).
 - `creation_time` (DateTime) — The time when the dictionary was created or last successfully reloaded.
-- `last_exception` (String) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created.
+- `last_exception` (String) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn’t be created.
 - `source` (String) — Text describing the data source for the dictionary.
 
 Note that the amount of memory used by the dictionary is not proportional to the number of items stored in it. So for flat and cached dictionaries, all the memory cells are pre-assigned, regardless of how full the dictionary actually is.
@@ -176,11 +176,11 @@ Columns:
 
 **Example**
 
-```sql
+``` sql
 SELECT * FROM system.events LIMIT 5
 ```
 
-```text
+``` text
 ┌─event─────────────────────────────────┬─value─┬─description────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Query                                 │    12 │ Number of queries to be interpreted and potentially executed. Does not include queries that failed to parse or were rejected due to AST size limits, quota limits or limits on the number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.                  │
 │ SelectQuery                           │     8 │ Same as Query, but only for SELECT queries.                                                                                                                                                                                                                │
@@ -192,12 +192,12 @@ SELECT * FROM system.events LIMIT 5
 
 **See Also**
 
-- [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+- [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 - [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
-- [system.metric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+- [system.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 - [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 
-## system.functions
+## system.functions {#system.functions}
 
 Contains information about normal and aggregate functions.
 
@@ -206,30 +206,29 @@ Columns:
 - `name`(`String`) – The name of the function.
 - `is_aggregate`(`UInt8`) — Whether the function is aggregate.
 
-## system.graphite_retentions
+## system.graphite\_retentions {#system.graphite_retentions}
 
-Contains information about parameters [graphite_rollup](server_settings/settings.md#server_settings-graphite_rollup) which are used in tables with [\*GraphiteMergeTree](table_engines/graphitemergetree.md) engines.
+Contains information about parameters [graphite\_rollup](server_settings/settings.md#server_settings-graphite_rollup) which are used in tables with [\*GraphiteMergeTree](table_engines/graphitemergetree.md) engines.
 
 Columns:
 
-- `config_name`     (String) - `graphite_rollup` parameter name.
-- `regexp`          (String) - A pattern for the metric name.
-- `function`        (String) - The name of the aggregating function.
-- `age`             (UInt64) - The minimum age of the data in seconds.
-- `precision`       (UInt64) - How precisely to define the age of the data in seconds.
-- `priority`        (UInt16) - Pattern priority.
-- `is_default`      (UInt8) - Whether the pattern is the default.
+- `config_name` (String) - `graphite_rollup` parameter name.
+- `regexp` (String) - A pattern for the metric name.
+- `function` (String) - The name of the aggregating function.
+- `age` (UInt64) - The minimum age of the data in seconds.
+- `precision` (UInt64) - How precisely to define the age of the data in seconds.
+- `priority` (UInt16) - Pattern priority.
+- `is_default` (UInt8) - Whether the pattern is the default.
 - `Tables.database` (Array(String)) - Array of names of database tables that use the `config_name` parameter.
-- `Tables.table`    (Array(String)) - Array of table names that use the `config_name` parameter.
+- `Tables.table` (Array(String)) - Array of table names that use the `config_name` parameter.
 
-
-## system.merges
+## system.merges {#system.merges}
 
 Contains information about merges and part mutations currently in process for tables in the MergeTree family.
 
 Columns:
 
-- `database` (String)  — The name of the database the table is in.
+- `database` (String) — The name of the database the table is in.
 - `table` (String) — Table name.
 - `elapsed` (Float64) — The time elapsed (in seconds) since the merge started.
 - `progress` (Float64) — The percentage of completed work from 0 to 1.
@@ -257,11 +256,11 @@ The list of supported metrics you can find in the [dbms/src/Common/CurrentMetric
 
 **Example**
 
-```sql
+``` sql
 SELECT * FROM system.metrics LIMIT 10
 ```
 
-```text
+``` text
 ┌─metric─────────────────────┬─value─┬─description──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Query                      │     1 │ Number of executing queries                                                                                                                                                                      │
 │ Merge                      │     0 │ Number of executing background merges                                                                                                                                                            │
@@ -278,16 +277,17 @@ SELECT * FROM system.metrics LIMIT 10
 
 **See Also**
 
-- [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+- [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 - [system.events](#system_tables-events) — Contains a number of events that occurred.
-- [system.metric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+- [system.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 - [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 
-## system.metric_log {#system_tables-metric_log}
+## system.metric\_log {#system_tables-metric_log}
 
 Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
 To turn on metrics history collection on `system.metric_log`, create `/etc/clickhouse-server/config.d/metric_log.xml` with following content:
-```xml
+
+``` xml
 <yandex>
     <metric_log>
         <database>system</database>
@@ -300,12 +300,11 @@ To turn on metrics history collection on `system.metric_log`, create `/etc/click
 
 **Example**
 
-```sql
+``` sql
 SELECT * FROM system.metric_log LIMIT 1 FORMAT Vertical;
 ```
 
-
-```text
+``` text
 Row 1:
 ──────
 event_date:                                                 2020-02-18
@@ -329,31 +328,31 @@ CurrentMetric_PartMutation:                                 0
 CurrentMetric_ReplicatedFetch:                              0
 CurrentMetric_ReplicatedSend:                               0
 CurrentMetric_ReplicatedChecks:                             0
-...    
+...
 ```
 
 **See also**
 
-- [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+- [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 - [system.events](#system_tables-events) — Contains a number of events that occurred.
 - [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
 - [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 
-## system.numbers
+## system.numbers {#system.numbers}
 
-This table contains a single UInt64 column named 'number' that contains almost all the natural numbers starting from zero.
+This table contains a single UInt64 column named ‘number’ that contains almost all the natural numbers starting from zero.
 You can use this table for tests, or if you need to do a brute force search.
 Reads from this table are not parallelized.
 
-## system.numbers_mt
+## system.numbers\_mt {#system.numbers_mt}
 
-The same as 'system.numbers' but reads are parallelized. The numbers can be returned in any order.
+The same as ‘system.numbers’ but reads are parallelized. The numbers can be returned in any order.
 Used for tests.
 
-## system.one
+## system.one {#system.one}
 
-This table contains a single row with a single 'dummy' UInt8 column containing the value 0.
-This table is used if a SELECT query doesn't specify the FROM clause.
+This table contains a single row with a single ‘dummy’ UInt8 column containing the value 0.
+This table is used if a SELECT query doesn’t specify the FROM clause.
 This is similar to the DUAL table found in other DBMSs.
 
 ## system.parts {#system_tables-parts}
@@ -366,68 +365,99 @@ Columns:
 
 - `partition` (String) – The partition name. To learn what a partition is, see the description of the [ALTER](../query_language/alter.md#query_language_queries_alter) query.
 
-    Formats:
+  Formats:
 
-    - `YYYYMM` for automatic partitioning by month.
-    - `any_string` when partitioning manually.
+  - `YYYYMM` for automatic partitioning by month.
+  - `any_string` when partitioning manually.
 
 - `name` (`String`) – Name of the data part.
-- `active` (`UInt8`) – Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging.
-- `marks` (`UInt64`) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` by the index granularity (usually 8192) (this hint doesn't work for adaptive granularity).
+
+- `active` (`UInt8`) – Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging.
+
+- `marks` (`UInt64`) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` by the index granularity (usually 8192) (this hint doesn’t work for adaptive granularity).
+
 - `rows` (`UInt64`) – The number of rows.
+
 - `bytes_on_disk` (`UInt64`) – Total size of all the data part files in bytes.
+
 - `data_compressed_bytes` (`UInt64`) – Total size of compressed data in the data part. All the auxiliary files (for example, files with marks) are not included.
+
 - `data_uncompressed_bytes` (`UInt64`) – Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included.
+
 - `marks_bytes` (`UInt64`) – The size of the file with marks.
-- `modification_time` (`DateTime`) – The time the directory with the data part was modified. This usually corresponds to the time of data part creation.|
+
+- `modification_time` (`DateTime`) – The time the directory with the data part was modified. This usually corresponds to the time of data part creation.\|
+
 - `remove_time` (`DateTime`) – The time when the data part became inactive.
+
 - `refcount` (`UInt32`) – The number of places where the data part is used. A value greater than 2 indicates that the data part is used in queries or merges.
+
 - `min_date` (`Date`) – The minimum value of the date key in the data part.
+
 - `max_date` (`Date`) – The maximum value of the date key in the data part.
+
 - `min_time` (`DateTime`) – The minimum value of the date and time key in the data part.
+
 - `max_time`(`DateTime`) – The maximum value of the date and time key in the data part.
+
 - `partition_id` (`String`) – ID of the partition.
+
 - `min_block_number` (`UInt64`) – The minimum number of data parts that make up the current part after merging.
+
 - `max_block_number` (`UInt64`) – The maximum number of data parts that make up the current part after merging.
+
 - `level` (`UInt32`) – Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts.
-- `data_version` (`UInt64`) – Number that is used to determine which mutations should be applied to the data part (mutations with a  version higher than `data_version`).
+
+- `data_version` (`UInt64`) – Number that is used to determine which mutations should be applied to the data part (mutations with a version higher than `data_version`).
+
 - `primary_key_bytes_in_memory` (`UInt64`) – The amount of memory (in bytes) used by primary key values.
+
 - `primary_key_bytes_in_memory_allocated` (`UInt64`) – The amount of memory (in bytes) reserved for primary key values.
-- `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition)
+
+- `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn’t exist. For more details, see [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition)
+
 - `database` (`String`) – Name of the database.
+
 - `table` (`String`) – Name of the table.
+
 - `engine` (`String`) – Name of the table engine without parameters.
+
 - `path` (`String`) – Absolute path to the folder with data part files.
+
 - `disk` (`String`) – Name of a disk that stores the data part.
+
 - `hash_of_all_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of compressed files.
+
 - `hash_of_uncompressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of uncompressed files (files with marks, index file etc.).
+
 - `uncompressed_hash_of_compressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of data in the compressed files as if they were uncompressed.
+
 - `bytes` (`UInt64`) – Alias for `bytes_on_disk`.
+
 - `marks_size` (`UInt64`) – Alias for `marks_bytes`.
 
+## system.part\_log {#system_tables-part-log}
 
-## system.part_log {#system_tables-part-log}
-
-The `system.part_log` table is created only if the [part_log](server_settings/settings.md#server_settings-part-log) server setting is specified.
+The `system.part_log` table is created only if the [part\_log](server_settings/settings.md#server_settings-part-log) server setting is specified.
 
 This table contains information about events that occurred with [data parts](table_engines/custom_partitioning_key.md) in the [MergeTree](table_engines/mergetree.md) family tables, such as adding or merging data.
 
 The `system.part_log` table contains the following columns:
 
 - `event_type` (Enum) — Type of the event that occurred with the data part. Can have one of the following values:
-    - `NEW_PART` — Inserting of a new data part.
-    - `MERGE_PARTS` — Merging of data parts.
-    - `DOWNLOAD_PART` — Downloading a data part.
-    - `REMOVE_PART` — Removing or detaching a data part using [DETACH PARTITION](../query_language/alter.md#alter_detach-partition).
-    - `MUTATE_PART` — Mutating of a data part.
-    - `MOVE_PART` — Moving the data part from the one disk to another one.
+  - `NEW_PART` — Inserting of a new data part.
+  - `MERGE_PARTS` — Merging of data parts.
+  - `DOWNLOAD_PART` — Downloading a data part.
+  - `REMOVE_PART` — Removing or detaching a data part using [DETACH PARTITION](../query_language/alter.md#alter_detach-partition).
+  - `MUTATE_PART` — Mutating of a data part.
+  - `MOVE_PART` — Moving the data part from the one disk to another one.
 - `event_date` (Date) — Event date.
 - `event_time` (DateTime) — Event time.
 - `duration_ms` (UInt64) — Duration.
 - `database` (String) — Name of the database the data part is in.
 - `table` (String) — Name of the table the data part is in.
 - `part_name` (String) — Name of the data part.
-- `partition_id` (String) — ID of the partition that the data part was inserted to. The column takes the 'all' value if the partitioning is by `tuple()`.
+- `partition_id` (String) — ID of the partition that the data part was inserted to. The column takes the ‘all’ value if the partitioning is by `tuple()`.
 - `rows` (UInt64) — The number of rows in the data part.
 - `size_in_bytes` (UInt64) — Size of the data part in bytes.
 - `merged_from` (Array(String)) — An array of names of the parts which the current part was made up from (after the merge).
@@ -451,11 +481,11 @@ Columns:
 - `rows_read` (UInt64) – The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
 - `bytes_read` (UInt64) – The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
 - `total_rows_approx` (UInt64) – The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
-- `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory.  See the  [max_memory_usage](../operations/settings/query_complexity.md#settings_max_memory_usage) setting.
-- `query` (String) – The query text. For `INSERT`, it doesn't include the data to insert.
+- `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [max\_memory\_usage](../operations/settings/query_complexity.md#settings_max_memory_usage) setting.
+- `query` (String) – The query text. For `INSERT`, it doesn’t include the data to insert.
 - `query_id` (String) – Query ID, if defined.
 
-## system.text_log {#system_tables-text_log}
+## system.text\_log {#system_tables-text_log}
 
 Contains logging entries. Logging level which goes to this table can be limited with `text_log.level` server setting.
 
@@ -467,45 +497,44 @@ Columns:
 - `thread_name` (String) — Name of the thread from which the logging was done.
 - `thread_id` (UInt64) — OS thread ID.
 - `level` (`Enum8`) - Entry level.
-    - `'Fatal' = 1`
-    - `'Critical' = 2`
-    - `'Error' = 3`
-    - `'Warning' = 4`
-    - `'Notice' = 5`
-    - `'Information' = 6`
-    - `'Debug' = 7`
-    - `'Trace' = 8`
+  - `'Fatal' = 1`
+  - `'Critical' = 2`
+  - `'Error' = 3`
+  - `'Warning' = 4`
+  - `'Notice' = 5`
+  - `'Information' = 6`
+  - `'Debug' = 7`
+  - `'Trace' = 8`
 - `query_id` (`String`) - ID of the query.
-- `logger_name` (`LowCardinality(String)`) - Name of the logger (i.e. `DDLWorker`)
+- `logger_name` (`LowCardinality(String)`) - Name of the logger (i.e. `DDLWorker`)
 - `message` (`String`) - The message itself.
 - `revision` (`UInt32`) - ClickHouse revision.
 - `source_file` (`LowCardinality(String)`) - Source file from which the logging was done.
 - `source_line` (`UInt64`) - Source line from which the logging was done.
 
-
-## system.query_log {#system_tables-query_log}
+## system.query\_log {#system_tables-query_log}
 
 Contains information about execution of queries. For each query, you can see processing start time, duration of processing, error messages and other information.
 
 !!! note "Note"
-    The table doesn't contain input data for `INSERT` queries.
+    The table doesn’t contain input data for `INSERT` queries.
 
-ClickHouse creates this table only if the [query_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
+ClickHouse creates this table only if the [query\_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
 
-To enable query logging, set the [log_queries](settings/settings.md#settings-log-queries) parameter to 1. For details, see the [Settings](settings/settings.md) section.
+To enable query logging, set the [log\_queries](settings/settings.md#settings-log-queries) parameter to 1. For details, see the [Settings](settings/settings.md) section.
 
 The `system.query_log` table registers two kinds of queries:
 
-1. Initial queries that were run directly by the client.
-2. Child queries that were initiated by other queries (for distributed query execution). For these types of queries, information about the parent queries is shown in the `initial_*` columns.
+1.  Initial queries that were run directly by the client.
+2.  Child queries that were initiated by other queries (for distributed query execution). For these types of queries, information about the parent queries is shown in the `initial_*` columns.
 
 Columns:
 
 - `type` (`Enum8`) — Type of event that occurred when executing the query. Values:
-    - `'QueryStart' = 1` — Successful start of query execution.
-    - `'QueryFinish' = 2` — Successful end of query execution.
-    - `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
-    - `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
+  - `'QueryStart' = 1` — Successful start of query execution.
+  - `'QueryFinish' = 2` — Successful end of query execution.
+  - `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
+  - `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
 - `event_date` (Date) — Query starting date.
 - `event_time` (DateTime) — Query starting time.
 - `query_start_time` (DateTime) — Start time of query execution.
@@ -521,20 +550,20 @@ Columns:
 - `exception` (String) — Exception message.
 - `stack_trace` (String) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
 - `is_initial_query` (UInt8) — Query type. Possible values:
-    - 1 — Query was initiated by the client.
-    - 0 — Query was initiated by another query for distributed query execution.
+  - 1 — Query was initiated by the client.
+  - 0 — Query was initiated by another query for distributed query execution.
 - `user` (String) — Name of the user who initiated the current query.
 - `query_id` (String) — ID of the query.
 - `address` (IPv6) — IP address that was used to make the query.
 - `port` (UInt16) — The client port that was used to make the query.
-- `initial_user` (String) —  Name of the user who ran the initial query (for distributed query execution).
+- `initial_user` (String) — Name of the user who ran the initial query (for distributed query execution).
 - `initial_query_id` (String) — ID of the initial query (for distributed query execution).
 - `initial_address` (IPv6) — IP address that the parent query was launched from.
 - `initial_port` (UInt16) — The client port that was used to make the parent query.
 - `interface` (UInt8) — Interface that the query was initiated from. Possible values:
-    - 1 — TCP.
-    - 2 — HTTP.
-- `os_user` (String) — OS's username who runs [clickhouse-client](../interfaces/cli.md).
+  - 1 — TCP.
+  - 2 — HTTP.
+- `os_user` (String) — OS’s username who runs [clickhouse-client](../interfaces/cli.md).
 - `client_hostname` (String) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
 - `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
 - `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
@@ -542,11 +571,11 @@ Columns:
 - `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
 - `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
 - `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
-    - 0 — The query was launched from the TCP interface.
-    - 1 — `GET` method was used.
-    - 2 — `POST` method was used.
+  - 0 — The query was launched from the TCP interface.
+  - 1 — `GET` method was used.
+  - 2 — `POST` method was used.
 - `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
-- `quota_key` (String) — The "quota key" specified in the [quotas](quotas.md) setting (see `keyed`).
+- `quota_key` (String) — The “quota key” specified in the [quotas](quotas.md) setting (see `keyed`).
 - `revision` (UInt32) — ClickHouse revision.
 - `thread_numbers` (Array(UInt32)) — Number of threads that are participating in query execution.
 - `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [system.events](#system_tables-events)
@@ -556,26 +585,26 @@ Columns:
 
 Each query creates one or two rows in the `query_log` table, depending on the status of the query:
 
-1. If the query execution is successful, two events with types 1 and 2 are created (see the `type` column).
-2. If an error occurred during query processing, two events with types 1 and 4 are created.
-3. If an error occurred before launching the query, a single event with type 3 is created.
+1.  If the query execution is successful, two events with types 1 and 2 are created (see the `type` column).
+2.  If an error occurred during query processing, two events with types 1 and 4 are created.
+3.  If an error occurred before launching the query, a single event with type 3 is created.
 
-By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query_log](server_settings/settings.md#server_settings-query-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
+By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query\_log](server_settings/settings.md#server_settings-query-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
 
 When the table is deleted manually, it will be automatically created on the fly. Note that all the previous logs will be deleted.
 
-!!! note
-    The storage period for logs is unlimited. Logs aren't automatically deleted from the table. You need to organize the removal of outdated logs yourself.
+!!! note "Note"
+    The storage period for logs is unlimited. Logs aren’t automatically deleted from the table. You need to organize the removal of outdated logs yourself.
 
-You can specify an arbitrary partitioning key for the `system.query_log` table in the [query_log](server_settings/settings.md#server_settings-query-log) server setting (see the `partition_by` parameter).
+You can specify an arbitrary partitioning key for the `system.query_log` table in the [query\_log](server_settings/settings.md#server_settings-query-log) server setting (see the `partition_by` parameter).
 
-## system.query_thread_log {#system_tables-query-thread-log}
+## system.query\_thread\_log {#system_tables-query-thread-log}
 
 The table contains information about each query execution thread.
 
-ClickHouse creates this table only if the [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
+ClickHouse creates this table only if the [query\_thread\_log](server_settings/settings.md#server_settings-query-thread-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
 
-To enable query logging, set the [log_query_threads](settings/settings.md#settings-log-query-threads) parameter to 1. For details, see the [Settings](settings/settings.md) section.
+To enable query logging, set the [log\_query\_threads](settings/settings.md#settings-log-query-threads) parameter to 1. For details, see the [Settings](settings/settings.md) section.
 
 Columns:
 
@@ -595,20 +624,20 @@ Columns:
 - `master_thread_id` (UInt64) — OS initial ID of initial thread.
 - `query` (String) — Query string.
 - `is_initial_query` (UInt8) — Query type. Possible values:
-    - 1 — Query was initiated by the client.
-    - 0 — Query was initiated by another query for distributed query execution.
+  - 1 — Query was initiated by the client.
+  - 0 — Query was initiated by another query for distributed query execution.
 - `user` (String) — Name of the user who initiated the current query.
 - `query_id` (String) — ID of the query.
 - `address` (IPv6) — IP address that was used to make the query.
 - `port` (UInt16) — The client port that was used to make the query.
-- `initial_user` (String) —  Name of the user who ran the initial query (for distributed query execution).
+- `initial_user` (String) — Name of the user who ran the initial query (for distributed query execution).
 - `initial_query_id` (String) — ID of the initial query (for distributed query execution).
 - `initial_address` (IPv6) — IP address that the parent query was launched from.
 - `initial_port` (UInt16) — The client port that was used to make the parent query.
 - `interface` (UInt8) — Interface that the query was initiated from. Possible values:
-    - 1 — TCP.
-    - 2 — HTTP.
-- `os_user` (String) — OS's username who runs [clickhouse-client](../interfaces/cli.md).
+  - 1 — TCP.
+  - 2 — HTTP.
+- `os_user` (String) — OS’s username who runs [clickhouse-client](../interfaces/cli.md).
 - `client_hostname` (String) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
 - `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
 - `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
@@ -616,56 +645,60 @@ Columns:
 - `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
 - `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
 - `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
-    - 0 — The query was launched from the TCP interface.
-    - 1 — `GET` method was used.
-    - 2 — `POST` method was used.
+  - 0 — The query was launched from the TCP interface.
+  - 1 — `GET` method was used.
+  - 2 — `POST` method was used.
 - `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
-- `quota_key` (String) — The "quota key" specified in the [quotas](quotas.md) setting (see `keyed`).
+- `quota_key` (String) — The “quota key” specified in the [quotas](quotas.md) setting (see `keyed`).
 - `revision` (UInt32) — ClickHouse revision.
 - `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events)
 - `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` column.
 
-By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
+By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query\_thread\_log](server_settings/settings.md#server_settings-query-thread-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
 
 When the table is deleted manually, it will be automatically created on the fly. Note that all the previous logs will be deleted.
 
-!!! note
-    The storage period for logs is unlimited. Logs aren't automatically deleted from the table. You need to organize the removal of outdated logs yourself.
+!!! note "Note"
+    The storage period for logs is unlimited. Logs aren’t automatically deleted from the table. You need to organize the removal of outdated logs yourself.
 
-You can specify an arbitrary partitioning key for the `system.query_thread_log` table in the [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) server setting (see the `partition_by` parameter).
+You can specify an arbitrary partitioning key for the `system.query_thread_log` table in the [query\_thread\_log](server_settings/settings.md#server_settings-query-thread-log) server setting (see the `partition_by` parameter).
 
-## system.trace_log {#system_tables-trace_log}
+## system.trace\_log {#system_tables-trace_log}
 
 Contains stack traces collected by the sampling query profiler.
 
-ClickHouse creates this table when the [trace_log](server_settings/settings.md#server_settings-trace_log) server configuration section is set. Also the [query_profiler_real_time_period_ns](settings/settings.md#query_profiler_real_time_period_ns) and [query_profiler_cpu_time_period_ns](settings/settings.md#query_profiler_cpu_time_period_ns) settings should be set.
+ClickHouse creates this table when the [trace\_log](server_settings/settings.md#server_settings-trace_log) server configuration section is set. Also the [query\_profiler\_real\_time\_period\_ns](settings/settings.md#query_profiler_real_time_period_ns) and [query\_profiler\_cpu\_time\_period\_ns](settings/settings.md#query_profiler_cpu_time_period_ns) settings should be set.
 
 To analyze logs, use the `addressToLine`, `addressToSymbol` and `demangle` introspection functions.
 
 Columns:
 
 - `event_date`([Date](../data_types/date.md)) — Date of sampling moment.
+
 - `event_time`([DateTime](../data_types/datetime.md)) — Timestamp of sampling moment.
+
 - `revision`([UInt32](../data_types/int_uint.md)) — ClickHouse server build revision.
 
-    When connecting to server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
+  When connecting to server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
 
 - `timer_type`([Enum8](../data_types/enum.md)) — Timer type:
 
-    - `Real` represents wall-clock time.
-    - `CPU` represents CPU time.
+  - `Real` represents wall-clock time.
+  - `CPU` represents CPU time.
 
 - `thread_number`([UInt32](../data_types/int_uint.md)) — Thread identifier.
-- `query_id`([String](../data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](#system_tables-query_log) system table.
+
+- `query_id`([String](../data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) system table.
+
 - `trace`([Array(UInt64)](../data_types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
 **Example**
 
-```sql
+``` sql
 SELECT * FROM system.trace_log LIMIT 1 \G
 ```
 
-```text
+``` text
 Row 1:
 ──────
 event_date:    2019-11-15
@@ -691,7 +724,7 @@ WHERE table = 'visits'
 FORMAT Vertical
 ```
 
-```text
+``` text
 Row 1:
 ──────
 database:                   merge
@@ -731,19 +764,19 @@ Columns:
 - `database` (`String`) - Database name
 - `table` (`String`) - Table name
 - `engine` (`String`) - Table engine name
-- `is_leader` (`UInt8`) - Whether the replica is the leader.  
-Only one replica at a time can be the leader. The leader is responsible for selecting background merges to perform.  
-Note that writes can be performed to any replica that is available and has a session in ZK, regardless of whether it is a leader.
+- `is_leader` (`UInt8`) - Whether the replica is the leader.
+  Only one replica at a time can be the leader. The leader is responsible for selecting background merges to perform.
+  Note that writes can be performed to any replica that is available and has a session in ZK, regardless of whether it is a leader.
 - `can_become_leader` (`UInt8`) - Whether the replica can be elected as a leader.
-- `is_readonly` (`UInt8`) - Whether the replica is in read-only mode.  
-This mode is turned on if the config doesn't have sections with ZooKeeper, if an unknown error occurred when reinitializing sessions in ZooKeeper, and during session reinitialization in ZooKeeper.
+- `is_readonly` (`UInt8`) - Whether the replica is in read-only mode.
+  This mode is turned on if the config doesn’t have sections with ZooKeeper, if an unknown error occurred when reinitializing sessions in ZooKeeper, and during session reinitialization in ZooKeeper.
 - `is_session_expired` (`UInt8`) - the session with ZooKeeper has expired. Basically the same as `is_readonly`.
-- `future_parts` (`UInt32`) - The number of data parts that will appear as the result of INSERTs or merges that haven't been done yet.
+- `future_parts` (`UInt32`) - The number of data parts that will appear as the result of INSERTs or merges that haven’t been done yet.
 - `parts_to_check` (`UInt32`) - The number of data parts in the queue for verification. A part is put in the verification queue if there is suspicion that it might be damaged.
 - `zookeeper_path` (`String`) - Path to table data in ZooKeeper.
 - `replica_name` (`String`) - Replica name in ZooKeeper. Different replicas of the same table have different names.
-- `replica_path` (`String`) - Path to replica data in ZooKeeper. The same as concatenating 'zookeeper_path/replicas/replica_path'.
-- `columns_version` (`Int32`) - Version number of the table structure. Indicates how many times ALTER was performed. If replicas have different versions, it means some replicas haven't made all of the ALTERs yet.
+- `replica_path` (`String`) - Path to replica data in ZooKeeper. The same as concatenating ‘zookeeper\_path/replicas/replica\_path’.
+- `columns_version` (`Int32`) - Version number of the table structure. Indicates how many times ALTER was performed. If replicas have different versions, it means some replicas haven’t made all of the ALTERs yet.
 - `queue_size` (`UInt32`) - Size of the queue for operations waiting to be performed. Operations include inserting blocks of data, merges, and certain other actions. It usually coincides with `future_parts`.
 - `inserts_in_queue` (`UInt32`) - Number of inserts of blocks of data that need to be made. Insertions are usually replicated fairly quickly. If this number is large, it means something is wrong.
 - `merges_in_queue` (`UInt32`) - The number of merges waiting to be made. Sometimes merges are lengthy, so this value may be greater than zero for a long time.
@@ -763,11 +796,11 @@ The next 4 columns have a non-zero value only where there is an active session w
 - `active_replicas` (`UInt8`) - The number of replicas of this table that have a session in ZooKeeper (i.e., the number of functioning replicas).
 
 If you request all the columns, the table may work a bit slowly, since several reads from ZooKeeper are made for each row.
-If you don't request the last 4 columns (log_max_index, log_pointer, total_replicas, active_replicas), the table works quickly.
+If you don’t request the last 4 columns (log\_max\_index, log\_pointer, total\_replicas, active\_replicas), the table works quickly.
 
 For example, you can check that everything is working correctly like this:
 
-```sql
+``` sql
 SELECT
     database,
     table,
@@ -797,9 +830,9 @@ WHERE
     OR active_replicas < total_replicas
 ```
 
-If this query doesn't return anything, it means that everything is fine.
+If this query doesn’t return anything, it means that everything is fine.
 
-## system.settings
+## system.settings {#system.settings}
 
 Contains information about settings that are currently in use.
 I.e. used for executing the query you are using to read from the system.settings table.
@@ -807,19 +840,18 @@ I.e. used for executing the query you are using to read from the system.settings
 Columns:
 
 - `name` (String) — Setting name.
-- `value` (String)  — Setting value.
+- `value` (String) — Setting value.
 - `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
-
 
 Example:
 
-```sql
+``` sql
 SELECT *
 FROM system.settings
 WHERE changed
 ```
 
-```text
+``` text
 ┌─name───────────────────┬─value───────┬─changed─┐
 │ max_threads            │ 8           │       1 │
 │ use_uncompressed_cache │ 0           │       1 │
@@ -828,7 +860,7 @@ WHERE changed
 └────────────────────────┴─────────────┴─────────┘
 ```
 
-## system.table_engines
+## system.table\_engines {#system.table_engines}
 
 Contains description of table engines supported by server and their feature support information.
 
@@ -844,13 +876,13 @@ This table contains the following columns (the column type is shown in brackets)
 
 Example:
 
-```sql
+``` sql
 SELECT *
 FROM system.table_engines
 WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 ```
 
-```text
+``` text
 ┌─name──────────────────────────┬─supports_settings─┬─supports_skipping_indices─┬─supports_sort_order─┬─supports_ttl─┬─supports_replication─┬─supports_deduplication─┐
 │ Kafka                         │                 1 │                         0 │                   0 │            0 │                    0 │                      0 │
 │ MergeTree                     │                 1 │                         1 │                   1 │            1 │                    0 │                      0 │
@@ -864,8 +896,7 @@ WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 - Kafka [settings](table_engines/kafka.md#table_engine-kafka-creating-a-table)
 - Join [settings](table_engines/join.md#join-limitations-and-settings)
 
-
-## system.tables
+## system.tables {#system.tables}
 
 Contains metadata of each table that the server knows about. Detached tables are not shown in `system.tables`.
 
@@ -889,14 +920,14 @@ This table contains the following columns (the column type is shown in brackets)
 
 The `system.tables` table is used in `SHOW TABLES` query implementation.
 
-## system.zookeeper
+## system.zookeeper {#system.zookeeper}
 
 The table does not exist if ZooKeeper is not configured. Allows reading data from the ZooKeeper cluster defined in the config.
-The query must have a 'path' equality condition in the WHERE clause. This is the path in ZooKeeper for the children that you want to get data for.
+The query must have a ‘path’ equality condition in the WHERE clause. This is the path in ZooKeeper for the children that you want to get data for.
 
 The query `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` outputs data for all children on the `/clickhouse` node.
-To output data for all root nodes, write path = '/'.
-If the path specified in 'path' doesn't exist, an exception will be thrown.
+To output data for all root nodes, write path = ‘/’.
+If the path specified in ‘path’ doesn’t exist, an exception will be thrown.
 
 Columns:
 
@@ -917,14 +948,14 @@ Columns:
 
 Example:
 
-```sql
+``` sql
 SELECT *
 FROM system.zookeeper
 WHERE path = '/clickhouse/tables/01-08/visits/replicas'
 FORMAT Vertical
 ```
 
-```text
+``` text
 Row 1:
 ──────
 name:           example01-08-1.yandex.ru
@@ -966,26 +997,25 @@ The table contains information about [mutations](../query_language/alter.md#alte
 
 **database**, **table** - The name of the database and table to which the mutation was applied.
 
-**mutation_id** - The ID of the mutation. For replicated tables these IDs correspond to znode names in the `<table_path_in_zookeeper>/mutations/` directory in ZooKeeper. For unreplicated tables the IDs correspond to file names in the data directory of the table.
+**mutation\_id** - The ID of the mutation. For replicated tables these IDs correspond to znode names in the `<table_path_in_zookeeper>/mutations/` directory in ZooKeeper. For unreplicated tables the IDs correspond to file names in the data directory of the table.
 
 **command** - The mutation command string (the part of the query after `ALTER TABLE [db.]table`).
 
-**create_time** - When this mutation command was submitted for execution.
+**create\_time** - When this mutation command was submitted for execution.
 
-**block_numbers.partition_id**, **block_numbers.number** - A nested column. For mutations of replicated tables, it contains one record for each partition: the partition ID and the block number that was acquired by the mutation (in each partition, only parts that contain blocks with numbers less than the block number acquired by the mutation in that partition will be mutated). In non-replicated tables, block numbers in all partitions form a single sequence. This means that for mutations of non-replicated tables, the column will contain one record with a single block number acquired by the mutation.
+**block\_numbers.partition\_id**, **block\_numbers.number** - A nested column. For mutations of replicated tables, it contains one record for each partition: the partition ID and the block number that was acquired by the mutation (in each partition, only parts that contain blocks with numbers less than the block number acquired by the mutation in that partition will be mutated). In non-replicated tables, block numbers in all partitions form a single sequence. This means that for mutations of non-replicated tables, the column will contain one record with a single block number acquired by the mutation.
 
-**parts_to_do** - The number of data parts that need to be mutated for the mutation to finish.
+**parts\_to\_do** - The number of data parts that need to be mutated for the mutation to finish.
 
-**is_done** - Is the mutation done? Note that even if `parts_to_do = 0` it is possible that a mutation of a replicated table is not done yet because of a long-running INSERT that will create a new data part that will need to be mutated.
+**is\_done** - Is the mutation done? Note that even if `parts_to_do = 0` it is possible that a mutation of a replicated table is not done yet because of a long-running INSERT that will create a new data part that will need to be mutated.
 
 If there were problems with mutating some parts, the following columns contain additional information:
 
-**latest_failed_part** - The name of the most recent part that could not be mutated.
+**latest\_failed\_part** - The name of the most recent part that could not be mutated.
 
-**latest_fail_time** - The time of the most recent part mutation failure.
+**latest\_fail\_time** - The time of the most recent part mutation failure.
 
-**latest_fail_reason** - The exception message that caused the most recent part mutation failure.
-
+**latest\_fail\_reason** - The exception message that caused the most recent part mutation failure.
 
 ## system.disks {#system_tables-disks}
 
@@ -999,8 +1029,7 @@ Columns:
 - `total_space` ([UInt64](../data_types/int_uint.md)) — Disk volume in bytes.
 - `keep_free_space` ([UInt64](../data_types/int_uint.md)) — Amount of disk space that should stay free on disk in bytes. Defined in the `keep_free_space_bytes` parameter of disk configuration.
 
-
-## system.storage_policies {#system_tables-storage_policies}
+## system.storage\_policies {#system_tables-storage_policies}
 
 Contains information about storage policies and volumes defined in the [server configuration](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 

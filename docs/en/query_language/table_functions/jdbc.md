@@ -5,18 +5,17 @@
 This table function requires separate `clickhouse-jdbc-bridge` program to be running.
 It supports Nullable types (based on DDL of remote table that is queried).
 
-
 **Examples**
 
-```sql
+``` sql
 SELECT * FROM jdbc('jdbc:mysql://localhost:3306/?user=root&password=root', 'schema', 'table')
 ```
 
-```sql
+``` sql
 SELECT * FROM jdbc('mysql://localhost:3306/?user=root&password=root', 'schema', 'table')
 ```
 
-```sql
+``` sql
 SELECT * FROM jdbc('datasource://mysql-local', 'schema', 'table')
 ```
 

@@ -1,4 +1,4 @@
-# ClickHouse Guides
+# ClickHouse Guides {#clickhouse-guides}
 
 Detailed step-by-step instructions that will help you solve various tasks using ClickHouse.
 

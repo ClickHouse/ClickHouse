@@ -1,6 +1,6 @@
-# Other functions
+# Other functions {#other-functions}
 
-## hostName()
+## hostName() {#hostname}
 
 Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
 
@@ -10,7 +10,7 @@ Returns the fully qualified domain name.
 
 **Syntax**
 
-```sql
+``` sql
 fqdn();
 ```
 
@@ -26,23 +26,23 @@ Type: `String`.
 
 Query:
 
-```sql
+``` sql
 SELECT FQDN();
 ```
 
 Result:
 
-```text
+``` text
 ┌─FQDN()──────────────────────────┐
 │ clickhouse.ru-central1.internal │
 └─────────────────────────────────┘
 ```
 
-## basename
+## basename {#basename}
 
 Extracts the trailing part of a string after the last slash or backslash. This function if often used to extract the filename from a path.
 
-```sql
+``` sql
 basename( expr )
 ```
 
@@ -62,48 +62,54 @@ A string that contains:
 
 **Example**
 
-```sql
+``` sql
 SELECT 'some/long/path/to/file' AS a, basename(a)
 ```
-```text
+
+``` text
 ┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
 │ some\long\path\to\file │ file                                   │
 └────────────────────────┴────────────────────────────────────────┘
 ```
-```sql
+
+``` sql
 SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
 ```
-```text
+
+``` text
 ┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
 │ some\long\path\to\file │ file                                   │
 └────────────────────────┴────────────────────────────────────────┘
 ```
-```sql
+
+``` sql
 SELECT 'some-file-name' AS a, basename(a)
 ```
-```text
+
+``` text
 ┌─a──────────────┬─basename('some-file-name')─┐
 │ some-file-name │ some-file-name             │
 └────────────────┴────────────────────────────┘
 ```
 
-## visibleWidth(x)
+## visibleWidth(x) {#visiblewidthx}
 
 Calculates the approximate width when outputting values to the console in text format (tab-separated).
 This function is used by the system for implementing Pretty formats.
 
 `NULL` is represented as a string corresponding to `NULL` in `Pretty` formats.
 
-```sql
+``` sql
 SELECT visibleWidth(NULL)
 ```
-```text
+
+``` text
 ┌─visibleWidth(NULL)─┐
 │                  4 │
 └────────────────────┘
 ```
 
-## toTypeName(x)
+## toTypeName(x) {#totypenamex}
 
 Returns a string containing the type name of the passed argument.
 
@@ -114,25 +120,25 @@ If `NULL` is passed to the function as input, then it returns the `Nullable(Noth
 Gets the size of the block.
 In ClickHouse, queries are always run on blocks (sets of column parts). This function allows getting the size of the block that you called it for.
 
-## materialize(x)
+## materialize(x) {#materializex}
 
 Turns a constant into a full column containing just one value.
 In ClickHouse, full columns and constants are represented differently in memory. Functions work differently for constant arguments and normal arguments (different code is executed), although the result is almost always the same. This function is for debugging this behavior.
 
-## ignore(...)
+## ignore(…) {#ignore}
 
 Accepts any arguments, including `NULL`. Always returns 0.
 However, the argument is still evaluated. This can be used for benchmarks.
 
-## sleep(seconds)
+## sleep(seconds) {#sleepseconds}
 
-Sleeps 'seconds' seconds on each data block. You can specify an integer or a floating-point number.
+Sleeps ‘seconds’ seconds on each data block. You can specify an integer or a floating-point number.
 
-## sleepEachRow(seconds)
+## sleepEachRow(seconds) {#sleepeachrowseconds}
 
-Sleeps 'seconds' seconds on each row. You can specify an integer or a floating-point number.
+Sleeps ‘seconds’ seconds on each row. You can specify an integer or a floating-point number.
 
-## currentDatabase()
+## currentDatabase() {#currentdatabase}
 
 Returns the name of the current database.
 You can use this function in table engine parameters in a CREATE TABLE query where you need to specify the database.
@@ -141,7 +147,7 @@ You can use this function in table engine parameters in a CREATE TABLE query whe
 
 Returns the login of current user. Login of user, that initiated query, will be returned in case distibuted query.
 
-```sql
+``` sql
 SELECT currentUser();
 ```
 
@@ -158,23 +164,23 @@ Type: `String`.
 
 Query:
 
-```sql
+``` sql
 SELECT currentUser();
 ```
 
 Result:
 
-```text
+``` text
 ┌─currentUser()─┐
 │ default       │
 └───────────────┘
 ```
 
-## isFinite(x)
+## isFinite(x) {#isfinitex}
 
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is not infinite and not a NaN, otherwise 0.
 
-## isInfinite(x)
+## isInfinite(x) {#isinfinitex}
 
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is infinite, otherwise 0. Note that 0 is returned for a NaN.
 
@@ -182,15 +188,14 @@ Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is infi
 
 Checks whether floating point value is finite.
 
-**Syntax** 
+**Syntax**
 
-```
-ifNotFinite(x,y)
-```
-**Parameters** 
+  ifNotFinite(x,y)
 
-- `x` — Value to be checked for infinity. Type: [Float*](../../data_types/float.md).
-- `y` — Fallback value. Type: [Float*](../../data_types/float.md).
+**Parameters**
+
+- `x` — Value to be checked for infinity. Type: [Float\*](../../data_types/float.md).
+- `y` — Fallback value. Type: [Float\*](../../data_types/float.md).
 
 **Returned value**
 
@@ -201,25 +206,21 @@ ifNotFinite(x,y)
 
 Query:
 
-```
-SELECT 1/0 as infimum, ifNotFinite(infimum,42)
-```
+  SELECT 1/0 as infimum, ifNotFinite(infimum,42)
 
 Result:
 
-```
-┌─infimum─┬─ifNotFinite(divide(1, 0), 42)─┐
-│     inf │                            42 │
-└─────────┴───────────────────────────────┘
-```
+  ┌─infimum─┬─ifNotFinite(divide(1, 0), 42)─┐
+  │     inf │                            42 │
+  └─────────┴───────────────────────────────┘
 
 You can get similar result by using [ternary operator](conditional_functions.md#ternary-operator): `isFinite(x) ? x : y`.
 
-## isNaN(x)
+## isNaN(x) {#isnanx}
 
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is a NaN, otherwise 0.
 
-## hasColumnInTable(\['hostname'\[, 'username'\[, 'password'\]\],\] 'database', 'table', 'column')
+## hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘database’, ‘table’, ‘column’) {#hascolumnintablehostname-username-password-database-table-column}
 
 Accepts constant strings: database name, table name, and column name. Returns a UInt8 constant expression equal to 1 if there is a column, otherwise 0. If the hostname parameter is set, the test will run on a remote server.
 The function throws an exception if the table does not exist.
@@ -241,7 +242,7 @@ The band is drawn with accuracy to one eighth of a symbol.
 
 Example:
 
-```sql
+``` sql
 SELECT
     toHour(EventTime) AS h,
     count() AS c,
@@ -251,7 +252,7 @@ GROUP BY h
 ORDER BY h ASC
 ```
 
-```text
+``` text
 ┌──h─┬──────c─┬─bar────────────────┐
 │  0 │ 292907 │ █████████▋         │
 │  1 │ 180563 │ ██████             │
@@ -280,21 +281,20 @@ ORDER BY h ASC
 └────┴────────┴────────────────────┘
 ```
 
-
-## transform
+## transform {#transform}
 
 Transforms a value according to the explicitly defined mapping of some elements to other ones.
 There are two variations of this function:
 
-### transform(x, array_from, array_to, default)
+### transform(x, array\_from, array\_to, default) {#transformx-array_from-array_to-default}
 
 `x` – What to transform.
 
 `array_from` – Constant array of values for converting.
 
-`array_to` – Constant array of values to convert the values in 'from' to.
+`array_to` – Constant array of values to convert the values in ‘from’ to.
 
-`default` – Which value to use if 'x' is not equal to any of the values in 'from'.
+`default` – Which value to use if ‘x’ is not equal to any of the values in ‘from’.
 
 `array_from` and `array_to` – Arrays of the same size.
 
@@ -306,11 +306,11 @@ Types:
 Where the same letter is indicated (T or U), for numeric types these might not be matching types, but types that have a common type.
 For example, the first argument can have the Int64 type, while the second has the Array(UInt16) type.
 
-If the 'x' value is equal to one of the elements in the 'array_from' array, it returns the existing element (that is numbered the same) from the 'array_to' array. Otherwise, it returns 'default'. If there are multiple matching elements in 'array_from', it returns one of the matches.
+If the ‘x’ value is equal to one of the elements in the ‘array\_from’ array, it returns the existing element (that is numbered the same) from the ‘array\_to’ array. Otherwise, it returns ‘default’. If there are multiple matching elements in ‘array\_from’, it returns one of the matches.
 
 Example:
 
-```sql
+``` sql
 SELECT
     transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other') AS title,
     count() AS c
@@ -320,7 +320,7 @@ GROUP BY title
 ORDER BY c DESC
 ```
 
-```text
+``` text
 ┌─title─────┬──────c─┐
 │ Yandex    │ 498635 │
 │ Google    │ 229872 │
@@ -328,10 +328,10 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-### transform(x, array_from, array_to)
+### transform(x, array\_from, array\_to) {#transformx-array_from-array_to}
 
-Differs from the first variation in that the 'default' argument is omitted.
-If the 'x' value is equal to one of the elements in the 'array_from' array, it returns the matching element (that is numbered the same) from the 'array_to' array. Otherwise, it returns 'x'.
+Differs from the first variation in that the ‘default’ argument is omitted.
+If the ‘x’ value is equal to one of the elements in the ‘array\_from’ array, it returns the matching element (that is numbered the same) from the ‘array\_to’ array. Otherwise, it returns ‘x’.
 
 Types:
 
@@ -339,7 +339,7 @@ Types:
 
 Example:
 
-```sql
+``` sql
 SELECT
     transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
     count() AS c
@@ -349,7 +349,7 @@ ORDER BY count() DESC
 LIMIT 10
 ```
 
-```text
+``` text
 ┌─s──────────────┬───────c─┐
 │                │ 2906259 │
 │ www.yandex     │  867767 │
@@ -363,19 +363,19 @@ LIMIT 10
 └────────────────┴─────────┘
 ```
 
-## formatReadableSize(x)
+## formatReadableSize(x) {#formatreadablesizex}
 
 Accepts the size (number of bytes). Returns a rounded size with a suffix (KiB, MiB, etc.) as a string.
 
 Example:
 
-```sql
+``` sql
 SELECT
     arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
     formatReadableSize(filesize_bytes) AS filesize
 ```
 
-```text
+``` text
 ┌─filesize_bytes─┬─filesize───┐
 │              1 │ 1.00 B     │
 │           1024 │ 1.00 KiB   │
@@ -384,27 +384,27 @@ SELECT
 └────────────────┴────────────┘
 ```
 
-## least(a, b)
+## least(a, b) {#leasta-b}
 
 Returns the smallest value from a and b.
 
-## greatest(a, b)
+## greatest(a, b) {#greatesta-b}
 
 Returns the largest value of a and b.
 
-## uptime()
+## uptime() {#uptime}
 
-Returns the server's uptime in seconds.
+Returns the server’s uptime in seconds.
 
-## version()
+## version() {#version}
 
 Returns the version of the server as a string.
 
-## timezone()
+## timezone() {#timezone}
 
 Returns the timezone of the server.
 
-## blockNumber
+## blockNumber {#blocknumber}
 
 Returns the sequence number of the data block where the row is located.
 
@@ -412,7 +412,7 @@ Returns the sequence number of the data block where the row is located.
 
 Returns the ordinal number of the row in the data block. Different data blocks are always recalculated.
 
-## rowNumberInAllBlocks()
+## rowNumberInAllBlocks() {#rownumberinallblocks}
 
 Returns the ordinal number of the row in the data block. This function only considers the affected data blocks.
 
@@ -422,7 +422,7 @@ The window function that provides access to a row at a specified offset which co
 
 **Syntax**
 
-```sql
+``` sql
 neighbor(column, offset[, default_value])
 ```
 
@@ -446,13 +446,13 @@ Type: type of data blocks affected or default value type.
 
 Query:
 
-```sql
+``` sql
 SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
 ```
 
 Result:
 
-```text
+``` text
 ┌─number─┬─neighbor(number, 2)─┐
 │      0 │                   2 │
 │      1 │                   3 │
@@ -469,13 +469,13 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
 ```
 
 Result:
 
-```text
+``` text
 ┌─number─┬─neighbor(number, 2, 999)─┐
 │      0 │                        2 │
 │      1 │                        3 │
@@ -494,7 +494,7 @@ This function can be used to compute year-over-year metric value:
 
 Query:
 
-```sql
+``` sql
 WITH toDate('2018-01-01') AS start_date
 SELECT
     toStartOfMonth(start_date + (number * 32)) AS month,
@@ -506,7 +506,7 @@ FROM numbers(16)
 
 Result:
 
-```text
+``` text
 ┌──────month─┬─money─┬─prev_year─┬─year_over_year─┐
 │ 2018-01-01 │    32 │         0 │              0 │
 │ 2018-02-01 │    63 │         0 │              0 │
@@ -537,7 +537,7 @@ If you make a subquery with ORDER BY and call the function from outside the subq
 
 Example:
 
-```sql
+``` sql
 SELECT
     EventID,
     EventTime,
@@ -554,7 +554,7 @@ FROM
 )
 ```
 
-```text
+``` text
 ┌─EventID─┬───────────EventTime─┬─delta─┐
 │    1106 │ 2016-11-24 00:00:04 │     0 │
 │    1107 │ 2016-11-24 00:00:05 │     1 │
@@ -566,14 +566,15 @@ FROM
 
 Please note - block size affects the result. With each new block, the `runningDifference` state is reset.
 
-```sql
+``` sql
 SELECT
     number,
     runningDifference(number + 1) AS diff
 FROM numbers(100000)
 WHERE diff != 1
 ```
-```text
+
+``` text
 ┌─number─┬─diff─┐
 │      0 │    0 │
 └────────┴──────┘
@@ -581,7 +582,8 @@ WHERE diff != 1
 │  65536 │    0 │
 └────────┴──────┘
 ```
-```sql
+
+``` sql
 set max_block_size=100000 -- default value is 65536!
 
 SELECT
@@ -590,33 +592,34 @@ SELECT
 FROM numbers(100000)
 WHERE diff != 1
 ```
-```text
+
+``` text
 ┌─number─┬─diff─┐
 │      0 │    0 │
 └────────┴──────┘
 ```
 
-## runningDifferenceStartingWithFirstValue
+## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
 Same as for [runningDifference](./other_functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
 
-## MACNumToString(num)
+## MACNumToString(num) {#macnumtostringnum}
 
 Accepts a UInt64 number. Interprets it as a MAC address in big endian. Returns a string containing the corresponding MAC address in the format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form).
 
-## MACStringToNum(s)
+## MACStringToNum(s) {#macstringtonums}
 
 The inverse function of MACNumToString. If the MAC address has an invalid format, it returns 0.
 
-## MACStringToOUI(s)
+## MACStringToOUI(s) {#macstringtoouis}
 
 Accepts a MAC address in the format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form). Returns the first three octets as a UInt64 number. If the MAC address has an invalid format, it returns 0.
 
-## getSizeOfEnumType
+## getSizeOfEnumType {#getsizeofenumtype}
 
 Returns the number of fields in [Enum](../../data_types/enum.md).
 
-```sql
+``` sql
 getSizeOfEnumType(value)
 ```
 
@@ -631,21 +634,21 @@ getSizeOfEnumType(value)
 
 **Example**
 
-```sql
+``` sql
 SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
 ```
-```text
+
+``` text
 ┌─x─┐
 │ 2 │
 └───┘
 ```
 
-## blockSerializedSize
+## blockSerializedSize {#blockserializedsize}
 
 Returns size on disk (without taking into account compression).
 
-
-```sql
+``` sql
 blockSerializedSize(value[, value[, ...]])
 ```
 
@@ -659,20 +662,21 @@ blockSerializedSize(value[, value[, ...]])
 
 **Example**
 
-```sql
+``` sql
 SELECT blockSerializedSize(maxState(1)) as x
 ```
-```text
+
+``` text
 ┌─x─┐
 │ 2 │
 └───┘
 ```
 
-## toColumnTypeName
+## toColumnTypeName {#tocolumntypename}
 
 Returns the name of the class that represents the data type of the column in RAM.
 
-```sql
+``` sql
 toColumnTypeName(value)
 ```
 
@@ -684,20 +688,23 @@ toColumnTypeName(value)
 
 - A string with the name of the class that is used for representing the `value` data type in RAM.
 
-**Example of the difference between` toTypeName ' and ' toColumnTypeName`**
+**Example of the difference between`toTypeName ' and ' toColumnTypeName`**
 
-```sql
+``` sql
 SELECT toTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
 ```
-```text
+
+``` text
 ┌─toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
 │ DateTime                                            │
 └─────────────────────────────────────────────────────┘
 ```
-```sql
+
+``` sql
 SELECT toColumnTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
 ```
-```text
+
+``` text
 ┌─toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
 │ Const(UInt32)                                             │
 └───────────────────────────────────────────────────────────┘
@@ -705,11 +712,11 @@ SELECT toColumnTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
 
 The example shows that the `DateTime` data type is stored in memory as `Const(UInt32)`.
 
-## dumpColumnStructure
+## dumpColumnStructure {#dumpcolumnstructure}
 
 Outputs a detailed description of data structures in RAM
 
-```sql
+``` sql
 dumpColumnStructure(value)
 ```
 
@@ -723,22 +730,23 @@ dumpColumnStructure(value)
 
 **Example**
 
-```sql
+``` sql
 SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))
 ```
-```text
+
+``` text
 ┌─dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
 │ DateTime, Const(size = 1, UInt32(size = 1))                  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## defaultValueOfArgumentType
+## defaultValueOfArgumentType {#defaultvalueofargumenttype}
 
 Outputs the default value for the data type.
 
 Does not include default values for custom columns set by the user.
 
-```sql
+``` sql
 defaultValueOfArgumentType(expression)
 ```
 
@@ -754,23 +762,25 @@ defaultValueOfArgumentType(expression)
 
 **Example**
 
-```sql
+``` sql
 SELECT defaultValueOfArgumentType( CAST(1 AS Int8) )
 ```
-```text
+
+``` text
 ┌─defaultValueOfArgumentType(CAST(1, 'Int8'))─┐
 │                                           0 │
 └─────────────────────────────────────────────┘
 ```
-```sql
+
+``` sql
 SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 ```
-```text
+
+``` text
 ┌─defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))─┐
 │                                                  ᴺᵁᴸᴸ │
 └───────────────────────────────────────────────────────┘
 ```
-
 
 ## replicate {#other_functions-replicate}
 
@@ -778,7 +788,7 @@ Creates an array with a single value.
 
 Used for internal implementation of [arrayJoin](array_join.md#functions_arrayjoin).
 
-```sql
+``` sql
 SELECT replicate(x, arr);
 ```
 
@@ -797,13 +807,13 @@ Type: `Array`.
 
 Query:
 
-```sql
+``` sql
 SELECT replicate(1, ['a', 'b', 'c'])
 ```
 
 Result:
 
-```text
+``` text
 ┌─replicate(1, ['a', 'b', 'c'])─┐
 │ [1,1,1]                       │
 └───────────────────────────────┘
@@ -815,7 +825,7 @@ Returns amount of remaining space on the filesystem where the files of the datab
 
 **Syntax**
 
-```sql
+``` sql
 filesystemAvailable()
 ```
 
@@ -829,13 +839,13 @@ Type: [UInt64](../../data_types/int_uint.md).
 
 Query:
 
-```sql
+``` sql
 SELECT formatReadableSize(filesystemAvailable()) AS "Available space", toTypeName(filesystemAvailable()) AS "Type";
 ```
 
 Result:
 
-```text
+``` text
 ┌─Available space─┬─Type───┐
 │ 30.75 GiB       │ UInt64 │
 └─────────────────┴────────┘
@@ -847,7 +857,7 @@ Returns total amount of the free space on the filesystem where the files of the 
 
 **Syntax**
 
-```sql
+``` sql
 filesystemFree()
 ```
 
@@ -861,13 +871,13 @@ Type: [UInt64](../../data_types/int_uint.md).
 
 Query:
 
-```sql
+``` sql
 SELECT formatReadableSize(filesystemFree()) AS "Free space", toTypeName(filesystemFree()) AS "Type";
 ```
 
 Result:
 
-```text
+``` text
 ┌─Free space─┬─Type───┐
 │ 32.39 GiB  │ UInt64 │
 └────────────┴────────┘
@@ -879,7 +889,7 @@ Returns the capacity of the filesystem in bytes. For evaluation, the [path](../.
 
 **Syntax**
 
-```sql
+``` sql
 filesystemCapacity()
 ```
 
@@ -893,13 +903,13 @@ Type: [UInt64](../../data_types/int_uint.md).
 
 Query:
 
-```sql
+``` sql
 SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesystemCapacity()) AS "Type"
 ```
 
 Result:
 
-```text
+``` text
 ┌─Capacity──┬─Type───┐
 │ 39.32 GiB │ UInt64 │
 └───────────┴────────┘
@@ -925,7 +935,7 @@ Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` st
 
 **Syntax**
 
-```sql
+``` sql
 joinGet(join_storage_table_name, `value_column`, join_keys)
 ```
 
@@ -939,7 +949,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Returns list of values corresponded to list of keys.
 
-If certain doesn't exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
+If certain doesn’t exist in source table then `0` or `null` will be returned based on [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
 
 More info about `join_use_nulls` in [Join operation](../../operations/table_engines/join.md).
 
@@ -947,13 +957,13 @@ More info about `join_use_nulls` in [Join operation](../../operations/table_engi
 
 Input table:
 
-```sql
+``` sql
 CREATE DATABASE db_test
 CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id) SETTINGS join_use_nulls = 1
 INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
 ```
 
-```text
+``` text
 ┌─id─┬─val─┐
 │  4 │  13 │
 │  2 │  12 │
@@ -963,13 +973,13 @@ INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
 
 Query:
 
-```sql
+``` sql
 SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS join_use_nulls = 1
 ```
 
 Result:
 
-```text
+``` text
 ┌─joinGet(db_test.id_val, 'val', toUInt32(number))─┐
 │                                                0 │
 │                                               11 │
@@ -978,30 +988,32 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model_name, ...) {#function-modelevaluate}
+## modelEvaluate(model\_name, …) {#function-modelevaluate}
+
 Evaluate external model.
 Accepts a model name and model arguments. Returns Float64.
 
-## throwIf(x\[, custom_message\])
+## throwIf(x\[, custom\_message\]) {#throwifx-custom_message}
 
 Throw an exception if the argument is non zero.
-custom_message - is an optional parameter: a constant string, provides an error message
+custom\_message - is an optional parameter: a constant string, provides an error message
 
-```sql
+``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
 ```
-```text
+
+``` text
 ↙ Progress: 0.00 rows, 0.00 B (0.00 rows/s., 0.00 B/s.) Received exception from server (version 19.14.1):
 Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 ```
 
 ## identity {#identity}
 
-Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn't look inside `identity` functions.
+Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn’t look inside `identity` functions.
 
 **Syntax**
 
-```sql
+``` sql
 identity(x)
 ```
 
@@ -1009,13 +1021,13 @@ identity(x)
 
 Query:
 
-```sql
+``` sql
 SELECT identity(42)
 ```
 
 Result:
 
-```text
+``` text
 ┌─identity(42)─┐
 │           42 │
 └──────────────┘
@@ -1027,7 +1039,7 @@ Generates a string with a random set of [ASCII](https://en.wikipedia.org/wiki/AS
 
 **Syntax**
 
-```sql
+``` sql
 randomPrintableASCII(length)
 ```
 
@@ -1039,16 +1051,17 @@ randomPrintableASCII(length)
 
 **Returned value**
 
- - String with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
+- String with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
 
 Type: [String](../../data_types/string.md)
 
 **Example**
 
-```sql
+``` sql
 SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers LIMIT 3
 ```
-```text
+
+``` text
 ┌─number─┬─str────────────────────────────┬─length(randomPrintableASCII(30))─┐
 │      0 │ SuiCOSTvC0csfABSw=UcSzp2.`rv8x │                               30 │
 │      1 │ 1Ag NlJ &RCN:*>HVPG;PE-nO"SUFD │                               30 │
