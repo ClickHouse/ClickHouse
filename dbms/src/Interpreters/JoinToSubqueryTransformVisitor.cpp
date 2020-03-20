@@ -655,7 +655,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
 /// 1. Expand asterisks in select expression list.
 /// 2. Normalize column names and find name clashes
 /// 3. Rewrite multiple JOINs with subqueries:
-///    SELECT ... FROM (SELECT `--join`.*, ... FROM (...) AS `--join` JOIN tableY ON ...) AS `--join` JOIN tableZ ON ...'
+///    SELECT ... FROM (SELECT `--.s`.*, ... FROM (...) AS `--.s` JOIN tableY ON ...) AS `--.s` JOIN tableZ ON ...'
 /// 4. Push down expressions of aliases used in ON section into expression list of first reletad subquery
 void JoinToSubqueryTransformMatcher::visitV2(ASTSelectQuery & select, ASTPtr & ast, Data & data)
 {
