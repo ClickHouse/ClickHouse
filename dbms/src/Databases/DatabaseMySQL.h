@@ -52,9 +52,9 @@ public:
 
     StoragePtr detachTable(const String & table_name) override;
 
-    void dropTable(const Context &, const String & table_name, bool no_delay = false) override;
+    void dropTable(const Context &, const String & table_name, bool no_delay) override;
 
-    void attachTable(const String & table_name, const StoragePtr & storage, const String & relative_table_path = {}) override;
+    void attachTable(const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
 
 protected:
     ASTPtr getCreateTableQueryImpl(const Context & context, const String & name, bool throw_on_error) const override;

@@ -24,7 +24,7 @@ public:
 
     void alterTable(
         const Context & context,
-        const String & name,
+        const StorageID & table_id,
         const StorageInMemoryMetadata & metadata) override;
 
 protected:

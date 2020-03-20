@@ -35,7 +35,7 @@ public:
     void dropTable(
         const Context & context,
         const String & table_name,
-        bool no_delay = false) override;
+        bool no_delay) override;
 
     void renameTable(
         const Context & context,
@@ -45,7 +45,7 @@ public:
 
     void alterTable(
         const Context & context,
-        const String & name,
+        const StorageID & table_id,
         const StorageInMemoryMetadata & metadata) override;
 
     time_t getObjectMetadataModificationTime(const String & table_name) const override;
@@ -62,7 +62,7 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name) override;
 
-    void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path = {}) override;
+    void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 
     StoragePtr detachTable(const String & table_name) override;
 

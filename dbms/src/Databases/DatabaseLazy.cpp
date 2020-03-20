@@ -41,7 +41,7 @@ void DatabaseLazy::loadStoredObjects(
     iterateMetadataFiles(context, [this](const String & file_name)
     {
         const std::string table_name = file_name.substr(0, file_name.size() - 4);
-        attachTable(table_name, nullptr);
+        attachTable(table_name, nullptr, {});
     });
 }
 
@@ -95,7 +95,7 @@ time_t DatabaseLazy::getObjectMetadataModificationTime(const String & table_name
 
 void DatabaseLazy::alterTable(
     const Context & /* context */,
-    const String & /* table_name */,
+    const StorageID & /*table_id*/,
     const StorageInMemoryMetadata & /* metadata */)
 {
     clearExpiredTables();

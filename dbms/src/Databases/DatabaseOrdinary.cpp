@@ -37,6 +37,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_ASSIGN_ALTER;
 }
 
 
@@ -218,9 +219,10 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
 
 void DatabaseOrdinary::alterTable(
     const Context & context,
-    const String & table_name,
+    const StorageID & table_id,
     const StorageInMemoryMetadata & metadata)
 {
+    String table_name = table_id.table_name;
     /// Read the definition of the table and replace the necessary parts with new ones.
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
@@ -276,6 +278,16 @@ void DatabaseOrdinary::alterTable(
         if (context.getSettingsRef().fsync_metadata)
             out.sync();
         out.close();
+    }
+
+    std::lock_guard lock{mutex};
+    auto actual_table_id = getTableUnlocked(table_id.table_name)->getStorageID();
+    if (table_id.database_name != actual_table_id.database_name ||
+        table_id.table_name != actual_table_id.table_name ||
+        table_id.uuid != actual_table_id.uuid)
+    {
+        Poco::File(table_metadata_tmp_path).remove();
+        throw Exception("Cannot alter table because it was renamed", ErrorCodes::CANNOT_ASSIGN_ALTER);
     }
 
     try

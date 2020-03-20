@@ -279,7 +279,7 @@ void StorageMergeTree::alter(
     {
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+        DatabaseCatalog::instance().getDatabaseAndTable(table_id).first->alterTable(context, table_id, metadata);
 
         update_metadata();
     }
@@ -296,7 +296,7 @@ void StorageMergeTree::alter(
 
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+        DatabaseCatalog::instance().getDatabaseAndTable(table_id).first->alterTable(context, table_id, metadata);
 
         update_metadata();
 

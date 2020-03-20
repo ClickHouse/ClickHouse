@@ -286,7 +286,7 @@ void StorageMaterializedView::alter(
     }
     /// end modify query
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    DatabaseCatalog::instance().getDatabaseAndTable(table_id).first->alterTable(context, table_id, metadata);
     setColumns(std::move(metadata.columns));
 }
 

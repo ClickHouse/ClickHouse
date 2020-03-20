@@ -147,4 +147,12 @@ DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()
     }
 }
 
+StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name) const
+{
+    auto it = tables.find(table_name);
+    if (it != tables.end())
+        return it->second;
+    throw Exception("Table " + backQuote(database_name) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+}
+
 }

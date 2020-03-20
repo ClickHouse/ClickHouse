@@ -25,7 +25,7 @@ public:
     //void removeTable(const Context & context, const String & table_name) override;
     void dropTable(const Context & context, const String & table_name, bool no_delay) override;
 
-    void attachTable(const String & name, const StoragePtr & table, const String & relative_table_path = {}) override;
+    void attachTable(const String & name, const StoragePtr & table, const String & relative_table_path) override;
     StoragePtr detachTable(const String & name) override;
 
     String getTableDataPath(const String & table_name) const override;

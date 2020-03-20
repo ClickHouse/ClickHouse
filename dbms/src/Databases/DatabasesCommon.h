@@ -29,7 +29,7 @@ public:
 
     bool empty(const Context & context) const override;
 
-    void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path = {}) override;
+    void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 
     StoragePtr detachTable(const String & table_name) override;
 
@@ -49,6 +49,7 @@ protected:
 
     void attachTableUnlocked(const String & table_name, const StoragePtr & table, const String & relative_table_path = {});
     StoragePtr detachTableUnlocked(const String & table_name);
+    StoragePtr getTableUnlocked(const String & table_name) const;
 };
 
 }
