@@ -40,16 +40,16 @@ std::string MMapReadBufferFromFile::getFileName() const
 }
 
 
-MMapReadBufferFromFile::MMapReadBufferFromFile(const std::string & file_name_, size_t offset, size_t length_)
-    : file_name(file_name_)
+MMapReadBufferFromFile::MMapReadBufferFromFile(std::string file_name_, size_t offset, size_t length_)
+    : file_name(std::move(file_name_))
 {
     open();
     init(fd, offset, length_);
 }
 
 
-MMapReadBufferFromFile::MMapReadBufferFromFile(const std::string & file_name_, size_t offset)
-    : file_name(file_name_)
+MMapReadBufferFromFile::MMapReadBufferFromFile(std::string file_name_, size_t offset)
+    : file_name(std::move(file_name_))
 {
     open();
     init(fd, offset);

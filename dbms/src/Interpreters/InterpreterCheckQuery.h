@@ -13,7 +13,7 @@ class Cluster;
 class InterpreterCheckQuery : public IInterpreter
 {
 public:
-    InterpreterCheckQuery(const ASTPtr & query_ptr_, const Context & context_);
+    InterpreterCheckQuery(ASTPtr query_ptr_, const Context & context_);
 
     BlockIO execute() override;
 

@@ -14,7 +14,7 @@ class AddingDefaultsBlockInputStream : public IBlockInputStream
 public:
     AddingDefaultsBlockInputStream(
         const BlockInputStreamPtr & input,
-        const ColumnDefaults & column_defaults_,
+        ColumnDefaults column_defaults_,
         const Context & context_);
 
     String getName() const override { return "AddingDefaults"; }

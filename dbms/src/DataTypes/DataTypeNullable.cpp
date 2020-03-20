@@ -27,8 +27,8 @@ namespace ErrorCodes
 }
 
 
-DataTypeNullable::DataTypeNullable(const DataTypePtr & nested_data_type_)
-    : nested_data_type{nested_data_type_}
+DataTypeNullable::DataTypeNullable(DataTypePtr nested_data_type_)
+    : nested_data_type{std::move(nested_data_type_)}
 {
     if (!nested_data_type->canBeInsideNullable())
         throw Exception("Nested type " + nested_data_type->getName() + " cannot be inside Nullable type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

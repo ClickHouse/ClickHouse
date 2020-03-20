@@ -104,7 +104,7 @@ public:
       */
     ZooKeeper(
         const Addresses & addresses,
-        const String & root_path,
+        String root_path,
         const String & auth_scheme,
         const String & auth_data,
         Poco::Timespan session_timeout_,

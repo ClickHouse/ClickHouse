@@ -20,6 +20,7 @@ struct MergeJoinEqualRange;
 class Volume;
 using VolumePtr = std::shared_ptr<Volume>;
 
+/// LSM is "log-structured merge tree"
 struct MiniLSM
 {
     using SortedFiles = std::vector<std::unique_ptr<TemporaryFile>>;
@@ -48,7 +49,7 @@ struct MiniLSM
 class MergeJoin : public IJoin
 {
 public:
-    MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block);
+    MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, Block right_sample_block);
 
     bool addJoinedBlock(const Block & block, bool check_limits) override;
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;

@@ -28,9 +28,9 @@ public:
 protected:
     StorageSetOrJoinBase(
         const String & relative_path_,
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
+        StorageID table_id_,
+        ColumnsDescription columns_,
+        ConstraintsDescription constraints_,
         const Context & context_);
 
     String base_path;
@@ -78,10 +78,10 @@ private:
 
 protected:
     StorageSet(
-        const String & relative_path_,
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
+        String relative_path_,
+        StorageID table_id_,
+        ColumnsDescription columns_,
+        ConstraintsDescription constraints_,
         const Context & context_);
 };
 

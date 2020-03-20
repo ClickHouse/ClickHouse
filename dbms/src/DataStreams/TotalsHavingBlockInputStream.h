@@ -25,8 +25,8 @@ public:
     /// expression may be nullptr
     TotalsHavingBlockInputStream(
         const BlockInputStreamPtr & input_,
-        bool overflow_row_, const ExpressionActionsPtr & expression_,
-        const std::string & filter_column_, TotalsMode totals_mode_, double auto_include_threshold_, bool final_);
+        bool overflow_row_, ExpressionActionsPtr expression_,
+        std::string filter_column_, TotalsMode totals_mode_, double auto_include_threshold_, bool final_);
 
     String getName() const override { return "TotalsHaving"; }
 

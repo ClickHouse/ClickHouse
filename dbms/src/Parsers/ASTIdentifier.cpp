@@ -30,9 +30,9 @@ std::shared_ptr<ASTIdentifier> ASTIdentifier::createSpecial(const String & name,
     return ret;
 }
 
-ASTIdentifier::ASTIdentifier(const String & name_, std::vector<String> && name_parts_)
-    : name(name_)
-    , name_parts(name_parts_)
+ASTIdentifier::ASTIdentifier(String name_, std::vector<String> name_parts_)
+    : name(std::move(name_))
+    , name_parts(std::move(name_parts_))
     , semantic(std::make_shared<IdentifierSemanticImpl>())
 {
     if (!name_parts.empty() && name_parts[0].empty())
@@ -47,7 +47,7 @@ ASTIdentifier::ASTIdentifier(const String & name_, std::vector<String> && name_p
     }
 }
 
-ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_)
+ASTIdentifier::ASTIdentifier(std::vector<String> name_parts_)
     : ASTIdentifier("", std::move(name_parts_))
 {}
 

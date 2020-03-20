@@ -17,7 +17,7 @@ bool equals(const Field & lhs, const Field & rhs)
 }
 
 
-FillingRow::FillingRow(const SortDescription & sort_description) : description(sort_description)
+FillingRow::FillingRow(SortDescription sort_description) : description(std::move(sort_description))
 {
     row.resize(description.size());
 }

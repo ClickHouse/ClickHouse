@@ -1556,12 +1556,12 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
     struct PartDescription
     {
-        PartDescription(size_t index_, const String & src_part_name_, const String & new_part_name_, const String & checksum_hex_,
+        PartDescription(size_t index_, String src_part_name_, String new_part_name_, String checksum_hex_,
                         MergeTreeDataFormatVersion format_version)
             : index(index_),
-            src_part_name(src_part_name_), src_part_info(MergeTreePartInfo::fromPartName(src_part_name_, format_version)),
-            new_part_name(new_part_name_), new_part_info(MergeTreePartInfo::fromPartName(new_part_name_, format_version)),
-            checksum_hex(checksum_hex_) {}
+            src_part_name(std::move(src_part_name_)), src_part_info(MergeTreePartInfo::fromPartName(src_part_name, format_version)),
+            new_part_name(std::move(new_part_name_)), new_part_info(MergeTreePartInfo::fromPartName(new_part_name, format_version)),
+            checksum_hex(std::move(checksum_hex_)) {}
 
         size_t index; // in log entry arrays
         String src_part_name;

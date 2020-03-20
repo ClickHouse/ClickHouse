@@ -32,7 +32,7 @@ std::string LanguageRegionsNamesDataSource::getSourceName() const
 }
 
 
-RegionsNamesDataProvider::RegionsNamesDataProvider(const std::string & directory_) : directory(directory_)
+RegionsNamesDataProvider::RegionsNamesDataProvider(std::string directory_) : directory(std::move(directory_))
 {
 }
 

@@ -17,7 +17,7 @@ class WriteBufferToKafkaProducer : public WriteBuffer
 public:
     WriteBufferToKafkaProducer(
         ProducerPtr producer_,
-        const std::string & topic_,
+        std::string topic_,
         std::optional<char> delimiter,
         size_t rows_per_message,
         size_t chunk_size_,

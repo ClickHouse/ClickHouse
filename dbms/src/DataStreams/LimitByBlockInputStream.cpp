@@ -7,8 +7,8 @@ namespace DB
 {
 
 LimitByBlockInputStream::LimitByBlockInputStream(const BlockInputStreamPtr & input,
-    size_t group_length_, size_t group_offset_, const Names & columns)
-    : columns_names(columns)
+    size_t group_length_, size_t group_offset_, Names columns)
+    : columns_names(std::move(columns))
     , group_length(group_length_)
     , group_offset(group_offset_)
 {

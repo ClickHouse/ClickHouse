@@ -18,7 +18,7 @@ using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 class InterpreterDropQuery : public IInterpreter
 {
 public:
-    InterpreterDropQuery(const ASTPtr & query_ptr_, Context & context_);
+    InterpreterDropQuery(ASTPtr query_ptr_, Context & context_);
 
     /// Drop table or database.
     BlockIO execute() override;

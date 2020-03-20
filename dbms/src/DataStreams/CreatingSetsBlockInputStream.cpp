@@ -18,9 +18,9 @@ namespace ErrorCodes
 
 CreatingSetsBlockInputStream::CreatingSetsBlockInputStream(
     const BlockInputStreamPtr & input,
-    const SubqueriesForSets & subqueries_for_sets_,
+    SubqueriesForSets subqueries_for_sets_,
     const Context & context_)
-    : subqueries_for_sets(subqueries_for_sets_)
+    : subqueries_for_sets(std::move(subqueries_for_sets_))
     , context(context_)
 {
     const Settings & settings = context.getSettingsRef();

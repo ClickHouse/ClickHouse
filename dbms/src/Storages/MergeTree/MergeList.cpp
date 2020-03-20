@@ -14,8 +14,8 @@ namespace CurrentMetrics
 namespace DB
 {
 
-MergeListElement::MergeListElement(const std::string & database_, const std::string & table_, const FutureMergedMutatedPart & future_part)
-    : database{database_}, table{table_}, partition_id{future_part.part_info.partition_id}
+MergeListElement::MergeListElement(std::string database_, std::string table_, const FutureMergedMutatedPart & future_part)
+    : database{std::move(database_)}, table{std::move(table_)}, partition_id{future_part.part_info.partition_id}
     , result_part_name{future_part.name}
     , result_part_path{future_part.path}
     , result_data_version{future_part.part_info.getDataVersion()}

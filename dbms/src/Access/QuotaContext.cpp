@@ -181,12 +181,16 @@ QuotaContext::QuotaContext()
 
 
 QuotaContext::QuotaContext(
-    const String & user_name_,
-    const UUID & user_id_,
-    const std::vector<UUID> & enabled_roles_,
-    const Poco::Net::IPAddress & address_,
-    const String & client_key_)
-    : user_name(user_name_), user_id(user_id_), enabled_roles(enabled_roles_), address(address_), client_key(client_key_)
+    String user_name_,
+    UUID user_id_,
+    std::vector<UUID> enabled_roles_,
+    Poco::Net::IPAddress address_,
+    String client_key_)
+    : user_name(std::move(user_name_)),
+    user_id(std::move(user_id_)),
+    enabled_roles(std::move(enabled_roles_)),
+    address(std::move(address_)),
+    client_key(std::move(client_key_))
 {
 }
 

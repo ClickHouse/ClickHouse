@@ -68,8 +68,8 @@ namespace ErrorCodes
 }
 
 
-InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Context & context_)
-    : query_ptr(query_ptr_), context(context_)
+InterpreterCreateQuery::InterpreterCreateQuery(ASTPtr query_ptr_, Context & context_)
+    : query_ptr(std::move(query_ptr_)), context(context_)
 {
 }
 

@@ -30,7 +30,7 @@ protected:
 
 public:
     WriteBufferFromFile(
-        const std::string & file_name_,
+        std::string file_name_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         int flags = -1,
         mode_t mode = 0666,

@@ -31,7 +31,7 @@ static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists)
 }
 
 
-InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, Context & context_) : query_ptr(query_ptr_), context(context_) {}
+InterpreterDropQuery::InterpreterDropQuery(ASTPtr query_ptr_, Context & context_) : query_ptr(std::move(query_ptr_)), context(context_) {}
 
 
 BlockIO InterpreterDropQuery::execute()

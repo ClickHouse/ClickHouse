@@ -29,8 +29,8 @@ NamesAndTypes getBlockStructure()
 }
 
 
-InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, const Context & context_)
-    : query_ptr(query_ptr_), context(context_)
+InterpreterCheckQuery::InterpreterCheckQuery(ASTPtr query_ptr_, const Context & context_)
+    : query_ptr(std::move(query_ptr_)), context(context_)
 {
 }
 

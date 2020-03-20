@@ -22,14 +22,14 @@ namespace ErrorCodes
 }
 
 
-IMergeTreeReader::IMergeTreeReader(const MergeTreeData::DataPartPtr & data_part_,
-    const NamesAndTypesList & columns_, UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_,
-    const MarkRanges & all_mark_ranges_, const MergeTreeReaderSettings & settings_,
-    const ValueSizeMap & avg_value_size_hints_)
-    : data_part(data_part_), avg_value_size_hints(avg_value_size_hints_)
-    , columns(columns_), uncompressed_cache(uncompressed_cache_), mark_cache(mark_cache_)
-    , settings(settings_), storage(data_part_->storage)
-    , all_mark_ranges(all_mark_ranges_)
+IMergeTreeReader::IMergeTreeReader(MergeTreeData::DataPartPtr data_part_,
+    NamesAndTypesList columns_, UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_,
+    MarkRanges all_mark_ranges_, MergeTreeReaderSettings settings_,
+    ValueSizeMap avg_value_size_hints_)
+    : data_part(std::move(data_part_)), avg_value_size_hints(std::move(avg_value_size_hints_))
+    , columns(std::move(columns_)), uncompressed_cache(uncompressed_cache_), mark_cache(mark_cache_)
+    , settings(std::move(settings_)), storage(data_part->storage)
+    , all_mark_ranges(std::move(all_mark_ranges_))
 {
 }
 

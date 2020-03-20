@@ -14,11 +14,11 @@ namespace ErrorCodes
 
 
 ReadInOrderOptimizer::ReadInOrderOptimizer(
-    const ManyExpressionActions & elements_actions_,
-    const SortDescription & required_sort_description_,
+    ManyExpressionActions elements_actions_,
+    SortDescription required_sort_description_,
     const SyntaxAnalyzerResultPtr & syntax_result)
-    : elements_actions(elements_actions_)
-    , required_sort_description(required_sort_description_)
+    : elements_actions(std::move(elements_actions_))
+    , required_sort_description(std::move(required_sort_description_))
 {
     if (elements_actions.size() != required_sort_description.size())
         throw Exception("Sizes of sort description and actions are mismatched", ErrorCodes::LOGICAL_ERROR);

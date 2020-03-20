@@ -118,14 +118,14 @@ bool sanitizeBlock(Block & block)
 
 
 ExpressionAnalyzer::ExpressionAnalyzer(
-    const ASTPtr & query_,
-    const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
+    ASTPtr query_,
+    SyntaxAnalyzerResultPtr syntax_analyzer_result_,
     const Context & context_,
     size_t subquery_depth_,
     bool do_global)
-    : query(query_), context(context_), settings(context.getSettings())
+    : query(std::move(query_)), context(context_), settings(context.getSettings())
     , subquery_depth(subquery_depth_)
-    , syntax(syntax_analyzer_result_)
+    , syntax(std::move(syntax_analyzer_result_))
 {
     /// external_tables, subqueries_for_sets for global subqueries.
     /// Replaces global subqueries with the generated names of temporary tables that will be sent to remote servers.

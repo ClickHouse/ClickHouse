@@ -15,21 +15,21 @@ class SelectStreamFactory final : public IStreamFactory
 public:
     /// Database in a query.
     SelectStreamFactory(
-        const Block & header_,
+        Block header_,
         QueryProcessingStage::Enum processed_stage_,
         StorageID main_table_,
-        const Scalars & scalars_,
+        Scalars scalars_,
         bool has_virtual_shard_num_column_,
-        const Tables & external_tables);
+        Tables external_tables);
 
     /// TableFunction in a query.
     SelectStreamFactory(
-        const Block & header_,
+        Block header_,
         QueryProcessingStage::Enum processed_stage_,
         ASTPtr table_func_ptr_,
-        const Scalars & scalars_,
+        Scalars scalars_,
         bool has_virtual_shard_num_column_,
-        const Tables & external_tables_);
+        Tables external_tables_);
 
     void createForShard(
         const Cluster::ShardInfo & shard_info,

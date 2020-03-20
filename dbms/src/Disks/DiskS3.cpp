@@ -336,7 +336,7 @@ namespace
 class DiskS3DirectoryIterator final : public IDiskDirectoryIterator
 {
 public:
-    DiskS3DirectoryIterator(const String & full_path, const String & folder_path_) : iter(full_path), folder_path(folder_path_) {}
+    DiskS3DirectoryIterator(String full_path, String folder_path_) : iter(std::move(full_path)), folder_path(std::move(folder_path_)) {}
 
     void next() override { ++iter; }
 
@@ -363,8 +363,8 @@ using DiskS3Ptr = std::shared_ptr<DiskS3>;
 class DiskS3Reservation final : public IReservation
 {
 public:
-    DiskS3Reservation(const DiskS3Ptr & disk_, UInt64 size_)
-        : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
+    DiskS3Reservation(DiskS3Ptr disk_, UInt64 size_)
+        : disk(std::move(disk_)), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
     {
     }
 

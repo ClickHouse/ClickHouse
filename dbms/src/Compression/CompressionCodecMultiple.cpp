@@ -21,7 +21,7 @@ extern const int CORRUPTED_DATA;
 }
 
 CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
-    : codecs(codecs_)
+    : codecs(std::move(codecs_))
 {
 }
 

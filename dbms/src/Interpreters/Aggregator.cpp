@@ -142,8 +142,8 @@ Block Aggregator::getHeader(bool final) const
 }
 
 
-Aggregator::Aggregator(const Params & params_)
-    : params(params_),
+Aggregator::Aggregator(Params params_)
+    : params(std::move(params_)),
     isCancelled([]() { return false; })
 {
     /// Use query-level memory tracker

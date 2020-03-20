@@ -79,10 +79,10 @@ public:
     /// Ctor for non-select queries. Generally its usage is:
     /// auto actions = ExpressionAnalyzer(query, syntax, context).getActions();
     ExpressionAnalyzer(
-        const ASTPtr & query_,
-        const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
+        ASTPtr query_,
+        SyntaxAnalyzerResultPtr syntax_analyzer_result_,
         const Context & context_)
-    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false)
+    :   ExpressionAnalyzer(std::move(query_), std::move(syntax_analyzer_result_), context_, 0, false)
     {}
 
     void appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types);
@@ -109,8 +109,8 @@ public:
 
 protected:
     ExpressionAnalyzer(
-        const ASTPtr & query_,
-        const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
+        ASTPtr query_,
+        SyntaxAnalyzerResultPtr syntax_analyzer_result_,
         const Context & context_,
         size_t subquery_depth_,
         bool do_global_);

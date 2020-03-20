@@ -9,10 +9,10 @@
 namespace DB
 {
 
-StorageValues::StorageValues(const StorageID & table_id_, const ColumnsDescription & columns_, const Block & res_block_)
-    : IStorage(table_id_), res_block(res_block_)
+StorageValues::StorageValues(StorageID table_id_, ColumnsDescription columns_, Block res_block_)
+    : IStorage(std::move(table_id_)), res_block(std::move(res_block_))
 {
-    setColumns(columns_);
+    setColumns(std::move(columns_));
 }
 
 Pipes StorageValues::read(

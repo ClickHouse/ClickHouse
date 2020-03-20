@@ -31,7 +31,7 @@ class SetOrJoinBlockOutputStream : public IBlockOutputStream
 {
 public:
     SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
-        const String & backup_path_, const String & backup_tmp_path_, const String & backup_file_name_);
+        String backup_path_, String backup_tmp_path_, String backup_file_name_);
 
     Block getHeader() const override { return table.getSampleBlock(); }
     void write(const Block & block) override;
@@ -48,11 +48,12 @@ private:
 };
 
 
-SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
-    const String & backup_path_, const String & backup_tmp_path_, const String & backup_file_name_)
+SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(
+    StorageSetOrJoinBase & table_,
+    String backup_path_, String backup_tmp_path_, String backup_file_name_)
     : table(table_),
-    backup_path(backup_path_), backup_tmp_path(backup_tmp_path_),
-    backup_file_name(backup_file_name_),
+    backup_path(std::move(backup_path_)), backup_tmp_path(std::move(backup_tmp_path_)),
+    backup_file_name(std::move(backup_file_name_)),
     backup_buf(backup_tmp_path + backup_file_name),
     compressed_backup_buf(backup_buf),
     backup_stream(compressed_backup_buf, 0, table.getSampleBlock())
@@ -88,14 +89,14 @@ BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const
 
 StorageSetOrJoinBase::StorageSetOrJoinBase(
     const String & relative_path_,
-    const StorageID & table_id_,
-    const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_,
+    StorageID table_id_,
+    ColumnsDescription columns_,
+    ConstraintsDescription constraints_,
     const Context & context_)
-    : IStorage(table_id_)
+    : IStorage(std::move(table_id_))
 {
-    setColumns(columns_);
-    setConstraints(constraints_);
+    setColumns(std::move(columns_));
+    setConstraints(std::move(constraints_));
 
     if (relative_path_.empty())
         throw Exception("Join and Set storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
@@ -106,12 +107,12 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
 
 
 StorageSet::StorageSet(
-    const String & relative_path_,
-    const StorageID & table_id_,
-    const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_,
+    String relative_path_,
+    StorageID table_id_,
+    ColumnsDescription columns_,
+    ConstraintsDescription constraints_,
     const Context & context_)
-    : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_},
+    : StorageSetOrJoinBase{std::move(relative_path_), std::move(table_id_), std::move(columns_), std::move(constraints_), context_},
     set(std::make_shared<Set>(SizeLimits(), false))
 {
     Block header = getSampleBlock();

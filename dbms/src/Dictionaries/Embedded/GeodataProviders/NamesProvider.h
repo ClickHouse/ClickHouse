@@ -13,8 +13,8 @@ private:
     std::string language;
 
 public:
-    LanguageRegionsNamesDataSource(const std::string & path_, const std::string & language_)
-        : path(path_), updates_tracker(path_), language(language_)
+    LanguageRegionsNamesDataSource(std::string path_, std::string language_)
+        : path(std::move(path_)), updates_tracker(path), language(std::move(language_))
     {
     }
 
@@ -39,7 +39,7 @@ private:
     std::string directory;
 
 public:
-    RegionsNamesDataProvider(const std::string & directory_);
+    RegionsNamesDataProvider(std::string directory_);
 
     ILanguageRegionsNamesDataSourcePtr getLanguageRegionsNamesSource(const std::string & language) const override;
 

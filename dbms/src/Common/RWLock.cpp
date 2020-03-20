@@ -52,8 +52,8 @@ public:
     LockHolderImpl& operator=(const LockHolderImpl & other) = delete;
 
     /// Implicit memory allocation for query_id is done here
-    LockHolderImpl(const String & query_id_, Type type)
-        : lock_type{type}, query_id{query_id_},
+    LockHolderImpl(String query_id_, Type type)
+        : lock_type{type}, query_id{std::move(query_id_)},
           active_client_increment{
             type == Type::Read ? CurrentMetrics::RWLockActiveReaders : CurrentMetrics::RWLockActiveWriters}
     {

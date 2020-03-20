@@ -23,7 +23,7 @@ AnalyzedJoin::AnalyzedJoin(const Settings & settings, VolumePtr tmp_volume_)
     , join_algorithm(settings.join_algorithm)
     , partial_merge_join_optimizations(settings.partial_merge_join_optimizations)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
-    , tmp_volume(tmp_volume_)
+    , tmp_volume(std::move(tmp_volume_))
 {
     if (settings.partial_merge_join)
         join_algorithm = JoinAlgorithm::PREFER_PARTIAL_MERGE;

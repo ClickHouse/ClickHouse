@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 ColumnFunction::ColumnFunction(size_t size, FunctionBasePtr function_, const ColumnsWithTypeAndName & columns_to_capture)
-        : size_(size), function(function_)
+        : size_(size), function(std::move(function_))
 {
     appendArguments(columns_to_capture);
 }

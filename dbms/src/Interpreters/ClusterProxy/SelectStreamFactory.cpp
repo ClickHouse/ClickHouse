@@ -36,35 +36,35 @@ namespace ClusterProxy
 {
 
 SelectStreamFactory::SelectStreamFactory(
-    const Block & header_,
+    Block header_,
     QueryProcessingStage::Enum processed_stage_,
     StorageID main_table_,
-    const Scalars & scalars_,
+    Scalars scalars_,
     bool has_virtual_shard_num_column_,
-    const Tables & external_tables_)
-    : header(header_),
+    Tables external_tables_)
+    : header(std::move(header_)),
     processed_stage{processed_stage_},
     main_table(std::move(main_table_)),
     table_func_ptr{nullptr},
-    scalars{scalars_},
+    scalars{std::move(scalars_)},
     has_virtual_shard_num_column(has_virtual_shard_num_column_),
-    external_tables{external_tables_}
+    external_tables{std::move(external_tables_)}
 {
 }
 
 SelectStreamFactory::SelectStreamFactory(
-    const Block & header_,
+    Block header_,
     QueryProcessingStage::Enum processed_stage_,
     ASTPtr table_func_ptr_,
-    const Scalars & scalars_,
+    Scalars scalars_,
     bool has_virtual_shard_num_column_,
-    const Tables & external_tables_)
-    : header(header_),
+    Tables external_tables_)
+    : header(std::move(header_)),
     processed_stage{processed_stage_},
-    table_func_ptr{table_func_ptr_},
-    scalars{scalars_},
+    table_func_ptr{std::move(table_func_ptr_)},
+    scalars{std::move(scalars_)},
     has_virtual_shard_num_column(has_virtual_shard_num_column_),
-    external_tables{external_tables_}
+    external_tables{std::move(external_tables_)}
 {
 }
 

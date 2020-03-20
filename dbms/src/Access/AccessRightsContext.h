@@ -119,7 +119,7 @@ public:
 private:
     friend class AccessRightsContextFactory;
     friend struct ext::shared_ptr_helper<AccessRightsContext>;
-    AccessRightsContext(const AccessControlManager & manager_, const Params & params_); /// AccessRightsContext should be created by AccessRightsContextFactory.
+    AccessRightsContext(const AccessControlManager & manager_, Params params_); /// AccessRightsContext should be created by AccessRightsContextFactory.
 
     void setUser(const UserPtr & user_) const;
     void setRolesInfo(const CurrentRolesInfoPtr & roles_info_) const;

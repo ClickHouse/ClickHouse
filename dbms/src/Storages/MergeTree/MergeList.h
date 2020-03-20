@@ -90,7 +90,7 @@ struct MergeListElement : boost::noncopyable
     UInt64 thread_id;
 
 
-    MergeListElement(const std::string & database, const std::string & table, const FutureMergedMutatedPart & future_part);
+    MergeListElement(std::string database, std::string table, const FutureMergedMutatedPart & future_part);
 
     MergeInfo getInfo() const;
 

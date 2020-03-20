@@ -27,9 +27,9 @@ static ColumnRawPtrs extractSortColumns(const Block & block, const SortDescripti
 
 LimitBlockInputStream::LimitBlockInputStream(
     const BlockInputStreamPtr & input, UInt64 limit_, UInt64 offset_, bool always_read_till_end_,
-    bool use_limit_as_total_rows_approx, bool with_ties_, const SortDescription & description_)
+    bool use_limit_as_total_rows_approx, bool with_ties_, SortDescription description_)
     : limit(limit_), offset(offset_), always_read_till_end(always_read_till_end_), with_ties(with_ties_)
-    , description(description_)
+    , description(std::move(description_))
 {
     if (use_limit_as_total_rows_approx)
     {

@@ -10,8 +10,9 @@
 
 namespace DB
 {
-InterpreterShowQuotasQuery::InterpreterShowQuotasQuery(const ASTPtr & query_ptr_, Context & context_)
-    : query_ptr(query_ptr_), context(context_)
+
+InterpreterShowQuotasQuery::InterpreterShowQuotasQuery(ASTPtr query_ptr_, Context & context_)
+    : query_ptr(std::move(query_ptr_)), context(context_)
 {
 }
 

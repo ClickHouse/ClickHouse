@@ -445,10 +445,10 @@ void MiniLSM::merge(std::function<void(const Block &)> callback)
 }
 
 
-MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block_)
-    : table_join(table_join_)
+MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, Block right_sample_block_)
+    : table_join(std::move(table_join_))
     , size_limits(table_join->sizeLimits())
-    , right_sample_block(right_sample_block_)
+    , right_sample_block(std::move(right_sample_block_))
     , nullable_right_side(table_join->forceNullableRight())
     , is_any_join(table_join->strictness() == ASTTableJoin::Strictness::Any)
     , is_all_join(table_join->strictness() == ASTTableJoin::Strictness::All)

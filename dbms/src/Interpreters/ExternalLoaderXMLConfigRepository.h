@@ -13,7 +13,7 @@ namespace DB
 class ExternalLoaderXMLConfigRepository : public IExternalLoaderConfigRepository
 {
 public:
-    ExternalLoaderXMLConfigRepository(const Poco::Util::AbstractConfiguration & main_config_, const std::string & config_key_);
+    ExternalLoaderXMLConfigRepository(const Poco::Util::AbstractConfiguration & main_config_, std::string config_key_);
 
     const String & getName() const override { return name; }
 

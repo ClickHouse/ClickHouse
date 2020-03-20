@@ -50,7 +50,7 @@ std::string ZooKeeperHolder::nullptr_exception_message =
     "ZooKeeperHolder should be initialized before sending any request to ZooKeeper";
 
 ZooKeeperHolder::UnstorableZookeeperHandler::UnstorableZookeeperHandler(ZooKeeper::Ptr zk_ptr_)
-: zk_ptr(zk_ptr_)
+    : zk_ptr(std::move(zk_ptr_))
 {
 }
 

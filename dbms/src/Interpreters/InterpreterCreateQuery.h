@@ -24,7 +24,7 @@ class ASTConstraintDeclaration;
 class InterpreterCreateQuery : public IInterpreter
 {
 public:
-    InterpreterCreateQuery(const ASTPtr & query_ptr_, Context & context_);
+    InterpreterCreateQuery(ASTPtr query_ptr_, Context & context_);
 
     BlockIO execute() override;
 

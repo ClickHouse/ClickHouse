@@ -16,7 +16,7 @@ class Context;
 class InterpreterShowTablesQuery : public IInterpreter
 {
 public:
-    InterpreterShowTablesQuery(const ASTPtr & query_ptr_, Context & context_);
+    InterpreterShowTablesQuery(ASTPtr query_ptr_, Context & context_);
 
     BlockIO execute() override;
 

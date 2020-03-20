@@ -29,13 +29,14 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
 protected:
-    StorageHDFS(const String & uri_,
-        const StorageID & table_id_,
-        const String & format_name_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
+    StorageHDFS(
+        String uri_,
+        StorageID table_id_,
+        String format_name_,
+        ColumnsDescription columns_,
+        ConstraintsDescription constraints_,
         Context & context_,
-        const String & compression_method_);
+        String compression_method_);
 
 private:
     String uri;

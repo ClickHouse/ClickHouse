@@ -10,8 +10,8 @@ namespace ErrorCodes
 }
 
 
-ExternalLoaderTempConfigRepository::ExternalLoaderTempConfigRepository(const String & repository_name_, const String & path_, const LoadablesConfigurationPtr & config_)
-    : name(repository_name_), path(path_), config(config_) {}
+ExternalLoaderTempConfigRepository::ExternalLoaderTempConfigRepository(String repository_name_, String path_, LoadablesConfigurationPtr config_)
+    : name(std::move(repository_name_)), path(std::move(path_)), config(std::move(config_)) {}
 
 
 std::set<String> ExternalLoaderTempConfigRepository::getAllLoadablesDefinitionNames()

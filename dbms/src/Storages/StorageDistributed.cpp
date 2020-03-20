@@ -208,30 +208,30 @@ static ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_k
 
 
 StorageDistributed::StorageDistributed(
-    const StorageID & id_,
-    const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_,
-    const String & remote_database_,
-    const String & remote_table_,
-    const String & cluster_name_,
+    StorageID id_,
+    ColumnsDescription columns_,
+    ConstraintsDescription constraints_,
+    String remote_database_,
+    String remote_table_,
+    String cluster_name_,
     const Context & context_,
     const ASTPtr & sharding_key_,
-    const String & storage_policy_,
-    const String & relative_data_path_,
+    String storage_policy_,
+    String relative_data_path_,
     bool attach_)
-    : IStorage(id_,
-               ColumnsDescription(
-                   {
-                       {"_shard_num", std::make_shared<DataTypeUInt32>()},
-                   },
-               true))
-    , remote_database(remote_database_)
-    , remote_table(remote_table_)
+    : IStorage(std::move(id_),
+        ColumnsDescription(
+            {
+                {"_shard_num", std::make_shared<DataTypeUInt32>()},
+            },
+            true))
+    , remote_database(std::move(remote_database_))
+    , remote_table(std::move(remote_table_))
     , global_context(context_)
-    , cluster_name(global_context.getMacros()->expand(cluster_name_))
+    , cluster_name(global_context.getMacros()->expand(std::move(cluster_name_)))
     , has_sharding_key(sharding_key_)
-    , storage_policy(storage_policy_)
-    , relative_data_path(relative_data_path_)
+    , storage_policy(std::move(storage_policy_))
+    , relative_data_path(std::move(relative_data_path_))
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -256,17 +256,17 @@ StorageDistributed::StorageDistributed(
 
 
 StorageDistributed::StorageDistributed(
-    const StorageID & id_,
-    const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_,
+    StorageID id_,
+    ColumnsDescription columns_,
+    ConstraintsDescription constraints_,
     ASTPtr remote_table_function_ptr_,
-    const String & cluster_name_,
+    String cluster_name_,
     const Context & context_,
     const ASTPtr & sharding_key_,
-    const String & storage_policy_,
-    const String & relative_data_path_,
+    String storage_policy_,
+    String relative_data_path_,
     bool attach)
-    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, storage_policy_, relative_data_path_, attach)
+    : StorageDistributed(std::move(id_), std::move(columns_), std::move(constraints_), {}, {}, std::move(cluster_name_), context_, sharding_key_, std::move(storage_policy_), std::move(relative_data_path_), attach)
 {
     remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
@@ -293,28 +293,28 @@ void StorageDistributed::createStorage()
 }
 
 StoragePtr StorageDistributed::createWithOwnCluster(
-    const StorageID & table_id_,
-    const ColumnsDescription & columns_,
-    const String & remote_database_,       /// database on remote servers.
-    const String & remote_table_,          /// The name of the table on the remote servers.
+    StorageID table_id_,
+    ColumnsDescription columns_,
+    String remote_database_,       /// database on remote servers.
+    String remote_table_,          /// The name of the table on the remote servers.
     ClusterPtr owned_cluster_,
     const Context & context_)
 {
-    auto res = create(table_id_, columns_, ConstraintsDescription{}, remote_database_, remote_table_, String{}, context_, ASTPtr(), String(), String(), false);
+    auto res = create(std::move(table_id_), std::move(columns_), ConstraintsDescription{}, std::move(remote_database_), std::move(remote_table_), String{}, context_, ASTPtr(), String(), String(), false);
     res->owned_cluster = std::move(owned_cluster_);
     return res;
 }
 
 
 StoragePtr StorageDistributed::createWithOwnCluster(
-    const StorageID & table_id_,
-    const ColumnsDescription & columns_,
+    StorageID table_id_,
+    ColumnsDescription columns_,
     ASTPtr & remote_table_function_ptr_,
-    ClusterPtr & owned_cluster_,
+    ClusterPtr owned_cluster_,
     const Context & context_)
 {
-    auto res = create(table_id_, columns_, ConstraintsDescription{}, remote_table_function_ptr_, String{}, context_, ASTPtr(), String(), String(), false);
-    res->owned_cluster = owned_cluster_;
+    auto res = create(std::move(table_id_), std::move(columns_), ConstraintsDescription{}, remote_table_function_ptr_, String{}, context_, ASTPtr(), String(), String(), false);
+    res->owned_cluster = std::move(owned_cluster_);
     return res;
 }
 

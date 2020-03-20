@@ -142,7 +142,7 @@ protected:
         size_t num_shards_,
         const Thresholds & min_thresholds_,
         const Thresholds & max_thresholds_,
-        const StorageID & destination_id,
+        StorageID destination_id,
         bool allow_materialized_);
 };
 

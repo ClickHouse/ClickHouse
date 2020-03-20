@@ -63,7 +63,7 @@ protected:
     StorageJoin(
         const String & relative_path_,
         const StorageID & table_id_,
-        const Names & key_names_,
+        Names key_names_,
         bool use_nulls_,
         SizeLimits limits_,
         ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_,

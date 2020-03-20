@@ -207,8 +207,7 @@ public:
         PLUS_INFINITY = 1
     };
 
-    explicit FieldWithInfinity(const Field & field_);
-    FieldWithInfinity(Field && field_);
+    explicit FieldWithInfinity(Field field_);
 
     static FieldWithInfinity getMinusInfinity();
     static FieldWithInfinity getPlusInfinity();
@@ -247,7 +246,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         const Names & key_column_names,
-        const ExpressionActionsPtr & key_expr);
+        ExpressionActionsPtr key_expr);
 
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(

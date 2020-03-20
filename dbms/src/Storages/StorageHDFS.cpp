@@ -35,29 +35,27 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-StorageHDFS::StorageHDFS(const String & uri_,
-    const StorageID & table_id_,
-    const String & format_name_,
-    const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_,
+StorageHDFS::StorageHDFS(
+    String uri_,
+    StorageID table_id_,
+    String format_name_,
+    ColumnsDescription columns_,
+    ConstraintsDescription constraints_,
     Context & context_,
-    const String & compression_method_ = "")
-    : IStorage(table_id_,
-               ColumnsDescription({
-                                          {"_path", std::make_shared<DataTypeString>()},
-                                          {"_file", std::make_shared<DataTypeString>()}
-                                  },
-                                  true    /// all_virtuals
-                                 )
-              )
-    , uri(uri_)
-    , format_name(format_name_)
+    String compression_method_ = {})
+    : IStorage(std::move(table_id_),
+        ColumnsDescription({
+            {"_path", std::make_shared<DataTypeString>()},
+            {"_file", std::make_shared<DataTypeString>()}
+        }, true /* all_virtuals */))
+    , uri(std::move(uri_))
+    , format_name(std::move(format_name_))
     , context(context_)
-    , compression_method(compression_method_)
+    , compression_method(std::move(compression_method_))
 {
     context.getRemoteHostFilter().checkURL(Poco::URI(uri));
-    setColumns(columns_);
-    setConstraints(constraints_);
+    setColumns(std::move(columns_));
+    setConstraints(std::move(constraints_));
 }
 
 namespace
@@ -100,7 +98,7 @@ public:
         , source_info(std::move(source_info_))
         , uri(std::move(uri_))
         , format(std::move(format_))
-        , compression_method(compression_method_)
+        , compression_method(std::move(compression_method_))
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
         , context(context_)
@@ -180,10 +178,10 @@ class HDFSBlockOutputStream : public IBlockOutputStream
 public:
     HDFSBlockOutputStream(const String & uri,
         const String & format,
-        const Block & sample_block_,
+        Block sample_block_,
         const Context & context,
         const CompressionMethod compression_method)
-        : sample_block(sample_block_)
+        : sample_block(std::move(sample_block_))
     {
         write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri), compression_method, 3);
         writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);

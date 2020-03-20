@@ -13,9 +13,9 @@ namespace ErrorCodes
 
 GraphiteRollupSortedBlockInputStream::GraphiteRollupSortedBlockInputStream(
     const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
-    const Graphite::Params & params_, time_t time_of_merge_)
+    Graphite::Params params_, time_t time_of_merge_)
     : MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
-    params(params_), time_of_merge(time_of_merge_)
+    params(std::move(params_)), time_of_merge(time_of_merge_)
 {
     size_t max_size_of_aggregate_state = 0;
     size_t max_alignment_of_aggregate_state = 1;

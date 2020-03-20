@@ -26,23 +26,23 @@ namespace ErrorCodes
 
 
 StorageXDBC::StorageXDBC(
-    const StorageID & table_id_,
-    const std::string & remote_database_name_,
-    const std::string & remote_table_name_,
-    const ColumnsDescription & columns_,
+    StorageID table_id_,
+    std::string remote_database_name_,
+    std::string remote_table_name_,
+    ColumnsDescription columns_,
     const Context & context_,
     const BridgeHelperPtr bridge_helper_)
     /// Please add support for constraints as soon as StorageODBC or JDBC will support insertion.
     : IStorageURLBase(Poco::URI(),
                       context_,
-                      table_id_,
+                      std::move(table_id_),
                       IXDBCBridgeHelper::DEFAULT_FORMAT,
-                      columns_,
+                      std::move(columns_),
                       ConstraintsDescription{},
-                      "" /* CompressionMethod */)
+                      {} /* CompressionMethod */)
     , bridge_helper(bridge_helper_)
-    , remote_database_name(remote_database_name_)
-    , remote_table_name(remote_table_name_)
+    , remote_database_name(std::move(remote_database_name_))
+    , remote_table_name(std::move(remote_table_name_))
 {
     log = &Poco::Logger::get("Storage" + bridge_helper->getName());
     uri = bridge_helper->getMainURI();

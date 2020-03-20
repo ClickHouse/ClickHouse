@@ -24,24 +24,24 @@ public:
     /// If `settings` is nullptr, settings will be taken from context.
     RemoteBlockInputStream(
             Connection & connection,
-            const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
-            const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
+            String query_, Block header_, const Context & context_, const Settings * settings = nullptr,
+            const ThrottlerPtr & throttler = nullptr, Scalars scalars_ = Scalars(), Tables external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Accepts several connections already taken from pool.
     /// If `settings` is nullptr, settings will be taken from context.
     RemoteBlockInputStream(
             std::vector<IConnectionPool::Entry> && connections,
-            const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
-            const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
+            String query_, Block header_, const Context & context_, const Settings * settings = nullptr,
+            const ThrottlerPtr & throttler = nullptr, Scalars scalars_ = Scalars(), Tables external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Takes a pool and gets one or several connections from it.
     /// If `settings` is nullptr, settings will be taken from context.
     RemoteBlockInputStream(
             const ConnectionPoolWithFailoverPtr & pool,
-            const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
-            const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
+            String query_, Block header_, const Context & context_, const Settings * settings = nullptr,
+            const ThrottlerPtr & throttler = nullptr, Scalars scalars_ = Scalars(), Tables external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     ~RemoteBlockInputStream() override;

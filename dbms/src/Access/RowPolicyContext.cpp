@@ -23,8 +23,8 @@ RowPolicyContext::RowPolicyContext()
 RowPolicyContext::~RowPolicyContext() = default;
 
 
-RowPolicyContext::RowPolicyContext(const UUID & user_id_, const std::vector<UUID> & enabled_roles_)
-    : user_id(user_id_), enabled_roles(enabled_roles_)
+RowPolicyContext::RowPolicyContext(UUID user_id_, std::vector<UUID> enabled_roles_)
+    : user_id(std::move(user_id_)), enabled_roles(std::move(enabled_roles_))
 {}
 
 

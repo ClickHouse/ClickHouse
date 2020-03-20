@@ -17,7 +17,7 @@ bool equals(const Field & lhs, const Field & rhs);
 class FillingRow
 {
 public:
-    FillingRow(const SortDescription & sort_description);
+    FillingRow(SortDescription sort_description);
 
     /// Generates next row according to fill 'from', 'to' and 'step' values.
     bool next(const FillingRow & to_row);

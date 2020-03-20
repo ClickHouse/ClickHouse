@@ -23,8 +23,8 @@ public:
     ~DatabaseMySQL() override;
 
     DatabaseMySQL(
-        const Context & global_context, const String & database_name, const String & metadata_path,
-        const ASTStorage * database_engine_define, const String & database_name_in_mysql, mysqlxx::Pool && pool);
+        const Context & global_context, String database_name, String metadata_path,
+        const ASTStorage * database_engine_define, String database_name_in_mysql, mysqlxx::Pool && pool);
 
     String getEngineName() const override { return "MySQL"; }
 

@@ -13,17 +13,18 @@ namespace DB
 constexpr decltype(ConfigReloader::reload_interval) ConfigReloader::reload_interval;
 
 ConfigReloader::ConfigReloader(
-        const std::string & path_,
-        const std::string & include_from_path_,
-        const std::string & preprocessed_dir_,
+        std::string path_,
+        std::string include_from_path_,
+        std::string preprocessed_dir_,
         zkutil::ZooKeeperNodeCache && zk_node_cache_,
-        const zkutil::EventPtr & zk_changed_event_,
+        zkutil::EventPtr zk_changed_event_,
         Updater && updater_,
         bool already_loaded)
-    : path(path_), include_from_path(include_from_path_)
-    , preprocessed_dir(preprocessed_dir_)
+    : path(std::move(path_))
+    , include_from_path(std::move(include_from_path_))
+    , preprocessed_dir(std::move(preprocessed_dir_))
     , zk_node_cache(std::move(zk_node_cache_))
-    , zk_changed_event(zk_changed_event_)
+    , zk_changed_event(std::move(zk_changed_event_))
     , updater(std::move(updater_))
 {
     if (!already_loaded)
@@ -144,8 +145,8 @@ struct ConfigReloader::FileWithTimestamp
     std::string path;
     time_t modification_time;
 
-    FileWithTimestamp(const std::string & path_, time_t modification_time_)
-        : path(path_), modification_time(modification_time_) {}
+    FileWithTimestamp(std::string path_, time_t modification_time_)
+        : path(std::move(path_)), modification_time(modification_time_) {}
 
     bool operator < (const FileWithTimestamp & rhs) const
     {

@@ -128,9 +128,9 @@ static MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read,
 
 
 AddingDefaultsBlockInputStream::AddingDefaultsBlockInputStream(const BlockInputStreamPtr & input,
-                                                               const ColumnDefaults & column_defaults_,
+                                                               ColumnDefaults column_defaults_,
                                                                const Context & context_)
-    : column_defaults(column_defaults_),
+    : column_defaults(std::move(column_defaults_)),
       context(context_)
 {
     children.push_back(input);

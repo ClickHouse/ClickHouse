@@ -39,25 +39,25 @@ static String backQuoteMySQL(const String & x)
 }
 
 StorageMySQL::StorageMySQL(
-    const StorageID & table_id_,
+    StorageID table_id_,
     mysqlxx::Pool && pool_,
-    const std::string & remote_database_name_,
-    const std::string & remote_table_name_,
+    std::string remote_database_name_,
+    std::string remote_table_name_,
     const bool replace_query_,
-    const std::string & on_duplicate_clause_,
-    const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_,
+    std::string on_duplicate_clause_,
+    ColumnsDescription columns_,
+    ConstraintsDescription constraints_,
     const Context & context_)
-    : IStorage(table_id_)
-    , remote_database_name(remote_database_name_)
-    , remote_table_name(remote_table_name_)
+    : IStorage(std::move(table_id_))
+    , remote_database_name(std::move(remote_database_name_))
+    , remote_table_name(std::move(remote_table_name_))
     , replace_query{replace_query_}
-    , on_duplicate_clause{on_duplicate_clause_}
+    , on_duplicate_clause{std::move(on_duplicate_clause_)}
     , pool(std::move(pool_))
     , global_context(context_)
 {
-    setColumns(columns_);
-    setConstraints(constraints_);
+    setColumns(std::move(columns_));
+    setConstraints(std::move(constraints_));
 }
 
 
@@ -92,14 +92,15 @@ Pipes StorageMySQL::read(
 class StorageMySQLBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit StorageMySQLBlockOutputStream(const StorageMySQL & storage_,
-        const std::string & remote_database_name_,
-        const std::string & remote_table_name_,
+    explicit StorageMySQLBlockOutputStream(
+        const StorageMySQL & storage_,
+        std::string remote_database_name_,
+        std::string remote_table_name_,
         const mysqlxx::PoolWithFailover::Entry & entry_,
         const size_t & mysql_max_rows_to_insert)
         : storage{storage_}
-        , remote_database_name{remote_database_name_}
-        , remote_table_name{remote_table_name_}
+        , remote_database_name{std::move(remote_database_name_)}
+        , remote_table_name{std::move(remote_table_name_)}
         , entry{entry_}
         , max_batch_rows{mysql_max_rows_to_insert}
     {

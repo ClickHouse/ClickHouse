@@ -38,8 +38,8 @@ private:
 public:
     explicit ReadBufferFromS3(
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
-        const String & bucket_,
-        const String & key_,
+        String bucket_,
+        String key_,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     bool nextImpl() override;

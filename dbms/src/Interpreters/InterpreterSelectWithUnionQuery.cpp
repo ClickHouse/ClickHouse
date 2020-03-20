@@ -28,12 +28,12 @@ namespace ErrorCodes
 
 
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
-    const ASTPtr & query_ptr_,
+    ASTPtr query_ptr_,
     const Context & context_,
     const SelectQueryOptions & options_,
     const Names & required_result_column_names)
     : options(options_),
-    query_ptr(query_ptr_),
+    query_ptr(std::move(query_ptr_)),
     context(std::make_shared<Context>(context_))
 {
     const auto & ast = query_ptr->as<ASTSelectWithUnionQuery &>();

@@ -15,8 +15,8 @@ class AccessRightsElements;
 class InterpreterKillQueryQuery : public IInterpreter
 {
 public:
-    InterpreterKillQueryQuery(const ASTPtr & query_ptr_, Context & context_)
-        : query_ptr(query_ptr_), context(context_) {}
+    InterpreterKillQueryQuery(ASTPtr query_ptr_, Context & context_)
+        : query_ptr(std::move(query_ptr_)), context(context_) {}
 
     BlockIO execute() override;
 

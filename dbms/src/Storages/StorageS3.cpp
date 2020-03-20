@@ -139,19 +139,20 @@ namespace
     {
     public:
         StorageS3BlockOutputStream(
-            const String & format,
+            String format,
             UInt64 min_upload_part_size,
-            const Block & sample_block_,
+            Block sample_block_,
             const Context & context,
             const CompressionMethod compression_method,
-            const std::shared_ptr<Aws::S3::S3Client> & client,
-            const String & bucket,
-            const String & key)
-            : sample_block(sample_block_)
+            std::shared_ptr<Aws::S3::S3Client> client,
+            String bucket,
+            String key)
+            : sample_block(std::move(sample_block_))
         {
             write_buf = wrapWriteBufferWithCompressionMethod(
-                std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size), compression_method, 3);
-            writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
+                std::make_unique<WriteBufferFromS3>(std::move(client), std::move(bucket), std::move(key), min_upload_part_size),
+                compression_method, 3 /* default compression level */);
+            writer = FormatFactory::instance().getOutput(std::move(format), *write_buf, sample_block, context);
         }
 
         Block getHeader() const override
@@ -186,29 +187,29 @@ namespace
 
 StorageS3::StorageS3(
     const S3::URI & uri_,
-    const String & access_key_id_,
-    const String & secret_access_key_,
-    const StorageID & table_id_,
-    const String & format_name_,
+    String access_key_id_,
+    String secret_access_key_,
+    StorageID table_id_,
+    String format_name_,
     UInt64 min_upload_part_size_,
-    const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_,
+    ColumnsDescription columns_,
+    ConstraintsDescription constraints_,
     Context & context_,
-    const String & compression_method_ = "")
-    : IStorage(table_id_, ColumnsDescription({
+    String compression_method_)
+    : IStorage(std::move(table_id_), ColumnsDescription({
             {"_path", std::make_shared<DataTypeString>()},
             {"_file", std::make_shared<DataTypeString>()}
         }, true))
     , uri(uri_)
     , context_global(context_)
-    , format_name(format_name_)
+    , format_name(std::move(format_name_))
     , min_upload_part_size(min_upload_part_size_)
-    , compression_method(compression_method_)
-    , client(S3::ClientFactory::instance().create(uri_.endpoint, access_key_id_, secret_access_key_))
+    , compression_method(std::move(compression_method_))
+    , client(S3::ClientFactory::instance().create(uri_.endpoint, std::move(access_key_id_), std::move(secret_access_key_)))
 {
     context_global.getRemoteHostFilter().checkURL(uri_.uri);
-    setColumns(columns_);
-    setConstraints(constraints_);
+    setColumns(std::move(columns_));
+    setConstraints(std::move(constraints_));
 }
 
 

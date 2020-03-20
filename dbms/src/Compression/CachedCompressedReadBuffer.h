@@ -25,7 +25,7 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> file_in;
 
     const std::string path;
-    size_t file_pos;
+    size_t file_pos = 0;
 
     /// A piece of data from the cache, or a piece of read data that we put into the cache.
     UncompressedCache::MappedPtr owned_cell;
@@ -38,7 +38,7 @@ private:
     clockid_t clock_type {};
 
 public:
-    CachedCompressedReadBuffer(const std::string & path, std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator, UncompressedCache * cache_);
+    CachedCompressedReadBuffer(std::string path, std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator, UncompressedCache * cache_);
 
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block);
 

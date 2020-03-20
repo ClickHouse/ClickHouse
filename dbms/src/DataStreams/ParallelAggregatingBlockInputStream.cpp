@@ -17,8 +17,8 @@ namespace DB
 
 ParallelAggregatingBlockInputStream::ParallelAggregatingBlockInputStream(
     const BlockInputStreams & inputs, const BlockInputStreamPtr & additional_input_at_end,
-    const Aggregator::Params & params_, bool final_, size_t max_threads_, size_t temporary_data_merge_threads_)
-    : params(params_), aggregator(params),
+    Aggregator::Params params_, bool final_, size_t max_threads_, size_t temporary_data_merge_threads_)
+    : params(std::move(params_)), aggregator(params),
     final(final_), max_threads(std::min(inputs.size(), max_threads_)), temporary_data_merge_threads(temporary_data_merge_threads_),
     keys_size(params.keys_size), aggregates_size(params.aggregates_size),
     handler(*this), processor(inputs, additional_input_at_end, max_threads, handler)

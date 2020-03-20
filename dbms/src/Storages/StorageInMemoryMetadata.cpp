@@ -3,12 +3,12 @@
 namespace DB
 {
 StorageInMemoryMetadata::StorageInMemoryMetadata(
-    const ColumnsDescription & columns_,
-    const IndicesDescription & indices_,
-    const ConstraintsDescription & constraints_)
-    : columns(columns_)
-    , indices(indices_)
-    , constraints(constraints_)
+    ColumnsDescription columns_,
+    IndicesDescription indices_,
+    ConstraintsDescription constraints_)
+    : columns(std::move(columns_))
+    , indices(std::move(indices_))
+    , constraints(std::move(constraints_))
 {
 }
 

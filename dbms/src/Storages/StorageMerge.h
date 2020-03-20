@@ -68,10 +68,10 @@ private:
 
 protected:
     StorageMerge(
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const String & source_database_,
-        const String & table_name_regexp_,
+        StorageID table_id_,
+        ColumnsDescription columns_,
+        String source_database_,
+        String table_name_regexp_,
         const Context & context_);
 
     Block getQueryHeader(const Names & column_names, const SelectQueryInfo & query_info,

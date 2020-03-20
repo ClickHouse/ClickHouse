@@ -29,8 +29,8 @@ namespace ErrorCodes
 }
 
 
-DataTypeArray::DataTypeArray(const DataTypePtr & nested_)
-    : nested{nested_}
+DataTypeArray::DataTypeArray(DataTypePtr nested_)
+    : nested{std::move(nested_)}
 {
 }
 

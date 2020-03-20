@@ -18,9 +18,9 @@ namespace ErrorCodes
 
 
 MergingSortedBlockInputStream::MergingSortedBlockInputStream(
-    const BlockInputStreams & inputs_, const SortDescription & description_,
+    const BlockInputStreams & inputs_, SortDescription description_,
     size_t max_block_size_, UInt64 limit_, WriteBuffer * out_row_sources_buf_, bool quiet_, bool average_block_sizes_)
-    : description(description_), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
+    : description(std::move(description_)), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
     , average_block_sizes(average_block_sizes_), source_blocks(inputs_.size())
     , cursors(inputs_.size()), out_row_sources_buf(out_row_sources_buf_)
     , log(&Logger::get("MergingSortedBlockInputStream"))

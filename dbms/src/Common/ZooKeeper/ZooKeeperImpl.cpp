@@ -818,13 +818,13 @@ ZooKeeper::~ZooKeeper()
 
 ZooKeeper::ZooKeeper(
     const Addresses & addresses,
-    const String & root_path_,
+    String root_path_,
     const String & auth_scheme,
     const String & auth_data,
     Poco::Timespan session_timeout_,
     Poco::Timespan connection_timeout,
     Poco::Timespan operation_timeout_)
-    : root_path(root_path_),
+    : root_path(std::move(root_path_)),
     session_timeout(session_timeout_),
     operation_timeout(std::min(operation_timeout_, session_timeout_))
 {

@@ -23,7 +23,7 @@ namespace DB
 class TaskNotification final : public Poco::Notification
 {
 public:
-    explicit TaskNotification(const BackgroundSchedulePoolTaskInfoPtr & task_) : task(task_) {}
+    explicit TaskNotification(BackgroundSchedulePoolTaskInfoPtr task_) : task(std::move(task_)) {}
     void execute() { task->execute(); }
 
 private:
@@ -32,8 +32,8 @@ private:
 
 
 BackgroundSchedulePoolTaskInfo::BackgroundSchedulePoolTaskInfo(
-    BackgroundSchedulePool & pool_, const std::string & log_name_, const BackgroundSchedulePool::TaskFunc & function_)
-    : pool(pool_), log_name(log_name_), function(function_)
+    BackgroundSchedulePool & pool_, std::string log_name_, BackgroundSchedulePool::TaskFunc function_)
+    : pool(pool_), log_name(std::move(log_name_)), function(std::move(function_))
 {
 }
 

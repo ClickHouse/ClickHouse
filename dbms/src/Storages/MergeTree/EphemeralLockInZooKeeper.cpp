@@ -12,11 +12,11 @@ namespace ErrorCodes
 }
 
 EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(
-    const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, Coordination::Requests * precheck_ops)
-    : zookeeper(&zookeeper_), path_prefix(path_prefix_)
+    String path_prefix_, String temp_path, zkutil::ZooKeeper & zookeeper_, Coordination::Requests * precheck_ops)
+    : zookeeper(&zookeeper_), path_prefix(std::move(path_prefix_))
 {
     /// The /abandonable_lock- name is for backward compatibility.
-    String holder_path_prefix = temp_path + "/abandonable_lock-";
+    String holder_path_prefix = std::move(temp_path) + "/abandonable_lock-";
 
     /// Let's create an secondary ephemeral node.
     if (!precheck_ops || precheck_ops->empty())

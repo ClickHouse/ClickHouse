@@ -15,8 +15,9 @@ class FinishSortingBlockInputStream : public IBlockInputStream
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
-    FinishSortingBlockInputStream(const BlockInputStreamPtr & input, const SortDescription & description_sorted_,
-        const SortDescription & description_to_sort_,
+    FinishSortingBlockInputStream(const BlockInputStreamPtr & input,
+        SortDescription description_sorted_,
+        SortDescription description_to_sort_,
         size_t max_merged_block_size_, UInt64 limit_);
 
     String getName() const override { return "FinishSorting"; }

@@ -42,7 +42,7 @@ public:
 private:
     friend class RowPolicyContextFactory;
     friend struct ext::shared_ptr_helper<RowPolicyContext>;
-    RowPolicyContext(const UUID & user_id_, const std::vector<UUID> & enabled_roles_); /// RowPolicyContext should be created by RowPolicyContextFactory.
+    RowPolicyContext(UUID user_id_, std::vector<UUID> enabled_roles_); /// RowPolicyContext should be created by RowPolicyContextFactory.
 
     using DatabaseAndTableName = std::pair<String, String>;
     using DatabaseAndTableNameRef = std::pair<std::string_view, std::string_view>;

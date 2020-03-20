@@ -1066,17 +1066,16 @@ void DDLWorker::runCleanupThread()
 class DDLQueryStatusInputStream : public IBlockInputStream
 {
 public:
-
-    DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context_)
-        : node_path(zk_node_path), context(context_), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputStream"))
+    DDLQueryStatusInputStream(String zk_node_path, const DDLLogEntry & entry, const Context & context_)
+        : node_path(std::move(zk_node_path)), context(context_), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputStream"))
     {
         sample = Block{
-            {std::make_shared<DataTypeString>(),    "host"},
-            {std::make_shared<DataTypeUInt16>(),    "port"},
-            {std::make_shared<DataTypeInt64>(),     "status"},
-            {std::make_shared<DataTypeString>(),    "error"},
-            {std::make_shared<DataTypeUInt64>(),    "num_hosts_remaining"},
-            {std::make_shared<DataTypeUInt64>(),    "num_hosts_active"},
+            {std::make_shared<DataTypeString>(), "host"},
+            {std::make_shared<DataTypeUInt16>(), "port"},
+            {std::make_shared<DataTypeInt64>(), "status"},
+            {std::make_shared<DataTypeString>(), "error"},
+            {std::make_shared<DataTypeUInt64>(), "num_hosts_remaining"},
+            {std::make_shared<DataTypeUInt64>(), "num_hosts_active"},
         };
 
         for (const HostID & host: entry.hosts)

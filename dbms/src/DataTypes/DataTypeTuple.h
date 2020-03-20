@@ -25,8 +25,8 @@ private:
 public:
     static constexpr bool is_parametric = true;
 
-    DataTypeTuple(const DataTypes & elems);
-    DataTypeTuple(const DataTypes & elems, const Strings & names);
+    DataTypeTuple(DataTypes elems);
+    DataTypeTuple(DataTypes elems, Strings names);
 
     TypeIndex getTypeId() const override { return TypeIndex::Tuple; }
     std::string doGetName() const override;

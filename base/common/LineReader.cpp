@@ -58,8 +58,8 @@ LineReader::Suggest::WordsRange LineReader::Suggest::getCompletions(const String
     });
 }
 
-LineReader::LineReader(const String & history_file_path_, char extender_, char delimiter_)
-    : history_file_path(history_file_path_), extender(extender_), delimiter(delimiter_)
+LineReader::LineReader(String history_file_path_, char extender_, char delimiter_)
+    : history_file_path(std::move(history_file_path_)), extender(extender_), delimiter(delimiter_)
 {
     /// FIXME: check extender != delimiter
 }

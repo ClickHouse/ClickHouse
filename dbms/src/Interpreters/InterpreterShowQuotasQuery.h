@@ -11,7 +11,7 @@ class Context;
 class InterpreterShowQuotasQuery : public IInterpreter
 {
 public:
-    InterpreterShowQuotasQuery(const ASTPtr & query_ptr_, Context & context_);
+    InterpreterShowQuotasQuery(ASTPtr query_ptr_, Context & context_);
 
     BlockIO execute() override;
 

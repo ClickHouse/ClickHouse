@@ -30,9 +30,9 @@ StorageDictionary::StorageDictionary(
     const ColumnsDescription & columns_,
     const Context & context,
     bool attach,
-    const String & dictionary_name_)
+    String dictionary_name_)
     : IStorage(table_id_)
-    , dictionary_name(dictionary_name_)
+    , dictionary_name(std::move(dictionary_name_))
     , logger(&Poco::Logger::get("StorageDictionary"))
 {
     setColumns(columns_);

@@ -17,9 +17,9 @@ namespace ErrorCodes
 }
 
 ColumnGathererStream::ColumnGathererStream(
-        const String & column_name_, const BlockInputStreams & source_streams, ReadBuffer & row_sources_buf_,
+        String column_name_, const BlockInputStreams & source_streams, ReadBuffer & row_sources_buf_,
         size_t block_preferred_size_)
-    : column_name(column_name_), sources(source_streams.size()), row_sources_buf(row_sources_buf_)
+    : column_name(std::move(column_name_)), sources(source_streams.size()), row_sources_buf(row_sources_buf_)
     , block_preferred_size(block_preferred_size_), log(&Logger::get("ColumnGathererStream"))
 {
     if (source_streams.empty())

@@ -36,7 +36,7 @@ namespace ErrorCodes
 StorageJoin::StorageJoin(
     const String & relative_path_,
     const StorageID & table_id_,
-    const Names & key_names_,
+    Names key_names_,
     bool use_nulls_,
     SizeLimits limits_,
     ASTTableJoin::Kind kind_,
@@ -46,7 +46,7 @@ StorageJoin::StorageJoin(
     bool overwrite,
     const Context & context_)
     : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_}
-    , key_names(key_names_)
+    , key_names(std::move(key_names_))
     , use_nulls(use_nulls_)
     , limits(limits_)
     , kind(kind_)

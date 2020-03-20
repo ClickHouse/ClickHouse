@@ -23,7 +23,7 @@ public:
     /// If it is ZOK does nothing
     static void check(int32_t code, const Coordination::Requests & requests, const Coordination::Responses & responses);
 
-    KeeperMultiException(int32_t code, const Coordination::Requests & requests, const Coordination::Responses & responses);
+    KeeperMultiException(int32_t code, Coordination::Requests requests, Coordination::Responses responses);
 
 private:
     static size_t getFailedOpIndex(int32_t code, const Coordination::Responses & responses);

@@ -24,12 +24,12 @@ namespace ErrorCodes
 
 
 ReadBufferFromFile::ReadBufferFromFile(
-    const std::string & file_name_,
+    std::string file_name_,
     size_t buf_size,
     int flags,
     char * existing_memory,
     size_t alignment)
-    : ReadBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment), file_name(file_name_)
+    : ReadBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment), file_name(std::move(file_name_))
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 

@@ -30,13 +30,13 @@ namespace ErrorCodes
 
 WriteBufferFromS3::WriteBufferFromS3(
     std::shared_ptr<Aws::S3::S3Client> client_ptr_,
-    const String & bucket_,
-    const String & key_,
+    String bucket_,
+    String key_,
     size_t minimum_upload_part_size_,
     size_t buffer_size_)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
-    , bucket(bucket_)
-    , key(key_)
+    , bucket(std::move(bucket_))
+    , key(std::move(key_))
     , client_ptr(std::move(client_ptr_))
     , minimum_upload_part_size{minimum_upload_part_size_}
     , temporary_buffer{std::make_unique<WriteBufferFromOwnString>()}

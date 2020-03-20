@@ -23,10 +23,10 @@ public:
                             size_t max_block_size,
                             unsigned num_streams) override;
 
-    StorageXDBC(const StorageID & table_id_,
-                const std::string & remote_database_name,
-                const std::string & remote_table_name,
-                const ColumnsDescription & columns_,
+    StorageXDBC(StorageID table_id_,
+                std::string remote_database_name,
+                std::string remote_table_name,
+                ColumnsDescription columns_,
                 const Context & context_, BridgeHelperPtr bridge_helper_);
 
 private:

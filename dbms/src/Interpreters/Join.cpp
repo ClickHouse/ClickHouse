@@ -180,7 +180,7 @@ static void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr &
 
 
 Join::Join(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_)
-    : table_join(table_join_)
+    : table_join(std::move(table_join_))
     , kind(table_join->kind())
     , strictness(table_join->strictness())
     , key_names_right(table_join->keyNamesRight())

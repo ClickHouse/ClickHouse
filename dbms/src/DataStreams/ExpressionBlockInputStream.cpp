@@ -5,8 +5,8 @@
 namespace DB
 {
 
-ExpressionBlockInputStream::ExpressionBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_)
-    : expression(expression_)
+ExpressionBlockInputStream::ExpressionBlockInputStream(const BlockInputStreamPtr & input, ExpressionActionsPtr expression_)
+    : expression(std::move(expression_))
 {
     children.push_back(input);
     cached_header = children.back()->getHeader();

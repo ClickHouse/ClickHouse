@@ -19,7 +19,7 @@ class InterpreterSelectWithUnionQuery : public IInterpreter
 {
 public:
     InterpreterSelectWithUnionQuery(
-        const ASTPtr & query_ptr_,
+        ASTPtr query_ptr_,
         const Context & context_,
         const SelectQueryOptions &,
         const Names & required_result_column_names = {});

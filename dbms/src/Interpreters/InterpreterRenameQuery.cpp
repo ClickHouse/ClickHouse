@@ -12,8 +12,8 @@ namespace DB
 {
 
 
-InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Context & context_)
-    : query_ptr(query_ptr_), context(context_)
+InterpreterRenameQuery::InterpreterRenameQuery(ASTPtr query_ptr_, Context & context_)
+    : query_ptr(std::move(query_ptr_)), context(context_)
 {
 }
 
@@ -60,8 +60,8 @@ BlockIO InterpreterRenameQuery::execute()
         String database_name;
         String table_name;
 
-        UniqueTableName(const String & database_name_, const String & table_name_)
-            : database_name(database_name_), table_name(table_name_) {}
+        UniqueTableName(String database_name_, String table_name_)
+            : database_name(std::move(database_name_)), table_name(std::move(table_name_)) {}
 
         bool operator< (const UniqueTableName & rhs) const
         {

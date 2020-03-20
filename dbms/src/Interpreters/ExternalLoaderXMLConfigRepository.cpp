@@ -12,8 +12,8 @@
 namespace DB
 {
 ExternalLoaderXMLConfigRepository::ExternalLoaderXMLConfigRepository(
-    const Poco::Util::AbstractConfiguration & main_config_, const std::string & config_key_)
-    : main_config(main_config_), config_key(config_key_)
+    const Poco::Util::AbstractConfiguration & main_config_, std::string config_key_)
+    : main_config(main_config_), config_key(std::move(config_key_))
 {
 }
 

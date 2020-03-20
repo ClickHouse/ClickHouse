@@ -61,10 +61,10 @@ namespace ErrorCodes
 
 
 DistributedBlockOutputStream::DistributedBlockOutputStream(
-        const Context & context_, StorageDistributed & storage_, const ASTPtr & query_ast_, const ClusterPtr & cluster_,
+        const Context & context_, StorageDistributed & storage_, ASTPtr query_ast_, ClusterPtr cluster_,
         bool insert_sync_, UInt64 insert_timeout_)
-        : context(context_), storage(storage_), query_ast(query_ast_), query_string(queryToString(query_ast_)),
-        cluster(cluster_), insert_sync(insert_sync_),
+        : context(context_), storage(storage_), query_ast(std::move(query_ast_)), query_string(queryToString(query_ast)),
+        cluster(std::move(cluster_)), insert_sync(insert_sync_),
         insert_timeout(insert_timeout_), log(&Logger::get("DistributedBlockOutputStream"))
 {
 }

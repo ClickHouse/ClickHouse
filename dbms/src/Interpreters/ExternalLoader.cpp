@@ -102,8 +102,8 @@ struct ExternalLoader::ObjectConfig
 class ExternalLoader::LoadablesConfigReader : private boost::noncopyable
 {
 public:
-    LoadablesConfigReader(const String & type_name_, Logger * log_)
-        : type_name(type_name_), log(log_)
+    LoadablesConfigReader(String type_name_, Logger * log_)
+        : type_name(std::move(type_name_)), log(log_)
     {
     }
     ~LoadablesConfigReader() = default;
@@ -384,11 +384,11 @@ public:
         const String & /* name */, const ObjectConfig & /* config */, const LoadablePtr & /* previous_version */)>;
 
     LoadingDispatcher(
-        const CreateObjectFunction & create_object_function_,
-        const String & type_name_,
+        CreateObjectFunction create_object_function_,
+        String type_name_,
         Logger * log_)
-        : create_object(create_object_function_)
-        , type_name(type_name_)
+        : create_object(std::move(create_object_function_))
+        , type_name(std::move(type_name_))
         , log(log_)
     {
     }
@@ -688,7 +688,7 @@ public:
 private:
     struct Info
     {
-        Info(const String & name_, const ObjectConfig & object_config_) : name(name_), object_config(object_config_) {}
+        Info(String name_, ObjectConfig object_config_) : name(std::move(name_)), object_config(std::move(object_config_)) {}
 
         bool loaded() const { return object != nullptr; }
         bool failed() const { return !object && exception; }

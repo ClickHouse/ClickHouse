@@ -42,11 +42,11 @@ namespace ErrorCodes
 
 /// Note: an additional page is allocated that will contain data that
 /// do not fit into the main buffer.
-WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_, mode_t mode_,
+WriteBufferAIO::WriteBufferAIO(std::string filename_, size_t buffer_size_, int flags_, mode_t mode_,
     char * existing_memory_)
     : WriteBufferFromFileBase(buffer_size_ + DEFAULT_AIO_FILE_BLOCK_SIZE, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
     flush_buffer(BufferWithOwnMemory<WriteBuffer>(this->memory.size(), nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
-    filename(filename_)
+    filename(std::move(filename_))
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 

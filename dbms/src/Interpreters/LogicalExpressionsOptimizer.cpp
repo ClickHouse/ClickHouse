@@ -20,8 +20,8 @@ namespace ErrorCodes
 
 
 LogicalExpressionsOptimizer::OrWithExpression::OrWithExpression(const ASTFunction * or_function_,
-    const IAST::Hash & expression_, const std::string & alias_)
-    : or_function(or_function_), expression(expression_), alias(alias_)
+    IAST::Hash expression_, std::string alias_)
+    : or_function(or_function_), expression(std::move(expression_)), alias(std::move(alias_))
 {
 }
 

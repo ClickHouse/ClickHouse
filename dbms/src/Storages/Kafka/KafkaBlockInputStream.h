@@ -14,7 +14,7 @@ class KafkaBlockInputStream : public IBlockInputStream
 {
 public:
     KafkaBlockInputStream(
-        StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix = true);
+        StorageKafka & storage_, const Context & context_, Names columns, size_t max_block_size_, bool commit_in_suffix = true);
     ~KafkaBlockInputStream() override;
 
     String getName() const override { return storage.getName(); }

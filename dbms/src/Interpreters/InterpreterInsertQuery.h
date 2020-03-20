@@ -16,7 +16,7 @@ class InterpreterInsertQuery : public IInterpreter
 {
 public:
     InterpreterInsertQuery(
-        const ASTPtr & query_ptr_,
+        ASTPtr query_ptr_,
         const Context & context_,
         bool allow_materialized_ = false,
         bool no_squash_ = false,

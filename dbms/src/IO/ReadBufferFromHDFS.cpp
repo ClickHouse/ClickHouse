@@ -22,8 +22,8 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
     HDFSBuilderPtr builder;
     HDFSFSPtr fs;
 
-    explicit ReadBufferFromHDFSImpl(const std::string & hdfs_name_)
-        : hdfs_uri(hdfs_name_)
+    explicit ReadBufferFromHDFSImpl(std::string hdfs_name_)
+        : hdfs_uri(std::move(hdfs_name_))
         , builder(createHDFSBuilder(hdfs_uri))
         , fs(createHDFSFS(builder.get()))
     {

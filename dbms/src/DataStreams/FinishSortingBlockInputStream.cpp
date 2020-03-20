@@ -24,10 +24,11 @@ static bool isPrefix(const SortDescription & pref_descr, const SortDescription &
 }
 
 FinishSortingBlockInputStream::FinishSortingBlockInputStream(
-    const BlockInputStreamPtr & input, const SortDescription & description_sorted_,
-    const SortDescription & description_to_sort_,
+    const BlockInputStreamPtr & input,
+    SortDescription description_sorted_,
+    SortDescription description_to_sort_,
     size_t max_merged_block_size_, UInt64 limit_)
-    : description_sorted(description_sorted_), description_to_sort(description_to_sort_),
+    : description_sorted(std::move(description_sorted_)), description_to_sort(std::move(description_to_sort_)),
     max_merged_block_size(max_merged_block_size_), limit(limit_)
 {
     if (!isPrefix(description_sorted, description_to_sort))

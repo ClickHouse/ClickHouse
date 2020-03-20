@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 
-RegionsHierarchy::RegionsHierarchy(IRegionsHierarchyDataSourcePtr data_source_) : data_source(data_source_)
+RegionsHierarchy::RegionsHierarchy(IRegionsHierarchyDataSourcePtr data_source_) : data_source(std::move(data_source_))
 {
 }
 

@@ -22,14 +22,14 @@ class StorageMySQL final : public ext::shared_ptr_helper<StorageMySQL>, public I
     friend struct ext::shared_ptr_helper<StorageMySQL>;
 public:
     StorageMySQL(
-        const StorageID & table_id_,
+        StorageID table_id_,
         mysqlxx::Pool && pool_,
-        const std::string & remote_database_name_,
-        const std::string & remote_table_name_,
+        std::string remote_database_name_,
+        std::string remote_table_name_,
         const bool replace_query_,
-        const std::string & on_duplicate_clause_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
+        std::string on_duplicate_clause_,
+        ColumnsDescription columns_,
+        ConstraintsDescription constraints_,
         const Context & context_);
 
     std::string getName() const override { return "MySQL"; }

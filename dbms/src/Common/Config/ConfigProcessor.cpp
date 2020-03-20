@@ -52,13 +52,13 @@ bool ConfigProcessor::isPreprocessedFile(const std::string & path)
 
 
 ConfigProcessor::ConfigProcessor(
-    const std::string & path_,
+    std::string path_,
     bool throw_on_bad_incl_,
     bool log_to_console,
-    const Substitutions & substitutions_)
-    : path(path_)
+    Substitutions substitutions_)
+    : path(std::move(path_))
     , throw_on_bad_incl(throw_on_bad_incl_)
-    , substitutions(substitutions_)
+    , substitutions(std::move(substitutions_))
     /// We need larger name pool to allow to support vast amount of users in users.xml files for ClickHouse.
     /// Size is prime because Poco::XML::NamePool uses bad (inefficient, low quality)
     ///  hash function internally, and its size was prime by default.

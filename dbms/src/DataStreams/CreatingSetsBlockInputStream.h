@@ -19,7 +19,7 @@ class CreatingSetsBlockInputStream : public IBlockInputStream
 public:
     CreatingSetsBlockInputStream(
         const BlockInputStreamPtr & input,
-        const SubqueriesForSets & subqueries_for_sets_,
+        SubqueriesForSets subqueries_for_sets_,
         const Context & context_);
 
     String getName() const override { return "CreatingSets"; }

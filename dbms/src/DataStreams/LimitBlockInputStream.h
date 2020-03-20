@@ -23,9 +23,9 @@ public:
       * description lets us know which row we should check for equality
       */
     LimitBlockInputStream(
-            const BlockInputStreamPtr & input, UInt64 limit_, UInt64 offset_,
-            bool always_read_till_end_ = false, bool use_limit_as_total_rows_approx = false,
-            bool with_ties_ = false, const SortDescription & description_ = {});
+        const BlockInputStreamPtr & input, UInt64 limit_, UInt64 offset_,
+        bool always_read_till_end_ = false, bool use_limit_as_total_rows_approx = false,
+        bool with_ties_ = false, SortDescription description_ = {});
 
     String getName() const override { return "Limit"; }
 

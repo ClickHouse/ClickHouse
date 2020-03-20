@@ -292,14 +292,14 @@ ProcessListEntry::~ProcessListEntry()
 
 
 QueryStatus::QueryStatus(
-    const String & query_,
-    const ClientInfo & client_info_,
+    String query_,
+    ClientInfo client_info_,
     size_t max_memory_usage_,
     double memory_tracker_fault_probability_,
     QueryPriorities::Handle && priority_handle_)
     :
-    query(query_),
-    client_info(client_info_),
+    query(std::move(query_)),
+    client_info(std::move(client_info_)),
     priority_handle(std::move(priority_handle_)),
     num_queries_increment{CurrentMetrics::Query},
     max_memory_usage(max_memory_usage_),

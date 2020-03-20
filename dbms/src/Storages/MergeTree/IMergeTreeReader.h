@@ -19,13 +19,13 @@ public:
     using ValueSizeMap = std::map<std::string, double>;
     using DeserializeBinaryBulkStateMap = std::map<std::string, IDataType::DeserializeBinaryBulkStatePtr>;
 
-    IMergeTreeReader(const MergeTreeData::DataPartPtr & data_part_,
-        const NamesAndTypesList & columns_,
+    IMergeTreeReader(MergeTreeData::DataPartPtr data_part_,
+        NamesAndTypesList columns_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
-        const MarkRanges & all_mark_ranges_,
-        const MergeTreeReaderSettings & settings_,
-        const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{});
+        MarkRanges all_mark_ranges_,
+        MergeTreeReaderSettings settings_,
+        ValueSizeMap avg_value_size_hints_ = {});
 
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark

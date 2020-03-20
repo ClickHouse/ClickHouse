@@ -28,8 +28,8 @@ public:
       * to parse and interpret expressions in other rows (in most cases it's faster
       * than interpreting expressions in each row separately, but it's still slower than streaming parsing)
       */
-    ValuesBlockInputFormat(ReadBuffer & in_, const Block & header_, const RowInputFormatParams & params_,
-                           const FormatSettings & format_settings_);
+    ValuesBlockInputFormat(ReadBuffer & in_, const Block & header_, RowInputFormatParams params_,
+                           FormatSettings format_settings_);
 
     String getName() const override { return "ValuesBlockInputFormat"; }
 

@@ -71,12 +71,13 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
 
 
 MergeTreeReadTask::MergeTreeReadTask(
-    const MergeTreeData::DataPartPtr & data_part_, const MarkRanges & mark_ranges_, const size_t part_index_in_query_,
-    const Names & ordered_names_, const NameSet & column_name_set_, const NamesAndTypesList & columns_,
-    const NamesAndTypesList & pre_columns_, const bool remove_prewhere_column_, const bool should_reorder_,
-    MergeTreeBlockSizePredictorPtr && size_predictor_)
-    : data_part{data_part_}, mark_ranges{mark_ranges_}, part_index_in_query{part_index_in_query_},
-    ordered_names{ordered_names_}, column_name_set{column_name_set_}, columns{columns_}, pre_columns{pre_columns_},
+    MergeTreeData::DataPartPtr data_part_, MarkRanges mark_ranges_, const size_t part_index_in_query_,
+    Names ordered_names_, NameSet column_name_set_, NamesAndTypesList columns_,
+    NamesAndTypesList pre_columns_, const bool remove_prewhere_column_, const bool should_reorder_,
+    MergeTreeBlockSizePredictorPtr size_predictor_)
+    : data_part{std::move(data_part_)}, mark_ranges{std::move(mark_ranges_)}, part_index_in_query{part_index_in_query_},
+    ordered_names{std::move(ordered_names_)}, column_name_set{std::move(column_name_set_)},
+    columns{std::move(columns_)}, pre_columns{std::move(pre_columns_)},
     remove_prewhere_column{remove_prewhere_column_}, should_reorder{should_reorder_}, size_predictor{std::move(size_predictor_)}
 {
 }
@@ -85,12 +86,12 @@ MergeTreeReadTask::~MergeTreeReadTask() = default;
 
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
-    const MergeTreeData::DataPartPtr & data_part_, const Names & columns, const Block & sample_block)
-    : data_part(data_part_)
+    MergeTreeData::DataPartPtr data_part_, Names columns, Block sample_block)
+    : data_part(std::move(data_part_))
 {
     number_of_rows_in_part = data_part->rows_count;
     /// Initialize with sample block until update won't called.
-    initialize(sample_block, {}, columns);
+    initialize(std::move(sample_block), {}, std::move(columns));
 }
 
 void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const Columns & columns, const Names & names, bool from_update)

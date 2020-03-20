@@ -27,8 +27,8 @@ using DiskLocalPtr = std::shared_ptr<DiskLocal>;
 class DiskLocalReservation : public IReservation
 {
 public:
-    DiskLocalReservation(const DiskLocalPtr & disk_, UInt64 size_)
-        : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
+    DiskLocalReservation(DiskLocalPtr disk_, UInt64 size_)
+        : disk(std::move(disk_)), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
     {
     }
 

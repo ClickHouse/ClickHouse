@@ -33,8 +33,8 @@ namespace ErrorCodes
 }
 
 
-DataTypeTuple::DataTypeTuple(const DataTypes & elems_)
-    : elems(elems_), have_explicit_names(false)
+DataTypeTuple::DataTypeTuple(DataTypes elems_)
+    : elems(std::move(elems_)), have_explicit_names(false)
 {
     /// Automatically assigned names in form of '1', '2', ...
     size_t size = elems.size();
@@ -44,8 +44,8 @@ DataTypeTuple::DataTypeTuple(const DataTypes & elems_)
 }
 
 
-DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
-    : elems(elems_), names(names_), have_explicit_names(true)
+DataTypeTuple::DataTypeTuple(DataTypes elems_, Strings names_)
+    : elems(std::move(elems_)), names(std::move(names_)), have_explicit_names(true)
 {
     size_t size = elems.size();
     if (names.size() != size)

@@ -21,9 +21,9 @@ namespace ErrorCodes
 
 
 NativeBlockOutputStream::NativeBlockOutputStream(
-    WriteBuffer & ostr_, UInt64 client_revision_, const Block & header_, bool remove_low_cardinality_,
+    WriteBuffer & ostr_, UInt64 client_revision_, Block header_, bool remove_low_cardinality_,
     WriteBuffer * index_ostr_, size_t initial_size_of_file_)
-    : ostr(ostr_), client_revision(client_revision_), header(header_),
+    : ostr(ostr_), client_revision(client_revision_), header(std::move(header_)),
     index_ostr(index_ostr_), initial_size_of_file(initial_size_of_file_), remove_low_cardinality(remove_low_cardinality_)
 {
     if (index_ostr)

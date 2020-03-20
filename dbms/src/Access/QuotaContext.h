@@ -47,7 +47,7 @@ private:
     friend struct ext::shared_ptr_helper<QuotaContext>;
 
     /// Instances of this class are created by QuotaContextFactory.
-    QuotaContext(const String & user_name_, const UUID & user_id_, const std::vector<UUID> & enabled_roles_, const Poco::Net::IPAddress & address_, const String & client_key_);
+    QuotaContext(String user_name_, UUID user_id_, std::vector<UUID> enabled_roles_, Poco::Net::IPAddress address_, String client_key_);
 
     static constexpr size_t MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
 

@@ -72,8 +72,8 @@ bool CachedCompressedReadBuffer::nextImpl()
 }
 
 CachedCompressedReadBuffer::CachedCompressedReadBuffer(
-    const std::string & path_, std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator_, UncompressedCache * cache_)
-    : ReadBuffer(nullptr, 0), file_in_creator(std::move(file_in_creator_)), cache(cache_), path(path_), file_pos(0)
+    std::string path_, std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator_, UncompressedCache * cache_)
+    : ReadBuffer(nullptr, 0), file_in_creator(std::move(file_in_creator_)), cache(cache_), path(std::move(path_))
 {
 }
 

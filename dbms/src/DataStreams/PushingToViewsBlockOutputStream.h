@@ -17,8 +17,8 @@ class ReplicatedMergeTreeBlockOutputStream;
 class PushingToViewsBlockOutputStream : public IBlockOutputStream
 {
 public:
-    PushingToViewsBlockOutputStream(const StoragePtr & storage_,
-        const Context & context_, const ASTPtr & query_ptr_, bool no_destination = false);
+    PushingToViewsBlockOutputStream(StoragePtr storage_,
+        const Context & context_, ASTPtr query_ptr_, bool no_destination = false);
 
     Block getHeader() const override;
     void write(const Block & block) override;

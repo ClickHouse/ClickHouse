@@ -17,7 +17,7 @@ class AccessRightsElements;
 class InterpreterRenameQuery : public IInterpreter
 {
 public:
-    InterpreterRenameQuery(const ASTPtr & query_ptr_, Context & context_);
+    InterpreterRenameQuery(ASTPtr query_ptr_, Context & context_);
     BlockIO execute() override;
 
 private:

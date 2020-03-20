@@ -260,8 +260,8 @@ class LLVMExecutableFunction : public IExecutableFunctionImpl
     void * function;
 
 public:
-    LLVMExecutableFunction(const std::string & name_, const std::unordered_map<std::string, void *> & symbols)
-        : name(name_)
+    LLVMExecutableFunction(std::string name_, const std::unordered_map<std::string, void *> & symbols)
+        : name(std::move(name_))
     {
         auto it = symbols.find(name);
         if (symbols.end() == it)

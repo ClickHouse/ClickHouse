@@ -29,7 +29,7 @@ MergeSortingBlockInputStream::MergeSortingBlockInputStream(
     size_t max_bytes_before_external_sort_, VolumePtr tmp_volume_, size_t min_free_disk_space_)
     : description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
     max_bytes_before_remerge(max_bytes_before_remerge_),
-    max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_volume(tmp_volume_),
+    max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_volume(std::move(tmp_volume_)),
     min_free_disk_space(min_free_disk_space_)
 {
     children.push_back(input);
@@ -143,8 +143,8 @@ Block MergeSortingBlockInputStream::readImpl()
 
 
 MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
-    Blocks & blocks_, const SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
-    : blocks(blocks_), header(blocks.at(0).cloneEmpty()), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_)
+    Blocks & blocks_, SortDescription description_, size_t max_merged_block_size_, UInt64 limit_)
+    : blocks(blocks_), header(blocks.at(0).cloneEmpty()), description(std::move(description_)), max_merged_block_size(max_merged_block_size_), limit(limit_)
 {
     Blocks nonempty_blocks;
     for (const auto & block : blocks)

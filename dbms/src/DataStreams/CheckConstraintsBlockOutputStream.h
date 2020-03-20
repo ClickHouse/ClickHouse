@@ -16,11 +16,11 @@ class CheckConstraintsBlockOutputStream : public IBlockOutputStream
 {
 public:
     CheckConstraintsBlockOutputStream(
-            const StorageID & table_,
-            const BlockOutputStreamPtr & output_,
-            const Block & header_,
-            const ConstraintsDescription & constraints_,
-            const Context & context_);
+        StorageID table_,
+        BlockOutputStreamPtr output_,
+        Block header_,
+        ConstraintsDescription constraints_,
+        const Context & context_);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;

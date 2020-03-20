@@ -29,8 +29,8 @@ namespace ErrorCodes
 }
 
 
-StatusFile::StatusFile(const std::string & path_)
-    : path(path_)
+StatusFile::StatusFile(std::string path_)
+    : path(std::move(path_))
 {
     /// If file already exists. NOTE Minor race condition.
     if (Poco::File(path).exists())

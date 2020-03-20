@@ -29,22 +29,22 @@ namespace ErrorCodes
 }
 
 IStorageURLBase::IStorageURLBase(
-    const Poco::URI & uri_,
+    Poco::URI uri_,
     const Context & context_,
-    const StorageID & table_id_,
-    const String & format_name_,
-    const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_,
-    const String & compression_method_)
-    : IStorage(table_id_)
-    , uri(uri_)
+    StorageID table_id_,
+    String format_name_,
+    ColumnsDescription columns_,
+    ConstraintsDescription constraints_,
+    String compression_method_)
+    : IStorage(std::move(table_id_))
+    , uri(std::move(uri_))
     , context_global(context_)
-    , compression_method(compression_method_)
-    , format_name(format_name_)
+    , compression_method(std::move(compression_method_))
+    , format_name(std::move(format_name_))
 {
     context_global.getRemoteHostFilter().checkURL(uri);
-    setColumns(columns_);
-    setConstraints(constraints_);
+    setColumns(std::move(columns_));
+    setConstraints(std::move(constraints_));
 }
 
 namespace
@@ -116,18 +116,19 @@ namespace
     class StorageURLBlockOutputStream : public IBlockOutputStream
     {
     public:
-        StorageURLBlockOutputStream(const Poco::URI & uri,
-            const String & format,
-            const Block & sample_block_,
+        StorageURLBlockOutputStream(
+            Poco::URI uri,
+            String format,
+            Block sample_block_,
             const Context & context,
-            const ConnectionTimeouts & timeouts,
+            ConnectionTimeouts timeouts,
             const CompressionMethod compression_method)
-            : sample_block(sample_block_)
+            : sample_block(std::move(sample_block_))
         {
             write_buf = wrapWriteBufferWithCompressionMethod(
-                std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts),
+                std::make_unique<WriteBufferFromHTTP>(std::move(uri), Poco::Net::HTTPRequest::HTTP_POST, std::move(timeouts)),
                 compression_method, 3);
-            writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
+            writer = FormatFactory::instance().getOutput(std::move(format), *write_buf, sample_block, context);
         }
 
         Block getHeader() const override

@@ -59,13 +59,13 @@ static String toQueryStringWithQuote(const std::vector<String> & quote_list)
 }
 
 DatabaseMySQL::DatabaseMySQL(
-    const Context & global_context_, const String & database_name_, const String & metadata_path_,
-    const ASTStorage * database_engine_define_, const String & database_name_in_mysql_, mysqlxx::Pool && pool)
-    : IDatabase(database_name_)
+    const Context & global_context_, String database_name_, String metadata_path_,
+    const ASTStorage * database_engine_define_, String database_name_in_mysql_, mysqlxx::Pool && pool)
+    : IDatabase(std::move(database_name_))
     , global_context(global_context_)
-    , metadata_path(metadata_path_)
+    , metadata_path(std::move(metadata_path_))
     , database_engine_define(database_engine_define_->clone())
-    , database_name_in_mysql(database_name_in_mysql_)
+    , database_name_in_mysql(std::move(database_name_in_mysql_))
     , mysql_pool(std::move(pool))
 {
 }

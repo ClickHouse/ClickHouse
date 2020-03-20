@@ -311,9 +311,9 @@ struct CodecTestSequence
     DataTypePtr data_type;
 
     CodecTestSequence(std::string name_, std::vector<char> serialized_data_, DataTypePtr data_type_)
-        : name(name_),
-          serialized_data(serialized_data_),
-          data_type(data_type_)
+        : name(std::move(name_)),
+          serialized_data(std::move(serialized_data_)),
+          data_type(std::move(data_type_))
     {}
 
     CodecTestSequence & append(const CodecTestSequence & other)

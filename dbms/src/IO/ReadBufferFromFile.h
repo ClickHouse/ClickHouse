@@ -25,7 +25,7 @@ protected:
     CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForRead};
 
 public:
-    ReadBufferFromFile(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
+    ReadBufferFromFile(std::string file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
         char * existing_memory = nullptr, size_t alignment = 0);
 
     /// Use pre-opened file descriptor.

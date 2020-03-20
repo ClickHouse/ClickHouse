@@ -113,11 +113,11 @@ class SyncKillQueryInputStream : public IBlockInputStream
 {
 public:
     SyncKillQueryInputStream(ProcessList & process_list_, QueryDescriptors && processes_to_stop_, Block && processes_block_,
-                             const Block & res_sample_block_)
+                             Block res_sample_block_)
         : process_list(process_list_),
         processes_to_stop(std::move(processes_to_stop_)),
         processes_block(std::move(processes_block_)),
-        res_sample_block(res_sample_block_)
+        res_sample_block(std::move(res_sample_block_))
     {
         addTotalRowsApprox(processes_to_stop.size());
     }

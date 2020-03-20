@@ -55,10 +55,10 @@ struct MergeTreeReadTask
     bool isFinished() const { return mark_ranges.empty() && range_reader.isCurrentRangeFinished(); }
 
     MergeTreeReadTask(
-        const MergeTreeData::DataPartPtr & data_part_, const MarkRanges & mark_ranges_, const size_t part_index_in_query_,
-        const Names & ordered_names_, const NameSet & column_name_set_, const NamesAndTypesList & columns_,
-        const NamesAndTypesList & pre_columns_, const bool remove_prewhere_column_, const bool should_reorder_,
-        MergeTreeBlockSizePredictorPtr && size_predictor_);
+        MergeTreeData::DataPartPtr data_part_, MarkRanges mark_ranges_, const size_t part_index_in_query_,
+        Names ordered_names_, NameSet column_name_set_, NamesAndTypesList columns_,
+        NamesAndTypesList pre_columns_, const bool remove_prewhere_column_, const bool should_reorder_,
+        MergeTreeBlockSizePredictorPtr size_predictor_);
 
     virtual ~MergeTreeReadTask();
 };
@@ -78,7 +78,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(const MergeTreeData & storage, const
 
 struct MergeTreeBlockSizePredictor
 {
-    MergeTreeBlockSizePredictor(const MergeTreeData::DataPartPtr & data_part_, const Names & columns, const Block & sample_block);
+    MergeTreeBlockSizePredictor(MergeTreeData::DataPartPtr data_part_, Names columns, Block sample_block);
 
     /// Reset some values for correct statistics calculating
     void startBlock();

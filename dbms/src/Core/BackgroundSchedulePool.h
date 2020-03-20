@@ -89,7 +89,7 @@ private:
 class BackgroundSchedulePoolTaskInfo : public std::enable_shared_from_this<BackgroundSchedulePoolTaskInfo>, private boost::noncopyable
 {
 public:
-    BackgroundSchedulePoolTaskInfo(BackgroundSchedulePool & pool_, const std::string & log_name_, const BackgroundSchedulePool::TaskFunc & function_);
+    BackgroundSchedulePoolTaskInfo(BackgroundSchedulePool & pool_, std::string log_name_, BackgroundSchedulePool::TaskFunc function_);
 
     /// Schedule for execution as soon as possible (if not already scheduled).
     /// If the task was already scheduled with delay, the delay will be ignored.

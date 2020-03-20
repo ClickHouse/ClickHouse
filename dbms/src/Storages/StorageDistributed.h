@@ -41,18 +41,18 @@ public:
     ~StorageDistributed() override;
 
     static StoragePtr createWithOwnCluster(
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const String & remote_database_,       /// database on remote servers.
-        const String & remote_table_,          /// The name of the table on the remote servers.
+        StorageID table_id_,
+        ColumnsDescription columns_,
+        String remote_database_,       /// database on remote servers.
+        String remote_table_,          /// The name of the table on the remote servers.
         ClusterPtr owned_cluster_,
         const Context & context_);
 
     static StoragePtr createWithOwnCluster(
-            const StorageID & table_id_,
-        const ColumnsDescription & columns_,
+        StorageID table_id_,
+        ColumnsDescription columns_,
         ASTPtr & remote_table_function_ptr_,     /// Table function ptr.
-        ClusterPtr & owned_cluster_,
+        ClusterPtr owned_cluster_,
         const Context & context_);
 
     std::string getName() const override { return "Distributed"; }
@@ -140,28 +140,28 @@ public:
 
 protected:
     StorageDistributed(
-        const StorageID & id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & remote_database_,
-        const String & remote_table_,
-        const String & cluster_name_,
+        StorageID id_,
+        ColumnsDescription columns_,
+        ConstraintsDescription constraints_,
+        String remote_database_,
+        String remote_table_,
+        String cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
-        const String & storage_policy_,
-        const String & relative_data_path_,
+        String storage_policy_,
+        String relative_data_path_,
         bool attach_);
 
     StorageDistributed(
-        const StorageID & id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
+        StorageID id_,
+        ColumnsDescription columns_,
+        ConstraintsDescription constraints_,
         ASTPtr remote_table_function_ptr_,
-        const String & cluster_name_,
+        String cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
-        const String & storage_policy_,
-        const String & relative_data_path_,
+        String storage_policy_,
+        String relative_data_path_,
         bool attach);
 
     ClusterPtr skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info);

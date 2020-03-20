@@ -130,8 +130,8 @@ protected:
 public:
 
     QueryStatus(
-        const String & query_,
-        const ClientInfo & client_info_,
+        String query_,
+        ClientInfo client_info_,
         size_t max_memory_usage,
         double memory_tracker_fault_probability,
         QueryPriorities::Handle && priority_handle_);

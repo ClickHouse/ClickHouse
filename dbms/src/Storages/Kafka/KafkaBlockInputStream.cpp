@@ -13,10 +13,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 KafkaBlockInputStream::KafkaBlockInputStream(
-    StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix_)
+    StorageKafka & storage_, const Context & context_, Names columns, size_t max_block_size_, bool commit_in_suffix_)
     : storage(storage_)
     , context(context_)
-    , column_names(columns)
+    , column_names(std::move(columns))
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(storage.getSampleBlockNonMaterialized()) /// FIXME: add materialized columns support

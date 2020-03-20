@@ -47,16 +47,16 @@ public:
     //* TODO: option with hyperscan? https://software.intel.com/en-us/articles/why-and-how-to-replace-pcre-with-hyperscan
     // re2::set should also work quite fast, but it doesn't return the match position, only which regexp was matched
 
-    MaskingRule(const std::string & name_, const std::string & regexp_string_, const std::string & replacement_string_)
-        : name(name_)
-        , replacement_string(replacement_string_)
-        , regexp_string(regexp_string_)
+    MaskingRule(std::string name_, std::string regexp_string_, std::string replacement_string_)
+        : name(std::move(name_))
+        , replacement_string(std::move(replacement_string_))
+        , regexp_string(std::move(regexp_string_))
         , regexp(regexp_string, RE2::Quiet)
         , replacement(replacement_string)
     {
         if (!regexp.ok())
             throw DB::Exception(
-                "SensitiveDataMasker: cannot compile re2: " + regexp_string_ + ", error: " + regexp.error()
+                "SensitiveDataMasker: cannot compile re2: " + regexp_string + ", error: " + regexp.error()
                     + ". Look at https://github.com/google/re2/wiki/Syntax for reference.",
                 DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
     }

@@ -68,7 +68,7 @@ protected:
         const ColumnsDescription & columns_,
         const Context & context,
         bool attach,
-        const String & dictionary_name_);
+        String dictionary_name_);
 };
 
 }

@@ -27,7 +27,7 @@ private:
     Block res_block;
 
 protected:
-    StorageValues(const StorageID & table_id_, const ColumnsDescription & columns_, const Block & res_block_);
+    StorageValues(StorageID table_id_, ColumnsDescription columns_, Block res_block_);
 };
 
 }

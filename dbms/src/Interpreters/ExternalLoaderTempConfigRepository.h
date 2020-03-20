@@ -11,7 +11,7 @@ namespace DB
 class ExternalLoaderTempConfigRepository : public IExternalLoaderConfigRepository
 {
 public:
-    ExternalLoaderTempConfigRepository(const String & repository_name_, const String & path_, const LoadablesConfigurationPtr & config_);
+    ExternalLoaderTempConfigRepository(String repository_name_, String path_, LoadablesConfigurationPtr config_);
 
     const String & getName() const override { return name; }
     bool isTemporary() const override { return true; }

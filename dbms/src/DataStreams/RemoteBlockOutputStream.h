@@ -20,8 +20,8 @@ class RemoteBlockOutputStream : public IBlockOutputStream
 {
 public:
     RemoteBlockOutputStream(Connection & connection_,
-                            const ConnectionTimeouts & timeouts,
-                            const String & query_,
+                            ConnectionTimeouts timeouts,
+                            String query_,
                             const Settings * settings_ = nullptr);
 
     Block getHeader() const override { return header; }

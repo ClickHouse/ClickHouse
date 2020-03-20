@@ -38,7 +38,7 @@ struct StorageInMemoryMetadata
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
     StorageInMemoryMetadata() = default;
-    StorageInMemoryMetadata(const ColumnsDescription & columns_, const IndicesDescription & indices_, const ConstraintsDescription & constraints_);
+    StorageInMemoryMetadata(ColumnsDescription columns_, IndicesDescription indices_, ConstraintsDescription constraints_);
 
     StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
 };

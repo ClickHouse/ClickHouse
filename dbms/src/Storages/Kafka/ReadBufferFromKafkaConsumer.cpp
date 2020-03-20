@@ -19,16 +19,16 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     size_t poll_timeout_,
     bool intermediate_commit_,
     const std::atomic<bool> & stopped_,
-    const Names & _topics)
+    Names _topics)
     : ReadBuffer(nullptr, 0)
-    , consumer(consumer_)
+    , consumer(std::move(consumer_))
     , log(log_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
     , intermediate_commit(intermediate_commit_)
     , stopped(stopped_)
     , current(messages.begin())
-    , topics(_topics)
+    , topics(std::move(_topics))
 {
     // called (synchroniously, during poll) when we enter the consumer group
     consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList& topic_partitions)

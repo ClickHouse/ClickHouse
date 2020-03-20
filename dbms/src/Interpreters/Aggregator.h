@@ -896,7 +896,7 @@ public:
         }
     };
 
-    Aggregator(const Params & params_);
+    Aggregator(Params params_);
 
     /// Aggregate the source. Get the result in the form of one of the data structures.
     void execute(const BlockInputStreamPtr & stream, AggregatedDataVariants & result);

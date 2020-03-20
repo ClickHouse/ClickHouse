@@ -26,7 +26,7 @@ public:
         size_t poll_timeout_,
         bool intermediate_commit_,
         const std::atomic<bool> & stopped_,
-        const Names & _topics
+        Names _topics
     );
     ~ReadBufferFromKafkaConsumer() override;
 

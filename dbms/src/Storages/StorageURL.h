@@ -28,13 +28,13 @@ public:
 
 protected:
     IStorageURLBase(
-        const Poco::URI & uri_,
+        Poco::URI uri_,
         const Context & context_,
-        const StorageID & id_,
-        const String & format_name_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & compression_method_);
+        StorageID id_,
+        String format_name_,
+        ColumnsDescription columns_,
+        ConstraintsDescription constraints_,
+        String compression_method_);
 
     Poco::URI uri;
     const Context & context_global;

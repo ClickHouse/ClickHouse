@@ -18,7 +18,7 @@ class ExpressionBlockInputStream : public IBlockInputStream
 public:
     using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-    ExpressionBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_);
+    ExpressionBlockInputStream(const BlockInputStreamPtr & input, ExpressionActionsPtr expression_);
 
     String getName() const override;
     Block getTotals() override;
@@ -38,8 +38,8 @@ private:
 class InflatingExpressionBlockInputStream : public ExpressionBlockInputStream
 {
 public:
-    InflatingExpressionBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_)
-    :   ExpressionBlockInputStream(input, expression_)
+    InflatingExpressionBlockInputStream(const BlockInputStreamPtr & input, ExpressionActionsPtr expression_)
+        : ExpressionBlockInputStream(input, std::move(expression_))
     {}
 
 protected:

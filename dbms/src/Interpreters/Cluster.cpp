@@ -90,10 +90,10 @@ Cluster::Address::Address(const Poco::Util::AbstractConfiguration & config, cons
 }
 
 
-Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port, bool secure_)
-    : user(user_), password(password_)
+Cluster::Address::Address(String host_port_, String user_, String password_, UInt16 clickhouse_port, bool secure_)
+    : user(std::move(user_)), password(std::move(password_))
 {
-    auto parsed_host_port = parseAddress(host_port_, clickhouse_port);
+    auto parsed_host_port = parseAddress(std::move(host_port_), clickhouse_port);
     host_name = parsed_host_port.first;
     port = parsed_host_port.second;
     secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;

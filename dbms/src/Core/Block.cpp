@@ -34,7 +34,7 @@ Block::Block(std::initializer_list<ColumnWithTypeAndName> il) : data{il}
 }
 
 
-Block::Block(const ColumnsWithTypeAndName & data_) : data{data_}
+Block::Block(ColumnsWithTypeAndName data_) : data{std::move(data_)}
 {
     initializeIndexByName();
 }

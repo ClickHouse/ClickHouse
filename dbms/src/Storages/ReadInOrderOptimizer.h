@@ -16,8 +16,8 @@ class ReadInOrderOptimizer
 {
 public:
     ReadInOrderOptimizer(
-        const ManyExpressionActions & elements_actions,
-        const SortDescription & required_sort_description,
+        ManyExpressionActions elements_actions,
+        SortDescription required_sort_description,
         const SyntaxAnalyzerResultPtr & syntax_result);
 
     InputSortingInfoPtr getInputOrder(const StoragePtr & storage) const;

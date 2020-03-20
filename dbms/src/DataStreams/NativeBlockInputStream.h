@@ -65,7 +65,7 @@ public:
 
     /// For cases when data structure (header) is known in advance.
     /// NOTE We may use header for data validation and/or type conversions. It is not implemented.
-    NativeBlockInputStream(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_);
+    NativeBlockInputStream(ReadBuffer & istr_, Block header_, UInt64 server_revision_);
 
     /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
     NativeBlockInputStream(ReadBuffer & istr_, UInt64 server_revision_,

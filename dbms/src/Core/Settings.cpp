@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 
-IMPLEMENT_SETTINGS_COLLECTION(Settings, LIST_OF_SETTINGS)
+IMPLEMENT_SETTINGS_COLLECTION(Settings, LIST_OF_SETTINGS) // NOLINT
 
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).

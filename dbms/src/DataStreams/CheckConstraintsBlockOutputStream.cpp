@@ -19,16 +19,16 @@ namespace ErrorCodes
 
 
 CheckConstraintsBlockOutputStream::CheckConstraintsBlockOutputStream(
-    const StorageID & table_id_,
-    const BlockOutputStreamPtr & output_,
-    const Block & header_,
-    const ConstraintsDescription & constraints_,
+    StorageID table_id_,
+    BlockOutputStreamPtr output_,
+    Block header_,
+    ConstraintsDescription constraints_,
     const Context & context_)
-    : table_id(table_id_),
-    output(output_),
-    header(header_),
-    constraints(constraints_),
-    expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
+    : table_id(std::move(table_id_)),
+    output(std::move(output_)),
+    header(std::move(header_)),
+    constraints(std::move(constraints_)),
+    expressions(constraints.getExpressions(context_, header.getNamesAndTypesList()))
 {
 }
 

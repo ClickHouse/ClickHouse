@@ -105,9 +105,9 @@ AccessRightsContext::AccessRightsContext()
 }
 
 
-AccessRightsContext::AccessRightsContext(const AccessControlManager & manager_, const Params & params_)
+AccessRightsContext::AccessRightsContext(const AccessControlManager & manager_, Params params_)
     : manager(&manager_)
-    , params(params_)
+    , params(std::move(params_))
 {
     subscription_for_user_change = manager->subscribeForChanges(
         *params.user_id, [this](const UUID &, const AccessEntityPtr & entity)

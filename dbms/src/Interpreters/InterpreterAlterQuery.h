@@ -16,7 +16,7 @@ class AccessRightsElements;
 class InterpreterAlterQuery : public IInterpreter
 {
 public:
-    InterpreterAlterQuery(const ASTPtr & query_ptr_, const Context & context_);
+    InterpreterAlterQuery(ASTPtr query_ptr_, const Context & context_);
 
     BlockIO execute() override;
 

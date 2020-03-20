@@ -36,8 +36,8 @@ class StorageDistributed;
 class DistributedBlockOutputStream : public IBlockOutputStream
 {
 public:
-    DistributedBlockOutputStream(const Context & context_, StorageDistributed & storage_, const ASTPtr & query_ast_,
-                                 const ClusterPtr & cluster_, bool insert_sync_, UInt64 insert_timeout_);
+    DistributedBlockOutputStream(const Context & context_, StorageDistributed & storage_, ASTPtr query_ast_,
+                                 ClusterPtr cluster_, bool insert_sync_, UInt64 insert_timeout_);
 
     Block getHeader() const override;
     void write(const Block & block) override;

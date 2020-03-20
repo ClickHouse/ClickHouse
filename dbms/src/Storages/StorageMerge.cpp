@@ -1,12 +1,5 @@
-#include <DataStreams/AddingConstColumnBlockInputStream.h>
-#include <DataStreams/narrowBlockInputStreams.h>
-#include <DataStreams/LazyBlockInputStream.h>
-#include <DataStreams/NullBlockInputStream.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -24,12 +17,12 @@
 #include <Databases/IDatabase.h>
 #include <ext/range.h>
 #include <algorithm>
-#include <Parsers/queryToString.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Transforms/AddingConstColumnTransform.h>
 #include <Processors/Transforms/ConvertingTransform.h>
+#include <DataStreams/narrowBlockInputStreams.h>
 
 
 namespace DB
@@ -47,17 +40,17 @@ namespace ErrorCodes
 
 
 StorageMerge::StorageMerge(
-    const StorageID & table_id_,
-    const ColumnsDescription & columns_,
-    const String & source_database_,
-    const String & table_name_regexp_,
+    StorageID table_id_,
+    ColumnsDescription columns_,
+    String source_database_,
+    String table_name_regexp_,
     const Context & context_)
-    : IStorage(table_id_, ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
-    , source_database(source_database_)
-    , table_name_regexp(table_name_regexp_)
+    : IStorage(std::move(table_id_), ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
+    , source_database(std::move(source_database_))
+    , table_name_regexp(std::move(table_name_regexp_))
     , global_context(context_)
 {
-    setColumns(columns_);
+    setColumns(std::move(columns_));
 }
 
 
@@ -485,7 +478,7 @@ void StorageMerge::convertingSourceStream(const Block & header, const Context & 
         ColumnWithTypeAndName header_column = header.getByPosition(column_index);
         ColumnWithTypeAndName before_column = before_block_header.getByName(header_column.name);
         /// If the processed_stage greater than FetchColumns and the block structure between streams is different.
-        /// the where expression maybe invalid because of convertingBlockInputStream.
+        /// the where expression maybe invalid because of converting stream.
         /// So we need to throw exception.
         if (!header_column.type->equals(*before_column.type.get()) && processed_stage > QueryProcessingStage::FetchColumns)
         {

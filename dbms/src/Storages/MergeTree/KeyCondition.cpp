@@ -338,13 +338,7 @@ inline bool Range::equals(const Field & lhs, const Field & rhs) { return applyVi
 inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
 
 
-FieldWithInfinity::FieldWithInfinity(const Field & field_)
-    : field(field_),
-    type(Type::NORMAL)
-{
-}
-
-FieldWithInfinity::FieldWithInfinity(Field && field_)
+FieldWithInfinity::FieldWithInfinity(Field field_)
     : field(std::move(field_)),
     type(Type::NORMAL)
 {
@@ -399,8 +393,8 @@ KeyCondition::KeyCondition(
     const SelectQueryInfo & query_info,
     const Context & context,
     const Names & key_column_names,
-    const ExpressionActionsPtr & key_expr_)
-    : key_expr(key_expr_), prepared_sets(query_info.sets)
+    ExpressionActionsPtr key_expr_)
+    : key_expr(std::move(key_expr_)), prepared_sets(query_info.sets)
 {
     for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
     {

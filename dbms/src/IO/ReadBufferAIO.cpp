@@ -40,10 +40,10 @@ namespace ErrorCodes
 
 /// Note: an additional page is allocated that will contain the data that
 /// does not fit into the main buffer.
-ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_, char * existing_memory_)
+ReadBufferAIO::ReadBufferAIO(std::string filename_, size_t buffer_size_, int flags_, char * existing_memory_)
     : ReadBufferFromFileBase(buffer_size_ + DEFAULT_AIO_FILE_BLOCK_SIZE, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
       fill_buffer(BufferWithOwnMemory<ReadBuffer>(internalBuffer().size(), nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
-      filename(filename_)
+      filename(std::move(filename_))
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 

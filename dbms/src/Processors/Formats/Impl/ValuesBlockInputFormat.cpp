@@ -27,10 +27,10 @@ namespace ErrorCodes
 }
 
 
-ValuesBlockInputFormat::ValuesBlockInputFormat(ReadBuffer & in_, const Block & header_, const RowInputFormatParams & params_,
-                                               const FormatSettings & format_settings_)
-        : IInputFormat(header_, buf), buf(in_), params(params_),
-          format_settings(format_settings_), num_columns(header_.columns()),
+ValuesBlockInputFormat::ValuesBlockInputFormat(ReadBuffer & in_, const Block & header_, RowInputFormatParams params_,
+                                               FormatSettings format_settings_)
+        : IInputFormat(header_, buf), buf(in_), params(std::move(params_)),
+          format_settings(std::move(format_settings_)), num_columns(header_.columns()),
           parser_type_for_column(num_columns, ParserType::Streaming),
           attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
           rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes())
