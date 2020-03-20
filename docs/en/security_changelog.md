@@ -66,4 +66,4 @@ Incorrect configuration in deb package could lead to the unauthorized use of the
 
 Credits: the UK’s National Cyber Security Centre (NCSC)
 
-[Original article](https://clickhouse.tech/docs/en/security_changelog/) <!--hide-->
+{## [Original article](https://clickhouse.tech/docs/en/security_changelog/) ##}
