@@ -257,13 +257,22 @@ private:
 
             auto update_time_from_repository = repository.getUpdateTime(path);
 
-            /// Actually it can't be less, but for sure we check less or equal
-            if (update_time_from_repository <= file_info.last_update_time)
+            // We can't count on that the mtime increases or that it has
+            // a particular relation to system time, so just check for strict
+            // equality.
+            // Note that on 1.x versions on Poco, the granularity of update
+            // time is one second, so the window where we can miss the changes
+            // is that wide (i.e. when we read the file and after that it
+            // is updated, but in the same second).
+            // The solution to this is probably switching to std::filesystem
+            // -- the work is underway to do so.
+            if (update_time_from_repository == file_info.last_update_time)
             {
                 file_info.in_use = true;
                 return false;
             }
 
+            LOG_TRACE(log, "Loading config file '" << path << "'.");
             auto file_contents = repository.load(path);
 
             /// get all objects' definitions
@@ -411,6 +420,8 @@ public:
         if (configs == new_configs)
             return;
 
+        LOG_TRACE(log, "Configuration of reloadable objects has changed");
+
         configs = new_configs;
 
         std::vector<String> removed_names;
@@ -418,7 +429,10 @@ public:
         {
             auto new_config_it = new_configs->find(name);
             if (new_config_it == new_configs->end())
+            {
+                LOG_TRACE(log, "Reloadable object '" << name << "' is removed");
                 removed_names.emplace_back(name);
+            }
             else
             {
                 const auto & new_config = new_config_it->second;
@@ -427,12 +441,17 @@ public:
                 if (!config_is_same)
                 {
                     /// Configuration has been changed.
+                    LOG_TRACE(log, "Configuration has changed for reloadable "
+                        "object '" << info.name << "'");
                     info.object_config = new_config;
 
                     if (info.triedToLoad())
                     {
                         /// The object has been tried to load before, so it is currently in use or was in use
                         /// and we should try to reload it with the new config.
+                        LOG_TRACE(log, "Will reload '" << name << "'"
+                            " because its configuration has changed and"
+                            " there were attempts to load it before");
                         startLoading(info, true);
                     }
                 }
@@ -446,7 +465,11 @@ public:
             {
                 Info & info = infos.emplace(name, Info{name, config}).first->second;
                 if (always_load_everything)
+                {
+                    LOG_TRACE(log, "Will reload new object '" << name << "'"
+                        " because always_load_everything flag is set.");
                     startLoading(info);
+                }
             }
         }
 
@@ -640,6 +663,10 @@ public:
                         if (!should_update_flag)
                         {
                             info.next_update_time = calculateNextUpdateTime(info.object, info.error_count);
+                            LOG_TRACE(log, "Object '" << info.name << "'"
+                                " not modified, will not reload. "
+                                "Next update at "
+                                << ext::to_string(info.next_update_time));
                             continue;
                         }
 
@@ -651,6 +678,8 @@ public:
                         /// Object was never loaded successfully and should be reloaded.
                         startLoading(info);
                     }
+                    LOG_TRACE(log, "Object '" << info.name << "' is neither"
+                        " loaded nor failed, so it will not be reloaded as outdated.");
                 }
             }
         }
@@ -844,8 +873,14 @@ private:
     {
         if (info.is_loading())
         {
+            LOG_TRACE(log, "The object '" << info.name <<
+                      "' is already being loaded, force = " << forced_to_reload << ".");
+
             if (!forced_to_reload)
+            {
                 return;
+            }
+
             cancelLoading(info);
         }
 
@@ -854,6 +889,12 @@ private:
         info.loading_id = loading_id;
         info.loading_start_time = std::chrono::system_clock::now();
         info.loading_end_time = TimePoint{};
+
+        LOG_TRACE(log, "Will load the object '" << info.name << "' "
+                  << (enable_async_loading ? std::string("in background")
+                                           : "immediately")
+                  << ", force = " << forced_to_reload
+                  << ", loading_id = " << info.loading_id);
 
         if (enable_async_loading)
         {
@@ -882,6 +923,7 @@ private:
     /// Does the loading, possibly in the separate thread.
     void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async)
     {
+        LOG_TRACE(log, "Start loading object '" << name << "'");
         try
         {
             /// Prepare for loading.
@@ -890,7 +932,11 @@ private:
                 LoadingGuardForAsyncLoad lock(async, mutex);
                 info = prepareToLoadSingleObject(name, loading_id, min_id_to_finish_loading_dependencies_, lock);
                 if (!info)
+                {
+                    LOG_TRACE(log, "Could not lock object '" << name
+                        << "' for loading");
                     return;
+                }
             }
 
             /// Previous version can be used as the base for new loading, enabling loading only part of data.
@@ -989,8 +1035,22 @@ private:
 
         /// We should check if this is still the same loading as we were doing.
         /// This is necessary because the object could be removed or load with another config while the `mutex` was unlocked.
-        if (!info || !info->is_loading() || (info->loading_id != loading_id))
+        if (!info)
+        {
+            LOG_TRACE(log, "Next update time for '" << name << "' will not be set because this object was not found.");
             return;
+        }
+        if (!info->is_loading())
+        {
+            LOG_TRACE(log, "Next update time for '" << name << "' will not be set because this object is not currently loading.");
+            return;
+        }
+        if (info->loading_id != loading_id)
+        {
+            LOG_TRACE(log, "Next update time for '" << name << "' will not be set because this object's current loading_id "
+                      << info->loading_id << " is different from the specified " << loading_id << ".");
+            return;
+        }
 
         if (new_exception)
         {
@@ -1018,6 +1078,8 @@ private:
             info->last_successful_update_time = current_time;
         info->state_id = info->loading_id;
         info->next_update_time = next_update_time;
+        LOG_TRACE(log, "Next update time for '" << info->name
+                  << "' was set to " << ext::to_string(next_update_time));
     }
 
     /// Removes the references to the loading thread from the maps.
@@ -1046,21 +1108,50 @@ private:
         if (loaded_object)
         {
             if (!loaded_object->supportUpdates())
+            {
+                LOG_TRACE(log, "Supposed update time for "
+                    "'" + loaded_object->getLoadableName() + "'"
+                    " is never (loaded, does not support updates)");
+
                 return never;
+            }
 
             /// do not update loadable objects with zero as lifetime
             const auto & lifetime = loaded_object->getLifetime();
             if (lifetime.min_sec == 0 && lifetime.max_sec == 0)
+            {
+                LOG_TRACE(log, "Supposed update time for "
+                    "'" + loaded_object->getLoadableName() + "'"
+                    " is never (loaded, lifetime 0)");
                 return never;
+            }
 
             if (!error_count)
             {
                 std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
-                return std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+                auto result = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+                LOG_TRACE(log, "Supposed update time for "
+                    "'" << loaded_object->getLoadableName() << "'"
+                    " is " << ext::to_string(result)
+                    << " (loaded, lifetime [" << lifetime.min_sec
+                    << ", " << lifetime.max_sec << "], no errors)");
+                return result;
             }
-        }
 
-        return std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
+            auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
+            LOG_TRACE(log, "Supposed update time for '" << loaded_object->getLoadableName() << "'"
+                " is " << ext::to_string(result)
+                << " (backoff, " << error_count << " errors)");
+            return result;
+        }
+        else
+        {
+            auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
+            LOG_TRACE(log, "Supposed update time for unspecified object "
+                " is " << ext::to_string(result)
+                << " (backoff, " << error_count << " errors.");
+            return result;
+        }
     }
 
     const CreateObjectFunction create_object;

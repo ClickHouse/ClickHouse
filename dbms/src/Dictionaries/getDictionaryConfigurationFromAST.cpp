@@ -179,13 +179,13 @@ void buildSingleAttribute(
     type_element->appendChild(type);
     attribute_element->appendChild(type_element);
 
-     AutoPtr<Element> null_value_element(doc->createElement("null_value"));
-     String null_value_str;
-     if (dict_attr->default_value)
-         null_value_str = getFieldAsString(dict_attr->default_value->as<ASTLiteral>()->value);
-     AutoPtr<Text> null_value(doc->createTextNode(null_value_str));
-     null_value_element->appendChild(null_value);
-     attribute_element->appendChild(null_value_element);
+    AutoPtr<Element> null_value_element(doc->createElement("null_value"));
+    String null_value_str;
+    if (dict_attr->default_value)
+        null_value_str = getFieldAsString(dict_attr->default_value->as<ASTLiteral>()->value);
+    AutoPtr<Text> null_value(doc->createTextNode(null_value_str));
+    null_value_element->appendChild(null_value);
+    attribute_element->appendChild(null_value_element);
 
     if (dict_attr->expression != nullptr)
     {

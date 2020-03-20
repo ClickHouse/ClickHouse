@@ -19,6 +19,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/CurrentThread.h>
 #include <Processors/DelayedPortsProcessor.h>
+#include <Processors/RowsBeforeLimitCounter.h>
 
 namespace DB
 {
@@ -438,6 +439,8 @@ void QueryPipeline::setOutput(ProcessorPtr output)
     connect(*streams.front(), main);
     connect(*totals_having_port, totals);
     connect(*extremes_port, extremes);
+
+    initRowsBeforeLimit();
 }
 
 void QueryPipeline::unitePipelines(
@@ -552,25 +555,12 @@ void QueryPipeline::setProcessListElement(QueryStatus * elem)
     }
 }
 
-void QueryPipeline::finalize()
+void QueryPipeline::initRowsBeforeLimit()
 {
-    checkInitialized();
+    RowsBeforeLimitCounterPtr rows_before_limit_at_least;
 
-    if (!output_format)
-        throw Exception("Cannot finalize pipeline because it doesn't have output.", ErrorCodes::LOGICAL_ERROR);
-
-    calcRowsBeforeLimit();
-}
-
-void QueryPipeline::calcRowsBeforeLimit()
-{
-    /// TODO get from Remote
-
-    UInt64 rows_before_limit_at_least = 0;
-    UInt64 rows_before_limit = 0;
-
-    bool has_limit = false;
-    bool has_partial_sorting = false;
+    std::vector<LimitTransform *> limits;
+    std::vector<SourceFromInputStream *> sources;
 
     std::unordered_set<IProcessor *> visited;
 
@@ -593,33 +583,24 @@ void QueryPipeline::calcRowsBeforeLimit()
 
         if (!visited_limit)
         {
-            if (auto * limit = typeid_cast<const LimitTransform *>(processor))
+            if (auto * limit = typeid_cast<LimitTransform *>(processor))
             {
-                has_limit = visited_limit = true;
-                rows_before_limit_at_least += limit->getRowsBeforeLimitAtLeast();
+                visited_limit = true;
+                limits.emplace_back(limit);
             }
 
             if (auto * source = typeid_cast<SourceFromInputStream *>(processor))
-            {
-                if (auto & stream = source->getStream())
-                {
-                    auto & info = stream->getProfileInfo();
-                    if (info.hasAppliedLimit())
-                    {
-                        has_limit = visited_limit = true;
-                        rows_before_limit_at_least += info.getRowsBeforeLimit();
-                    }
-                }
-            }
+                sources.emplace_back(source);
         }
-
-        if (auto * sorting = typeid_cast<const PartialSortingTransform *>(processor))
+        else if (auto * sorting = typeid_cast<PartialSortingTransform *>(processor))
         {
-            has_partial_sorting = true;
-            rows_before_limit += sorting->getNumReadRows();
+            if (!rows_before_limit_at_least)
+                rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
+
+            sorting->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 
             /// Don't go to children. Take rows_before_limit from last PartialSortingTransform.
-            /// continue;
+            continue;
         }
 
         /// Skip totals and extremes port for output format.
@@ -640,9 +621,24 @@ void QueryPipeline::calcRowsBeforeLimit()
         }
     }
 
-    /// Get num read rows from PartialSortingTransform if have it.
-    if (has_limit)
-        output_format->setRowsBeforeLimit(has_partial_sorting ? rows_before_limit : rows_before_limit_at_least);
+    if (!rows_before_limit_at_least && (!limits.empty() || !sources.empty()))
+    {
+        rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
+
+        for (auto & limit : limits)
+            limit->setRowsBeforeLimitCounter(rows_before_limit_at_least);
+
+        for (auto & source : sources)
+            source->setRowsBeforeLimitCounter(rows_before_limit_at_least);
+    }
+
+    /// If there is a limit, then enable rows_before_limit_at_least
+    /// It is needed when zero rows is read, but we still want rows_before_limit_at_least in result.
+    if (!limits.empty())
+        rows_before_limit_at_least->add(0);
+
+    if (rows_before_limit_at_least)
+        output_format->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 }
 
 Pipe QueryPipeline::getPipe() &&
