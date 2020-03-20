@@ -1,4 +1,4 @@
-# 日志引擎系列 {#table_engines-log_engine_family}
+# 日志引擎系列 {#table-engines-log-engine-family}
 
 这些引擎是为了需要写入许多小数据量（少于一百万行）的表的场景而开发的。
 
@@ -8,27 +8,30 @@
 - [Log](log.md)
 - [TinyLog](tinylog.md)
 
-## 共同属性 {#table_engines-log_engine_family-common_properties}
+## 共同属性 {#table-engines-log-engine-family-common-properties}
 
 引擎：
 
 - 数据存储在磁盘上。
+
 - 写入时将数据追加在文件末尾。
+
 - 不支持[突变](../../query_language/alter.md#alter-mutations)操作。
+
 - 不支持索引。
 
     这意味着 `SELECT` 在范围查询时效率不高。
-    
+
 - 非原子地写入数据。
 
     如果某些事情破坏了写操作，例如服务器的异常关闭，你将会得到一张包含了损坏数据的表。
 
-## 差异 {#table_engines-log_engine_family-differences}
+## 差异 {#table-engines-log-engine-family-differences}
 
 `Log` 和 `StripeLog` 引擎支持：
 
 - 并发访问数据的锁。
-    
+
     `INSERT` 请求执行过程中表会被锁定，并且其他的读写数据的请求都会等待直到锁定被解除。如果没有写数据的请求，任意数量的读请求都可以并发执行。
 
 - 并行读取数据。

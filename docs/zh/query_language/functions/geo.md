@@ -1,10 +1,10 @@
-# GEO函数
+# GEO函数 {#geohan-shu}
 
-## greatCircleDistance
+## greatCircleDistance {#greatcircledistance}
 
 使用[great-circle distance公式](https://en.wikipedia.org/wiki/Great-circle_distance)计算地球表面两点之间的距离。
 
-```sql
+``` sql
 greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 ```
 
@@ -25,22 +25,22 @@ greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 
 **示例**
 
-```sql
+``` sql
 SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 ```
 
-```text
+``` text
 ┌─greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)─┐
 │                                                14132374.194975413 │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## pointInEllipses
+## pointInEllipses {#pointinellipses}
 
 检查指定的点是否至少包含在指定的一个椭圆中。
 下述中的坐标是几何图形在笛卡尔坐标系中的位置。
 
-```sql
+``` sql
 pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
 ```
 
@@ -58,21 +58,21 @@ pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
 
 **示例**
 
-```sql
+``` sql
 SELECT pointInEllipses(55.755831, 37.617673, 55.755831, 37.617673, 1.0, 2.0)
 ```
 
-```text
+``` text
 ┌─pointInEllipses(55.755831, 37.617673, 55.755831, 37.617673, 1., 2.)─┐
 │                                                                   1 │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## pointInPolygon
+## pointInPolygon {#pointinpolygon}
 
 检查指定的点是否包含在指定的多边形中。
 
-```sql
+``` sql
 pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 ```
 
@@ -89,20 +89,21 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 **示例**
 
-```sql
+``` sql
 SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ```
 
-```text
+``` text
 ┌─res─┐
 │   1 │
 └─────┘
 ```
 
-## geohashEncode
+## geohashEncode {#geohashencode}
 
 将经度和纬度编码为geohash-string，请参阅（http://geohash.org/,https://en.wikipedia.org/wiki/Geohash）。
-```sql
+
+``` sql
 geohashEncode(longitude, latitude, [precision])
 ```
 
@@ -118,17 +119,17 @@ geohashEncode(longitude, latitude, [precision])
 
 **示例**
 
-```sql
+``` sql
 SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res
 ```
 
-```text
+``` text
 ┌─res──────────┐
 │ ezs42d000000 │
 └──────────────┘
 ```
 
-## geohashDecode
+## geohashDecode {#geohashdecode}
 
 将任何geohash编码的字符串解码为经度和纬度。
 
@@ -142,22 +143,21 @@ SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res
 
 **示例**
 
-```sql
+``` sql
 SELECT geohashDecode('ezs42') AS res
 ```
 
-```text
+``` text
 ┌─res─────────────────────────────┐
 │ (-5.60302734375,42.60498046875) │
 └─────────────────────────────────┘
 ```
 
-
-## geoToH3
+## geoToH3 {#geotoh3}
 
 计算指定的分辨率的[H3](https://uber.github.io/h3/#/documentation/overview/introduction)索引`(lon, lat)`。
 
-```sql
+``` sql
 geoToH3(lon, lat, resolution)
 ```
 
@@ -176,25 +176,26 @@ geoToH3(lon, lat, resolution)
 
 **示例**
 
-```sql
+``` sql
 SELECT geoToH3(37.79506683, 55.71290588, 15) as h3Index
 ```
-```text
+
+``` text
 ┌────────────h3Index─┐
 │ 644325524701193974 │
 └────────────────────┘
 ```
 
-## geohashesInBox
+## geohashesInBox {#geohashesinbox}
 
 计算在指定精度下计算最小包含指定的经纬范围的最小图形的geohash数组。
 
 **输入值**
 
-- longitude_min - 最小经度。其值应在`[-180°，180°]`范围内
-- latitude_min - 最小纬度。其值应在`[-90°，90°]`范围内
-- longitude_max - 最大经度。其值应在`[-180°，180°]`范围内
-- latitude_max - 最大纬度。其值应在`[-90°，90°]`范围内
+- longitude\_min - 最小经度。其值应在`[-180°，180°]`范围内
+- latitude\_min - 最小纬度。其值应在`[-90°，90°]`范围内
+- longitude\_max - 最大经度。其值应在`[-180°，180°]`范围内
+- latitude\_max - 最大纬度。其值应在`[-90°，90°]`范围内
 - precision - geohash的精度。其值应在`[1, 12]`内的`UInt8`类型的数字
 
 请注意，上述所有的坐标参数必须同为`Float32`或`Float64`中的一种类型。
@@ -202,16 +203,17 @@ SELECT geoToH3(37.79506683, 55.71290588, 15) as h3Index
 **返回值**
 
 - 包含指定范围内的指定精度的geohash字符串数组。注意，您不应该依赖返回数组中geohash的顺序。
-- [] - 当传入的最小经纬度大于最大经纬度时将返回一个空数组。
+- \[\] - 当传入的最小经纬度大于最大经纬度时将返回一个空数组。
 
 请注意，如果生成的数组长度超过10000时，则函数将抛出异常。
 
 **示例**
 
-```sql
+``` sql
 SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos
 ```
-```text
+
+``` text
 ┌─thasos──────────────────────────────────────┐
 │ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
 └─────────────────────────────────────────────┘

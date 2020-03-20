@@ -1,6 +1,6 @@
-<div dir="rtl" markdown="1">
+<div markdown="1" dir="rtl">
 
-# ClickHouse ﻪﭽﺨﯾﺭﺎﺗ
+# ClickHouse ﻪﭽﺨﯾﺭﺎﺗ {#clickhouse}
 
 ClickHouse در ابتدا برای قدرت به Yandex.Metrica دومین بستر آنالیز وب در دنیا توسعه داده شد، و همچنان جز اصلی آن است. ClickHouse اجازه می دهند که با بیش از 13 تریلیون رکورد در دیتابیس و بیش از 20 میلیارد event در روز، گزارش های مستقیم (On the fly) از داده های non-aggregate تهیه کنیم. این مقاله پیشنیه ی تاریخی در ارتباط با اهداف اصلی ClickHouse قبل از آنکه به یک محصول open source تبدیل شود، می دهد.
 
@@ -8,7 +8,7 @@ Yandex.Metrica تولید گزارش های برپایه بازدید و session
 
 از آوریل 2014، Yandex.Metrica تقریبا 12 میلیارد event شامل page view و click در روز دریافت کرد. تمام این event ها باید به ترتیب برای ساخت گزارش های سفارشی ذخیره سازی می شدند. یک query ممکن است نیاز به اسکن کردن میلیون ها سطر با زمان کمتر از چند صد میلی ثانیه، یا چند صد میلیون سطر در عرض چند ثانیه داشته باشد.
 
-## استفاده در Yandex.Metrica و دیگر سرویس های Yandex
+## استفاده در Yandex.Metrica و دیگر سرویس های Yandex {#stfdh-dr-yandex-metrica-w-dygr-srwys-hy-yandex}
 
 ClickHouse با چندین اهداف در Yandex.Metrica استفاده می شود. وظیفه اصلی آن ساخت گزارش های آنلاین از داده های non-aggregate می باشد. ClickHouse در یک کلاستر با سایز 374 سرور، که بیش از 20.3 تریلیون سطر در دیتابیس را دارد مورد استفاده قرار می گیرد. اندازه فشرده داده ها، بدون شمارش داده های تکراری و replication، حدود 2 پتابایت می باشد. اندازه ی غیرفشرده داده ها (در فرمت TSV) حدودا 17 پتابایت می باشد.
 
@@ -22,7 +22,7 @@ ClickHouse همچنین در موارد زیراستفاده می شود:
 
 ClickHouse حداقل در دوازده جای دیگر سرویس Yandex نصب شده است: در search verticals، Market، Direct، Business Analytics، Mobile Development، AdFox، سرویس های شخصی و..
 
-## داده های Aggregate , Non-Aggregate
+## داده های Aggregate , Non-Aggregate {#ddh-hy-aggregate-non-aggregate}
 
 یک دیدگاه محبوب وجود دارد که شما باید، داده های خود را به منظور کاهش اندازه داده ها Aggregate کنید.
 
@@ -46,4 +46,5 @@ Yandex.Metrica دارای یک سیستم تخصصی برای aggregate کردن
 برای حذف محدودیت های OLAPServer و حل مشکلات کار با داده های Non-Aggregate برای تمام گزارش ها، ما مدیریت دیتابیس ClicHouse را توسعه دادیم..
 
 </div>
+
 [مقاله اصلی](https://clickhouse.tech/docs/fa/introduction/ya_metrika_task/) <!--hide-->
