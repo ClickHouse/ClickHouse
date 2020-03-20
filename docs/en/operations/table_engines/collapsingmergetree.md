@@ -119,6 +119,8 @@ For each resulting data part ClickHouse saves:
 
 4.  None of the rows, in all other cases.
 
+<!-- -->
+
   Also when there are at least 2 more “state” rows than “cancel” rows, or at least 2 more “cancel” rows then “state” rows, the merge continues, but ClickHouse treats this situation as a logical error and records it in the server log. This error can occur if the same data were inserted more than once.
 
 Thus, collapsing should not change the results of calculating statistics.
