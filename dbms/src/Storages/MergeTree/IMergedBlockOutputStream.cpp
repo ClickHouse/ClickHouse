@@ -6,11 +6,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_UNLINK;
-}
-
 IMergedBlockOutputStream::IMergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part)
     : storage(data_part->storage)
@@ -87,11 +82,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     {
         if (checksums.files.count(removed_file))
         {
-            String path_to_remove = data_part->getFullPath() + removed_file;
-
-            if (0 != unlink(path_to_remove.c_str()))
-                throwFromErrnoWithPath("Cannot unlink file " + path_to_remove, path_to_remove, ErrorCodes::CANNOT_UNLINK);
-
+            data_part->disk->remove(data_part->getFullRelativePath() + removed_file);
             checksums.files.erase(removed_file);
         }
     }
