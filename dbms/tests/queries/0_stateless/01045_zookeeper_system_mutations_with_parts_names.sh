@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function wait_mutation_to_start()
 {
-    query_wait=`$CLICKHOUSE_CLIENT --query="SELECT length(parts_to_do_names) FROM system.mutations where table = 'replicated_table_for_mutations'" 2>&1`
+    query_wait=`$CLICKHOUSE_CLIENT --query="SELECT length(parts_to_do_names) FROM system.mutations where table = '$1'" 2>&1`
 
     while [ "$query_wait" == "0" ] || [ -z "$query_wait" ]
     do
