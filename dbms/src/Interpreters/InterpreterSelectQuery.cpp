@@ -280,7 +280,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (!rewriter_version || rewriter_version > 2)
             throw Exception("Bad multiple_joins_rewriter_version setting value: " + settings.multiple_joins_rewriter_version.toString(),
                             ErrorCodes::INVALID_SETTING_VALUE);
-        JoinToSubqueryTransformVisitor::Data join_to_subs_data{*context, joined_tables.tablesWithColumns(), aliases, rewriter_version};
+        JoinToSubqueryTransformVisitor::Data join_to_subs_data{joined_tables.tablesWithColumns(), aliases, rewriter_version};
         JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query_ptr);
 
         joined_tables.reset(select);

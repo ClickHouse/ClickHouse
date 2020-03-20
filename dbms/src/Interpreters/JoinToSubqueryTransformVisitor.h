@@ -18,7 +18,6 @@ class JoinToSubqueryTransformMatcher
 public:
     struct Data
     {
-        const Context & context;
         const std::vector<TableWithColumnNamesAndTypes> & tables;
         const Aliases & aliases;
         size_t version = 1;
