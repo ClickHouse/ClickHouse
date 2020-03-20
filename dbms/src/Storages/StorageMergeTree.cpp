@@ -768,9 +768,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
         return BackgroundProcessingPoolTaskResult::ERROR;
 
     if (merger_mutator.merges_blocker.isCancelled())
-    {
         return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
-    }
 
     try
     {
@@ -783,7 +781,6 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
                 clearOldPartsFromFilesystem();
                 clearOldTemporaryDirectories();
             }
-
             clearOldMutations();
         }
 
