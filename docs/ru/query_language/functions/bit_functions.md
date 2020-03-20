@@ -219,17 +219,16 @@ bitCount(x)
 
 Запрос:
 
-```
+```sql
 SELECT bitCount(100)
 ```
 
 Результат:
 
-```
+```text
 ┌─bitCount(100)─┐
 │             3 │
 └───────────────┘
-
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/bit_functions/) <!--hide-->

@@ -228,17 +228,16 @@ Type: [Integer](../../data_types/int_uint.md).
 
 Query:
 
-```
+```sql
 SELECT bitCount(100)
 ```
 
 Result:
 
-```
+```text
 ┌─bitCount(100)─┐
 │             3 │
 └───────────────┘
-
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/bit_functions/) <!--hide-->
