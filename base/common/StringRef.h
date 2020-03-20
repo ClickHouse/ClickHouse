@@ -170,14 +170,13 @@ inline bool operator> (StringRef lhs, StringRef rhs)
   * For more information, see hash_map_string_3.cpp
   */
 
-#if defined(ARCADIA_BUILD)
-using namespace CityHash_v1_0_2;
-#endif
-
 struct StringRefHash64
 {
     size_t operator() (StringRef x) const
     {
+#if !defined(ARCADIA_BUILD)
+        using namespace CityHash_v1_0_2;
+#endif
         return CityHash64(x.data, x.size);
     }
 };
@@ -188,6 +187,9 @@ struct StringRefHash64
 
 inline UInt64 hashLen16(UInt64 u, UInt64 v)
 {
+#if !defined(ARCADIA_BUILD)
+    using namespace CityHash_v1_0_2;
+#endif
     return Hash128to64(uint128(u, v));
 }
 

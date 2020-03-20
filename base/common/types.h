@@ -6,7 +6,7 @@
 #include <string>
 #include <type_traits>
 
-#if __cplusplus < 202001L
+#if __cplusplus <= 201703L
 using char8_t = unsigned char;
 #endif
 
