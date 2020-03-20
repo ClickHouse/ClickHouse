@@ -216,8 +216,8 @@ TEST(WeakHash32, ColumnString_2)
 
     /*
      * a
+     * aa
      * aaa
-     * aaaa
      * ...
      * b
      * bb
@@ -231,7 +231,7 @@ TEST(WeakHash32, ColumnString_2)
         {
             data.push_back(i);
             size_t s = (i % max_size) + 1;
-            std::string str(letter, s);
+            std::string str(s, letter);
             col->insertData(str.data(), str.size());
 
             if (s == max_size)
