@@ -49,7 +49,7 @@ inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataType
 }
 
 
-static AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertUnary(name, argument_types);
 
@@ -83,13 +83,12 @@ static AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string 
         return createAggregateFunctionGroupArrayImpl<GroupArrayTrait<true, Sampler::NONE>>(argument_types[0], max_elems);
 }
 
-static AggregateFunctionPtr
-createAggregateFunctionGroupArraySample(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionGroupArraySample(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertUnary(name, argument_types);
 
     UInt64 max_elems = std::numeric_limits<UInt64>::max();
-    UInt64 seed = 123456;
+    UInt64 seed = thread_local_rng();
 
     UInt64 * params[2] = {&max_elems, &seed};
     if (parameters.size() != 1 && parameters.size() != 2)

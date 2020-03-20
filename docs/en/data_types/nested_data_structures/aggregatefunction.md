@@ -38,9 +38,9 @@ uniqState(UserID)
 quantilesState(0.5, 0.9)(SendTiming)
 ```
 
-In contrast to the corresponding functions `uniq` and `quantiles`, `-State`- functions return the state, instead the final value. In other words, they return a value of `AggregateFunction` type.
+In contrast to the corresponding functions `uniq` and `quantiles`, `-State`- functions return the state, instead of the final value. In other words, they return a value of `AggregateFunction` type.
 
-In the results of `SELECT` query the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. If dump data into, for example, `TabSeparated` format with `SELECT` query then this dump can be loaded back using `INSERT` query.
+In the results of `SELECT` query, the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. If dump data into, for example, `TabSeparated` format with `SELECT` query then this dump can be loaded back using `INSERT` query.
 
 ### Data Selection
 
@@ -61,4 +61,4 @@ SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP
 See [AggregatingMergeTree](../../operations/table_engines/aggregatingmergetree.md) engine description.
 
 
-[Original article](https://clickhouse.yandex/docs/en/data_types/nested_data_structures/aggregatefunction/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data_types/nested_data_structures/aggregatefunction/) <!--hide-->

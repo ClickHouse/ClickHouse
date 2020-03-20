@@ -2,7 +2,16 @@
 #include "Selectors.h"
 #include "Algorithms.h"
 
-namespace DB::GatherUtils
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
+namespace GatherUtils
 {
 
 struct ArrayConcat : public ArraySinkSourceSelector<ArrayConcat>
@@ -37,4 +46,6 @@ void concat(const std::vector<std::unique_ptr<IArraySource>> & sources, IArraySi
         throw Exception("Concat function should get at least 1 ArraySource", ErrorCodes::LOGICAL_ERROR);
     return ArrayConcat::select(*sources.front(), sink, sources);
 }
+}
+
 }

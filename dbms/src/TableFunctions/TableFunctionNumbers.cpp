@@ -5,7 +5,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Storages/System/StorageSystemNumbers.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include "registerTableFunctions.h"
 
 
@@ -31,7 +33,9 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_f
         UInt64 offset = arguments.size() == 2 ? evaluateArgument(context, arguments[0]) : 0;
         UInt64 length = arguments.size() == 2 ? evaluateArgument(context, arguments[1]) : evaluateArgument(context, arguments[0]);
 
-        auto res = StorageSystemNumbers::create(table_name, multithreaded, length, offset, false);
+        context.checkAccess(AccessType::numbers);
+
+        auto res = StorageSystemNumbers::create(StorageID(getDatabaseName(), table_name), multithreaded, length, offset, false);
         res->startup();
         return res;
     }

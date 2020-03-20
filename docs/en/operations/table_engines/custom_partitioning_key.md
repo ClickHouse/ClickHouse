@@ -2,7 +2,7 @@
 
 Partitioning is available for the [MergeTree](mergetree.md) family tables (including [replicated](replication.md) tables). [Materialized views](materializedview.md) based on MergeTree tables support partitioning, as well.
 
-A partition is a logical combination of records in a table by a specified criterion. You can set a partition by an arbitrary criterion, such as by month, by day, or by event type. Each partition is stored separately in order to simplify manipulations of this data. When accessing the data, ClickHouse uses the smallest subset of partitions possible.
+A partition is a logical combination of records in a table by a specified criterion. You can set a partition by an arbitrary criterion, such as by month, by day, or by event type. Each partition is stored separately to simplify manipulations of this data. When accessing the data, ClickHouse uses the smallest subset of partitions possible.
 
 The partition is specified in the `PARTITION BY expr` clause when [creating a table](mergetree.md#table_engine-mergetree-creating-a-table). The partition key can be any expression from the table columns. For example, to specify partitioning by month, use the expression `toYYYYMM(date_column)`:
 
@@ -117,4 +117,4 @@ Note that on the operating server, you cannot manually change the set of parts o
 
 ClickHouse allows you to perform operations with the partitions: delete them, copy from one table to another, or create a backup. See the list of all operations in the section [Manipulations With Partitions and Parts](../../query_language/alter.md#alter_manipulations-with-partitions).
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->

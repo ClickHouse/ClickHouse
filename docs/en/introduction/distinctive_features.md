@@ -61,4 +61,4 @@ Uses asynchronous multimaster replication. After being written to any available 
 
 For more information, see the section [Data replication](../operations/table_engines/replication.md).
 
-[Original article](https://clickhouse.yandex/docs/en/introduction/distinctive_features/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/introduction/distinctive_features/) <!--hide-->

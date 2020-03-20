@@ -1,7 +1,7 @@
 #pragma once
 
 #include <atomic>
-#include <common/Types.h>
+#include <common/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SimpleActionBlocker.h>
 #include <Common/VariableContext.h>
@@ -15,7 +15,10 @@ class MemoryTracker
 {
     std::atomic<Int64> amount {0};
     std::atomic<Int64> peak {0};
-    std::atomic<Int64> limit {0};
+    std::atomic<Int64> hard_limit {0};
+    std::atomic<Int64> profiler_limit {0};
+
+    Int64 profiler_step = 0;
 
     /// To test exception safety of calling code, memory tracker throws an exception on each memory allocation with specified probability.
     double fault_probability = 0;
@@ -32,7 +35,6 @@ class MemoryTracker
 
 public:
     MemoryTracker(VariableContext level_ = VariableContext::Thread) : level(level_) {}
-    MemoryTracker(Int64 limit_, VariableContext level_ = VariableContext::Thread) : limit(limit_), level(level_) {}
     MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread) : parent(parent_), level(level_) {}
 
     ~MemoryTracker();
@@ -66,19 +68,20 @@ public:
         return peak.load(std::memory_order_relaxed);
     }
 
-    void setLimit(Int64 limit_)
-    {
-        limit.store(limit_, std::memory_order_relaxed);
-    }
-
     /** Set limit if it was not set.
       * Otherwise, set limit to new value, if new value is greater than previous limit.
       */
-    void setOrRaiseLimit(Int64 value);
+    void setOrRaiseHardLimit(Int64 value);
+    void setOrRaiseProfilerLimit(Int64 value);
 
     void setFaultProbability(double value)
     {
         fault_probability = value;
+    }
+
+    void setProfilerStep(Int64 value)
+    {
+        profiler_step = value;
     }
 
     /// next should be changed only once: from nullptr to some value.
@@ -127,4 +130,5 @@ namespace CurrentMemoryTracker
 }
 
 
+/// Holding this object will temporarily disable memory tracking.
 DB::SimpleActionLock getCurrentMemoryTrackerActionLock();

@@ -19,11 +19,23 @@ namespace Poco
 
 namespace DB
 {
+class AccessRightsContext;
+using AccessRightsContextPtr = std::shared_ptr<const AccessRightsContext>;
+class AccessRightsContextFactory;
+struct User;
+using UserPtr = std::shared_ptr<const User>;
+class RoleContext;
+using RoleContextPtr = std::shared_ptr<const RoleContext>;
+class RoleContextFactory;
+class RowPolicyContext;
+using RowPolicyContextPtr = std::shared_ptr<const RowPolicyContext>;
+class RowPolicyContextFactory;
 class QuotaContext;
+using QuotaContextPtr = std::shared_ptr<const QuotaContext>;
 class QuotaContextFactory;
 struct QuotaUsageInfo;
-class RowPolicyContext;
-class RowPolicyContextFactory;
+class ClientInfo;
+struct Settings;
 
 
 /// Manages access control entities.
@@ -33,18 +45,39 @@ public:
     AccessControlManager();
     ~AccessControlManager();
 
-    void loadFromConfig(const Poco::Util::AbstractConfiguration & users_config);
+    void setLocalDirectory(const String & directory);
+    void setUsersConfig(const Poco::Util::AbstractConfiguration & users_config);
 
-    std::shared_ptr<QuotaContext>
-    createQuotaContext(const String & user_name, const Poco::Net::IPAddress & address, const String & custom_quota_key);
+    AccessRightsContextPtr getAccessRightsContext(
+        const UUID & user_id,
+        const std::vector<UUID> & current_roles,
+        bool use_default_roles,
+        const Settings & settings,
+        const String & current_database,
+        const ClientInfo & client_info) const;
+
+    RoleContextPtr getRoleContext(
+        const std::vector<UUID> & current_roles,
+        const std::vector<UUID> & current_roles_with_admin_option) const;
+
+    RowPolicyContextPtr getRowPolicyContext(
+        const UUID & user_id,
+        const std::vector<UUID> & enabled_roles) const;
+
+    QuotaContextPtr getQuotaContext(
+        const String & user_name,
+        const UUID & user_id,
+        const std::vector<UUID> & enabled_roles,
+        const Poco::Net::IPAddress & address,
+        const String & custom_quota_key) const;
 
     std::vector<QuotaUsageInfo> getQuotaUsageInfo() const;
 
-    std::shared_ptr<RowPolicyContext> getRowPolicyContext(const String & user_name) const;
-
 private:
-    std::unique_ptr<QuotaContextFactory> quota_context_factory;
+    std::unique_ptr<AccessRightsContextFactory> access_rights_context_factory;
+    std::unique_ptr<RoleContextFactory> role_context_factory;
     std::unique_ptr<RowPolicyContextFactory> row_policy_context_factory;
+    std::unique_ptr<QuotaContextFactory> quota_context_factory;
 };
 
 }

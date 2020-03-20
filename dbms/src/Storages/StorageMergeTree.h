@@ -33,17 +33,17 @@ public:
 
     std::string getName() const override { return merging_params.getModeName() + "MergeTree"; }
 
+    bool supportsParallelInsert() const override { return true; }
+
     bool supportsIndexForIn() const override { return true; }
 
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-    bool supportProcessorsPipeline() const override { return true; }
 
     std::optional<UInt64> totalRows() const override;
 

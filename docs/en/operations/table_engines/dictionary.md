@@ -1,4 +1,3 @@
-
 # Dictionary
 
 The `Dictionary` engine displays the [dictionary](../../query_language/dicts/external_dicts.md) data as a ClickHouse table.
@@ -90,4 +89,4 @@ select * from products limit 1;
 ```
 
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/dictionary/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/dictionary/) <!--hide-->

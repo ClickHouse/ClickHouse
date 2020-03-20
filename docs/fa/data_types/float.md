@@ -87,4 +87,4 @@ SELECT 0 / 0
 قوانین مربوط به مرتب سازی ` Nan ` را در بخش [ORDER BY clause](../query_language/select.md) ببینید.
 
 </div>
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/float/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/data_types/float/) <!--hide-->

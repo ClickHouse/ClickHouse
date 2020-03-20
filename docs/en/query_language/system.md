@@ -107,4 +107,4 @@ Provides possibility to start background merges for tables in the MergeTree fami
 SYSTEM START MERGES [[db.]merge_tree_family_table_name]
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/system/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/system/) <!--hide-->

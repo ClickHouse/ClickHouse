@@ -52,4 +52,4 @@ WHERE a = 'b\0'
 
 请注意，`FixedString(N)`的长度是个常量。仅由空字符组成的字符串，函数[length](../query_language/functions/array_functions.md#array_functions-length)返回值为`N`,而函数[empty](../query_language/functions/string_functions.md#string_functions-empty)的返回值为`1`。
 
-[来源文章](https://clickhouse.yandex/docs/en/data_types/fixedstring/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/data_types/fixedstring/) <!--hide-->

@@ -35,6 +35,9 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_MANY_BYTES;
@@ -89,6 +92,8 @@ inline bool likePatternIsStrstr(const String & pattern, String & res)
 template <bool like, bool revert = false>
 struct MatchImpl
 {
+    static constexpr bool use_default_implementation_for_constants = true;
+
     using ResultType = UInt8;
 
     static void vector_constant(
@@ -240,12 +245,6 @@ struct MatchImpl
         }
     }
 
-    static void constant_constant(const std::string & data, const std::string & pattern, UInt8 & res)
-    {
-        const auto & regexp = Regexps::get<like, true>(pattern);
-        res = revert ^ regexp->match(data);
-    }
-
     template <typename... Args>
     static void vector_vector(Args &&...)
     {
@@ -307,8 +306,8 @@ struct MultiMatchAnyImpl
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
         auto on_match = []([[maybe_unused]] unsigned int id,
-                           unsigned long long /* from */,
-                           unsigned long long /* to */,
+                           unsigned long long /* from */, // NOLINT
+                           unsigned long long /* to */, // NOLINT
                            unsigned int /* flags */,
                            void * context) -> int
         {
@@ -408,8 +407,8 @@ struct MultiMatchAllIndicesImpl
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
         auto on_match = [](unsigned int id,
-                           unsigned long long /* from */,
-                           unsigned long long /* to */,
+                           unsigned long long /* from */, // NOLINT
+                           unsigned long long /* to */, // NOLINT
                            unsigned int /* flags */,
                            void * context) -> int
         {
@@ -519,7 +518,7 @@ struct ReplaceRegexpImpl
     {
         Instructions instructions;
 
-        String now = "";
+        String now;
         for (size_t i = 0; i < s.size(); ++i)
         {
             if (s[i] == '\\' && i + 1 < s.size())
@@ -846,29 +845,6 @@ struct ReplaceStringImpl
 #undef COPY_REST_OF_CURRENT_STRING
         }
     }
-
-    static void constant(const std::string & data, const std::string & needle, const std::string & replacement, std::string & res_data)
-    {
-        res_data = "";
-        int replace_cnt = 0;
-        for (size_t i = 0; i < data.size(); ++i)
-        {
-            bool match = true;
-            if (i + needle.size() > data.size() || (replace_one && replace_cnt > 0))
-                match = false;
-            for (size_t j = 0; match && j < needle.size(); ++j)
-                if (data[i + j] != needle[j])
-                    match = false;
-            if (match)
-            {
-                ++replace_cnt;
-                res_data += replacement;
-                i = i + needle.size() - 1;
-            }
-            else
-                res_data += data[i];
-        }
-    }
 };
 
 
@@ -922,7 +898,7 @@ public:
         String needle = c1_const->getValue<String>();
         String replacement = c2_const->getValue<String>();
 
-        if (needle.size() == 0)
+        if (needle.empty())
             throw Exception("Length of the second argument of function replace must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))

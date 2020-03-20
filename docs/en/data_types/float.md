@@ -25,7 +25,7 @@ SELECT 1 - 0.9
 
 - The result of the calculation depends on the calculation method (the processor type and architecture of the computer system).
 - Floating-point calculations might result in numbers such as infinity (`Inf`) and "not-a-number" (`NaN`). This should be taken into account when processing the results of calculations.
-- When parsing floating point numbers from text, the result might not be the nearest machine-representable number.
+- When parsing floating-point numbers from text, the result might not be the nearest machine-representable number.
 
 ## NaN and Inf {#data_type-float-nan-inf}
 
@@ -70,4 +70,4 @@ SELECT 0 / 0
   See the rules for `NaN` sorting in the section [ORDER BY clause](../query_language/select.md).
 
 
-[Original article](https://clickhouse.yandex/docs/en/data_types/float/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data_types/float/) <!--hide-->

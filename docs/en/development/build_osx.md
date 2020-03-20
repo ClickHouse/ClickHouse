@@ -1,6 +1,6 @@
 # How to Build ClickHouse on Mac OS X
 
-Build should work on Mac OS X 10.12.
+Build should work on Mac OS X 10.15 (Catalina)
 
 ## Install Homebrew
 
@@ -17,16 +17,14 @@ $ brew install cmake ninja libtool gettext
 ## Checkout ClickHouse Sources
 
 ```bash
-$ git clone --recursive git@github.com:yandex/ClickHouse.git
+$ git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 ```
 or
 ```bash
-$ git clone --recursive https://github.com/yandex/ClickHouse.git
+$ git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 
 $ cd ClickHouse
 ```
-
-For the latest stable version, switch to the `stable` branch.
 
 ## Build ClickHouse
 
@@ -82,4 +80,4 @@ Reboot.
 To check if it's working, you can use `ulimit -n` command.
 
 
-[Original article](https://clickhouse.yandex/docs/en/development/build_osx/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->

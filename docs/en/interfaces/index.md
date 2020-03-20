@@ -18,4 +18,4 @@ There are also a wide range of third-party libraries for working with ClickHouse
 * [Integrations](third-party/integrations.md)
 * [Visual interfaces](third-party/gui.md)
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/interfaces/) <!--hide-->

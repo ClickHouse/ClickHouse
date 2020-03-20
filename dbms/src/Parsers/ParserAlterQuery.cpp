@@ -5,6 +5,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserPartition.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -29,7 +30,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_comment_column("COMMENT COLUMN");
     ParserKeyword s_modify_order_by("MODIFY ORDER BY");
     ParserKeyword s_modify_ttl("MODIFY TTL");
+    ParserKeyword s_materialize_ttl("MATERIALIZE TTL");
     ParserKeyword s_modify_setting("MODIFY SETTING");
+    ParserKeyword s_modify_query("MODIFY QUERY");
 
     ParserKeyword s_add_index("ADD INDEX");
     ParserKeyword s_drop_index("DROP INDEX");
@@ -88,6 +91,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         /* allow_empty = */ false);
     ParserSetQuery parser_settings(true);
     ParserNameList values_p;
+    ParserSelectWithUnionQuery select_p;
     ParserTTLExpressionList parser_ttl_list;
 
     if (is_live_view)
@@ -455,11 +459,27 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 return false;
             command->type = ASTAlterCommand::MODIFY_TTL;
         }
+        else if (s_materialize_ttl.ignore(pos, expected))
+        {
+            command->type = ASTAlterCommand::MATERIALIZE_TTL;
+
+            if (s_in_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command->partition, expected))
+                    return false;
+            }
+        }
         else if (s_modify_setting.ignore(pos, expected))
         {
             if (!parser_settings.parse(pos, command->settings_changes, expected))
                 return false;
             command->type = ASTAlterCommand::MODIFY_SETTING;
+        }
+        else if (s_modify_query.ignore(pos, expected))
+        {
+            if (!select_p.parse(pos, command->select, expected))
+                return false;
+            command->type = ASTAlterCommand::MODIFY_QUERY;
         }
         else
             return false;

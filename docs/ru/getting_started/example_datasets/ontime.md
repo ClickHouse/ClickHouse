@@ -1,4 +1,3 @@
-
 # OnTime
 
 Этот датасет может быть получен двумя способами:
@@ -8,7 +7,7 @@
 
 ## Импорт из сырых данных
 
-Скачивание данных:
+Скачивание данных (из `https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh`):
 
 ```bash
 for s in `seq 1987 2018`
@@ -19,8 +18,6 @@ wget https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performa
 done
 done
 ```
-
-(из <https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh> )
 
 Создание таблицы:
 
@@ -135,7 +132,10 @@ CREATE TABLE `ontime` (
   `Div5LongestGTime` String,
   `Div5WheelsOff` String,
   `Div5TailNum` String
-) ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192)
+) ENGINE = MergeTree 
+PARTITION BY Year 
+ORDER BY (Carrier, FlightDate) 
+SETTINGS index_granularity = 8192;
 ```
 
 Загрузка данных:
@@ -227,7 +227,7 @@ FROM
         AND Year=2007
     GROUP BY Carrier
 )
-ANY INNER JOIN
+JOIN
 (
     SELECT
         Carrier,
@@ -246,7 +246,7 @@ SELECT Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year=2007
 GROUP BY Carrier
-ORDER BY Carrier
+ORDER BY c3 DESC
 ```
 
 Q6. Предыдущий запрос за более широкий диапазон лет, 2000-2008
@@ -263,7 +263,7 @@ FROM
         AND Year>=2000 AND Year<=2008
     GROUP BY Carrier
 )
-ANY INNER JOIN
+JOIN
 (
     SELECT
         Carrier,
@@ -282,7 +282,7 @@ SELECT Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year>=2000 AND Year<=2008
 GROUP BY Carrier
-ORDER BY Carrier;
+ORDER BY c3 DESC;
 ```
 
 Q7. Процент полетов, задержанных на более 10 минут, в разбивке по годам
@@ -298,7 +298,7 @@ FROM
     WHERE DepDelay>10
     GROUP BY Year
 )
-ANY INNER JOIN
+JOIN
 (
     select
         Year,
@@ -312,7 +312,7 @@ ORDER BY Year;
 Более оптимальная версия того же запроса:
 
 ```sql
-SELECT Year, avg(DepDelay>10)
+SELECT Year, avg(DepDelay>10)*100
 FROM ontime
 GROUP BY Year
 ORDER BY Year;
@@ -402,4 +402,4 @@ LIMIT 10;
 -   <https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/>
 -   <http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html>
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/getting_started/example_datasets/ontime/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/example_datasets/ontime/) <!--hide-->

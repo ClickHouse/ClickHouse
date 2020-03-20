@@ -13,7 +13,7 @@ Connected to ClickHouse server version 19.17.1 revision 54428.
 :)
 ```
 
-Клиенты и серверы различных версий совместимы, однако если клиент старее сервера, то некоторые новые фукнции могут быть недоступны. Мы рекомендуем использовать одинаковые версии клиента и сервера. При подключении клиента к более новому серверу `clickhouse-client` выводит сообщение:
+Клиенты и серверы различных версий совместимы, однако если клиент старее сервера, то некоторые новые функции могут быть недоступны. Мы рекомендуем использовать одинаковые версии клиента и сервера. При подключении клиента к более новому серверу `clickhouse-client` выводит сообщение:
 
 ```
 ClickHouse client version is older than ClickHouse server. It may lack support for new features.
@@ -147,4 +147,4 @@ $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM 
 </config>
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/cli/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/cli/) <!--hide-->

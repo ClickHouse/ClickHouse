@@ -284,4 +284,4 @@ SELECT toTypeName(toNullable(10))
 └────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/functions_for_nulls/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/functions_for_nulls/) <!--hide-->

@@ -15,9 +15,9 @@ $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_gov
 
 ## Оперативная память
 
-Для небольших объемов данных (до ~200 Гб в сжатом виде) лучше всего использовать столько памяти не меньше, чем объем данных.
-Для больших объемов данных, при выполнении интерактивных (онлайн) запросов, стоит использовать разумный объем оперативной памяти (128 Гб или более) для того, чтобы горячее подмножество данных поместилось в кеше страниц.
-Даже для объемов данных в ~50 Тб на сервер, использование 128 Гб оперативной памяти намного лучше для производительности выполнения запросов, чем 64 Гб.
+Для небольших объёмов данных (до ~200 Гб в сжатом виде) лучше всего использовать столько памяти не меньше, чем объём данных.
+Для больших объёмов данных, при выполнении интерактивных (онлайн) запросов, стоит использовать разумный объём оперативной памяти (128 Гб или более) для того, чтобы горячее подмножество данных поместилось в кеше страниц.
+Даже для объёмов данных в ~50 Тб на сервер, использование 128 Гб оперативной памяти намного лучше для производительности выполнения запросов, чем 64 Гб.
 
 Не выключайте overcommit. Значение `cat /proc/sys/vm/overcommit_memory` должно быть 0 or 1. Выполните:
 
@@ -84,7 +84,7 @@ XFS также подходит, но не так тщательно проте�
 При использовании IPv6, стоит увеличить размер кеша маршрутов.
 Ядра Linux до 3.2 имели массу проблем в реализации IPv6.
 
-Предпочитайте как минимум 10 Гбит сеть. 1 Гбит также будет работать, но намного хуже для починки реплик с десятками терабайт данных или для обработки распределенных запросов с большим объемом промежуточных данных.
+Предпочитайте как минимум 10 Гбит сеть. 1 Гбит также будет работать, но намного хуже для починки реплик с десятками терабайт данных или для обработки распределенных запросов с большим объёмом промежуточных данных.
 
 ## ZooKeeper
 
@@ -124,9 +124,9 @@ maxClientCnxns=2000
 
 maxSessionTimeout=60000000
 # the directory where the snapshot is stored.
-dataDir=/opt/zookeeper/{{ cluster['name'] }}/data
+dataDir=/opt/zookeeper/{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }}/data
 # Place the dataLogDir to a separate physical disc for better performance
-dataLogDir=/opt/zookeeper/{{ cluster['name'] }}/logs
+dataLogDir=/opt/zookeeper/{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }}/logs
 
 autopurge.snapRetainCount=10
 autopurge.purgeInterval=1
@@ -159,7 +159,7 @@ snapCount=3000000
 leaderServes=yes
 
 standaloneEnabled=false
-dynamicConfigFile=/etc/zookeeper-{{ cluster['name'] }}/conf/zoo.cfg.dynamic
+dynamicConfigFile=/etc/zookeeper-{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }}/conf/zoo.cfg.dynamic
 ```
 
 Версия Java:
@@ -172,7 +172,7 @@ Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
 Параметры JVM:
 
 ```bash
-NAME=zookeeper-{{ cluster['name'] }}
+NAME=zookeeper-{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }}
 ZOOCFGDIR=/etc/$NAME/conf
 
 # TODO this is really ugly
@@ -191,8 +191,8 @@ JAVA=/usr/bin/java
 ZOOMAIN="org.apache.zookeeper.server.quorum.QuorumPeerMain"
 ZOO_LOG4J_PROP="INFO,ROLLINGFILE"
 JMXLOCALONLY=false
-JAVA_OPTS="-Xms{{ cluster.get('xms','128M') }} \
-    -Xmx{{ cluster.get('xmx','1G') }} \
+JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '{{' }} '}}' }} \
+    -Xmx{{ '{{' }} cluster.get('xmx','1G') {{ '{{' }} '}}' }} \
     -Xloggc:/var/log/$NAME/zookeeper-gc.log \
     -XX:+UseGCLogFileRotation \
     -XX:NumberOfGCLogFiles=16 \
@@ -213,7 +213,7 @@ JAVA_OPTS="-Xms{{ cluster.get('xms','128M') }} \
 Salt init:
 
 ```text
-description "zookeeper-{{ cluster['name'] }} centralized coordination service"
+description "zookeeper-{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }} centralized coordination service"
 
 start on runlevel [2345]
 stop on runlevel [!2345]
@@ -223,22 +223,22 @@ respawn
 limit nofile 8192 8192
 
 pre-start script
-    [ -r "/etc/zookeeper-{{ cluster['name'] }}/conf/environment" ] || exit 0
-    . /etc/zookeeper-{{ cluster['name'] }}/conf/environment
+    [ -r "/etc/zookeeper-{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }}/conf/environment" ] || exit 0
+    . /etc/zookeeper-{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }}/conf/environment
     [ -d $ZOO_LOG_DIR ] || mkdir -p $ZOO_LOG_DIR
     chown $USER:$GROUP $ZOO_LOG_DIR
 end script
 
 script
-    . /etc/zookeeper-{{ cluster['name'] }}/conf/environment
+    . /etc/zookeeper-{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }}/conf/environment
     [ -r /etc/default/zookeeper ] && . /etc/default/zookeeper
     if [ -z "$JMXDISABLE" ]; then
         JAVA_OPTS="$JAVA_OPTS -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=$JMXLOCALONLY"
     fi
-    exec start-stop-daemon --start -c $USER --exec $JAVA --name zookeeper-{{ cluster['name'] }} \
+    exec start-stop-daemon --start -c $USER --exec $JAVA --name zookeeper-{{ '{{' }} cluster['name'] {{ '{{' }} '}}' }} \
         -- -cp $CLASSPATH $JAVA_OPTS -Dzookeeper.log.dir=${ZOO_LOG_DIR} \
         -Dzookeeper.root.logger=${ZOO_LOG4J_PROP} $ZOOMAIN $ZOOCFG
 end script
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/tips/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/tips/) <!--hide-->

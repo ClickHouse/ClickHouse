@@ -100,7 +100,7 @@ void ISimpleTransform::work()
         return;
     }
 
-    has_input = false;
+    has_input = !needInputData();
 
     if (!skip_empty_chunks || current_data.chunk)
         transformed = true;

@@ -12,7 +12,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -171,10 +170,8 @@ bool JSONCompactEachRowRowInputFormat::readRow(DB::MutableColumns &columns, DB::
     }
     assertChar(']', in);
 
-    for (size_t i = 0; i < not_seen_columns.size(); i++)
-    {
-        columns[not_seen_columns[i]]->insertDefault();
-    }
+    for (const auto & name : not_seen_columns)
+        columns[name]->insertDefault();
 
     ext.read_columns = read_columns;
     return true;

@@ -718,4 +718,4 @@ arrayReduce（'agg_func'，arr1，...） - 将聚合函数`agg_func`应用于数
 
 
 
-[来源文章](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/array_functions/) <!--hide-->

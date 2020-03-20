@@ -88,4 +88,4 @@ SELECT * FROM mysql_table
 - [The 'mysql' table function](../../query_language/table_functions/mysql.md)
 - [Using MySQL as a source of external dictionary](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/mysql/) <!--hide-->

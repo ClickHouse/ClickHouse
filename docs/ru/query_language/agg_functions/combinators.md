@@ -117,4 +117,4 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/agg_functions/combinators/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/agg_functions/combinators/) <!--hide-->

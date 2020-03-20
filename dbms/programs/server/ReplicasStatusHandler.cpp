@@ -35,7 +35,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         bool ok = true;
         std::stringstream message;
 
-        auto databases = context.getDatabases();
+        auto databases = DatabaseCatalog::instance().getDatabases();
 
         /// Iterate through all the replicated tables.
         for (const auto & db : databases)
@@ -76,6 +76,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         }
         else
         {
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
             response.send() << message.rdbuf();
         }
     }

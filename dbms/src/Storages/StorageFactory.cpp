@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
-#include <Storages/StorageID.h>
+#include <Interpreters/StorageID.h>
 
 namespace DB
 {
@@ -31,9 +31,9 @@ static void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_t
 }
 
 
-void StorageFactory::registerStorage(const std::string & name, Creator creator)
+void StorageFactory::registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features)
 {
-    if (!storages.emplace(name, std::move(creator)).second)
+    if (!storages.emplace(name, Creator{std::move(creator_fn), features}).second)
         throw Exception("TableFunctionFactory: the table function name '" + name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
 }
@@ -49,8 +49,9 @@ StoragePtr StorageFactory::get(
     bool has_force_restore_data_flag) const
 {
     String name;
-    ASTs args;
     ASTStorage * storage_def = query.storage;
+
+    bool has_engine_args = false;
 
     if (query.is_view)
     {
@@ -89,27 +90,9 @@ StoragePtr StorageFactory::get(
                     "Engine definition cannot take the form of a parametric function", ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS);
 
             if (engine_def.arguments)
-                args = engine_def.arguments->children;
+                has_engine_args = true;
 
             name = engine_def.name;
-
-            if (storage_def->settings && !endsWith(name, "MergeTree") && name != "Kafka" && name != "Join")
-            {
-                throw Exception(
-                    "Engine " + name + " doesn't support SETTINGS clause. "
-                    "Currently only the MergeTree family of engines, Kafka engine and Join engine support it",
-                    ErrorCodes::BAD_ARGUMENTS);
-            }
-
-            if ((storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by ||
-                storage_def->ttl_table || !columns.getColumnTTLs().empty() ||
-                (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty()))
-                && !endsWith(name, "MergeTree"))
-            {
-                throw Exception(
-                    "Engine " + name + " doesn't support PARTITION BY, PRIMARY KEY, ORDER BY, TTL or SAMPLE BY clauses and skipping indices. "
-                    "Currently only the MergeTree family of engines supports them", ErrorCodes::BAD_ARGUMENTS);
-            }
 
             if (name == "View")
             {
@@ -129,23 +112,62 @@ StoragePtr StorageFactory::get(
                     "Direct creation of tables with ENGINE LiveView is not supported, use CREATE LIVE VIEW statement",
                     ErrorCodes::INCORRECT_QUERY);
             }
+
+            auto it = storages.find(name);
+            if (it == storages.end())
+            {
+                auto hints = getHints(name);
+                if (!hints.empty())
+                    throw Exception("Unknown table engine " + name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_STORAGE);
+                else
+                    throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
+            }
+
+            auto checkFeature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
+            {
+                if (!feature_matcher_fn(it->second.features))
+                {
+                    String msg = "Engine " + name + " doesn't support " + feature_description + ". "
+                        "Currently only the following engines have support for the feature: [";
+                    auto supporting_engines = getAllRegisteredNamesByFeatureMatcherFn(feature_matcher_fn);
+                    for (size_t index = 0; index < supporting_engines.size(); ++index)
+                    {
+                        if (index)
+                            msg += ", ";
+                        msg += supporting_engines[index];
+                    }
+                    msg += "]";
+                    throw Exception(msg, ErrorCodes::BAD_ARGUMENTS);
+                }
+            };
+
+            if (storage_def->settings)
+                checkFeature(
+                    "SETTINGS clause",
+                    [](StorageFeatures features) { return features.supports_settings; });
+
+            if (storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by)
+                checkFeature(
+                    "PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses",
+                    [](StorageFeatures features) { return features.supports_sort_order; });
+
+            if (storage_def->ttl_table || !columns.getColumnTTLs().empty())
+                checkFeature(
+                    "TTL clause",
+                    [](StorageFeatures features) { return features.supports_ttl; });
+
+            if (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty())
+                checkFeature(
+                    "skipping indices",
+                    [](StorageFeatures features) { return features.supports_skipping_indices; });
         }
     }
 
-    auto it = storages.find(name);
-    if (it == storages.end())
-    {
-        auto hints = getHints(name);
-        if (!hints.empty())
-            throw Exception("Unknown table engine " + name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_STORAGE);
-        else
-            throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
-    }
-
+    ASTs empty_engine_args;
     Arguments arguments
     {
         .engine_name = name,
-        .engine_args = args,
+        .engine_args = has_engine_args ? storage_def->engine->arguments->children : empty_engine_args,
         .storage_def = storage_def,
         .query = query,
         .relative_data_path = relative_data_path,
@@ -158,7 +180,7 @@ StoragePtr StorageFactory::get(
         .has_force_restore_data_flag = has_force_restore_data_flag
     };
 
-    return it->second(arguments);
+    return storages.at(name).creator_fn(arguments);
 }
 
 StorageFactory & StorageFactory::instance()

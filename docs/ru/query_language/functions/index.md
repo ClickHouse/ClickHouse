@@ -62,4 +62,4 @@
 
 Если функция в запросе выполняется на сервере-инициаторе запроса, а вам нужно, чтобы она выполнялась на удалённых серверах, вы можете обернуть её в агрегатную функцию any или добавить в ключ в `GROUP BY`.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/) <!--hide-->

@@ -22,7 +22,6 @@ using Key = UInt64;
 using Value = UInt64;
 
 
-
 /// Various hash functions to test
 
 namespace Hashes
@@ -273,9 +272,9 @@ namespace Hashes
             };
             size_t res = 0;
 
-            for (size_t i = 0; i < 8; ++i)
+            for (auto & rand : random)
             {
-                res ^= random[i][UInt8(x)];
+                res ^= rand[UInt8(x)];
                 x >>= 8;
             }
 
@@ -336,7 +335,6 @@ static void NO_INLINE testForEachMapAndHash(const Key * data, size_t size)
 }
 
 
-
 int main(int argc, char ** argv)
 {
     if (argc < 2)
@@ -345,8 +343,8 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    size_t n = atoi(argv[1]);
-//    size_t m = atoi(argv[2]);
+    size_t n = std::stol(argv[1]);
+//    size_t m = std::stol(argv[2]);
 
     std::cerr << std::fixed << std::setprecision(3);
 

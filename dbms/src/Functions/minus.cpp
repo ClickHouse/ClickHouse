@@ -10,6 +10,7 @@ struct MinusImpl
 {
     using ResultType = typename NumberTraits::ResultOfSubtraction<A, B>::Type;
     static const constexpr bool allow_decimal = true;
+    static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)

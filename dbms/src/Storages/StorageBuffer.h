@@ -40,7 +40,7 @@ class Context;
 class StorageBuffer : public ext::shared_ptr_helper<StorageBuffer>, public IStorage
 {
 friend struct ext::shared_ptr_helper<StorageBuffer>;
-friend class BufferBlockInputStream;
+friend class BufferSource;
 friend class BufferBlockOutputStream;
 
 public:
@@ -56,7 +56,7 @@ public:
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -74,9 +74,9 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsPrewhere() const override
     {
-        if (no_destination)
+        if (!destination_id)
             return false;
-        auto dest = global_context.tryGetTable(destination_database, destination_table);
+        auto dest = DatabaseCatalog::instance().tryGetTable(destination_id);
         if (dest && dest.get() != this)
             return dest->supportsPrewhere();
         return false;
@@ -110,9 +110,7 @@ private:
     const Thresholds min_thresholds;
     const Thresholds max_thresholds;
 
-    const String destination_database;
-    const String destination_table;
-    bool no_destination;    /// If set, do not write data from the buffer, but simply empty the buffer.
+    StorageID destination_id;
     bool allow_materialized;
 
     Poco::Logger * log;
@@ -144,8 +142,7 @@ protected:
         size_t num_shards_,
         const Thresholds & min_thresholds_,
         const Thresholds & max_thresholds_,
-        const String & destination_database_,
-        const String & destination_table_,
+        const StorageID & destination_id,
         bool allow_materialized_);
 };
 

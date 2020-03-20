@@ -106,4 +106,4 @@ Accepts a numeric argument and returns a UInt64 number close to 2 to the power o
 
 Accepts a numeric argument and returns a UInt64 number close to 10 to the power of x.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/math_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/math_functions/) <!--hide-->

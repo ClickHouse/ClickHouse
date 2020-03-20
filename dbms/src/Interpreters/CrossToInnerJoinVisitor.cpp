@@ -4,8 +4,10 @@
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -27,41 +29,26 @@ namespace ErrorCodes
 namespace
 {
 
-struct JoinedTable
+struct JoinedElement
 {
-    DatabaseAndTableWithAlias table;
-    ASTTablesInSelectQueryElement * element = nullptr;
-    ASTTableJoin * join = nullptr;
-    ASTPtr array_join = nullptr;
-    bool has_using = false;
-
-    JoinedTable(ASTPtr table_element)
+    explicit JoinedElement(const ASTTablesInSelectQueryElement & table_element)
+        : element(table_element)
     {
-        element = table_element->as<ASTTablesInSelectQueryElement>();
-        if (!element)
-            throw Exception("Logical error: TablesInSelectQueryElement expected", ErrorCodes::LOGICAL_ERROR);
+        if (element.table_join)
+            join = element.table_join->as<ASTTableJoin>();
+    }
 
-        if (element->table_join)
-        {
-            join = element->table_join->as<ASTTableJoin>();
-            if (join->kind == ASTTableJoin::Kind::Cross ||
-                join->kind == ASTTableJoin::Kind::Comma)
-            {
-                if (!join->children.empty())
-                    throw Exception("Logical error: CROSS JOIN has expressions", ErrorCodes::LOGICAL_ERROR);
-            }
+    void checkTableName(const DatabaseAndTableWithAlias & table, const String & current_database) const
+    {
+        if (!element.table_expression)
+            throw Exception("Not a table expression in JOIN (ARRAY JOIN?)", ErrorCodes::LOGICAL_ERROR);
 
-            if (join->using_expression_list)
-                has_using = true;
-        }
+        ASTTableExpression * table_expression = element.table_expression->as<ASTTableExpression>();
+        if (!table_expression)
+            throw Exception("Wrong table expression in JOIN", ErrorCodes::LOGICAL_ERROR);
 
-        if (element->table_expression)
-        {
-            const auto & expr = element->table_expression->as<ASTTableExpression &>();
-            table = DatabaseAndTableWithAlias(expr);
-        }
-
-        array_join = element->array_join;
+        if (!table.same(DatabaseAndTableWithAlias(*table_expression, current_database)))
+            throw Exception("Inconsistent table names", ErrorCodes::LOGICAL_ERROR);
     }
 
     void rewriteCommaToCross()
@@ -70,7 +57,24 @@ struct JoinedTable
             join->kind = ASTTableJoin::Kind::Cross;
     }
 
+    void rewriteCrossToInner(ASTPtr on_expression)
+    {
+        join->kind = ASTTableJoin::Kind::Inner;
+        join->strictness = ASTTableJoin::Strictness::All;
+
+        join->on_expression = on_expression;
+        join->children.push_back(join->on_expression);
+    }
+
+    ASTPtr arrayJoin() const { return element.array_join; }
+    const ASTTableJoin * tableJoin() const { return join; }
+
     bool canAttachOnExpression() const { return join && !join->on_expression; }
+    bool hasUsing() const { return join && join->using_expression_list; }
+
+private:
+    const ASTTablesInSelectQueryElement & element;
+    ASTTableJoin * join = nullptr;
 };
 
 bool isComparison(const String & name)
@@ -89,13 +93,14 @@ class CheckExpressionVisitorData
 public:
     using TypeToVisit = const ASTFunction;
 
-    CheckExpressionVisitorData(const std::vector<JoinedTable> & tables_)
+    CheckExpressionVisitorData(const std::vector<JoinedElement> & tables_,
+                               const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
+                               Aliases && aliases_)
         : joined_tables(tables_)
+        , tables(tables_with_columns)
+        , aliases(aliases_)
         , ands_only(true)
-    {
-        for (auto & joined : joined_tables)
-            tables.push_back(joined.table);
-    }
+    {}
 
     void visit(const ASTFunction & node, const ASTPtr & ast)
     {
@@ -124,11 +129,12 @@ public:
         {
             /// leave other comparisons as is
         }
-        else if (functionIsInOperator(node.name)) /// IN, NOT IN
+        else if (functionIsLikeOperator(node.name) || /// LIKE, NOT LIKE
+                 functionIsInOperator(node.name))  /// IN, NOT IN
         {
-            if (auto ident = node.arguments->children.at(0)->as<ASTIdentifier>())
-                if (size_t min_table = checkIdentifier(*ident))
-                    asts_to_join_on[min_table].push_back(ast);
+            /// leave as is. It's not possible to make push down here cause of unknown aliases and not implemented JOIN predicates.
+            ///     select a as b form t1, t2 where t1.x = t2.x and b in(42)
+            ///     select a as b form t1 inner join t2 on t1.x = t2.x and b in(42)
         }
         else
         {
@@ -159,9 +165,10 @@ public:
     }
 
 private:
-    const std::vector<JoinedTable> & joined_tables;
-    std::vector<DatabaseAndTableWithAlias> tables;
+    const std::vector<JoinedElement> & joined_tables;
+    const std::vector<TableWithColumnNamesAndTypes> & tables;
     std::map<size_t, std::vector<ASTPtr>> asts_to_join_on;
+    Aliases aliases;
     bool ands_only;
 
     size_t canMoveEqualsToJoinOn(const ASTFunction & node)
@@ -176,6 +183,12 @@ private:
         if (!left || !right)
             return false;
 
+        /// Moving expressions that use column aliases is not supported.
+        if (left->isShort() && aliases.count(left->shortName()))
+            return false;
+        if (right->isShort() && aliases.count(right->shortName()))
+            return false;
+
         return checkIdentifiers(*left, *right);
     }
 
@@ -184,28 +197,20 @@ private:
     /// @return table position to attach expression to or 0.
     size_t checkIdentifiers(const ASTIdentifier & left, const ASTIdentifier & right)
     {
-        size_t left_table_pos = 0;
-        bool left_match = IdentifierSemantic::chooseTable(left, tables, left_table_pos);
+        std::optional<size_t> left_table_pos = IdentifierSemantic::getMembership(left);
+        if (!left_table_pos)
+            left_table_pos = IdentifierSemantic::chooseTable(left, tables);
 
-        size_t right_table_pos = 0;
-        bool right_match = IdentifierSemantic::chooseTable(right, tables, right_table_pos);
+        std::optional<size_t> right_table_pos = IdentifierSemantic::getMembership(right);
+        if (!right_table_pos)
+            right_table_pos = IdentifierSemantic::chooseTable(right, tables);
 
-        if (left_match && right_match && (left_table_pos != right_table_pos))
+        if (left_table_pos && right_table_pos && (*left_table_pos != *right_table_pos))
         {
-            size_t table_pos = std::max(left_table_pos, right_table_pos);
+            size_t table_pos = std::max(*left_table_pos, *right_table_pos);
             if (joined_tables[table_pos].canAttachOnExpression())
                 return table_pos;
         }
-        return 0;
-    }
-
-    size_t checkIdentifier(const ASTIdentifier & identifier)
-    {
-        size_t best_table_pos = 0;
-        bool match = IdentifierSemantic::chooseTable(identifier, tables, best_table_pos);
-
-        if (match && joined_tables[best_table_pos].canAttachOnExpression())
-            return best_table_pos;
         return 0;
     }
 };
@@ -214,7 +219,7 @@ using CheckExpressionMatcher = ConstOneTypeMatcher<CheckExpressionVisitorData, f
 using CheckExpressionVisitor = ConstInDepthNodeVisitor<CheckExpressionMatcher, true>;
 
 
-bool getTables(ASTSelectQuery & select, std::vector<JoinedTable> & joined_tables, size_t & num_comma)
+bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tables, size_t & num_comma)
 {
     if (!select.tables())
         return false;
@@ -233,23 +238,37 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedTable> & joined_tables
 
     for (auto & child : tables->children)
     {
-        joined_tables.emplace_back(JoinedTable(child));
-        JoinedTable & t = joined_tables.back();
-        if (t.array_join)
+        auto table_element = child->as<ASTTablesInSelectQueryElement>();
+        if (!table_element)
+            throw Exception("Logical error: TablesInSelectQueryElement expected", ErrorCodes::LOGICAL_ERROR);
+
+        joined_tables.emplace_back(JoinedElement(*table_element));
+        JoinedElement & t = joined_tables.back();
+
+        if (t.arrayJoin())
         {
             ++num_array_join;
             continue;
         }
 
-        if (t.has_using)
+        if (t.hasUsing())
         {
             ++num_using;
             continue;
         }
 
-        if (auto * join = t.join)
+        if (auto * join = t.tableJoin())
+        {
+            if (join->kind == ASTTableJoin::Kind::Cross ||
+                join->kind == ASTTableJoin::Kind::Comma)
+            {
+                if (!join->children.empty())
+                    throw Exception("Logical error: CROSS JOIN has expressions", ErrorCodes::LOGICAL_ERROR);
+            }
+
             if (join->kind == ASTTableJoin::Kind::Comma)
                 ++num_comma;
+        }
     }
 
     if (num_using && (num_tables - num_array_join) > 2)
@@ -258,13 +277,16 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedTable> & joined_tables
     if (num_comma && (num_comma != (joined_tables.size() - 1)))
         throw Exception("Mix of COMMA and other JOINS is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
-    if (num_array_join || num_using)
-        return false;
-    return true;
+    return !(num_array_join || num_using);
 }
 
 }
 
+
+bool CrossToInnerJoinMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
+{
+    return !node->as<ASTSubquery>();
+}
 
 void CrossToInnerJoinMatcher::visit(ASTPtr & ast, Data & data)
 {
@@ -275,9 +297,18 @@ void CrossToInnerJoinMatcher::visit(ASTPtr & ast, Data & data)
 void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & data)
 {
     size_t num_comma = 0;
-    std::vector<JoinedTable> joined_tables;
+    std::vector<JoinedElement> joined_tables;
     if (!getTables(select, joined_tables, num_comma))
         return;
+
+    /// Check if joined_tables are consistent with known tables_with_columns
+    {
+        if (joined_tables.size() != data.tables_with_columns.size())
+            throw Exception("Logical error: inconsistent number of tables", ErrorCodes::LOGICAL_ERROR);
+
+        for (size_t i = 0; i < joined_tables.size(); ++i)
+            joined_tables[i].checkTableName(data.tables_with_columns[i].table, data.current_database);
+    }
 
     /// COMMA to CROSS
 
@@ -292,7 +323,13 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
     if (!select.where())
         return;
 
-    CheckExpressionVisitor::Data visitor_data{joined_tables};
+    Aliases aliases;
+    QueryAliasesVisitor::Data query_aliases_data{aliases};
+    if (ASTPtr with = select.with())
+        QueryAliasesVisitor(query_aliases_data).visit(with);
+    QueryAliasesVisitor(query_aliases_data).visit(select.select());
+
+    CheckExpressionVisitor::Data visitor_data{joined_tables, data.tables_with_columns, std::move(aliases)};
     CheckExpressionVisitor(visitor_data).visit(select.where());
 
     if (visitor_data.complex())
@@ -302,12 +339,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
     {
         if (visitor_data.matchAny(i))
         {
-            ASTTableJoin & join = *joined_tables[i].join;
-            join.kind = ASTTableJoin::Kind::Inner;
-            join.strictness = ASTTableJoin::Strictness::All;
-
-            join.on_expression = visitor_data.makeOnExpression(i);
-            join.children.push_back(join.on_expression);
+            joined_tables[i].rewriteCrossToInner(visitor_data.makeOnExpression(i));
             data.done = true;
         }
     }

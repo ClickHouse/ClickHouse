@@ -31,12 +31,11 @@ namespace
 using NamesToTypeNames = std::unordered_map<std::string, std::string>;
 /// Get value from field and convert it to string.
 /// Also remove quotes from strings.
-String getUnescapedFieldString(const Field & field)
+String getFieldAsString(const Field & field)
 {
-    String string = applyVisitor(FieldVisitorToString(), field);
-    if (!string.empty() && string.front() == '\'' && string.back() == '\'')
-        return string.substr(1, string.size() - 2);
-    return string;
+    if (field.getType() == Field::Types::Which::String)
+        return field.get<String>();
+    return applyVisitor(FieldVisitorToString(), field);
 }
 
 
@@ -180,13 +179,13 @@ void buildSingleAttribute(
     type_element->appendChild(type);
     attribute_element->appendChild(type_element);
 
-     AutoPtr<Element> null_value_element(doc->createElement("null_value"));
-     String null_value_str;
-     if (dict_attr->default_value)
-         null_value_str = getUnescapedFieldString(dict_attr->default_value->as<ASTLiteral>()->value);
-     AutoPtr<Text> null_value(doc->createTextNode(null_value_str));
-     null_value_element->appendChild(null_value);
-     attribute_element->appendChild(null_value_element);
+    AutoPtr<Element> null_value_element(doc->createElement("null_value"));
+    String null_value_str;
+    if (dict_attr->default_value)
+        null_value_str = getFieldAsString(dict_attr->default_value->as<ASTLiteral>()->value);
+    AutoPtr<Text> null_value(doc->createTextNode(null_value_str));
+    null_value_element->appendChild(null_value);
+    attribute_element->appendChild(null_value_element);
 
     if (dict_attr->expression != nullptr)
     {
@@ -197,7 +196,7 @@ void buildSingleAttribute(
         if (const auto * literal = dict_attr->expression->as<ASTLiteral>();
                 literal && literal->value.getType() == Field::Types::String)
         {
-            expression_str = getUnescapedFieldString(literal->value);
+            expression_str = getFieldAsString(literal->value);
         }
         else
             expression_str = queryToString(dict_attr->expression);
@@ -311,9 +310,9 @@ NamesToTypeNames buildDictionaryAttributesConfiguration(
 {
     const auto & children = dictionary_attributes->children;
     NamesToTypeNames attributes_names_and_types;
-    for (size_t i = 0; i < children.size(); ++i)
+    for (const auto & child : children)
     {
-        const ASTDictionaryAttributeDeclaration * dict_attr = children[i]->as<const ASTDictionaryAttributeDeclaration>();
+        const ASTDictionaryAttributeDeclaration * dict_attr = child->as<const ASTDictionaryAttributeDeclaration>();
         if (!dict_attr->type)
             throw Exception("Dictionary attribute must has type", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
@@ -346,7 +345,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         }
         else if (auto literal = pair->second->as<const ASTLiteral>(); literal)
         {
-            AutoPtr<Text> value(doc->createTextNode(getUnescapedFieldString(literal->value)));
+            AutoPtr<Text> value(doc->createTextNode(getFieldAsString(literal->value)));
             current_xml_element->appendChild(value);
         }
         else if (auto list = pair->second->as<const ASTExpressionList>(); list)

@@ -55,7 +55,7 @@ visitParamExtractString('{"abc":"hello}', 'abc') = ''
 
 На данный момент, не поддерживаются записанные в формате `\uXXXX\uYYYY` кодовые точки не из basic multilingual plane (они переводятся не в UTF-8, а в CESU-8).
 
-Следующие функции используют [simdjson](https://github.com/lemire/simdjson) который разработан по более сложны требования для разбора JSON. Упомянутое выше предположение 2 по-прежнему применимо.
+Следующие функции используют [simdjson](https://github.com/lemire/simdjson) который разработан под более сложные требования для разбора JSON. Упомянутое выше предположение 2 по-прежнему применимо.
 
 ## isValidJSON(json)
 
@@ -221,4 +221,4 @@ SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 
 SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') = ['-100', '200.0', '"hello"']'
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/json_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/json_functions/) <!--hide-->

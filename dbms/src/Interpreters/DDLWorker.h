@@ -17,12 +17,13 @@ namespace DB
 {
 
 class ASTAlterQuery;
+class AccessRightsElements;
 struct DDLLogEntry;
 struct DDLTask;
 
 
 /// Pushes distributed DDL query to the queue
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, NameSet && query_databases);
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_required_access);
 
 
 class DDLWorker
@@ -58,10 +59,10 @@ private:
     void processTask(DDLTask & task, const ZooKeeperPtr & zookeeper);
 
     /// Check that query should be executed on leader replica only
-    bool taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, StoragePtr storage) const;
+    static bool taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, StoragePtr storage);
 
     /// Check that shard has consistent config with table
-    void checkShardConfig(const String & table, const DDLTask & taks, StoragePtr storage) const;
+    void checkShardConfig(const String & table, const DDLTask & task, StoragePtr storage) const;
 
     /// Executes query only on leader replica in case of replicated table.
     /// Queries like TRUNCATE/ALTER .../OPTIMIZE have to be executed only on one node of shard.
@@ -83,7 +84,7 @@ private:
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
 
     /// Init task node
-    void createStatusDirs(const std::string & node_name, const ZooKeeperPtr & zookeeper);
+    static void createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper);
 
 
     void runMainThread();

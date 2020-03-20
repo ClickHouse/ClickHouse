@@ -17,11 +17,11 @@ namespace ErrorCodes
 
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const MergeTreeIndexMinMax & index_)
-    : IMergeTreeIndexGranule(), index(index_), parallelogram() {}
+    : index(index_) {}
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
-    const MergeTreeIndexMinMax & index_, std::vector<Range> && parallelogram_)
-    : IMergeTreeIndexGranule(), index(index_), parallelogram(std::move(parallelogram_)) {}
+    const MergeTreeIndexMinMax & index_, std::vector<Range> && hyperrectangle_)
+    : index(index_), hyperrectangle(std::move(hyperrectangle_)) {}
 
 void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
 {
@@ -34,17 +34,17 @@ void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
         const DataTypePtr & type = index.data_types[i];
         if (!type->isNullable())
         {
-            type->serializeBinary(parallelogram[i].left, ostr);
-            type->serializeBinary(parallelogram[i].right, ostr);
+            type->serializeBinary(hyperrectangle[i].left, ostr);
+            type->serializeBinary(hyperrectangle[i].right, ostr);
         }
         else
         {
-            bool is_null = parallelogram[i].left.isNull() || parallelogram[i].right.isNull(); // one is enough
+            bool is_null = hyperrectangle[i].left.isNull() || hyperrectangle[i].right.isNull(); // one is enough
             writeBinary(is_null, ostr);
             if (!is_null)
             {
-                type->serializeBinary(parallelogram[i].left, ostr);
-                type->serializeBinary(parallelogram[i].right, ostr);
+                type->serializeBinary(hyperrectangle[i].left, ostr);
+                type->serializeBinary(hyperrectangle[i].right, ostr);
             }
         }
     }
@@ -52,7 +52,7 @@ void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
 
 void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr)
 {
-    parallelogram.clear();
+    hyperrectangle.clear();
     Field min_val;
     Field max_val;
     for (size_t i = 0; i < index.columns.size(); ++i)
@@ -78,7 +78,7 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr)
                 max_val = Null();
             }
         }
-        parallelogram.emplace_back(min_val, true, max_val, true);
+        hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
 }
 
@@ -88,7 +88,7 @@ MergeTreeIndexAggregatorMinMax::MergeTreeIndexAggregatorMinMax(const MergeTreeIn
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorMinMax::getGranuleAndReset()
 {
-    return std::make_shared<MergeTreeIndexGranuleMinMax>(index, std::move(parallelogram));
+    return std::make_shared<MergeTreeIndexGranuleMinMax>(index, std::move(hyperrectangle));
 }
 
 void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, size_t limit)
@@ -107,14 +107,14 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
         const auto & column = block.getByName(index.columns[i]).column;
         column->cut(*pos, rows_read)->getExtremes(field_min, field_max);
 
-        if (parallelogram.size() <= i)
+        if (hyperrectangle.size() <= i)
         {
-            parallelogram.emplace_back(field_min, true, field_max, true);
+            hyperrectangle.emplace_back(field_min, true, field_max, true);
         }
         else
         {
-            parallelogram[i].left = std::min(parallelogram[i].left, field_min);
-            parallelogram[i].right = std::max(parallelogram[i].right, field_max);
+            hyperrectangle[i].left = std::min(hyperrectangle[i].left, field_min);
+            hyperrectangle[i].right = std::max(hyperrectangle[i].right, field_max);
         }
     }
 
@@ -126,7 +126,7 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     const SelectQueryInfo &query,
     const Context &context,
     const MergeTreeIndexMinMax &index_)
-    : IMergeTreeIndexCondition(), index(index_), condition(query, context, index.columns, index.expr) {}
+    : index(index_), condition(query, context, index.columns, index.expr) {}
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
 {
@@ -140,10 +140,10 @@ bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr 
     if (!granule)
         throw Exception(
             "Minmax index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
-    for (const auto & range : granule->parallelogram)
+    for (const auto & range : granule->hyperrectangle)
         if (range.left.isNull() || range.right.isNull())
             return true;
-    return condition.mayBeTrueInParallelogram(granule->parallelogram, index.data_types);
+    return condition.checkInHyperrectangle(granule->hyperrectangle, index.data_types).can_be_true;
 }
 
 
@@ -192,8 +192,7 @@ std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
         throw Exception("Minmax index have not any arguments", ErrorCodes::INCORRECT_QUERY);
 
     ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
-    auto syntax = SyntaxAnalyzer(context, {}).analyze(
-        expr_list, new_columns);
+    auto syntax = SyntaxAnalyzer(context).analyze(expr_list, new_columns);
     auto minmax_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
 
     auto sample = ExpressionAnalyzer(expr_list, syntax, context)

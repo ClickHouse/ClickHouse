@@ -2,7 +2,7 @@
 
 See <https://amplab.cs.berkeley.edu/benchmark/>
 
-Sign up for a free account at <https://aws.amazon.com>. You will need a credit card, email and phone number.Get a new access key at <https://console.aws.amazon.com/iam/home?nc2=h_m_sc#security_credential>
+Sign up for a free account at <https://aws.amazon.com>. You will need a credit card, email and phone number. Get a new access key at <https://console.aws.amazon.com/iam/home?nc2=h_m_sc#security_credential>
 
 Run the following in the console:
 
@@ -120,4 +120,4 @@ LIMIT 1
 ```
 
 
-[Original article](https://clickhouse.yandex/docs/en/getting_started/example_datasets/amplab_benchmark/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets/amplab_benchmark/) <!--hide-->

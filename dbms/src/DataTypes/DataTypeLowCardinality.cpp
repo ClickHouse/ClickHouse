@@ -77,7 +77,7 @@ struct KeysSerializationVersion
             throw Exception("Invalid version for DataTypeLowCardinality key column.", ErrorCodes::LOGICAL_ERROR);
     }
 
-    KeysSerializationVersion(UInt64 version) : value(static_cast<Value>(version)) { checkVersion(version); }
+    explicit KeysSerializationVersion(UInt64 version) : value(static_cast<Value>(version)) { checkVersion(version); }
 };
 
 /// Version is stored at the start of each granule. It's used to store indexes type and flags.
@@ -949,7 +949,7 @@ bool DataTypeLowCardinality::equals(const IDataType & rhs) const
 }
 
 
-static DataTypePtr create(const String & /*type_name*/, const ASTPtr & arguments)
+static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
         throw Exception("LowCardinality data type family must have single argument - type of elements",

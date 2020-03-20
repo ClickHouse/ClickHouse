@@ -9,6 +9,7 @@
 #include <boost/range/algorithm/lower_bound.hpp>
 #include <boost/range/algorithm/stable_sort.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
+#include <boost/smart_ptr/make_shared.hpp>
 
 
 namespace DB
@@ -34,24 +35,14 @@ void QuotaContextFactory::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUI
 {
     quota = quota_;
     quota_id = quota_id_;
-
-    boost::range::copy(quota->roles, std::inserter(roles, roles.end()));
-    all_roles = quota->all_roles;
-    boost::range::copy(quota->except_roles, std::inserter(except_roles, except_roles.end()));
-
+    roles = &quota->roles;
     rebuildAllIntervals();
 }
 
 
 bool QuotaContextFactory::QuotaInfo::canUseWithContext(const QuotaContext & context) const
 {
-    if (roles.count(context.user_name))
-        return true;
-
-    if (all_roles && !except_roles.count(context.user_name))
-        return true;
-
-    return false;
+    return roles->match(context.user_id, context.enabled_roles);
 }
 
 
@@ -91,7 +82,7 @@ String QuotaContextFactory::QuotaInfo::calculateKey(const QuotaContext & context
 }
 
 
-std::shared_ptr<const QuotaContext::Intervals> QuotaContextFactory::QuotaInfo::getOrBuildIntervals(const String & key)
+boost::shared_ptr<const QuotaContext::Intervals> QuotaContextFactory::QuotaInfo::getOrBuildIntervals(const String & key)
 {
     auto it = key_to_intervals.find(key);
     if (it != key_to_intervals.end())
@@ -107,9 +98,9 @@ void QuotaContextFactory::QuotaInfo::rebuildAllIntervals()
 }
 
 
-std::shared_ptr<const QuotaContext::Intervals> QuotaContextFactory::QuotaInfo::rebuildIntervals(const String & key)
+boost::shared_ptr<const QuotaContext::Intervals> QuotaContextFactory::QuotaInfo::rebuildIntervals(const String & key)
 {
-    auto new_intervals = std::make_shared<Intervals>();
+    auto new_intervals = boost::make_shared<Intervals>();
     new_intervals->quota_name = quota->getName();
     new_intervals->quota_id = quota_id;
     new_intervals->quota_key = key;
@@ -179,16 +170,14 @@ QuotaContextFactory::QuotaContextFactory(const AccessControlManager & access_con
 }
 
 
-QuotaContextFactory::~QuotaContextFactory()
-{
-}
+QuotaContextFactory::~QuotaContextFactory() = default;
 
 
-std::shared_ptr<QuotaContext> QuotaContextFactory::createContext(const String & user_name, const Poco::Net::IPAddress & address, const String & client_key)
+QuotaContextPtr QuotaContextFactory::createContext(const String & user_name, const UUID & user_id, const std::vector<UUID> & enabled_roles, const Poco::Net::IPAddress & address, const String & client_key)
 {
     std::lock_guard lock{mutex};
     ensureAllQuotasRead();
-    auto context = ext::shared_ptr_helper<QuotaContext>::create(user_name, address, client_key);
+    auto context = ext::shared_ptr_helper<QuotaContext>::create(user_name, user_id, enabled_roles, address, client_key);
     contexts.push_back(context);
     chooseQuotaForContext(context);
     return context;
@@ -266,7 +255,7 @@ void QuotaContextFactory::chooseQuotaForAllContexts()
 void QuotaContextFactory::chooseQuotaForContext(const std::shared_ptr<QuotaContext> & context)
 {
     /// `mutex` is already locked.
-    std::shared_ptr<const Intervals> intervals;
+    boost::shared_ptr<const Intervals> intervals;
     for (auto & info : all_quotas | boost::adaptors::map_values)
     {
         if (info.canUseWithContext(*context))
@@ -278,9 +267,9 @@ void QuotaContextFactory::chooseQuotaForContext(const std::shared_ptr<QuotaConte
     }
 
     if (!intervals)
-        intervals = std::make_shared<Intervals>(); /// No quota == no limits.
+        intervals = boost::make_shared<Intervals>(); /// No quota == no limits.
 
-    std::atomic_store(&context->atomic_intervals, intervals);
+    context->intervals.store(intervals);
 }
 
 

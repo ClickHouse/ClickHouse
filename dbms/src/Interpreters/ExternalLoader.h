@@ -71,6 +71,7 @@ public:
         LoadablePtr object;
         String origin;
         TimePoint loading_start_time;
+        TimePoint last_successful_update_time;
         Duration loading_duration;
         std::exception_ptr exception;
         std::string repository_name;

@@ -2,7 +2,7 @@
 
 Prepared data structure for using in [JOIN](../../query_language/select.md#select-join) operations.
 
-## Creating a Table
+## Creating a Table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -75,13 +75,13 @@ You can use `INSERT` queries to add data to the `Join`-engine tables. If the tab
 You cannot perform a `SELECT` query directly from the table. Instead, use one of the following methods:
 
 - Place the table to the right side in a `JOIN` clause.
-- Call the [joinGet](../../query_language/functions/other_functions.md#other_functions-joinget) function, which lets you extract data from the table the same way as from a dictionary.
+- Call the [joinGet](../../query_language/functions/other_functions.md#joinget) function, which lets you extract data from the table the same way as from a dictionary.
 
-### Limitations and Settings
+### Limitations and Settings {#join-limitations-and-settings}
 
 When creating a table, the following settings are applied:
 
-- [join_use_nulls](../settings/settings.md#settings-join_use_nulls)
+- [join_use_nulls](../settings/settings.md#join_use_nulls)
 - [max_rows_in_join](../settings/query_complexity.md#settings-max_rows_in_join)
 - [max_bytes_in_join](../settings/query_complexity.md#settings-max_bytes_in_join)
 - [join_overflow_mode](../settings/query_complexity.md#settings-join_overflow_mode)
@@ -89,10 +89,12 @@ When creating a table, the following settings are applied:
 
 The `Join`-engine tables can't be used in `GLOBAL JOIN` operations.
 
+The `Join`-engine allows use [join_use_nulls](../settings/settings.md#join_use_nulls) setting in the `CREATE TABLE` statement. And [SELECT](../../query_language/select.md) query allows use `join_use_nulls` too. If you have different `join_use_nulls` settings, you can get an error joining table. It depends on kind of JOIN. When you use [joinGet](../../query_language/functions/other_functions.md#joinget) function, you have to use the same `join_use_nulls` setting in `CRATE TABLE` and `SELECT` statements.
+
 ## Data Storage
 
 `Join` table data is always located in the RAM. When inserting rows into a table, ClickHouse writes data blocks to the directory on the disk so that they can be restored when the server restarts.
 
 If the server restarts incorrectly, the data block on the disk might get lost or damaged. In this case, you may need to manually delete the file with damaged data.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/join/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/join/) <!--hide-->

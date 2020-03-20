@@ -83,4 +83,4 @@ SELECT * FROM stripe_log_table ORDER BY timestamp
 └─────────────────────┴──────────────┴────────────────────────────┘
 ```
 
-[来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/stripelog/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/stripelog/) <!--hide-->

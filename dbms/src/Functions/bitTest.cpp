@@ -10,6 +10,7 @@ template <typename A, typename B>
 struct BitTestImpl
 {
     using ResultType = UInt8;
+    static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
     NO_SANITIZE_UNDEFINED static inline Result apply(A a, B b)

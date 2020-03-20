@@ -1,4 +1,3 @@
-
 # External Data for Query Processing
 
 ClickHouse allows sending a server the data that is needed for processing a query, together with a SELECT query. This data is put in a temporary table (see the section "Temporary tables") and can be used in the query (for example, in IN operators).
@@ -60,4 +59,4 @@ $ curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+coun
 For distributed query processing, the temporary tables are sent to all the remote servers.
 
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/external_data/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/external_data/) <!--hide-->

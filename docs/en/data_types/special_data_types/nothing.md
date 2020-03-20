@@ -1,4 +1,3 @@
-
 # Nothing
 
 The only purpose of this data type is to represent cases where value is not expected. So you can't create a `Nothing` type value.
@@ -17,4 +16,4 @@ SELECT toTypeName(array())
 ```
 
 
-[Original article](https://clickhouse.yandex/docs/en/data_types/special_data_types/nothing/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data_types/special_data_types/nothing/) <!--hide-->

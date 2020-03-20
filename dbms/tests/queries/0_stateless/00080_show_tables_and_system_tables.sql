@@ -6,6 +6,7 @@ CREATE TABLE test_show_tables.A (A UInt8) ENGINE = TinyLog;
 CREATE TABLE test_show_tables.B (A UInt8) ENGINE = TinyLog;
 
 SHOW TABLES from test_show_tables;
+SHOW TABLES in system where engine like '%System%' and name in ('numbers', 'one');
 
 SELECT name, toUInt32(metadata_modification_time) > 0, engine_full, create_table_query FROM system.tables WHERE database = 'test_show_tables' ORDER BY name FORMAT TSVRaw;
 

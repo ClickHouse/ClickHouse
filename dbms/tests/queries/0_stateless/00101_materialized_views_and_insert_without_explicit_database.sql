@@ -1,24 +1,31 @@
-DROP TABLE IF EXISTS default.test_table;
-DROP TABLE IF EXISTS default.test_view;
-DROP TABLE IF EXISTS default.test_view_filtered;
+CREATE DATABASE IF NOT EXISTS test_00101_0;
 
-CREATE TABLE default.test_table (EventDate Date, CounterID UInt32,  UserID UInt64,  EventTime DateTime, UTCEventTime DateTime) ENGINE = MergeTree(EventDate, CounterID, 8192);
-CREATE MATERIALIZED VIEW default.test_view (Rows UInt64,  MaxHitTime DateTime) ENGINE = Memory AS SELECT count() AS Rows, max(UTCEventTime) AS MaxHitTime FROM default.test_table;
-CREATE MATERIALIZED VIEW default.test_view_filtered (EventDate Date, CounterID UInt32) ENGINE = Memory POPULATE AS SELECT CounterID, EventDate FROM default.test_table WHERE EventDate < '2013-01-01';
+USE test_00101_0;
 
-INSERT INTO default.test_table (EventDate, UTCEventTime) VALUES ('2014-01-02', '2014-01-02 03:04:06');
+DROP TABLE IF EXISTS test_table;
+DROP TABLE IF EXISTS test_view;
+DROP TABLE IF EXISTS test_view_filtered;
 
-SELECT * FROM default.test_table;
-SELECT * FROM default.test_view;
-SELECT * FROM default.test_view_filtered;
+CREATE TABLE test_table (EventDate Date, CounterID UInt32,  UserID UInt64,  EventTime DateTime, UTCEventTime DateTime) ENGINE = MergeTree(EventDate, CounterID, 8192);
+CREATE MATERIALIZED VIEW test_view (Rows UInt64,  MaxHitTime DateTime) ENGINE = Memory AS SELECT count() AS Rows, max(UTCEventTime) AS MaxHitTime FROM test_table;
+CREATE MATERIALIZED VIEW test_view_filtered (EventDate Date, CounterID UInt32) ENGINE = Memory POPULATE AS SELECT CounterID, EventDate FROM test_table WHERE EventDate < '2013-01-01';
 
-DROP TABLE default.test_table;
-DROP TABLE default.test_view;
-DROP TABLE default.test_view_filtered;
+INSERT INTO test_table (EventDate, UTCEventTime) VALUES ('2014-01-02', '2014-01-02 03:04:06');
+
+SELECT * FROM test_table;
+SELECT * FROM test_view;
+SELECT * FROM test_view_filtered;
+
+DROP TABLE test_table;
+DROP TABLE test_view;
+DROP TABLE test_view_filtered;
 
 -- Check only sophisticated constructors and desctructors:
 
-USE test;
+CREATE DATABASE IF NOT EXISTS test_00101_1;
+
+USE test_00101_1;
+
 DROP TABLE IF EXISTS tmp;
 DROP TABLE IF EXISTS tmp_mv;
 DROP TABLE IF EXISTS tmp_mv2;
@@ -44,3 +51,8 @@ EXISTS TABLE `.inner.tmp_mv`;
 EXISTS TABLE `.inner.tmp_mv2`;
 EXISTS TABLE `.inner.tmp_mv3`;
 EXISTS TABLE `.inner.tmp_mv4`;
+
+DROP TABLE tmp;
+
+DROP DATABASE test_00101_0;
+DROP DATABASE test_00101_1;

@@ -17,4 +17,4 @@ A function that allows getting a column from a tuple.
 There is no cost to execute the function.
 
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/in_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/in_functions/) <!--hide-->

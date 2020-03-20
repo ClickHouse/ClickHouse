@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
-#include <Storages/MergeTree/MergeTreeReader.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
 
 
 namespace DB
@@ -9,26 +9,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int MEMORY_LIMIT_EXCEEDED;
-}
-
-static Block replaceTypes(Block && header, const MergeTreeData::DataPartPtr & data_part)
-{
-    /// Types may be different during ALTER (when this stream is used to perform an ALTER).
-    /// NOTE: We may use similar code to implement non blocking ALTERs.
-    for (const auto & name_type : data_part->columns)
-    {
-        if (header.has(name_type.name))
-        {
-            auto & elem = header.getByName(name_type.name);
-            if (!elem.type->equals(*name_type.type))
-            {
-                elem.type = name_type.type;
-                elem.column = elem.type->createColumn();
-            }
-        }
-    }
-
-    return std::move(header);
 }
 
 MergeTreeSelectProcessor::MergeTreeSelectProcessor(
@@ -42,26 +22,23 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
     bool check_columns_,
-    size_t min_bytes_to_use_direct_io_,
-    size_t min_bytes_to_use_mmap_io_,
-    size_t max_read_buffer_size_,
-    bool save_marks_in_cache_,
+    const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_,
     size_t part_index_in_query_,
     bool quiet)
     :
     MergeTreeBaseSelectProcessor{
-        replaceTypes(storage_.getSampleBlockForColumns(required_columns_), owned_data_part_),
+        storage_.getSampleBlockForColumns(required_columns_),
         storage_, prewhere_info_, max_block_size_rows_,
-        preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, min_bytes_to_use_direct_io_, min_bytes_to_use_mmap_io_,
-        max_read_buffer_size_, use_uncompressed_cache_, save_marks_in_cache_, virt_column_names_},
+        preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
+        reader_settings_, use_uncompressed_cache_, virt_column_names_},
     required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
     part_columns_lock(data_part->columns_lock),
     all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
     check_columns(check_columns_),
-    path(data_part->getFullPath())
+    path(data_part->getFullRelativePath())
 {
     /// Let's estimate total number of rows for progress bar.
     for (const auto & range : all_mark_ranges)
@@ -95,11 +72,6 @@ try
 
     task_columns = getReadTaskColumns(storage, data_part, required_columns, prewhere_info, check_columns);
 
-    /** @note you could simply swap `reverse` in if and else branches of MergeTreeDataSelectExecutor,
-     * and remove this reverse. */
-    MarkRanges remaining_mark_ranges = all_mark_ranges;
-    std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
-
     auto size_predictor = (preferred_block_size_bytes == 0)
         ? nullptr
         : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, data_part->storage.getSampleBlock());
@@ -109,7 +81,7 @@ try
     column_name_set = NameSet{column_names.begin(), column_names.end()};
 
     task = std::make_unique<MergeTreeReadTask>(
-        data_part, remaining_mark_ranges, part_index_in_query, ordered_names, column_name_set, task_columns.columns,
+        data_part, all_mark_ranges, part_index_in_query, ordered_names, column_name_set, task_columns.columns,
         task_columns.pre_columns, prewhere_info && prewhere_info->remove_prewhere_column,
         task_columns.should_reorder, std::move(size_predictor));
 
@@ -120,16 +92,12 @@ try
 
         owned_mark_cache = storage.global_context.getMarkCache();
 
-        reader = std::make_unique<MergeTreeReader>(
-            path, data_part, task_columns.columns, owned_uncompressed_cache.get(),
-            owned_mark_cache.get(), save_marks_in_cache, storage,
-            all_mark_ranges, min_bytes_to_use_direct_io, min_bytes_to_use_mmap_io, max_read_buffer_size);
+        reader = data_part->getReader(task_columns.columns, all_mark_ranges,
+            owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
 
         if (prewhere_info)
-            pre_reader = std::make_unique<MergeTreeReader>(
-                path, data_part, task_columns.pre_columns, owned_uncompressed_cache.get(),
-                owned_mark_cache.get(), save_marks_in_cache, storage,
-                all_mark_ranges, min_bytes_to_use_direct_io, min_bytes_to_use_mmap_io, max_read_buffer_size);
+            pre_reader = data_part->getReader(task_columns.pre_columns, all_mark_ranges,
+                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
     }
 
     return true;
