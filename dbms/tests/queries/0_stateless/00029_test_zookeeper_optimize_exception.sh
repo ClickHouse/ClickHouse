@@ -21,3 +21,6 @@ echo `${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 --server_logs_file=/dev/nu
   | grep -c 'Code: 388. DB::Exception: .* DB::Exception: .* Cannot select parts for optimization'
 echo `${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 --server_logs_file=/dev/null --query="OPTIMIZE TABLE test_optimize_exception_replicated PARTITION 201710" 2>&1` \
   | grep -c 'Code: 388. DB::Exception: .* DB::Exception:.* Cannot select parts for optimization'
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE test_optimize_exception NO DELAY"
+sleep 1

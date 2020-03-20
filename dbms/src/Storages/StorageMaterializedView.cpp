@@ -37,7 +37,7 @@ namespace ErrorCodes
 static inline String generateInnerTableName(const StorageID & view_id)
 {
     if (view_id.hasUUID())
-        return ".inner." + toString(view_id.uuid);
+        return ".inner_id." + toString(view_id.uuid);
     return ".inner." + view_id.getTableName();
 }
 

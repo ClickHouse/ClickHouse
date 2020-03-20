@@ -32,7 +32,8 @@ void DatabaseMemory::createTable(
 
 void DatabaseMemory::dropTable(
     const Context & /*context*/,
-    const String & table_name)
+    const String & table_name,
+    bool /*no_delay*/)
 {
     std::lock_guard lock{mutex};
     auto table = detachTableUnlocked(table_name);

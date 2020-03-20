@@ -192,7 +192,7 @@ void DatabaseOnDisk::createTable(
     }
 }
 
-void DatabaseOnDisk::dropTable(const Context &  context, const String & table_name)
+void DatabaseOnDisk::dropTable(const Context & context, const String & table_name, bool /*no_delay*/)
 {
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop = table_metadata_path + drop_suffix;

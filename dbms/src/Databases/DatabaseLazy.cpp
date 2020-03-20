@@ -66,10 +66,11 @@ void DatabaseLazy::createTable(
 
 void DatabaseLazy::dropTable(
     const Context & context,
-    const String & table_name)
+    const String & table_name,
+    bool no_delay)
 {
     SCOPE_EXIT({ clearExpiredTables(); });
-    DatabaseOnDisk::dropTable(context, table_name);
+    DatabaseOnDisk::dropTable(context, table_name, no_delay);
 }
 
 void DatabaseLazy::renameTable(

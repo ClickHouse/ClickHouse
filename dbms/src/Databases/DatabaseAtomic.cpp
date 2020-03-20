@@ -64,7 +64,7 @@ StoragePtr DatabaseAtomic::detachTable(const String & name)
     return DatabaseWithDictionaries::detachTable(name);
 }
 
-void DatabaseAtomic::dropTable(const Context &, const String & table_name)
+void DatabaseAtomic::dropTable(const Context &, const String & table_name, bool no_delay)
 {
     String table_metadata_path = getObjectMetadataPath(table_name);
 
@@ -74,7 +74,7 @@ void DatabaseAtomic::dropTable(const Context &, const String & table_name)
     String table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
     LOG_INFO(log, "Mark table " + table->getStorageID().getNameForLogs() + " to drop.");
     Poco::File(table_metadata_path).renameTo(table_metadata_path_drop);
-    DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop);
+    DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, no_delay);
 }
 
 void DatabaseAtomic::renameTable(const Context & context, const String & table_name, IDatabase & to_database,
