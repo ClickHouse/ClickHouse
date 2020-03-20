@@ -32,7 +32,7 @@ public:
     void dropTable(
         const Context & context,
         const String & table_name,
-        bool no_delay = false) override;
+        bool no_delay) override;
 
     ASTPtr getCreateTableQueryImpl(const Context & /*context*/, const String & name, bool throw_on_error) const override;
     ASTPtr getCreateDatabaseQuery(const Context & /*context*/) const override;

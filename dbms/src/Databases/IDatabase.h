@@ -227,7 +227,7 @@ public:
     /// You must call under the TableStructureLock of the corresponding table . If engine_modifier is empty, then engine does not change.
     virtual void alterTable(
         const Context & /*context*/,
-        const String & /*name*/,
+        const StorageID & /*table_id*/,
         const StorageInMemoryMetadata & /*metadata*/)
     {
         throw Exception(getEngineName() + ": alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);

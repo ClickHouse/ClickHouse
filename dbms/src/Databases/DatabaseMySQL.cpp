@@ -505,7 +505,7 @@ void DatabaseMySQL::createTable(const Context & context, const String & table_na
         throw Exception("The MySQL database engine can only execute attach statements of type attach table database_name.table_name",
             ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
-    attachTable(table_name, storage);
+    attachTable(table_name, storage, {});
 }
 
 }

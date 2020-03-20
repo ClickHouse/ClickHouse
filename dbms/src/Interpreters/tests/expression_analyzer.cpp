@@ -101,8 +101,8 @@ int main()
     auto system_database = std::make_shared<DatabaseMemory>("system");
     DatabaseCatalog::instance().attachDatabase("system", system_database);
     //context.setCurrentDatabase("system");
-    system_database->attachTable("one", StorageSystemOne::create("one"));
-    system_database->attachTable("numbers", StorageSystemNumbers::create(StorageID("system", "numbers"), false));
+    system_database->attachTable("one", StorageSystemOne::create("one"), {});
+    system_database->attachTable("numbers", StorageSystemNumbers::create(StorageID("system", "numbers"), false), {});
 
     size_t success = 0;
     for (auto & entry : queries)
