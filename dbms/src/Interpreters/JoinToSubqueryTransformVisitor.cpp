@@ -34,10 +34,17 @@ namespace
 ASTPtr makeSubqueryTemplate()
 {
     ParserTablesInSelectQueryElement parser(true);
-    ASTPtr subquery_template = parseQuery(parser, "(select * from _t)", 0);
+    ASTPtr subquery_template = parseQuery(parser, "(select * from _t) as `--s`", 0);
     if (!subquery_template)
         throw Exception("Cannot parse subquery template", ErrorCodes::LOGICAL_ERROR);
     return subquery_template;
+}
+
+ASTPtr makeSubqueryQualifiedAsterisk()
+{
+    auto asterisk = std::make_shared<ASTQualifiedAsterisk>();
+    asterisk->children.emplace_back(std::make_shared<ASTIdentifier>("--s"));
+    return asterisk;
 }
 
 /// Replace asterisks in select_expression_list with column identifiers
@@ -50,6 +57,7 @@ public:
         std::vector<String> tables_order;
         std::shared_ptr<ASTExpressionList> new_select_expression_list;
 
+        /// V1
         Data(const Context & context, const std::vector<const ASTTableExpression *> & table_expressions)
         {
             tables_order.reserve(table_expressions.size());
@@ -64,6 +72,19 @@ public:
 
                 String table_name = DatabaseAndTableWithAlias(*expr, context.getCurrentDatabase()).getQualifiedNamePrefix(false);
                 NamesAndTypesList columns = getColumnsFromTableExpression(*expr, context);
+                tables_order.push_back(table_name);
+                table_columns.emplace(std::move(table_name), std::move(columns));
+            }
+        }
+
+        /// V2
+        Data(const std::vector<TableWithColumnNamesAndTypes> & tables)
+        {
+            tables_order.reserve(tables.size());
+            for (const auto & table : tables)
+            {
+                String table_name = table.table.getQualifiedNamePrefix(false);
+                NamesAndTypesList columns = table.columns;
                 tables_order.push_back(table_name);
                 table_columns.emplace(std::move(table_name), std::move(columns));
             }
@@ -380,9 +401,10 @@ struct CollectColumnIdentifiersMatcher
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
     {
-        /// Do not go into subqueries. Do not collect table identifiers.
+        /// Do not go into subqueries. Do not collect table identifiers. Do not get identifier from 't.*'.
         return !node->as<ASTSubquery>() &&
-            !node->as<ASTTablesInSelectQuery>();
+            !node->as<ASTTablesInSelectQuery>() &&
+            !node->as<ASTQualifiedAsterisk>();
     }
 
     static void visit(const ASTPtr & ast, Data & data)
@@ -396,45 +418,45 @@ struct CollectColumnIdentifiersMatcher
         data.push_back(const_cast<ASTIdentifier *>(&ident));
     }
 };
+using CollectColumnIdentifiersVisitor = ConstInDepthNodeVisitor<CollectColumnIdentifiersMatcher, true>;
 
-struct TableNeededColumns
+struct CheckAliasDependencyVisitorData
 {
-    const DatabaseAndTableWithAlias & table;
-    NameSet no_clashes = {};
-    NameSet column_clashes = {}; /// It's column for sure
-    NameSet alias_clashes = {}; /// It's column or alias
+    using TypeToVisit = ASTIdentifier;
 
-    void fillExpressionList(ASTExpressionList & expression_list) const
+    const Aliases & aliases;
+    const ASTIdentifier * dependency = nullptr;
+
+    void visit(ASTIdentifier & ident, ASTPtr &)
     {
-        size_t columns_count = no_clashes.size() + column_clashes.size() + alias_clashes.size();
-        expression_list.children.reserve(expression_list.children.size() + columns_count);
-
-        String table_name = table.getQualifiedNamePrefix(false);
-
-        for (auto & column : no_clashes)
-            addShortName(column, expression_list);
-
-        for (auto & column : column_clashes)
-            addAliasedName(table_name, column, expression_list);
-
-        for (auto & column : alias_clashes)
-            addShortName(column, expression_list);
-    }
-
-    static void addShortName(const String & column, ASTExpressionList & expression_list)
-    {
-        auto ident = std::make_shared<ASTIdentifier>(column);
-        expression_list.children.emplace_back(std::move(ident));
-    }
-
-    /// t.x as `t.x`
-    static void addAliasedName(const String & table, const String & column, ASTExpressionList & expression_list)
-    {
-        auto ident = std::make_shared<ASTIdentifier>(std::vector<String>{table, column});
-        ident->setAlias(table + '.' + column);
-        expression_list.children.emplace_back(std::move(ident));
+        if (!dependency && aliases.count(ident.name))
+            dependency = &ident;
     }
 };
+using CheckAliasDependencyMatcher = OneTypeMatcher<CheckAliasDependencyVisitorData>;
+using CheckAliasDependencyVisitor = InDepthNodeVisitor<CheckAliasDependencyMatcher, true>;
+
+struct RewriteWithAliasMatcher
+{
+    using Data = std::unordered_map<String, ASTPtr>;
+
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
+    {
+        return !node->as<ASTSubquery>();
+    }
+
+    static void visit(ASTPtr & ast, Data & data)
+    {
+        String alias = ast->tryGetAlias();
+        if (!alias.empty())
+        {
+            auto it = data.find(alias);
+            if (it != data.end() && it->second.get() == ast.get())
+                ast = std::make_shared<ASTIdentifier>(alias);
+        }
+    }
+};
+using RewriteWithAliasVisitor = InDepthNodeVisitor<RewriteWithAliasMatcher, true>;
 
 class SubqueryExpressionsRewriteMatcher
 {
@@ -442,9 +464,7 @@ public:
     struct Data
     {
         ASTPtr expression_list;
-        const String & alias;
-        bool rewritten = false;
-        bool aliased = false;
+        bool done = false;
     };
 
     static bool needChildVisit(ASTPtr & node, ASTPtr &)
@@ -456,28 +476,179 @@ public:
     {
         if (auto * t = ast->as<ASTSelectQuery>())
             visit(*t, ast, data);
-        if (auto * t = ast->as<ASTSubquery>())
-            visit(*t, ast, data);
     }
 
 private:
     static void visit(ASTSelectQuery & select, ASTPtr &, Data & data)
     {
-        if (!data.rewritten)
+        if (!data.done)
             select.setExpression(ASTSelectQuery::Expression::SELECT, std::move(data.expression_list));
-        data.rewritten = true;
+        data.done = true;
+    }
+};
+using SubqueryExpressionsRewriteVisitor = InDepthNodeVisitor<SubqueryExpressionsRewriteMatcher, true>;
+
+struct TableNeededColumns
+{
+    const DatabaseAndTableWithAlias & table;
+    NameSet no_clashes = {};
+    NameSet alias_clashes = {};
+    std::unordered_map<String, String> column_clashes = {};
+
+    void fillExpressionList(ASTExpressionList & expression_list) const
+    {
+        size_t columns_count = no_clashes.size() + column_clashes.size() + alias_clashes.size();
+        expression_list.children.reserve(expression_list.children.size() + columns_count);
+
+        String table_name = table.getQualifiedNamePrefix(false);
+
+        for (auto & column : no_clashes)
+            addShortName(column, expression_list);
+
+        for (auto & column : alias_clashes)
+            addShortName(column, expression_list);
+
+        for (auto & [column, alias] : column_clashes)
+            addAliasedName(table_name, column, alias, expression_list);
     }
 
-    static void visit(ASTSubquery &, ASTPtr & ast, Data & data)
+    static void addShortName(const String & column, ASTExpressionList & expression_list)
     {
-        if (!data.aliased)
-            ast->setAlias(data.alias);
-        data.aliased = true;
+        auto ident = std::make_shared<ASTIdentifier>(column);
+        expression_list.children.emplace_back(std::move(ident));
+    }
+
+    /// t.x as `some`
+    static void addAliasedName(const String & table, const String & column, const String & alias, ASTExpressionList & expression_list)
+    {
+        auto ident = std::make_shared<ASTIdentifier>(std::vector<String>{table, column});
+        ident->setAlias(alias);
+        expression_list.children.emplace_back(std::move(ident));
     }
 };
 
-using CollectColumnIdentifiersVisitor = ConstInDepthNodeVisitor<CollectColumnIdentifiersMatcher, true>;
-using SubqueryExpressionsRewriteVisitor = InDepthNodeVisitor<SubqueryExpressionsRewriteMatcher, true>;
+class UniqueShortNames
+{
+public:
+    String get(const String & long_name)
+    {
+        auto it = names.find(long_name);
+        if (it != names.end())
+            return it->second;
+
+        String unique_name = generateUniqueName();
+        names.emplace(long_name, unique_name);
+        return unique_name;
+    }
+
+private:
+    std::unordered_map<String, String> names;
+    size_t counter = 0;
+
+    String generateUniqueName()
+    {
+        static constexpr const char * pattern = "--x";
+        return String(pattern) + std::to_string(counter++);
+    }
+};
+
+size_t countSuchColumns(const std::vector<TableWithColumnNamesAndTypes> & tables, const String & short_name)
+{
+    size_t count = 0;
+    for (auto & table : tables)
+        if (table.hasColumn(short_name))
+            ++count;
+    return count;
+}
+
+/// Find clashes and normalize names
+/// 1. If column name has no clashes make all its occurrences short: 'table.column' -> 'column', 'table_alias.column' -> 'column'.
+/// 2. If column name can't be short cause of alias with same name generate and use unique name for it.
+/// 3. If column clashes with another column generate and use unique names for them.
+/// 4. If column clashes with another column and it's short - it's 'ambiguous column' error.
+/// 5. If column clashes with alias add short column name to select list. It would be removed later if not needed.
+std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
+    const std::vector<TableWithColumnNamesAndTypes> & tables,
+    const Aliases & aliases,
+    std::vector<ASTIdentifier *> & identifiers)
+{
+    UniqueShortNames unique_names;
+    size_t last_table_pos = tables.size() - 1;
+
+    std::vector<TableNeededColumns> needed_columns;
+    needed_columns.reserve(tables.size());
+    for (auto & table : tables)
+        needed_columns.push_back(TableNeededColumns{table.table});
+
+    for (ASTIdentifier * ident : identifiers)
+    {
+        bool got_alias = aliases.count(ident->name);
+
+        if (auto table_pos = IdentifierSemantic::chooseTable(*ident, tables))
+        {
+            if (!ident->isShort())
+            {
+                if (got_alias)
+                    throw Exception("Alias clashes with qualified column '" + ident->name + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+
+                String short_name = ident->shortName();
+                size_t count = countSuchColumns(tables, short_name);
+
+                if (count > 1 || aliases.count(short_name))
+                {
+                    auto & table = tables[*table_pos];
+                    IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
+
+                    /// For tables moved into subselects we need unique short names for clashed names
+                    if (*table_pos != last_table_pos)
+                    {
+                        auto & unique_long_name = ident->name;
+                        String unique_short_name = unique_names.get(unique_long_name);
+                        ident->setShortName(unique_short_name);
+                        needed_columns[*table_pos].column_clashes.emplace(short_name, unique_short_name);
+                    }
+                }
+                else
+                {
+                    ident->setShortName(short_name); /// table.column -> column
+                    needed_columns[*table_pos].no_clashes.emplace(std::move(short_name));
+                }
+            }
+            else if (got_alias)
+                needed_columns[*table_pos].alias_clashes.emplace(ident->shortName());
+            else
+                needed_columns[*table_pos].no_clashes.emplace(ident->shortName());
+        }
+        else if (!got_alias)
+            throw Exception("Unknown column name '" + ident->name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
+    }
+
+    return needed_columns;
+}
+
+/// Make expression list for current subselect
+std::shared_ptr<ASTExpressionList> subqueryExpressionList(
+    size_t table_pos,
+    const std::vector<TableNeededColumns> & needed_columns,
+    const std::vector<std::vector<ASTPtr>> & alias_pushdown)
+{
+    auto expression_list = std::make_shared<ASTExpressionList>();
+
+    /// First time extract needed left table columns manually.
+    /// Next times extract left table columns via QualifiedAsterisk: `--s`.*
+    if (table_pos == 1)
+        needed_columns[0].fillExpressionList(*expression_list);
+    else
+        expression_list->children.emplace_back(makeSubqueryQualifiedAsterisk());
+
+    /// Add needed right table columns
+    needed_columns[table_pos].fillExpressionList(*expression_list);
+
+    for (auto & expr : alias_pushdown[table_pos])
+        expression_list->children.emplace_back(std::move(expr));
+
+    return expression_list;
+}
 
 } /// namelesspace
 
@@ -493,121 +664,112 @@ void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
     }
 }
 
-/// The reason for V2: not to alias columns without clashes, use better `t.x` style aliases for others.
+/// The reason for V2: not to alias columns without clashes.
+/// It allows USING and 'select *' for queries with subselects. It doesn't need AsterisksSemantic and related stuff.
+/// 1. Expand asterisks in select expression list.
+/// 2. Normalize column names and find name clashes
+/// 3. Rewrite multiple JOINs with subqueries:
+///    SELECT ... FROM (SELECT `--join`.*, ... FROM (...) AS `--join` JOIN tableY ON ...) AS `--join` JOIN tableZ ON ...'
+/// 4. Push down expressions of aliases used in ON section into expression list of first reletad subquery
 void JoinToSubqueryTransformMatcher::visitV2(ASTSelectQuery & select, ASTPtr & ast, Data & data)
 {
     std::vector<const ASTTableExpression *> table_expressions;
     if (!needRewrite<2>(select, table_expressions))
         return;
 
-    /// TODO: check table_expressions vs data.tables consistency
+    auto & src_tables = select.tables()->children;
+    size_t tables_count = src_tables.size();
+
+    if (table_expressions.size() != data.tables.size() ||
+        tables_count != data.tables.size())
+        throw Exception("Inconsistent tables count in JOIN rewriter", ErrorCodes::LOGICAL_ERROR);
+
+    /// Replace * and t.* with columns in select expression list.
+    {
+        ExtractAsterisksVisitor::Data asterisks_data(data.tables);
+        ExtractAsterisksVisitor(asterisks_data).visit(select.select());
+        if (asterisks_data.new_select_expression_list)
+            select.setExpression(ASTSelectQuery::Expression::SELECT, std::move(asterisks_data.new_select_expression_list));
+    }
 
     /// Collect column identifiers
 
     std::vector<ASTIdentifier *> identifiers;
     CollectColumnIdentifiersVisitor(identifiers).visit(ast);
 
-    /// JOIN sections
-    for (auto & child : select.tables()->children)
+    std::vector<ASTIdentifier *> using_identifiers;
+    std::vector<std::vector<ASTPtr>> alias_pushdown(tables_count);
+    std::unordered_map<String, ASTPtr> on_aliases;
+
+    /// Collect columns from JOIN sections. Detect if we have aliases there (they need pushdown).
+    for (size_t table_pos = 0; table_pos < tables_count; ++table_pos)
     {
-        auto * table = child->as<ASTTablesInSelectQueryElement>();
+        auto * table = src_tables[table_pos]->as<ASTTablesInSelectQueryElement>();
         if (table->table_join)
         {
             auto & join = table->table_join->as<ASTTableJoin &>();
             if (join.on_expression)
-                CollectColumnIdentifiersVisitor(identifiers).visit(join.on_expression);
-            /// Nothing special for join.using_expression_list cause it contains short names
-        }
-    }
-
-    /// Find clashes and normalize names:
-    /// 1. If column name has no clashes make all its occurrences short: 'table.column' -> 'column', 'table_alias.column' -> 'column'.
-    /// 2. If column name can't be short cause of same alias we keep it long converting 'table.column' -> 'table_alias.column' if any.
-    /// 3. If column clashes with another column keep their names long but convert 'table.column' -> 'table_alias.column' if any.
-    /// 4. If column clashes with another column and it's short - it's 'ambiguous column' error.
-    /// 5. If column clashes with alias add short column name to select list. It would be removed later if not needed.
-    /// @note Source query aliases should not clash with qualified names.
-
-    std::vector<TableNeededColumns> needed_columns;
-    needed_columns.reserve(data.tables.size());
-    for (auto & table : data.tables)
-        needed_columns.push_back(TableNeededColumns{table.table});
-    NameSet alias_uses;
-
-    for (ASTIdentifier * ident : identifiers)
-    {
-        bool got_alias = data.aliases.count(ident->name);
-
-        if (auto table_pos = IdentifierSemantic::chooseTable(*ident, data.tables))
-        {
-            const String & short_name = ident->shortName();
-            if (!ident->isShort())
             {
-                if (got_alias)
-                    throw Exception("Alias clashes with qualified column '" + ident->name + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+                std::vector<ASTIdentifier *> on_identifiers;
+                CollectColumnIdentifiersVisitor(on_identifiers).visit(join.on_expression);
+                identifiers.insert(identifiers.end(), on_identifiers.begin(), on_identifiers.end());
 
-                size_t count = 0;
-                for (auto & table : data.tables)
-                    if (table.hasColumn(short_name))
-                        ++count;
-
-                if (count > 1 || data.aliases.count(short_name))
+                /// Extract aliases used in ON section for pushdown. Exclude the last table.
+                if (table_pos < tables_count - 1)
                 {
-                    auto & table = data.tables[*table_pos];
-                    IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
-                    needed_columns[*table_pos].column_clashes.emplace(short_name);
-                }
-                else
-                {
-                    ident->setShortName(short_name); /// table.column -> column
-                    needed_columns[*table_pos].no_clashes.emplace(short_name);
+                    for (auto * ident : on_identifiers)
+                    {
+                        auto it = data.aliases.find(ident->name);
+                        if (!on_aliases.count(ident->name) && it != data.aliases.end())
+                        {
+                            auto alias_expression = it->second;
+                            alias_pushdown[table_pos].push_back(alias_expression);
+                            on_aliases[ident->name] = alias_expression;
+                        }
+                    }
                 }
             }
-            else if (got_alias)
-                needed_columns[*table_pos].alias_clashes.emplace(short_name);
-            else
-                needed_columns[*table_pos].no_clashes.emplace(short_name);
+            else if (join.using_expression_list)
+                CollectColumnIdentifiersVisitor(using_identifiers).visit(join.on_expression);
         }
-        else if (got_alias)
-            alias_uses.insert(ident->name);
-        else
-            throw Exception("Unknown column name '" + ident->name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
     }
 
-    /// Rewrite tables
+    /// Check if alias expression is too complex to push it down.
+    for (auto & expr : on_aliases)
+    {
+        CheckAliasDependencyVisitor::Data check{data.aliases};
+        CheckAliasDependencyVisitor(check).visit(expr.second);
+        if (check.dependency)
+            throw Exception("Cannot rewrite JOINs. Alias '" + expr.first +
+                            "' used in ON section depends on another alias '" + check.dependency->name + "'",
+                            ErrorCodes::NOT_IMPLEMENTED);
+    }
 
-    auto & src_tables = select.tables()->children;
+    /// Check same name in aliases, USING and ON sections. Cannot push down alias to ON through USING cause of name masquerading.
+    for (auto * ident : using_identifiers)
+        if (on_aliases.count(ident->name))
+            throw Exception("Cannot rewrite JOINs. Alias '" + ident->name + "' appears both in ON and USING", ErrorCodes::NOT_IMPLEMENTED);
+    using_identifiers.clear();
+
+    /// Replace pushdowned expressions with aliases names in original expression lists.
+    RewriteWithAliasVisitor(on_aliases).visit(ast);
+    on_aliases.clear();
+
+    std::vector<TableNeededColumns> needed_columns =
+        normalizeColumnNamesExtractNeeded(data.tables, data.aliases, identifiers);
+
+    /// Rewrite JOINs with subselects
+
     ASTPtr left_table = src_tables[0];
 
     static ASTPtr subquery_template = makeSubqueryTemplate();
-    static constexpr const char * join_subquery_alias = "--join";
 
     for (size_t i = 1; i < src_tables.size() - 1; ++i)
     {
-        String prev_join_alias = String(join_subquery_alias) + std::to_string(i-1);
-        String current_join_alias = String(join_subquery_alias) + std::to_string(i);
-
-        auto expression_list = std::make_shared<ASTExpressionList>();
-        {
-            if (i == 1)
-            {
-                /// First time extract needed left table columns manually
-                needed_columns[0].fillExpressionList(*expression_list);
-            }
-            else
-            {
-                /// Next times extract left tables via QualifiedAsterisk
-                auto asterisk = std::make_shared<ASTQualifiedAsterisk>();
-                asterisk->children.emplace_back(std::make_shared<ASTIdentifier>(prev_join_alias));
-                expression_list->children.emplace_back(std::move(asterisk));
-            }
-
-            /// Add needed right table columns
-            needed_columns[i].fillExpressionList(*expression_list);
-        }
+        auto expression_list = subqueryExpressionList(i, needed_columns, alias_pushdown);
 
         ASTPtr subquery = subquery_template->clone();
-        SubqueryExpressionsRewriteVisitor::Data expr_rewrite_data{std::move(expression_list), current_join_alias};
+        SubqueryExpressionsRewriteVisitor::Data expr_rewrite_data{std::move(expression_list)};
         SubqueryExpressionsRewriteVisitor(expr_rewrite_data).visit(subquery);
 
         left_table = replaceJoin(left_table, src_tables[i], subquery);
