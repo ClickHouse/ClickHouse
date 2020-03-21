@@ -19,7 +19,8 @@ public:
     using ValueSizeMap = std::map<std::string, double>;
     using DeserializeBinaryBulkStateMap = std::map<std::string, IDataType::DeserializeBinaryBulkStatePtr>;
 
-    IMergeTreeReader(MergeTreeData::DataPartPtr data_part_,
+    IMergeTreeReader(
+        MergeTreeData::DataPartPtr data_part_,
         NamesAndTypesList columns_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
