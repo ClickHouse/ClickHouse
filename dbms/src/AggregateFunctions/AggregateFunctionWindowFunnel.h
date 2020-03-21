@@ -56,6 +56,9 @@ struct AggregateFunctionWindowFunnelData
 
     void merge(const AggregateFunctionWindowFunnelData & other)
     {
+        if (other.events_list.empty())
+            return;
+
         const auto size = events_list.size();
 
         events_list.insert(std::begin(other.events_list), std::end(other.events_list));
