@@ -22,7 +22,7 @@ Todas las funciones devuelven un único retorno como resultado (no varios valore
 
 Para simplificar, ciertas funciones solo pueden funcionar con constantes para algunos argumentos. Por ejemplo, el argumento correcto del operador LIKE debe ser una constante.
 Casi todas las funciones devuelven una constante para argumentos constantes. La excepción son las funciones que generan números aleatorios.
-El ‘now’ function devuelve valores diferentes para las consultas que se ejecutaron en diferentes momentos, pero el resultado se considera una constante, ya que la constancia solo es importante dentro de una sola consulta.
+El ‘now’ función devuelve valores diferentes para las consultas que se ejecutaron en diferentes momentos, pero el resultado se considera una constante, ya que la constancia solo es importante dentro de una sola consulta.
 Una expresión constante también se considera una constante (por ejemplo, la mitad derecha del operador LIKE se puede construir a partir de múltiples constantes).
 
 Las funciones se pueden implementar de diferentes maneras para argumentos constantes y no constantes (se ejecuta un código diferente). Pero los resultados para una constante y para una columna verdadera que contiene solo el mismo valor deben coincidir entre sí.
@@ -54,8 +54,8 @@ Para el procesamiento de consultas distribuidas, se realizan tantas etapas de pr
 Esto significa que las funciones se pueden realizar en diferentes servidores.
 Por ejemplo, en la consulta `SELECT f(sum(g(x))) FROM distributed_table GROUP BY h(y),`
 
--   si una `distributed_table` tiene al menos dos fragmentos, las funciones ‘g’ y ‘h’ se realizan en servidores remotos, y la función ‘f’ se realiza en el servidor solicitante.
--   si una `distributed_table` tiene sólo un fragmento, todos los ‘f’, ‘g’, y ‘h’ funciones se realizan en el servidor de este fragmento.
+-   Más información `distributed_table` tiene al menos dos fragmentos, las funciones ‘g’ y ‘h’ se realizan en servidores remotos, y la función ‘f’ se realiza en el servidor solicitante.
+-   Más información `distributed_table` tiene sólo un fragmento, todos los ‘f’, ‘g’, y ‘h’ funciones se realizan en el servidor de este fragmento.
 
 El resultado de una función generalmente no depende del servidor en el que se realice. Sin embargo, a veces esto es importante.
 Por ejemplo, las funciones que funcionan con diccionarios utilizan el diccionario que existe en el servidor en el que se están ejecutando.

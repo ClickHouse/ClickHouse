@@ -18,7 +18,7 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 
 -   `password` — Contraseña de usuario.
 
--   `replace_query` — Bandera que convierte `INSERT INTO` consultas a `REPLACE INTO`. Si `replace_query=1`, la consulta se reemplaza.
+-   `replace_query` — Bandera que convierte `INSERT INTO` Consultas a `REPLACE INTO`. Si `replace_query=1`, la consulta se reemplaza.
 
 -   `on_duplicate_clause` — El `ON DUPLICATE KEY on_duplicate_clause` expresión que se añade a la `INSERT` consulta.
 

@@ -99,7 +99,7 @@ En el opcional `<allow_dictionaries>` sección, también puede especificar una l
 
 Acceso a la `system` base de datos siempre está permitida (ya que esta base de datos se utiliza para procesar consultas).
 
-El usuario puede obtener una lista de todas las bases de datos y tablas en ellos mediante el uso de `SHOW` consultas o tablas del sistema, incluso si no se permite el acceso a bases de datos individuales.
+El usuario puede obtener una lista de todas las bases de datos y tablas en ellos mediante el uso de `SHOW` Consultas o tablas del sistema, incluso si no se permite el acceso a bases de datos individuales.
 
 El acceso a la base de datos no está [sólo lectura](settings/permissions_for_queries.md#settings_readonly) configuración. No puede conceder acceso completo a una base de datos y `readonly` acceso a otro.
 

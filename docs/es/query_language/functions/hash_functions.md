@@ -15,11 +15,11 @@ Considere usar el [sipHash64](#hash_functions-siphash64) función en su lugar.
 
 **Parámetros**
 
-La función toma un número variable de parámetros de entrada. Los parámetros pueden ser cualquiera de los [tipos de datos compatibles](../../data_types/index.md).
+La función toma un número variable de parámetros de entrada. Los parámetros pueden ser cualquiera de los [Tipos de datos compatibles](../../data_types/index.md).
 
 **Valor devuelto**
 
-Un [UInt64](../../data_types/int_uint.md) tipo de datos valor hash.
+Naciones [UInt64](../../data_types/int_uint.md) tipo de datos valor hash.
 
 **Ejemplo**
 
@@ -41,7 +41,7 @@ Si desea obtener el mismo resultado que la salida de la utilidad md5sum, use low
 
 ## sipHash64 {#hash-functions-siphash64}
 
-Produce un [SipHash](https://131002.net/siphash/) valor hash.
+Producir un [SipHash](https://131002.net/siphash/) hachís valor.
 
 ``` sql
 sipHash64(par1,...)
@@ -58,11 +58,11 @@ Función [interpretar](../../query_language/functions/type_conversion_functions.
 
 **Parámetros**
 
-La función toma un número variable de parámetros de entrada. Los parámetros pueden ser cualquiera de los [tipos de datos compatibles](../../data_types/index.md).
+La función toma un número variable de parámetros de entrada. Los parámetros pueden ser cualquiera de los [Tipos de datos compatibles](../../data_types/index.md).
 
 **Valor devuelto**
 
-Un [UInt64](../../data_types/int_uint.md) tipo de datos valor hash.
+Naciones [UInt64](../../data_types/int_uint.md) tipo de datos valor hash.
 
 **Ejemplo**
 
@@ -79,12 +79,12 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 ## sipHash128 {#hash-functions-siphash128}
 
 Calcula SipHash a partir de una cadena.
-Acepta un argumento de tipo String. Devuelve FixedString(16).
+Acepta un argumento de tipo String. ¿Cómo puedo hacerlo?
 Difiere de sipHash64 en que el estado final de plegado xor solo se realiza hasta 128 bits.
 
 ## cityHash64 {#cityhash64}
 
-Produce un [Método de codificación de datos:](https://github.com/google/cityhash) valor hash.
+Producir un [Método de codificación de datos:](https://github.com/google/cityhash) hachís valor.
 
 ``` sql
 cityHash64(par1,...)
@@ -94,11 +94,11 @@ Esta es una función hash rápida no criptográfica. Utiliza el algoritmo CityHa
 
 **Parámetros**
 
-La función toma un número variable de parámetros de entrada. Los parámetros pueden ser cualquiera de los [tipos de datos compatibles](../../data_types/index.md).
+La función toma un número variable de parámetros de entrada. Los parámetros pueden ser cualquiera de los [Tipos de datos compatibles](../../data_types/index.md).
 
 **Valor devuelto**
 
-Un [UInt64](../../data_types/int_uint.md) tipo de datos valor hash.
+Naciones [UInt64](../../data_types/int_uint.md) tipo de datos valor hash.
 
 **Ejemplos**
 
@@ -150,7 +150,7 @@ Los niveles son los mismos que en URLHierarchy. Esta función es específica de 
 
 ## Método de codificación de datos: {#farmhash64}
 
-Produce un [Método de codificación de datos:](https://github.com/google/farmhash) valor hash.
+Producir un [Método de codificación de datos:](https://github.com/google/farmhash) hachís valor.
 
 ``` sql
 farmHash64(par1, ...)
@@ -160,11 +160,11 @@ La función utiliza el `Hash64` de todos [métodos disponibles](https://github.c
 
 **Parámetros**
 
-La función toma un número variable de parámetros de entrada. Los parámetros pueden ser cualquiera de los [tipos de datos compatibles](../../data_types/index.md).
+La función toma un número variable de parámetros de entrada. Los parámetros pueden ser cualquiera de los [Tipos de datos compatibles](../../data_types/index.md).
 
 **Valor devuelto**
 
-Un [UInt64](../../data_types/int_uint.md) tipo de datos valor hash.
+Naciones [UInt64](../../data_types/int_uint.md) tipo de datos valor hash.
 
 **Ejemplo**
 
@@ -190,7 +190,7 @@ SELECT javaHash('');
 
 **Valor devuelto**
 
-Un `Int32` tipo de datos valor hash.
+Naciones `Int32` tipo de datos valor hash.
 
 **Ejemplo**
 
@@ -224,7 +224,7 @@ javaHashUTF16LE(stringUtf16le)
 
 **Valor devuelto**
 
-Un `Int32` tipo de datos valor hash.
+Naciones `Int32` tipo de datos valor hash.
 
 **Ejemplo**
 
@@ -256,7 +256,7 @@ Esto es sólo [Nivel de Cifrado WEP](#hash_functions-javahash) con poco de signo
 
 **Valor devuelto**
 
-Un `Int32` tipo de datos valor hash.
+Naciones `Int32` tipo de datos valor hash.
 
 Tipo: `hiveHash`.
 
@@ -278,7 +278,7 @@ Resultado:
 
 ## Método de codificación de datos: {#metrohash64}
 
-Produce un [Método de codificación de datos:](http://www.jandrewrogers.com/2015/05/27/metrohash/) valor hash.
+Producir un [Método de codificación de datos:](http://www.jandrewrogers.com/2015/05/27/metrohash/) hachís valor.
 
 ``` sql
 metroHash64(par1, ...)
@@ -286,11 +286,11 @@ metroHash64(par1, ...)
 
 **Parámetros**
 
-La función toma un número variable de parámetros de entrada. Los parámetros pueden ser cualquiera de los [tipos de datos compatibles](../../data_types/index.md).
+La función toma un número variable de parámetros de entrada. Los parámetros pueden ser cualquiera de los [Tipos de datos compatibles](../../data_types/index.md).
 
 **Valor devuelto**
 
-Un [UInt64](../../data_types/int_uint.md) tipo de datos valor hash.
+Naciones [UInt64](../../data_types/int_uint.md) tipo de datos valor hash.
 
 **Ejemplo**
 
@@ -312,7 +312,7 @@ Para obtener más información, consulte el enlace: [SaltarConsistentHash](https
 
 ## murmurHash2\_32, murmurHash2\_64 {#murmurhash2-32-murmurhash2-64}
 
-Produce un [Método de codificación de datos:](https://github.com/aappleby/smhasher) valor hash.
+Producir un [Método de codificación de datos:](https://github.com/aappleby/smhasher) hachís valor.
 
 ``` sql
 murmurHash2_32(par1, ...)
@@ -321,7 +321,7 @@ murmurHash2_64(par1, ...)
 
 **Parámetros**
 
-Ambas funciones toman un número variable de parámetros de entrada. Los parámetros pueden ser cualquiera de los [tipos de datos compatibles](../../data_types/index.md).
+Ambas funciones toman un número variable de parámetros de entrada. Los parámetros pueden ser cualquiera de los [Tipos de datos compatibles](../../data_types/index.md).
 
 **Valor devuelto**
 
@@ -342,7 +342,7 @@ SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 ## murmurHash3\_32, murmurHash3\_64 {#murmurhash3-32-murmurhash3-64}
 
-Produce un [Método de codificación de datos:](https://github.com/aappleby/smhasher) valor hash.
+Producir un [Método de codificación de datos:](https://github.com/aappleby/smhasher) hachís valor.
 
 ``` sql
 murmurHash3_32(par1, ...)
@@ -351,7 +351,7 @@ murmurHash3_64(par1, ...)
 
 **Parámetros**
 
-Ambas funciones toman un número variable de parámetros de entrada. Los parámetros pueden ser cualquiera de los [tipos de datos compatibles](../../data_types/index.md).
+Ambas funciones toman un número variable de parámetros de entrada. Los parámetros pueden ser cualquiera de los [Tipos de datos compatibles](../../data_types/index.md).
 
 **Valor devuelto**
 
@@ -372,7 +372,7 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 ## murmurHash3\_128 {#murmurhash3-128}
 
-Produce un [Método de codificación de datos:](https://github.com/aappleby/smhasher) valor hash.
+Producir un [Método de codificación de datos:](https://github.com/aappleby/smhasher) hachís valor.
 
 ``` sql
 murmurHash3_128( expr )
@@ -384,7 +384,7 @@ murmurHash3_128( expr )
 
 **Valor devuelto**
 
-Un [Cadena fija (16)](../../data_types/fixedstring.md) tipo de datos valor hash.
+Naciones [Cadena fija (16)](../../data_types/fixedstring.md) tipo de datos valor hash.
 
 **Ejemplo**
 
@@ -412,7 +412,7 @@ SELECT xxHash64('');
 
 **Valor devuelto**
 
-Un `Uint32` o `Uint64` tipo de datos valor hash.
+Naciones `Uint32` o `Uint64` tipo de datos valor hash.
 
 Tipo: `xxHash`.
 

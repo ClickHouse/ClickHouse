@@ -1,24 +1,24 @@
-# Array(T) {#data-type-array}
+# Matriz (T) {#data-type-array}
 
-Array of `T`-type items.
+Matriz de `T`-tipo de artículos.
 
-`T` can be anything, including an array.
+`T` puede ser cualquier cosa, incluida una matriz.
 
-## Creating an array {#creating-an-array}
+## Creación de una matriz {#creating-an-array}
 
-You can use a function to create an array:
+Puede usar una función para crear una matriz:
 
 ``` sql
 array(T)
 ```
 
-You can also use square brackets.
+También puede usar corchetes.
 
 ``` sql
 []
 ```
 
-Example of creating an array:
+Ejemplo de creación de una matriz:
 
 ``` sql
 SELECT array(1, 2) AS x, toTypeName(x)
@@ -40,13 +40,13 @@ SELECT [1, 2] AS x, toTypeName(x)
 └───────┴────────────────────┘
 ```
 
-## Working with data types {#working-with-data-types}
+## Trabajar con tipos de datos {#working-with-data-types}
 
-When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [NULL](../query_language/syntax.md#null-literal) or [Nullable](nullable.md#data_type-nullable) type arguments, the type of array elements is [Nullable](nullable.md).
+Al crear una matriz sobre la marcha, ClickHouse define automáticamente el tipo de argumento como el tipo de datos más estrecho que puede almacenar todos los argumentos enumerados. Si hay alguna [NULO](../query_language/syntax.md#null-literal) o [NULO](nullable.md#data_type-nullable) los argumentos de tipo, el tipo de elementos de la matriz es [NULO](nullable.md).
 
-If ClickHouse couldn’t determine the data type, it will generate an exception. For instance, this will happen when trying to create an array with strings and numbers simultaneously (`SELECT array(1, 'a')`).
+Si ClickHouse no pudo determinar el tipo de datos, generará una excepción. Por ejemplo, esto sucederá al intentar crear una matriz con cadenas y números simultáneamente (`SELECT array(1, 'a')`).
 
-Examples of automatic data type detection:
+Ejemplos de detección automática de tipos de datos:
 
 ``` sql
 SELECT array(1, 2, NULL) AS x, toTypeName(x)
@@ -58,7 +58,7 @@ SELECT array(1, 2, NULL) AS x, toTypeName(x)
 └────────────┴───────────────────────────────┘
 ```
 
-If you try to create an array of incompatible data types, ClickHouse throws an exception:
+Si intenta crear una matriz de tipos de datos incompatibles, ClickHouse produce una excepción:
 
 ``` sql
 SELECT array(1, 'a')
@@ -69,4 +69,4 @@ Received exception from server (version 1.1.54388):
 Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString and some of them are not.
 ```
 
-[Original article](https://clickhouse.tech/docs/es/data_types/array/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/data_types/array/) <!--hide-->

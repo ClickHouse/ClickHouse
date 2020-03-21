@@ -64,7 +64,7 @@ Motores en la familia:
 -   [Memoria](memory.md)
 -   [Búfer](buffer.md)
 
-## Virtual columnas {#table-engines-virtual-columns}
+## Columnas virtuales {#table-engines-virtual-columns}
 
 La columna virtual es un atributo de motor de tabla integral que se define en el código fuente del motor.
 

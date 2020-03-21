@@ -1,7 +1,7 @@
 # File {#table-engines-file}
 
 El motor de tabla de archivos mantiene los datos en un archivo en uno de los [file
-formato](../../interfaces/formats.md#formats) (TabSeparated, Native, etc.).
+Formato](../../interfaces/formats.md#formats) (TabSeparated, Native, etc.).
 
 Ejemplos de uso:
 
@@ -60,7 +60,7 @@ SELECT * FROM file_engine_table
 └──────┴───────┘
 ```
 
-## Uso en Clickhouse-local {#usage-in-clickhouse-local}
+## Uso es Clickhouse-local {#usage-in-clickhouse-local}
 
 En [Sistema abierto.](../utils/clickhouse-local.md) El motor de archivos acepta la ruta del archivo además de `Format`. Los flujos de entrada / salida predeterminados se pueden especificar utilizando nombres numéricos o legibles por humanos como `0` o `stdin`, `1` o `stdout`.
 **Ejemplo:**

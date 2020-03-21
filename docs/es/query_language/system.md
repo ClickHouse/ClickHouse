@@ -1,7 +1,7 @@
 # Consultas del sistema {#query-language-system}
 
--   [RELOAD DICCIONARIOS](#query_language-system-reload-dictionaries)
--   [RELOAD DICCIONARIO](#query_language-system-reload-dictionary)
+-   [Cargar DICCIONARIOS](#query_language-system-reload-dictionaries)
+-   [Cargar DICCIONARIO](#query_language-system-reload-dictionary)
 -   [CATEGORÍA](#query_language-system-drop-dns-cache)
 -   [CACHÉ DE LA MARCA DE LA GOTA](#query_language-system-drop-mark-cache)
 -   [REGISTROS DE FLUSH](#query_language-system-flush_logs)
@@ -14,10 +14,10 @@
 -   [PARADA DE FUSIONES](#query_language-system-stop-merges)
 -   [COMIENZAR FUSIONES](#query_language-system-start-merges)
 
-## RELOAD DICCIONARIOS {#query-language-system-reload-dictionaries}
+## Cargar DICCIONARIOS {#query-language-system-reload-dictionaries}
 
 Vuelve a cargar todos los diccionarios que se han cargado correctamente antes.
-De forma predeterminada, los diccionarios se cargan perezosamente (ver [Diccionarios\_lazy\_load](../operations/server_settings/settings.md#server_settings-dictionaries_lazy_load)), por lo que en lugar de cargarse automáticamente al inicio, se inicializan en el primer acceso a través de la función dictGet o SELECT desde tablas con ENGINE = Dictionary . El `SYSTEM RELOAD DICTIONARIES` consulta vuelve a cargar dichos diccionarios (LOADED).
+De forma predeterminada, los diccionarios se cargan perezosamente (ver [Diccionarios\_lazy\_load](../operations/server_settings/settings.md#server_settings-dictionaries_lazy_load)), por lo que en lugar de cargarse automáticamente al inicio, se inicializan en el primer acceso a través de la función dictGet o SELECT desde tablas con ENGINE = Dictionary . El `SYSTEM RELOAD DICTIONARIES` Consulta vuelve a cargar dichos diccionarios (LOADED).
 Siempre vuelve `Ok.` independientemente del resultado de la actualización del diccionario.
 
 ## RELOAD DICTIONARY dictionary\_name {#query-language-system-reload-dictionary}

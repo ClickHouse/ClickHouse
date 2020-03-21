@@ -15,9 +15,9 @@ Restricción:
 
 Valores posibles:
 
--   `deny` — Valor predeterminado. Prohíbe el uso de estos tipos de subconsultas (devuelve el “Double-distributed in/JOIN subqueries is denied” salvedad).
+-   `deny` — Valor predeterminado. Prohíbe el uso de estos tipos de subconsultas (devuelve el “Double-distributed in/JOIN subqueries is denied” Salvedad).
 -   `local` — Sustituye la base de datos y la tabla de la subconsulta por locales para el servidor de destino (fragmento), dejando `IN`/`JOIN.`
--   `global` — Sustituye el `IN`/`JOIN` consulta con `GLOBAL IN`/`GLOBAL JOIN.`
+-   `global` — Sustituye el `IN`/`JOIN` Consulta con `GLOBAL IN`/`GLOBAL JOIN.`
 -   `allow` — Permite la utilización de este tipo de subconsultas.
 
 ## enable\_optimize\_predicate\_expression {#enable-optimize-predicate-expression}
@@ -72,7 +72,7 @@ Si `force_primary_key=1`, ClickHouse comprueba si la consulta tiene una condici�
 
 ## Formato\_esquema {#format-schema}
 
-Este parámetro es útil cuando se utilizan formatos que requieren una definición de esquema, como [Cap’n Proto](https://capnproto.org/) o [Protobuf](https://developers.google.com/protocol-buffers/). El valor depende del formato.
+Este parámetro es útil cuando se utilizan formatos que requieren una definición de esquema, como [Cap'n Proto](https://capnproto.org/) o [Protobuf](https://developers.google.com/protocol-buffers/). El valor depende del formato.
 
 ## fsync\_metadata {#fsync-metadata}
 
@@ -129,7 +129,7 @@ Valor predeterminado: 0.
 
 ## Nombre de la red inalámbrica (SSID): {#setting-max-http-get-redirects}
 
-Limita el número máximo de saltos de redirección HTTP GET para [URL](../table_engines/url.md)-mesas de motor. La configuración se aplica a ambos tipos de tablas: las creadas por [CREAR TABLA](../../query_language/create/#create-table-query) consulta y por el [URL](../../query_language/table_functions/url.md) función de la tabla.
+Limita el número máximo de saltos de redirección HTTP GET para [URL](../table_engines/url.md)-mesas de motor. La configuración se aplica a ambos tipos de tablas: las creadas por [CREAR TABLA](../../query_language/create/#create-table-query) Consulta y por el [URL](../../query_language/table_functions/url.md) función de la tabla.
 
 Valores posibles:
 
@@ -238,7 +238,7 @@ Esta configuración sólo se utiliza cuando `input_format_values_deduce_template
 ```
 
 Cuando esta configuración está habilitada, ClickHouse comprobará el tipo real de literal y utilizará una plantilla de expresión del tipo correspondiente. En algunos casos, puede ralentizar significativamente la evaluación de expresiones en `Values`.
-Cuando está deshabilitado, ClickHouse puede usar un tipo más general para algunos literales (por ejemplo, `Float64` o `Int64` en lugar de `UInt64` para `42`), pero puede causar problemas de desbordamiento y precisión.
+Cuando está deshabilitado, ClickHouse puede usar un tipo más general para algunos literales (por ejemplo, `Float64` o `Int64` es lugar de `UInt64` para `42`), pero puede causar problemas de desbordamiento y precisión.
 Habilitado de forma predeterminada.
 
 ## Entrada\_format\_defaults\_for\_omitted\_fields {#session-settings-input-format-defaults-for-omitted-fields}
@@ -352,7 +352,7 @@ Establece el rigor predeterminado para [Cláusulas JOIN](../../query_language/se
 Valores posibles:
 
 -   `ALL` — Si la tabla correcta tiene varias filas coincidentes, ClickHouse crea un [Producto cartesiano](https://en.wikipedia.org/wiki/Cartesian_product) de filas coincidentes. Esta es la normal `JOIN` comportamiento de SQL estándar.
--   `ANY` — Si la tabla correcta tiene varias filas coincidentes, solo se une la primera encontrada. Si la tabla correcta solo tiene una fila coincidente, los resultados de `ANY` y `ALL` son los mismos.
+-   `ANY` — Si la tabla correcta tiene varias filas coincidentes, solo se une la primera encontrada. Si la tabla correcta solo tiene una fila coincidente, los resultados de `ANY` y `ALL` hijo de los mismos.
 -   `ASOF` — Para unir secuencias con una coincidencia incierta.
 -   `Empty string` — Si `ALL` o `ANY` no se especifica en la consulta, ClickHouse produce una excepción.
 
@@ -385,7 +385,7 @@ Establece el tipo de [UNIR](../../query_language/select.md) comportamiento. Al f
 Valores posibles:
 
 -   0 — Las celdas vacías se rellenan con el valor predeterminado del tipo de campo correspondiente.
--   Uno — `JOIN` se comporta de la misma manera que en SQL estándar. El tipo del campo correspondiente se convierte en [NULL](../../data_types/nullable.md#data_type-nullable), y las celdas vacías se llenan con [NULO](../../query_language/syntax.md).
+-   Uno — `JOIN` se comporta de la misma manera que en SQL estándar. El tipo del campo correspondiente se convierte en [NULO](../../data_types/nullable.md#data_type-nullable), y las celdas vacías se llenan con [NULO](../../query_language/syntax.md).
 
 Valor predeterminado: 0.
 
@@ -400,12 +400,12 @@ Bloquea el tamaño de `max_block_size` no siempre se cargan desde la tabla. Si e
 ## preferred\_block\_size\_bytes {#preferred-block-size-bytes}
 
 Utilizado para el mismo propósito que `max_block_size`, pero establece el tamaño de bloque recomendado en bytes adaptándolo al número de filas en el bloque.
-Sin embargo, el tamaño del bloque no puede ser más que `max_block_size` filas.
-Por defecto: 1,000,000. Solo funciona cuando se lee desde los motores MergeTree.
+Sin embargo, el tamaño del bloque no puede ser más que `max_block_size` películas.
+Por defecto: 1.000.000. Solo funciona cuando se lee desde los motores MergeTree.
 
 ## merge\_tree\_min\_rows\_for\_concurrent\_read {#setting-merge-tree-min-rows-for-concurrent-read}
 
-Si el número de filas que se leerán de un fichero [Método de codificación de datos:](../table_engines/mergetree.md) mesa excede `merge_tree_min_rows_for_concurrent_read` luego ClickHouse intenta realizar una lectura simultánea de este archivo en varios hilos.
+Si el número de filas que se leerán de un fichero [Método de codificación de datos:](../table_engines/mergetree.md) más caliente `merge_tree_min_rows_for_concurrent_read` luego ClickHouse intenta realizar una lectura simultánea de este archivo en varios hilos.
 
 Valores posibles:
 
@@ -481,7 +481,7 @@ Valor predeterminado: 2013265920.
 
 El volumen de datos mínimo necesario para utilizar el acceso directo de E/S al disco de almacenamiento.
 
-ClickHouse usa esta configuración al leer datos de tablas. Si el volumen total de almacenamiento de todos los datos a leer excede `min_bytes_to_use_direct_io` luego ClickHouse lee los datos del disco de almacenamiento con el `O_DIRECT` opcion.
+ClickHouse usa esta configuración al leer datos de tablas. Si el volumen total de almacenamiento de todos los datos a leer excede `min_bytes_to_use_direct_io` luego ClickHouse lee los datos del disco de almacenamiento con el `O_DIRECT` opción.
 
 Valores posibles:
 
@@ -549,7 +549,7 @@ Si normalmente se ejecuta menos de una consulta SELECT en un servidor a la vez, 
 
 Para las consultas que se completan rápidamente debido a un LIMIT, puede establecer un ‘max\_threads’. Por ejemplo, si el número necesario de entradas se encuentra en cada bloque y max\_threads = 8, entonces se recuperan 8 bloques, aunque hubiera sido suficiente leer solo uno.
 
-Cuanto menor sea el `max_threads` valor, menos memoria se consume.
+Cuanto menor sea el `max_threads` valor, menos memoria se consumen.
 
 ## Método de codificación de datos: {#settings-max-insert-threads}
 
@@ -668,7 +668,7 @@ El Yandex.Metrica utiliza este parámetro establecido en 1 para implementar suge
 
 ## Nombre de la red inalámbrica (SSID): {#stream-flush-interval-ms}
 
-Funciona para tablas con streaming en el caso de un tiempo de espera, o cuando un subproceso genera [Max\_insert\_block\_size](#settings-max_insert_block_size) filas.
+Funciona para tablas con streaming en el caso de un tiempo de espera, o cuando un subproceso genera [Max\_insert\_block\_size](#settings-max_insert_block_size) películas.
 
 El valor predeterminado es 7500.
 
@@ -685,7 +685,7 @@ ClickHouse admite los siguientes algoritmos para elegir réplicas:
 -   [En orden](#load_balancing-in_order)
 -   [Primero o aleatorio](#load_balancing-first_or_random)
 
-### Random (por defecto) {#load-balancing-random}
+### Aleatorio (por defecto) {#load-balancing-random}
 
 ``` sql
 load_balancing = random
@@ -725,7 +725,7 @@ load_balancing = first_or_random
 
 Este algoritmo elige la primera réplica del conjunto o una réplica aleatoria si la primera no está disponible. Es eficaz en configuraciones de topología de replicación cruzada, pero inútil en otras configuraciones.
 
-El `first_or_random` resuelve el problema del algoritmo `in_order` algoritmo. Con `in_order`, si una réplica se cae, la siguiente obtiene una carga doble mientras que las réplicas restantes manejan la cantidad habitual de tráfico. Cuando se utiliza el `first_or_random` algoritmo, la carga se distribuye uniformemente entre las réplicas que todavía están disponibles.
+El `first_or_random` Resuelve el problema del algoritmo `in_order` algoritmo. Desventaja `in_order`, si una réplica se cae, la siguiente obtiene una carga doble mientras que las réplicas restantes manejan la cantidad habitual de tráfico. Cuando se utiliza el `first_or_random` algoritmo, la carga se distribuye uniformemente entre las réplicas que todavía están disponibles.
 
 ## prefer\_localhost\_replica {#settings-prefer-localhost-replica}
 
@@ -802,13 +802,13 @@ Habilita las escrituras de quórum.
 
 Valor predeterminado: 0.
 
-Quorum escribe
+Quórum escribe
 
 `INSERT` solo tiene éxito cuando ClickHouse logra escribir correctamente datos en el `insert_quorum` de réplicas durante el `insert_quorum_timeout`. Si por alguna razón el número de réplicas con escrituras exitosas no alcanza el `insert_quorum`, la escritura se considera fallida y ClickHouse eliminará el bloque insertado de todas las réplicas donde los datos ya se han escrito.
 
 Todas las réplicas del quórum son consistentes, es decir, contienen datos de todas las réplicas anteriores `INSERT` consulta. El `INSERT` la secuencia está linealizada.
 
-Al leer los datos escritos desde el `insert_quorum` usted puede utilizar el [select\_sequential\_consistency](#settings-select_sequential_consistency) opcion.
+Al leer los datos escritos desde el `insert_quorum` Puede utilizar el [select\_sequential\_consistency](#settings-select_sequential_consistency) opción.
 
 ClickHouse genera una excepción
 
@@ -833,7 +833,7 @@ Ver también:
 
 ## select\_sequential\_consistency {#settings-select-sequential-consistency}
 
-Habilita o deshabilita la coherencia secuencial para `SELECT` consulta:
+Habilita o deshabilita la coherencia secuencial para `SELECT` Consulta:
 
 Valores posibles:
 
@@ -844,7 +844,7 @@ Valor predeterminado: 0.
 
 Uso
 
-Cuando se habilita la coherencia secuencial, ClickHouse permite al cliente ejecutar el `SELECT` consulta sólo para aquellas réplicas que contienen datos de todas las `INSERT` consultas ejecutadas con `insert_quorum`. Si el cliente hace referencia a una réplica parcial, ClickHouse generará una excepción. La consulta SELECT no incluirá datos que aún no se hayan escrito en el quórum de réplicas.
+Cuando se habilita la coherencia secuencial, ClickHouse permite al cliente ejecutar el `SELECT` consulta sólo para aquellas réplicas que contienen datos de todas las `INSERT` Consultas ejecutadas con `insert_quorum`. Si el cliente hace referencia a una réplica parcial, ClickHouse generará una excepción. La consulta SELECT no incluirá datos que aún no se hayan escrito en el quórum de réplicas.
 
 Ver también:
 
@@ -879,7 +879,7 @@ Uso
 
 De forma predeterminada, la desduplicación no se realiza para las vistas materializadas, sino que se realiza en sentido ascendente, en la tabla de origen.
 Si se omite un bloque INSERTed debido a la desduplicación en la tabla de origen, no habrá inserción en las vistas materializadas adjuntas. Este comportamiento existe para permitir la inserción de datos altamente agregados en vistas materializadas, para los casos en que los bloques insertados son los mismos después de la agregación de vistas materializadas pero derivados de diferentes INSERT en la tabla de origen.
-Al mismo tiempo, este comportamiento “breaks” `INSERT` idempotencia. Si una `INSERT` en la mesa principal fue exitoso y `INSERT` en una vista materializada falló (por ejemplo, debido a una falla de comunicación con Zookeeper), un cliente obtendrá un error y puede volver a intentar la operación. Sin embargo, la vista materializada no recibirá la segunda inserción porque se descartará mediante deduplicación en la tabla principal (fuente). Configuración `deduplicate_blocks_in_dependent_materialized_views` permite cambiar este comportamiento. Al reintentar, una vista materializada recibirá la inserción de repetición y realizará la comprobación de desduplicación por sí misma,
+Al mismo tiempo, este comportamiento “breaks” `INSERT` empotencia. Si una `INSERT` en la mesa principal fue exitoso y `INSERT` en una vista materializada falló (por ejemplo, debido a una falla de comunicación con Zookeeper), un cliente obtendrá un error y puede volver a intentar la operación. Sin embargo, la vista materializada no recibirá la segunda inserción porque se descartará mediante deduplicación en la tabla principal (fuente). Configuración `deduplicate_blocks_in_dependent_materialized_views` permite cambiar este comportamiento. Al reintentar, una vista materializada recibirá la inserción de repetición y realizará la comprobación de desduplicación por sí misma,
 ignorando el resultado de la comprobación para la tabla de origen, e insertará filas perdidas debido a la primera falla.
 
 ## Método de codificación de datos: {#settings-max-network-bytes}
@@ -1175,7 +1175,7 @@ Valor predeterminado: 32768 (32 KiB)
 
 ## Todos los derechos reservados. {#settings-format-avro-schema-registry-url}
 
-Establece la URL del Registro de esquemas confluentes para usar con [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) formato
+Establece la URL del Registro de esquemas confluentes para usar con [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) Formato
 
 Tipo: URL
 

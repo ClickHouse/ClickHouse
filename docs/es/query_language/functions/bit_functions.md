@@ -4,7 +4,7 @@ Las funciones de bits funcionan para cualquier par de tipos de UInt8, UInt16, UI
 
 El tipo de resultado es un entero con bits iguales a los bits máximos de sus argumentos. Si al menos uno de los argumentos está firmado, el resultado es un número firmado. Si un argumento es un número de coma flotante, se convierte en Int64.
 
-## pocoY(a, b) {#bitanda-b}
+## PocoY(a, b) {#bitanda-b}
 
 ## bitOr (a, b) {#bitora-b}
 
@@ -22,7 +22,7 @@ El tipo de resultado es un entero con bits iguales a los bits máximos de sus ar
 
 ## bitTest {#bittest}
 
-Toma cualquier entero y lo convierte en [forma binaria](https://en.wikipedia.org/wiki/Binary_number) devuelve el valor de un bit en la posición especificada. La cuenta atrás comienza desde 0 de derecha a izquierda.
+Toma cualquier entero y lo convierte en [Forma binaria](https://en.wikipedia.org/wiki/Binary_number) devuelve el valor de un bit en la posición especificada. La cuenta atrás comienza desde 0 de derecha a izquierda.
 
 **Sintaxis**
 

@@ -1,13 +1,13 @@
-# OnTime {#ontime}
+# Un tiempo {#ontime}
 
-This dataset can be obtained in two ways:
+Este conjunto de datos se puede obtener de dos maneras:
 
--   import from raw data
--   download of prepared partitions
+-   importación de datos sin procesar
+-   descarga de particiones preparadas
 
-## Import From Raw Data {#import-from-raw-data}
+## Importar desde datos sin procesar {#import-from-raw-data}
 
-Downloading data:
+Descarga de datos:
 
 ``` bash
 for s in `seq 1987 2018`
@@ -19,9 +19,9 @@ done
 done
 ```
 
-(from https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh )
+(a partir de https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh )
 
-Creating a table:
+Creación de una tabla:
 
 ``` sql
 CREATE TABLE `ontime` (
@@ -140,13 +140,13 @@ ORDER BY (Carrier, FlightDate)
 SETTINGS index_granularity = 8192;
 ```
 
-Loading data:
+Carga de datos:
 
 ``` bash
 $ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
-## Download of Prepared Partitions {#download-of-prepared-partitions}
+## Descarga de Particiones Preparadas {#download-of-prepared-partitions}
 
 ``` bash
 $ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
@@ -156,10 +156,10 @@ $ sudo service clickhouse-server restart
 $ clickhouse-client --query "select count(*) from datasets.ontime"
 ```
 
-!!! info "Info"
-    If you will run the queries described below, you have to use the full table name, `datasets.ontime`.
+!!! info "INFO"
+    Si va a ejecutar las consultas que se describen a continuación, debe usar el nombre completo de la tabla, `datasets.ontime`.
 
-## Queries {#queries}
+## Consulta {#queries}
 
 Q0.
 
@@ -173,7 +173,7 @@ FROM
 );
 ```
 
-Q1. The number of flights per day from the year 2000 to 2008
+Q1. El número de vuelos por día desde el año 2000 hasta 2008
 
 ``` sql
 SELECT DayOfWeek, count(*) AS c
@@ -183,7 +183,7 @@ GROUP BY DayOfWeek
 ORDER BY c DESC;
 ```
 
-Q2. The number of flights delayed by more than 10 minutes, grouped by the day of the week, for 2000-2008
+Preguntas frecuentes El número de vuelos retrasados por más de 10 minutos, agrupados por el día de la semana, para 2000-2008
 
 ``` sql
 SELECT DayOfWeek, count(*) AS c
@@ -193,7 +193,7 @@ GROUP BY DayOfWeek
 ORDER BY c DESC;
 ```
 
-Q3. The number of delays by the airport for 2000-2008
+Q3. El número de retrasos por parte del aeropuerto para 2000-2008
 
 ``` sql
 SELECT Origin, count(*) AS c
@@ -204,7 +204,7 @@ ORDER BY c DESC
 LIMIT 10;
 ```
 
-Q4. The number of delays by carrier for 2007
+Preguntas más frecuentes Número de retrasos por transportista para 2007
 
 ``` sql
 SELECT Carrier, count(*)
@@ -214,7 +214,7 @@ GROUP BY Carrier
 ORDER BY count(*) DESC;
 ```
 
-Q5. The percentage of delays by carrier for 2007
+Q5. El porcentaje de retrasos por transportista para 2007
 
 ``` sql
 SELECT Carrier, c, c2, c*100/c2 as c3
@@ -240,7 +240,7 @@ JOIN
 ORDER BY c3 DESC;
 ```
 
-Better version of the same query:
+Mejor versión de la misma consulta:
 
 ``` sql
 SELECT Carrier, avg(DepDelay>10)*100 AS c3
@@ -250,7 +250,7 @@ GROUP BY Carrier
 ORDER BY c3 DESC
 ```
 
-Q6. The previous request for a broader range of years, 2000-2008
+¿Por qué? La solicitud anterior de una gama más amplia de años, 2000-2008
 
 ``` sql
 SELECT Carrier, c, c2, c*100/c2 as c3
@@ -276,7 +276,7 @@ JOIN
 ORDER BY c3 DESC;
 ```
 
-Better version of the same query:
+Mejor versión de la misma consulta:
 
 ``` sql
 SELECT Carrier, avg(DepDelay>10)*100 AS c3
@@ -286,7 +286,7 @@ GROUP BY Carrier
 ORDER BY c3 DESC;
 ```
 
-Q7. Percentage of flights delayed for more than 10 minutes, by year
+Preguntas frecuentes Porcentaje de vuelos retrasados por más de 10 minutos, por año
 
 ``` sql
 SELECT Year, c1/c2
@@ -310,7 +310,7 @@ JOIN
 ORDER BY Year;
 ```
 
-Better version of the same query:
+Mejor versión de la misma consulta:
 
 ``` sql
 SELECT Year, avg(DepDelay>10)*100
@@ -319,7 +319,7 @@ GROUP BY Year
 ORDER BY Year;
 ```
 
-Q8. The most popular destinations by the number of directly connected cities for various year ranges
+¿Por qué? Los destinos más populares por el número de ciudades conectadas directamente para varios rangos de año
 
 ``` sql
 SELECT DestCityName, uniqExact(OriginCityName) AS u
@@ -329,7 +329,7 @@ GROUP BY DestCityName
 ORDER BY u DESC LIMIT 10;
 ```
 
-Q9.
+¿Por qué?
 
 ``` sql
 SELECT Year, count(*) AS c1
@@ -337,7 +337,7 @@ FROM ontime
 GROUP BY Year;
 ```
 
-Q10.
+Preguntas frecuentes
 
 ``` sql
 SELECT
@@ -355,7 +355,7 @@ ORDER by rate DESC
 LIMIT 1000;
 ```
 
-Bonus:
+Bono:
 
 ``` sql
 SELECT avg(cnt)
@@ -393,7 +393,7 @@ ORDER BY c DESC
 LIMIT 10;
 ```
 
-This performance test was created by Vadim Tkachenko. See:
+Esta prueba de rendimiento fue creada por Vadim Tkachenko. Ver:
 
 -   https://www.percona.com/blog/2009/10/02/analyzing-air-traffic-performance-with-infobright-and-monetdb/
 -   https://www.percona.com/blog/2009/10/26/air-traffic-queries-in-luciddb/
@@ -402,4 +402,4 @@ This performance test was created by Vadim Tkachenko. See:
 -   https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/
 -   http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html
 
-[Original article](https://clickhouse.tech/docs/es/getting_started/example_datasets/ontime/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/getting_started/example_datasets/ontime/) <!--hide-->

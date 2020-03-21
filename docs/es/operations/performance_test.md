@@ -2,7 +2,7 @@
 
 Con esta instrucción, puede ejecutar una prueba de rendimiento básica de ClickHouse en cualquier servidor sin instalar paquetes de ClickHouse.
 
-1.  Ir a “commits” página: https://github.com/ClickHouse/ClickHouse/commits/master
+1.  Ir a un “commits” página: https://github.com/ClickHouse/ClickHouse/commits/master
 
 2.  Haga clic en la primera marca de verificación verde o cruz roja con verde “ClickHouse Build Check” y haga clic en el “Details” enlace cerca “ClickHouse Build Check”.
 
@@ -19,7 +19,7 @@ Con esta instrucción, puede ejecutar una prueba de rendimiento básica de Click
       # Then do:
       chmod a+x clickhouse
 
-1.  Descargar configs:
+1.  Descargar configuraciones:
 
 <!-- -->
 
@@ -58,7 +58,7 @@ Con esta instrucción, puede ejecutar una prueba de rendimiento básica de Click
       ./clickhouse client --query "SELECT count() FROM hits_100m_obfuscated"
       100000000
 
-1.  Edite el benchmark-new.sh, cambie “clickhouse-client” a “./clickhouse client” y añadir “–max\_memory\_usage 100000000000” parámetro.
+1.  Edite el benchmark-new.sh, cambie “clickhouse-client” Naciones “./clickhouse client” y añadir “–max\_memory\_usage 100000000000” parámetro.
 
 <!-- -->
 

@@ -5,7 +5,7 @@ Las consultas en ClickHouse se pueden dividir en varios tipos:
 1.  Leer consultas de datos: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
 2.  Escribir consultas de datos: `INSERT`, `OPTIMIZE`.
 3.  Cambiar la consulta de configuración: `SET`, `USE`.
-4.  [DDL](https://en.wikipedia.org/wiki/Data_definition_language) consulta: `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
+4.  [DDL](https://en.wikipedia.org/wiki/Data_definition_language) Consulta: `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
 5.  `KILL QUERY`.
 
 La siguiente configuración regula los permisos de usuario según el tipo de consulta:
@@ -19,7 +19,7 @@ La siguiente configuración regula los permisos de usuario según el tipo de con
 
 Restringe los permisos para leer datos, escribir datos y cambiar las consultas de configuración.
 
-Vea cómo las consultas se dividen en tipos [arriba](#permissions_for_queries).
+Vea cómo las consultas se dividen en tipos [Arriba](#permissions_for_queries).
 
 Valores posibles:
 
@@ -40,7 +40,7 @@ Valor predeterminado: 0
 
 Permite o niega [DDL](https://en.wikipedia.org/wiki/Data_definition_language) consulta.
 
-Vea cómo las consultas se dividen en tipos [arriba](#permissions_for_queries).
+Vea cómo las consultas se dividen en tipos [Arriba](#permissions_for_queries).
 
 Valores posibles:
 

@@ -6,15 +6,15 @@ Las pruebas funcionales son las más simples y cómodas de usar. La mayoría de 
 
 Cada prueba funcional envía una o varias consultas al servidor ClickHouse en ejecución y compara el resultado con la referencia.
 
-Las pruebas se encuentran en `dbms/tests/queries` directorio. Hay dos subdirectorios: `stateless` y `stateful`. Las pruebas sin estado ejecutan consultas sin datos de prueba precargados: a menudo crean pequeños conjuntos de datos sintéticos sobre la marcha, dentro de la prueba misma. Las pruebas estatales requieren datos de prueba precargados de Yandex.Métrica y no está disponible para el público en general. Tendemos a usar sólo `stateless` pruebas y evitar la adición de nuevos `stateful` prueba.
+Las pruebas se encuentran en `dbms/tests/queries` Directorio. Hay dos subdirectorios: `stateless` y `stateful`. Las pruebas sin estado ejecutan consultas sin datos de prueba precargados: a menudo crean pequeños conjuntos de datos sintéticos sobre la marcha, dentro de la prueba misma. Las pruebas estatales requieren datos de prueba precargados de Yandex.Métrica y no está disponible para el público en general. Tendemos a usar sólo `stateless` pruebas y evitar la adición de nuevos `stateful` prueba.
 
-Cada prueba puede ser de dos tipos: `.sql` y `.sh`. `.sql` test es el script SQL simple que se canaliza a `clickhouse-client --multiquery --testmode`. `.sh` test es un script que se ejecuta por sí mismo.
+Cada prueba puede ser de dos tipos: `.sql` y `.sh`. `.sql` prueba es el script SQL simple que se canaliza a `clickhouse-client --multiquery --testmode`. `.sh` test es un script que se ejecuta por sí mismo.
 
 Para ejecutar todas las pruebas, use `dbms/tests/clickhouse-test` herramienta. Mira `--help` para la lista de posibles opciones. Simplemente puede ejecutar todas las pruebas o ejecutar un subconjunto de pruebas filtradas por subcadena en el nombre de la prueba: `./clickhouse-test substring`.
 
-La forma más sencilla de invocar pruebas funcionales es copiar `clickhouse-client` a `/usr/bin/`, ejecutar `clickhouse-server` y luego ejecutar `./clickhouse-test` de su propio directorio.
+La forma más sencilla de invocar pruebas funcionales es copiar `clickhouse-client` Naciones `/usr/bin/`, ejecutar `clickhouse-server` y luego ejecutar `./clickhouse-test` de su propio directorio.
 
-Para agregar una nueva prueba, cree un `.sql` o `.sh` archivo en `dbms/tests/queries/0_stateless` directorio, compruébelo manualmente y luego genere `.reference` archivo de la siguiente manera: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` o `./00000_test.sh > ./00000_test.reference`.
+Atracciones cercanas al hotel `.sql` o `.sh` archivo en `dbms/tests/queries/0_stateless` directorio, compruébelo manualmente y luego genere `.reference` archivo de la siguiente manera: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` o `./00000_test.sh > ./00000_test.reference`.
 
 Las pruebas deben usar (crear, soltar, etc.) solo tablas en `test` base de datos que se supone que se crea de antemano; también las pruebas pueden usar tablas temporales.
 
@@ -22,12 +22,12 @@ Si desea utilizar consultas distribuidas en pruebas funcionales, puede aprovecha
 
 Algunas pruebas están marcadas con `zookeeper`, `shard` o `long` en sus nombres.
 `zookeeper` es para pruebas que están usando ZooKeeper. `shard` es para pruebas que
-requiere servidor para escuchar `127.0.0.*`; `distributed` o `global` tienen el mismo
+Requiere servidor para escuchar `127.0.0.*`; `distributed` o `global` Tienen el mismo
 significado. `long` es para pruebas que duran un poco más de un segundo. Usted puede
-deshabilitar estos grupos de pruebas utilizando `--no-zookeeper`, `--no-shard` y
+Deshabilitar estos grupos de pruebas utilizando `--no-zookeeper`, `--no-shard` y
 `--no-long` opciones, respectivamente.
 
-## Bugs conocidos {#known-bugs}
+## Errores conocidos {#known-bugs}
 
 Si conocemos algunos errores que se pueden reproducir fácilmente mediante pruebas funcionales, colocamos pruebas funcionales preparadas en `dbms/tests/queries/bugs` directorio. Estas pruebas se moverán a `dbms/tests/queries/0_stateless` cuando se corrigen errores.
 
@@ -55,11 +55,11 @@ Si desea mejorar el rendimiento de ClickHouse en algún escenario, y si se puede
 
 ## Herramientas de prueba y secuencias de comandos {#test-tools-and-scripts}
 
-Algunos programas en `tests` directorio no son pruebas preparadas, pero son herramientas de prueba. Por ejemplo, para `Lexer` hay una herramienta `dbms/src/Parsers/tests/lexer` que solo hacen la tokenización de stdin y escriben el resultado coloreado en stdout. Puede usar este tipo de herramientas como ejemplos de código y para exploración y pruebas manuales.
+Algunos programas en `tests` directorio no son pruebas preparadas, pero son herramientas de prueba. Por ejemplo, párr `Lexer` hay una herramienta `dbms/src/Parsers/tests/lexer` que solo hacen la tokenización de stdin y escriben el resultado coloreado en stdout. Puede usar este tipo de herramientas como ejemplos de código y para exploración y pruebas manuales.
 
 También puede colocar un par de archivos `.sh` y `.reference` junto con la herramienta para ejecutarlo en alguna entrada predefinida, entonces el resultado del script se puede comparar con `.reference` file. Este tipo de pruebas no están automatizadas.
 
-## Miscellanous Pruebas {#miscellanous-tests}
+## Pruebas misceláneas {#miscellanous-tests}
 
 Hay pruebas para diccionarios externos ubicados en `dbms/tests/external_dictionaries` y para modelos aprendidos a máquina en `dbms/tests/external_models`. Estas pruebas no se actualizan y deben transferirse a pruebas de integración.
 
@@ -73,7 +73,7 @@ Cuando desarrolla una nueva característica, es razonable probarla también manu
 
 Construir ClickHouse. Ejecute ClickHouse desde el terminal: cambie el directorio a `dbms/src/programs/clickhouse-server` y ejecutarlo con `./clickhouse-server`. Se utilizará la configuración (`config.xml`, `users.xml` y archivos dentro de `config.d` y `users.d` directorios) desde el directorio actual de forma predeterminada. Para conectarse al servidor ClickHouse, ejecute `dbms/src/programs/clickhouse-client/clickhouse-client`.
 
-Tenga en cuenta que todas las herramientas de clickhouse (servidor, cliente, etc.) son solo enlaces simbólicos a un único binario llamado `clickhouse`. Puede encontrar este binario en `dbms/src/programs/clickhouse`. Todas las herramientas también se pueden invocar como `clickhouse tool` en lugar de `clickhouse-tool`.
+Tenga en cuenta que todas las herramientas de clickhouse (servidor, cliente, etc.) son solo enlaces simbólicos a un único binario llamado `clickhouse`. Puede encontrar este binario en `dbms/src/programs/clickhouse`. Todas las herramientas también se pueden invocar como `clickhouse tool` es lugar de `clickhouse-tool`.
 
 Alternativamente, puede instalar el paquete ClickHouse: ya sea una versión estable del repositorio de Yandex o puede crear un paquete para usted con `./release` en la raíz de fuentes de ClickHouse. Luego inicie el servidor con `sudo service clickhouse-server start` (o detener para detener el servidor). Busque registros en `/etc/clickhouse-server/clickhouse-server.log`.
 
@@ -150,9 +150,9 @@ Normalmente lanzamos y ejecutamos todas las pruebas en una sola variante de comp
 
 -   construir en FreeBSD;
 -   construir en Debian con bibliotecas de paquetes del sistema;
--   construir con enlaces compartidos de bibliotecas;
+-   Construir con enlaces compartidos de bibliotecas;
 -   construir en la plataforma AArch64;
--   construir en la plataforma PowerPc.
+-   Construir en la plataforma PowerPc.
 
 Por ejemplo, construir con paquetes del sistema es una mala práctica, porque no podemos garantizar qué versión exacta de paquetes tendrá un sistema. Pero esto es realmente necesario para los mantenedores de Debian. Por esta razón, al menos tenemos que admitir esta variante de construcción. Otro ejemplo: la vinculación compartida es una fuente común de problemas, pero es necesaria para algunos entusiastas.
 
@@ -164,7 +164,7 @@ Cuando ampliamos el protocolo de red ClickHouse, probamos manualmente que el ant
 
 ## Ayuda del compilador {#help-from-the-compiler}
 
-Código principal de ClickHouse (que se encuentra en `dbms` directorio) se construye con `-Wall -Wextra -Werror` y con algunas advertencias habilitadas adicionales. Aunque estas opciones no están habilitadas para bibliotecas de terceros.
+Código principal de ClickHouse (que se encuentra en `dbms` Directorio) se construye con `-Wall -Wextra -Werror` y con algunas advertencias habilitadas adicionales. Aunque estas opciones no están habilitadas para bibliotecas de terceros.
 
 Clang tiene advertencias aún más útiles: puedes buscarlas con `-Weverything` y elige algo para la compilación predeterminada.
 
@@ -176,7 +176,7 @@ Para las compilaciones de producción, se usa gcc (todavía genera un código li
 Ejecutamos pruebas funcionales y de integración bajo ASan por compromiso.
 
 **Valgrind (Memcheck)**.
-Realizamos pruebas funcionales bajo Valgrind durante la noche. Se tarda varias horas. Actualmente hay un falso positivo conocido en `re2` biblioteca, ver [este artículo](https://research.swtch.com/sparse).
+Realizamos pruebas funcionales bajo Valgrind durante la noche. Se tarda varias horas. Actualmente hay un falso positivo conocido en `re2` Biblioteca, ver [este artículo](https://research.swtch.com/sparse).
 
 **Desinfectante de comportamiento indefinido.**
 Ejecutamos pruebas funcionales y de integración bajo ASan por compromiso.
@@ -204,7 +204,7 @@ La gente del departamento de Yandex Cloud hace una visión general básica de la
 
 Corremos `PVS-Studio` por compromiso. Hemos evaluado `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`. Encontrará instrucciones de uso en `dbms/tests/instructions/` directorio. También puedes leer [el artículo en ruso](https://habr.com/company/yandex/blog/342018/).
 
-Si usted usa `CLion` como IDE, puede aprovechar algunos `clang-tidy` comprueba fuera de la caja.
+Si usted estados unidos `CLion` Como IDE, puede aprovechar algunos `clang-tidy` comprueba fuera de la caja.
 
 ## Endurecer {#hardening}
 

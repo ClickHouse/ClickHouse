@@ -4,7 +4,7 @@ La partición está disponible para el [Método de codificación de datos:](merg
 
 Una partición es una combinación lógica de registros en una tabla por un criterio especificado. Puede establecer una partición por un criterio arbitrario, como por mes, por día o por tipo de evento. Cada partición se almacena por separado para simplificar las manipulaciones de estos datos. Al acceder a los datos, ClickHouse utiliza el subconjunto más pequeño de particiones posible.
 
-La partición se especifica en el `PARTITION BY expr` cláusula cuando [creando una tabla](mergetree.md#table_engine-mergetree-creating-a-table). La clave de partición puede ser cualquier expresión de las columnas de la tabla. Por ejemplo, para especificar la partición por mes, utilice la expresión `toYYYYMM(date_column)`:
+La partición se especifica en el `PARTITION BY expr` cláusula cuando [Creando una tabla](mergetree.md#table_engine-mergetree-creating-a-table). La clave de partición puede ser cualquier expresión de las columnas de la tabla. Por ejemplo, para especificar la partición por mes, utilice la expresión `toYYYYMM(date_column)`:
 
 ``` sql
 CREATE TABLE visits
@@ -18,7 +18,7 @@ PARTITION BY toYYYYMM(VisitDate)
 ORDER BY Hour;
 ```
 
-La clave de partición también puede ser una tupla de expresiones (similar a la [clave primaria](mergetree.md#primary-keys-and-indexes-in-queries)). Por ejemplo:
+La clave de partición también puede ser una tupla de expresiones (similar a la [Clave primaria](mergetree.md#primary-keys-and-indexes-in-queries)). Por ejemplo:
 
 ``` sql
 ENGINE = ReplicatedCollapsingMergeTree('/clickhouse/tables/name', 'replica1', Sign)
@@ -33,7 +33,7 @@ Al insertar datos nuevos en una tabla, estos datos se almacenan como una parte s
 !!! info "INFO"
     Una combinación solo funciona para partes de datos que tienen el mismo valor para la expresión de partición. Esto significa **no debe hacer particiones demasiado granulares** (más de un millar de particiones). De lo contrario, el `SELECT` consulta funciona mal debido a un número excesivamente grande de archivos en el sistema de archivos y descriptores de archivos abiertos.
 
-Utilice el [sistema.parte](../system_tables.md#system_tables-parts) tabla para ver las partes y particiones de la tabla. Por ejemplo, supongamos que tenemos un `visits` tabla con partición por mes. Vamos a realizar el `SELECT` consulta para el `system.parts` tabla:
+Descripción [sistema.parte](../system_tables.md#system_tables-parts) tabla para ver las partes y particiones de la tabla. Por ejemplo, supongamos que tenemos un `visits` tabla con partición por mes. Vamos a realizar el `SELECT` Consulta para el `system.parts` tabla:
 
 ``` sql
 SELECT

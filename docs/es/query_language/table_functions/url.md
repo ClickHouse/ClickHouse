@@ -5,7 +5,7 @@
 
 URL - Dirección de servidor HTTP o HTTPS, que puede aceptar `GET` y/o `POST` peticiones.
 
-formato - [formato](../../interfaces/formats.md#formats) de los datos.
+Formato - [Formato](../../interfaces/formats.md#formats) de los datos.
 
 estructura - estructura de la tabla en `'UserID UInt64, Name String'` formato. Determina los nombres y tipos de columna.
 

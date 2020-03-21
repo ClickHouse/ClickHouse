@@ -1,34 +1,34 @@
-# DateTime {#data-type-datetime}
+# FechaHora {#data-type-datetime}
 
-Allows to store an instant in time, that can be expressed as a calendar date and a time of a day.
+Permite almacenar un instante en el tiempo, que se puede expresar como una fecha del calendario y una hora de un día.
 
-Syntax:
+Sintaxis:
 
 ``` sql
 DateTime([timezone])
 ```
 
-Supported range of values: \[1970-01-01 00:00:00, 2105-12-31 23:59:59\].
+Rango de valores: \[1970-01-01 00:00:00, 2105-12-31 23:59:59\].
 
-Resolution: 1 second.
+Resolución: 1 segundo.
 
-## Usage Remarks {#usage-remarks}
+## Observaciones de uso {#usage-remarks}
 
-The point in time is saved as a [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), regardless of the time zone or daylight saving time. Additionally, the `DateTime` type can store time zone that is the same for the entire column, that affects how the values of the `DateTime` type values are displayed in text format and how the values specified as strings are parsed (‘2020-01-01 05:00:01’). The time zone is not stored in the rows of the table (or in resultset), but is stored in the column metadata.
-A list of supported time zones can be found in the [IANA Time Zone Database](https://www.iana.org/time-zones).
-The `tzdata` package, containing [IANA Time Zone Database](https://www.iana.org/time-zones), should be installed in the system. Use the `timedatectl list-timezones` command to list timezones known by a local system.
+El punto en el tiempo se guarda como un [Timestamp de Unix](https://en.wikipedia.org/wiki/Unix_time), independientemente de la zona horaria o el horario de verano. Además, el `DateTime` tipo puede almacenar zona horaria que es la misma para toda la columna, que afecta a cómo los valores de la `DateTime` Los valores de tipo se muestran en formato de texto y cómo se analizan los valores especificados como cadenas (‘2020-01-01 05:00:01’). La zona horaria no se almacena en las filas de la tabla (o en el conjunto de resultados), sino que se almacena en los metadatos de la columna.
+Se puede encontrar una lista de zonas horarias compatibles en el [Base de datos de zonas horarias de IANA](https://www.iana.org/time-zones).
+El `tzdata` paquete, que contiene [Base de datos de zonas horarias de IANA](https://www.iana.org/time-zones), debe instalarse en el sistema. Descripción `timedatectl list-timezones` comando para listar zonas horarias conocidas por un sistema local.
 
-You can explicitly set a time zone for `DateTime`-type columns when creating a table. If the time zone isn’t set, ClickHouse uses the value of the [timezone](../operations/server_settings/settings.md#server_settings-timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
+Puede establecer explícitamente una zona horaria para `DateTime`-type columnas al crear una tabla. Si la zona horaria no está establecida, ClickHouse usa el valor [Zona horaria](../operations/server_settings/settings.md#server_settings-timezone) parámetro en la configuración del servidor o la configuración del sistema operativo en el momento del inicio del servidor ClickHouse.
 
-The [clickhouse-client](../interfaces/cli.md) applies the server time zone by default if a time zone isn’t explicitly set when initializing the data type. To use the client time zone, run `clickhouse-client` with the `--use_client_time_zone` parameter.
+El [Casa de clics-cliente](../interfaces/cli.md) aplica la zona horaria del servidor de forma predeterminada si una zona horaria no se establece explícitamente al inicializar el tipo de datos. Para utilizar la zona horaria del cliente, ejecute `clickhouse-client` con el `--use_client_time_zone` parámetro.
 
-ClickHouse outputs values in `YYYY-MM-DD hh:mm:ss` text format by default. You can change the output with the [formatDateTime](../query_language/functions/date_time_functions.md#formatdatetime) function.
+ClickHouse genera valores en `YYYY-MM-DD hh:mm:ss` formato de texto por defecto. Puede cambiar la salida con el [formatDateTime](../query_language/functions/date_time_functions.md#formatdatetime) función.
 
-When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date\_time\_input\_format](../operations/settings/settings.md#settings-date_time_input_format) setting.
+Al insertar datos en ClickHouse, puede usar diferentes formatos de cadenas de fecha y hora, dependiendo del valor de la [Date\_time\_input\_format](../operations/settings/settings.md#settings-date_time_input_format) configuración.
 
-## Examples {#examples}
+## Ejemplos {#examples}
 
-**1.** Creating a table with a `DateTime`-type column and inserting data into it:
+**1.** Creación de una tabla con un `DateTime`-tipo de columna e insertar datos en ella:
 
 ``` sql
 CREATE TABLE dt
@@ -54,10 +54,10 @@ SELECT * FROM dt;
 └─────────────────────┴──────────┘
 ```
 
--   When inserting datetime as an integer, it is treated as Unix Timestamp (UTC). `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Europe/Moscow` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
--   When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Europe/Moscow` timezone and saved as `1546290000`.
+-   Al insertar datetime como un entero, se trata como Unix Timestamp (UTC). `1546300800` representante `'2019-01-01 00:00:00'` UTC. Sin embargo, como `timestamp` tetas grandes `Europe/Moscow` (UTC + 3) zona horaria especificada, al emitir como cadena, el valor se mostrará como `'2019-01-01 03:00:00'`
+-   Al insertar el valor de cadena como fecha y hora, se trata como si estuviera en la zona horaria de la columna. `'2019-01-01 00:00:00'` será tratado como estar en `Europe/Moscow` zona horaria y guardado como `1546290000`.
 
-**2.** Filtering on `DateTime` values
+**2.** Filtrado en `DateTime` valor
 
 ``` sql
 SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Europe/Moscow')
@@ -69,7 +69,7 @@ SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Europe/Mos
 └─────────────────────┴──────────┘
 ```
 
-`DateTime` column values can be filtered using a string value in `WHERE` predicate. It will be converted to `DateTime` automatically:
+`DateTime` se pueden filtrar usando un valor de cadena en `WHERE` predicado. Se convertirá a `DateTime` automática:
 
 ``` sql
 SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
@@ -81,7 +81,7 @@ SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
 └─────────────────────┴──────────┘
 ```
 
-**3.** Getting a time zone for a `DateTime`-type column:
+**3.** Obtener una zona horaria para un `DateTime`-tipo columna:
 
 ``` sql
 SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
@@ -93,7 +93,7 @@ SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
 └─────────────────────┴───────────────────────────┘
 ```
 
-**4.** Timezone conversion
+**4.** Conversión de zona horaria
 
 ``` sql
 SELECT
@@ -109,14 +109,14 @@ FROM dt
 └─────────────────────┴─────────────────────┘
 ```
 
-## See Also {#see-also}
+## Ver también {#see-also}
 
--   [Type conversion functions](../query_language/functions/type_conversion_functions.md)
--   [Functions for working with dates and times](../query_language/functions/date_time_functions.md)
--   [Functions for working with arrays](../query_language/functions/array_functions.md)
--   [The `date_time_input_format` setting](../operations/settings/settings.md#settings-date_time_input_format)
--   [The `timezone` server configuration parameter](../operations/server_settings/settings.md#server_settings-timezone)
--   [Operators for working with dates and times](../query_language/operators.md#operators-datetime)
--   [The `Date` data type](date.md)
+-   [Funciones de conversión de tipos](../query_language/functions/type_conversion_functions.md)
+-   [Funciones para trabajar con fechas y horas](../query_language/functions/date_time_functions.md)
+-   [Funciones para trabajar con matrices](../query_language/functions/array_functions.md)
+-   [El `date_time_input_format` configuración](../operations/settings/settings.md#settings-date_time_input_format)
+-   [El `timezone` parámetro de configuración del servidor](../operations/server_settings/settings.md#server_settings-timezone)
+-   [Operadores para trabajar con fechas y horas](../query_language/operators.md#operators-datetime)
+-   [El `Date` Tipo de datos](date.md)
 
-[Original article](https://clickhouse.tech/docs/es/data_types/datetime/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/data_types/datetime/) <!--hide-->

@@ -148,7 +148,7 @@ Resultado:
 └───────────────────────────────────┘
 ```
 
-Frase «Salut, étudiante!», donde el carácter `é` puede ser representado usando un un punto (`U+00E9`) o dos puntos (`U+0065U+0301`) la función se puede devolver algún resultado inesperado:
+Frase «Salut, étudiante!», donde el carácter `é` Puede ser representado usando un punto (`U+00E9`) o dos puntos (`U+0065U+0301`) la función se puede devolver algún resultado inesperado:
 
 Consulta de la carta `é`, que se representa un punto Unicode `U+00E9`:
 
@@ -271,7 +271,7 @@ Para una búsqueda que no distingue entre mayúsculas y minúsculas o / y en for
 
 ## multiSearchFirstIndex(pajar, \[aguja<sub>Uno</sub>, aguja<sub>Cómo hacer</sub>, …, aguja<sub>y</sub>\]) {#multisearchfirstindexhaystack-needle1-needle2-needlen}
 
-Devuelve el índice `i` (a partir de 1) de la aguja encontrada más a la izquierda<sub>me</sub> en la cadena `haystack` y 0 de lo contrario.
+Devuelve el índice `i` (a partir de 1) de la aguja encontrada más a la izquierda<sub>me</sub> es la cadena `haystack` y 0 de lo contrario.
 
 Para una búsqueda que no distingue entre mayúsculas y minúsculas o / y en formato UTF-8, use funciones `multiSearchFirstIndexCaseInsensitive, multiSearchFirstIndexUTF8, multiSearchFirstIndexCaseInsensitiveUTF8`.
 
@@ -288,7 +288,7 @@ Para una búsqueda que no distingue entre mayúsculas y minúsculas o / y en for
 
 Comprueba si la cadena coincide con la `pattern` expresión regular. Un `re2` expresión regular. El [sintaxis](https://github.com/google/re2/wiki/Syntax) de la `re2` expresiones regulares es más limitada que la sintaxis de las expresiones regulares de Perl.
 
-Devuelve 0 si no coincide, o 1 si coincide.
+Devuelve 0 si no coinciden, o 1 si coinciden.
 
 Tenga en cuenta que el símbolo de barra invertida (`\`) se utiliza para escapar en la expresión regular. El mismo símbolo se usa para escapar en literales de cadena. Por lo tanto, para escapar del símbolo en una expresión regular, debe escribir dos barras invertidas (\\) en un literal de cadena.
 
@@ -297,10 +297,10 @@ Para que los patrones busquen subcadenas en una cadena, es mejor usar LIKE o ‘
 
 ## multiMatchAny(pajar, \[patrón<sub>Uno</sub>, patrón<sub>Cómo hacer</sub>, …, patrón<sub>y</sub>\]) {#multimatchanyhaystack-pattern1-pattern2-patternn}
 
-Lo mismo que `match`, pero devuelve 0 si ninguna de las expresiones regulares coincide y 1 si alguno de los patrones coincide. Se utiliza [hyperscan](https://github.com/intel/hyperscan) biblioteca. Para que los patrones busquen subcadenas en una cadena, es mejor usar `multiSearchAny` ya que funciona mucho más rápido.
+Lo mismo que `match`, pero devuelve 0 si ninguna de las expresiones regulares coinciden y 1 si alguno de los patrones coinciden. Se utiliza [hyperscan](https://github.com/intel/hyperscan) biblioteca. Para que los patrones busquen subcadenas en una cadena, es mejor usar `multiSearchAny` ya que funciona mucho más rápido.
 
 !!! note "Nota"
-    La longitud de cualquiera de los `haystack` cadena debe ser inferior a 2<sup>Nivel de Cifrado WEP</sup> bytes de lo contrario, se lanza la excepción. Esta restricción tiene lugar debido a la API de hiperscan.
+    La longitud de cualquiera de los `haystack` Cadena debe ser inferior a 2<sup>Nivel de Cifrado WEP</sup> bytes de lo contrario, se lanza la excepción. Esta restricción tiene lugar debido a la API de hiperscan.
 
 ## multiMatchAnyIndex(pajar, \[patrón<sub>Uno</sub>, patrón<sub>Cómo hacer</sub>, …, patrón<sub>y</sub>\]) {#multimatchanyindexhaystack-pattern1-pattern2-patternn}
 
@@ -312,7 +312,7 @@ Lo mismo que `multiMatchAny`, pero devuelve la matriz de todas las indicaciones 
 
 ## multiFuzzyMatchAny(pajar, distancia, \[patrón<sub>Uno</sub>, patrón<sub>Cómo hacer</sub>, …, patrón<sub>y</sub>\]) {#multifuzzymatchanyhaystack-distance-pattern1-pattern2-patternn}
 
-Lo mismo que `multiMatchAny`, pero devuelve 1 si algún patrón coincide con el pajar dentro de una constante [editar distancia](https://en.wikipedia.org/wiki/Edit_distance). Esta función también está en modo experimental y puede ser extremadamente lenta. Para obtener más información, consulte [documentación de hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching).
+Lo mismo que `multiMatchAny`, pero devuelve 1 si algún patrón coincide con el pajar dentro de una constante [Editar distancia](https://en.wikipedia.org/wiki/Edit_distance). Esta función también está en modo experimental y puede ser extremadamente lenta. Para obtener más información, consulte [documentación de hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching).
 
 ## multiFuzzyMatchAnyIndex(pajar, distancia, \[patrón<sub>Uno</sub>, patrón<sub>Cómo hacer</sub>, …, patrón<sub>y</sub>\]) {#multifuzzymatchanyindexhaystack-distance-pattern1-pattern2-patternn}
 
@@ -330,11 +330,11 @@ Lo mismo que `multiFuzzyMatchAny`, pero devuelve la matriz de todos los índices
 
 ## extracto(pajar, patrón) {#extracthaystack-pattern}
 
-Extrae un fragmento de una cadena utilizando una expresión regular. Si ‘haystack’ no coincide con el ‘pattern’ regex, se devuelve una cadena vacía. Si la expresión regular no contiene subpatrones, toma el fragmento que coincide con toda la expresión regular. De lo contrario, toma el fragmento que coincide con el primer subpatrón.
+Extrae un fragmento de una cadena utilizando una expresión regular. Si ‘haystack’ no coinciden con el ‘pattern’ regex, se devuelve una cadena vacía. Si la expresión regular no contiene subpatrones, toma el fragmento que coincide con toda la expresión regular. De lo contrario, toma el fragmento que coincide con el primer subpatrón.
 
 ## extractAll(pajar, patrón) {#extractallhaystack-pattern}
 
-Extrae todos los fragmentos de una cadena utilizando una expresión regular. Si ‘haystack’ no coincide con el ‘pattern’ regex, se devuelve una cadena vacía. Devuelve una matriz de cadenas que consiste en todas las coincidencias con la expresión regular. En general, el comportamiento es el mismo que el ‘extract’ función (toma el primer subpatrón, o la expresión completa si no hay un subpatrón).
+Extrae todos los fragmentos de una cadena utilizando una expresión regular. Si ‘haystack’ no coinciden con el ‘pattern’ regex, se devuelve una cadena vacía. Devuelve una matriz de cadenas que consiste en todas las coincidencias con la expresión regular. En general, el comportamiento es el mismo que el ‘extract’ función (toma el primer subpatrón, o la expresión completa si no hay un subpatrón).
 
 ## como (pajar, patrón), operador de patrón COMO pajar {#function-like}
 

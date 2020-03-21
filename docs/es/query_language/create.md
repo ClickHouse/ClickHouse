@@ -1,4 +1,4 @@
-# CREATE Consultas {#create-queries}
+# CREAR Consultas {#create-queries}
 
 ## CREAR BASE DE DATOS {#query-language-create-database}
 
@@ -31,7 +31,7 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 
 ## CREAR TABLA {#create-table-query}
 
-El `CREATE TABLE` consulta puede tener varias formas.
+El `CREATE TABLE` puede tener varias formas.
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -42,7 +42,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = engine
 ```
 
-Crea una tabla llamada ‘name’ en el ‘db’ base de datos o la base de datos actual si ‘db’ no está establecida, con la estructura especificada entre paréntesis y ‘engine’ motor.
+Crea una tabla llamada ‘name’ es el ‘db’ base de datos o la base de datos actual si ‘db’ no está establecida, con la estructura especificada entre paréntesis y ‘engine’ motor.
 La estructura de la tabla es una lista de descripciones de columnas. Si los índices son compatibles con el motor, se indican como parámetros para el motor de tablas.
 
 Una descripción de columna es `name type` en el caso más simple. Ejemplo: `RegionID UInt32`.
@@ -64,7 +64,7 @@ Crea una tabla con la estructura y los datos [función de la tabla](table_functi
 CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 ```
 
-Crea una tabla con una estructura como el resultado de la `SELECT` consulta, con el ‘engine’ motor, y lo llena con datos de SELECT.
+Crea una tabla con una estructura como el resultado de la `SELECT` Consulta, con el ‘engine’ motor, y lo llena con datos de SELECT.
 
 En todos los casos, si `IF NOT EXISTS` Si se especifica la tabla, la consulta no devolverá un error si la tabla ya existe. En este caso, la consulta no hará nada.
 
@@ -152,7 +152,7 @@ Si se especifica un códec, el códec predeterminado no se aplica. Los códecs s
 La compresión es compatible con los siguientes motores de tablas:
 
 -   [Método de codificación de datos:](../operations/table_engines/mergetree.md) familia. Admite códecs de compresión de columnas y selecciona el método de compresión predeterminado mediante [compresión](../operations/server_settings/settings.md#server-settings-compression) configuración.
--   [Registro](../operations/table_engines/log_family.md) familia. Utiliza el `lz4` método de compresión por defecto y soporta códecs de compresión de columna.
+-   [Registro](../operations/table_engines/log_family.md) Familia. Utiliza el `lz4` método de compresión por defecto y soporta códecs de compresión de columna.
 -   [Establecer](../operations/table_engines/set.md). Solo admite la compresión predeterminada.
 -   [Unir](../operations/table_engines/join.md). Solo admite la compresión predeterminada.
 
@@ -162,7 +162,7 @@ ClickHouse admite códecs de propósito común y códecs especializados.
 
 Estos códecs están diseñados para hacer que la compresión sea más efectiva mediante el uso de características específicas de los datos. Algunos de estos códecs no comprimen los propios datos. En su lugar, preparan los datos para un códec de propósito común, que lo comprime mejor que sin esta preparación.
 
-Especializados codecs:
+Códecs Especializados:
 
 -   `Delta(delta_bytes)` — Enfoque de compresión en el que los valores brutos se sustituyen por la diferencia de dos valores vecinos, excepto el primer valor que permanece sin cambios. Hasta `delta_bytes` se utilizan para almacenar valores delta, por lo que `delta_bytes` es el tamaño máximo de los valores brutos. Posible `delta_bytes` valores: 1, 2, 4, 8. El valor predeterminado para `delta_bytes` ser `sizeof(type)` si es igual a 1, 2, 4 u 8. En todos los demás casos, es 1.
 -   `DoubleDelta` — Calcula delta de deltas y lo escribe en forma binaria compacta. Las tasas de compresión óptimas se logran para secuencias monotónicas con una zancada constante, como los datos de series de tiempo. Se puede utilizar con cualquier tipo de ancho fijo. Implementa el algoritmo utilizado en Gorilla TSDB, extendiéndolo para admitir tipos de 64 bits. Utiliza 1 bit adicional para deltas de 32 bytes: prefijos de 5 bits en lugar de prefijos de 4 bits. Para obtener información adicional, consulte Compresión de sellos de tiempo en [Gorila: Una base de datos de series temporales rápida, escalable y en memoria](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
@@ -215,7 +215,7 @@ CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
 
 En la mayoría de los casos, las tablas temporales no se crean manualmente, sino cuando se utilizan datos externos para una consulta o para `(GLOBAL) IN`. Para obtener más información, consulte las secciones correspondientes
 
-Es posible utilizar tablas con [MOTOR = Memoria](../operations/table_engines/memory.md) en lugar de tablas temporales.
+Es posible utilizar tablas con [MOTOR = Memoria](../operations/table_engines/memory.md) es lugar de tablas temporales.
 
 ## Consultas DDL distribuidas (cláusula ON CLUSTER) {#distributed-ddl-queries-on-cluster-clause}
 
@@ -267,7 +267,7 @@ Una vista materializada se organiza de la siguiente manera: al insertar datos en
 
 Si especifica POPULATE, los datos de tabla existentes se insertan en la vista al crearlos, como si `CREATE TABLE ... AS SELECT ...` . De lo contrario, la consulta solo contiene los datos insertados en la tabla después de crear la vista. No recomendamos usar POPULATE, ya que los datos insertados en la tabla durante la creación de la vista no se insertarán en ella.
 
-Un `SELECT` consulta puede contener `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`… Tenga en cuenta que las conversiones correspondientes se realizan de forma independiente en cada bloque de datos insertados. Por ejemplo, si `GROUP BY` se establece, los datos se agregan durante la inserción, pero solo dentro de un solo paquete de datos insertados. Los datos no se agregarán más. La excepción es cuando se utiliza un ENGINE que realiza de forma independiente la agregación de datos, como `SummingMergeTree`.
+Naciones `SELECT` Consulta puede contener `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`… Tenga en cuenta que las conversiones correspondientes se realizan de forma independiente en cada bloque de datos insertados. Por ejemplo, si `GROUP BY` se establece, los datos se agregan durante la inserción, pero solo dentro de un solo paquete de datos insertados. Los datos no se agregarán más. La excepción es cuando se utiliza un ENGINE que realiza de forma independiente la agregación de datos, como `SummingMergeTree`.
 
 La ejecución de `ALTER` las consultas sobre vistas materializadas no se han desarrollado completamente, por lo que podrían ser inconvenientes. Si la vista materializada utiliza la construcción `TO [db.]name` puede `DETACH` la vista, ejecutar `ALTER` para la tabla de destino, y luego `ATTACH` el previamente separado (`DETACH`) vista.
 

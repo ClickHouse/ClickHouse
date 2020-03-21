@@ -1,7 +1,7 @@
 # Referencia SQL {#sql-reference}
 
 -   [SELECCIONAR](select.md)
--   [INSERTAR EN](insert_into.md)
+-   [ES INSERTAR](insert_into.md)
 -   [CREAR](create.md)
 -   [ALTERAR](alter.md#query_language_queries_alter)
 -   [Otros tipos de consultas](misc.md)

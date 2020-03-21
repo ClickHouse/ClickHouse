@@ -1,28 +1,28 @@
 # UUID {#uuid-data-type}
 
-A universally unique identifier (UUID) is a 16-byte number used to identify records. For detailed information about the UUID, see [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
+Un identificador único universal (UUID) es un número de 16 bytes utilizado para identificar registros. Para obtener información detallada sobre el UUID, consulte [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
 
-The example of UUID type value is represented below:
+El ejemplo de valor de tipo UUID se representa a continuación:
 
 ``` text
 61f0c404-5cb3-11e7-907b-a6006ad3dba0
 ```
 
-If you do not specify the UUID column value when inserting a new record, the UUID value is filled with zero:
+Si no especifica el valor de la columna UUID al insertar un nuevo registro, el valor UUID se rellena con cero:
 
 ``` text
 00000000-0000-0000-0000-000000000000
 ```
 
-## How to generate {#how-to-generate}
+## Cómo generar {#how-to-generate}
 
-To generate the UUID value, ClickHouse provides the [generateUUIDv4](../query_language/functions/uuid_functions.md) function.
+Para generar el valor UUID, ClickHouse proporciona el [GenerateUUIDv4](../query_language/functions/uuid_functions.md) función.
 
-## Usage example {#usage-example}
+## Ejemplo de uso {#usage-example}
 
-**Example 1**
+**Ejemplo 1**
 
-This example demonstrates creating a table with the UUID type column and inserting a value into the table.
+En este ejemplo se muestra la creación de una tabla con la columna de tipo UUID e insertar un valor en la tabla.
 
 ``` sql
 CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog
@@ -42,9 +42,9 @@ SELECT * FROM t_uuid
 └──────────────────────────────────────┴───────────┘
 ```
 
-**Example 2**
+**Ejemplo 2**
 
-In this example, the UUID column value is not specified when inserting a new record.
+En este ejemplo, el valor de la columna UUID no se especifica al insertar un nuevo registro.
 
 ``` sql
 INSERT INTO t_uuid (y) VALUES ('Example 2')
@@ -61,10 +61,10 @@ SELECT * FROM t_uuid
 └──────────────────────────────────────┴───────────┘
 ```
 
-## Restrictions {#restrictions}
+## Restricción {#restrictions}
 
-The UUID data type only supports functions which [String](string.md) data type also supports (for example, [min](../query_language/agg_functions/reference.md#agg_function-min), [max](../query_language/agg_functions/reference.md#agg_function-max), and [count](../query_language/agg_functions/reference.md#agg_function-count)).
+El tipo de datos UUID sólo admite funciones que [Cadena](string.md) tipo de datos también soporta (por ejemplo, [minuto](../query_language/agg_functions/reference.md#agg_function-min), [máximo](../query_language/agg_functions/reference.md#agg_function-max), y [contar](../query_language/agg_functions/reference.md#agg_function-count)).
 
-The UUID data type is not supported by arithmetic operations (for example, [abs](../query_language/functions/arithmetic_functions.md#arithm_func-abs)) or aggregate functions, such as [sum](../query_language/agg_functions/reference.md#agg_function-sum) and [avg](../query_language/agg_functions/reference.md#agg_function-avg).
+El tipo de datos UUID no es compatible con operaciones aritméticas (por ejemplo, [abdominales](../query_language/functions/arithmetic_functions.md#arithm_func-abs)) o funciones agregadas, tales como [resumir](../query_language/agg_functions/reference.md#agg_function-sum) y [avg](../query_language/agg_functions/reference.md#agg_function-avg).
 
-[Original article](https://clickhouse.tech/docs/es/data_types/uuid/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/data_types/uuid/) <!--hide-->

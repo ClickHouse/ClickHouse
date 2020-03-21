@@ -19,7 +19,7 @@ Vea la descripción detallada del [CREAR TABLA](../../query_language/create.md#c
 
 ## Escribir los datos {#table-engines-stripelog-writing-the-data}
 
-El `StripeLog` el motor almacena todas las columnas en un archivo. Para cada `INSERT` consulta, ClickHouse agrega el bloque de datos al final de un archivo de tabla, escribiendo columnas una por una.
+El `StripeLog` el motor almacena todas las columnas en un archivo. Para cada `INSERT` ClickHouse agrega el bloque de datos al final de un archivo de tabla, escribiendo columnas una por una.
 
 Para cada tabla, ClickHouse escribe los archivos:
 
@@ -30,7 +30,7 @@ El `StripeLog` el motor no soporta el `ALTER UPDATE` y `ALTER DELETE` operación
 
 ## Lectura de los datos {#table-engines-stripelog-reading-the-data}
 
-El archivo con marcas permite ClickHouse paralelizar la lectura de datos. Esto significa que un `SELECT` query devuelve filas en un orden impredecible. Utilice el `ORDER BY` cláusula para ordenar filas.
+El archivo con marcas permite ClickHouse paralelizar la lectura de datos. Esto significa que un `SELECT` consulta devuelve filas en un orden impredecible. Descripción `ORDER BY` cláusula para ordenar filas.
 
 ## Ejemplo de uso {#table-engines-stripelog-example-of-use}
 
@@ -46,7 +46,7 @@ CREATE TABLE stripe_log_table
 ENGINE = StripeLog
 ```
 
-Insertar datos:
+Inserte datos:
 
 ``` sql
 INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The first regular message')

@@ -4,7 +4,7 @@ Permite que ClickHouse se conecte a bases de datos externas a través de [JDBC](
 
 Para implementar la conexión JDBC, ClickHouse utiliza el programa independiente [Sistema abierto.](https://github.com/alex-krash/clickhouse-jdbc-bridge) que debería ejecutarse como un demonio.
 
-Este motor soporta el [NULL](../../data_types/nullable.md) tipo de datos.
+Este motor soporta el [NULO](../../data_types/nullable.md) tipo de datos.
 
 ## Creación de una tabla {#creating-a-table}
 

@@ -23,7 +23,7 @@ Principales características:
     Si es necesario, puede establecer el método de muestreo de datos en la tabla.
 
 !!! info "INFO"
-    El [Fusionar](merge.md) el motor no pertenece al `*MergeTree` familia.
+    El [Fusionar](merge.md) el motor no pertenece al `*MergeTree` Familia.
 
 ## Creación de una tabla {#table-engine-mergetree-creating-a-table}
 
@@ -83,8 +83,8 @@ Para obtener una descripción de los parámetros, consulte [Descripción de la c
     -   `index_granularity` — Número máximo de filas de datos entre las marcas de un índice. Valor predeterminado: 8192. Ver [Almacenamiento de datos](#mergetree-data-storage).
     -   `index_granularity_bytes` — Tamaño máximo de los gránulos de datos en bytes. Valor predeterminado: 10 MB. Para restringir el tamaño del gránulo solo por el número de filas, establezca en 0 (no recomendado). Ver [Almacenamiento de datos](#mergetree-data-storage).
     -   `enable_mixed_granularity_parts` — Habilita o deshabilita la transición para controlar el tamaño del gránulo `index_granularity_bytes` configuración. Antes de la versión 19.11, sólo existía el `index_granularity` ajuste para restringir el tamaño del gránulo. El `index_granularity_bytes` mejora el rendimiento de ClickHouse al seleccionar datos de tablas con filas grandes (decenas y cientos de megabytes). Si tiene tablas con filas grandes, puede habilitar esta configuración para que las tablas mejoren la eficiencia de `SELECT` consulta.
-    -   `use_minimalistic_part_header_in_zookeeper` — Método de almacenamiento de los encabezados de partes de datos en ZooKeeper. Si `use_minimalistic_part_header_in_zookeeper=1`, entonces ZooKeeper almacena menos datos. Para obtener más información, consulte [descripción del ajuste](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) en “Server configuration parameters”.
-    -   `min_merge_bytes_to_use_direct_io` — El volumen mínimo de datos para la operación de fusión que se necesita para utilizar el acceso directo de E/S al disco de almacenamiento. Al fusionar partes de datos, ClickHouse calcula el volumen total de almacenamiento de todos los datos que se van a fusionar. Si el volumen excede `min_merge_bytes_to_use_direct_io` bytes, ClickHouse lee y escribe los datos en el disco de almacenamiento utilizando la interfaz de E / S directa (`O_DIRECT` opcion). Si `min_merge_bytes_to_use_direct_io = 0`, entonces la E/S directa está deshabilitada. Valor predeterminado: `10 * 1024 * 1024 * 1024` byte.
+    -   `use_minimalistic_part_header_in_zookeeper` — Método de almacenamiento de los encabezados de partes de datos en ZooKeeper. Si `use_minimalistic_part_header_in_zookeeper=1`, entonces ZooKeeper almacena menos datos. Para obtener más información, consulte [descripción del ajuste](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) es “Server configuration parameters”.
+    -   `min_merge_bytes_to_use_direct_io` — El volumen mínimo de datos para la operación de fusión que se necesita para utilizar el acceso directo de E/S al disco de almacenamiento. Al fusionar partes de datos, ClickHouse calcula el volumen total de almacenamiento de todos los datos que se van a fusionar. Si el volumen excede `min_merge_bytes_to_use_direct_io` bytes, ClickHouse lee y escribe los datos en el disco de almacenamiento utilizando la interfaz de E / S directa (`O_DIRECT` opción). Si `min_merge_bytes_to_use_direct_io = 0`, entonces la E/S directa está deshabilitada. Valor predeterminado: `10 * 1024 * 1024 * 1024` byte.
         <a name="mergetree_setting-merge_with_ttl_timeout"></a>
     -   `merge_with_ttl_timeout` — Retraso mínimo en segundos antes de repetir una fusión con TTL. Valor predeterminado: 86400 (1 día).
     -   `write_final_mark` — Habilita o deshabilita la escritura de la marca de índice final al final de la parte de datos (después del último byte). Valor predeterminado: 1. No lo apague.
@@ -99,7 +99,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 En el ejemplo, configuramos la partición por mes.
 
-También establecemos una expresión para el muestreo como un hash por el ID de usuario. Esto le permite pseudoaleatorizar los datos en la tabla para cada `CounterID` y `EventDate`. Si define un [MUESTRA](../../query_language/select.md#select-sample-clause) cláusula al seleccionar los datos, ClickHouse devolverá una muestra de datos pseudoaleatoria uniforme para un subconjunto de usuarios.
+También establecemos una expresión para el muestreo como un hash por el ID de usuario. Esto le permite pseudoaleatorizar los datos en la tabla para cada `CounterID` y `EventDate`. Si definir un [MUESTRA](../../query_language/select.md#select-sample-clause) cláusula al seleccionar los datos, ClickHouse devolverá una muestra de datos pseudoaleatoria uniforme para un subconjunto de usuarios.
 
 El `index_granularity` se puede omitir porque 8192 es el valor predeterminado.
 
@@ -181,7 +181,7 @@ El número de columnas en la clave principal no está explícitamente limitado. 
     Si la clave principal es `(a, b)`, a continuación, añadir otra columna `c` mejorará el rendimiento si se cumplen las siguientes condiciones:
 
     -   Hay consultas con una condición en la columna `c`.
-    -   Rangos de datos largos (varias veces más `index_granularity`) con valores idénticos para `(a, b)` son comunes. En otras palabras, al agregar otra columna le permite omitir rangos de datos bastante largos.
+    -   Rangos de datos largos (varias veces más `index_granularity`) con valores idénticos para `(a, b)` hijo comunes. En otras palabras, al agregar otra columna le permite omitir rangos de datos bastante largos.
 
 -   Mejorar la compresión de datos.
 
@@ -286,7 +286,7 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
 -   `set(max_rows)`
 
-    Almacena valores únicos de la expresión especificada (no más de `max_rows` filas, `max_rows=0` medio “no limits”). Utiliza los valores para comprobar si `WHERE` expresión no es satisfactorio en un bloque de datos.
+    Almacena valores únicos de la expresión especificada (no más de `max_rows` películas, `max_rows=0` medio “no limits”). Utiliza los valores para comprobar si `WHERE` expresión no es satisfactorio en un bloque de datos.
 
 -   `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
@@ -307,7 +307,7 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
     Tipos de datos admitidos: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`.
 
-    Las siguientes funciones pueden usarlo: [igual](../../query_language/functions/comparison_functions.md), [notEquals](../../query_language/functions/comparison_functions.md), [en](../../query_language/functions/in_functions.md), [noEn](../../query_language/functions/in_functions.md), [tener](../../query_language/functions/array_functions.md).
+    Las siguientes funciones pueden usarlo: [igual](../../query_language/functions/comparison_functions.md), [notEquals](../../query_language/functions/comparison_functions.md), [es](../../query_language/functions/in_functions.md), [noEn](../../query_language/functions/in_functions.md), [Tener](../../query_language/functions/array_functions.md).
 
 <!-- -->
 
@@ -323,22 +323,22 @@ Condiciones en el `WHERE` cláusula contiene llamadas de las funciones que opera
 
 El `set` index se puede utilizar con todas las funciones. Subconjuntos de funciones para otros índices se muestran en la siguiente tabla.
 
-| Función (operador) / Índice                                                                            | clave primaria | minmax | Descripción | Sistema abierto. | bloom\_filter |
+| Función (operador) / Índice                                                                            | Clave primaria | minmax | Descripción | Sistema abierto. | bloom\_filter |
 |--------------------------------------------------------------------------------------------------------|----------------|--------|-------------|------------------|---------------|
-| [igual (=, ==)](../../query_language/functions/comparison_functions.md#function-equals)                | ✔              | ✔      | ✔           | ✔                | ✔             |
+| [¿Por qué?)](../../query_language/functions/comparison_functions.md#function-equals)                   | ✔              | ✔      | ✔           | ✔                | ✔             |
 | [notEquals(!Número)](../../query_language/functions/comparison_functions.md#function-notequals)        | ✔              | ✔      | ✔           | ✔                | ✔             |
 | [como](../../query_language/functions/string_search_functions.md#function-like)                        | ✔              | ✔      | ✔           | ✗                | ✗             |
 | [No como](../../query_language/functions/string_search_functions.md#function-notlike)                  | ✔              | ✔      | ✔           | ✗                | ✗             |
 | [Comienza con](../../query_language/functions/string_functions.md#startswith)                          | ✔              | ✔      | ✔           | ✔                | ✗             |
 | [Finaliza con](../../query_language/functions/string_functions.md#endswith)                            | ✗              | ✗      | ✔           | ✔                | ✗             |
 | [multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany)    | ✗              | ✗      | ✔           | ✗                | ✗             |
-| [en](../../query_language/functions/in_functions.md#in-functions)                                      | ✔              | ✔      | ✔           | ✔                | ✔             |
+| [es](../../query_language/functions/in_functions.md#in-functions)                                      | ✔              | ✔      | ✔           | ✔                | ✔             |
 | [noEn](../../query_language/functions/in_functions.md#in-functions)                                    | ✔              | ✔      | ✔           | ✔                | ✔             |
 | [menos (\<)](../../query_language/functions/comparison_functions.md#function-less)                     | ✔              | ✔      | ✗           | ✗                | ✗             |
-| [mayor (\>)](../../query_language/functions/comparison_functions.md#function-greater)                  | ✔              | ✔      | ✗           | ✗                | ✗             |
+| [Alcalde (\>)](../../query_language/functions/comparison_functions.md#function-greater)                | ✔              | ✔      | ✗           | ✗                | ✗             |
 | [menosOrEquals (\<=)](../../query_language/functions/comparison_functions.md#function-lessorequals)    | ✔              | ✔      | ✗           | ✗                | ✗             |
 | [mayorOrEquals (\>=)](../../query_language/functions/comparison_functions.md#function-greaterorequals) | ✔              | ✔      | ✗           | ✗                | ✗             |
-| [vaciar](../../query_language/functions/array_functions.md#function-empty)                             | ✔              | ✔      | ✗           | ✗                | ✗             |
+| [Vaciar](../../query_language/functions/array_functions.md#function-empty)                             | ✔              | ✔      | ✗           | ✗                | ✗             |
 | [notEmpty](../../query_language/functions/array_functions.md#function-notempty)                        | ✔              | ✔      | ✗           | ✗                | ✗             |
 | hasToken                                                                                               | ✗              | ✗      | ✗           | ✔                | ✗             |
 
@@ -471,7 +471,7 @@ Los datos con un TTL caducado se eliminan cuando ClickHouse fusiona partes de da
 
 Cuando ClickHouse ve que los datos han caducado, realiza una combinación fuera de programación. Para controlar la frecuencia de tales fusiones, puede establecer [Método de codificación de datos:](#mergetree_setting-merge_with_ttl_timeout). Si el valor es demasiado bajo, realizará muchas fusiones fuera de horario que pueden consumir muchos recursos.
 
-Si realiza el `SELECT` consulta entre fusiones, puede obtener datos caducados. Para evitarlo, use el [OPTIMIZAR](../../query_language/misc.md#misc_operations-optimize) consulta antes `SELECT`.
+Si realiza el `SELECT` consulta entre fusiones, puede obtener datos caducados. Para evitarlo, use el [OPTIMIZAR](../../query_language/misc.md#misc_operations-optimize) Consulta antes `SELECT`.
 
 [Artículo Original](https://clickhouse.tech/docs/es/operations/table_engines/mergetree/) <!--hide-->
 
@@ -490,11 +490,11 @@ La parte de datos es la unidad móvil mínima para `MergeTree`-mesas de motor. L
 -   Volumen — Conjunto ordenado de discos iguales (similar a [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
 -   Política de almacenamiento: conjunto de volúmenes y reglas para mover datos entre ellos.
 
-Los nombres dados a las entidades descritas se pueden encontrar en las tablas del sistema, [sistema.almacenamiento\_policies](../system_tables.md#system_tables-storage_policies) y [sistema.disco](../system_tables.md#system_tables-disks). Para aplicar una de las directivas de almacenamiento configuradas para una tabla, `storage_policy` establecimiento de `MergeTree`-mesas de la familia del motor.
+Los nombres dados a las entidades descritas se pueden encontrar en las tablas del sistema, [sistema.almacenamiento\_policies](../system_tables.md#system_tables-storage_policies) y [sistema.Discoteca](../system_tables.md#system_tables-disks). Para aplicar una de las directivas de almacenamiento configuradas para una tabla, `storage_policy` establecimiento de `MergeTree`-mesas de la familia del motor.
 
 ### Configuración {#table-engine-mergetree-multiple-volumes-configure}
 
-Los discos, los volúmenes y las políticas de almacenamiento deben declararse `<storage_configuration>` etiqueta ya sea en el archivo principal `config.xml` o en un archivo distinto en el `config.d` directorio.
+Los discos, los volúmenes y las políticas de almacenamiento deben declararse `<storage_configuration>` etiqueta ya sea en el archivo principal `config.xml` o en un archivo distinto en el `config.d` Directorio.
 
 Estructura de configuración:
 

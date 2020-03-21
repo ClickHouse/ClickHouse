@@ -32,7 +32,7 @@ Para obtener una descripción de los parámetros de consulta, consulte [descripc
 VersionedCollapsingMergeTree(sign, version)
 ```
 
--   `sign` — Nombre de la columna con el tipo de fila: `1` es una “state” fila, `-1` es una “cancel” fila.
+-   `sign` — Nombre de la columna con el tipo de fila: `1` es una “state” fila, `-1` es una “cancel” Fila.
 
     El tipo de datos de columna debe ser `Int8`.
 
@@ -62,7 +62,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Todos los parámetros excepto `sign` y `version` el mismo significado que en `MergeTree`.
 
--   `sign` — Nombre de la columna con el tipo de fila: `1` es una “state” fila, `-1` es una “cancel” fila.
+-   `sign` — Nombre de la columna con el tipo de fila: `1` es una “state” fila, `-1` es una “cancel” Fila.
 
     Tipo de datos de columna — `Int8`.
 
@@ -78,7 +78,7 @@ Todos los parámetros excepto `sign` y `version` el mismo significado que en `Me
 
 Considere una situación en la que necesite guardar datos que cambien continuamente para algún objeto. Es razonable tener una fila para un objeto y actualizar la fila siempre que haya cambios. Sin embargo, la operación de actualización es costosa y lenta para un DBMS porque requiere volver a escribir los datos en el almacenamiento. La actualización no es aceptable si necesita escribir datos rápidamente, pero puede escribir los cambios en un objeto secuencialmente de la siguiente manera.
 
-Utilice el `Sign` columna al escribir la fila. Si `Sign = 1` significa que la fila es un estado de un objeto (llamémoslo el “state” fila). Si `Sign = -1` indica la cancelación del estado de un objeto con los mismos atributos (llamémoslo el “cancel” fila). También use el `Version` columna, que debe identificar cada estado de un objeto con un número separado.
+Descripción `Sign` columna al escribir la fila. Si `Sign = 1` significa que la fila es un estado de un objeto (llamémoslo el “state” fila). Si `Sign = -1` indica la cancelación del estado de un objeto con los mismos atributos (llamémoslo el “cancel” fila). También use el `Version` columna, que debe identificar cada estado de un objeto con un número separado.
 
 Por ejemplo, queremos calcular cuántas páginas visitaron los usuarios en algún sitio y cuánto tiempo estuvieron allí. En algún momento escribimos la siguiente fila con el estado de la actividad del usuario:
 
@@ -116,7 +116,7 @@ Para averiguar por qué necesitamos dos filas para cada cambio, vea [Algoritmo](
 
 **Notas sobre el uso**
 
-1.  El programa que escribe los datos debe recordar el estado de un objeto para cancelarlo. El “cancel” cadena debe ser una copia de la “state” con lo opuesto `Sign`. Esto aumenta el tamaño inicial de almacenamiento, pero permite escribir los datos rápidamente.
+1.  El programa que escribe los datos debe recordar el estado de un objeto para cancelarlo. El “cancel” Cadena debe ser una copia de la “state” con lo opuesto `Sign`. Esto aumenta el tamaño inicial de almacenamiento, pero permite escribir los datos rápidamente.
 2.  Las matrices de largo crecimiento en columnas reducen la eficiencia del motor debido a la carga para escribir. Cuanto más sencillos sean los datos, mejor será la eficiencia.
 3.  `SELECT` Los resultados dependen en gran medida de la coherencia del historial de cambios de objetos. Sea preciso al preparar los datos para insertarlos. Puede obtener resultados impredecibles con datos incoherentes, como valores negativos para métricas no negativas, como la profundidad de la sesión.
 
@@ -130,7 +130,7 @@ Cuando ClickHouse inserta datos, ordena filas por la clave principal. Si el `Ver
 
 ClickHouse no garantiza que todas las filas con la misma clave principal estarán en la misma parte de datos resultante o incluso en el mismo servidor físico. Esto es cierto tanto para escribir los datos como para la posterior fusión de las partes de datos. Además, ClickHouse procesa `SELECT` consultas con múltiples subprocesos, y no puede predecir el orden de las filas en el resultado. Esto significa que la agregación es necesaria si hay una necesidad de obtener completamente “collapsed” datos de un `VersionedCollapsingMergeTree` tabla.
 
-Para finalizar el colapso, escriba una consulta con un `GROUP BY` cláusula y funciones agregadas que representan el signo. Por ejemplo, para calcular la cantidad, use `sum(Sign)` en lugar de `count()`. Para calcular la suma de algo, use `sum(Sign * x)` en lugar de `sum(x)` y agregar `HAVING sum(Sign) > 0`.
+Para finalizar el colapso, escriba una consulta con un `GROUP BY` cláusula y funciones agregadas que representan el signo. Por ejemplo, para calcular la cantidad, use `sum(Sign)` es lugar de `count()`. Para calcular la suma de algo, use `sum(Sign * x)` es lugar de `sum(x)` y agregar `HAVING sum(Sign) > 0`.
 
 Los agregados `count`, `sum` y `avg` se puede calcular de esta manera. El agregado `uniq` se puede calcular si un objeto tiene al menos un estado no colapsado. Los agregados `min` y `max` no se puede calcular porque `VersionedCollapsingMergeTree` no guarda el historial de valores de estados colapsados.
 

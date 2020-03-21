@@ -133,7 +133,7 @@ Puedes ver más ejemplos en [prueba](https://github.com/ClickHouse/ClickHouse/bl
 
 ### INTERVALO {#operator-interval}
 
-Crea un [Intervalo](../data_types/special_data_types/interval.md)-type valor que debe utilizarse en operaciones aritméticas con [Fecha](../data_types/date.md) y [FechaHora](../data_types/datetime.md)-type valores.
+Crea un [Intervalo](../data_types/special_data_types/interval.md)-type valor que debe utilizarse en operaciones aritméticas con [Fecha](../data_types/date.md) y [FechaHora](../data_types/datetime.md)-tipo valores.
 
 Tipos de intervalos:
 - `SECOND`
@@ -162,7 +162,7 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 
 **Ver también**
 
--   [Intervalo](../data_types/special_data_types/interval.md) tipo de datos
+-   [Intervalo](../data_types/special_data_types/interval.md) Tipo de datos
 -   [ToInterval](functions/type_conversion_functions.md#function-tointerval) funciones de conversión de tipo
 
 ## Operador de Negación Lógica {#logical-negation-operator}
@@ -232,8 +232,8 @@ ClickHouse soporta el `IS NULL` y `IS NOT NULL` operador.
 
 ### ES NULO {#operator-is-null}
 
--   Para [NULL](../data_types/nullable.md) valores de tipo, el `IS NULL` operador devuelve:
-    -   `1` si el valor es `NULL`.
+-   Para [NULO](../data_types/nullable.md) valores de tipo, el `IS NULL` operador devuelve:
+    -   `1` Español `NULL`.
     -   `0` de lo contrario.
 -   Para otros valores, el `IS NULL` operador siempre devuelve `0`.
 
@@ -251,8 +251,8 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 
 ### NO ES NULO {#is-not-null}
 
--   Para [NULL](../data_types/nullable.md) valores de tipo, el `IS NOT NULL` operador devuelve:
-    -   `0` si el valor es `NULL`.
+-   Para [NULO](../data_types/nullable.md) valores de tipo, el `IS NOT NULL` operador devuelve:
+    -   `0` Español `NULL`.
     -   `1` de lo contrario.
 -   Para otros valores, el `IS NOT NULL` operador siempre devuelve `1`.
 

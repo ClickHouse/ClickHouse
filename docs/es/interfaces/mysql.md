@@ -1,18 +1,18 @@
-# MySQL interface {#mysql-interface}
+# Interfaz de MySQL {#mysql-interface}
 
-ClickHouse supports MySQL wire protocol. It can be enabled by [mysql\_port](../operations/server_settings/settings.md#server_settings-mysql_port) setting in configuration file:
+ClickHouse soporta el protocolo de cable MySQL. Puede ser habilitado por [mysql\_port](../operations/server_settings/settings.md#server_settings-mysql_port) configuración en el archivo de configuración:
 
 ``` xml
 <mysql_port>9004</mysql_port>
 ```
 
-Example of connecting using command-line tool `mysql`:
+Ejemplo de conexión mediante la herramienta de línea de comandos `mysql`:
 
 ``` bash
 $ mysql --protocol tcp -u default -P 9004
 ```
 
-Output if a connection succeeded:
+Salida si una conexión se realizó correctamente:
 
 ``` text
 Welcome to the MySQL monitor.  Commands end with ; or \g.
@@ -30,13 +30,13 @@ Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
 mysql>
 ```
 
-For compatibility with all MySQL clients, it is recommended to specify user password with [double SHA1](../operations/settings/settings_users.md#password_double_sha1_hex) in configuration file.
-If user password is specified using [SHA256](../operations/settings/settings_users.md#password_sha256_hex), some clients won’t be able to authenticate (mysqljs and old versions of command-line tool mysql).
+Para la compatibilidad con todos los clientes MySQL, se recomienda especificar la contraseña de usuario con [Doble SHA1](../operations/settings/settings_users.md#password_double_sha1_hex) en el archivo de configuración.
+Si la contraseña de usuario se especifica usando [SHA256](../operations/settings/settings_users.md#password_sha256_hex), algunos clientes no podrán autenticarse (mysqljs y versiones antiguas de la herramienta de línea de comandos mysql).
 
-Restrictions:
+Restricción:
 
--   prepared queries are not supported
+-   las consultas preparadas no son compatibles
 
--   some data types are sent as strings
+-   algunos tipos de datos se envían como cadenas
 
-[Original article](https://clickhouse.tech/docs/es/interfaces/mysql/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/interfaces/mysql/) <!--hide-->

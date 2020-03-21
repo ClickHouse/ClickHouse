@@ -160,7 +160,7 @@ Comprueba si dos mapas de bits tienen intersección por algunos elementos.
 bitmapHasAny(bitmap1, bitmap2)
 ```
 
-Si está seguro de que `bitmap2` contiene estrictamente un elemento, considere usar el [bitmapContains](#bitmap_functions-bitmapcontains) función. Funciona de manera más eficiente.
+Si está seguro de que `bitmap2` Esta es la página de desambiguación en 24symbols. [bitmapContains](#bitmap_functions-bitmapcontains) función. Funciona de manera más eficiente.
 
 **Parámetros**
 
@@ -168,7 +168,7 @@ Si está seguro de que `bitmap2` contiene estrictamente un elemento, considere u
 
 **Valores de retorno**
 
--   `1`, si `bitmap1` y `bitmap2` tienen un elemento similar al menos.
+-   `1` si `bitmap1` y `bitmap2` tienen un elemento similar al menos.
 -   `0`, de lo contrario.
 
 **Ejemplo**

@@ -1,6 +1,6 @@
-# Star Schema Benchmark {#star-schema-benchmark}
+# Estrella Schema Benchmark {#star-schema-benchmark}
 
-Compiling dbgen:
+Compilación de dbgen:
 
 ``` bash
 $ git clone git@github.com:vadimtk/ssb-dbgen.git
@@ -8,10 +8,10 @@ $ cd ssb-dbgen
 $ make
 ```
 
-Generating data:
+Generación de datos:
 
-!!! warning "Attention"
-    With `-s 100` dbgen generates 600 million rows (67 GB), while while `-s 1000` it generates 6 billion rows (which takes a lot of time)
+!!! warning "Atención"
+    Desventaja `-s 100` dbgen genera 600 millones de filas (67 GB), mientras que `-s 1000` genera 6 mil millones de filas (lo que lleva mucho tiempo)
 
 ``` bash
 $ ./dbgen -s 1000 -T c
@@ -21,7 +21,7 @@ $ ./dbgen -s 1000 -T s
 $ ./dbgen -s 1000 -T d
 ```
 
-Creating tables in ClickHouse:
+Creación de tablas en ClickHouse:
 
 ``` sql
 CREATE TABLE customer
@@ -86,7 +86,7 @@ CREATE TABLE supplier
 ENGINE = MergeTree ORDER BY S_SUPPKEY;
 ```
 
-Inserting data:
+Inserte datos:
 
 ``` bash
 $ clickhouse-client --query "INSERT INTO customer FORMAT CSV" < customer.tbl
@@ -95,7 +95,7 @@ $ clickhouse-client --query "INSERT INTO supplier FORMAT CSV" < supplier.tbl
 $ clickhouse-client --query "INSERT INTO lineorder FORMAT CSV" < lineorder.tbl
 ```
 
-Converting “star schema” to denormalized “flat schema”:
+Conversión “star schema” a desnormalizado “flat schema”:
 
 ``` sql
 SET max_memory_usage = 20000000000;
@@ -149,9 +149,9 @@ INNER JOIN supplier AS s ON s.S_SUPPKEY = l.LO_SUPPKEY
 INNER JOIN part AS p ON p.P_PARTKEY = l.LO_PARTKEY;
 ```
 
-Running the queries:
+Las consultas:
 
-Q1.1
+Número de teléfono
 
 ``` sql
 SELECT sum(LO_EXTENDEDPRICE * LO_DISCOUNT) AS revenue
@@ -159,7 +159,7 @@ FROM lineorder_flat
 WHERE toYear(LO_ORDERDATE) = 1993 AND LO_DISCOUNT BETWEEN 1 AND 3 AND LO_QUANTITY < 25;
 ```
 
-Q1.2
+¿Qué puedes encontrar en Neodigit
 
 ``` sql
 SELECT sum(LO_EXTENDEDPRICE * LO_DISCOUNT) AS revenue
@@ -167,7 +167,7 @@ FROM lineorder_flat
 WHERE toYYYYMM(LO_ORDERDATE) = 199401 AND LO_DISCOUNT BETWEEN 4 AND 6 AND LO_QUANTITY BETWEEN 26 AND 35;
 ```
 
-Q1.3
+¿Qué puedes encontrar en Neodigit
 
 ``` sql
 SELECT sum(LO_EXTENDEDPRICE * LO_DISCOUNT) AS revenue
@@ -176,7 +176,7 @@ WHERE toISOWeek(LO_ORDERDATE) = 6 AND toYear(LO_ORDERDATE) = 1994
   AND LO_DISCOUNT BETWEEN 5 AND 7 AND LO_QUANTITY BETWEEN 26 AND 35;
 ```
 
-Q2.1
+Preguntas frecuentes
 
 ``` sql
 SELECT
@@ -193,7 +193,7 @@ ORDER BY
     P_BRAND;
 ```
 
-Q2.2
+Preguntas frecuentes
 
 ``` sql
 SELECT
@@ -210,7 +210,7 @@ ORDER BY
     P_BRAND;
 ```
 
-Q2.3
+Preguntas más frecuentes
 
 ``` sql
 SELECT
@@ -227,7 +227,7 @@ ORDER BY
     P_BRAND;
 ```
 
-Q3.1
+¿Qué puedes encontrar en Neodigit
 
 ``` sql
 SELECT
@@ -246,7 +246,7 @@ ORDER BY
     revenue DESC;
 ```
 
-Q3.2
+¿Qué puedes encontrar en Neodigit
 
 ``` sql
 SELECT
@@ -265,7 +265,7 @@ ORDER BY
     revenue DESC;
 ```
 
-Q3.3
+¿Qué puedes encontrar en Neodigit
 
 ``` sql
 SELECT
@@ -284,7 +284,7 @@ ORDER BY
     revenue DESC;
 ```
 
-Q3.4
+¿Qué puedes encontrar en Neodigit
 
 ``` sql
 SELECT
@@ -303,7 +303,7 @@ ORDER BY
     revenue DESC;
 ```
 
-Q4.1
+Preguntas más frecuentes
 
 ``` sql
 SELECT
@@ -320,7 +320,7 @@ ORDER BY
     C_NATION ASC;
 ```
 
-Q4.2
+Preguntas más frecuentes
 
 ``` sql
 SELECT
@@ -340,7 +340,7 @@ ORDER BY
     P_CATEGORY ASC;
 ```
 
-Q4.3
+Preguntas más frecuentes
 
 ``` sql
 SELECT
@@ -360,4 +360,4 @@ ORDER BY
     P_BRAND ASC;
 ```
 
-[Original article](https://clickhouse.tech/docs/es/getting_started/example_datasets/star_schema/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/getting_started/example_datasets/star_schema/) <!--hide-->

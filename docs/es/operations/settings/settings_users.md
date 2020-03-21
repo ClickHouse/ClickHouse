@@ -63,7 +63,7 @@ La contraseña se puede especificar en texto sin formato o en SHA256 (formato he
 
     La primera línea del resultado es la contraseña. La segunda línea es el hash SHA1 doble correspondiente.
 
-### user\_name/redes {#user-namenetworks}
+### Nombre\_usuario/redes {#user-namenetworks}
 
 Lista de redes desde las que el usuario puede conectarse al servidor ClickHouse.
 
@@ -105,11 +105,11 @@ Para abrir el acceso solo desde localhost, especifique:
 <ip>127.0.0.1</ip>
 ```
 
-### user\_name/perfil {#user-nameprofile}
+### Nombre\_usuario/perfil {#user-nameprofile}
 
 Puede asignar un perfil de configuración para el usuario. Los perfiles de configuración se configuran en una sección separada del `users.xml` file. Para obtener más información, consulte [Perfiles de configuración](settings_profiles.md).
 
-### user\_name/cuota {#user-namequota}
+### Nombre\_usuario/cuota {#user-namequota}
 
 Las cuotas le permiten realizar un seguimiento o limitar el uso de recursos durante un período de tiempo. Las cuotas se configuran en el `quotas`
 sección de la `users.xml` archivo de configuración.
@@ -122,7 +122,7 @@ En esta sección, puede limitar las filas devueltas por ClickHouse para `SELECT`
 
 **Ejemplo**
 
-La siguiente configuración obliga a que el usuario `user1` sólo puede ver las filas de `table1` como resultado de `SELECT` consultas, donde el valor de la `id` campo es 1000.
+La siguiente configuración obliga a que el usuario `user1` sólo puede ver las filas de `table1` como resultado de `SELECT` Consultas, donde el valor de la `id` campo es 1000.
 
 ``` xml
 <user1>

@@ -76,7 +76,7 @@ Las réplicas están duplicando servidores (para leer todos los datos, puede acc
 
 Los nombres de clúster no deben contener puntos.
 
-Los parámetros `host`, `port`, y opcionalmente `user`, `password`, `secure`, `compression` se especifican para cada servidor:
+Los parámetros `host`, `port`, y opcionalmente `user`, `password`, `secure`, `compression` Se especifican para cada servidor:
 - `host` – La dirección del servidor remoto. Puede utilizar el dominio o la dirección IPv4 o IPv6. Si especifica el dominio, el servidor realiza una solicitud DNS cuando se inicia y el resultado se almacena mientras el servidor se esté ejecutando. Si la solicitud DNS falla, el servidor no se inicia. Si cambia el registro DNS, reinicie el servidor.
 - `port` – El puerto TCP para la actividad de mensajería (‘tcp\_port’ en la configuración, generalmente establecido en 9000). No lo confundas con http\_port.
 - `user` – Nombre del usuario para conectarse a un servidor remoto. Valor predeterminado: predeterminado. Este usuario debe tener acceso para conectarse al servidor especificado. El acceso se configura en los usuarios.archivo xml. Para obtener más información, consulte la sección [Derechos de acceso](../../operations/access_rights.md).
@@ -114,7 +114,7 @@ Si este parámetro se establece en ‘true’, la operación de escritura selecc
 
 Si se establece en ‘false’ (el valor predeterminado), los datos se escriben en todas las réplicas. En esencia, esto significa que la tabla distribuida replica los datos en sí. Esto es peor que usar tablas replicadas, porque no se verifica la consistencia de las réplicas y, con el tiempo, contendrán datos ligeramente diferentes.
 
-Para seleccionar el fragmento al que se envía una fila de datos, se analiza la expresión de fragmentación y su resto se toma de dividirlo por el peso total de los fragmentos. La fila se envía al fragmento que corresponde al medio intervalo de los restos de ‘prev\_weight’ a ‘prev\_weights + weight’, donde ‘prev\_weights’ es el peso total de los fragmentos con el número más pequeño, y ‘weight’ es el peso de este fragmento. Por ejemplo, si hay dos fragmentos, y el primero tiene un peso de 9 mientras que el segundo tiene un peso de 10, la fila se enviará al primer fragmento para los restos del rango \[0, 9), y al segundo para los restos del rango \[9, 19).
+Para seleccionar el fragmento al que se envía una fila de datos, se analiza la expresión de fragmentación y su resto se toma de dividirlo por el peso total de los fragmentos. La fila se envía al fragmento que corresponde al medio intervalo de los restos de ‘prev\_weight’ Naciones ‘prev\_weights + weight’, donde ‘prev\_weights’ es el peso total de los fragmentos con el número más pequeño, y ‘weight’ es el peso de este fragmento. Por ejemplo, si hay dos fragmentos, y el primero tiene un peso de 9 mientras que el segundo tiene un peso de 10, la fila se enviará al primer fragmento para los restos del rango \[0, 9), y al segundo para los restos del rango \[9, 19).
 
 La expresión de fragmentación puede ser cualquier expresión de constantes y columnas de tabla que devuelva un entero. Por ejemplo, puede usar la expresión ‘rand()’ para la distribución aleatoria de datos, o ‘UserID’ para la distribución por el resto de dividir el ID del usuario (entonces los datos de un solo usuario residirán en un solo fragmento, lo que simplifica la ejecución de IN y JOIN por los usuarios). Si una de las columnas no se distribuye lo suficientemente uniformemente, puede envolverla en una función hash: intHash64(UserID) .
 
@@ -133,7 +133,7 @@ Si el servidor dejó de existir o tuvo un reinicio aproximado (por ejemplo, desp
 
 Cuando la opción max\_parallel\_replicas está habilitada, el procesamiento de consultas se paralela en todas las réplicas dentro de un solo fragmento. Para obtener más información, consulte la sección [max\_parallel\_replicas](../settings/settings.md#settings-max_parallel_replicas).
 
-## Virtual Columnas {#virtual-columns}
+## Columnas virtuales {#virtual-columns}
 
 -   `_shard_num` — Contiene el `shard_num` (de `system.clusters`). Tipo: [UInt32](../../data_types/int_uint.md).
 
@@ -142,6 +142,6 @@ Cuando la opción max\_parallel\_replicas está habilitada, el procesamiento de 
 
 **Ver también**
 
--   [Virtual columnas](index.md#table_engines-virtual_columns)
+-   [Columnas virtuales](index.md#table_engines-virtual_columns)
 
 [Artículo Original](https://clickhouse.tech/docs/es/operations/table_engines/distributed/) <!--hide-->

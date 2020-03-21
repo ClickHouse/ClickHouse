@@ -1,8 +1,8 @@
 # ReplacingMergeTree {#replacingmergetree}
 
-El motor difiere de [Método de codificación de datos:](mergetree.md#table_engines-mergetree) en que elimina las entradas duplicadas con el mismo valor de clave principal (o más exactamente, con el mismo [clave de clasificación](mergetree.md) valor).
+El motor difiere de [Método de codificación de datos:](mergetree.md#table_engines-mergetree) en que elimina las entradas duplicadas con el mismo valor de clave principal (o más exactamente, con el mismo [clave de clasificación](mergetree.md) de valor).
 
-La desduplicación de datos solo se produce durante una fusión. La fusión se produce en segundo plano en un momento desconocido, por lo que no se puede planificar para ello. Algunos de los datos pueden permanecer sin procesar. Aunque puede ejecutar una fusión no programada utilizando el `OPTIMIZE` consulta, no cuente con su uso, porque el `OPTIMIZE` consulta leerá y escribirá una gran cantidad de datos.
+La desduplicación de datos solo se produce durante una fusión. La fusión se produce en segundo plano en un momento desconocido, por lo que no se puede planificar para ello. Algunos de los datos pueden permanecer sin procesar. Aunque puede ejecutar una fusión no programada utilizando el `OPTIMIZE` Consulta, no cuente con su uso, porque el `OPTIMIZE` consulta leerá y escribirá una gran cantidad de datos.
 
 Así, `ReplacingMergeTree` es adecuado para borrar datos duplicados en segundo plano para ahorrar espacio, pero no garantiza la ausencia de duplicados.
 

@@ -30,7 +30,7 @@ Por ejemplo:
 SELECT * FROM table INTO OUTFILE 'file'
 ```
 
-De forma predeterminada, ClickHouse usa el [TabSeparated](../interfaces/formats.md#tabseparated) formato de datos de salida. Para seleccionar el [formato de datos](../interfaces/formats.md), utilizar el [Cláusula FORMAT](../query_language/select/#format-clause).
+De forma predeterminada, ClickHouse usa el [TabSeparated](../interfaces/formats.md#tabseparated) formato de datos de salida. Para seleccionar el [Formato de datos](../interfaces/formats.md), utilizar el [Cláusula FORMAT](../query_language/select/#format-clause).
 
 Por ejemplo:
 

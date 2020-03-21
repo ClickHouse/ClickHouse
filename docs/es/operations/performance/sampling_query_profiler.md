@@ -22,9 +22,9 @@ Para analizar el `trace_log` tabla del sistema:
 
     Por razones de seguridad, las funciones de introspección están deshabilitadas de forma predeterminada.
 
--   Utilice el `addressToLine`, `addressToSymbol` y `demangle` [funciones de la introspección](../../query_language/functions/introspection.md) para obtener nombres de funciones y sus posiciones en el código ClickHouse. Para obtener un perfil para alguna consulta, debe agregar datos del `trace_log` tabla. Puede agregar datos por funciones individuales o por los seguimientos de pila completos.
+-   Descripción `addressToLine`, `addressToSymbol` y `demangle` [funciones de la introspección](../../query_language/functions/introspection.md) para obtener nombres de funciones y sus posiciones en el código ClickHouse. Para obtener un perfil para alguna consulta, debe agregar datos del `trace_log` tabla. Puede agregar datos por funciones individuales o por los seguimientos de pila completos.
 
-Si necesita visualizar `trace_log` información, intente [Flamegraph](../../interfaces/third-party/gui/#clickhouse-flamegraph) y [Nivel de Cifrado WEP](https://github.com/laplab/clickhouse-speedscope).
+Si necesita visualizar `trace_log` información, intente [Gráfico de llamas](../../interfaces/third-party/gui/#clickhouse-flamegraph) y [Nivel de Cifrado WEP](https://github.com/laplab/clickhouse-speedscope).
 
 ## Ejemplo {#example}
 

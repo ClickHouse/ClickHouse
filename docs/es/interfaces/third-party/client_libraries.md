@@ -1,50 +1,50 @@
-# Client Libraries from Third-party Developers {#client-libraries-from-third-party-developers}
+# Bibliotecas de clientes de desarrolladores de terceros {#client-libraries-from-third-party-developers}
 
-!!! warning "Disclaimer"
-    Yandex does **not** maintain the libraries listed below and haven’t done any extensive testing to ensure their quality.
+!!! warning "Descargo"
+    Yandex hace **ni** mantenga las bibliotecas enumeradas a continuación y no haya realizado ninguna prueba extensa para garantizar su calidad.
 
--   Python
-    -   [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm)
-    -   [clickhouse-driver](https://github.com/mymarilyn/clickhouse-driver)
-    -   [clickhouse-client](https://github.com/yurial/clickhouse-client)
-    -   [aiochclient](https://github.com/maximdanilchenko/aiochclient)
+-   Película
+    -   [InformaciónSistema abierto.](https://github.com/Infinidat/infi.clickhouse_orm)
+    -   [Casa de clics-conductor](https://github.com/mymarilyn/clickhouse-driver)
+    -   [Casa de clics-cliente](https://github.com/yurial/clickhouse-client)
+    -   [Aiochclient](https://github.com/maximdanilchenko/aiochclient)
 -   PHP
-    -   [SeasClick](https://github.com/SeasX/SeasClick)
-    -   [phpClickHouse](https://github.com/smi2/phpClickHouse)
-    -   [clickhouse-php-client](https://github.com/8bitov/clickhouse-php-client)
-    -   [clickhouse-client](https://github.com/bozerkins/clickhouse-client)
+    -   [Método de codificación de datos:](https://github.com/SeasX/SeasClick)
+    -   [Inicio](https://github.com/smi2/phpClickHouse)
+    -   [Sistema abierto.](https://github.com/8bitov/clickhouse-php-client)
+    -   [Casa de clics-cliente](https://github.com/bozerkins/clickhouse-client)
     -   [PhpClickHouseClient](https://github.com/SevaCode/PhpClickHouseClient)
--   Go
-    -   [clickhouse](https://github.com/kshvakov/clickhouse/)
-    -   [go-clickhouse](https://github.com/roistat/go-clickhouse)
-    -   [mailrugo-clickhouse](https://github.com/mailru/go-clickhouse)
-    -   [golang-clickhouse](https://github.com/leprosus/golang-clickhouse)
+-   Ve
+    -   [Casa de clics](https://github.com/kshvakov/clickhouse/)
+    -   [Sistema abierto.](https://github.com/roistat/go-clickhouse)
+    -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/mailru/go-clickhouse)
+    -   [Golang-clickhouse](https://github.com/leprosus/golang-clickhouse)
 -   NodeJs
-    -   [clickhouse (NodeJs)](https://github.com/TimonKK/clickhouse)
-    -   [node-clickhouse](https://github.com/apla/node-clickhouse)
+    -   [Casa de clic (NodeJs)](https://github.com/TimonKK/clickhouse)
+    -   [Inicio](https://github.com/apla/node-clickhouse)
 -   Perl
-    -   [perl-DBD-ClickHouse](https://github.com/elcamlost/perl-DBD-ClickHouse)
-    -   [HTTP-ClickHouse](https://metacpan.org/release/HTTP-ClickHouse)
-    -   [AnyEvent-ClickHouse](https://metacpan.org/release/AnyEvent-ClickHouse)
--   Ruby
-    -   [ClickHouse (Ruby)](https://github.com/shlima/click_house)
+    -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/elcamlost/perl-DBD-ClickHouse)
+    -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://metacpan.org/release/HTTP-ClickHouse)
+    -   [Cualquier evento-ClickHouse](https://metacpan.org/release/AnyEvent-ClickHouse)
+-   Rubí
+    -   [Haga clic en Casa (Ruby)](https://github.com/shlima/click_house)
 -   R
-    -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
-    -   [RClickhouse](https://github.com/IMSMWU/RClickhouse)
+    -   [Sistema abierto.](https://github.com/hannesmuehleisen/clickhouse-r)
+    -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/IMSMWU/RClickhouse)
 -   Java
-    -   [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)
-    -   [clickhouse-client](https://github.com/Ecwid/clickhouse-client)
--   Scala
-    -   [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
--   Kotlin
+    -   [Casa de clic-cliente-java](https://github.com/VirtusAI/clickhouse-client-java)
+    -   [Casa de clics-cliente](https://github.com/Ecwid/clickhouse-client)
+-   Ciudad
+    -   [Sistema abierto.](https://github.com/crobox/clickhouse-scala-client)
+-   Bienvenido
     -   [AORM](https://github.com/TanVD/AORM)
 -   C\#
-    -   [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
-    -   [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
-    -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
+    -   [Sistema abierto.Ado](https://github.com/killwort/ClickHouse-Net)
+    -   [Sistema abierto.Cliente](https://github.com/DarkWanderer/ClickHouse.Client)
+    -   [Sistema abierto.](https://github.com/ilyabreev/ClickHouse.Net)
 -   Elixir
     -   [clickhousex](https://github.com/appodeal/clickhousex/)
 -   Nim
-    -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
+    -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/leonardoce/nim-clickhouse)
 
-[Original article](https://clickhouse.tech/docs/es/interfaces/third-party/client_libraries/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/interfaces/third-party/client_libraries/) <!--hide-->

@@ -2,7 +2,7 @@
 
 ## Por ejemplo:) {#splitbycharseparator-s}
 
-Divide una cadena en subcadenas separadas por ‘separator’.’separador’ debe ser una constante de cadena que consta de exactamente un carácter.
+Divide una cadena en subcadenas separadas por ‘separator’.'separador' debe ser una constante de cadena que consta de exactamente un carácter.
 Devuelve una matriz de subcadenas seleccionadas. Se pueden seleccionar subcadenas vacías si el separador aparece al principio o al final de la cadena, o si hay varios separadores consecutivos.
 
 **Ejemplo:**
@@ -45,7 +45,7 @@ SELECT splitByString('', 'abcde')
 
 ## Por ejemplo, se puede usar una matriz.\]) {#arraystringconcatarr-separator}
 
-Concatena las cadenas enumeradas en la matriz con el separador.’separador’ es un parámetro opcional: una cadena constante, establecida en una cadena vacía por defecto.
+Concatena las cadenas enumeradas en la matriz con el separador.'separador' es un parámetro opcional: una cadena constante, establecida en una cadena vacía por defecto.
 Devuelve la cadena.
 
 ## Sistema abierto.) {#alphatokenss}

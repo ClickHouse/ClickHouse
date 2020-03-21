@@ -1,14 +1,14 @@
-# ClickHouse Tutorial {#clickhouse-tutorial}
+# Tutorial de ClickHouse {#clickhouse-tutorial}
 
-## What to Expect from This Tutorial? {#what-to-expect-from-this-tutorial}
+## Qué Esperar de Este Tutorial? {#what-to-expect-from-this-tutorial}
 
-By going through this tutorial you’ll learn how to set up basic ClickHouse cluster, it’ll be small, but fault-tolerant and scalable. We will use one of the example datasets to fill it with data and execute some demo queries.
+Al pasar por este tutorial, aprenderá cómo configurar el clúster básico de ClickHouse, será pequeño, pero tolerante a fallos y escalable. Usaremos uno de los conjuntos de datos de ejemplo para llenarlo con datos y ejecutar algunas consultas de demostración.
 
-## Single Node Setup {#single-node-setup}
+## Configuración de nodo único {#single-node-setup}
 
-To postpone complexities of distributed environment, we’ll start with deploying ClickHouse on a single server or virtual machine. ClickHouse is usually installed from [deb](index.md#install-from-deb-packages) or [rpm](index.md#from-rpm-packages) packages, but there are [alternatives](index.md#from-docker-image) for the operating systems that do no support them.
+Para posponer las complejidades del entorno distribuido, comenzaremos con la implementación de ClickHouse en un único servidor o máquina virtual. ClickHouse generalmente se instala desde [deb](index.md#install-from-deb-packages) o [RPM](index.md#from-rpm-packages) paquetes, pero hay [alternativa](index.md#from-docker-image) para los sistemas operativos que no los admiten.
 
-For example, you have chosen `deb` packages and executed:
+Por ejemplo, ha elegido `deb` paquetes y ejecutado:
 
 ``` bash
 sudo apt-get install dirmngr
@@ -20,48 +20,48 @@ sudo apt-get update
 sudo apt-get install -y clickhouse-server clickhouse-client
 ```
 
-What do we have in the packages that got installed:
+¿Qué tenemos en los paquetes que tengo instalados:
 
--   `clickhouse-client` package contains [clickhouse-client](../interfaces/cli.md) application, interactive ClickHouse console client.
--   `clickhouse-common` package contains a ClickHouse executable file.
--   `clickhouse-server` package contains configuration files to run ClickHouse as a server.
+-   `clickhouse-client` el paquete contiene [Casa de clics-cliente](../interfaces/cli.md) aplicación, cliente interactivo de la consola ClickHouse.
+-   `clickhouse-common` El paquete contiene un archivo ejecutable ClickHouse.
+-   `clickhouse-server` El paquete contiene archivos de configuración para ejecutar ClickHouse como servidor.
 
-Server config files are located in `/etc/clickhouse-server/`. Before going further please notice the `<path>` element in `config.xml`. Path determines the location for data storage, so it should be located on volume with large disk capacity, the default value is `/var/lib/clickhouse/`. If you want to adjust the configuration it’s not handy to directly edit `config.xml` file, considering it might get rewritten on future package updates. The recommended way to override the config elements is to create [files in config.d directory](../operations/configuration_files.md) which serve as “patches” to config.xml.
+Los archivos de configuración del servidor se encuentran en `/etc/clickhouse-server/`. Antes de ir más lejos, tenga en cuenta el `<path>` elemento en `config.xml`. La ruta determina la ubicación para el almacenamiento de datos, por lo que debe ubicarse en un volumen con gran capacidad de disco, el valor predeterminado es `/var/lib/clickhouse/`. Si desea ajustar la configuración, no es útil editar directamente `config.xml` archivo, teniendo en cuenta que podría ser reescrito en futuras actualizaciones de paquetes. La forma recomendada de anular los elementos de configuración es crear [archivos en config.directorio d](../operations/configuration_files.md) que sirven como “patches” de configuración.XML.
 
-As you might have noticed, `clickhouse-server` is not launched automatically after package installation. It won’t be automatically restarted after updates either. The way you start the server depends on your init system, usually, it’s:
+Como habrás notado, `clickhouse-server` no se inicia automáticamente después de la instalación del paquete. Tampoco se reiniciará automáticamente después de las actualizaciones. La forma en que inicia el servidor depende de su sistema de inicio, generalmente, es:
 
 ``` bash
 sudo service clickhouse-server start
 ```
 
-or
+o
 
 ``` bash
 sudo /etc/init.d/clickhouse-server start
 ```
 
-The default location for server logs is `/var/log/clickhouse-server/`. The server will be ready to handle client connections once `Ready for connections` message was logged.
+La ubicación predeterminada para los registros del servidor es `/var/log/clickhouse-server/`. El servidor estará listo para manejar las conexiones de cliente una vez `Ready for connections` se registró el mensaje.
 
-Once the `clickhouse-server` is up and running, we can use `clickhouse-client` to connect to the server and run some test queries like `SELECT "Hello, world!";`.
+Una vez que el `clickhouse-server` está en funcionamiento, podemos usar `clickhouse-client` para conectarse al servidor y ejecutar algunas consultas de prueba como `SELECT "Hello, world!";`.
 
 <details markdown="1">
 
-<summary>Quick tips for clickhouse-client</summary>
-Interactive mode:
+<summary>Consejos rápidos para clickhouse-cliente</summary>
+Modo interactivo:
 
 ``` bash
 clickhouse-client
 clickhouse-client --host=... --port=... --user=... --password=...
 ```
 
-Enable multiline queries:
+Habilitar consultas multilínea:
 
 ``` bash
 clickhouse-client -m
 clickhouse-client --multiline
 ```
 
-Run queries in batch-mode:
+Ejecutar consultas en modo por lotes:
 
 ``` bash
 clickhouse-client --query='SELECT 1'
@@ -69,7 +69,7 @@ echo 'SELECT 1' | clickhouse-client
 clickhouse-client <<< 'SELECT 1'
 ```
 
-Insert data from a file in specified format:
+Insertar datos de un archivo en el formato especificado:
 
 ``` bash
 clickhouse-client --query='INSERT INTO table VALUES' < data.txt
@@ -78,39 +78,39 @@ clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' < data.tsv
 
 </details>
 
-## Import Sample Dataset {#import-sample-dataset}
+## Importar conjunto de datos de muestra {#import-sample-dataset}
 
-Now it’s time to fill our ClickHouse server with some sample data. In this tutorial, we’ll use anonymized data of Yandex.Metrica, the first service that runs ClickHouse in production way before it became open-source (more on that in [history section](../introduction/history.md)). There are [multiple ways to import Yandex.Metrica dataset](example_datasets/metrica.md) and for the sake of the tutorial, we’ll go with the most realistic one.
+Ahora es el momento de llenar nuestro servidor ClickHouse con algunos datos de muestra. En este tutorial, usaremos datos anónimos de Yandex.Metrica, el primer servicio que ejecuta ClickHouse en forma de producción antes de que se convirtiera en código abierto (más sobre eso en [sección de historia](../introduction/history.md)). Hay [múltiples formas de importar Yandex.Conjunto de datos de Metrica](example_datasets/metrica.md) y por el bien del tutorial, iremos con el más realista.
 
-### Download and Extract Table Data {#download-and-extract-table-data}
+### Descargar y extraer datos de tabla {#download-and-extract-table-data}
 
 ``` bash
 curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
 curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
 ```
 
-The extracted files are about 10GB in size.
+Los archivos extraídos tienen un tamaño de aproximadamente 10 GB.
 
-### Create Tables {#create-tables}
+### Crear tablas {#create-tables}
 
-Tables are logically grouped into “databases”. There’s a `default` database, but we’ll create a new one named `tutorial`:
+Las tablas se agrupan lógicamente en “databases”. Hay un `default` base de datos, pero crearemos una nueva llamada `tutorial`:
 
 ``` bash
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tutorial"
 ```
 
-Syntax for creating tables is way more complicated compared to databases (see [reference](../query_language/create.md). In general `CREATE TABLE` statement has to specify three key things:
+La sintaxis para crear tablas es mucho más complicada en comparación con las bases de datos (ver [referencia](../query_language/create.md). En general `CREATE TABLE` declaración tiene que especificar tres cosas clave:
 
-1.  Name of table to create.
-2.  Table schema, i.e. list of columns and their [data types](../data_types/index.md).
-3.  [Table engine](../operations/table_engines/index.md) and it’s settings, which determines all the details on how queries to this table will be physically executed.
+1.  Nombre de la tabla que se va a crear.
+2.  Table schema, i.e. list of columns and their [tipos de datos](../data_types/index.md).
+3.  [Motor de tabla](../operations/table_engines/index.md) y su configuración, que determina todos los detalles sobre cómo se ejecutarán físicamente las consultas a esta tabla.
 
-Yandex.Metrica is a web analytics service and sample dataset doesn’t cover its full functionality, so there are only two tables to create:
+El Yandex.Metrica es un servicio de análisis web y el conjunto de datos de muestra no cubre toda su funcionalidad, por lo que solo hay dos tablas para crear:
 
--   `hits` is a table with each action done by all users on all websites covered by the service.
--   `visits` is a table that contains pre-built sessions instead of individual actions.
+-   `hits` es una tabla con cada acción realizada por todos los usuarios en todos los sitios web cubiertos por el servicio.
+-   `visits` es una tabla que contiene sesiones precompiladas en lugar de acciones individuales.
 
-Let’s see and execute the real create table queries for these tables:
+Veamos y ejecutemos las consultas de tabla de creación real para estas tablas:
 
 ``` sql
 CREATE TABLE tutorial.hits_v1
@@ -453,22 +453,22 @@ SAMPLE BY intHash32(UserID)
 SETTINGS index_granularity = 8192
 ```
 
-You can execute those queries using the interactive mode of `clickhouse-client` (just launch it in a terminal without specifying a query in advance) or try some [alternative interface](../interfaces/index.md) if you want.
+Puede ejecutar esas consultas utilizando el modo interactivo de `clickhouse-client` (simplemente ejecútelo en un terminal sin especificar una consulta por adelantado) o pruebe algunos [interfaz alternativa](../interfaces/index.md) Si quieres.
 
-As we can see, `hits_v1` uses the [basic MergeTree engine](../operations/table_engines/mergetree.md), while the `visits_v1` uses the [Collapsing](../operations/table_engines/collapsingmergetree.md) variant.
+Como podemos ver, `hits_v1` utiliza el [motor básico MergeTree](../operations/table_engines/mergetree.md), mientras que el `visits_v1` utiliza el [Derrumbar](../operations/table_engines/collapsingmergetree.md) variante.
 
-### Import Data {#import-data}
+### Importar datos {#import-data}
 
-Data import to ClickHouse is done via [INSERT INTO](../query_language/insert_into.md) query like in many other SQL databases. However data is usually provided in one of the [supported formats](../interfaces/formats.md) instead of `VALUES` clause (which is also supported).
+La importación de datos a ClickHouse se realiza a través de [INSERTAR EN](../query_language/insert_into.md) consulta como en muchas otras bases de datos SQL. Sin embargo, los datos generalmente se proporcionan en uno de los [Formatos soportados](../interfaces/formats.md) en lugar de `VALUES` cláusula (que también es compatible).
 
-The files we downloaded earlier are in tab-separated format, so here’s how to import them via console client:
+Los archivos que descargamos anteriormente están en formato separado por tabuladores, así que aquí le mostramos cómo importarlos a través del cliente de la consola:
 
 ``` bash
 clickhouse-client --query "INSERT INTO tutorial.hits_v1 FORMAT TSV" --max_insert_block_size=100000 < hits_v1.tsv
 clickhouse-client --query "INSERT INTO tutorial.visits_v1 FORMAT TSV" --max_insert_block_size=100000 < visits_v1.tsv
 ```
 
-ClickHouse has a lot of [settings to tune](../operations/settings/index.md) and one way to specify them in console client is via arguments, as we can see with `--max_insert_block_size`. The easiest way to figure out what settings are available, what do they mean and what the defaults are is to query the `system.settings` table:
+ClickHouse tiene un montón de [ajustes para sintonizar](../operations/settings/index.md) y una forma de especificarlos en el cliente de la consola es a través de argumentos, como podemos ver con `--max_insert_block_size`. La forma más fácil de averiguar qué configuraciones están disponibles, qué significan y cuáles son los valores predeterminados es consultar el `system.settings` tabla:
 
 ``` sql
 SELECT name, value, changed, description
@@ -479,23 +479,23 @@ FORMAT TSV
 max_insert_block_size    1048576    0    "The maximum block size for insertion, if we control the creation of blocks for insertion."
 ```
 
-Optionally you can [OPTIMIZE](../query_language/misc/#misc_operations-optimize) the tables after import. Tables that are configured with MergeTree-family engine always do merges of data parts in background to optimize data storage (or at least check if it makes sense). These queries will just force the table engine to do storage optimization right now instead of some time later:
+Opcionalmente se puede [OPTIMIZAR](../query_language/misc/#misc_operations-optimize) las tablas después de la importación. Las tablas que están configuradas con el motor de la familia MergeTree siempre fusionan partes de datos en segundo plano para optimizar el almacenamiento de datos (o al menos verificar si tiene sentido). Estas consultas solo obligarán al motor de tablas a realizar la optimización del almacenamiento en este momento en lugar de algún tiempo después:
 
 ``` bash
 clickhouse-client --query "OPTIMIZE TABLE tutorial.hits_v1 FINAL"
 clickhouse-client --query "OPTIMIZE TABLE tutorial.visits_v1 FINAL"
 ```
 
-This is I/O and CPU intensive operation so if the table constantly receives new data it’s better to leave it alone and let merges run in background.
+Esta es una operación intensiva de E / S y CPU, por lo que si la tabla recibe constantemente datos nuevos, es mejor dejarlo solo y dejar que las fusiones se ejecuten en segundo plano.
 
-Now we can check that the tables are successfully imported:
+Ahora podemos comprobar que las tablas se han importado correctamente:
 
 ``` bash
 clickhouse-client --query "SELECT COUNT(*) FROM tutorial.hits_v1"
 clickhouse-client --query "SELECT COUNT(*) FROM tutorial.visits_v1"
 ```
 
-## Example Queries {#example-queries}
+## Consultas de ejemplo {#example-queries}
 
 ``` sql
 SELECT
@@ -517,18 +517,18 @@ FROM tutorial.visits_v1
 WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403) AND (domain(StartURL) = 'yandex.ru')
 ```
 
-## Cluster Deployment {#cluster-deployment}
+## Implementación de clúster {#cluster-deployment}
 
-ClickHouse cluster is a homogenous cluster. Steps to set up:
+El clúster ClickHouse es un clúster homogéneo. Pasos para configurar:
 
-1.  Install ClickHouse server on all machines of the cluster
-2.  Set up cluster configs in configuration files
-3.  Create local tables on each instance
-4.  Create a [Distributed table](../operations/table_engines/distributed.md)
+1.  Instale el servidor ClickHouse en todas las máquinas del clúster
+2.  Configurar configuraciones de clúster en archivos de configuración
+3.  Crear tablas locales en cada instancia
+4.  Crear un [Tabla distribuida](../operations/table_engines/distributed.md)
 
-[Distributed table](../operations/table_engines/distributed.md) is actually a kind of “view” to local tables of ClickHouse cluster. SELECT query from a distributed table will be executed using resources of all cluster’s shards. You may specify configs for multiple clusters and create multiple distributed tables providing views to different clusters.
+[Tabla distribuida](../operations/table_engines/distributed.md) es en realidad una especie de “view” a las tablas locales del clúster ClickHouse. La consulta SELECT de una tabla distribuida se ejecutará utilizando recursos de todos los fragmentos del clúster. Puede especificar configuraciones para varios clústeres y crear varias tablas distribuidas que proporcionen vistas a diferentes clústeres.
 
-Example config for a cluster with three shards, one replica each:
+Ejemplo de configuración para un clúster con tres fragmentos, una réplica cada uno:
 
 ``` xml
 <remote_servers>
@@ -555,37 +555,37 @@ Example config for a cluster with three shards, one replica each:
 </remote_servers>
 ```
 
-For further demonstration let’s create a new local table with the same `CREATE TABLE` query that we used for `hits_v1`, but different table name:
+Para más demostraciones, creemos una nueva tabla local con la misma `CREATE TABLE` consulta que utilizamos para `hits_v1`, pero nombre de tabla diferente:
 
 ``` sql
 CREATE TABLE tutorial.hits_local (...) ENGINE = MergeTree() ...
 ```
 
-Creating a distributed table providing a view into local tables of the cluster:
+Creación de una tabla distribuida que proporcione una vista en las tablas locales del clúster:
 
 ``` sql
 CREATE TABLE tutorial.hits_all AS tutorial.hits_local
 ENGINE = Distributed(perftest_3shards_1replicas, tutorial, hits_local, rand());
 ```
 
-A common practice is to create similar Distributed tables on all machines of the cluster. This would allow running distributed queries on any machine of the cluster. Also there’s an alternative option to create temporary distributed table for a given SELECT query using [remote](../query_language/table_functions/remote.md) table function.
+Una práctica común es crear tablas distribuidas similares en todas las máquinas del clúster. Esto permitiría ejecutar consultas distribuidas en cualquier máquina del clúster. También hay una opción alternativa para crear una tabla distribuida temporal para una consulta SELECT determinada usando [remoto](../query_language/table_functions/remote.md) función de la tabla.
 
-Let’s run [INSERT SELECT](../query_language/insert_into.md) into the Distributed table to spread the table to multiple servers.
+Vamos a correr [INSERTAR SELECCIONAR](../query_language/insert_into.md) en la tabla Distributed para extender la tabla a varios servidores.
 
 ``` sql
 INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
 ```
 
-!!! warning "Notice"
-    This approach is not suitable for sharding of large tables. There’s a separate tool [clickhouse-copier](../operations/utils/clickhouse-copier.md) that can re-shard arbitrary large tables.
+!!! warning "Aviso"
+    Este enfoque no es adecuado para la fragmentación de tablas grandes. Hay una herramienta separada [Método de codificación de datos:](../operations/utils/clickhouse-copier.md) que puede volver a fragmentar tablas grandes arbitrarias.
 
-As you could expect computationally heavy queries are executed N times faster being launched on 3 servers instead of one.
+Como era de esperar, las consultas computacionalmente pesadas se ejecutan N veces más rápido y se lanzan en 3 servidores en lugar de uno.
 
-In this case, we have used a cluster with 3 shards each contains a single replica.
+En este caso, hemos utilizado un clúster con 3 fragmentos, cada uno contiene una única réplica.
 
-To provide resilience in a production environment we recommend that each shard should contain 2-3 replicas distributed between multiple datacenters. Note that ClickHouse supports an unlimited number of replicas.
+Para proporcionar resiliencia en un entorno de producción, recomendamos que cada fragmento contenga 2-3 réplicas distribuidas entre varios centros de datos. Tenga en cuenta que ClickHouse admite un número ilimitado de réplicas.
 
-Example config for a cluster of one shard containing three replicas:
+Ejemplo de configuración para un clúster de un fragmento que contiene tres réplicas:
 
 ``` xml
 <remote_servers>
@@ -609,13 +609,13 @@ Example config for a cluster of one shard containing three replicas:
 </remote_servers>
 ```
 
-To enable native replication <a href="http://zookeeper.apache.org/" rel="external nofollow">ZooKeeper</a> is required. ClickHouse will take care of data consistency on all replicas and run restore procedure after failure
-automatically. It’s recommended to deploy ZooKeeper cluster to separate servers.
+Para habilitar la replicación nativa <a href="http://zookeeper.apache.org/" rel="external nofollow">ZooKeeper</a> se requiere. ClickHouse se encargará de la coherencia de los datos en todas las réplicas y ejecutará el procedimiento de restauración después de la falla
+automática. Se recomienda implementar el clúster ZooKeeper en servidores separados.
 
-ZooKeeper is not a strict requirement: in some simple cases, you can duplicate the data by writing it into all the replicas from your application code. This approach is **not** recommended, in this case, ClickHouse won’t be able to
-guarantee data consistency on all replicas. This remains the responsibility of your application.
+ZooKeeper no es un requisito estricto: en algunos casos simples, puede duplicar los datos escribiéndolos en todas las réplicas de su código de aplicación. Este enfoque es **ni** recomendado, en este caso, ClickHouse no podrá
+garantizar la coherencia de los datos en todas las réplicas. Esto sigue siendo responsabilidad de su aplicación.
 
-ZooKeeper locations need to be specified in the configuration file:
+Las ubicaciones de ZooKeeper deben especificarse en el archivo de configuración:
 
 ``` xml
 <zookeeper>
@@ -634,7 +634,7 @@ ZooKeeper locations need to be specified in the configuration file:
 </zookeeper>
 ```
 
-Also, we need to set macros for identifying each shard and replica, it will be used on table creation:
+Además, necesitamos establecer macros para identificar cada fragmento y réplica, se usará en la creación de la tabla:
 
 ``` xml
 <macros>
@@ -643,7 +643,7 @@ Also, we need to set macros for identifying each shard and replica, it will be u
 </macros>
 ```
 
-If there are no replicas at the moment on replicated table creation, a new first replica will be instantiated. If there are already live replicas, the new replica will clone the data from existing ones. You have an option to create all replicated tables first and that insert data to it. Another option is to create some replicas and add the others after or during data insertion.
+Si no hay réplicas en este momento en la creación de la tabla replicada, se creará una nueva primera réplica. Si ya hay réplicas activas, la nueva réplica clonará los datos de las existentes. Tiene la opción de crear primero todas las tablas replicadas e insertar datos en ella. Otra opción es crear algunas réplicas y agregar las otras después o durante la inserción de datos.
 
 ``` sql
 CREATE TABLE tutorial.hits_replica (...)
@@ -654,12 +654,12 @@ ENGINE = ReplcatedMergeTree(
 ...
 ```
 
-Here we use [ReplicatedMergeTree](../operations/table_engines/replication.md) table engine. In parameters we specify ZooKeeper path containing shard and replica identifiers.
+Aquí usamos [ReplicatedMergeTree](../operations/table_engines/replication.md) motor de mesa. En los parámetros, especificamos la ruta ZooKeeper que contiene identificadores de fragmentos y réplicas.
 
 ``` sql
 INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;
 ```
 
-Replication operates in multi-master mode. Data can be loaded into any replica and it will be synced with other instances automatically. Replication is asynchronous so at a given moment, not all replicas may contain recently inserted data. To allow data insertion at least one replica should be up. Others will sync up data and repair consistency once they will become active again. Please notice that such an approach allows for the low possibility of a loss of just appended data.
+La replicación funciona en modo multi-master. Los datos se pueden cargar en cualquier réplica y se sincronizarán con otras instancias automáticamente. La replicación es asíncrona, por lo que en un momento dado, no todas las réplicas pueden contener datos insertados recientemente. Para permitir la inserción de datos, al menos una réplica debe estar activa. Otros sincronizarán los datos y repararán la coherencia una vez que vuelvan a activarse. Tenga en cuenta que tal enfoque permite la baja posibilidad de una pérdida de datos que acaba de agregar.
 
-[Original article](https://clickhouse.tech/docs/es/getting_started/tutorial/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/getting_started/tutorial/) <!--hide-->

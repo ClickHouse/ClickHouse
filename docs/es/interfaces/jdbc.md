@@ -1,8 +1,8 @@
-# JDBC Driver {#jdbc-driver}
+# Controlador JDBC {#jdbc-driver}
 
--   **[Official driver](https://github.com/ClickHouse/clickhouse-jdbc)**
--   Third-party drivers:
-    -   [ClickHouse-Native-JDBC](https://github.com/housepower/ClickHouse-Native-JDBC)
-    -   [clickhouse4j](https://github.com/blynkkk/clickhouse4j)
+-   **[Conductor oficial](https://github.com/ClickHouse/clickhouse-jdbc)**
+-   Controladores de terceros:
+    -   [Sistema abierto.](https://github.com/housepower/ClickHouse-Native-JDBC)
+    -   [Método de codificación de datos:](https://github.com/blynkkk/clickhouse4j)
 
-[Original article](https://clickhouse.tech/docs/es/interfaces/jdbc/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/interfaces/jdbc/) <!--hide-->

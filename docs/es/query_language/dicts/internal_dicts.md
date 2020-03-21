@@ -1,48 +1,48 @@
-# Internal dictionaries {#internal-dicts}
+# Diccionarios internos {#internal-dicts}
 
-ClickHouse contains a built-in feature for working with a geobase.
+ClickHouse contiene una función integrada para trabajar con una geobase.
 
-This allows you to:
+Esto le permite:
 
--   Use a region’s ID to get its name in the desired language.
--   Use a region’s ID to get the ID of a city, area, federal district, country, or continent.
--   Check whether a region is part of another region.
--   Get a chain of parent regions.
+-   Utilice el ID de una región para obtener su nombre en el idioma deseado.
+-   Utilice el ID de una región para obtener el ID de una ciudad, área, distrito federal, país o continente.
+-   Compruebe si una región es parte de otra región.
+-   Obtener una cadena de regiones principales.
 
-All the functions support “translocality,” the ability to simultaneously use different perspectives on region ownership. For more information, see the section “Functions for working with Yandex.Metrica dictionaries”.
+Todas las funciones de apoyo “translocality,” la capacidad de utilizar simultáneamente diferentes perspectivas sobre la propiedad de la región. Para obtener más información, consulte la sección “Functions for working with Yandex.Metrica dictionaries”.
 
-The internal dictionaries are disabled in the default package.
-To enable them, uncomment the parameters `path_to_regions_hierarchy_file` and `path_to_regions_names_files` in the server configuration file.
+Los diccionarios internos están deshabilitados en el paquete predeterminado.
+Para habilitarlos, descomente los parámetros `path_to_regions_hierarchy_file` y `path_to_regions_names_files` en el archivo de configuración del servidor.
 
-The geobase is loaded from text files.
+La geobase se carga desde archivos de texto.
 
-Place the `regions_hierarchy*.txt` files into the `path_to_regions_hierarchy_file` directory. This configuration parameter must contain the path to the `regions_hierarchy.txt` file (the default regional hierarchy), and the other files (`regions_hierarchy_ua.txt`) must be located in the same directory.
+Coloque el `regions_hierarchy*.txt` archivos en el `path_to_regions_hierarchy_file` directorio. Este parámetro de configuración debe contener la ruta `regions_hierarchy.txt` archivo (la jerarquía regional predeterminada), y los otros archivos (`regions_hierarchy_ua.txt`) debe estar ubicado en el mismo directorio.
 
-Put the `regions_names_*.txt` files in the `path_to_regions_names_files` directory.
+Ponga el `regions_names_*.txt` archivos en el `path_to_regions_names_files` Directorio.
 
-You can also create these files yourself. The file format is as follows:
+También puede crear estos archivos usted mismo. El formato de archivo es el siguiente:
 
-`regions_hierarchy*.txt`: TabSeparated (no header), columns:
+`regions_hierarchy*.txt`: TabSeparated (sin encabezado), columnas:
 
--   region ID (`UInt32`)
--   parent region ID (`UInt32`)
--   region type (`UInt8`): 1 - continent, 3 - country, 4 - federal district, 5 - region, 6 - city; other types don’t have values
--   population (`UInt32`) — optional column
+-   ID de la región (`UInt32`)
+-   ID de región padre (`UInt32`)
+-   tipo de región (`UInt8`): 1 - continente, 3 - país, 4 - distrito federal, 5 - región, 6 - ciudad; otros tipos no tienen valores
+-   población (`UInt32`) — optional column
 
-`regions_names_*.txt`: TabSeparated (no header), columns:
+`regions_names_*.txt`: TabSeparated (sin encabezado), columnas:
 
--   region ID (`UInt32`)
--   region name (`String`) — Can’t contain tabs or line feeds, even escaped ones.
+-   ID de la región (`UInt32`)
+-   nombre de la región (`String`) — Can't contain tabs or line feeds, even escaped ones.
 
-A flat array is used for storing in RAM. For this reason, IDs shouldn’t be more than a million.
+Una matriz plana se usa para almacenar en RAM. Por esta razón, los ID no deberían ser más de un millón.
 
-Dictionaries can be updated without restarting the server. However, the set of available dictionaries is not updated.
-For updates, the file modification times are checked. If a file has changed, the dictionary is updated.
-The interval to check for changes is configured in the `builtin_dictionaries_reload_interval` parameter.
-Dictionary updates (other than loading at first use) do not block queries. During updates, queries use the old versions of dictionaries. If an error occurs during an update, the error is written to the server log, and queries continue using the old version of dictionaries.
+Los diccionarios se pueden actualizar sin reiniciar el servidor. Sin embargo, el conjunto de diccionarios disponibles no se actualiza.
+Para las actualizaciones, se comprueban los tiempos de modificación de archivos. Si un archivo ha cambiado, el diccionario se actualiza.
+El intervalo para comprobar si hay cambios se configura en el `builtin_dictionaries_reload_interval` parámetro.
+Las actualizaciones del diccionario (aparte de la carga al primer uso) no bloquean las consultas. Durante las actualizaciones, las consultas utilizan las versiones anteriores de los diccionarios. Si se produce un error durante una actualización, el error se escribe en el registro del servidor y las consultas continúan utilizando la versión anterior de los diccionarios.
 
-We recommend periodically updating the dictionaries with the geobase. During an update, generate new files and write them to a separate location. When everything is ready, rename them to the files used by the server.
+Recomendamos actualizar periódicamente los diccionarios con la geobase. Durante una actualización, genere nuevos archivos y escríbalos en una ubicación separada. Cuando todo esté listo, cambie el nombre a los archivos utilizados por el servidor.
 
-There are also functions for working with OS identifiers and Yandex.Metrica search engines, but they shouldn’t be used.
+También hay funciones para trabajar con identificadores de sistema operativo y Yandex.Motores de búsqueda Metrica, pero no deben ser utilizados.
 
-[Original article](https://clickhouse.tech/docs/es/query_language/dicts/internal_dicts/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/query_language/dicts/internal_dicts/) <!--hide-->

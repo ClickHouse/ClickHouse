@@ -1,12 +1,12 @@
-# Anonymized Yandex.Metrica Data {#anonymized-yandex-metrica-data}
+# Yandex anonimizado.Metrica Datos {#anonymized-yandex-metrica-data}
 
-Dataset consists of two tables containing anonymized data about hits (`hits_v1`) and visits (`visits_v1`) of Yandex.Metrica. You can read more about Yandex.Metrica in [ClickHouse history](../../introduction/history.md) section.
+El conjunto de datos consta de dos tablas que contienen datos anónimos sobre los hits (`hits_v1`) y visitas (`visits_v1`) el Yandex.Métrica. Puedes leer más sobre Yandex.Metrica en [Historial de ClickHouse](../../introduction/history.md) apartado.
 
-The dataset consists of two tables, either of them can be downloaded as a compressed `tsv.xz` file or as prepared partitions. In addition to that, an extended version of the `hits` table containing 100 million rows is available as TSV at https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits\_100m\_obfuscated\_v1.tsv.xz and as prepared partitions at https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits\_100m\_obfuscated\_v1.tar.xz.
+El conjunto de datos consta de dos tablas, cualquiera de ellas se puede descargar como `tsv.xz` o como particiones preparadas. Además, una versión extendida de la `hits` La tabla que contiene 100 millones de filas está disponible como TSV en https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits\_100m\_obfuscated\_v1.tsv.xz y como particiones preparadas en https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits\_100m\_obfuscated\_v1.tar.xz.
 
-## Obtaining Tables from Prepared Partitions {#obtaining-tables-from-prepared-partitions}
+## Obtención de tablas a partir de particiones preparadas {#obtaining-tables-from-prepared-partitions}
 
-Download and import hits table:
+Descargar e importar tabla de hits:
 
 ``` bash
 curl -O https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_v1.tar
@@ -16,7 +16,7 @@ sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 ```
 
-Download and import visits:
+Descargar e importar visitas:
 
 ``` bash
 curl -O https://clickhouse-datasets.s3.yandex.net/visits/partitions/visits_v1.tar
@@ -26,9 +26,9 @@ sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## Obtaining Tables from Compressed TSV File {#obtaining-tables-from-compressed-tsv-file}
+## Obtención de tablas a partir de un archivo TSV comprimido {#obtaining-tables-from-compressed-tsv-file}
 
-Download and import hits from compressed TSV file:
+Descargar e importar hits desde un archivo TSV comprimido:
 
 ``` bash
 curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
@@ -42,7 +42,7 @@ clickhouse-client --query "OPTIMIZE TABLE datasets.hits_v1 FINAL"
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 ```
 
-Download and import visits from compressed tsv-file:
+Descargue e importe visitas desde un archivo tsv comprimido:
 
 ``` bash
 curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
@@ -56,8 +56,8 @@ clickhouse-client --query "OPTIMIZE TABLE datasets.visits_v1 FINAL"
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## Example Queries {#example-queries}
+## Consultas de ejemplo {#example-queries}
 
-[ClickHouse tutorial](../../getting_started/tutorial.md) is based on Yandex.Metrica dataset and the recommended way to get started with this dataset is to just go through tutorial.
+[Tutorial de ClickHouse](../../getting_started/tutorial.md) se basa en Yandex.El conjunto de datos de Metrica y la forma recomendada de comenzar con este conjunto de datos es simplemente pasar por el tutorial.
 
-Additional examples of queries to these tables can be found among [stateful tests](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/tests/queries/1_stateful) of ClickHouse (they are named `test.hists` and `test.visits` there).
+Se pueden encontrar ejemplos adicionales de consultas a estas tablas entre [pruebas estatales](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/tests/queries/1_stateful) de ClickHouse (se nombran `test.hists` y `test.visits` Todos los derechos reservados.

@@ -1,18 +1,18 @@
 # AggregateFunction(name, types\_of\_arguments…) {#data-type-aggregatefunction}
 
-The intermediate state of an aggregate function. To get it, use aggregate functions with the `-State` suffix. To get aggregated data in the future, you must use the same aggregate functions with the `-Merge`suffix.
+El estado intermedio de una función agregada. Para obtenerlo, use funciones agregadas con el `-State` sufijo. Para obtener datos agregados en el futuro, debe utilizar las mismas funciones agregadas con el `-Merge`sufijo.
 
 `AggregateFunction` — parametric data type.
 
-**Parameters**
+**Parámetros**
 
--   Name of the aggregate function.
+-   Nombre de la función de agregado.
 
         If the function is parametric specify its parameters too.
 
--   Types of the aggregate function arguments.
+-   Tipos de los argumentos de la función agregada.
 
-**Example**
+**Ejemplo**
 
 ``` sql
 CREATE TABLE t
@@ -23,32 +23,32 @@ CREATE TABLE t
 ) ENGINE = ...
 ```
 
-[uniq](../../query_language/agg_functions/reference.md#agg_function-uniq), anyIf ([any](../../query_language/agg_functions/reference.md#agg_function-any)+[If](../../query_language/agg_functions/combinators.md#agg-functions-combinator-if)) and [quantiles](../../query_language/agg_functions/reference.md) are the aggregate functions supported in ClickHouse.
+[uniq](../../query_language/agg_functions/reference.md#agg_function-uniq), anyIf ([cualquier](../../query_language/agg_functions/reference.md#agg_function-any)+[Si](../../query_language/agg_functions/combinators.md#agg-functions-combinator-if)) y [cantiles](../../query_language/agg_functions/reference.md) son las funciones agregadas admitidas en ClickHouse.
 
-## Usage {#usage}
+## Uso {#usage}
 
-### Data Insertion {#data-insertion}
+### Inserción de datos {#data-insertion}
 
-To insert data, use `INSERT SELECT` with aggregate `-State`- functions.
+Para insertar datos, utilice `INSERT SELECT` con agregado `-State`- función.
 
-**Function examples**
+**Ejemplos de funciones**
 
 ``` sql
 uniqState(UserID)
 quantilesState(0.5, 0.9)(SendTiming)
 ```
 
-In contrast to the corresponding functions `uniq` and `quantiles`, `-State`- functions return the state, instead of the final value. In other words, they return a value of `AggregateFunction` type.
+En contraste con las funciones correspondientes `uniq` y `quantiles`, `-State`- funciones devuelven el estado, en lugar del valor final. En otras palabras, devuelven un valor de `AggregateFunction` tipo.
 
-In the results of `SELECT` query, the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. If dump data into, for example, `TabSeparated` format with `SELECT` query then this dump can be loaded back using `INSERT` query.
+En los resultados de `SELECT` consulta, los valores de `AggregateFunction` tipo tiene representación binaria específica de la implementación para todos los formatos de salida de ClickHouse. Si volcar datos en, por ejemplo, `TabSeparated` Formato con `SELECT` Consulta entonces este volcado se puede cargar de nuevo usando `INSERT` consulta.
 
-### Data Selection {#data-selection}
+### Selección de datos {#data-selection}
 
-When selecting data from `AggregatingMergeTree` table, use `GROUP BY` clause and the same aggregate functions as when inserting data, but using `-Merge`suffix.
+Al seleccionar datos de `AggregatingMergeTree` mesa, uso `GROUP BY` cláusula y las mismas funciones agregadas que al insertar datos, pero usando `-Merge`sufijo.
 
-An aggregate function with `-Merge` suffix takes a set of states, combines them, and returns the result of complete data aggregation.
+Una función agregada con `-Merge` sufijo toma un conjunto de estados, los combina y devuelve el resultado de la agregación de datos completa.
 
-For example, the following two queries return the same result:
+Por ejemplo, las siguientes dos consultas devuelven el mismo resultado:
 
 ``` sql
 SELECT uniq(UserID) FROM table
@@ -56,8 +56,8 @@ SELECT uniq(UserID) FROM table
 SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP BY RegionID)
 ```
 
-## Usage Example {#usage-example}
+## Ejemplo de uso {#usage-example}
 
-See [AggregatingMergeTree](../../operations/table_engines/aggregatingmergetree.md) engine description.
+Ver [AgregaciónMergeTree](../../operations/table_engines/aggregatingmergetree.md) Descripción del motor.
 
-[Original article](https://clickhouse.tech/docs/es/data_types/nested_data_structures/aggregatefunction/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/data_types/nested_data_structures/aggregatefunction/) <!--hide-->

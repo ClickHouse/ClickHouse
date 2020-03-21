@@ -208,7 +208,7 @@ Convierte una fecha o fecha con hora en un número UInt16 que contiene el númer
 
 Convierte una fecha o fecha con hora en un número UInt8 que contiene el número de semana ISO.
 
-## ToWeek(fecha\[,modo\]) {#toweekdatemode}
+## ParaSemana(fecha\[,modo\]) {#toweekdatemode}
 
 Esta función devuelve el número de semana para la fecha o la fecha y hora. La forma de dos argumentos de toWeek() le permite especificar si la semana comienza el domingo o el lunes y si el valor de retorno debe estar en el rango de 0 a 53 o de 1 a 53. Si se omite el argumento mode, el modo predeterminado es 0.
 `toISOWeek()`es una función de compatibilidad que es equivalente a `toWeek(date,3)`.
@@ -282,12 +282,12 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 Acepta cero argumentos y devuelve la hora actual en uno de los momentos de ejecución de la solicitud.
 Esta función devuelve una constante, incluso si la solicitud tardó mucho en completarse.
 
-## hoy {#today}
+## Hoy {#today}
 
 Acepta cero argumentos y devuelve la fecha actual en uno de los momentos de ejecución de la solicitud.
 Lo mismo que ‘toDate(now())’.
 
-## ayer {#yesterday}
+## enfermería {#yesterday}
 
 Acepta cero argumentos y devuelve la fecha de ayer en uno de los momentos de ejecución de la solicitud.
 Lo mismo que ‘today() - 1’.
@@ -408,20 +408,20 @@ Para un intervalo de tiempo a partir de ‘StartTime’ y continuando por ‘Dur
 Por ejemplo, `timeSlots(toDateTime('2012-01-01 12:20:00'), 600) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')]`.
 Esto es necesario para buscar páginas vistas en la sesión correspondiente.
 
-## formatDateTime(Hora, Formato\[, Zona horaria\]) {#formatdatetime}
+## FormatDateTime(Hora, Formato\[, Zona horaria\]) {#formatdatetime}
 
 La función da formato a una hora según una cadena de formato dada. NB: El formato es una expresión constante, por ejemplo, no puede tener múltiples formatos para una sola columna de resultado.
 
 Modificadores compatibles para Formato:
 (“Example” columna muestra el resultado de formateo para el tiempo `2018-01-02 22:33:44`)
 
-| Modificador      | Descripci                                                        | Ejemplo                          |
+| Modificador      | Descripción                                                      | Ejemplo                          |
 |------------------|------------------------------------------------------------------|----------------------------------|
 | %C               | año dividido por 100 y truncado a entero (00-99)                 | Veinte                           |
 | %d               | día del mes, cero acolchado (01-31)                              | Bienvenido                       |
-| %D               | Fecha corta de MM/DD/YY, equivalente a %m/%d/%y                  | Método de codificación de datos: |
+| %D               | Fecha corta de MM/DD/YY, equivalente a %m/%d/%a                  | Método de codificación de datos: |
 | %e               | día del mes, espacio acolchado ( 1-31)                           | Cómo hacer                       |
-| Categoría        | fecha corta AAAA-MM-DD, equivalente a %Y-%m-%d                   | Sistema abierto.                 |
+| Categoría        | fecha corta AAAA-MM-DD, equivalente de la onu %Y-%m-%d           | Sistema abierto.                 |
 | %H               | hora en formato 24h (00-23)                                      | Veintidos                        |
 | %Me              | hora en formato 12h (01-12)                                      | Diez                             |
 | %j               | día del año (001-366)                                            | Categoría                        |
@@ -431,13 +431,13 @@ Modificadores compatibles para Formato:
 | %p               | Designación AM o PM                                              | PM                               |
 | %R               | HH de 24 horas: Tiempo del milímetro, equivalente a %H: %M       | 22:33                            |
 | %S               | segundo (00-59)                                                  | Sistema abierto.                 |
-| % t              | carácter de pestaña horizontal (’)                               |                                  |
+| % t              | carácter de pestaña horizontal (')                               |                                  |
 | Tipo de artículo | Formato de hora ISO 8601 (HH:MM:SS), equivalente a %H:%M:%S      | 22:33:44                         |
 | %u               | ISO 8601 día de la semana como número con el lunes como 1 (1-7)  | Cómo hacer                       |
 | %V               | Número de semana ISO 8601 (01-53)                                | Acerca de                        |
 | % w              | día de la semana como un número decimal con domingo como 0 (0-6) | Cómo hacer                       |
 | %y               | Año, últimos dos dígitos (00-99)                                 | Acerca de                        |
 | %Y               | Año                                                              | 2018 Nueva York                  |
-| %%               | signo                                                            | %                                |
+| %%               | Por qué?                                                         | %                                |
 
 [Artículo Original](https://clickhouse.tech/docs/es/query_language/functions/date_time_functions/) <!--hide-->

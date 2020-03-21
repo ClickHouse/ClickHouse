@@ -1,24 +1,24 @@
-# Storing Dictionaries in Memory {#dicts-external-dicts-dict-layout}
+# Almacenamiento de diccionarios en la memoria {#dicts-external-dicts-dict-layout}
 
-There are a variety of ways to store dictionaries in memory.
+Hay una variad de formas de almacenar diccionarios en la memoria.
 
-We recommend [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) and [complex\_key\_hashed](#complex-key-hashed). which provide optimal processing speed.
+Recomendamos [Plano](#flat), [Hashed](#dicts-external_dicts_dict_layout-hashed) y [Método de codificación de datos:](#complex-key-hashed). que proporcionan una velocidad de procesamiento óptima.
 
-Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section “[cache](#cache)”.
+No se recomienda el almacenamiento en caché debido al rendimiento potencialmente bajo y las dificultades para seleccionar los parámetros óptimos. Lea más en la sección “[cache](#cache)”.
 
-There are several ways to improve dictionary performance:
+Hay varias formas de mejorar el rendimiento del diccionario:
 
--   Call the function for working with the dictionary after `GROUP BY`.
--   Mark attributes to extract as injective. An attribute is called injective if different attribute values correspond to different keys. So when `GROUP BY` uses a function that fetches an attribute value by the key, this function is automatically taken out of `GROUP BY`.
+-   Llame a la función para trabajar con el diccionario después `GROUP BY`.
+-   Marque los atributos para extraer como inyectivos. Un atributo se llama injective si diferentes valores de atributo corresponden a claves diferentes. Entonces, cuando `GROUP BY` utiliza una función que obtiene un valor de atributo mediante la clave, esta función se elimina automáticamente de `GROUP BY`.
 
-ClickHouse generates an exception for errors with dictionaries. Examples of errors:
+ClickHouse genera una excepción para errores con diccionarios. Ejemplos de errores:
 
--   The dictionary being accessed could not be loaded.
--   Error querying a `cached` dictionary.
+-   No se pudo cargar el diccionario al que se accede.
+-   Error al consultar un `cached` diccionario.
 
-You can view the list of external dictionaries and their statuses in the `system.dictionaries` table.
+Puede ver la lista de diccionarios externos y sus estados en el `system.dictionaries` tabla.
 
-The configuration looks like this:
+La configuración se ve así:
 
 ``` xml
 <yandex>
@@ -34,7 +34,7 @@ The configuration looks like this:
 </yandex>
 ```
 
-Corresponding [DDL-query](../create.md#create-dictionary-query):
+Correspondiente [Consulta DDL](../create.md#create-dictionary-query):
 
 ``` sql
 CREATE DICTIONARY (...)
@@ -43,28 +43,28 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 ...
 ```
 
-## Ways to Store Dictionaries in Memory {#ways-to-store-dictionaries-in-memory}
+## Maneras de almacenar diccionarios en la memoria {#ways-to-store-dictionaries-in-memory}
 
--   [flat](#flat)
--   [hashed](#dicts-external_dicts_dict_layout-hashed)
--   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
+-   [Plano](#flat)
+-   [Hashed](#dicts-external_dicts_dict_layout-hashed)
+-   [Sistema abierto.](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [cache](#cache)
 -   [range\_hashed](#range-hashed)
--   [complex\_key\_hashed](#complex-key-hashed)
--   [complex\_key\_cache](#complex-key-cache)
--   [ip\_trie](#ip-trie)
+-   [Método de codificación de datos:](#complex-key-hashed)
+-   [complejo\_key\_cache](#complex-key-cache)
+-   [Método de codificación de datos:](#ip-trie)
 
-### flat {#flat}
+### Plano {#flat}
 
-The dictionary is completely stored in memory in the form of flat arrays. How much memory does the dictionary use? The amount is proportional to the size of the largest key (in space used).
+El diccionario está completamente almacenado en la memoria en forma de matrices planas. ¿Cuánta memoria usa el diccionario? La cantidad es proporcional al tamaño de la clave más grande (en el espacio utilizado).
 
-The dictionary key has the `UInt64` type and the value is limited to 500,000. If a larger key is discovered when creating the dictionary, ClickHouse throws an exception and does not create the dictionary.
+La clave del diccionario tiene el `UInt64` tipo y el valor está limitado a 500.000. Si se descubre una clave más grande al crear el diccionario, ClickHouse produce una excepción y no crea el diccionario.
 
-All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
+Se admiten todos los tipos de fuentes. Al actualizar, los datos (de un archivo o de una tabla) se leen en su totalidad.
 
-This method provides the best performance among all available methods of storing the dictionary.
+Este método proporciona el mejor rendimiento entre todos los métodos disponibles para almacenar el diccionario.
 
-Configuration example:
+Ejemplo de configuración:
 
 ``` xml
 <layout>
@@ -72,19 +72,19 @@ Configuration example:
 </layout>
 ```
 
-or
+o
 
 ``` sql
 LAYOUT(FLAT())
 ```
 
-### hashed {#dicts-external-dicts-dict-layout-hashed}
+### Hashed {#dicts-external-dicts-dict-layout-hashed}
 
-The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
+El diccionario está completamente almacenado en la memoria en forma de una tabla hash. El diccionario puede contener cualquier número de elementos con cualquier identificador En la práctica, el número de claves puede alcanzar decenas de millones de elementos.
 
-All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
+Se admiten todos los tipos de fuentes. Al actualizar, los datos (de un archivo o de una tabla) se leen en su totalidad.
 
-Configuration example:
+Ejemplo de configuración:
 
 ``` xml
 <layout>
@@ -92,17 +92,17 @@ Configuration example:
 </layout>
 ```
 
-or
+o
 
 ``` sql
 LAYOUT(HASHED())
 ```
 
-### sparse\_hashed {#dicts-external-dicts-dict-layout-sparse-hashed}
+### Sistema abierto. {#dicts-external-dicts-dict-layout-sparse-hashed}
 
-Similar to `hashed`, but uses less memory in favor more CPU usage.
+Similar a `hashed`, pero usa menos memoria a favor más uso de CPU.
 
-Configuration example:
+Ejemplo de configuración:
 
 ``` xml
 <layout>
@@ -114,11 +114,11 @@ Configuration example:
 LAYOUT(SPARSE_HASHED())
 ```
 
-### complex\_key\_hashed {#complex-key-hashed}
+### Método de codificación de datos: {#complex-key-hashed}
 
-This type of storage is for use with composite [keys](external_dicts_dict_structure.md). Similar to `hashed`.
+Este tipo de almacenamiento es para su uso con material compuesto [claves](external_dicts_dict_structure.md). Similar a `hashed`.
 
-Configuration example:
+Ejemplo de configuración:
 
 ``` xml
 <layout>
@@ -132,11 +132,11 @@ LAYOUT(COMPLEX_KEY_HASHED())
 
 ### range\_hashed {#range-hashed}
 
-The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values.
+El diccionario se almacena en la memoria en forma de una tabla hash con una matriz ordenada de rangos y sus valores correspondientes.
 
-This storage method works the same way as hashed and allows using date/time (arbitrary numeric type) ranges in addition to the key.
+Este método de almacenamiento funciona de la misma manera que hash y permite el uso de intervalos de fecha / hora (tipo numérico arbitrario) además de la clave.
 
-Example: The table contains discounts for each advertiser in the format:
+Ejemplo: La tabla contiene descuentos para cada anunciante en el formato:
 
 ``` text
 +---------------|---------------------|-------------------|--------+
@@ -150,9 +150,9 @@ Example: The table contains discounts for each advertiser in the format:
 +---------------|---------------------|-------------------|--------+
 ```
 
-To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](external_dicts_dict_structure.md). These elements must contain elements `name` and`type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
+Para utilizar un ejemplo para intervalos de fechas, defina el `range_min` y `range_max` elementos en el [estructura](external_dicts_dict_structure.md). Estos elementos deben contener elementos `name` y`type` (si `type` no se especifica, se utilizará el tipo predeterminado - Fecha). `type` puede ser de cualquier tipo numérico (Fecha / DateTime / UInt64 / Int32 / otros).
 
-Example:
+Ejemplo:
 
 ``` xml
 <structure>
@@ -170,7 +170,7 @@ Example:
     ...
 ```
 
-or
+o
 
 ``` sql
 CREATE DICTIONARY somedict (
@@ -183,21 +183,21 @@ LAYOUT(RANGE_HASHED())
 RANGE(MIN first MAX last)
 ```
 
-To work with these dictionaries, you need to pass an additional argument to the `dictGetT` function, for which a range is selected:
+Para trabajar con estos diccionarios, debe pasar un argumento adicional al `dictGetT` función, para la que se selecciona un rango:
 
 ``` sql
 dictGetT('dict_name', 'attr_name', id, date)
 ```
 
-This function returns the value for the specified `id`s and the date range that includes the passed date.
+Esta función devuelve el valor para el `id`s y el intervalo de fechas que incluye la fecha pasada.
 
-Details of the algorithm:
+Detalles del algoritmo:
 
--   If the `id` is not found or a range is not found for the `id`, it returns the default value for the dictionary.
--   If there are overlapping ranges, you can use any.
--   If the range delimiter is `NULL` or an invalid date (such as 1900-01-01 or 2039-01-01), the range is left open. The range can be open on both sides.
+-   Si el `id` no se encuentra o no se encuentra un rango para el `id` devuelve el valor predeterminado para el diccionario.
+-   Si hay rangos superpuestos, puede usar cualquiera.
+-   Si el delimitador de rango es `NULL` o una fecha no válida (como 1900-01-01 o 2039-01-01), el rango se deja abierto. La gama puede estar abierta en ambos lados.
 
-Configuration example:
+Ejemplo de configuración:
 
 ``` xml
 <yandex>
@@ -232,7 +232,7 @@ Configuration example:
 </yandex>
 ```
 
-or
+o
 
 ``` sql
 CREATE DICTIONARY somedict(
@@ -247,18 +247,18 @@ RANGE(MIN StartTimeStamp MAX EndTimeStamp)
 
 ### cache {#cache}
 
-The dictionary is stored in a cache that has a fixed number of cells. These cells contain frequently used elements.
+El diccionario se almacena en una memoria caché que tiene un número fijo de celdas. Estas celdas contienen elementos de uso frecuente.
 
-When searching for a dictionary, the cache is searched first. For each block of data, all keys that are not found in the cache or are outdated are requested from the source using `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. The received data is then written to the cache.
+Al buscar un diccionario, primero se busca en la memoria caché. Para cada bloque de datos, todas las claves que no se encuentran en la memoria caché o están desactualizadas se solicitan desde el origen utilizando `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. Los datos recibidos se escriben en la memoria caché.
 
-For cache dictionaries, the expiration [lifetime](external_dicts_dict_lifetime.md) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used, and it is re-requested the next time it needs to be used.
-This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the `system.dictionaries` table.
+Para los diccionarios de caché, la caducidad [vida](external_dicts_dict_lifetime.md) de datos en la memoria caché se puede establecer. Si más tiempo que `lifetime` ha pasado desde que se cargaron los datos en una celda, el valor de la celda no se usa y se vuelve a solicitar la próxima vez que se deba usar.
+Esta es la menos efectiva de todas las formas de almacenar diccionarios. La velocidad de la memoria caché depende en gran medida de la configuración correcta y del escenario de uso. Un diccionario de tipo de caché funciona bien solo cuando las tasas de aciertos son lo suficientemente altas (recomendado 99% y superior). Puede ver la tasa de aciertos promedio en el `system.dictionaries` tabla.
 
-To improve cache performance, use a subquery with `LIMIT`, and call the function with the dictionary externally.
+Para mejorar el rendimiento de la caché, utilice una subconsulta con `LIMIT`, y llame a la función con el diccionario externamente.
 
-Supported [sources](external_dicts_dict_sources.md): MySQL, ClickHouse, executable, HTTP.
+Apoyar [fuente](external_dicts_dict_sources.md): MySQL, ClickHouse, ejecutable, HTTP.
 
-Example of settings:
+Ejemplo de configuración:
 
 ``` xml
 <layout>
@@ -269,31 +269,31 @@ Example of settings:
 </layout>
 ```
 
-or
+o
 
 ``` sql
 LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 ```
 
-Set a large enough cache size. You need to experiment to select the number of cells:
+Establezca un tamaño de caché lo suficientemente grande. Necesitas experimentar para seleccionar el número de celdas:
 
-1.  Set some value.
-2.  Run queries until the cache is completely full.
-3.  Assess memory consumption using the `system.dictionaries` table.
-4.  Increase or decrease the number of cells until the required memory consumption is reached.
+1.  Establecer algún valor.
+2.  Ejecute consultas hasta que la memoria caché esté completamente llena.
+3.  Evalúe el consumo de memoria utilizando el `system.dictionaries` tabla.
+4.  Aumente o disminuya el número de celdas hasta que se alcance el consumo de memoria requerido.
 
-!!! warning "Warning"
-    Do not use ClickHouse as a source, because it is slow to process queries with random reads.
+!!! warning "Advertencia"
+    No use ClickHouse como fuente, ya que es lento procesar consultas con lecturas aleatorias.
 
-### complex\_key\_cache {#complex-key-cache}
+### complejo\_key\_cache {#complex-key-cache}
 
-This type of storage is for use with composite [keys](external_dicts_dict_structure.md). Similar to `cache`.
+Este tipo de almacenamiento es para su uso con material compuesto [claves](external_dicts_dict_structure.md). Similar a `cache`.
 
-### ip\_trie {#ip-trie}
+### Método de codificación de datos: {#ip-trie}
 
-This type of storage is for mapping network prefixes (IP addresses) to metadata such as ASN.
+Este tipo de almacenamiento sirve para asignar prefijos de red (direcciones IP) a metadatos como ASN.
 
-Example: The table contains network prefixes and their corresponding AS number and country code:
+Ejemplo: La tabla contiene prefijos de red y su correspondiente número AS y código de país:
 
 ``` text
   +-----------------|-------|--------+
@@ -309,9 +309,9 @@ Example: The table contains network prefixes and their corresponding AS number a
   +-----------------|-------|--------+
 ```
 
-When using this type of layout, the structure must have a composite key.
+Cuando se utiliza este tipo de diseño, la estructura debe tener una clave compuesta.
 
-Example:
+Ejemplo:
 
 ``` xml
 <structure>
@@ -334,7 +334,7 @@ Example:
     ...
 ```
 
-or
+o
 
 ``` sql
 CREATE DICTIONARY somedict (
@@ -345,22 +345,22 @@ CREATE DICTIONARY somedict (
 PRIMARY KEY prefix
 ```
 
-The key must have only one String type attribute that contains an allowed IP prefix. Other types are not supported yet.
+La clave debe tener solo un atributo de tipo String que contenga un prefijo IP permitido. Todavía no se admiten otros tipos.
 
-For queries, you must use the same functions (`dictGetT` with a tuple) as for dictionaries with composite keys:
+Para consultas, debe utilizar las mismas funciones (`dictGetT` con una tupla) como para diccionarios con claves compuestas:
 
 ``` sql
 dictGetT('dict_name', 'attr_name', tuple(ip))
 ```
 
-The function takes either `UInt32` for IPv4, or `FixedString(16)` for IPv6:
+La función toma cualquiera `UInt32` para IPv4, o `FixedString(16)` para IPv6:
 
 ``` sql
 dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 ```
 
-Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
+Todavía no se admiten otros tipos. La función devuelve el atributo para el prefijo que corresponde a esta dirección IP. Si hay prefijos superpuestos, se devuelve el más específico.
 
-Data is stored in a `trie`. It must completely fit into RAM.
+Los datos se almacenan en un `trie`. Debe encajar completamente en la RAM.
 
-[Original article](https://clickhouse.tech/docs/es/query_language/dicts/external_dicts_dict_layout/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

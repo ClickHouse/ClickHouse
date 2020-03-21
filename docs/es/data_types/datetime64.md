@@ -1,20 +1,20 @@
 # DateTime64 {#data-type-datetime64}
 
-Allows to store an instant in time, that can be expressed as a calendar date and a time of a day, with defined sub-second precision
+Permite almacenar un instante en el tiempo, que se puede expresar como una fecha de calendario y una hora de un día, con una precisión de subsegundo definida
 
-Tick size (precision): 10<sup>-precision</sup> seconds
+Tamaño de la marca (precisión): 10<sup>-Precision</sup> segundo
 
-Syntax:
+Sintaxis:
 
 ``` sql
 DateTime64(precision, [timezone])
 ```
 
-Internally, stores data as a number of ‘ticks’ since epoch start (1970-01-01 00:00:00 UTC) as Int64. The tick resolution is determined by the precision parameter. Additionally, the `DateTime64` type can store time zone that is the same for the entire column, that affects how the values of the `DateTime64` type values are displayed in text format and how the values specified as strings are parsed (‘2020-01-01 05:00:01.000’). The time zone is not stored in the rows of the table (or in resultset), but is stored in the column metadata. See details in [DateTime](datetime.md).
+Internamente, almacena datos como un número de ‘ticks’ desde el inicio de la época (1970-01-01 00:00:00 UTC) como Int64. La resolución de tick está determinada por el parámetro precision. Además, el `DateTime64` tipo puede almacenar zona horaria que es la misma para toda la columna, que afecta a cómo los valores de la `DateTime64` Los valores de tipo se muestran en formato de texto y cómo se analizan los valores especificados como cadenas (‘2020-01-01 05:00:01.000’). La zona horaria no se almacena en las filas de la tabla (o en el conjunto de resultados), sino que se almacena en los metadatos de la columna. Ver detalles en [FechaHora](datetime.md).
 
-## Examples {#examples}
+## Ejemplos {#examples}
 
-**1.** Creating a table with `DateTime64`-type column and inserting data into it:
+**1.** Creación de una tabla con `DateTime64`-tipo de columna e insertar datos en ella:
 
 ``` sql
 CREATE TABLE dt
@@ -40,10 +40,10 @@ SELECT * FROM dt
 └─────────────────────────┴──────────┘
 ```
 
--   When inserting datetime as an integer, it is treated as an appropriately scaled Unix Timestamp (UTC). `1546300800000` (with precision 3) represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Europe/Moscow` (UTC+3) timezone specified, when outputting as a string the value will be shown as `'2019-01-01 03:00:00'`
--   When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Europe/Moscow` timezone and stored as `1546290000000`.
+-   Al insertar datetime como un entero, se trata como una marca de tiempo Unix (UTC) apropiadamente escalada. `1546300800000` (con precisión 3) representa `'2019-01-01 00:00:00'` UTC. Sin embargo, como `timestamp` tetas grandes `Europe/Moscow` (UTC + 3) zona horaria especificada, al emitir como una cadena, el valor se mostrará como `'2019-01-01 03:00:00'`
+-   Al insertar el valor de cadena como fecha y hora, se trata como si estuviera en la zona horaria de la columna. `'2019-01-01 00:00:00'` será tratado como estar en `Europe/Moscow` Zona horaria y se almacena como `1546290000000`.
 
-**2.** Filtering on `DateTime64` values
+**2.** Filtrado en `DateTime64` valor
 
 ``` sql
 SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Europe/Moscow')
@@ -55,9 +55,9 @@ SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Europ
 └─────────────────────────┴──────────┘
 ```
 
-Unlike `DateTime`, `DateTime64` values are not converted from `String` automatically
+A diferencia de `DateTime`, `DateTime64` los valores no se convierten desde `String` automática
 
-**3.** Getting a time zone for a `DateTime64`-type value:
+**3.** Obtener una zona horaria para un `DateTime64`-tipo de valor:
 
 ``` sql
 SELECT toDateTime64(now(), 3, 'Europe/Moscow') AS column, toTypeName(column) AS x
@@ -69,7 +69,7 @@ SELECT toDateTime64(now(), 3, 'Europe/Moscow') AS column, toTypeName(column) AS 
 └─────────────────────────┴────────────────────────────────┘
 ```
 
-**4.** Timezone conversion
+**4.** Conversión de zona horaria
 
 ``` sql
 SELECT
@@ -85,13 +85,13 @@ FROM dt
 └─────────────────────────┴─────────────────────────┘
 ```
 
-## See Also {#see-also}
+## Ver también {#see-also}
 
--   [Type conversion functions](../query_language/functions/type_conversion_functions.md)
--   [Functions for working with dates and times](../query_language/functions/date_time_functions.md)
--   [Functions for working with arrays](../query_language/functions/array_functions.md)
--   [The `date_time_input_format` setting](../operations/settings/settings.md#settings-date_time_input_format)
--   [The `timezone` server configuration parameter](../operations/server_settings/settings.md#server_settings-timezone)
--   [Operators for working with dates and times](../query_language/operators.md#operators-datetime)
--   [`Date` data type](date.md)
--   [`DateTime` data type](datetime.md)
+-   [Funciones de conversión de tipos](../query_language/functions/type_conversion_functions.md)
+-   [Funciones para trabajar con fechas y horas](../query_language/functions/date_time_functions.md)
+-   [Funciones para trabajar con matrices](../query_language/functions/array_functions.md)
+-   [El `date_time_input_format` configuración](../operations/settings/settings.md#settings-date_time_input_format)
+-   [El `timezone` parámetro de configuración del servidor](../operations/server_settings/settings.md#server_settings-timezone)
+-   [Operadores para trabajar con fechas y horas](../query_language/operators.md#operators-datetime)
+-   [`Date` Tipo de datos](date.md)
+-   [`DateTime` Tipo de datos](datetime.md)

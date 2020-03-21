@@ -1,34 +1,34 @@
-# FixedString {#fixedstring}
+# Cadena fija {#fixedstring}
 
-A fixed-length string of `N` bytes (neither characters nor code points).
+Una cadena de longitud fija de `N` bytes (ni caracteres ni puntos de código).
 
-To declare a column of `FixedString` type, use the following syntax:
+Para declarar una columna de `FixedString` tipo, utilice la siguiente sintaxis:
 
 ``` sql
 <column_name> FixedString(N)
 ```
 
-Where `N` is a natural number.
+Donde `N` es un número natural.
 
-The `FixedString` type is efficient when data has the length of precisely `N` bytes. In all other cases, it is likely to reduce efficiency.
+El `FixedString` tipo es eficiente cuando los datos tienen la longitud de `N` byte. En todos los demás casos, es probable que reduzca la eficiencia.
 
-Examples of the values that can be efficiently stored in `FixedString`-typed columns:
+Ejemplos de los valores que se pueden almacenar eficientemente en `FixedString`Escrito columnas:
 
--   The binary representation of IP addresses (`FixedString(16)` for IPv6).
+-   La representación binaria de direcciones IP (`FixedString(16)` para IPv6).
 -   Language codes (ru\_RU, en\_US … ).
 -   Currency codes (USD, RUB … ).
--   Binary representation of hashes (`FixedString(16)` for MD5, `FixedString(32)` for SHA256).
+-   Representación binaria de hashes (`FixedString(16)` para MD5, `FixedString(32)` para SHA256).
 
-To store UUID values, use the [UUID](uuid.md) data type.
+Para almacenar valores UUID, utilice el [UUID](uuid.md) tipo de datos.
 
-When inserting the data, ClickHouse:
+Al insertar los datos, ClickHouse:
 
--   Complements a string with null bytes if the string contains fewer than `N` bytes.
--   Throws the `Too large value for FixedString(N)` exception if the string contains more than `N` bytes.
+-   Complementa una cadena con bytes nulos si la cadena contiene menos de `N` byte.
+-   Lanza el `Too large value for FixedString(N)` excepción si la cadena contiene más de `N` byte.
 
-When selecting the data, ClickHouse does not remove the null bytes at the end of the string. If you use the `WHERE` clause, you should add null bytes manually to match the `FixedString` value. The following example illustrates how to use the `WHERE` clause with `FixedString`.
+Al seleccionar los datos, ClickHouse no elimina los bytes nulos al final de la cadena. Si utiliza el `WHERE` cláusula, debe agregar bytes nulos manualmente para que coincida con el `FixedString` valor. En el ejemplo siguiente se muestra cómo utilizar el `WHERE` cláusula con `FixedString`.
 
-Let’s consider the following table with the single `FixedString(2)` column:
+Consideremos la siguiente tabla con el único `FixedString(2)` columna:
 
 ``` text
 ┌─name──┐
@@ -36,7 +36,7 @@ Let’s consider the following table with the single `FixedString(2)` column:
 └───────┘
 ```
 
-The query `SELECT * FROM FixedStringTable WHERE a = 'b'` does not return any data as a result. We should complement the filter pattern with null bytes.
+Consulta `SELECT * FROM FixedStringTable WHERE a = 'b'` no devuelve ningún dato como resultado. Debemos complementar el patrón de filtro con bytes nulos.
 
 ``` sql
 SELECT * FROM FixedStringTable
@@ -49,8 +49,8 @@ WHERE a = 'b\0'
 └───┘
 ```
 
-This behaviour differs from MySQL for the `CHAR` type (where strings are padded with spaces, and the spaces are removed for output).
+Este comportamiento difiere de MySQL para el `CHAR` tipo (donde las cadenas se rellenan con espacios y los espacios se eliminan para la salida).
 
-Note that the length of the `FixedString(N)` value is constant. The [length](../query_language/functions/array_functions.md#array_functions-length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](../query_language/functions/string_functions.md#empty) function returns `1` in this case.
+Tenga en cuenta que la longitud del `FixedString(N)` el valor es constante. El [longitud](../query_language/functions/array_functions.md#array_functions-length) función devuelve `N` incluso si el `FixedString(N)` sólo se rellena con bytes nulos, pero el valor [Vaciar](../query_language/functions/string_functions.md#empty) función devuelve `1` en este caso.
 
-[Original article](https://clickhouse.tech/docs/es/data_types/fixedstring/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/data_types/fixedstring/) <!--hide-->
