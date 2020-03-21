@@ -6,7 +6,7 @@
 #include <thread>
 
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <common/getMemoryAmount.h>
 #include <Common/StringUtils/StringUtils.h>
 
@@ -40,7 +40,7 @@ ReportBuilder::ReportBuilder(const std::string & server_version_)
 {
 }
 
-std::string ReportBuilder::getCurrentTime() const
+static std::string getCurrentTime()
 {
     return DateLUT::instance().timeToString(time(nullptr));
 }
@@ -119,7 +119,7 @@ std::string ReportBuilder::buildFullReport(
             if (statistics.sampler.size() != 0)
             {
                 JSONString quantiles(4); /// here, 4 is the size of \t padding
-                for (double percent = 10; percent <= 90; percent += 10)
+                for (int percent = 10; percent <= 90; percent += 10)
                 {
                     std::string quantile_key = std::to_string(percent / 100.0);
                     while (quantile_key.back() == '0')
@@ -163,7 +163,7 @@ std::string ReportBuilder::buildFullReport(
 std::string ReportBuilder::buildCompactReport(
     const PerformanceTestInfo & test_info,
     std::vector<TestStats> & stats,
-    const std::vector<std::size_t> & queries_to_run) const
+    const std::vector<std::size_t> & queries_to_run)
 {
     FormatSettings settings;
     std::ostringstream output;

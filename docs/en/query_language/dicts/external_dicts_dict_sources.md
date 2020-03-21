@@ -1,10 +1,10 @@
-# Sources of External Dictionaries {#dicts-external_dicts_dict_sources}
+# Sources of External Dictionaries {#dicts-external-dicts-dict-sources}
 
 An external dictionary can be connected from many different sources.
 
 If dictionary is configured using xml-file, the configuration looks like this:
 
-```xml
+``` xml
 <yandex>
   <dictionary>
     ...
@@ -21,7 +21,7 @@ If dictionary is configured using xml-file, the configuration looks like this:
 
 In case of [DDL-query](../create.md#create-dictionary-query), equal configuration will looks like:
 
-```sql
+``` sql
 CREATE DICTIONARY dict_name (...)
 ...
 SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
@@ -32,22 +32,21 @@ The source is configured in the `source` section.
 
 Types of sources (`source_type`):
 
-- [Local file](#dicts-external_dicts_dict_sources-local_file)
-- [Executable file](#dicts-external_dicts_dict_sources-executable)
-- [HTTP(s)](#dicts-external_dicts_dict_sources-http)
-- DBMS
-    - [ODBC](#dicts-external_dicts_dict_sources-odbc)
-    - [MySQL](#dicts-external_dicts_dict_sources-mysql)
-    - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
-    - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
-    - [Redis](#dicts-external_dicts_dict_sources-redis)
+-   [Local file](#dicts-external_dicts_dict_sources-local_file)
+-   [Executable file](#dicts-external_dicts_dict_sources-executable)
+-   [HTTP(s)](#dicts-external_dicts_dict_sources-http)
+-   DBMS
+    -   [ODBC](#dicts-external_dicts_dict_sources-odbc)
+    -   [MySQL](#dicts-external_dicts_dict_sources-mysql)
+    -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
+    -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
+    -   [Redis](#dicts-external_dicts_dict_sources-redis)
 
-
-## Local File {#dicts-external_dicts_dict_sources-local_file}
+## Local File {#dicts-external-dicts-dict-sources-local-file}
 
 Example of settings:
 
-```xml
+``` xml
 <source>
   <file>
     <path>/opt/dictionaries/os.tsv</path>
@@ -58,23 +57,22 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
 ```
 
 Setting fields:
 
-- `path` – The absolute path to the file.
-- `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
+-   `path` – The absolute path to the file.
+-   `format` – The file format. All the formats described in “[Formats](../../interfaces/formats.md#formats)” are supported.
 
+## Executable File {#dicts-external-dicts-dict-sources-executable}
 
-## Executable File {#dicts-external_dicts_dict_sources-executable}
-
-Working with executable files depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file's STDIN. Otherwise, ClickHouse starts executable file and treats its output as dictionary data.
+Working with executable files depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts executable file and treats its output as dictionary data.
 
 Example of settings:
 
-```xml
+``` xml
 <source>
     <executable>
         <command>cat /opt/dictionaries/os.tsv</command>
@@ -85,23 +83,22 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 SOURCE(EXECUTABLE(command 'cat /opt/dictionaries/os.tsv' format 'TabSeparated'))
 ```
 
 Setting fields:
 
-- `command` – The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
-- `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
+-   `command` – The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
+-   `format` – The file format. All the formats described in “[Formats](../../interfaces/formats.md#formats)” are supported.
 
-
-## HTTP(s) {#dicts-external_dicts_dict_sources-http}
+## HTTP(s) {#dicts-external-dicts-dict-sources-http}
 
 Working with an HTTP(s) server depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
 
 Example of settings:
 
-```xml
+``` xml
 <source>
     <http>
         <url>http://[::1]/os.tsv</url>
@@ -122,7 +119,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 SOURCE(HTTP(
     url 'http://[::1]/os.tsv'
     format 'TabSeparated'
@@ -135,24 +132,23 @@ In order for ClickHouse to access an HTTPS resource, you must [configure openSSL
 
 Setting fields:
 
-- `url` – The source URL.
-- `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
-- `credentials` – Basic HTTP authentication. Optional parameter.
-    - `user` – Username required for the authentication.
-    - `password` – Password required for the authentication.
-- `headers` – All custom HTTP headers entries used for the HTTP request. Optional parameter.
-    - `header` – Single HTTP header entry.
-        - `name` – Identifiant name used for the header send on the request.
-        - `value` – Value set for a specific identifiant name.
+-   `url` – The source URL.
+-   `format` – The file format. All the formats described in “[Formats](../../interfaces/formats.md#formats)” are supported.
+-   `credentials` – Basic HTTP authentication. Optional parameter.
+    -   `user` – Username required for the authentication.
+    -   `password` – Password required for the authentication.
+-   `headers` – All custom HTTP headers entries used for the HTTP request. Optional parameter.
+    -   `header` – Single HTTP header entry.
+    -   `name` – Identifiant name used for the header send on the request.
+    -   `value` – Value set for a specific identifiant name.
 
-
-## ODBC {#dicts-external_dicts_dict_sources-odbc}
+## ODBC {#dicts-external-dicts-dict-sources-odbc}
 
 You can use this method to connect any database that has an ODBC driver.
 
 Example of settings:
 
-```xml
+``` xml
 <source>
     <odbc>
         <db>DatabaseName</db>
@@ -165,7 +161,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 SOURCE(ODBC(
     db 'DatabaseName'
     table 'SchemaName.TableName'
@@ -176,25 +172,25 @@ SOURCE(ODBC(
 
 Setting fields:
 
-- `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
-- `table` – Name of the table and schema if exists.
-- `connection_string` – Connection string.
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
+-   `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
+-   `table` – Name of the table and schema if exists.
+-   `connection_string` – Connection string.
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
 
-ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it's necessary to set table name accordingly to table name case in database.
+ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
 
 If you have a problems with encodings when using Oracle, see the corresponding [FAQ](../../faq/general.md#oracle-odbc-encodings) article.
 
-### Known vulnerability of the ODBC dictionary functionality
+### Known vulnerability of the ODBC dictionary functionality {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
-!!! attention
+!!! attention "Attention"
     When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
 
 **Example of insecure use**
 
-Let's configure unixODBC for PostgreSQL. Content of `/etc/odbc.ini`:
+Let’s configure unixODBC for PostgreSQL. Content of `/etc/odbc.ini`:
 
-```text
+``` text
 [gregtest]
 Driver = /usr/lib/psqlodbca.so
 Servername = localhost
@@ -207,24 +203,25 @@ PASSWORD = test
 
 If you then make a query such as
 
-```sql
-SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');    
+``` sql
+SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 ```
 
 ODBC driver will send values of `USERNAME` and `PASSWORD` from `odbc.ini` to `some-server.com`.
 
-### Example of Connecting PostgreSQL
+### Example of Connecting PostgreSQL {#example-of-connecting-postgresql}
 
 Ubuntu OS.
 
 Installing unixODBC and the ODBC driver for PostgreSQL:
-```bash
+
+``` bash
 $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 ```
 
 Configuring `/etc/odbc.ini` (or `~/.odbc.ini`):
 
-```text
+``` text
     [DEFAULT]
     Driver = myconnection
 
@@ -245,7 +242,7 @@ Configuring `/etc/odbc.ini` (or `~/.odbc.ini`):
 
 The dictionary configuration in ClickHouse:
 
-```xml
+``` xml
 <yandex>
     <dictionary>
         <name>table_name</name>
@@ -280,7 +277,7 @@ The dictionary configuration in ClickHouse:
 
 or
 
-```sql
+``` sql
 CREATE DICTIONARY table_name (
     id UInt64,
     some_column UInt64 DEFAULT 0
@@ -293,19 +290,19 @@ LIFETIME(MIN 300 MAX 360)
 
 You may need to edit `odbc.ini` to specify the full path to the library with the driver `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
-### Example of Connecting MS SQL Server
+### Example of Connecting MS SQL Server {#example-of-connecting-ms-sql-server}
 
 Ubuntu OS.
 
 Installing the driver: :
 
-```bash
+``` bash
 $ sudo apt-get install tdsodbc freetds-bin sqsh
 ```
 
 Configuring the driver:
 
-```bash
+``` bash
     $ cat /etc/freetds/freetds.conf
     ...
 
@@ -340,7 +337,7 @@ Configuring the driver:
 
 Configuring the dictionary in ClickHouse:
 
-```xml
+``` xml
 <yandex>
     <dictionary>
         <name>test</name>
@@ -376,7 +373,7 @@ Configuring the dictionary in ClickHouse:
 
 or
 
-```sql
+``` sql
 CREATE DICTIONARY test (
     k UInt64,
     s String DEFAULT ''
@@ -387,14 +384,13 @@ LAYOUT(FLAT())
 LIFETIME(MIN 300 MAX 360)
 ```
 
-## DBMS
+## DBMS {#dbms}
 
-
-### MySQL {#dicts-external_dicts_dict_sources-mysql}
+### MySQL {#dicts-external-dicts-dict-sources-mysql}
 
 Example of settings:
 
-```xml
+``` xml
 <source>
   <mysql>
       <port>3306</port>
@@ -418,7 +414,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 SOURCE(MYSQL(
     port 3306
     user 'clickhouse'
@@ -434,24 +430,30 @@ SOURCE(MYSQL(
 
 Setting fields:
 
-- `port` – The port on the MySQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
-- `user` – Name of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
-- `password` – Password of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
-- `replica` – Section of replica configurations. There can be multiple sections.
+-   `port` – The port on the MySQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 
-    - `replica/host` – The MySQL host.
-    - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+-   `user` – Name of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 
-- `db` – Name of the database.
-- `table` – Name of the table.
-- `where ` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in MySQL, for example, `id > 10 AND id < 20`. Optional parameter.
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
+-   `password` – Password of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+
+-   `replica` – Section of replica configurations. There can be multiple sections.
+
+        - `replica/host` – The MySQL host.
+        - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+
+-   `db` – Name of the database.
+
+-   `table` – Name of the table.
+
+-   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in MySQL, for example, `id > 10 AND id < 20`. Optional parameter.
+
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
 
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
 
 Example of settings:
 
-```xml
+``` xml
 <source>
   <mysql>
       <host>localhost</host>
@@ -468,7 +470,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 SOURCE(MYSQL(
     host 'localhost'
     socket '/path/to/socket/file.sock'
@@ -481,12 +483,11 @@ SOURCE(MYSQL(
 ))
 ```
 
-
-### ClickHouse {#dicts-external_dicts_dict_sources-clickhouse}
+### ClickHouse {#dicts-external-dicts-dict-sources-clickhouse}
 
 Example of settings:
 
-```xml
+``` xml
 <source>
     <clickhouse>
         <host>example01-01-1</host>
@@ -502,7 +503,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 SOURCE(CLICKHOUSE(
     host 'example01-01-1'
     port 9000
@@ -516,21 +517,20 @@ SOURCE(CLICKHOUSE(
 
 Setting fields:
 
-- `host` – The ClickHouse host. If it is a local host, the query is processed without any network activity. To improve fault tolerance, you can create a [Distributed](../../operations/table_engines/distributed.md) table and enter it in subsequent configurations.
-- `port` – The port on the ClickHouse server.
-- `user` – Name of the ClickHouse user.
-- `password` – Password of the ClickHouse user.
-- `db` – Name of the database.
-- `table` – Name of the table.
-- `where ` – The selection criteria. May be omitted.
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
+-   `host` – The ClickHouse host. If it is a local host, the query is processed without any network activity. To improve fault tolerance, you can create a [Distributed](../../operations/table_engines/distributed.md) table and enter it in subsequent configurations.
+-   `port` – The port on the ClickHouse server.
+-   `user` – Name of the ClickHouse user.
+-   `password` – Password of the ClickHouse user.
+-   `db` – Name of the database.
+-   `table` – Name of the table.
+-   `where` – The selection criteria. May be omitted.
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
 
-
-### MongoDB {#dicts-external_dicts_dict_sources-mongodb}
+### MongoDB {#dicts-external-dicts-dict-sources-mongodb}
 
 Example of settings:
 
-```xml
+``` xml
 <source>
     <mongodb>
         <host>localhost</host>
@@ -545,7 +545,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 SOURCE(MONGO(
     host 'localhost'
     port 27017
@@ -558,19 +558,18 @@ SOURCE(MONGO(
 
 Setting fields:
 
-- `host` – The MongoDB host.
-- `port` – The port on the MongoDB server.
-- `user` – Name of the MongoDB user.
-- `password` – Password of the MongoDB user.
-- `db` – Name of the database.
-- `collection` – Name of the collection.
+-   `host` – The MongoDB host.
+-   `port` – The port on the MongoDB server.
+-   `user` – Name of the MongoDB user.
+-   `password` – Password of the MongoDB user.
+-   `db` – Name of the database.
+-   `collection` – Name of the collection.
 
-
-### Redis {#dicts-external_dicts_dict_sources-redis}
+### Redis {#dicts-external-dicts-dict-sources-redis}
 
 Example of settings:
 
-```xml
+``` xml
 <source>
     <redis>
         <host>localhost</host>
@@ -583,7 +582,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 SOURCE(REDIS(
     host 'localhost'
     port 6379
@@ -594,9 +593,9 @@ SOURCE(REDIS(
 
 Setting fields:
 
-- `host` – The Redis host.
-- `port` – The port on the Redis server.
-- `storage_type` – The structure of internal Redis storage using for work with keys. `simple` is for simple sources and for hashed single key sources, `hash_map` is for hashed sources with two keys. Ranged sources and cache sources with complex key are unsupported. May be omitted, default value is `simple`.
-- `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
+-   `host` – The Redis host.
+-   `port` – The port on the Redis server.
+-   `storage_type` – The structure of internal Redis storage using for work with keys. `simple` is for simple sources and for hashed single key sources, `hash_map` is for hashed sources with two keys. Ranged sources and cache sources with complex key are unsupported. May be omitted, default value is `simple`.
+-   `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
 
 [Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

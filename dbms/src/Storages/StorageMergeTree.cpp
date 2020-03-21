@@ -21,8 +21,6 @@
 #include <Disks/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Poco/DirectoryIterator.h>
-#include <Poco/File.h>
 #include <optional>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Processors/Pipe.h>
@@ -95,8 +93,7 @@ void StorageMergeTree::startup()
 
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup.restart();
-    if (!getSettings()->disable_background_merges)
-        merging_mutating_task_handle = global_context.getBackgroundPool().addTask([this] { return mergeMutateTask(); });
+    merging_mutating_task_handle = global_context.getBackgroundPool().addTask([this] { return mergeMutateTask(); });
     if (areBackgroundMovesNeeded())
         moving_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
 }
@@ -1241,7 +1238,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
                        dest_table_storage->getStorageID().getNameForLogs() + ": " + dest_table_storage->getStoragePolicy()->getName(), ErrorCodes::LOGICAL_ERROR);
     Stopwatch watch;
 
-    MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(this);
+    MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this);
     String partition_id = getPartitionIDFromQuery(partition, context);
 
     DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);

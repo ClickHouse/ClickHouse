@@ -211,8 +211,8 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    size_t n = atoi(argv[1]);
-    size_t m = atoi(argv[2]);
+    size_t n = std::stol(argv[1]);
+    size_t m = std::stol(argv[2]);
 
     DB::Arena pool(128 * 1024 * 1024);
     std::vector<StringRef> data(n);

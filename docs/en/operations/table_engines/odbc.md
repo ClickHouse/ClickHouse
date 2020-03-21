@@ -1,4 +1,4 @@
-# ODBC {#table_engine-odbc}
+# ODBC {#table-engine-odbc}
 
 Allows ClickHouse to connect to external databases via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
@@ -6,9 +6,9 @@ To safely implement ODBC connections, ClickHouse uses a separate program `clickh
 
 This engine supports the [Nullable](../../data_types/nullable.md) data type.
 
-## Creating a Table
+## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1],
@@ -22,16 +22,16 @@ See a detailed description of the [CREATE TABLE](../../query_language/create.md#
 
 The table structure can differ from the source table structure:
 
-- Column names should be the same as in the source table, but you can use just some of these columns and in any order.
-- Column types may differ from those in the source table. ClickHouse tries to [cast](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) values to the ClickHouse data types.
+-   Column names should be the same as in the source table, but you can use just some of these columns and in any order.
+-   Column types may differ from those in the source table. ClickHouse tries to [cast](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) values to the ClickHouse data types.
 
 **Engine Parameters**
 
-- `connection_settings` — Name of the section with connection settings in the `odbc.ini` file.
-- `external_database` — Name of a database in an external DBMS.
-- `external_table` — Name of a table in the `external_database`.
+-   `connection_settings` — Name of the section with connection settings in the `odbc.ini` file.
+-   `external_database` — Name of a database in an external DBMS.
+-   `external_table` — Name of a table in the `external_database`.
 
-## Usage Example
+## Usage Example {#usage-example}
 
 **Retrieving data from the local MySQL installation via ODBC**
 
@@ -41,17 +41,18 @@ Ensure that unixODBC and MySQL Connector are installed.
 
 By default (if installed from packages), ClickHouse starts as user `clickhouse`. Thus, you need to create and configure this user in the MySQL server.
 
-```bash
+``` bash
 $ sudo mysql
 ```
-```sql
+
+``` sql
 mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
 mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'clickhouse' WITH GRANT OPTION;
 ```
 
 Then configure the connection in `/etc/odbc.ini`.
 
-```bash
+``` bash
 $ cat /etc/odbc.ini
 [mysqlconn]
 DRIVER = /usr/local/lib/libmyodbc5w.so
@@ -64,7 +65,7 @@ PASSWORD = clickhouse
 
 You can check the connection using the `isql` utility from the unixODBC installation.
 
-```bash
+``` bash
 $ isql -v mysqlconn
 +---------------------------------------+
 | Connected!                            |
@@ -74,7 +75,7 @@ $ isql -v mysqlconn
 
 Table in MySQL:
 
-```text
+``` text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -97,7 +98,7 @@ mysql> select * from test;
 
 Table in ClickHouse, retrieving data from the MySQL table:
 
-```sql
+``` sql
 CREATE TABLE odbc_t
 (
     `int_id` Int32,
@@ -105,18 +106,20 @@ CREATE TABLE odbc_t
 )
 ENGINE = ODBC('DSN=mysqlconn', 'test', 'test')
 ```
-```sql
+
+``` sql
 SELECT * FROM odbc_t
 ```
-```text
+
+``` text
 ┌─int_id─┬─float_nullable─┐
 │      1 │           ᴺᵁᴸᴸ │
 └────────┴────────────────┘
 ```
 
-## See Also
+## See Also {#see-also}
 
-- [ODBC external dictionaries](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
-- [ODBC table function](../../query_language/table_functions/odbc.md)
+-   [ODBC external dictionaries](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
+-   [ODBC table function](../../query_language/table_functions/odbc.md)
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/odbc/) <!--hide-->

@@ -26,9 +26,6 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
-#include <Common/createHardLink.h>
-#include <Poco/File.h>
-#include <Poco/DirectoryIterator.h>
 #include <cmath>
 #include <numeric>
 #include <iomanip>
@@ -494,7 +491,7 @@ public:
 /// Vertical merge) or a mutation of a single part. During a single stage all rows are read.
 struct MergeStageProgress
 {
-    MergeStageProgress(Float64 weight_)
+    explicit MergeStageProgress(Float64 weight_)
         : is_first(true) , weight(weight_)
     {
     }
@@ -576,10 +573,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
               << parts.front()->name << " to " << parts.back()->name
               << " into " << TMP_PREFIX + future_part.name + " with type " + future_part.type.toString());
 
-    String part_path = data.getFullPathOnDisk(space_reservation->getDisk());
+    auto disk = space_reservation->getDisk();
+    String part_path = data.relative_data_path;
     String new_part_tmp_path = part_path + TMP_PREFIX + future_part.name + "/";
-    if (Poco::File(new_part_tmp_path).exists())
-        throw Exception("Directory " + new_part_tmp_path + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+    if (disk->exists(new_part_tmp_path))
+        throw Exception("Directory " + fullPath(disk, new_part_tmp_path) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
     MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
 
@@ -598,7 +596,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         future_part.name,
         future_part.type,
         future_part.part_info,
-        space_reservation->getDisk(),
+        disk,
         TMP_PREFIX + future_part.name);
 
     new_data_part->setColumns(all_columns);
@@ -633,16 +631,17 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merge_entry->total_size_bytes_compressed,
         static_cast<double> (merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
 
+    /// TODO: Should it go through IDisk interface?
     String rows_sources_file_path;
-    std::unique_ptr<WriteBuffer> rows_sources_uncompressed_write_buf;
+    std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf;
     std::unique_ptr<WriteBuffer> rows_sources_write_buf;
     std::optional<ColumnSizeEstimator> column_sizes;
 
     if (merge_alg == MergeAlgorithm::Vertical)
     {
-        Poco::File(new_part_tmp_path).createDirectories();
+        disk->createDirectories(new_part_tmp_path);
         rows_sources_file_path = new_part_tmp_path + "rows_sources";
-        rows_sources_uncompressed_write_buf = std::make_unique<WriteBufferFromFile>(rows_sources_file_path);
+        rows_sources_uncompressed_write_buf = disk->writeFile(rows_sources_file_path);
         rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*rows_sources_uncompressed_write_buf);
 
         for (const MergeTreeData::DataPartPtr & part : parts)
@@ -832,6 +831,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         rows_sources_write_buf->next();
         rows_sources_uncompressed_write_buf->next();
+        /// Ensure data has written to disk.
+        rows_sources_uncompressed_write_buf->finalize();
 
         size_t rows_sources_count = rows_sources_write_buf->count();
         /// In special case, when there is only one source part, and no rows were skipped, we may have
@@ -842,7 +843,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 + ") differs from number of bytes written to rows_sources file (" + toString(rows_sources_count)
                 + "). It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        CompressedReadBufferFromFile rows_sources_read_buf(rows_sources_file_path, 0, 0, 0);
+        CompressedReadBufferFromFile rows_sources_read_buf(disk->readFile(rows_sources_file_path));
         IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns;
 
         for (size_t column_num = 0, gathering_column_names_size = gathering_column_names.size();
@@ -909,7 +910,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             merge_entry->progress.store(progress_before + column_sizes->columnWeight(column_name), std::memory_order_relaxed);
         }
 
-        Poco::File(rows_sources_file_path).remove();
+        disk->remove(rows_sources_file_path);
     }
 
     for (const auto & part : parts)
@@ -1018,7 +1019,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     new_data_part->index_granularity_info = source_part->index_granularity_info;
     new_data_part->setColumns(getColumnsForNewDataPart(source_part, updated_header, all_columns));
 
-    String new_part_tmp_path = new_data_part->getFullPath();
+    auto disk = new_data_part->disk;
+    String new_part_tmp_path = new_data_part->getFullRelativePath();
 
     /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
     /// (which is locked in data.getTotalActiveSizeInBytes()) is locked after part->columns_lock
@@ -1029,7 +1031,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         source_part->bytes_on_disk, static_cast<double>(source_part->bytes_on_disk) / data.getTotalActiveSizeInBytes());
 
 
-    Poco::File(new_part_tmp_path).createDirectories();
+    disk->createDirectories(new_part_tmp_path);
 
     /// Don't change granularity type while mutating subset of columns
     auto mrk_extension = source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(new_data_part->getType())
@@ -1041,7 +1043,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         need_remove_expired_values = true;
 
     /// All columns from part are changed and may be some more that were missing before in part
-    if (source_part->getColumns().isSubsetOf(updated_header.getNamesAndTypesList()))
+    if (isCompactPart(source_part) || source_part->getColumns().isSubsetOf(updated_header.getNamesAndTypesList()))
     {
         /// All columns are modified, proceed to write a new part from scratch.
         if (data.hasPrimaryKey() || data.hasSkipIndices())
@@ -1125,17 +1127,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         if (need_remove_expired_values)
             files_to_skip.insert("ttl.txt");
 
-        Poco::DirectoryIterator dir_end;
         /// Create hardlinks for unchanged files
-        for (Poco::DirectoryIterator dir_it(source_part->getFullPath()); dir_it != dir_end; ++dir_it)
+        for (auto it = disk->iterateDirectory(source_part->getFullRelativePath()); it->isValid(); it->next())
         {
-            if (files_to_skip.count(dir_it.name()) || files_to_remove.count(dir_it.name()))
+            if (files_to_skip.count(it->name()) || files_to_remove.count(it->name()))
                 continue;
 
-            Poco::Path destination(new_part_tmp_path);
-            destination.append(dir_it.name());
+            String destination = new_part_tmp_path + "/" + it->name();
 
-            createHardLink(dir_it.path().toString(), destination.toString());
+            disk->createHardLink(it->path(), destination);
         }
 
         merge_entry->columns_written = all_columns.size() - updated_header.columns();
@@ -1181,8 +1181,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         if (need_remove_expired_values)
         {
             /// Write a file with ttl infos in json format.
-            WriteBufferFromFile out_ttl(new_part_tmp_path + "ttl.txt", 4096);
-            HashingWriteBuffer out_hashing(out_ttl);
+            auto out_ttl = disk->writeFile(new_part_tmp_path + "ttl.txt", 4096);
+            HashingWriteBuffer out_hashing(*out_ttl);
             new_data_part->ttl_infos.write(out_hashing);
             new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
             new_data_part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
@@ -1193,15 +1193,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 new_data_part->checksums.files.erase(removed_file);
         {
             /// Write file with checksums.
-            WriteBufferFromFile out_checksums(new_part_tmp_path + "checksums.txt", 4096);
-            new_data_part->checksums.write(out_checksums);
+            auto out_checksums = disk->writeFile(new_part_tmp_path + "checksums.txt", 4096);
+            new_data_part->checksums.write(*out_checksums);
         } /// close fd
 
 
         {
             /// Write a file with a description of columns.
-            WriteBufferFromFile out_columns(new_part_tmp_path + "columns.txt", 4096);
-            new_data_part->getColumns().writeText(out_columns);
+            auto out_columns = disk->writeFile(new_part_tmp_path + "columns.txt", 4096);
+            new_data_part->getColumns().writeText(*out_columns);
         } /// close
 
         new_data_part->rows_count = source_part->rows_count;
@@ -1318,7 +1318,7 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
     MergeTreeData::DataPartPtr part,
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
-    MutationCommands & for_file_renames) const
+    MutationCommands & for_file_renames)
 {
     NameSet removed_columns_from_compact_part;
     NameSet already_changed_columns;
@@ -1379,7 +1379,7 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
 
 
 NameSet MergeTreeDataMergerMutator::collectFilesToRemove(
-    MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension) const
+    MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension)
 {
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
@@ -1392,7 +1392,6 @@ NameSet MergeTreeDataMergerMutator::collectFilesToRemove(
             },
             {});
     }
-
 
     NameSet remove_files;
     /// Remove old indices
@@ -1422,11 +1421,12 @@ NameSet MergeTreeDataMergerMutator::collectFilesToRemove(
                 column->type->enumerateStreams(callback, stream_path);
         }
     }
+
     return remove_files;
 }
 
 NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
-    const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension) const
+    const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension)
 {
     NameSet files_to_skip = {"checksums.txt", "columns.txt"};
 
@@ -1454,7 +1454,7 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
 
 
 NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
-    MergeTreeData::DataPartPtr source_part, const Block & updated_header, NamesAndTypesList all_columns) const
+    MergeTreeData::DataPartPtr source_part, const Block & updated_header, NamesAndTypesList all_columns)
 {
     Names source_column_names = source_part->getColumns().getNames();
     NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());

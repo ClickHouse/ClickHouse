@@ -1,25 +1,25 @@
-# Прочие виды запросов
+# Прочие виды запросов {#prochie-vidy-zaprosov}
 
-## ATTACH
+## ATTACH {#attach}
 
 Запрос полностью аналогичен запросу `CREATE`, но:
 
-- вместо слова `CREATE` используется слово `ATTACH`;
-- запрос не создаёт данные на диске, а предполагает, что данные уже лежат в соответствующих местах, и всего лишь добавляет информацию о таблице на сервер. После выполнения запроса `ATTACH` сервер будет знать о существовании таблицы.
+-   вместо слова `CREATE` используется слово `ATTACH`;
+-   запрос не создаёт данные на диске, а предполагает, что данные уже лежат в соответствующих местах, и всего лишь добавляет информацию о таблице на сервер. После выполнения запроса `ATTACH` сервер будет знать о существовании таблицы.
 
 Если таблица перед этим была отсоединена (`DETACH`), т.е. её структура известна, можно использовать сокращенную форму записи без определения структуры.
 
-```sql
+``` sql
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 Этот запрос используется при старте сервера. Сервер хранит метаданные таблиц в виде файлов с запросами `ATTACH`, которые он просто исполняет при запуске (за исключением системных таблиц, которые явно создаются на сервере).
 
-## CHECK TABLE
+## CHECK TABLE {#check-table}
 
 Проверяет таблицу на повреждение данных.
 
-```sql
+``` sql
 CHECK TABLE [db.]name
 ```
 
@@ -27,15 +27,15 @@ CHECK TABLE [db.]name
 
 Ответ содержит колонку `result`, содержащую одну строку с типом [Boolean](../data_types/boolean.md). Допустимые значения:
 
-- 0 - данные в таблице повреждены;
-- 1 - данные не повреждены.
+-   0 - данные в таблице повреждены;
+-   1 - данные не повреждены.
 
 Запрос `CHECK TABLE` поддерживает следующие движки таблиц:
 
-- [Log](../operations/table_engines/log.md)
-- [TinyLog](../operations/table_engines/tinylog.md)
-- [StripeLog](../operations/table_engines/stripelog.md)
-- [Семейство MergeTree](../operations/table_engines/mergetree.md)
+-   [Log](../operations/table_engines/log.md)
+-   [TinyLog](../operations/table_engines/tinylog.md)
+-   [StripeLog](../operations/table_engines/stripelog.md)
+-   [Семейство MergeTree](../operations/table_engines/mergetree.md)
 
 При попытке выполнить запрос с таблицами с другими табличными движками, ClickHouse генерирует исключение.
 
@@ -47,70 +47,71 @@ CHECK TABLE [db.]name
 
 В этом случае можно скопировать оставшиеся неповрежденные данные в другую таблицу. Для этого:
 
-1. Создайте новую таблицу с такой же структурой, как у поврежденной таблицы. Для этого выполните запрос `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
-2. Установите значение параметра [max_threads](../operations/settings/settings.md#settings-max_threads) в 1. Это нужно для того, чтобы выполнить следующий запрос в одном потоке. Установить значение параметра можно через запрос: `SET max_threads = 1`.
-3. Выполните запрос `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. В результате неповрежденные данные будут скопированы в другую таблицу. Обратите внимание, будут скопированы только те данные, которые следуют до поврежденного участка.
-4. Перезапустите `clickhouse-client`, чтобы вернуть предыдущее значение параметра `max_threads`.
+1.  Создайте новую таблицу с такой же структурой, как у поврежденной таблицы. Для этого выполните запрос `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
+2.  Установите значение параметра [max\_threads](../operations/settings/settings.md#settings-max_threads) в 1. Это нужно для того, чтобы выполнить следующий запрос в одном потоке. Установить значение параметра можно через запрос: `SET max_threads = 1`.
+3.  Выполните запрос `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. В результате неповрежденные данные будут скопированы в другую таблицу. Обратите внимание, будут скопированы только те данные, которые следуют до поврежденного участка.
+4.  Перезапустите `clickhouse-client`, чтобы вернуть предыдущее значение параметра `max_threads`.
 
 ## DESCRIBE TABLE {#misc-describe-table}
 
-```sql
+``` sql
 DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
+
 Возвращает описание столбцов таблицы.
 
 Результат запроса содержит столбцы (все столбцы имеют тип String):
 
-- `name` — имя столбца таблицы;
-- `type`— тип столбца;
-- `default_type` — в каком виде задано [выражение для значения по умолчанию](create.md#create-default-values): `DEFAULT`, `MATERIALIZED` или `ALIAS`. Столбец содержит пустую строку, если значение по умолчанию не задано.
-- `default_expression` — значение, заданное в секции `DEFAULT`;
-- `comment_expression` — комментарий к столбцу.
+-   `name` — имя столбца таблицы;
+-   `type`— тип столбца;
+-   `default_type` — в каком виде задано [выражение для значения по умолчанию](create.md#create-default-values): `DEFAULT`, `MATERIALIZED` или `ALIAS`. Столбец содержит пустую строку, если значение по умолчанию не задано.
+-   `default_expression` — значение, заданное в секции `DEFAULT`;
+-   `comment_expression` — комментарий к столбцу.
 
-Вложенные структуры данных выводятся в "развёрнутом" виде. То есть, каждый столбец - по отдельности, с именем через точку.
+Вложенные структуры данных выводятся в «развёрнутом» виде. То есть, каждый столбец - по отдельности, с именем через точку.
 
-## DETACH
+## DETACH {#detach}
 
 Удаляет из сервера информацию о таблице name. Сервер перестаёт знать о существовании таблицы.
 
-```sql
+``` sql
 DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 Но ни данные, ни метаданные таблицы не удаляются. При следующем запуске сервера, сервер прочитает метаданные и снова узнает о таблице.
-Также, "отцепленную" таблицу можно прицепить заново запросом `ATTACH` (за исключением системных таблиц, для которых метаданные не хранятся).
+Также, «отцепленную» таблицу можно прицепить заново запросом `ATTACH` (за исключением системных таблиц, для которых метаданные не хранятся).
 
 Запроса `DETACH DATABASE` нет.
 
-## DROP
+## DROP {#drop}
 
 Запрос имеет два вида: `DROP DATABASE` и `DROP TABLE`.
 
-```sql
+``` sql
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 ```
 
 Удаляет все таблицы внутри базы данных db, а затем саму базу данных db.
 Если указано `IF EXISTS` - не выдавать ошибку, если база данных не существует.
 
-```sql
+``` sql
 DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 Удаляет таблицу.
 Если указано `IF EXISTS` - не выдавать ошибку, если таблица не существует или база данных не существует.
 
-## EXISTS
+## EXISTS {#exists}
 
-```sql
+``` sql
 EXISTS [TEMPORARY] TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Возвращает один столбец типа `UInt8`, содержащий одно значение - `0`, если таблицы или БД не существует и `1`, если таблица в указанной БД существует.
 
-## KILL QUERY
+## KILL QUERY {#kill-query}
 
-```sql
+``` sql
 KILL QUERY [ON CLUSTER cluster]
   WHERE <where expression to SELECT FROM system.processes query>
   [SYNC|ASYNC|TEST]
@@ -122,7 +123,7 @@ KILL QUERY [ON CLUSTER cluster]
 
 Примеры
 
-```sql
+``` sql
 -- Принудительно останавливает все запросы с указанным query_id:
 KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
 
@@ -137,15 +138,15 @@ Readonly-пользователи могут останавливать толь
 Синхронный вариант (`SYNC`) ожидает остановки всех запросов и построчно выводит информацию о процессах по ходу их остановки.
 Ответ содержит колонку `kill_status`, которая может принимать следующие значения:
 
-1. 'finished' - запрос был успешно остановлен;
-2. 'waiting' - запросу отправлен сигнал завершения, ожидается его остановка;
-3. остальные значения описывают причину невозможности остановки запроса.
+1.  ‘finished’ - запрос был успешно остановлен;
+2.  ‘waiting’ - запросу отправлен сигнал завершения, ожидается его остановка;
+3.  остальные значения описывают причину невозможности остановки запроса.
 
 Тестовый вариант запроса (`TEST`) только проверяет права пользователя и выводит список запросов для остановки.
 
 ## KILL MUTATION {#kill-mutation}
 
-```sql
+``` sql
 KILL MUTATION [ON CLUSTER cluster]
   WHERE <where expression to SELECT FROM system.mutations query>
   [TEST]
@@ -158,7 +159,7 @@ KILL MUTATION [ON CLUSTER cluster]
 
 Примеры:
 
-```sql
+``` sql
 -- Останавливает все мутации одной таблицы:
 KILL MUTATION WHERE database = 'default' AND table = 'table'
 
@@ -170,9 +171,9 @@ KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = '
 
 Данные, уже изменённые мутацией, остаются в таблице (отката на старую версию данных не происходит).
 
-## OPTIMIZE {#misc_operations-optimize}
+## OPTIMIZE {#misc-operations-optimize}
 
-```sql
+``` sql
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL] [DEDUPLICATE]
 ```
 
@@ -180,19 +181,19 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 
 Если `OPTIMIZE` применяется к таблицам семейства [ReplicatedMergeTree](../operations/table_engines/replication.md), ClickHouse создаёт задачу на мёрж и ожидает её исполнения на всех узлах (если активирована настройка `replication_alter_partitions_sync`).
 
-- Если `OPTIMIZE` не выполняет мёрж по любой причине, ClickHouse не оповещает об этом клиента. Чтобы включить оповещения, используйте настройку [optimize_throw_if_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop).
-- Если указать `PARTITION`, то оптимизация выполняется только для указанной партиции. [Как задавать имя партиции в запросах](alter.md#alter-how-to-specify-part-expr).
-- Если указать `FINAL`, то оптимизация выполняется даже в том случае, если все данные уже лежат в одном куске.
-- Если указать `DEDUPLICATE`, то произойдет схлопывание полностью одинаковых строк (сравниваются значения во всех колонках), имеет смысл только для движка MergeTree.
+-   Если `OPTIMIZE` не выполняет мёрж по любой причине, ClickHouse не оповещает об этом клиента. Чтобы включить оповещения, используйте настройку [optimize\_throw\_if\_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop).
+-   Если указать `PARTITION`, то оптимизация выполняется только для указанной партиции. [Как задавать имя партиции в запросах](alter.md#alter-how-to-specify-part-expr).
+-   Если указать `FINAL`, то оптимизация выполняется даже в том случае, если все данные уже лежат в одном куске.
+-   Если указать `DEDUPLICATE`, то произойдет схлопывание полностью одинаковых строк (сравниваются значения во всех колонках), имеет смысл только для движка MergeTree.
 
 !!! warning "Внимание"
-    Запрос `OPTIMIZE` не может устранить причину появления ошибки "Too many parts".
+    Запрос `OPTIMIZE` не может устранить причину появления ошибки «Too many parts».
 
-## RENAME {#misc_operations-rename}
+## RENAME {#misc-operations-rename}
 
 Переименовывает одну или несколько таблиц.
 
-```sql
+``` sql
 RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ... [ON CLUSTER cluster]
 ```
 
@@ -200,7 +201,7 @@ RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ...
 
 ## SET {#query-set}
 
-```sql
+``` sql
 SET param = value
 ```
 
@@ -208,15 +209,15 @@ SET param = value
 
 Можно одним запросом установить все настройки из заданного профиля настроек.
 
-```sql
+``` sql
 SET profile = 'profile-name-from-the-settings-file'
 ```
 
 Подробности смотрите в разделе [Настройки](../operations/settings/settings.md).
 
-## TRUNCATE
+## TRUNCATE {#truncate}
 
-```sql
+``` sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -224,9 +225,9 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 Запрос `TRUNCATE` не поддерживается для следующих движков: [View](../operations/table_engines/view.md), [File](../operations/table_engines/file.md), [URL](../operations/table_engines/url.md) и [Null](../operations/table_engines/null.md).
 
-## USE
+## USE {#use}
 
-```sql
+``` sql
 USE db
 ```
 

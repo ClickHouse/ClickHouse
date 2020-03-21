@@ -162,7 +162,7 @@ static void injection(
     {
         int migrate_to = std::uniform_int_distribution<>(0, num_cpus_loaded - 1)(thread_local_rng);
 
-        cpu_set_t set;
+        cpu_set_t set{};
         CPU_ZERO(&set);
         CPU_SET(migrate_to, &set);
 

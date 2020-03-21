@@ -137,7 +137,7 @@ struct SymbolResolver : public llvm::orc::SymbolResolver
 {
     llvm::LegacyJITSymbolResolver & impl;
 
-    SymbolResolver(llvm::LegacyJITSymbolResolver & impl_) : impl(impl_) {}
+    explicit SymbolResolver(llvm::LegacyJITSymbolResolver & impl_) : impl(impl_) {}
 
     llvm::orc::SymbolNameSet getResponsibilitySet(const llvm::orc::SymbolNameSet & symbols) final
     {

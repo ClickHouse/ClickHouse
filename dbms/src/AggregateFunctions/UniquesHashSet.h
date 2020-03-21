@@ -2,7 +2,7 @@
 
 #include <math.h>
 
-#include <common/Types.h>
+#include <common/types.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>

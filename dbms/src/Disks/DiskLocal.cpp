@@ -1,4 +1,5 @@
 #include "DiskLocal.h"
+#include <Common/createHardLink.h>
 #include "DiskFactory.h"
 
 #include <Interpreters/Context.h>
@@ -11,7 +12,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
@@ -254,6 +254,33 @@ Poco::Timestamp DiskLocal::getLastModified(const String & path)
     return Poco::File(disk_path + path).getLastModified();
 }
 
+void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
+{
+    DB::createHardLink(disk_path + src_path, disk_path + dst_path);
+}
+
+void DiskLocal::createFile(const String & path)
+{
+    Poco::File(disk_path + path).createFile();
+}
+
+void DiskLocal::setReadOnly(const String & path)
+{
+    Poco::File(disk_path + path).setReadOnly(true);
+}
+
+bool inline isSameDiskType(const IDisk & one, const IDisk & another)
+{
+    return typeid(one) == typeid(another);
+}
+
+void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
+{
+    if (isSameDiskType(*this, *to_disk))
+        Poco::File(disk_path + from_path).copyTo(to_disk->getPath() + to_path); /// Use more optimal way.
+    else
+        IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
+}
 
 void DiskLocalReservation::update(UInt64 new_size)
 {

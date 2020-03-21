@@ -4,7 +4,7 @@ Short description.
 
 **Syntax** (without SELECT)
 
-```sql
+``` sql
 <function syntax>
 ```
 
@@ -14,12 +14,12 @@ More text (Optional).
 
 **Parameters** (Optional)
 
-- `x` — Description. [Type name](relative/path/to/type/dscr.md#type).
-- `y` — Description. [Type name](relative/path/to/type/dscr.md#type).
+-   `x` — Description. [Type name](relative/path/to/type/dscr.md#type).
+-   `y` — Description. [Type name](relative/path/to/type/dscr.md#type).
 
 **Returned value(s)**
 
-- Returned values list.
+-   Returned values list.
 
 Type: [Type](relative/path/to/type/dscr.md#type).
 
@@ -29,20 +29,19 @@ The example must show usage and/or a use cases. The following text contains reco
 
 Input table (Optional):
 
-```text
+``` text
 ```
 
 Query:
 
-```sql
+``` sql
 ```
 
 Result:
 
-```text
+``` text
 ```
 
 **See Also** (Optional)
 
-- [link](#)
-
+-   [link](#)

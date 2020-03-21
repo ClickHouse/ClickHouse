@@ -8,7 +8,7 @@ namespace DB
 /** Internal temporary storage for table function input(...)
   */
 
-class StorageInput : public ext::shared_ptr_helper<StorageInput>, public IStorage
+class StorageInput final : public ext::shared_ptr_helper<StorageInput>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageInput>;
 public:

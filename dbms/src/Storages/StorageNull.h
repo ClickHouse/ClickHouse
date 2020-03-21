@@ -16,7 +16,7 @@ namespace DB
 /** When writing, does nothing.
   * When reading, returns nothing.
   */
-class StorageNull : public ext::shared_ptr_helper<StorageNull>, public IStorage
+class StorageNull final : public ext::shared_ptr_helper<StorageNull>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageNull>;
 public:

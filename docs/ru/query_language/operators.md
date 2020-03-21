@@ -1,19 +1,19 @@
-# Операторы
+# Операторы {#operatory}
 
 Все операторы преобразуются в соответствующие функции на этапе парсинга запроса, с учётом их приоритетов и ассоциативности.
 Далее будут перечислены группы операторов в порядке их приоритета (чем выше, тем раньше оператор связывается со своими аргументами).
 
-## Операторы доступа
+## Операторы доступа {#operatory-dostupa}
 
 `a[N]` - доступ к элементу массива, функция `arrayElement(a, N)`.
 
 `a.N` - доступ к элементу кортежа, функция `tupleElement(a, N)`.
 
-## Оператор числового отрицания
+## Оператор числового отрицания {#operator-chislovogo-otritsaniia}
 
 `-a` - функция `negate(a)`.
 
-## Операторы умножения и деления
+## Операторы умножения и деления {#operatory-umnozheniia-i-deleniia}
 
 `a * b` - функция `multiply(a, b)`
 
@@ -21,13 +21,13 @@
 
 `a % b` - функция `modulo(a, b)`
 
-## Операторы сложения и вычитания
+## Операторы сложения и вычитания {#operatory-slozheniia-i-vychitaniia}
 
 `a + b` - функция `plus(a, b)`
 
 `a - b` - функция `minus(a, b)`
 
-## Операторы сравнения
+## Операторы сравнения {#operatory-sravneniia}
 
 `a = b` - функция `equals(a, b)`
 
@@ -53,7 +53,7 @@
 
 `a NOT BETWEEN b AND c` - равнозначно `a < b OR a > c`
 
-## Операторы для работы с множествами
+## Операторы для работы с множествами {#operatory-dlia-raboty-s-mnozhestvami}
 
 *Смотрите раздел [Операторы IN](select.md#select-in-operators).*
 
@@ -67,9 +67,9 @@
 
 ## Оператор для работы с датами и временем {#operators-datetime}
 
-### EXTRACT
+### EXTRACT {#extract}
 
-```sql
+``` sql
 EXTRACT(part FROM date);
 ```
 
@@ -77,12 +77,12 @@ EXTRACT(part FROM date);
 
 В параметре `part` указывается, какой фрагмент даты нужно получить. Доступные значения:
 
-- `DAY` — День. Возможные значения: 1–31.
-- `MONTH` — Номер месяца. Возможные значения: 1–12.
-- `YEAR` — Год.
-- `SECOND` — Секунда. Возможные значения: 0–59.
-- `MINUTE` — Минута. Возможные значения: 0–59.
-- `HOUR` — Час. Возможные значения: 0–23.
+-   `DAY` — День. Возможные значения: 1–31.
+-   `MONTH` — Номер месяца. Возможные значения: 1–12.
+-   `YEAR` — Год.
+-   `SECOND` — Секунда. Возможные значения: 0–59.
+-   `MINUTE` — Минута. Возможные значения: 0–59.
+-   `HOUR` — Час. Возможные значения: 0–23.
 
 Эти значения могут быть указаны также в нижнем регистре (`day`, `month`).
 
@@ -90,7 +90,7 @@ EXTRACT(part FROM date);
 
 Примеры:
 
-```sql
+``` sql
 SELECT EXTRACT(DAY FROM toDate('2017-06-15'));
 SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
 SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
@@ -98,7 +98,7 @@ SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
 
 В следующем примере создадим таблицу и добавим в неё значение с типом `DateTime`.
 
-```sql
+``` sql
 CREATE TABLE test.Orders
 (
     OrderId UInt64,
@@ -108,10 +108,11 @@ CREATE TABLE test.Orders
 ENGINE = Log;
 ```
 
-```sql
+``` sql
 INSERT INTO test.Orders VALUES (1, 'Jarlsberg Cheese', toDateTime('2008-10-11 13:23:44'));
 ```
-```sql
+
+``` sql
 SELECT
     toYear(OrderDate) AS OrderYear,
     toMonth(OrderDate) AS OrderMonth,
@@ -122,7 +123,7 @@ SELECT
 FROM test.Orders;
 ```
 
-```text
+``` text
 ┌─OrderYear─┬─OrderMonth─┬─OrderDay─┬─OrderHour─┬─OrderMinute─┬─OrderSecond─┐
 │      2008 │         10 │       11 │        13 │          23 │          44 │
 └───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
@@ -149,10 +150,11 @@ FROM test.Orders;
 
 Пример:
 
-```sql
+``` sql
 SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
 ```
-```text
+
+``` text
 ┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
 │ 2019-10-23 11:16:28 │                                    2019-10-27 14:16:28 │
 └─────────────────────┴────────────────────────────────────────────────────────┘
@@ -160,22 +162,22 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 
 **Смотрите также**
 
-- Тип данных [Interval](../data_types/special_data_types/interval.md)
-- Функции преобразования типов [toInterval](functions/type_conversion_functions.md#function-tointerval)
+-   Тип данных [Interval](../data_types/special_data_types/interval.md)
+-   Функции преобразования типов [toInterval](functions/type_conversion_functions.md#function-tointerval)
 
-## Оператор логического отрицания
+## Оператор логического отрицания {#operator-logicheskogo-otritsaniia}
 
 `NOT a` - функция `not(a)`
 
-## Оператор логического 'И'
+## Оператор логического ‘И’ {#operator-logicheskogo-i}
 
 `a AND b` - функция `and(a, b)`
 
-## Оператор логического 'ИЛИ'
+## Оператор логического ‘ИЛИ’ {#operator-logicheskogo-ili}
 
 `a OR b` - функция `or(a, b)`
 
-## Условный оператор
+## Условный оператор {#uslovnyi-operator}
 
 `a ? b : c` - функция `if(a, b, c)`
 
@@ -183,9 +185,9 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 
 Условный оператор сначала вычисляет значения b и c, затем проверяет выполнение условия a, и только после этого возвращает соответствующее значение. Если в качестве b или с выступает функция [arrayJoin()](functions/array_join.md#functions_arrayjoin), то размножение каждой строки произойдет вне зависимости от условия а.
 
-## Условное выражение {#operator_case}
+## Условное выражение {#operator-case}
 
-```sql
+``` sql
 CASE [x]
     WHEN a THEN b
     [WHEN ... THEN ...]
@@ -199,63 +201,68 @@ END
 !!! note "Примечание"
     Функция `transform` не умеет работать с `NULL`.
 
-## Оператор склеивания строк
+## Оператор склеивания строк {#operator-skleivaniia-strok}
 
 `s1 || s2` - функция `concat(s1, s2)`
 
-## Оператор создания лямбда-выражения
+## Оператор создания лямбда-выражения {#operator-sozdaniia-liambda-vyrazheniia}
 
 `x -> expr` - функция `lambda(x, expr)`
 
 Следующие операторы не имеют приоритета, так как представляют собой скобки:
 
-## Оператор создания массива
+## Оператор создания массива {#operator-sozdaniia-massiva}
 
 `[x1, ...]` - функция `array(x1, ...)`
 
-## Оператор создания кортежа
+## Оператор создания кортежа {#operator-sozdaniia-kortezha}
 
 `(x1, x2, ...)` - функция `tuple(x2, x2, ...)`
 
-## Ассоциативность
+## Ассоциативность {#assotsiativnost}
 
 Все бинарные операторы имеют левую ассоциативность. Например, `1 + 2 + 3` преобразуется в `plus(plus(1, 2), 3)`.
 Иногда это работает не так, как ожидается. Например, `SELECT 4 > 3 > 2` выдаст 0.
 
 Для эффективности, реализованы функции `and` и `or`, принимающие произвольное количество аргументов. Соответствующие цепочки операторов `AND` и `OR`, преобразуются в один вызов этих функций.
 
-## Проверка на `NULL`
+## Проверка на `NULL` {#proverka-na-null}
 
 ClickHouse поддерживает операторы `IS NULL` и `IS NOT NULL`.
 
 ### IS NULL {#operator-is-null}
 
-- Для значений типа [Nullable](../data_types/nullable.md) оператор `IS NULL` возвращает:
-    - `1`, если значение — `NULL`.
-    - `0` в обратном случае.
-- Для прочих значений оператор `IS NULL` всегда возвращает `0`.
+-   Для значений типа [Nullable](../data_types/nullable.md) оператор `IS NULL` возвращает:
+    -   `1`, если значение — `NULL`.
+    -   `0` в обратном случае.
+-   Для прочих значений оператор `IS NULL` всегда возвращает `0`.
 
-```sql
+<!-- -->
+
+``` sql
 SELECT x+100 FROM t_null WHERE y IS NULL
 ```
-```text
+
+``` text
 ┌─plus(x, 100)─┐
 │          101 │
 └──────────────┘
 ```
 
+### IS NOT NULL {#is-not-null}
 
-### IS NOT NULL
+-   Для значений типа [Nullable](../data_types/nullable.md) оператор `IS NOT NULL` возвращает:
+    -   `0`, если значение — `NULL`.
+    -   `1`, в обратном случае.
+-   Для прочих значений оператор `IS NOT NULL` всегда возвращает `1`.
 
-- Для значений типа [Nullable](../data_types/nullable.md) оператор `IS NOT NULL` возвращает:
-    - `0`, если значение — `NULL`.
-    - `1`, в обратном случае.
-- Для прочих значений оператор `IS NOT NULL` всегда возвращает `1`.
+<!-- -->
 
-```sql
+``` sql
 SELECT * FROM t_null WHERE y IS NOT NULL
 ```
-```text
+
+``` text
 ┌─x─┬─y─┐
 │ 2 │ 3 │
 └───┴───┘

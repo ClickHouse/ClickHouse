@@ -1,6 +1,6 @@
 #include <common/shift10.h>
 
-#include <common/likely.h>
+#include "defines.h"
 
 #include <limits>
 

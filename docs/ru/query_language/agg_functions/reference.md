@@ -1,31 +1,31 @@
-# Справочник функций
+# Справочник функций {#spravochnik-funktsii}
 
-## count {#agg_function-count}
+## count {#agg-function-count}
 
 Вычисляет количество строк или не NULL значений .
 
 ClickHouse поддерживает следующие виды синтаксиса для `count`:
 
-- `count(expr)` или `COUNT(DISTINCT expr)`.
-- `count()` или `COUNT(*)`. Синтаксис `count()` специфичен для ClickHouse.
+-   `count(expr)` или `COUNT(DISTINCT expr)`.
+-   `count()` или `COUNT(*)`. Синтаксис `count()` специфичен для ClickHouse.
 
 **Параметры**
 
 Функция может принимать:
 
-- Ноль параметров.
-- Одно [выражение](../syntax.md#syntax-expressions).
+-   Ноль параметров.
+-   Одно [выражение](../syntax.md#syntax-expressions).
 
 **Возвращаемое значение**
 
-- Если функция вызывается без параметров, она вычисляет количество строк.
-- Если передаётся [выражение](../syntax.md#syntax-expressions) , то функция вычисляет количество раз, когда выражение возвращает не NULL. Если выражение возвращает значение типа [Nullable](../../data_types/nullable.md), то результат `count` не становится `Nullable`. Функция возвращает 0, если выражение возвращает `NULL` для всех строк.
+-   Если функция вызывается без параметров, она вычисляет количество строк.
+-   Если передаётся [выражение](../syntax.md#syntax-expressions) , то функция вычисляет количество раз, когда выражение возвращает не NULL. Если выражение возвращает значение типа [Nullable](../../data_types/nullable.md), то результат `count` не становится `Nullable`. Функция возвращает 0, если выражение возвращает `NULL` для всех строк.
 
 В обоих случаях тип возвращаемого значения [UInt64](../../data_types/int_uint.md).
 
 **Подробности**
 
-ClickHouse поддерживает синтаксис `COUNT(DISTINCT ...)`. Поведение этой конструкции зависит от настройки [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation). Она определяет, какая из функций [uniq*](#agg_function-uniq) используется для выполнения операции. По умолчанию — функция [uniqExact](#agg_function-uniqexact).
+ClickHouse поддерживает синтаксис `COUNT(DISTINCT ...)`. Поведение этой конструкции зависит от настройки [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation). Она определяет, какая из функций [uniq\*](#agg_function-uniq) используется для выполнения операции. По умолчанию — функция [uniqExact](#agg_function-uniqexact).
 
 Запрос `SELECT count() FROM table` не оптимизирован, поскольку количество записей в таблице не хранится отдельно. Он выбирает небольшой столбец из таблицы и подсчитывает количество значений в нём.
 
@@ -33,11 +33,11 @@ ClickHouse поддерживает синтаксис `COUNT(DISTINCT ...)`. П
 
 Пример 1:
 
-```sql
+``` sql
 SELECT count() FROM t
 ```
 
-```text
+``` text
 ┌─count()─┐
 │       5 │
 └─────────┘
@@ -45,21 +45,21 @@ SELECT count() FROM t
 
 Пример 2:
 
-```sql
+``` sql
 SELECT name, value FROM system.settings WHERE name = 'count_distinct_implementation'
 ```
 
-```text
+``` text
 ┌─name──────────────────────────┬─value─────┐
 │ count_distinct_implementation │ uniqExact │
 └───────────────────────────────┴───────────┘
 ```
 
-```sql
+``` sql
 SELECT count(DISTINCT num) FROM t
 ```
 
-```text
+``` text
 ┌─uniqExact(num)─┐
 │              3 │
 └────────────────┘
@@ -67,7 +67,7 @@ SELECT count(DISTINCT num) FROM t
 
 Этот пример показывает, что `count(DISTINCT num)` выполняется с помощью функции `uniqExact` в соответствии со значением настройки `count_distinct_implementation`.
 
-## any(x) {#agg_function-any}
+## any(x) {#agg-function-any}
 
 Выбирает первое попавшееся значение.
 Порядок выполнения запроса может быть произвольным и даже каждый раз разным, поэтому результат данной функции недетерминирован.
@@ -77,43 +77,43 @@ SELECT count(DISTINCT num) FROM t
 
 При наличии в запросе `SELECT` секции `GROUP BY` или хотя бы одной агрегатной функции, ClickHouse (в отличие от, например, MySQL) требует, чтобы все выражения в секциях `SELECT`, `HAVING`, `ORDER BY` вычислялись из ключей или из агрегатных функций. То есть, каждый выбираемый из таблицы столбец, должен использоваться либо в ключах, либо внутри агрегатных функций. Чтобы получить поведение, как в MySQL, вы можете поместить остальные столбцы в агрегатную функцию `any`.
 
-## anyHeavy(x) {#agg_function-anyHeavy}
+## anyHeavy(x) {#agg-function-anyheavy}
 
-Выбирает часто встречающееся значение с помощью алгоритма "[heavy hitters](http://www.cs.umd.edu/~samir/498/karp.pdf)". Если существует значение, которое встречается чаще, чем в половине случаев, в каждом потоке выполнения запроса, то возвращается данное значение. В общем случае, результат недетерминирован.
+Выбирает часто встречающееся значение с помощью алгоритма «[heavy hitters](http://www.cs.umd.edu/~samir/498/karp.pdf)». Если существует значение, которое встречается чаще, чем в половине случаев, в каждом потоке выполнения запроса, то возвращается данное значение. В общем случае, результат недетерминирован.
 
-```sql
+``` sql
 anyHeavy(column)
 ```
 
 **Аргументы**
 
-- `column` — имя столбца.
+-   `column` — имя столбца.
 
 **Пример**
 
 Возьмём набор данных [OnTime](../../getting_started/example_datasets/ontime.md) и выберем произвольное часто встречающееся значение в столбце `AirlineID`.
 
-```sql
+``` sql
 SELECT anyHeavy(AirlineID) AS res
 FROM ontime
 ```
 
-```text
+``` text
 ┌───res─┐
 │ 19690 │
 └───────┘
 ```
 
-## anyLast(x) {#agg_function-anyLast}
+## anyLast(x) {#agg-function-anylast}
 
 Выбирает последнее попавшееся значение.
 Результат так же недетерминирован, как и для функции `any`.
 
-##groupBitAnd
+## groupBitAnd {#groupbitand}
 
 Применяет побитовое `И` для последовательности чисел.
 
-```sql
+``` sql
 groupBitAnd(expr)
 ```
 
@@ -129,7 +129,7 @@ groupBitAnd(expr)
 
 Тестовые данные:
 
-```text
+``` text
 binary     decimal
 00101100 = 44
 00011100 = 28
@@ -139,7 +139,7 @@ binary     decimal
 
 Запрос:
 
-```sql
+``` sql
 SELECT groupBitAnd(num) FROM t
 ```
 
@@ -147,16 +147,16 @@ SELECT groupBitAnd(num) FROM t
 
 Результат:
 
-```text
+``` text
 binary     decimal
 00000100 = 4
 ```
 
-##groupBitOr
+## groupBitOr {#groupbitor}
 
 Применяет побитовое `ИЛИ` для последовательности чисел.
 
-```sql
+``` sql
 groupBitOr(expr)
 ```
 
@@ -172,7 +172,7 @@ groupBitOr(expr)
 
 Тестовые данные:
 
-```text
+``` text
 binary     decimal
 00101100 = 44
 00011100 = 28
@@ -182,7 +182,7 @@ binary     decimal
 
 Запрос:
 
-```sql
+``` sql
 SELECT groupBitOr(num) FROM t
 ```
 
@@ -190,16 +190,16 @@ SELECT groupBitOr(num) FROM t
 
 Результат:
 
-```text
+``` text
 binary     decimal
 01111101 = 125
 ```
 
-##groupBitXor
+## groupBitXor {#groupbitxor}
 
 Применяет побитовое `ИСКЛЮЧАЮЩЕЕ ИЛИ` для последовательности чисел.
 
-```sql
+``` sql
 groupBitXor(expr)
 ```
 
@@ -215,7 +215,7 @@ groupBitXor(expr)
 
 Тестовые данные:
 
-```text
+``` text
 binary     decimal
 00101100 = 44
 00011100 = 28
@@ -225,7 +225,7 @@ binary     decimal
 
 Запрос:
 
-```sql
+``` sql
 SELECT groupBitXor(num) FROM t
 ```
 
@@ -233,16 +233,16 @@ SELECT groupBitXor(num) FROM t
 
 Результат:
 
-```text
+``` text
 binary     decimal
 01101000 = 104
 ```
 
-## groupBitmap
+## groupBitmap {#groupbitmap}
 
 Bitmap или агрегатные вычисления для столбца с типом данных `UInt*`, возвращают кардинальность в виде значения типа UInt64, если добавить суффикс -State, то возвращают [объект bitmap](../functions/bitmap_functions.md).
 
-```sql
+``` sql
 groupBitmap(expr)
 ```
 
@@ -258,7 +258,7 @@ groupBitmap(expr)
 
 Тестовые данные:
 
-```text
+``` text
 UserID
 1
 1
@@ -268,73 +268,73 @@ UserID
 
 Запрос:
 
-```sql
+``` sql
 SELECT groupBitmap(UserID) as num FROM t
 ```
 
 Результат:
 
-```text
+``` text
 num
 3
 ```
 
-## min(x) {#agg_function-min}
+## min(x) {#agg-function-min}
 
 Вычисляет минимум.
 
-## max(x) {#agg_function-max}
+## max(x) {#agg-function-max}
 
 Вычисляет максимум.
 
-## argMin(arg, val) {#agg_function-argMin}
+## argMin(arg, val) {#agg-function-argmin}
 
 Вычисляет значение arg при минимальном значении val. Если есть несколько разных значений arg для минимальных значений val, то выдаётся первое попавшееся из таких значений.
 
 **Пример:**
 
-```text
+``` text
 ┌─user─────┬─salary─┐
 │ director │   5000 │
 │ manager  │   3000 │
 │ worker   │   1000 │
 └──────────┴────────┘
 ```
-```sql
+
+``` sql
 SELECT argMin(user, salary) FROM salary
 ```
-```text
+
+``` text
 ┌─argMin(user, salary)─┐
 │ worker               │
 └──────────────────────┘
 ```
 
-## argMax(arg, val) {#agg_function-argMax}
+## argMax(arg, val) {#agg-function-argmax}
 
 Вычисляет значение arg при максимальном значении val. Если есть несколько разных значений arg для максимальных значений val, то выдаётся первое попавшееся из таких значений.
 
-
-## sum(x) {#agg_function-sum}
+## sum(x) {#agg-function-sum}
 
 Вычисляет сумму.
 Работает только для чисел.
 
-## sumWithOverflow(x) {#agg_function-sumWithOverflow}
+## sumWithOverflow(x) {#agg-function-sumwithoverflow}
 
 Вычисляет сумму чисел, используя для результата тот же тип данных, что и для входных параметров. Если сумма выйдет за максимальное значение для заданного типа данных, то функция вернёт ошибку.
 
 Работает только для чисел.
 
+## sumMap(key, value) {#summapkey-value}
 
-## sumMap(key, value)
-
-Производит суммирование массива 'value' по соответствующим ключам заданным в массиве 'key'.
-Количество элементов в 'key' и 'value' должно быть одинаковым для каждой строки, для которой происходит суммирование.
+Производит суммирование массива ‘value’ по соответствующим ключам заданным в массиве ‘key’.
+Количество элементов в ‘key’ и ‘value’ должно быть одинаковым для каждой строки, для которой происходит суммирование.
 Возвращает кортеж из двух массивов - ключи в отсортированном порядке и значения, просуммированные по соответствующим ключам.
 
 Пример:
 
-```sql
+``` sql
 CREATE TABLE sum_map(
     date Date,
     timeslot DateTime,
@@ -355,18 +355,18 @@ FROM sum_map
 GROUP BY timeslot
 ```
 
-```text
+``` text
 ┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┐
 │ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │
 │ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │
 └─────────────────────┴──────────────────────────────────────────────┘
 ```
 
-## skewPop
+## skewPop {#skewpop}
 
 Вычисляет [коэффициент асимметрии](https://ru.wikipedia.org/wiki/Коэффициент_асимметрии) для последовательности.
 
-```sql
+``` sql
 skewPop(expr)
 ```
 
@@ -380,17 +380,17 @@ skewPop(expr)
 
 **Пример**
 
-```sql
+``` sql
 SELECT skewPop(value) FROM series_with_value_column
 ```
 
-## skewSamp
+## skewSamp {#skewsamp}
 
-Вычисляет [выборочный коэффициент асимметрии](https://ru.wikipedia.org/wiki/Статистика_(функция_выборки))  для последовательности.
+Вычисляет [выборочный коэффициент асимметрии](https://ru.wikipedia.org/wiki/Статистика_(функция_выборки)) для последовательности.
 
 Он представляет собой несмещенную оценку асимметрии случайной величины, если переданные значения образуют ее выборку.
 
-```sql
+``` sql
 skewSamp(expr)
 ```
 
@@ -404,15 +404,15 @@ skewSamp(expr)
 
 **Пример**
 
-```sql
+``` sql
 SELECT skewSamp(value) FROM series_with_value_column
 ```
 
-## kurtPop
+## kurtPop {#kurtpop}
 
 Вычисляет [коэффициент эксцесса](https://ru.wikipedia.org/wiki/Коэффициент_эксцесса) последовательности.
 
-```sql
+``` sql
 kurtPop(expr)
 ```
 
@@ -426,17 +426,17 @@ kurtPop(expr)
 
 **Пример**
 
-```sql
+``` sql
 SELECT kurtPop(value) FROM series_with_value_column
 ```
 
-## kurtSamp
+## kurtSamp {#kurtsamp}
 
 Вычисляет [выборочный коэффициент эксцесса](https://ru.wikipedia.org/wiki/Статистика_(функция_выборки)) для последовательности.
 
 Он представляет собой несмещенную оценку эксцесса случайной величины, если переданные значения образуют ее выборку.
 
-```sql
+``` sql
 kurtSamp(expr)
 ```
 
@@ -450,18 +450,18 @@ kurtSamp(expr)
 
 **Пример**
 
-```sql
+``` sql
 SELECT kurtSamp(value) FROM series_with_value_column
 ```
 
-## timeSeriesGroupSum(uid, timestamp, value) {#agg_function-timeseriesgroupsum}
+## timeSeriesGroupSum(uid, timestamp, value) {#agg-function-timeseriesgroupsum}
 
 `timeSeriesGroupSum` агрегирует временные ряды в которых не совпадают моменты.
 Функция использует линейную интерполяцию между двумя значениями времени, а затем суммирует значения для одного и того же момента (как измеренные так и интерполированные) по всем рядам.
 
-- `uid` уникальный идентификатор временного ряда, `UInt64`.
-- `timestamp` имеет тип `Int64` чтобы можно было учитывать милли и микросекунды.
-- `value` представляет собой значение метрики.
+-   `uid` уникальный идентификатор временного ряда, `UInt64`.
+-   `timestamp` имеет тип `Int64` чтобы можно было учитывать милли и микросекунды.
+-   `value` представляет собой значение метрики.
 
 Функция возвращает массив кортежей с парами `(timestamp, aggregated_value)`.
 
@@ -469,7 +469,7 @@ SELECT kurtSamp(value) FROM series_with_value_column
 
 Пример:
 
-```text
+``` text
 ┌─uid─┬─timestamp─┬─value─┐
 │ 1   │     2     │   0.2 │
 │ 1   │     7     │   0.7 │
@@ -484,7 +484,7 @@ SELECT kurtSamp(value) FROM series_with_value_column
 └─────┴───────────┴───────┘
 ```
 
-```sql
+``` sql
 CREATE TABLE time_series(
     uid       UInt64,
     timestamp Int64,
@@ -502,32 +502,32 @@ FROM (
 
 И результат будет:
 
-```text
+``` text
 [(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
 ```
 
-## timeSeriesGroupRateSum(uid, ts, val) {#agg_function-timeseriesgroupratesum}
+## timeSeriesGroupRateSum(uid, ts, val) {#agg-function-timeseriesgroupratesum}
 
 Аналогично timeSeriesGroupRateSum, timeSeriesGroupRateSum будет вычислять производные по timestamp для рядов, а затем суммировать полученные производные для всех рядов для одного значения timestamp.
 Также ряды должны быть отсортированы по возрастанию timestamp.
 
 Для пример из описания timeSeriesGroupRateSum результат будет следующим:
 
-```text
+``` text
 [(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
 ```
 
-## avg(x) {#agg_function-avg}
+## avg(x) {#agg-function-avg}
 
 Вычисляет среднее.
 Работает только для чисел.
 Результат всегда Float64.
 
-## uniq {#agg_function-uniq}
+## uniq {#agg-function-uniq}
 
 Приближённо вычисляет количество различных значений аргумента.
 
-```sql
+``` sql
 uniq(x[, ...])
 ```
 
@@ -537,34 +537,34 @@ uniq(x[, ...])
 
 **Возвращаемое значение**
 
-- Значение с типом данных [UInt64](../../data_types/int_uint.md).
+-   Значение с типом данных [UInt64](../../data_types/int_uint.md).
 
 **Детали реализации**
 
 Функция:
 
-- Вычисляет хэш для всех параметров агрегации, а затем использует его в вычислениях.
+-   Вычисляет хэш для всех параметров агрегации, а затем использует его в вычислениях.
 
-- Использует адаптивный алгоритм выборки. В качестве состояния вычисления функция использует выборку хэш-значений элементов  размером до 65536.
+-   Использует адаптивный алгоритм выборки. В качестве состояния вычисления функция использует выборку хэш-значений элементов размером до 65536.
 
-    Этот алгоритм очень точен и очень эффективен по использованию CPU. Если запрос содержит небольшое количество этих функций, использование `uniq` почти так же эффективно,  как и использование других агрегатных функций.
+        Этот алгоритм очень точен и очень эффективен по использованию CPU. Если запрос содержит небольшое количество этих функций, использование `uniq` почти так же эффективно,  как и использование других агрегатных функций.
 
-- Результат детерминирован (не зависит от порядка выполнения запроса).
+-   Результат детерминирован (не зависит от порядка выполнения запроса).
 
 Эту функцию рекомендуется использовать практически во всех сценариях.
 
 **Смотрите также**
 
-- [uniqCombined](#agg_function-uniqcombined)
-- [uniqCombined64](#agg_function-uniqcombined64)
-- [uniqHLL12](#agg_function-uniqhll12)
-- [uniqExact](#agg_function-uniqexact)
+-   [uniqCombined](#agg_function-uniqcombined)
+-   [uniqCombined64](#agg_function-uniqcombined64)
+-   [uniqHLL12](#agg_function-uniqhll12)
+-   [uniqExact](#agg_function-uniqexact)
 
-## uniqCombined {#agg_function-uniqcombined}
+## uniqCombined {#agg-function-uniqcombined}
 
 Приближённо вычисляет количество различных значений аргумента.
 
-```sql
+``` sql
 uniqCombined(HLL_precision)(x[, ...])
 ```
 
@@ -574,49 +574,49 @@ uniqCombined(HLL_precision)(x[, ...])
 
 Функция принимает переменное число входных параметров. Параметры могут быть числовых типов, а также `Tuple`, `Array`, `Date`, `DateTime`, `String`.
 
-`HLL_precision` — это логарифм по основанию 2 от числа ячеек в [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog). Необязательный, можно использовать функцию как `uniqCombined (x [,...])`. Для `HLL_precision`  значение по умолчанию  — 17, что фактически составляет 96 КБ пространства (2^17 ячеек, 6 бит каждая).
+`HLL_precision` — это логарифм по основанию 2 от числа ячеек в [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog). Необязательный, можно использовать функцию как `uniqCombined (x [,...])`. Для `HLL_precision` значение по умолчанию — 17, что фактически составляет 96 КБ пространства (2^17 ячеек, 6 бит каждая).
 
 **Возвращаемое значение**
 
-- Число типа [UInt64](../../data_types/int_uint.md).
+-   Число типа [UInt64](../../data_types/int_uint.md).
 
 **Детали реализации**
 
 Функция:
 
-- Вычисляет хэш (64-битный для `String` и 32-битный для всех остальных типов) для всех параметров агрегации, а затем использует его в вычислениях.
+-   Вычисляет хэш (64-битный для `String` и 32-битный для всех остальных типов) для всех параметров агрегации, а затем использует его в вычислениях.
 
-- Используется комбинация трёх алгоритмов: массив, хэш-таблица и HyperLogLog с таблицей коррекции погрешности.
+-   Используется комбинация трёх алгоритмов: массив, хэш-таблица и HyperLogLog с таблицей коррекции погрешности.
 
-    Для небольшого количества различных значений используется массив. Если размер набора больше, используется хэш-таблица. При дальнейшем увеличении количества значений, используется структура HyperLogLog, имеющая фиксированный размер в памяти.
+        Для небольшого количества различных значений используется массив. Если размер набора больше, используется хэш-таблица. При дальнейшем увеличении количества значений, используется структура HyperLogLog, имеющая фиксированный размер в памяти.
 
-- Результат детерминирован (не зависит от порядка выполнения запроса).
+-   Результат детерминирован (не зависит от порядка выполнения запроса).
 
 !!! note "Note"
     Так как используется 32-битный хэш для не-`String` типов, результат будет иметь очень очень большую ошибку для количества разичных элементов существенно больше `UINT_MAX` (ошибка быстро растёт начиная с нескольких десятков миллиардов различных значений), таким образом в этом случае нужно использовать [uniqCombined64](#agg_function-uniqcombined64)
 
 По сравнению с функцией [uniq](#agg_function-uniq), `uniqCombined`:
 
-- Потребляет в несколько раз меньше памяти.
-- Вычисляет с в несколько раз более высокой точностью.
-- Обычно имеет немного более низкую производительность. В некоторых сценариях `uniqCombined` может показывать более высокую производительность, чем  `uniq`, например, в случае распределенных запросов, при которых по сети передаётся большое количество состояний агрегации.
+-   Потребляет в несколько раз меньше памяти.
+-   Вычисляет с в несколько раз более высокой точностью.
+-   Обычно имеет немного более низкую производительность. В некоторых сценариях `uniqCombined` может показывать более высокую производительность, чем `uniq`, например, в случае распределенных запросов, при которых по сети передаётся большое количество состояний агрегации.
 
 **Смотрите также**
 
-- [uniq](#agg_function-uniq)
-- [uniqCombined64](#agg_function-uniqcombined64)
-- [uniqHLL12](#agg_function-uniqhll12)
-- [uniqExact](#agg_function-uniqexact)
+-   [uniq](#agg_function-uniq)
+-   [uniqCombined64](#agg_function-uniqcombined64)
+-   [uniqHLL12](#agg_function-uniqhll12)
+-   [uniqExact](#agg_function-uniqexact)
 
-## uniqCombined64 {#agg_function-uniqcombined64}
+## uniqCombined64 {#agg-function-uniqcombined64}
 
 Использует 64-битный хэш для всех типов, в отличие от [uniqCombined](#agg_function-uniqcombined).
 
-## uniqHLL12 {#agg_function-uniqhll12}
+## uniqHLL12 {#agg-function-uniqhll12}
 
 Вычисляет приблизительное число различных значений аргументов, используя алгоритм [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog).
 
-```sql
+``` sql
 uniqHLL12(x[, ...])
 ```
 
@@ -626,33 +626,33 @@ uniqHLL12(x[, ...])
 
 **Возвращаемое значение**
 
-- Значение хэша с типом данных [UInt64](../../data_types/int_uint.md).
+-   Значение хэша с типом данных [UInt64](../../data_types/int_uint.md).
 
 **Детали реализации**
 
 Функция:
 
-- Вычисляет хэш для всех параметров агрегации, а затем использует его в вычислениях.
+-   Вычисляет хэш для всех параметров агрегации, а затем использует его в вычислениях.
 
-- Использует алгоритм HyperLogLog для аппроксимации числа различных значений аргументов.
+-   Использует алгоритм HyperLogLog для аппроксимации числа различных значений аргументов.
 
-    Используется 212 5-битовых ячеек. Размер состояния чуть больше 2.5 КБ. Результат не точный (ошибка до ~10%) для небольших множеств (<10K элементов). Однако для множеств большой кардинальности (10K - 100M) результат довольно точен (ошибка до ~1.6%). Начиная с 100M ошибка оценки будет только расти и для множеств огромной кардинальности (1B+ элементов) функция возвращает результат с очень большой неточностью.
+        Используется 212 5-битовых ячеек. Размер состояния чуть больше 2.5 КБ. Результат не точный (ошибка до ~10%) для небольших множеств (<10K элементов). Однако для множеств большой кардинальности (10K - 100M) результат довольно точен (ошибка до ~1.6%). Начиная с 100M ошибка оценки будет только расти и для множеств огромной кардинальности (1B+ элементов) функция возвращает результат с очень большой неточностью.
 
-- Результат детерминирован (не зависит от порядка выполнения запроса).
+-   Результат детерминирован (не зависит от порядка выполнения запроса).
 
 Мы не рекомендуем использовать эту функцию. В большинстве случаев используйте функцию [uniq](#agg_function-uniq) или [uniqCombined](#agg_function-uniqcombined).
 
 **Смотрите также**
 
-- [uniq](#agg_function-uniq)
-- [uniqCombined](#agg_function-uniqcombined)
-- [uniqExact](#agg_function-uniqexact)
+-   [uniq](#agg_function-uniq)
+-   [uniqCombined](#agg_function-uniqcombined)
+-   [uniqExact](#agg_function-uniqexact)
 
-## uniqExact {#agg_function-uniqexact}
+## uniqExact {#agg-function-uniqexact}
 
 Вычисляет точное количество различных значений аргументов.
 
-```sql
+``` sql
 uniqExact(x[, ...])
 ```
 
@@ -666,11 +666,11 @@ uniqExact(x[, ...])
 
 **Смотрите также**
 
-- [uniq](#agg_function-uniq)
-- [uniqCombined](#agg_function-uniqcombined)
-- [uniqHLL12](#agg_function-uniqhll12)
+-   [uniq](#agg_function-uniq)
+-   [uniqCombined](#agg_function-uniqcombined)
+-   [uniqHLL12](#agg_function-uniqhll12)
 
-## groupArray(x), groupArray(max_size)(x) {#agg_function-grouparray}
+## groupArray(x), groupArray(max\_size)(x) {#agg-function-grouparray}
 
 Составляет массив из значений аргумента.
 Значения в массив могут быть добавлены в любом (недетерминированном) порядке.
@@ -680,8 +680,7 @@ uniqExact(x[, ...])
 
 В некоторых случаях, вы всё же можете рассчитывать на порядок выполнения запроса. Это — случаи, когда `SELECT` идёт из подзапроса, в котором используется `ORDER BY`.
 
-
-## groupArrayInsertAt(x)
+## groupArrayInsertAt(x) {#grouparrayinsertatx}
 
 Вставляет в массив значение в заданную позицию.
 
@@ -689,14 +688,14 @@ uniqExact(x[, ...])
 
 Опциональные параметры:
 
-- Значение по умолчанию для подстановки на пустые позиции.
-- Длина результирующего массива. Например, если вы хотите получать массивы одинакового размера для всех агрегатных ключей. При использовании этого параметра значение по умолчанию задавать обязательно.
+-   Значение по умолчанию для подстановки на пустые позиции.
+-   Длина результирующего массива. Например, если вы хотите получать массивы одинакового размера для всех агрегатных ключей. При использовании этого параметра значение по умолчанию задавать обязательно.
 
-## groupArrayMovingSum {#agg_function-grouparraymovingsum}
+## groupArrayMovingSum {#agg-function-grouparraymovingsum}
 
 Вычисляет скользящую сумму входных значений.
 
-```sql
+``` sql
 groupArrayMovingSum(numbers_for_summing)
 groupArrayMovingSum(window_size)(numbers_for_summing)
 ```
@@ -705,18 +704,18 @@ groupArrayMovingSum(window_size)(numbers_for_summing)
 
 **Параметры**
 
-- `numbers_for_summing` — [выражение](../syntax.md#syntax-expressions), возвращающее значение числового типа.
-- `window_size` — размер окна.
+-   `numbers_for_summing` — [выражение](../syntax.md#syntax-expressions), возвращающее значение числового типа.
+-   `window_size` — размер окна.
 
 **Возвращаемые значения**
 
-- Массив того же размера и типа, что и входные данные.
+-   Массив того же размера и типа, что и входные данные.
 
 **Пример**
 
 Таблица с исходными данными:
 
-```sql
+``` sql
 CREATE TABLE t
 (
     `int` UInt8,
@@ -726,7 +725,7 @@ CREATE TABLE t
 ENGINE = TinyLog
 ```
 
-```text
+``` text
 ┌─int─┬─float─┬──dec─┐
 │   1 │   1.1 │ 1.10 │
 │   2 │   2.2 │ 2.20 │
@@ -737,7 +736,7 @@ ENGINE = TinyLog
 
 Запросы:
 
-```sql
+``` sql
 SELECT
     groupArrayMovingSum(int) AS I,
     groupArrayMovingSum(float) AS F,
@@ -745,13 +744,13 @@ SELECT
 FROM t
 ```
 
-```text
+``` text
 ┌─I──────────┬─F───────────────────────────────┬─D──────────────────────┐
 │ [1,3,7,14] │ [1.1,3.3000002,7.7000003,15.47] │ [1.10,3.30,7.70,15.47] │
 └────────────┴─────────────────────────────────┴────────────────────────┘
 ```
 
-```sql
+``` sql
 SELECT
     groupArrayMovingSum(2)(int) AS I,
     groupArrayMovingSum(2)(float) AS F,
@@ -759,31 +758,29 @@ SELECT
 FROM t
 ```
 
-```text
+``` text
 ┌─I──────────┬─F───────────────────────────────┬─D──────────────────────┐
 │ [1,3,6,11] │ [1.1,3.3000002,6.6000004,12.17] │ [1.10,3.30,6.60,12.17] │
 └────────────┴─────────────────────────────────┴────────────────────────┘
 ```
 
-## groupArrayMovingAvg {#agg_function-grouparraymovingavg}
+## groupArrayMovingAvg {#agg-function-grouparraymovingavg}
 
 Вычисляет скользящее среднее для входных значений.
 
-```
-groupArrayMovingAvg(numbers_for_summing)
-groupArrayMovingAvg(window_size)(numbers_for_summing)
-```
+    groupArrayMovingAvg(numbers_for_summing)
+    groupArrayMovingAvg(window_size)(numbers_for_summing)
 
 Функция может принимать размер окна в качестве параметра. Если окно не указано, то функция использует размер окна, равный количеству строк в столбце.
 
 **Параметры**
 
-- `numbers_for_summing` — [выражение](../syntax.md#syntax-expressions), возвращающее значение числового типа.
-- `window_size` — размер окна.
+-   `numbers_for_summing` — [выражение](../syntax.md#syntax-expressions), возвращающее значение числового типа.
+-   `window_size` — размер окна.
 
 **Возвращаемые значения**
 
-- Массив того же размера и типа, что и входные данные.
+-   Массив того же размера и типа, что и входные данные.
 
 Функция использует [округление к меньшему по модулю](https://ru.wikipedia.org/wiki/Округление#Методы). Оно усекает десятичные разряды, незначимые для результирующего типа данных.
 
@@ -791,7 +788,7 @@ groupArrayMovingAvg(window_size)(numbers_for_summing)
 
 Таблица с исходными данными:
 
-```sql
+``` sql
 CREATE TABLE t
 (
     `int` UInt8,
@@ -801,7 +798,7 @@ CREATE TABLE t
 ENGINE = TinyLog
 ```
 
-```text
+``` text
 ┌─int─┬─float─┬──dec─┐
 │   1 │   1.1 │ 1.10 │
 │   2 │   2.2 │ 2.20 │
@@ -812,7 +809,7 @@ ENGINE = TinyLog
 
 Запросы:
 
-```sql
+``` sql
 SELECT
     groupArrayMovingAvg(int) AS I,
     groupArrayMovingAvg(float) AS F,
@@ -820,13 +817,13 @@ SELECT
 FROM t
 ```
 
-```text
+``` text
 ┌─I─────────┬─F───────────────────────────────────┬─D─────────────────────┐
 │ [0,0,1,3] │ [0.275,0.82500005,1.9250001,3.8675] │ [0.27,0.82,1.92,3.86] │
 └───────────┴─────────────────────────────────────┴───────────────────────┘
 ```
 
-```sql
+``` sql
 SELECT
     groupArrayMovingAvg(2)(int) AS I,
     groupArrayMovingAvg(2)(float) AS F,
@@ -834,13 +831,13 @@ SELECT
 FROM t
 ```
 
-```text
+``` text
 ┌─I─────────┬─F────────────────────────────────┬─D─────────────────────┐
 │ [0,1,3,5] │ [0.55,1.6500001,3.3000002,6.085] │ [0.55,1.65,3.30,6.08] │
 └───────────┴──────────────────────────────────┴───────────────────────┘
 ```
 
-## groupUniqArray(x), groupUniqArray(max_size)(x)
+## groupUniqArray(x), groupUniqArray(max\_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
 
 Составляет массив из различных значений аргумента. Расход оперативной памяти такой же, как у функции `uniqExact`.
 
@@ -854,36 +851,34 @@ FROM t
 
 Внутренние состояния функций `quantile*` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantiles](#quantiles), это повысит эффективность запроса.
 
-**Синтаксис** 
+**Синтаксис**
 
-```sql
+``` sql
 quantile(level)(expr)
 ```
 
 Алиас: `median`.
 
-**Параметры** 
+**Параметры**
 
-- `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
-- `expr` — Выражение над значениями столбца, которое возвращает данные [числовых типов](../../data_types/index.md#data_types) или типов [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md).
+-   `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
+-   `expr` — Выражение над значениями столбца, которое возвращает данные [числовых типов](../../data_types/index.md#data_types) или типов [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md).
 
+**Возвращаемое значение**
 
-**Возвращаемое значение** 
-
-- Приблизительный квантиль заданного уровня.
+-   Приблизительный квантиль заданного уровня.
 
 Тип:
 
-- [Float64](../../data_types/float.md) для входных данных числового типа.
-- [Date](../../data_types/date.md), если входные значения имеют тип `Date`.
-- [DateTime](../../data_types/datetime.md), если входные значения имеют тип `DateTime`.
-
+-   [Float64](../../data_types/float.md) для входных данных числового типа.
+-   [Date](../../data_types/date.md), если входные значения имеют тип `Date`.
+-   [DateTime](../../data_types/datetime.md), если входные значения имеют тип `DateTime`.
 
 **Пример**
 
 Входная таблица:
 
-```text
+``` text
 ┌─val─┐
 │   1 │
 │   1 │
@@ -894,13 +889,13 @@ quantile(level)(expr)
 
 Запрос:
 
-```sql
+``` sql
 SELECT quantile(val) FROM t
 ```
 
 Результат:
 
-```text
+``` text
 ┌─quantile(val)─┐
 │           1.5 │
 └───────────────┘
@@ -908,9 +903,8 @@ SELECT quantile(val) FROM t
 
 **Смотрите также**
 
-- [median](#median)
-- [quantiles](#quantiles)
-
+-   [median](#median)
+-   [quantiles](#quantiles)
 
 ## quantileDeterministic {#quantiledeterministic}
 
@@ -920,37 +914,35 @@ SELECT quantile(val) FROM t
 
 Внутренние состояния функций `quantile*` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantiles](#quantiles), это повысит эффективность запроса.
 
-**Синтаксис** 
+**Синтаксис**
 
-```sql
+``` sql
 quantileDeterministic(level)(expr, determinator)
 ```
 
 Алиас: `medianDeterministic`.
 
-**Параметры** 
+**Параметры**
 
-- `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
-- `expr` — Выражение над значениями столбца, которое возвращает данные [числовых типов](../../data_types/index.md#data_types) или типов [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md).
-- `determinator` — Число, хэш которого используется при сэмплировании в алгоритме reservoir sampling, чтобы сделать результат детерминированным. В качестве детерминатора можно использовать любое определённое положительное число, например, идентификатор пользователя или события. Если одно  и то же значение детерминатора попадается в выборке слишком часто, то функция выдаёт некорректный результат.
+-   `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
+-   `expr` — Выражение над значениями столбца, которое возвращает данные [числовых типов](../../data_types/index.md#data_types) или типов [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md).
+-   `determinator` — Число, хэш которого используется при сэмплировании в алгоритме reservoir sampling, чтобы сделать результат детерминированным. В качестве детерминатора можно использовать любое определённое положительное число, например, идентификатор пользователя или события. Если одно и то же значение детерминатора попадается в выборке слишком часто, то функция выдаёт некорректный результат.
 
 **Возвращаемое значение**
 
-- Приблизительный квантиль заданного уровня.
-
+-   Приблизительный квантиль заданного уровня.
 
 Тип:
 
-- [Float64](../../data_types/float.md) для входных данных числового типа.
-- [Date](../../data_types/date.md) если входные значения имеют тип `Date`.
-- [DateTime](../../data_types/datetime.md) если входные значения имеют тип `DateTime`.
-
+-   [Float64](../../data_types/float.md) для входных данных числового типа.
+-   [Date](../../data_types/date.md) если входные значения имеют тип `Date`.
+-   [DateTime](../../data_types/datetime.md) если входные значения имеют тип `DateTime`.
 
 **Пример**
 
 Входная таблица:
 
-```text
+``` text
 ┌─val─┐
 │   1 │
 │   1 │
@@ -961,13 +953,13 @@ quantileDeterministic(level)(expr, determinator)
 
 Запрос:
 
-```sql
+``` sql
 SELECT quantileDeterministic(val, 1) FROM t
 ```
 
 Результат:
 
-```text
+``` text
 ┌─quantileDeterministic(val, 1)─┐
 │                           1.5 │
 └───────────────────────────────┘
@@ -975,9 +967,8 @@ SELECT quantileDeterministic(val, 1) FROM t
 
 **Смотрите также**
 
-- [median](#median)
-- [quantiles](#quantiles)
-
+-   [median](#median)
+-   [quantiles](#quantiles)
 
 ## quantileExact {#quantileexact}
 
@@ -987,41 +978,40 @@ SELECT quantileDeterministic(val, 1) FROM t
 
 Внутренние состояния функций `quantile*` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantiles](#quantiles), это повысит эффективность запроса.
 
-**Синтаксис** 
+**Синтаксис**
 
-```sql
+``` sql
 quantileExact(level)(expr)
 ```
 
 Алиас: `medianExact`.
 
-**Параметры** 
+**Параметры**
 
-- `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
-- `expr` — Выражение над значениями столбца, которое возвращает данные [числовых типов](../../data_types/index.md#data_types) или типов [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md).
-
+-   `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
+-   `expr` — Выражение над значениями столбца, которое возвращает данные [числовых типов](../../data_types/index.md#data_types) или типов [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md).
 
 **Возвращаемое значение**
 
-- Квантиль заданного уровня.
+-   Квантиль заданного уровня.
 
 Тип:
 
-- [Float64](../../data_types/float.md) для входных данных числового типа.
-- [Date](../../data_types/date.md) если входные значения имеют тип `Date`.
-- [DateTime](../../data_types/datetime.md) если входные значения имеют тип `DateTime`.
+-   [Float64](../../data_types/float.md) для входных данных числового типа.
+-   [Date](../../data_types/date.md) если входные значения имеют тип `Date`.
+-   [DateTime](../../data_types/datetime.md) если входные значения имеют тип `DateTime`.
 
 **Пример**
 
 Запрос:
 
-```sql
+``` sql
 SELECT quantileExact(number) FROM numbers(10)
 ```
 
 Результат:
 
-```text
+``` text
 ┌─quantileExact(number)─┐
 │                     5 │
 └───────────────────────┘
@@ -1029,8 +1019,8 @@ SELECT quantileExact(number) FROM numbers(10)
 
 **Смотрите также**
 
-- [median](#median)
-- [quantiles](#quantiles)
+-   [median](#median)
+-   [quantiles](#quantiles)
 
 ## quantileExactWeighted {#quantileexactweighted}
 
@@ -1040,35 +1030,35 @@ SELECT quantileExact(number) FROM numbers(10)
 
 Внутренние состояния функций `quantile*` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantiles](#quantiles), это повысит эффективность запроса.
 
-**Синтаксис** 
+**Синтаксис**
 
-```sql
+``` sql
 quantileExactWeighted(level)(expr, weight)
 ```
 
 Алиас: `medianExactWeighted`.
 
-**Параметры** 
+**Параметры**
 
-- `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
-- `expr` — Выражение над значениями столбца, которое возвращает данные [числовых типов](../../data_types/index.md#data_types) или типов [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md).
-- `weight` — Столбец с весам элементов последовательности. Вес — это количество повторений элемента в последовательности.
+-   `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
+-   `expr` — Выражение над значениями столбца, которое возвращает данные [числовых типов](../../data_types/index.md#data_types) или типов [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md).
+-   `weight` — Столбец с весам элементов последовательности. Вес — это количество повторений элемента в последовательности.
 
 **Возвращаемое значение**
 
-- Quantile of the specified level.
+-   Quantile of the specified level.
 
 Тип:
 
-- [Float64](../../data_types/float.md) для входных данных числового типа.
-- [Date](../../data_types/date.md) если входные значения имеют тип `Date`.
-- [DateTime](../../data_types/datetime.md) если входные значения имеют тип `DateTime`.
+-   [Float64](../../data_types/float.md) для входных данных числового типа.
+-   [Date](../../data_types/date.md) если входные значения имеют тип `Date`.
+-   [DateTime](../../data_types/datetime.md) если входные значения имеют тип `DateTime`.
 
 **Пример**
 
 Входная таблица:
 
-```text
+``` text
 ┌─n─┬─val─┐
 │ 0 │   3 │
 │ 1 │   2 │
@@ -1079,22 +1069,22 @@ quantileExactWeighted(level)(expr, weight)
 
 Запрос:
 
-```sql
+``` sql
 SELECT quantileExactWeighted(n, val) FROM t
 ```
 
 Результат:
 
-```text
+``` text
 ┌─quantileExactWeighted(n, val)─┐
 │                             1 │
 └───────────────────────────────┘
 ```
 
-**Смотрите также** 
+**Смотрите также**
 
-- [median](#median)
-- [quantiles](#quantiles)
+-   [median](#median)
+-   [quantiles](#quantiles)
 
 ## quantileTiming {#quantiletiming}
 
@@ -1106,7 +1096,7 @@ SELECT quantileExactWeighted(n, val) FROM t
 
 **Синтаксис**
 
-```sql
+``` sql
 quantileTiming(level)(expr)
 ```
 
@@ -1114,18 +1104,19 @@ quantileTiming(level)(expr)
 
 **Параметры**
 
-- `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
-- `expr` — [Выражение](../syntax.md#syntax-expressions) над значения столбца, которые возвращают данные типа [Float*](../../data_types/float.md).
+-   `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
 
-    - Если в функцию передать отрицательные значения, то её поведение не определено.
-    - Если значение больше, чем 30 000 (например, время загрузки страницы превышает 30 секунд), то оно приравнивается к 30 000.
+-   `expr` — [Выражение](../syntax.md#syntax-expressions) над значения столбца, которые возвращают данные типа [Float\*](../../data_types/float.md).
+
+        - Если в функцию передать отрицательные значения, то её поведение не определено.
+        - Если значение больше, чем 30 000 (например, время загрузки страницы превышает 30 секунд), то оно приравнивается к 30 000.
 
 **Точность**
 
 Вычисления точны при соблюдении следующих условий:
 
-- Размер выборки не превышает 5670 элементов.
-- Размер выборки превышает 5670 элементов, но значение каждого элемента не больше 1024.
+-   Размер выборки не превышает 5670 элементов.
+-   Размер выборки превышает 5670 элементов, но значение каждого элемента не больше 1024.
 
 В противном случае, результат вычисления округляется до ближайшего множителя числа 16.
 
@@ -1134,7 +1125,7 @@ quantileTiming(level)(expr)
 
 **Возвращаемое значение**
 
-- Квантиль заданного уровня.
+-   Квантиль заданного уровня.
 
 Тип: `Float32`.
 
@@ -1145,7 +1136,7 @@ quantileTiming(level)(expr)
 
 Входная таблица:
 
-```text
+``` text
 ┌─response_time─┐
 │            72 │
 │           112 │
@@ -1161,13 +1152,13 @@ quantileTiming(level)(expr)
 
 Запрос:
 
-```sql
+``` sql
 SELECT quantileTiming(response_time) FROM t
 ```
 
 Результат:
 
-```text
+``` text
 ┌─quantileTiming(response_time)─┐
 │                           126 │
 └───────────────────────────────┘
@@ -1175,8 +1166,8 @@ SELECT quantileTiming(response_time) FROM t
 
 **Смотрите также**
 
-- [median](#median)
-- [quantiles](#quantiles)
+-   [median](#median)
+-   [quantiles](#quantiles)
 
 ## quantileTimingWeighted {#quantiletimingweighted}
 
@@ -1188,7 +1179,7 @@ SELECT quantileTiming(response_time) FROM t
 
 **Синтаксис**
 
-```sql
+``` sql
 quantileTimingWeighted(level)(expr, weight)
 ```
 
@@ -1196,20 +1187,21 @@ quantileTimingWeighted(level)(expr, weight)
 
 **Параметры**
 
-- `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
-- `expr` — [Выражение](../syntax.md#syntax-expressions) над значения столбца, которые возвращают данные типа [Float*](../../data_types/float.md).
+-   `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
 
-    - Если в функцию передать отрицательные значения, то её поведение не определено.
-    - Если значение больше, чем 30 000 (например, время загрузки страницы превышает 30 секунд), то оно приравнивается к 30 000.
+-   `expr` — [Выражение](../syntax.md#syntax-expressions) над значения столбца, которые возвращают данные типа [Float\*](../../data_types/float.md).
 
-- `weight` — Столбец с весам элементов последовательности. Вес — это количество повторений элемента в последовательности.
+        - Если в функцию передать отрицательные значения, то её поведение не определено.
+        - Если значение больше, чем 30 000 (например, время загрузки страницы превышает 30 секунд), то оно приравнивается к 30 000.
+
+-   `weight` — Столбец с весам элементов последовательности. Вес — это количество повторений элемента в последовательности.
 
 **Точность**
 
 Вычисления точны при соблюдении следующих условий:
 
-- Размер выборки не превышает 5670 элементов.
-- Размер выборки превышает 5670 элементов, но значение каждого элемента не больше 1024.
+-   Размер выборки не превышает 5670 элементов.
+-   Размер выборки превышает 5670 элементов, но значение каждого элемента не больше 1024.
 
 В противном случае, результат вычисления округляется до ближайшего множителя числа 16.
 
@@ -1218,7 +1210,7 @@ quantileTimingWeighted(level)(expr, weight)
 
 **Возвращаемое значение**
 
-- Квантиль заданного уровня.
+-   Квантиль заданного уровня.
 
 Тип: `Float32`.
 
@@ -1229,7 +1221,7 @@ quantileTimingWeighted(level)(expr, weight)
 
 Входная таблица:
 
-```text
+``` text
 ┌─response_time─┬─weight─┐
 │            68 │      1 │
 │           104 │      2 │
@@ -1242,13 +1234,13 @@ quantileTimingWeighted(level)(expr, weight)
 
 Запрос:
 
-```sql
+``` sql
 SELECT quantileTimingWeighted(response_time, weight) FROM t
 ```
 
 Результат:
 
-```text
+``` text
 ┌─quantileTimingWeighted(response_time, weight)─┐
 │                                           112 │
 └───────────────────────────────────────────────┘
@@ -1256,57 +1248,53 @@ SELECT quantileTimingWeighted(response_time, weight) FROM t
 
 **Смотрите также**
 
-- [median](#median)
-- [quantiles](#quantiles)
-
+-   [median](#median)
+-   [quantiles](#quantiles)
 
 ## quantileTDigest {#quantiletdigest}
 
 Приблизительно вычисляет [квантиль](https://ru.wikipedia.org/wiki/Квантиль) числовой последовательности, используя алгоритм [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf).
 
-Максимальная ошибка 1%.  Потребление памяти — `log(n)`, где `n` — число значений. Результат не детерминирован и зависит от порядка выполнения запроса.
+Максимальная ошибка 1%. Потребление памяти — `log(n)`, где `n` — число значений. Результат не детерминирован и зависит от порядка выполнения запроса.
 
 Производительность функции ниже, чем производительность функции [quantile](#quantile) или [quantileTiming](#quantiletiming). По соотношению размера состояния к точности вычисления, эта функция значительно превосходит `quantile`.
 
 Внутренние состояния функций `quantile*` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantiles](#quantiles), это повысит эффективность запроса.
 
-**Синтаксис** 
+**Синтаксис**
 
-```sql
+``` sql
 quantileTDigest(level)(expr)
 ```
 
 Алиас: `medianTDigest`.
 
-**Параметры** 
+**Параметры**
 
-- `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
-- `expr` — Выражение над значениями столбца, которое возвращает данные [числовых типов](../../data_types/index.md#data_types) или типов [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md).
-
+-   `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
+-   `expr` — Выражение над значениями столбца, которое возвращает данные [числовых типов](../../data_types/index.md#data_types) или типов [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md).
 
 **Возвращаемое значение**
 
-- Приблизительную квантиль заданного уровня.
-
+-   Приблизительную квантиль заданного уровня.
 
 Тип:
 
-- [Float64](../../data_types/float.md) для входных данных числового типа.
-- [Date](../../data_types/date.md) если входные значения имеют тип `Date`.
-- [DateTime](../../data_types/datetime.md) если входные значения имеют тип `DateTime`.
-
+-   [Float64](../../data_types/float.md) для входных данных числового типа.
+-   [Date](../../data_types/date.md) если входные значения имеют тип `Date`.
+-   [DateTime](../../data_types/datetime.md) если входные значения имеют тип `DateTime`.
 
 **Пример**
 
 Запрос:
 
-```sql
+``` sql
 SELECT quantileTDigest(number) FROM numbers(10)
 ```
 
 Результат:
 
-```text
+``` text
 ┌─quantileTDigest(number)─┐
 │                     4.5 │
 └─────────────────────────┘
@@ -1314,55 +1302,54 @@ SELECT quantileTDigest(number) FROM numbers(10)
 
 **Смотрите также**
 
-- [median](#median)
-- [quantiles](#quantiles)
+-   [median](#median)
+-   [quantiles](#quantiles)
 
 ## quantileTDigestWeighted {#quantiletdigestweighted}
 
 Приблизительно вычисляет [квантиль](https://ru.wikipedia.org/wiki/Квантиль) числовой последовательности, используя алгоритм [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf). Функция учитывает вес каждого элемента последовательности.
- 
-Максимальная ошибка 1%.  Потребление памяти — `log(n)`, где `n` — число значений. Результат не детерминирован и зависит от порядка выполнения запроса.
+
+Максимальная ошибка 1%. Потребление памяти — `log(n)`, где `n` — число значений. Результат не детерминирован и зависит от порядка выполнения запроса.
 
 Производительность функции ниже, чем производительность функции [quantile](#quantile) или [quantileTiming](#quantiletiming). По соотношению размера состояния к точности вычисления, эта функция значительно превосходит `quantile`.
 
 Внутренние состояния функций `quantile*` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantiles](#quantiles), это повысит эффективность запроса.
 
-**Синтаксис** 
+**Синтаксис**
 
-```sql
+``` sql
 quantileTDigestWeighted(level)(expr, weight)
 ```
 
 Алиас: `medianTDigest`.
 
-**Параметры** 
+**Параметры**
 
-- `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
-- `expr` — Выражение над значениями столбца, которое возвращает данные [числовых типов](../../data_types/index.md#data_types) или типов [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md).
-- `weight` — Столбец с весам элементов последовательности. Вес — это количество повторений элемента в последовательности.
+-   `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
+-   `expr` — Выражение над значениями столбца, которое возвращает данные [числовых типов](../../data_types/index.md#data_types) или типов [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md).
+-   `weight` — Столбец с весам элементов последовательности. Вес — это количество повторений элемента в последовательности.
 
 **Возвращаемое значение**
 
-- Приблизительный квантиль заданного уровня.
-
+-   Приблизительный квантиль заданного уровня.
 
 Тип:
 
-- [Float64](../../data_types/float.md) для входных данных числового типа.
-- [Date](../../data_types/date.md) если входные значения имеют тип `Date`.
-- [DateTime](../../data_types/datetime.md) если входные значения имеют тип `DateTime`.
+-   [Float64](../../data_types/float.md) для входных данных числового типа.
+-   [Date](../../data_types/date.md) если входные значения имеют тип `Date`.
+-   [DateTime](../../data_types/datetime.md) если входные значения имеют тип `DateTime`.
 
 **Пример**
 
 Запрос:
 
-```sql
+``` sql
 SELECT quantileTDigestWeighted(number, 1) FROM numbers(10)
 ```
 
 Результат:
 
-```text
+``` text
 ┌─quantileTDigestWeighted(number, 1)─┐
 │                                4.5 │
 └────────────────────────────────────┘
@@ -1370,9 +1357,8 @@ SELECT quantileTDigestWeighted(number, 1) FROM numbers(10)
 
 **Смотрите также**
 
-- [median](#median)
-- [quantiles](#quantiles)
-
+-   [median](#median)
+-   [quantiles](#quantiles)
 
 ## median {#median}
 
@@ -1380,20 +1366,20 @@ SELECT quantileTDigestWeighted(number, 1) FROM numbers(10)
 
 Functions:
 
-- `median` — алиас [quantile](#quantile).
-- `medianDeterministic` — алиас [quantileDeterministic](#quantiledeterministic).
-- `medianExact` —  алиас [quantileExact](#quantileexact).
-- `medianExactWeighted` — алиас [quantileExactWeighted](#quantileexactweighted).
-- `medianTiming` — алиас [quantileTiming](#quantiletiming).
-- `medianTimingWeighted` — алиас [quantileTimingWeighted](#quantiletimingweighted).
-- `medianTDigest` — алиас [quantileTDigest](#quantiletdigest).
-- `medianTDigestWeighted` — алиас [quantileTDigestWeighted](#quantiletdigestweighted).
+-   `median` — алиас [quantile](#quantile).
+-   `medianDeterministic` — алиас [quantileDeterministic](#quantiledeterministic).
+-   `medianExact` — алиас [quantileExact](#quantileexact).
+-   `medianExactWeighted` — алиас [quantileExactWeighted](#quantileexactweighted).
+-   `medianTiming` — алиас [quantileTiming](#quantiletiming).
+-   `medianTimingWeighted` — алиас [quantileTimingWeighted](#quantiletimingweighted).
+-   `medianTDigest` — алиас [quantileTDigest](#quantiletdigest).
+-   `medianTDigestWeighted` — алиас [quantileTDigestWeighted](#quantiletdigestweighted).
 
 **Пример**
 
 Входная таблица:
 
-```text
+``` text
 ┌─val─┐
 │   1 │
 │   1 │
@@ -1404,23 +1390,23 @@ Functions:
 
 Запрос:
 
-```sql
+``` sql
 SELECT medianDeterministic(val, 1) FROM t
 ```
 
 Результат:
 
-```text
+``` text
 ┌─medianDeterministic(val, 1)─┐
 │                         1.5 │
 └─────────────────────────────┘
 ```
 
-## quantiles(level1, level2, ...)(x) {#quantiles}
+## quantiles(level1, level2, …)(x) {#quantiles}
 
 Для всех quantile-функций, также присутствуют соответствующие quantiles-функции: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`. Эти функции за один проход вычисляют все квантили перечисленных уровней и возвращают массив вычисленных значений.
 
-## varSamp(x)
+## varSamp(x) {#varsampx}
 
 Вычисляет величину `Σ((x - x̅)^2) / (n - 1)`, где `n` - размер выборки, `x̅`- среднее значение `x`.
 
@@ -1428,27 +1414,27 @@ SELECT medianDeterministic(val, 1) FROM t
 
 Возвращает `Float64`. В случае, когда `n <= 1`, возвращается `+∞`.
 
-## varPop(x)
+## varPop(x) {#varpopx}
 
 Вычисляет величину `Σ((x - x̅)^2) / n`, где `n` - размер выборки, `x̅`- среднее значение `x`.
 
 То есть, дисперсию для множества значений. Возвращает `Float64`.
 
-## stddevSamp(x)
+## stddevSamp(x) {#stddevsampx}
 
 Результат равен квадратному корню от `varSamp(x)`.
 
-## stddevPop(x)
+## stddevPop(x) {#stddevpopx}
 
 Результат равен квадратному корню от `varPop(x)`.
 
-## topK(N)(column)
+## topK(N)(column) {#topkncolumn}
 
 Возвращает массив наиболее часто встречающихся значений в указанном столбце. Результирующий массив упорядочен по убыванию частоты значения (не по самим значениям).
 
 Реализует [Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf) алгоритм для анализа TopK, на основе reduce-and-combine алгоритма из методики [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
 
-```sql
+``` sql
 topK(N)(column)
 ```
 
@@ -1458,19 +1444,19 @@ topK(N)(column)
 
 **Аргументы**
 
-- 'N' - Количество значений.
-- 'x' – Столбец.
+-   ‘N’ - Количество значений.
+-   ‘x’ – Столбец.
 
 **Пример**
 
 Возьмём набор данных [OnTime](../../getting_started/example_datasets/ontime.md) и выберем 3 наиболее часто встречающихся значения в столбце `AirlineID`.
 
-```sql
+``` sql
 SELECT topK(3)(AirlineID) AS res
 FROM ontime
 ```
 
-```text
+``` text
 ┌─res─────────────────┐
 │ [19393,19790,19805] │
 └─────────────────────┘
@@ -1482,66 +1468,65 @@ FROM ontime
 
 **Синтаксис**
 
-```sql
+``` sql
 topKWeighted(N)(x, weight)
 ```
 
 **Параметры**
 
-- `N` — Количество элементов для выдачи.
+-   `N` — Количество элементов для выдачи.
 
 **Аргументы**
 
-- `x` – значение.
-- `weight` — вес. [UInt8](../../data_types/int_uint.md).
+-   `x` – значение.
+-   `weight` — вес. [UInt8](../../data_types/int_uint.md).
 
 **Возвращаемое значение**
 
 Возвращает массив значений с максимально приближенной суммой весов.
 
-
 **Пример**
 
 Запрос:
 
-```sql
+``` sql
 SELECT topKWeighted(10)(number, number) FROM numbers(1000)
 ```
 
 Результат:
 
-```text
+``` text
 ┌─topKWeighted(10)(number, number)──────────┐
 │ [999,998,997,996,995,994,993,992,991,990] │
 └───────────────────────────────────────────┘
 ```
 
-## covarSamp(x, y)
+## covarSamp(x, y) {#covarsampx-y}
 
 Вычисляет величину `Σ((x - x̅)(y - y̅)) / (n - 1)`.
 
 Возвращает Float64. В случае, когда `n <= 1`, возвращается +∞.
 
-## covarPop(x, y)
+## covarPop(x, y) {#covarpopx-y}
 
 Вычисляет величину `Σ((x - x̅)(y - y̅)) / n`.
 
-## corr(x, y)
+## corr(x, y) {#corrx-y}
 
 Вычисляет коэффициент корреляции Пирсона: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
 
-## simpleLinearRegression
+## simpleLinearRegression {#simplelinearregression}
 
 Выполняет простую (одномерную) линейную регрессию.
 
-```sql
+``` sql
 simpleLinearRegression(x, y)
 ```
 
 Параметры:
 
-- `x` — столбец со значениями зависимой переменной.
-- `y` — столбец со значениями наблюдаемой переменной.
+-   `x` — столбец со значениями зависимой переменной.
+-   `y` — столбец со значениями наблюдаемой переменной.
 
 Возвращаемые значения:
 
@@ -1549,45 +1534,44 @@ simpleLinearRegression(x, y)
 
 **Примеры**
 
-```sql
+``` sql
 SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])
 ```
 
-```text
+``` text
 ┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])─┐
 │ (1,0)                                                             │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-```sql
+``` sql
 SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 ```
 
-```text
+``` text
 ┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])─┐
 │ (1,3)                                                             │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
+## stochasticLinearRegression {#agg-functions-stochasticlinearregression}
 
 Функция реализует стохастическую линейную регрессию. Поддерживает пользовательские параметры для скорости обучения, коэффициента регуляризации L2, размера mini-batch и имеет несколько методов обновления весов ([Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) (по умолчанию), [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
 
-### Параметры {#agg_functions-stochasticlinearregression-parameters}
+### Параметры {#agg-functions-stochasticlinearregression-parameters}
 
 Есть 4 настраиваемых параметра. Они передаются в функцию последовательно, однако не обязательно указывать все, используются значения по умолчанию, однако хорошая модель требует некоторой настройки параметров.
 
-```text
+``` text
 stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 ```
 
-1. Скорость обучения — коэффициент длины шага, при выполнении градиентного спуска. Слишком большая скорость обучения может привести к бесконечным весам модели. По умолчанию `0.00001`.
-2. Коэффициент регуляризации l2. Помогает предотвратить подгонку. По умолчанию `0.1`.
-3. Размер mini-batch задаёт количество элементов, чьи градиенты будут вычислены и просуммированы при выполнении одного шага градиентного спуска. Чистый стохастический спуск использует один элемент, однако использование mini-batch (около 10 элементов) делает градиентные шаги более стабильными. По умолчанию `15`.
-4. Метод обновления весов, можно выбрать один из следующих: `Adam` (по умолчанию), `SGD`, `Momentum`, `Nesterov`. `Momentum` и `Nesterov` более требовательные к вычислительным ресурсам и памяти, однако они имеют высокую скорость схождения и устойчивости методов стохастического градиента.
+1.  Скорость обучения — коэффициент длины шага, при выполнении градиентного спуска. Слишком большая скорость обучения может привести к бесконечным весам модели. По умолчанию `0.00001`.
+2.  Коэффициент регуляризации l2. Помогает предотвратить подгонку. По умолчанию `0.1`.
+3.  Размер mini-batch задаёт количество элементов, чьи градиенты будут вычислены и просуммированы при выполнении одного шага градиентного спуска. Чистый стохастический спуск использует один элемент, однако использование mini-batch (около 10 элементов) делает градиентные шаги более стабильными. По умолчанию `15`.
+4.  Метод обновления весов, можно выбрать один из следующих: `Adam` (по умолчанию), `SGD`, `Momentum`, `Nesterov`. `Momentum` и `Nesterov` более требовательные к вычислительным ресурсам и памяти, однако они имеют высокую скорость схождения и устойчивости методов стохастического градиента.
 
-
-### Использование {#agg_functions-stochasticlinearregression-usage}
+### Использование {#agg-functions-stochasticlinearregression-usage}
 
 `stochasticLinearRegression` используется на двух этапах: построение модели и предсказание новых данных. Чтобы построить модель и сохранить её состояние для дальнейшего использования, мы используем комбинатор `-State`.
 Для прогнозирования мы используем функцию [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), которая принимает в качестве аргументов состояние и свойства для прогнозирования.
@@ -1598,7 +1582,7 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 
 Пример запроса:
 
-```sql
+``` sql
 CREATE TABLE IF NOT EXISTS train_data
 (
     param1 Float64,
@@ -1618,7 +1602,7 @@ AS state FROM train_data;
 
 После сохранения состояния в таблице мы можем использовать его несколько раз для прогнозирования или смёржить с другими состояниями и создать новые, улучшенные модели.
 
-```sql
+``` sql
 WITH (SELECT state FROM your_model) AS model SELECT
 evalMLMethod(model, param1, param2) FROM test_data
 ```
@@ -1627,76 +1611,83 @@ evalMLMethod(model, param1, param2) FROM test_data
 
 `test_data` — это таблица, подобная `train_data`, но при этом может не содержать целевое значение.
 
-### Примечания {#agg_functions-stochasticlinearregression-notes}
+### Примечания {#agg-functions-stochasticlinearregression-notes}
 
-1. Объединить две модели можно следующим запросом:
+1.  Объединить две модели можно следующим запросом:
 
-    ```sql
+<!-- -->
+
+    ``` sql
     SELECT state1 + state2 FROM your_models
     ```
 
-    где таблица `your_models` содержит обе модели. Запрос вернёт новый объект `AggregateFunctionState`.
+  где таблица `your_models` содержит обе модели. Запрос вернёт новый объект `AggregateFunctionState`.
 
-2. Пользователь может получать веса созданной модели для своих целей без сохранения модели, если не использовать комбинатор  `-State`.
+1.  Пользователь может получать веса созданной модели для своих целей без сохранения модели, если не использовать комбинатор `-State`.
 
-    ```sql
+<!-- -->
+
+    ``` sql
     SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data
     ```
 
-    Подобный запрос строит модель и возвращает её веса, отвечающие параметрам моделей и смещение. Таким образом, в приведенном выше примере запрос вернет столбец с тремя значениями.
+  Подобный запрос строит модель и возвращает её веса, отвечающие параметрам моделей и смещение. Таким образом, в приведенном выше примере запрос вернет столбец с тремя значениями.
 
 **Смотрите также**
 
-- [stochasticLogisticRegression](#agg_functions-stochasticlogisticregression)
-- [Отличие линейной от логистической регрессии.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
+-   [stochasticLogisticRegression](#agg_functions-stochasticlogisticregression)
+-   [Отличие линейной от логистической регрессии.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
 
-
-## stochasticLogisticRegression {#agg_functions-stochasticlogisticregression}
+## stochasticLogisticRegression {#agg-functions-stochasticlogisticregression}
 
 Функция реализует стохастическую логистическую регрессию. Её можно использовать для задачи бинарной классификации, функция поддерживает те же пользовательские параметры, что и stochasticLinearRegression и работает таким же образом.
 
-### Параметры {#agg_functions-stochasticlogisticregression-parameters}
+### Параметры {#agg-functions-stochasticlogisticregression-parameters}
 
 Параметры те же, что и в stochasticLinearRegression:
 `learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
 Смотрите раздел [parameters](#agg_functions-stochasticlinearregression-parameters).
 
-```text
+``` text
 stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 ```
 
-1. Построение модели
+1.  Построение модели
 
-    Смотрите раздел `Построение модели` в описании [stochasticLinearRegression](#stochasticlinearregression-usage-fitting) .
+<!-- -->
 
-    Прогнозируемые метки должны быть в диапазоне [-1, 1].
+  Смотрите раздел `Построение модели` в описании [stochasticLinearRegression](#stochasticlinearregression-usage-fitting) .
 
-2. Прогнозирование
+    Прогнозируемые метки должны быть в диапазоне \[-1, 1\].
 
-    Используя сохраненное состояние, можно предсказать вероятность наличия у объекта метки `1`.
+1.  Прогнозирование
 
-    ```sql
+<!-- -->
+
+  Используя сохраненное состояние, можно предсказать вероятность наличия у объекта метки `1`.
+
+    ``` sql
     WITH (SELECT state FROM your_model) AS model SELECT
     evalMLMethod(model, param1, param2) FROM test_data
     ```
 
-    Запрос возвращает столбец вероятностей. Обратите внимание, что первый аргумент `evalMLMethod` это объект `AggregateFunctionState`, далее идут столбцы свойств.
+  Запрос возвращает столбец вероятностей. Обратите внимание, что первый аргумент `evalMLMethod` это объект `AggregateFunctionState`, далее идут столбцы свойств.
 
-    Мы также можем установить границу вероятности, которая присваивает элементам различные метки.
+  Мы также можем установить границу вероятности, которая присваивает элементам различные метки.
 
-    ```sql
+    ``` sql
     SELECT ans < 1.1 AND ans > 0.5 FROM
     (WITH (SELECT state FROM your_model) AS model SELECT
     evalMLMethod(model, param1, param2) AS ans FROM test_data)
     ```
 
-    Тогда результатом будут метки.
+  Тогда результатом будут метки.
 
-    `test_data` — это таблица, подобная `train_data`, но при этом может не содержать целевое значение.
+  `test_data` — это таблица, подобная `train_data`, но при этом может не содержать целевое значение.
 
 **Смотрите также**
 
-- [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
-- [Отличие линейной от логистической регрессии](https://moredez.ru/q/51225972/)
+-   [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
+-   [Отличие линейной от логистической регрессии](https://moredez.ru/q/51225972/)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/agg_functions/reference/) <!--hide-->
