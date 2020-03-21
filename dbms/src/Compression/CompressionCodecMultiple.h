@@ -11,7 +11,7 @@ public:
     CompressionCodecMultiple() = default;
     explicit CompressionCodecMultiple(Codecs codecs_);
 
-    UInt8 getMethodByte() const override;
+    uint8_t getMethodByte() const override;
 
     String getCodecDesc() const override;
 

@@ -12,7 +12,7 @@ struct DecimalUtilsSplitAndCombineTestParam
     const char * description;
 
     Decimal64 decimal_value;
-    UInt8 scale;
+    uint8_t scale;
 
     DecimalUtils::DecimalComponents<typename Decimal64::NativeType> components;
 };

@@ -9,4 +9,4 @@
 
 При грубом перезапуске сервера, блок данных на диске может быть потерян или повреждён. В последнем случае, может потребоваться вручную удалить файл с повреждёнными данными.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/set/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/set/) <!--hide-->

@@ -72,4 +72,4 @@ SELECT * FROM url_engine_table
     - Indexes.
     - Replication.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/url/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/url/) <!--hide-->

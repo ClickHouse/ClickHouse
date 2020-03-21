@@ -41,9 +41,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int READONLY;
-    extern const int UNKNOWN_COMPRESSION_METHOD;
 
+    extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_PARSE_QUOTED_STRING;
@@ -575,6 +574,7 @@ void HTTPHandler::processQuery(
             try
             {
                 char b;
+                //FIXME looks like MSG_DONTWAIT is useless because of POCO_BROKEN_TIMEOUTS
                 int status = socket.receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK);
                 if (status == 0)
                     context.killCurrentQuery();

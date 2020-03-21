@@ -121,4 +121,4 @@ SELECT * FROM odbc_t
 - [Внешние словари ODBC](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
 - [Табличная функция odbc](../../query_language/table_functions/odbc.md)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/odbc/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/odbc/) <!--hide-->

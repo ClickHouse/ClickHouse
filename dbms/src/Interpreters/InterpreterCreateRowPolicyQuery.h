@@ -2,12 +2,14 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
+#include <optional>
 
 
 namespace DB
 {
 class ASTCreateRowPolicyQuery;
 struct RowPolicy;
+struct GenericRoleSet;
 
 
 class InterpreterCreateRowPolicyQuery : public IInterpreter
@@ -18,7 +20,7 @@ public:
     BlockIO execute() override;
 
 private:
-    void updateRowPolicyFromQuery(RowPolicy & policy, const ASTCreateRowPolicyQuery & query);
+    void updateRowPolicyFromQuery(RowPolicy & policy, const ASTCreateRowPolicyQuery & query, const std::optional<GenericRoleSet> & roles_from_query);
 
     ASTPtr query_ptr;
     Context & context;

@@ -60,7 +60,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
-    extern const int WRONG_PASSWORD;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
 }
 

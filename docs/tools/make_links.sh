@@ -13,9 +13,10 @@ function do_make_links()
         # replacing "/./" with /
         dst_file="../${lang}${src_file}"
         dst_file="${dst_file/\/\.\//\/}"
+        dst_file="${dst_file/${lang}\./${lang}}"
 
         mkdir -p $(dirname "${dst_file}")
-        ln -sr "${src_file}" "${dst_file}"
+        ln -sr "${src_file}" "${dst_file}" 2>/dev/null
     done
 }
 

@@ -21,9 +21,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
-UInt8 CompressionCodecZSTD::getMethodByte() const
+uint8_t CompressionCodecZSTD::getMethodByte() const
 {
-    return static_cast<UInt8>(CompressionMethodByte::ZSTD);
+    return static_cast<uint8_t>(CompressionMethodByte::ZSTD);
 }
 
 String CompressionCodecZSTD::getCodecDesc() const

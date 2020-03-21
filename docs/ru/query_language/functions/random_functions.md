@@ -14,4 +14,4 @@
 Возвращает псевдослучайное число типа UInt64, равномерно распределённое среди всех чисел типа UInt64.
 Используется linear congruential generator.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/random_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/random_functions/) <!--hide-->

@@ -72,4 +72,4 @@ Performance will not decrease if:
 - You upload data that is usually sorted by time.
 
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/insert_into/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/insert_into/) <!--hide-->

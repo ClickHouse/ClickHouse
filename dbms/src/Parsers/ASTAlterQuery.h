@@ -31,7 +31,9 @@ public:
         COMMENT_COLUMN,
         MODIFY_ORDER_BY,
         MODIFY_TTL,
+        MATERIALIZE_TTL,
         MODIFY_SETTING,
+        MODIFY_QUERY,
 
         ADD_INDEX,
         DROP_INDEX,
@@ -112,6 +114,9 @@ public:
 
     /// FOR MODIFY_SETTING
     ASTPtr settings_changes;
+
+    /// For MODIFY_QUERY
+    ASTPtr select;
 
     /** In ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live views is stored here
      */

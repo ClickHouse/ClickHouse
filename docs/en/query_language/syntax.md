@@ -173,4 +173,4 @@ A list of expressions is one or more expressions separated by commas.
 Functions and operators, in turn, can have expressions as arguments.
 
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/syntax/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/syntax/) <!--hide-->

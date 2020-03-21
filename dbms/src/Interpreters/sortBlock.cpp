@@ -141,8 +141,6 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
         {
             if (!is_column_const)
                 block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
-            else if (limit != 0) // LIMIT exists
-                block.getByPosition(i).column = block.getByPosition(i).column->cut(0, limit);
         }
     }
     else

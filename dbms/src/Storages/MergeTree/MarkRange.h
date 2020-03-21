@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstddef>
-#include <vector>
+#include <deque>
 
 
 namespace DB
@@ -19,7 +19,7 @@ struct MarkRange
     MarkRange(const size_t begin_, const size_t end_) : begin{begin_}, end{end_} {}
 };
 
-using MarkRanges = std::vector<MarkRange>;
+using MarkRanges = std::deque<MarkRange>;
 
 
 }

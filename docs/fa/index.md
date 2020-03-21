@@ -146,4 +146,4 @@ LIMIT 20
 
 </div>
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/) <!--hide-->

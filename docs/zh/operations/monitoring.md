@@ -34,4 +34,4 @@ ClickHouse 收集的指标项：
 
 此外，您可以通过HTTP API监视服务器可用性。 将HTTP GET请求发送到 `/`。 如果服务器可用，它将以 `200 OK` 响应。
 
-要监视服务器集群的配置中，应设置[max_replica_delay_for_distributed_queries](settings/settings.md#settings-max_replica_delay_for_distributed_queries)参数并使用HTTP资源`/replicas_status`。 如果副本可用，并且不延迟在其他副本之后，则对`/replicas_status`的请求将返回200 OK。 如果副本被延迟，它将返回有关延迟信息。
+要监视服务器集群的配置中，应设置[max_replica_delay_for_distributed_queries](settings/settings.md#settings-max_replica_delay_for_distributed_queries)参数并使用HTTP资源`/replicas_status`。 如果副本可用，并且不延迟在其他副本之后，则对`/replicas_status`的请求将返回200 OK。 如果副本滞后，请求将返回 `503 HTTP_SERVICE_UNAVAILABLE`，包括有关待办事项大小的信息。

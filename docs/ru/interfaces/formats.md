@@ -101,6 +101,32 @@ world
 
 [NULL](../query_language/syntax.md) форматируется как `\N`.
 
+Каждый элемент структуры типа [Nested](../data_types/nested_data_structures/nested.md) представляется как отдельный массив.
+
+Например:
+
+```sql
+CREATE TABLE nestedt
+(
+    `id` UInt8, 
+    `aux` Nested(
+        a UInt8, 
+        b String
+    )
+)
+ENGINE = TinyLog
+```
+```sql
+INSERT INTO nestedt Values ( 1, [1], ['a'])
+```
+```sql
+SELECT * FROM nestedt FORMAT TSV
+```
+```text
+1	[1]	['a']
+```
+
+
 ## TabSeparatedRaw {#tabseparatedraw}
 
 Отличается от формата `TabSeparated` тем, что строки выводятся без экранирования.
@@ -1013,4 +1039,4 @@ $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT OR
 Если для ввода/вывода данных используется [HTTP-интерфейс](../interfaces/http.md), то файл со схемой должен располагаться на сервере в каталоге,
 указанном в параметре [format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path) конфигурации сервера.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/formats/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/formats/) <!--hide-->

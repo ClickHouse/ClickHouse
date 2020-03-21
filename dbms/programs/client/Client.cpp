@@ -4,6 +4,8 @@
 
 #if USE_REPLXX
 #   include <common/ReplxxLineReader.h>
+#elif USE_READLINE
+#   include <common/ReadlineLineReader.h>
 #else
 #   include <common/LineReader.h>
 #endif
@@ -99,13 +101,9 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_READ_HISTORY;
-    extern const int CANNOT_APPEND_HISTORY;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
-    extern const int CANNOT_SET_SIGNAL_HANDLER;
-    extern const int SYSTEM_ERROR;
     extern const int INVALID_USAGE_OF_INPUT;
 }
 
@@ -130,7 +128,8 @@ private:
     bool echo_queries = false;           /// Print queries before execution in batch mode.
     bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
-    bool stdin_is_not_tty = false;       /// stdin is not a terminal.
+    bool stdin_is_a_tty = false;         /// stdin is a terminal.
+    bool stdout_is_a_tty = false;        /// stdout is a terminal.
 
     uint16_t terminal_width = 0;         /// Terminal width is needed to render progress bar.
 
@@ -378,7 +377,7 @@ private:
         ///   The value of the option is used as the text of query (or of multiple queries).
         ///   If stdin is not a terminal, INSERT data for the first query is read from it.
         /// - stdin is not a terminal. In this case queries are read from it.
-        if (stdin_is_not_tty || config().has("query"))
+        if (!stdin_is_a_tty || config().has("query"))
             is_interactive = false;
 
         std::cout << std::fixed << std::setprecision(3);
@@ -483,8 +482,12 @@ private:
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
             if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
+            {
+                if (config().has("case_insensitive_suggestion"))
+                    Suggest::instance().setCaseInsensitive();
                 /// Load suggestion data from the server.
                 Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
+            }
 
             /// Load command history if present.
             if (config().has("history_file"))
@@ -503,9 +506,17 @@ private:
 
 #if USE_REPLXX
             ReplxxLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
+#elif USE_READLINE
+            ReadlineLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
 #else
             LineReader lr(history_file, '\\', config().has("multiline") ? ';' : 0);
 #endif
+
+            /// Enable bracketed-paste-mode only when multiquery is enabled and multiline is
+            ///  disabled, so that we are able to paste and execute multiline queries in a whole
+            ///  instead of erroring out, while be less intrusive.
+            if (config().has("multiquery") && !config().has("multiline"))
+                lr.enableBracketedPaste();
 
             do
             {
@@ -874,7 +885,7 @@ private:
         if (!select && !external_tables.empty())
             throw Exception("External tables could be sent only with select query", ErrorCodes::BAD_ARGUMENTS);
 
-        std::vector<ExternalTableData> data;
+        std::vector<ExternalTableDataPtr> data;
         for (auto & table : external_tables)
             data.emplace_back(table.getData(context));
 
@@ -910,7 +921,7 @@ private:
             ? query.substr(0, parsed_insert_query.data - query.data())
             : query;
 
-        if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
+        if (!parsed_insert_query.data && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
         connection->sendQuery(connection_parameters.timeouts, query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
@@ -1332,7 +1343,7 @@ private:
                 }
             }
 
-            logs_out_stream = std::make_shared<InternalTextLogsRowOutputStream>(*wb);
+            logs_out_stream = std::make_shared<InternalTextLogsRowOutputStream>(*wb, stdout_is_a_tty);
             logs_out_stream->writePrefix();
         }
     }
@@ -1643,9 +1654,10 @@ public:
             }
         }
 
-        stdin_is_not_tty = !isatty(STDIN_FILENO);
+        stdin_is_a_tty = isatty(STDIN_FILENO);
+        stdout_is_a_tty = isatty(STDOUT_FILENO);
 
-        if (!stdin_is_not_tty)
+        if (stdin_is_a_tty)
             terminal_width = getTerminalWidth();
 
         namespace po = boost::program_options;
@@ -1676,6 +1688,7 @@ public:
             ("always_load_suggestion_data", "Load suggestion data even if clickhouse-client is run in non-interactive mode. Used for testing.")
             ("suggestion_limit", po::value<int>()->default_value(10000),
                 "Suggestion limit for how many databases, tables and columns to fetch.")
+            ("case_insensitive_suggestion", "Case sensitive suggestions.")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
             ("format,f", po::value<std::string>(), "default output format")

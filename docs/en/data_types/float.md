@@ -70,4 +70,4 @@ SELECT 0 / 0
   See the rules for `NaN` sorting in the section [ORDER BY clause](../query_language/select.md).
 
 
-[Original article](https://clickhouse.yandex/docs/en/data_types/float/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data_types/float/) <!--hide-->

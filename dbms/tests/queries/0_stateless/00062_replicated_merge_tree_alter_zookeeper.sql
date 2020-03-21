@@ -95,7 +95,7 @@ DESC TABLE test.replicated_alter2;
 SHOW CREATE TABLE test.replicated_alter2;
 SELECT * FROM test.replicated_alter1 ORDER BY k;
 
-ALTER TABLE test.replicated_alter1 MODIFY COLUMN dt Date, MODIFY COLUMN s DateTime;
+ALTER TABLE test.replicated_alter1 MODIFY COLUMN dt Date, MODIFY COLUMN s DateTime DEFAULT '0000-00-00 00:00:00';
 
 DESC TABLE test.replicated_alter1;
 SHOW CREATE TABLE test.replicated_alter1;

@@ -51,8 +51,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int QUERY_IS_TOO_LARGE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int QUERY_WAS_CANCELLED;
 }
@@ -478,8 +476,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         << formatReadableSizeWithBinarySuffix(elem.read_bytes / elapsed_seconds) << "/sec.");
                 }
 
-                elem.thread_numbers = std::move(info.thread_numbers);
-                elem.os_thread_ids = std::move(info.os_thread_ids);
+                elem.thread_ids = std::move(info.thread_ids);
                 elem.profile_counters = std::move(info.profile_counters);
 
                 if (log_queries)
@@ -517,8 +514,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                     elem.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 
-                    elem.thread_numbers = std::move(info.thread_numbers);
-                    elem.os_thread_ids = std::move(info.os_thread_ids);
+                    elem.thread_ids = std::move(info.thread_ids);
                     elem.profile_counters = std::move(info.profile_counters);
                 }
 
@@ -559,7 +555,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         throw;
     }
 
-    return std::make_tuple(ast, res);
+    return std::make_tuple(ast, std::move(res));
 }
 
 

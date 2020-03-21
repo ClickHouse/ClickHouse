@@ -77,7 +77,7 @@ bool RowPolicy::equal(const IAccessEntity & other) const
     const auto & other_policy = typeid_cast<const RowPolicy &>(other);
     return (database == other_policy.database) && (table_name == other_policy.table_name) && (policy_name == other_policy.policy_name)
         && boost::range::equal(conditions, other_policy.conditions) && restrictive == other_policy.restrictive
-        && (roles == other_policy.roles) && (all_roles == other_policy.all_roles) && (except_roles == other_policy.except_roles);
+        && (roles == other_policy.roles);
 }
 
 

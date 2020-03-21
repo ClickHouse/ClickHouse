@@ -105,6 +105,36 @@ bool GridPolygonDictionary::find(const Point &point, size_t & id) const
     return found;
 }
 
+SmartPolygonDictionary::SmartPolygonDictionary(
+        const std::string & database_,
+        const std::string & name_,
+        const DictionaryStructure & dict_struct_,
+        DictionarySourcePtr source_ptr_,
+        const DictionaryLifetime dict_lifetime_,
+        InputType input_type_,
+        PointType point_type_)
+        : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_),
+          buckets_idx(this->polygons)
+{
+}
+
+std::shared_ptr<const IExternalLoadable> SmartPolygonDictionary::clone() const
+{
+    return std::make_shared<SmartPolygonDictionary>(
+            this->database,
+            this->name,
+            this->dict_struct,
+            this->source_ptr->clone(),
+            this->dict_lifetime,
+            this->input_type,
+            this->point_type);
+}
+
+bool SmartPolygonDictionary::find(const Point & point, size_t & id) const
+{
+    return this->buckets_idx.find(point, id);
+}
+
 template <class PolygonDictionary>
 DictionaryPtr createLayout(const std::string &,
                            const DictionaryStructure & dict_struct,
@@ -172,6 +202,7 @@ void registerDictionaryPolygon(DictionaryFactory & factory)
 
     factory.registerLayout("polygon", createLayout<SimplePolygonDictionary>, true);
     factory.registerLayout("grid_polygon", createLayout<GridPolygonDictionary>, true);
+    factory.registerLayout("bucket_polygon", createLayout<SmartPolygonDictionary>, true);
 }
 
 }

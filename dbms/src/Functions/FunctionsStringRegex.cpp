@@ -35,6 +35,9 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_MANY_BYTES;
@@ -89,6 +92,8 @@ inline bool likePatternIsStrstr(const String & pattern, String & res)
 template <bool like, bool revert = false>
 struct MatchImpl
 {
+    static constexpr bool use_default_implementation_for_constants = true;
+
     using ResultType = UInt8;
 
     static void vector_constant(
@@ -238,12 +243,6 @@ struct MatchImpl
                     memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
             }
         }
-    }
-
-    static void constant_constant(const std::string & data, const std::string & pattern, UInt8 & res)
-    {
-        const auto & regexp = Regexps::get<like, true>(pattern);
-        res = revert ^ regexp->match(data);
     }
 
     template <typename... Args>
@@ -844,29 +843,6 @@ struct ReplaceStringImpl
                 COPY_REST_OF_CURRENT_STRING();
             }
 #undef COPY_REST_OF_CURRENT_STRING
-        }
-    }
-
-    static void constant(const std::string & data, const std::string & needle, const std::string & replacement, std::string & res_data)
-    {
-        res_data = "";
-        int replace_cnt = 0;
-        for (size_t i = 0; i < data.size(); ++i)
-        {
-            bool match = true;
-            if (i + needle.size() > data.size() || (replace_one && replace_cnt > 0))
-                match = false;
-            for (size_t j = 0; match && j < needle.size(); ++j)
-                if (data[i + j] != needle[j])
-                    match = false;
-            if (match)
-            {
-                ++replace_cnt;
-                res_data += replacement;
-                i = i + needle.size() - 1;
-            }
-            else
-                res_data += data[i];
         }
     }
 };

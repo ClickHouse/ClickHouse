@@ -51,7 +51,7 @@ Read 2 rows, 32.00 B in 0.000 sec., 4987 rows/sec., 77.93 KiB/sec.
 3	4
 ```
 
-А теперь давайте выведем на экран объем оперативной памяти, занимаемой пользователями (Unix):
+А теперь давайте выведем на экран объём оперативной памяти, занимаемой пользователями (Unix):
 
 ```bash
 $ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' | clickhouse-local -S "user String, mem Float64" -q "SELECT user, round(sum(mem), 2) as memTotal FROM table GROUP BY user ORDER BY memTotal DESC FORMAT Pretty"
@@ -66,4 +66,4 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ...
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/utils/clickhouse-local/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/utils/clickhouse-local/) <!--hide-->

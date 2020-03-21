@@ -13,6 +13,7 @@ limitations under the License. */
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
+#include <Access/AccessFlags.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 
@@ -22,7 +23,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_STORAGE;
     extern const int UNKNOWN_TABLE;
     extern const int TOO_MANY_COLUMNS;
     extern const int SUPPORT_IS_DISABLED;
@@ -61,6 +61,7 @@ BlockIO InterpreterWatchQuery::execute()
 
     /// List of columns to read to execute the query.
     Names required_columns = storage->getColumns().getNamesOfPhysical();
+    context.checkAccess(AccessType::SELECT, database, table, required_columns);
 
     /// Get context settings for this query
     const Settings & settings = context.getSettingsRef();
@@ -81,7 +82,6 @@ BlockIO InterpreterWatchQuery::execute()
 
     /// From stage
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
-    QueryProcessingStage::Enum to_stage = QueryProcessingStage::Complete;
 
     /// Watch storage
     streams = storage->watch(required_columns, query_info, context, from_stage, max_block_size, max_streams);
@@ -89,18 +89,14 @@ BlockIO InterpreterWatchQuery::execute()
     /// Constraints on the result, the quota on the result, and also callback for progress.
     if (IBlockInputStream * stream = dynamic_cast<IBlockInputStream *>(streams[0].get()))
     {
-        /// Constraints apply only to the final result.
-        if (to_stage == QueryProcessingStage::Complete)
-        {
-            IBlockInputStream::LocalLimits limits;
-            limits.mode = IBlockInputStream::LIMITS_CURRENT;
-            limits.size_limits.max_rows = settings.max_result_rows;
-            limits.size_limits.max_bytes = settings.max_result_bytes;
-            limits.size_limits.overflow_mode = settings.result_overflow_mode;
+        IBlockInputStream::LocalLimits limits;
+        limits.mode = IBlockInputStream::LIMITS_CURRENT;
+        limits.size_limits.max_rows = settings.max_result_rows;
+        limits.size_limits.max_bytes = settings.max_result_bytes;
+        limits.size_limits.overflow_mode = settings.result_overflow_mode;
 
-            stream->setLimits(limits);
-            stream->setQuota(context.getQuota());
-        }
+        stream->setLimits(limits);
+        stream->setQuota(context.getQuota());
     }
 
     res.in = streams[0];

@@ -55,4 +55,4 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 - `ver` — столбец с версией. Необязательный параметр. Описание смотрите выше по тексту.
 </details>
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/replacingmergetree/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/replacingmergetree/) <!--hide-->

@@ -1,5 +1,5 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <DataTypes/DataTypeDate.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -80,7 +80,7 @@ void run(String part_path, String date_column, String dest_path)
     checksums.files["count.txt"].file_size = count_out_hashing.count();
     checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
 
-    MergeTreeDataPart::MinMaxIndex minmax_idx(min_date, max_date);
+    IMergeTreeDataPart::MinMaxIndex minmax_idx(min_date, max_date);
     Names minmax_idx_columns = {date_column};
     DataTypes minmax_idx_column_types = {std::make_shared<DataTypeDate>()};
     minmax_idx.store(minmax_idx_columns, minmax_idx_column_types, new_tmp_part_path_str, checksums);

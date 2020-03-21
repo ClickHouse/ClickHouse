@@ -332,6 +332,39 @@ def test_moves_to_disk_eventually_work(started_cluster, name, engine):
         node1.query("DROP TABLE IF EXISTS {}".format(name))
 
 
+def test_replicated_download_ttl_info(started_cluster):
+    name = "test_replicated_ttl_info"
+    engine = "ReplicatedMergeTree('/clickhouse/test_replicated_download_ttl_info', '{replica}')"
+    try:
+        for i, node in enumerate((node1, node2), start=1):
+            node.query("""
+                CREATE TABLE {name} (
+                    s1 String,
+                    d1 DateTime
+                ) ENGINE = {engine}
+                ORDER BY tuple()
+                TTL d1 TO DISK 'external'
+                SETTINGS storage_policy='small_jbod_with_external'
+            """.format(name=name, engine=engine))
+
+        node1.query("SYSTEM STOP MOVES {}".format(name))
+
+        node2.query("INSERT INTO {} (s1, d1) VALUES ('{}', toDateTime({}))".format(name, get_random_string(1024 * 1024), time.time()-100))
+
+        assert set(get_used_disks_for_table(node2, name)) == {"external"}
+        time.sleep(1)
+
+        assert node1.query("SELECT count() FROM {}".format(name)).splitlines() == ["1"]
+        assert set(get_used_disks_for_table(node1, name)) == {"external"}
+
+    finally:
+        for node in (node1, node2):
+            try:
+                node.query("DROP TABLE IF EXISTS {}".format(name))
+            except:
+                continue
+
+
 @pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine,positive", [
     ("mt_test_merges_to_disk_do_not_work","MergeTree()",0),

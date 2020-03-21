@@ -102,4 +102,4 @@ if (OPENSSL_FOUND)
     target_link_libraries(aws_s3 PRIVATE ${OPENSSL_LIBRARIES})
 endif()
 
-target_link_libraries(aws_s3 PRIVATE aws_s3_checksums libcurl)
+target_link_libraries(aws_s3 PRIVATE aws_s3_checksums curl)

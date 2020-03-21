@@ -1,7 +1,9 @@
 #include "DiskMemory.h"
 #include "DiskFactory.h"
 
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 
@@ -10,6 +12,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int FILE_DOESNT_EXIST;
     extern const int FILE_ALREADY_EXISTS;
     extern const int DIRECTORY_DOESNT_EXIST;
@@ -34,6 +37,100 @@ public:
 private:
     std::vector<String> dir_file_paths;
     std::vector<String>::iterator iter;
+};
+
+/// Adapter with actual behaviour as ReadBufferFromString.
+class ReadIndirectBuffer : public ReadBufferFromFileBase
+{
+public:
+    ReadIndirectBuffer(String path_, const String & data_)
+        : ReadBufferFromFileBase(), impl(ReadBufferFromString(data_)), path(std::move(path_))
+    {
+        internal_buffer = impl.buffer();
+        working_buffer = internal_buffer;
+        pos = working_buffer.begin();
+    }
+
+    std::string getFileName() const override { return path; }
+
+    off_t seek(off_t off, int whence) override
+    {
+        impl.swap(*this);
+        off_t result = impl.seek(off, whence);
+        impl.swap(*this);
+        return result;
+    }
+
+    off_t getPosition() override { return pos - working_buffer.begin(); }
+
+private:
+    ReadBufferFromString impl;
+    const String path;
+};
+
+/// This class is responsible to update files metadata after buffer is finalized.
+class WriteIndirectBuffer : public WriteBufferFromFileBase
+{
+public:
+    WriteIndirectBuffer(DiskMemory * disk_, String path_, WriteMode mode_, size_t buf_size)
+        : WriteBufferFromFileBase(buf_size, nullptr, 0), impl(), disk(disk_), path(std::move(path_)), mode(mode_)
+    {
+    }
+
+    ~WriteIndirectBuffer() override
+    {
+        try
+        {
+            finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    void finalize() override
+    {
+        if (impl.isFinished())
+            return;
+
+        next();
+
+        /// str() finalizes buffer.
+        String value = impl.str();
+
+        auto iter = disk->files.find(path);
+
+        if (iter == disk->files.end())
+            throw Exception("File '" + path + "' does not exist", ErrorCodes::FILE_DOESNT_EXIST);
+
+        /// Resize to the actual number of bytes written to string.
+        value.resize(count());
+
+        if (mode == WriteMode::Rewrite)
+            disk->files.insert_or_assign(path, DiskMemory::FileData{iter->second.type, value});
+        else if (mode == WriteMode::Append)
+            disk->files.insert_or_assign(path, DiskMemory::FileData{iter->second.type, iter->second.data + value});
+    }
+
+    std::string getFileName() const override { return path; }
+
+    void sync() override {}
+
+private:
+    void nextImpl() override
+    {
+        if (!offset())
+            return;
+
+        impl.write(working_buffer.begin(), offset());
+    }
+
+private:
+    WriteBufferFromOwnString impl;
+    DiskMemory * disk;
+    const String path;
+    const WriteMode mode;
 };
 
 
@@ -94,7 +191,7 @@ size_t DiskMemory::getFileSize(const String & path) const
     if (iter == files.end())
         throw Exception("File '" + path + "' does not exist", ErrorCodes::FILE_DOESNT_EXIST);
 
-    return iter->second.data.size();
+    return iter->second.data.length();
 }
 
 void DiskMemory::createDirectory(const String & path)
@@ -218,7 +315,7 @@ void DiskMemory::copyFile(const String & /*from_path*/, const String & /*to_path
     throw Exception("Method copyFile is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-std::unique_ptr<ReadBuffer> DiskMemory::readFile(const String & path, size_t /*buf_size*/) const
+std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, size_t /*buf_size*/, size_t, size_t, size_t) const
 {
     std::lock_guard lock(mutex);
 
@@ -226,10 +323,10 @@ std::unique_ptr<ReadBuffer> DiskMemory::readFile(const String & path, size_t /*b
     if (iter == files.end())
         throw Exception("File '" + path + "' does not exist", ErrorCodes::FILE_DOESNT_EXIST);
 
-    return std::make_unique<ReadBufferFromString>(iter->second.data);
+    return std::make_unique<ReadIndirectBuffer>(path, iter->second.data);
 }
 
-std::unique_ptr<WriteBuffer> DiskMemory::writeFile(const String & path, size_t /*buf_size*/, WriteMode mode)
+std::unique_ptr<WriteBufferFromFileBase> DiskMemory::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t, size_t)
 {
     std::lock_guard lock(mutex);
 
@@ -241,13 +338,10 @@ std::unique_ptr<WriteBuffer> DiskMemory::writeFile(const String & path, size_t /
             throw Exception(
                 "Failed to create file '" + path + "'. Directory " + parent_path + " does not exist", ErrorCodes::DIRECTORY_DOESNT_EXIST);
 
-        iter = files.emplace(path, FileData{FileType::File}).first;
+        files.emplace(path, FileData{FileType::File});
     }
 
-    if (mode == WriteMode::Append)
-        return std::make_unique<WriteBufferFromString>(iter->second.data, WriteBufferFromString::AppendModeTag{});
-    else
-        return std::make_unique<WriteBufferFromString>(iter->second.data);
+    return std::make_unique<WriteIndirectBuffer>(this, path, mode, buf_size);
 }
 
 void DiskMemory::remove(const String & path)

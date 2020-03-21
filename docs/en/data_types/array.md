@@ -66,4 +66,4 @@ Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception
 ```
 
 
-[Original article](https://clickhouse.yandex/docs/en/data_types/array/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data_types/array/) <!--hide-->

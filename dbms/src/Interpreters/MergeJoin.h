@@ -50,12 +50,13 @@ class MergeJoin : public IJoin
 public:
     MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block);
 
-    bool addJoinedBlock(const Block & block) override;
+    bool addJoinedBlock(const Block & block, bool check_limits = true) override;
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
     void joinTotals(Block &) const override;
     void setTotals(const Block &) override;
     bool hasTotals() const override { return totals; }
     size_t getTotalRowCount() const override { return right_blocks_row_count; }
+    size_t getTotalByteCount() const override { return right_blocks_bytes; }
 
 private:
     struct NotProcessed : public ExtraBlock
@@ -95,7 +96,9 @@ private:
     size_t right_blocks_bytes = 0;
     bool is_in_memory = true;
     const bool nullable_right_side;
+    const bool is_any_join;
     const bool is_all_join;
+    const bool is_semi_join;
     const bool is_inner;
     const bool is_left;
     const bool skip_not_intersected;
@@ -118,12 +121,13 @@ private:
     template <bool in_memory>
     std::shared_ptr<Block> loadRightBlock(size_t pos);
 
-    template <bool is_all>
+    template <bool is_all> /// ALL or ANY
     bool leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & skip_right);
-    template <bool is_all>
-    bool innerJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
-                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & skip_right);
+    bool semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
+                  MutableColumns & left_columns, MutableColumns & right_columns);
+    bool allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
+                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & skip_right);
 
     bool saveRightBlock(Block && block);
     void flushRightBlocks();

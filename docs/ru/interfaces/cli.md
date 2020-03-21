@@ -147,4 +147,4 @@ $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM 
 </config>
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/cli/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/cli/) <!--hide-->

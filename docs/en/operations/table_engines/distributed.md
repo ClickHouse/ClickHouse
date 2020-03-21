@@ -14,7 +14,7 @@ The Distributed engine accepts parameters:
 
   See also:
   - `insert_distributed_sync` setting
-  - [MergeTree](../mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
+  - [MergeTree](mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 
 Example:
 
@@ -142,4 +142,4 @@ When the max_parallel_replicas option is enabled, query processing is paralleliz
 - [Virtual columns](index.md#table_engines-virtual_columns)
 
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/distributed/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/distributed/) <!--hide-->

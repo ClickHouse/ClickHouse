@@ -23,6 +23,12 @@ class QueryPipeline
 {
 public:
     QueryPipeline() = default;
+    QueryPipeline(QueryPipeline &&) = default;
+    ~QueryPipeline() = default;
+    QueryPipeline(const QueryPipeline &) = delete;
+    QueryPipeline & operator= (const QueryPipeline & rhs) = delete;
+
+    QueryPipeline & operator= (QueryPipeline && rhs);
 
     /// All pipes must have same header.
     void init(Pipes pipes);
@@ -81,7 +87,7 @@ public:
 
     void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
     void addInterpreterContext(std::shared_ptr<Context> context) { interpreter_context.emplace_back(std::move(context)); }
-    void addStorageHolder(StoragePtr storage) { storage_holder.emplace_back(std::move(storage)); }
+    void addStorageHolder(StoragePtr storage) { storage_holders.emplace_back(std::move(storage)); }
 
     /// For compatibility with IBlockInputStream.
     void setProgressCallback(const ProgressCallback & callback);
@@ -93,7 +99,21 @@ public:
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
     size_t getMaxThreads() const { return max_threads; }
 
+    /// Convert query pipeline to single pipe.
+    Pipe getPipe() &&;
+
 private:
+    /// Destruction order: processors, header, locks, temporary storages, local contexts
+
+    /// Some Streams (or Processors) may implicitly use Context or temporary Storage created by Interpreter.
+    /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
+    /// because QueryPipeline is alive until query is finished.
+    std::vector<std::shared_ptr<Context>> interpreter_context;
+    std::vector<StoragePtr> storage_holders;
+    TableStructureReadLocks table_locks;
+
+    /// Common header for each stream.
+    Block current_header;
 
     /// All added processors.
     Processors processors;
@@ -108,20 +128,11 @@ private:
     /// If resize processor was added to pipeline.
     bool has_resize = false;
 
-    /// Common header for each stream.
-    Block current_header;
-
-    TableStructureReadLocks table_locks;
-
-    /// Some Streams (or Processors) may implicitly use Context or temporary Storage created by Interpreter.
-    /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
-    /// because QueryPipeline is alive until query is finished.
-    std::vector<std::shared_ptr<Context>> interpreter_context;
-    std::vector<StoragePtr> storage_holder;
-
     IOutputFormat * output_format = nullptr;
 
     size_t max_threads = 0;
+
+    QueryStatus * process_list_element = nullptr;
 
     void checkInitialized();
     void checkSource(const ProcessorPtr & source, bool can_have_totals);

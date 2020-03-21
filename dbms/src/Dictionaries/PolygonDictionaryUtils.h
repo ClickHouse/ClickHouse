@@ -86,4 +86,64 @@ private:
     void setBoundingBox();
 };
 
+/** Generate edge indexes during its construction in
+ *  the following way: sort all polygon's vertexes by x coordinate, and then store all interesting
+ *  polygon edges for each adjacent x coordinates. For each query finds interesting edges and 
+ *  iterates over them, finding required polygon. If there is more than one any such polygon may be returned.
+ */
+class BucketsPolygonIndex
+{
+public:
+    /** A two-dimensional point in Euclidean coordinates. */
+    using Point = IPolygonDictionary::Point;
+    /** A polygon in boost is a an outer ring of points with zero or more cut out inner rings. */
+    using Polygon = IPolygonDictionary::Polygon;
+    /** A ring in boost used for describing the polygons. */
+    using Ring = IPolygonDictionary::Ring;
+
+    /** Builds an index by splitting all edges with provided sorted x coordinates. */
+    BucketsPolygonIndex(const std::vector<Polygon> & polygons, const std::vector<Float64> & splits);
+
+    /** Builds an index by splitting all edges with all points x coordinates. */
+    BucketsPolygonIndex(const std::vector<Polygon> & polygons);
+
+    /** Finds polygon id the same way as IPolygonIndex. */
+    bool find(const Point & point, size_t & id) const;
+
+private:
+    /** Returns unique x coordinates among all points. */
+    std::vector<Float64> uniqueX(const std::vector<Polygon> & polygons);
+
+    /** Builds indexes described above. */
+    void indexBuild(const std::vector<Polygon> & polygons);
+
+    /** Auxiliary function for adding ring to index */
+    void indexAddRing(const Ring & ring, size_t polygon_id);
+
+    /** Edge describes edge (adjacent points) of any polygon, and contains polygon's id.
+     *  Invariant here is first point has x not greater than second point.
+     */
+    struct Edge
+    {
+        Point l;
+        Point r;
+        size_t polygon_id;
+
+        static bool compare1(const Edge & a, const Edge & b);
+        static bool compare2(const Edge & a, const Edge & b);
+    };
+
+    Poco::Logger * log;
+
+    /** Sorted distinct coordinates of all vertexes. */
+    std::vector<Float64> sorted_x;
+    std::vector<Edge> all_edges;
+
+    /** Edges from all polygons, classified by sorted_x borders.
+     *  edges_index[i] stores all interesting edges in range ( sorted_x[i]; sorted_x[i + 1] ]
+     *  That means edges_index.size() + 1 == sorted_x.size()
+     */
+    std::vector<std::vector<Edge>> edges_index;
+};
+
 }

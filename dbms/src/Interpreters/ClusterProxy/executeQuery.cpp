@@ -6,6 +6,7 @@
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/ProcessList.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -36,11 +37,11 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
     return new_context;
 }
 
-BlockInputStreams executeQuery(
+Pipes executeQuery(
     IStreamFactory & stream_factory, const ClusterPtr & cluster,
-    const ASTPtr & query_ast, const Context & context, const Settings & settings)
+    const ASTPtr & query_ast, const Context & context, const Settings & settings, const SelectQueryInfo & query_info)
 {
-    BlockInputStreams res;
+    Pipes res;
 
     const std::string query = queryToString(query_ast);
 
@@ -64,7 +65,7 @@ BlockInputStreams executeQuery(
         throttler = user_level_throttler;
 
     for (const auto & shard_info : cluster->getShardsInfo())
-        stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, res);
+        stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, query_info, res);
 
     return res;
 }

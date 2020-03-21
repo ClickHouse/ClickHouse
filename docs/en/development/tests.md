@@ -226,7 +226,7 @@ If you use `CLion` as an IDE, you can leverage some `clang-tidy` checks out of t
 
 ## Code Style
 
-Code style rules are described [here](https://clickhouse.yandex/docs/en/development/style/).
+Code style rules are described [here](https://clickhouse.tech/docs/en/development/style/).
 
 To check for some common style violations, you can use `utils/check-style` script.
 
@@ -258,4 +258,4 @@ Build jobs and tests are run in Sandbox on per commit basis. Resulting packages 
 We don't use Travis CI due to the limit on time and computational power.
 We don't use Jenkins. It was used before and now we are happy we are not using Jenkins.
 
-[Original article](https://clickhouse.yandex/docs/en/development/tests/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/development/tests/) <!--hide-->

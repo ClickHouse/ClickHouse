@@ -8,7 +8,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ThreadPool.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
@@ -30,7 +29,9 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
     /// If the "root" table deduplactes blocks, there are no need to make deduplication for children
     /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
-    bool disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
+    bool disable_deduplication_for_children = false;
+    if (!context.getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
+        disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
 
     auto table_id = storage->getStorageID();
     Dependencies dependencies = context.getDependencies(table_id);
@@ -51,8 +52,10 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         ASTPtr query;
         BlockOutputStreamPtr out;
 
-        if (auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(dependent_table.get()))
+        if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
         {
+            addTableLock(materialized_view->lockStructureForShare(true, context.getInitialQueryId()));
+
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
             query = materialized_view->getInnerQuery();
@@ -129,7 +132,7 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     }
 
     /// Don't process materialized views if this block is duplicate
-    if (replicated_output && replicated_output->lastBlockIsDuplicate())
+    if (!context.getSettingsRef().deduplicate_blocks_in_dependent_materialized_views && replicated_output && replicated_output->lastBlockIsDuplicate())
         return;
 
     // Insert data into materialized views only after successful insert into main table

@@ -12,6 +12,8 @@ namespace
     {
         switch (kind)
         {
+            case Kind::USER: return "USER";
+            case Kind::ROLE: return "ROLE";
             case Kind::QUOTA: return "QUOTA";
             case Kind::ROW_POLICY: return "POLICY";
         }

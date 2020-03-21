@@ -122,4 +122,4 @@ SELECT 查询会被发送到所有分片，并且无论数据在分片中如何�
 启用 max_parallel_replicas 选项后，会在分表的所有副本上并行查询处理。更多信息，请参阅“设置，max_parallel_replicas”部分。
 
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/distributed/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/distributed/) <!--hide-->

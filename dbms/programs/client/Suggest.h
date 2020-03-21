@@ -12,7 +12,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_PACKET_FROM_SERVER;
 }
 
 class Suggest : public LineReader::Suggest, boost::noncopyable
@@ -23,6 +22,9 @@ public:
         static Suggest instance;
         return instance;
     }
+
+    /// Need to set before load
+    void setCaseInsensitive() { case_insensitive = true; }
 
     void load(const ConnectionParameters & connection_parameters, size_t suggestion_limit);
 

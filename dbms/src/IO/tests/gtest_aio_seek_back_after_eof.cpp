@@ -3,20 +3,31 @@
 #include <gtest/gtest.h>
 
 #include <Core/Defines.h>
-#include <port/unistd.h>
+#include <unistd.h>
 #include <IO/ReadBufferAIO.h>
 #include <fstream>
+#include <string>
 
 namespace
 {
 std::string createTmpFileForEOFtest()
 {
     char pattern[] = "/tmp/fileXXXXXX";
-    char * dir = ::mkdtemp(pattern);
-    return std::string(dir) + "/foo";
+    if (char * dir = ::mkdtemp(pattern); dir)
+    {
+        return std::string(dir) + "/foo";
+    }
+    else
+    {
+        /// We have no tmp in docker
+        /// So we have to use root
+        std::string almost_rand_dir = std::string{"/"} + std::to_string(rand()) + "foo";
+        return almost_rand_dir;
+    }
+
 }
 
-void prepare_for_eof(std::string & filename, std::string & buf)
+void prepareForEOF(std::string & filename, std::string & buf)
 {
     static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -28,7 +39,7 @@ void prepare_for_eof(std::string & filename, std::string & buf)
     for (size_t i = 0; i < n; ++i)
         buf += symbols[i % symbols.length()];
 
-    std::ofstream out(filename.c_str());
+    std::ofstream out(filename);
     out << buf;
 }
 
@@ -39,7 +50,7 @@ TEST(ReadBufferAIOTest, TestReadAfterAIO)
     using namespace DB;
     std::string data;
     std::string file_path;
-    prepare_for_eof(file_path, data);
+    prepareForEOF(file_path, data);
     ReadBufferAIO testbuf(file_path);
 
     std::string newdata;
@@ -50,7 +61,7 @@ TEST(ReadBufferAIOTest, TestReadAfterAIO)
     EXPECT_TRUE(testbuf.eof());
 
 
-    testbuf.seek(data.length() - 100);
+    testbuf.seek(data.length() - 100, SEEK_SET);
 
     std::string smalldata;
     smalldata.resize(100);
@@ -59,7 +70,7 @@ TEST(ReadBufferAIOTest, TestReadAfterAIO)
     EXPECT_TRUE(testbuf.eof());
 
 
-    testbuf.seek(0);
+    testbuf.seek(0, SEEK_SET);
     std::string repeatdata;
     repeatdata.resize(data.length());
     size_t read_after_eof_big = testbuf.read(repeatdata.data(), repeatdata.size());

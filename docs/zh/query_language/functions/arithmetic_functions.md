@@ -76,4 +76,4 @@ Calculates a number with the reverse sign. The result is always signed.
 除以零或将最小负数除以-1时抛出异常。
 
 
-[来源文章](https://clickhouse.yandex/docs/en/query_language/functions/arithmetic_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/arithmetic_functions/) <!--hide-->

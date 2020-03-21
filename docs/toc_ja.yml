@@ -6,6 +6,7 @@ nav:
   - 'ClickHouse Features that Can Be Considered Disadvantages': 'introduction/features_considered_disadvantages.md'
   - 'Performance': 'introduction/performance.md'
   - 'History': 'introduction/history.md'
+  - 'Adopters': 'introduction/adopters.md'
 
 - 'Getting Started':
   - 'hidden': 'getting_started/index.md'
@@ -25,6 +26,7 @@ nav:
   - 'Command-Line Client': 'interfaces/cli.md'
   - 'Native Interface (TCP)': 'interfaces/tcp.md'
   - 'HTTP Interface': 'interfaces/http.md'
+  - 'MySQL Interface': 'interfaces/mysql.md'
   - 'Input and Output Formats': 'interfaces/formats.md'
   - 'JDBC Driver': 'interfaces/jdbc.md'
   - 'ODBC Driver': 'interfaces/odbc.md'
@@ -149,6 +151,7 @@ nav:
       - 'Dictionary Updates': 'query_language/dicts/external_dicts_dict_lifetime.md'
       - 'Sources of External Dictionaries': 'query_language/dicts/external_dicts_dict_sources.md'
       - 'Dictionary Key and Fields': 'query_language/dicts/external_dicts_dict_structure.md'
+      - 'Hierarchical dictionaries': 'query_language/dicts/external_dicts_dict_hierarchical.md'
     - 'Internal Dictionaries': 'query_language/dicts/internal_dicts.md'
   - 'Operators': 'query_language/operators.md'
   - 'Data Types':
@@ -197,6 +200,8 @@ nav:
   - 'Configuration Files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'
   - 'System Tables': 'operations/system_tables.md'
+  - 'Optimizing Performance':
+    - 'Query Profiling': 'operations/performance/sampling_query_profiler.md'
   - 'Testing Hardware': 'operations/performance_test.md'
   - 'Server Configuration Parameters':
     - 'Introduction': 'operations/server_settings/index.md'

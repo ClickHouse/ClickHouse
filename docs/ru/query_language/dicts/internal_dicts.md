@@ -45,4 +45,4 @@ ClickHouse содержит встроенную возможность рабо
 
 Также имеются функции для работы с идентификаторами операционных систем и поисковых систем Яндекс.Метрики, пользоваться которыми не нужно.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/dicts/internal_dicts/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/internal_dicts/) <!--hide-->

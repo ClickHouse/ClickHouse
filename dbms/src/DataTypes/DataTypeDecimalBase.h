@@ -17,8 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int CANNOT_CONVERT_TYPE;
-    extern const int DECIMAL_OVERFLOW;
 }
 
 class Context;

@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int UNSUPPORTED_METHOD;
     extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
 }
 

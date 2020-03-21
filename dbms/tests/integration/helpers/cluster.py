@@ -20,6 +20,7 @@ from dicttoxml import dicttoxml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
+from confluent.schemaregistry.client import CachedSchemaRegistryClient
 
 from .client import Client
 from .hdfs_api import HDFSApi
@@ -121,6 +122,11 @@ class ClickHouseCluster:
         self.minio_client = None  # type: Minio
         self.minio_redirect_host = "redirect"
         self.minio_redirect_port = 80
+
+        # available when with_kafka == True
+        self.schema_registry_client = None
+        self.schema_registry_host = "schema-registry"
+        self.schema_registry_port = 8081
 
         self.docker_client = None
         self.is_up = False
@@ -372,6 +378,19 @@ class ClickHouseCluster:
                 logging.warning("Can't connect to Minio: %s", str(ex))
                 time.sleep(1)
 
+    def wait_schema_registry_to_start(self, timeout=10):
+        sr_client = CachedSchemaRegistryClient('http://localhost:8081')
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                sr_client._send_request(sr_client.url)
+                self.schema_registry_client = sr_client
+                logging.info("Connected to SchemaRegistry")
+                return
+            except Exception as ex:
+                logging.warning("Can't connect to SchemaRegistry: %s", str(ex))
+                time.sleep(1)
+
     def start(self, destroy_dirs=True):
         if self.is_up:
             return
@@ -415,6 +434,7 @@ class ClickHouseCluster:
         if self.with_kafka and self.base_kafka_cmd:
             subprocess_check_call(self.base_kafka_cmd + common_opts + ['--renew-anon-volumes'])
             self.kafka_docker_id = self.get_instance_docker_id('kafka1')
+            self.wait_schema_registry_to_start(120)
 
         if self.with_hdfs and self.base_hdfs_cmd:
             subprocess_check_call(self.base_hdfs_cmd + common_opts)
@@ -643,6 +663,22 @@ class ClickHouseInstance:
 
         return urllib.urlopen(url, data).read()
 
+    def kill_clickhouse(self, stop_start_wait_sec=5):
+        pid = self.get_process_pid("clickhouse")
+        if not pid:
+            raise Exception("No clickhouse found")
+        self.exec_in_container(["bash",  "-c", "kill -9 {}".format(pid)], user='root')
+        time.sleep(stop_start_wait_sec)
+
+    def restore_clickhouse(self, retries=100):
+        pid = self.get_process_pid("clickhouse")
+        if pid:
+            raise Exception("ClickHouse has already started")
+        self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
+        from helpers.test_tools import assert_eq_with_retry
+        # wait start
+        assert_eq_with_retry(self, "select 1", "1", retry_count=retries)
+
     def restart_clickhouse(self, stop_start_wait_sec=5, kill=False):
         if not self.stay_alive:
             raise Exception("clickhouse can be restarted only with stay_alive=True instance")
@@ -664,7 +700,7 @@ class ClickHouseInstance:
 
     def contains_in_log(self, substring):
         result = self.exec_in_container(
-            ["bash", "-c", "grep '{}' /var/log/clickhouse-server/clickhouse-server.log || true".format(substring)])
+            ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log || true'.format(substring)])
         return len(result) > 0
 
     def copy_file_to_container(self, local_path, dest_path):
@@ -880,6 +916,7 @@ class ClickHouseInstance:
 
         if self.with_kafka:
             depends_on.append("kafka1")
+            depends_on.append("schema-registry")
 
         if self.with_zookeeper:
             depends_on.append("zoo1")
@@ -949,3 +986,14 @@ class ClickHouseInstance:
     def destroy_dir(self):
         if p.exists(self.path):
             shutil.rmtree(self.path)
+
+
+class ClickHouseKiller(object):
+    def __init__(self, clickhouse_node):
+        self.clickhouse_node = clickhouse_node
+
+    def __enter__(self):
+        self.clickhouse_node.kill_clickhouse()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.clickhouse_node.restore_clickhouse()

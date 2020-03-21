@@ -19,6 +19,13 @@ void registerFunctionH3EdgeLengthM(FunctionFactory &);
 void registerFunctionH3GetResolution(FunctionFactory &);
 void registerFunctionH3IsValid(FunctionFactory &);
 void registerFunctionH3KRing(FunctionFactory &);
+void registerFunctionH3GetBaseCell(FunctionFactory &);
+void registerFunctionH3ToParent(FunctionFactory &);
+void registerFunctionH3ToChildren(FunctionFactory &);
+void registerFunctionH3IndexesAreNeighbors(FunctionFactory &);
+void registerFunctionStringToH3(FunctionFactory &);
+void registerFunctionH3ToString(FunctionFactory &);
+void registerFunctionH3HexAreaM2(FunctionFactory &);
 #endif
 
 
@@ -38,6 +45,13 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionH3GetResolution(factory);
     registerFunctionH3IsValid(factory);
     registerFunctionH3KRing(factory);
+    registerFunctionH3GetBaseCell(factory);
+    registerFunctionH3ToParent(factory);
+    registerFunctionH3ToChildren(factory);
+    registerFunctionH3IndexesAreNeighbors(factory);
+    registerFunctionStringToH3(factory);
+    registerFunctionH3ToString(factory);
+    registerFunctionH3HexAreaM2(factory);
 #endif
 }
 
