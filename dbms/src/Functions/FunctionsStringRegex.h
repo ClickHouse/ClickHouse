@@ -121,7 +121,7 @@ public:
 
         /// The blame for resizing output is for the callee.
         if (col_haystack_vector)
-            Impl::vector_constant(
+            Impl::vectorConstant(
                 col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res, offsets_res, edit_distance);
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName(), ErrorCodes::ILLEGAL_COLUMN);

@@ -119,7 +119,7 @@ public:
             if (col_haystack_const && col_needle_const)
             {
                 ResultType res{};
-                Impl::constant_constant(col_haystack_const->getValue<String>(), col_needle_const->getValue<String>(), res);
+                Impl::constantConstant(col_haystack_const->getValue<String>(), col_needle_const->getValue<String>(), res);
                 block.getByPosition(result).column
                     = block.getByPosition(result).type->createColumnConst(col_haystack_const->size(), toField(res));
                 return;
@@ -135,17 +135,17 @@ public:
         const ColumnString * col_needle_vector = checkAndGetColumn<ColumnString>(&*column_needle);
 
         if (col_haystack_vector && col_needle_vector)
-            Impl::vector_vector(
+            Impl::vectorVector(
                 col_haystack_vector->getChars(),
                 col_haystack_vector->getOffsets(),
                 col_needle_vector->getChars(),
                 col_needle_vector->getOffsets(),
                 vec_res);
         else if (col_haystack_vector && col_needle_const)
-            Impl::vector_constant(
+            Impl::vectorConstant(
                 col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), col_needle_const->getValue<String>(), vec_res);
         else if (col_haystack_const && col_needle_vector)
-            Impl::constant_vector(
+            Impl::constantVector(
                 col_haystack_const->getValue<String>(), col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
         else
             throw Exception(
@@ -277,7 +277,7 @@ public:
         vec_res.resize(column_haystack_size * refs.size());
 
         if (col_haystack_vector)
-            Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res);
+            Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res);
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
@@ -366,7 +366,7 @@ public:
 
         /// The blame for resizing output is for the callee.
         if (col_haystack_vector)
-            Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res, offsets_res);
+            Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res, offsets_res);
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 

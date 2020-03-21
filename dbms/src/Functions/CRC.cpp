@@ -28,7 +28,7 @@ struct CRCImpl
 {
     using ReturnType = T;
 
-    static T make_crc(const unsigned char *buf, size_t size)
+    static T makeCRC(const unsigned char *buf, size_t size)
     {
         static CRCBase<ReturnType> base(polynomial);
 
@@ -56,7 +56,7 @@ struct CRC32ZLIBImpl
     using ReturnType = UInt32;
     static constexpr auto name = "CRC32";
 
-    static UInt32 make_crc(const unsigned char *buf, size_t size)
+    static UInt32 makeCRC(const unsigned char *buf, size_t size)
     {
         return crc32_z(0L, buf, size);
     }
@@ -85,20 +85,20 @@ struct CRCFunctionWrapper
         ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            res[i] = do_crc(data, prev_offset, offsets[i] - prev_offset - 1);
+            res[i] = doCRC(data, prev_offset, offsets[i] - prev_offset - 1);
             prev_offset = offsets[i];
         }
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars & data, size_t n, ReturnType & res) { res = do_crc(data, 0, n); }
+    static void vectorFixedToConstant(const ColumnString::Chars & data, size_t n, ReturnType & res) { res = doCRC(data, 0, n); }
 
-    static void vector_fixed_to_vector(const ColumnString::Chars & data, size_t n, PaddedPODArray<ReturnType> & res)
+    static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<ReturnType> & res)
     {
         size_t size = data.size() / n;
 
         for (size_t i = 0; i < size; ++i)
         {
-            res[i] = do_crc(data, i * n, n);
+            res[i] = doCRC(data, i * n, n);
         }
     }
 
@@ -108,10 +108,10 @@ struct CRCFunctionWrapper
     }
 
 private:
-    static ReturnType do_crc(const ColumnString::Chars & buf, size_t offset, size_t size)
+    static ReturnType doCRC(const ColumnString::Chars & buf, size_t offset, size_t size)
     {
         const unsigned char * p = reinterpret_cast<const unsigned char *>(&buf[0]) + offset;
-        return Impl::make_crc(p, size);
+        return Impl::makeCRC(p, size);
     }
 };
 

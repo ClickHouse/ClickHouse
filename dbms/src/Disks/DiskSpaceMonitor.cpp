@@ -176,7 +176,7 @@ Volume::Volume(
                             << formatReadableSizeWithBinarySuffix(sizes[i]) << ") for containing part the size of max_data_part_size ("
                             << formatReadableSizeWithBinarySuffix(max_data_part_size) << ")");
     }
-    constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
+    static constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
     if (max_data_part_size != 0 && max_data_part_size < MIN_PART_SIZE)
         LOG_WARNING(
             logger,

@@ -235,7 +235,7 @@ Pipes StorageMerge::read(
         auto & storage = std::get<0>(table);
 
         /// If sampling requested, then check that table supports it.
-        if (query_info.query->as<ASTSelectQuery>()->sample_size() && !storage->supportsSampling())
+        if (query_info.query->as<ASTSelectQuery>()->sampleSize() && !storage->supportsSampling())
             throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
         auto source_pipes = createSources(

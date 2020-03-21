@@ -96,7 +96,7 @@ struct MatchImpl
 
     using ResultType = UInt8;
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & pattern, PaddedPODArray<UInt8> & res)
     {
         if (offsets.empty())
@@ -246,14 +246,14 @@ struct MatchImpl
     }
 
     template <typename... Args>
-    static void vector_vector(Args &&...)
+    static void vectorVector(Args &&...)
     {
         throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     /// Search different needles in single haystack.
     template <typename... Args>
-    static void constant_vector(Args &&...)
+    static void constantVector(Args &&...)
     {
         throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -274,17 +274,17 @@ struct MultiMatchAnyImpl
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
         PaddedPODArray<Type> & res,
         PaddedPODArray<UInt64> & offsets)
     {
-        vector_constant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt);
+        vectorConstant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt);
     }
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
@@ -351,7 +351,7 @@ struct MultiMatchAnyImpl
         memset(accum.data(), 0, accum.size());
         for (size_t j = 0; j < needles.size(); ++j)
         {
-            MatchImpl<false, false>::vector_constant(haystack_data, haystack_offsets, needles[j].toString(), accum);
+            MatchImpl<false, false>::vectorConstant(haystack_data, haystack_offsets, needles[j].toString(), accum);
             for (size_t i = 0; i < res.size(); ++i)
             {
                 if constexpr (FindAny)
@@ -377,17 +377,17 @@ struct MultiMatchAllIndicesImpl
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
         PaddedPODArray<Type> & res,
         PaddedPODArray<UInt64> & offsets)
     {
-        vector_constant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt);
+        vectorConstant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt);
     }
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,

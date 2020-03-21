@@ -50,14 +50,14 @@ template <typename T>
 class DiskTest : public testing::Test
 {
 public:
-    void SetUp() override { disk_ = createDisk<T>(); }
+    void SetUp() override { disk = createDisk<T>(); }
 
-    void TearDown() override { destroyDisk<T>(disk_); }
+    void TearDown() override { destroyDisk<T>(disk); }
 
-    const DB::DiskPtr & getDisk() { return disk_; }
+    const DB::DiskPtr & getDisk() { return disk; }
 
 private:
-    DB::DiskPtr disk_;
+    DB::DiskPtr disk;
 };
 
 

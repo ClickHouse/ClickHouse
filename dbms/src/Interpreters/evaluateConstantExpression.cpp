@@ -273,21 +273,21 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
             return {};
         }
 
-        auto hasRequiredColumns = [&target_expr](const Block & block) -> bool
+        auto has_required_columns = [&target_expr](const Block & block) -> bool
         {
             for (const auto & name : target_expr->getRequiredColumns())
             {
-                bool hasColumn = false;
+                bool has_column = false;
                 for (const auto & column_name : block.getNames())
                 {
                     if (column_name == name)
                     {
-                        hasColumn = true;
+                        has_column = true;
                         break;
                     }
                 }
 
-                if (!hasColumn)
+                if (!has_column)
                     return false;
             }
 
@@ -299,7 +299,7 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
             Block block(conjunct);
 
             // Block should contain all required columns from `target_expr`
-            if (!hasRequiredColumns(block))
+            if (!has_required_columns(block))
             {
                 return {};
             }

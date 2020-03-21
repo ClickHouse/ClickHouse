@@ -171,7 +171,7 @@ private:
     }
 
     template <typename Transform, typename T1, typename T2>
-    void vector_vector(
+    void vectorVector(
         const ColumnVector<T1> & x, const ColumnVector<T2> & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result)
@@ -183,7 +183,7 @@ private:
     }
 
     template <typename Transform, typename T1, typename T2>
-    void vector_constant(
+    void vectorConstant(
         const ColumnVector<T1> & x, T2 y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result)
@@ -194,7 +194,7 @@ private:
     }
 
     template <typename Transform, typename T1, typename T2>
-    void constant_vector(
+    void constantVector(
         T1 x, const ColumnVector<T2> & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result)
