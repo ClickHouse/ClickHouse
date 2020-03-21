@@ -49,7 +49,7 @@ if (ENABLE_JEMALLOC)
             list(APPEND SRCS ${LIBRARY_DIR}/src/zone.c)
         endif ()
 
-        add_library(jemalloc STATIC ${SRCS})
+        add_library(jemalloc ${SRCS})
         target_include_directories(jemalloc PRIVATE ${LIBRARY_DIR}/include)
         target_include_directories(jemalloc PUBLIC include)
         if (ARCH_AMD64)
