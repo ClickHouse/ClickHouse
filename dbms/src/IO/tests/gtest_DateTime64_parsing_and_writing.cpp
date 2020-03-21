@@ -37,7 +37,7 @@ TEST_P(DateTime64StringParseTest, readDateTime64Text)
     const auto & param = GetParam();
     ReadBufferFromMemory read_buffer(param.string.data(), param.string.size());
 
-    DateTime64 actual;
+    DateTime64 actual{};
     EXPECT_TRUE(tryReadDateTime64Text(actual, param.scale, read_buffer, param.timezone));
 
     EXPECT_EQ(param.dt64, actual);

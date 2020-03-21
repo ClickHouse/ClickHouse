@@ -215,7 +215,7 @@ JSON::ElementType JSON::getType() const
 
 void JSON::checkPos(Pos pos) const
 {
-    if (pos >= ptr_end)
+    if (pos >= ptr_end || ptr_begin == nullptr)
         throw JSONException("JSON: unexpected end of data.");
 }
 

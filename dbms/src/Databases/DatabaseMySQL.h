@@ -17,7 +17,7 @@ namespace DB
  *  It doesn't make any manipulations with filesystem.
  *  All tables are created by calling code after real-time pull-out structure from remote MySQL
  */
-class DatabaseMySQL : public IDatabase
+class DatabaseMySQL final : public IDatabase
 {
 public:
     ~DatabaseMySQL() override;

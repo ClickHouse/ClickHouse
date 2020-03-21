@@ -129,7 +129,8 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
     /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
     const Names & column_names_to_sum,
     size_t max_block_size_)
-    : MergingSortedBlockInputStream(inputs_, description_, max_block_size_)
+    : MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
+    log(&Logger::get("SummingSortedBlockInputStream"))
 {
     current_row.resize(num_columns);
 

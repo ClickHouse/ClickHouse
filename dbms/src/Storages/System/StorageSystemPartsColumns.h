@@ -13,7 +13,7 @@ class Context;
 /** Implements system table 'parts_columns' which allows to get information about
  * columns in data parts for tables of MergeTree family.
  */
-class StorageSystemPartsColumns
+class StorageSystemPartsColumns final
         : public ext::shared_ptr_helper<StorageSystemPartsColumns>, public StorageSystemPartsBase
 {
     friend struct ext::shared_ptr_helper<StorageSystemPartsColumns>;

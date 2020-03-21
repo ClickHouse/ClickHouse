@@ -3515,13 +3515,13 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, con
     }
 }
 
-MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage * source_table) const
+MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table) const
 {
-    MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(source_table);
+    MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(&source_table);
     if (!src_data)
-        throw Exception("Table " + source_table->getStorageID().getNameForLogs() +
+        throw Exception("Table " + source_table.getStorageID().getNameForLogs() +
                         " supports attachPartitionFrom only for MergeTree family of table engines."
-                        " Got " + source_table->getName(), ErrorCodes::NOT_IMPLEMENTED);
+                        " Got " + source_table.getName(), ErrorCodes::NOT_IMPLEMENTED);
 
     if (getColumns().getAllPhysical().sizeOfDifference(src_data->getColumns().getAllPhysical()))
         throw Exception("Tables have different structure", ErrorCodes::INCOMPATIBLE_COLUMNS);
@@ -3545,7 +3545,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage * sour
 
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const
 {
-    return checkStructureAndGetMergeTreeData(source_table.get());
+    return checkStructureAndGetMergeTreeData(*source_table);
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(const MergeTreeData::DataPartPtr & src_part,
