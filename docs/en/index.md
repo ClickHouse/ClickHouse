@@ -129,4 +129,4 @@ This is not done in “normal” databases, because it doesn’t make sense when
 
 Note that for CPU efficiency, the query language must be declarative (SQL or MDX), or at least a vector (J, K). The query should only contain implicit loops, allowing for optimization.
 
-[Original article](https://clickhouse.tech/docs/en/) <!--hide-->
+{## [Original article](https://clickhouse.tech/docs/en/) ##}
