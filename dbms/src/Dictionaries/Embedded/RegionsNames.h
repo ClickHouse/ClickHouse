@@ -4,7 +4,7 @@
 #include <vector>
 #include <Poco/Exception.h>
 #include <common/StringRef.h>
-#include <common/Types.h>
+#include <common/types.h>
 #include "GeodataProviders/INamesProvider.h"
 
 

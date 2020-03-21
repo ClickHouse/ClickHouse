@@ -18,7 +18,7 @@ namespace DB
 class StorageFileBlockInputStream;
 class StorageFileBlockOutputStream;
 
-class StorageFile : public ext::shared_ptr_helper<StorageFile>, public IStorage
+class StorageFile final : public ext::shared_ptr_helper<StorageFile>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageFile>;
 public:

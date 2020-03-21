@@ -281,7 +281,7 @@ private:
     }
 
     /// Should we celebrate a bit?
-    bool isNewYearMode()
+    static bool isNewYearMode()
     {
         time_t current_time = time(nullptr);
 
@@ -294,7 +294,7 @@ private:
             || (now.month() == 1 && now.day() <= 5);
     }
 
-    bool isChineseNewYearMode(const String & local_tz)
+    static bool isChineseNewYearMode(const String & local_tz)
     {
         /// Days of Dec. 20 in Chinese calendar starting from year 2019 to year 2105
         static constexpr UInt16 chineseNewYearIndicators[]
@@ -481,8 +481,6 @@ private:
 
             if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
             {
-                if (config().has("case_insensitive_suggestion"))
-                    Suggest::instance().setCaseInsensitive();
                 /// Load suggestion data from the server.
                 Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
             }
@@ -1594,7 +1592,7 @@ private:
             std::cout << "Ok." << std::endl;
     }
 
-    void showClientVersion()
+    static void showClientVersion()
     {
         std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
     }
@@ -1720,7 +1718,6 @@ public:
             ("always_load_suggestion_data", "Load suggestion data even if clickhouse-client is run in non-interactive mode. Used for testing.")
             ("suggestion_limit", po::value<int>()->default_value(10000),
                 "Suggestion limit for how many databases, tables and columns to fetch.")
-            ("case_insensitive_suggestion", "Case sensitive suggestions.")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
             ("format,f", po::value<std::string>(), "default output format")

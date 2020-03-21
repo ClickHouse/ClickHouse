@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-class DiskMemoryDirectoryIterator : public IDiskDirectoryIterator
+class DiskMemoryDirectoryIterator final : public IDiskDirectoryIterator
 {
 public:
     explicit DiskMemoryDirectoryIterator(std::vector<Poco::Path> && dir_file_paths_)
@@ -42,8 +42,9 @@ private:
     std::vector<Poco::Path>::iterator iter;
 };
 
+
 /// Adapter with actual behaviour as ReadBufferFromString.
-class ReadIndirectBuffer : public ReadBufferFromFileBase
+class ReadIndirectBuffer final : public ReadBufferFromFileBase
 {
 public:
     ReadIndirectBuffer(String path_, const String & data_)
@@ -71,8 +72,9 @@ private:
     const String path;
 };
 
+
 /// This class is responsible to update files metadata after buffer is finalized.
-class WriteIndirectBuffer : public WriteBufferFromFileBase
+class WriteIndirectBuffer final : public WriteBufferFromFileBase
 {
 public:
     WriteIndirectBuffer(DiskMemory * disk_, String path_, WriteMode mode_, size_t buf_size)
@@ -386,8 +388,25 @@ void DiskMemory::removeRecursive(const String & path)
 
 void DiskMemory::listFiles(const String & path, std::vector<String> & file_names)
 {
+    std::lock_guard lock(mutex);
+
     for (auto it = iterateDirectory(path); it->isValid(); it->next())
         file_names.push_back(it->name());
+}
+
+void DiskMemory::createHardLink(const String &, const String &)
+{
+    throw Exception("Method createHardLink is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void DiskMemory::createFile(const String &)
+{
+    throw Exception("Method createFile is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void DiskMemory::setReadOnly(const String &)
+{
+    throw Exception("Method setReadOnly is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 

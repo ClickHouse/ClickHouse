@@ -274,6 +274,7 @@ if unstable_queries:
 
 error_tests += slow_average_tests
 if error_tests:
+    status = 'failure'
     message_array.append(str(error_tests) + ' errors')
 
 if message_array:

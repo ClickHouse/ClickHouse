@@ -13,7 +13,7 @@ class Context;
 
 /** implements system table "merge_tree_settings", which allows to get information about the current MergeTree settings.
   */
-class SystemMergeTreeSettings : public ext::shared_ptr_helper<SystemMergeTreeSettings>, public IStorageSystemOneBlock<SystemMergeTreeSettings>
+class SystemMergeTreeSettings final : public ext::shared_ptr_helper<SystemMergeTreeSettings>, public IStorageSystemOneBlock<SystemMergeTreeSettings>
 {
     friend struct ext::shared_ptr_helper<SystemMergeTreeSettings>;
 public:

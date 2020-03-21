@@ -25,6 +25,12 @@ namespace ErrorCodes
 }
 
 
+static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists)
+{
+    return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name) : DatabaseCatalog::instance().getDatabase(database_name);
+}
+
+
 InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, Context & context_) : query_ptr(query_ptr_), context(context_) {}
 
 
@@ -227,6 +233,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
     return {};
 }
 
+
 BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, ASTDropQuery::Kind kind, bool if_exists)
 {
     auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
@@ -263,10 +270,6 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
     return {};
 }
 
-DatabasePtr InterpreterDropQuery::tryGetDatabase(const String & database_name, bool if_exists)
-{
-    return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name) : DatabaseCatalog::instance().getDatabase(database_name);
-}
 
 DatabaseAndTable InterpreterDropQuery::tryGetDatabaseAndTable(const String & database_name, const String & table_name, bool if_exists)
 {

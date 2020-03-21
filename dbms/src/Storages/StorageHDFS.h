@@ -13,7 +13,7 @@ namespace DB
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
  */
-class StorageHDFS : public ext::shared_ptr_helper<StorageHDFS>, public IStorage
+class StorageHDFS final : public ext::shared_ptr_helper<StorageHDFS>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageHDFS>;
 public:

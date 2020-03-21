@@ -91,6 +91,28 @@ ASTPtr StorageView::getRuntimeViewQuery(const ASTSelectQuery & outer_query, cons
 }
 
 
+static void replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery)
+{
+    auto * select_element = select_query->tables()->children[0]->as<ASTTablesInSelectQueryElement>();
+
+    if (!select_element->table_expression)
+        throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
+
+    auto * table_expression = select_element->table_expression->as<ASTTableExpression>();
+
+    if (!table_expression->database_and_table_name)
+        throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
+
+    const auto alias = table_expression->database_and_table_name->tryGetAlias();
+    table_expression->database_and_table_name = {};
+    table_expression->subquery = std::make_shared<ASTSubquery>();
+    table_expression->subquery->children.push_back(subquery);
+    table_expression->children.push_back(table_expression->subquery);
+    if (!alias.empty())
+        table_expression->subquery->setAlias(alias);
+}
+
+
 ASTPtr StorageView::getRuntimeViewQuery(ASTSelectQuery * outer_query, const Context & context, bool normalize)
 {
     auto runtime_view_query = inner_query->clone();
@@ -116,28 +138,6 @@ ASTPtr StorageView::getRuntimeViewQuery(ASTSelectQuery * outer_query, const Cont
 
     return runtime_view_query;
 }
-
-void StorageView::replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery)
-{
-    auto * select_element = select_query->tables()->children[0]->as<ASTTablesInSelectQueryElement>();
-
-    if (!select_element->table_expression)
-        throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
-
-    auto * table_expression = select_element->table_expression->as<ASTTableExpression>();
-
-    if (!table_expression->database_and_table_name)
-        throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
-
-    const auto alias = table_expression->database_and_table_name->tryGetAlias();
-    table_expression->database_and_table_name = {};
-    table_expression->subquery = std::make_shared<ASTSubquery>();
-    table_expression->subquery->children.push_back(subquery);
-    table_expression->children.push_back(table_expression->subquery);
-    if (!alias.empty())
-        table_expression->subquery->setAlias(alias);
-}
-
 
 void registerStorageView(StorageFactory & factory)
 {

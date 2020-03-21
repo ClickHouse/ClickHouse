@@ -1,16 +1,15 @@
-
-# OnTime
+# OnTime {#ontime}
 
 This dataset can be obtained in two ways:
 
-- import from raw data
-- download of prepared partitions
+-   import from raw data
+-   download of prepared partitions
 
-## Import From Raw Data
+## Import From Raw Data {#import-from-raw-data}
 
 Downloading data:
 
-```bash
+``` bash
 for s in `seq 1987 2018`
 do
 for m in `seq 1 12`
@@ -20,11 +19,11 @@ done
 done
 ```
 
-(from <https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh> )
+(from https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh )
 
 Creating a table:
 
-```sql
+``` sql
 CREATE TABLE `ontime` (
   `Year` UInt16,
   `Quarter` UInt8,
@@ -135,21 +134,21 @@ CREATE TABLE `ontime` (
   `Div5LongestGTime` String,
   `Div5WheelsOff` String,
   `Div5TailNum` String
-) ENGINE = MergeTree 
-PARTITION BY Year 
-ORDER BY (Carrier, FlightDate) 
+) ENGINE = MergeTree
+PARTITION BY Year
+ORDER BY (Carrier, FlightDate)
 SETTINGS index_granularity = 8192;
 ```
 
 Loading data:
 
-```bash
+``` bash
 $ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
-## Download of Prepared Partitions
+## Download of Prepared Partitions {#download-of-prepared-partitions}
 
-```bash
+``` bash
 $ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
 $ tar xvf ontime.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
@@ -157,15 +156,14 @@ $ sudo service clickhouse-server restart
 $ clickhouse-client --query "select count(*) from datasets.ontime"
 ```
 
-!!!info
-    If you will run queries described below, you have to use full table name,
-    `datasets.ontime`.
+!!! info "Info"
+    If you will run the queries described below, you have to use the full table name, `datasets.ontime`.
 
-## Queries
+## Queries {#queries}
 
 Q0.
 
-```sql
+``` sql
 SELECT avg(c1)
 FROM
 (
@@ -177,7 +175,7 @@ FROM
 
 Q1. The number of flights per day from the year 2000 to 2008
 
-```sql
+``` sql
 SELECT DayOfWeek, count(*) AS c
 FROM ontime
 WHERE Year>=2000 AND Year<=2008
@@ -187,7 +185,7 @@ ORDER BY c DESC;
 
 Q2. The number of flights delayed by more than 10 minutes, grouped by the day of the week, for 2000-2008
 
-```sql
+``` sql
 SELECT DayOfWeek, count(*) AS c
 FROM ontime
 WHERE DepDelay>10 AND Year>=2000 AND Year<=2008
@@ -195,9 +193,9 @@ GROUP BY DayOfWeek
 ORDER BY c DESC;
 ```
 
-Q3. The number of delays by airport for 2000-2008
+Q3. The number of delays by the airport for 2000-2008
 
-```sql
+``` sql
 SELECT Origin, count(*) AS c
 FROM ontime
 WHERE DepDelay>10 AND Year>=2000 AND Year<=2008
@@ -208,7 +206,7 @@ LIMIT 10;
 
 Q4. The number of delays by carrier for 2007
 
-```sql
+``` sql
 SELECT Carrier, count(*)
 FROM ontime
 WHERE DepDelay>10 AND Year=2007
@@ -218,7 +216,7 @@ ORDER BY count(*) DESC;
 
 Q5. The percentage of delays by carrier for 2007
 
-```sql
+``` sql
 SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
@@ -244,7 +242,7 @@ ORDER BY c3 DESC;
 
 Better version of the same query:
 
-```sql
+``` sql
 SELECT Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year=2007
@@ -254,7 +252,7 @@ ORDER BY c3 DESC
 
 Q6. The previous request for a broader range of years, 2000-2008
 
-```sql
+``` sql
 SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
@@ -280,7 +278,7 @@ ORDER BY c3 DESC;
 
 Better version of the same query:
 
-```sql
+``` sql
 SELECT Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year>=2000 AND Year<=2008
@@ -290,7 +288,7 @@ ORDER BY c3 DESC;
 
 Q7. Percentage of flights delayed for more than 10 minutes, by year
 
-```sql
+``` sql
 SELECT Year, c1/c2
 FROM
 (
@@ -314,7 +312,7 @@ ORDER BY Year;
 
 Better version of the same query:
 
-```sql
+``` sql
 SELECT Year, avg(DepDelay>10)*100
 FROM ontime
 GROUP BY Year
@@ -323,8 +321,8 @@ ORDER BY Year;
 
 Q8. The most popular destinations by the number of directly connected cities for various year ranges
 
-```sql
-SELECT DestCityName, uniqExact(OriginCityName) AS u 
+``` sql
+SELECT DestCityName, uniqExact(OriginCityName) AS u
 FROM ontime
 WHERE Year >= 2000 and Year <= 2010
 GROUP BY DestCityName
@@ -333,7 +331,7 @@ ORDER BY u DESC LIMIT 10;
 
 Q9.
 
-```sql
+``` sql
 SELECT Year, count(*) AS c1
 FROM ontime
 GROUP BY Year;
@@ -341,7 +339,7 @@ GROUP BY Year;
 
 Q10.
 
-```sql
+``` sql
 SELECT
    min(Year), max(Year), Carrier, count(*) AS cnt,
    sum(ArrDelayMinutes>30) AS flights_delayed,
@@ -359,7 +357,7 @@ LIMIT 1000;
 
 Bonus:
 
-```sql
+``` sql
 SELECT avg(cnt)
 FROM
 (
@@ -397,12 +395,11 @@ LIMIT 10;
 
 This performance test was created by Vadim Tkachenko. See:
 
-- <https://www.percona.com/blog/2009/10/02/analyzing-air-traffic-performance-with-infobright-and-monetdb/>
-- <https://www.percona.com/blog/2009/10/26/air-traffic-queries-in-luciddb/>
-- <https://www.percona.com/blog/2009/11/02/air-traffic-queries-in-infinidb-early-alpha/>
-- <https://www.percona.com/blog/2014/04/21/using-apache-hadoop-and-impala-together-with-mysql-for-data-analysis/>
-- <https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/>
-- <http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html>
-
+-   https://www.percona.com/blog/2009/10/02/analyzing-air-traffic-performance-with-infobright-and-monetdb/
+-   https://www.percona.com/blog/2009/10/26/air-traffic-queries-in-luciddb/
+-   https://www.percona.com/blog/2009/11/02/air-traffic-queries-in-infinidb-early-alpha/
+-   https://www.percona.com/blog/2014/04/21/using-apache-hadoop-and-impala-together-with-mysql-for-data-analysis/
+-   https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/
+-   http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html
 
 [Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets/ontime/) <!--hide-->
