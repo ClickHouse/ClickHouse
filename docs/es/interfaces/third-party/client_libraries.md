@@ -12,6 +12,7 @@
     -   [smi2/phpclickhouse](https://packagist.org/packages/smi2/phpClickHouse)
     -   [8bitov/clickhouse-php-client](https://packagist.org/packages/8bitov/clickhouse-php-client)
     -   [bozerkins/clickhouse-client](https://packagist.org/packages/bozerkins/clickhouse-client)
+    -   [simpod/clickhouse-client](https://packagist.org/packages/simpod/clickhouse-client)
     -   [seva-code/php-click-house-client](https://packagist.org/packages/seva-code/php-click-house-client)
     -   [SeasClick C++ client](https://github.com/SeasX/SeasClick)
 -   Ve
