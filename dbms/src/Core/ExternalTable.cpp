@@ -65,8 +65,8 @@ void BaseExternalTable::parseStructureFromStructureField(const std::string & arg
     std::vector<std::string> vals;
     splitInto<' ', ','>(vals, argument, true);
 
-    if (vals.size() & 1)
-        throw Exception("Odd number of attributes in section structure", ErrorCodes::BAD_ARGUMENTS);
+    if (vals.size() % 2 != 0)
+        throw Exception("Odd number of attributes in section structure: " + std::to_string(vals.size()), ErrorCodes::BAD_ARGUMENTS);
 
     for (size_t i = 0; i < vals.size(); i += 2)
         structure.emplace_back(vals[i], vals[i + 1]);
