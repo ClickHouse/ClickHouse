@@ -9,11 +9,11 @@
     -   [Casa de clics-cliente](https://github.com/yurial/clickhouse-client)
     -   [Aiochclient](https://github.com/maximdanilchenko/aiochclient)
 -   PHP
-    -   [Método de codificación de datos:](https://github.com/SeasX/SeasClick)
-    -   [Inicio](https://github.com/smi2/phpClickHouse)
-    -   [Sistema abierto.](https://github.com/8bitov/clickhouse-php-client)
-    -   [Casa de clics-cliente](https://github.com/bozerkins/clickhouse-client)
-    -   [PhpClickHouseClient](https://github.com/SevaCode/PhpClickHouseClient)
+    -   [smi2/phpclickhouse](https://packagist.org/packages/smi2/phpClickHouse)
+    -   [8bitov/clickhouse-php-client](https://packagist.org/packages/8bitov/clickhouse-php-client)
+    -   [bozerkins/clickhouse-client](https://packagist.org/packages/bozerkins/clickhouse-client)
+    -   [seva-code/php-click-house-client](https://packagist.org/packages/seva-code/php-click-house-client)
+    -   [SeasClick C++ client](https://github.com/SeasX/SeasClick)
 -   Ve
     -   [Casa de clics](https://github.com/kshvakov/clickhouse/)
     -   [Sistema abierto.](https://github.com/roistat/go-clickhouse)
