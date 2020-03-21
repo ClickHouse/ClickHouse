@@ -229,7 +229,7 @@ def write_redirect_html(out_path, to_url):
     <body>
         If you are not redirected automatically, follow this <a href="{to_url}">link</a>.
     </body>
-</html>'''
+</html>''')
 
 
 def build_redirect_html(args, from_path, to_path):
