@@ -1,11 +1,11 @@
 #include "coverage.h"
 
-#include <common/config_common.h>
-
 #if WITH_COVERAGE
 
 #    include <mutex>
+
 #    include <unistd.h>
+
 
 #    if defined(__clang__)
 extern "C" void __llvm_profile_dump();
