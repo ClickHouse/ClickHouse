@@ -216,20 +216,20 @@ def build_single_page_version(lang, args, cfg):
 
 def write_redirect_html(out_path, to_url):
     with open(out_path, 'w') as f:
-        f.write('''<!DOCTYPE HTML>
+        f.write(f'''<!DOCTYPE HTML>
 <html lang="en-US">
     <head>
         <meta charset="UTF-8">
-        <meta http-equiv="refresh" content="0; url=%s">
+        <meta http-equiv="refresh" content="0; url={to_url}">
         <script type="text/javascript">
-            window.location.href = "%s"
+            window.location.href = "{to_url}"
         </script>
         <title>Page Redirection</title>
     </head>
     <body>
-        If you are not redirected automatically, follow this <a href="%s">link</a>.
+        If you are not redirected automatically, follow this <a href="{to_url}">link</a>.
     </body>
-</html>''' % (to_url, to_url, to_url))
+</html>'''
 
 
 def build_redirect_html(args, from_path, to_path):
