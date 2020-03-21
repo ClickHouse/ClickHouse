@@ -36,6 +36,5 @@ lrwxrwxrwx 1 root root        10  clickhouse-lld -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-local -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-obfuscator -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-odbc-bridge -> clickhouse
-lrwxrwxrwx 1 root root        10  clickhouse-performance-test -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-server -> clickhouse
 ```
