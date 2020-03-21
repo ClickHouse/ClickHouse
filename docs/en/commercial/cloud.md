@@ -13,4 +13,4 @@
 -   Encryption and isolation
 -   Automated maintenance
 
-{## [Original article](https://clickhouse.tech/docs/en/commercial/cloud/) #}}
+{## [Original article](https://clickhouse.tech/docs/en/commercial/cloud/) ##}
