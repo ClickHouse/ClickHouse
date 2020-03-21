@@ -1,5 +1,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCheckQuery.h>
+#include <Access/AccessFlags.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <DataStreams/OneBlockInputStream.h>
@@ -40,6 +41,7 @@ BlockIO InterpreterCheckQuery::execute()
     const String & table_name = check.table;
     String database_name = check.database.empty() ? context.getCurrentDatabase() : check.database;
 
+    context.checkAccess(AccessType::SHOW, database_name, table_name);
     StoragePtr table = context.getTable(database_name, table_name);
     auto check_results = table->checkData(query_ptr, context);
 

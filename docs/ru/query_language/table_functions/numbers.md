@@ -18,4 +18,4 @@ SELECT * FROM system.numbers LIMIT 10;
 select toDate('2010-01-01') + number as d FROM numbers(365);
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/table_functions/numbers/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/numbers/) <!--hide-->

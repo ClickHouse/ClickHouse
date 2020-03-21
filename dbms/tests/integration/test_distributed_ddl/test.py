@@ -135,7 +135,7 @@ ENGINE = Distributed(cluster_without_replication, default, merge, i)
     time.sleep(5)
     test_cluster.ddl_check_query(instance, "ALTER TABLE merge ON CLUSTER cluster_without_replication MODIFY COLUMN i Int64")
     time.sleep(5)
-    test_cluster.ddl_check_query(instance, "ALTER TABLE merge ON CLUSTER cluster_without_replication ADD COLUMN s DEFAULT toString(i) FORMAT TSV")
+    test_cluster.ddl_check_query(instance, "ALTER TABLE merge ON CLUSTER cluster_without_replication ADD COLUMN s String DEFAULT toString(i) FORMAT TSV")
 
     assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(''.join(['{}\t{}\n'.format(x,x) for x in xrange(4)]))
 
@@ -289,6 +289,11 @@ def test_rename(test_cluster):
     assert instance.query("select count(id), sum(id) from rename where sid like 'new%'").rstrip() == "10\t245"
     test_cluster.pm_random_drops.push_rules(rules)
 
+def test_socket_timeout(test_cluster):
+    instance = test_cluster.instances['ch1']
+    # queries should not fail with "Timeout exceeded while reading from socket" in case of EINTR caused by query profiler
+    for i in range(0, 100):
+        instance.query("select hostName() as host, count() from cluster('cluster', 'system', 'settings') group by host")
 
 if __name__ == '__main__':
     with contextmanager(test_cluster)() as ctx_cluster:

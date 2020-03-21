@@ -98,4 +98,4 @@
 
 Доступ к БД не связан с настройкой [readonly](settings/permissions_for_queries.md#settings_readonly). Невозможно дать полный доступ к одной БД и `readonly` к другой.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/access_rights/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/access_rights/) <!--hide-->

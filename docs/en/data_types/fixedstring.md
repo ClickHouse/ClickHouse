@@ -52,4 +52,4 @@ This behavior differs from MySQL behavior for the `CHAR` type (where strings are
 
 Note that the length of the `FixedString(N)` value is constant. The [length](../query_language/functions/array_functions.md#array_functions-length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](../query_language/functions/string_functions.md#string_functions-empty) function returns `1` in this case.
 
-[Original article](https://clickhouse.yandex/docs/en/data_types/fixedstring/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data_types/fixedstring/) <!--hide-->

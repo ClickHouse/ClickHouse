@@ -78,6 +78,40 @@ git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 命令执行成功后，可以通过执行`git pull upstream master`，从ClickHouse的主分支中拉去更新。
 
 
+## Working with submodules
+
+Working with submodules in git could be painful. Next commands will help to manage it:
+
+```
+# ! each command accepts --recursive
+# Update remote URLs for submodules. Barely rare case
+git submodule sync
+# Add new submodules
+git submodule init
+# Update existing submodules to the current state
+git submodule update
+# Two last commands could be merged together
+git submodule update --init
+```
+
+The next commands would help you to reset all submodules to the initial state (!WARING! - any chenges inside will be deleted):
+
+```
+# Synchronizes submodules' remote URL with .gitmodules
+git submodule sync --recursive
+# Update the registered submodules with initialize not yet initialized
+git submodule update --init --recursive
+# Reset all changes done after HEAD
+git submodule foreach git reset --hard
+# Clean files from .gitignore
+git submodule foreach git clean -xfd
+# Repeat last 4 commands for all submodule
+git submodule foreach git submodule sync --recursive
+git submodule foreach git submodule update --init --recursive
+git submodule foreach git submodule foreach git reset --hard
+git submodule foreach git submodule foreach git clean -xfd
+```
+
 # 构建系统
 
 ClickHouse使用 CMake 和 Ninja 来构建系统。
@@ -114,7 +148,7 @@ Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性�
 
 在Ubuntu上安装GCC，请执行：`sudo apt install gcc g++`
 
-请使用`gcc --version`查看gcc的版本。如果gcc版本低于9，请参考此处的指示：https://clickhouse.yandex/docs/en/development/build/#install-gcc-9 。
+请使用`gcc --version`查看gcc的版本。如果gcc版本低于9，请参考此处的指示：https://clickhouse.tech/docs/en/development/build/#install-gcc-9 。
 
 在Mac OS X上安装GCC，请执行：`brew install gcc`
 
@@ -239,11 +273,11 @@ KDevelop和QTCreator是另外两款适合开发ClickHouse的替代IDE。尽管�
 
 # 编写代码
 
-ClickHouse的架构描述可以在此处查看：https://clickhouse.yandex/docs/en/development/architecture/
+ClickHouse的架构描述可以在此处查看：https://clickhouse.tech/docs/en/development/architecture/
 
-代码风格指引：https://clickhouse.yandex/docs/en/development/style/
+代码风格指引：https://clickhouse.tech/docs/en/development/style/
 
-编写测试用例：https://clickhouse.yandex/docs/en/development/tests/
+编写测试用例：https://clickhouse.tech/docs/en/development/tests/
 
 任务列表：https://github.com/yandex/ClickHouse/blob/master/dbms/tests/instructions/easy_tasks_sorted_en.md
 

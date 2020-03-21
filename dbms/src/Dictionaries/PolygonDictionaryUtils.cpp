@@ -109,4 +109,259 @@ void GridRoot::setBoundingBox()
     });
 }
 
+BucketsPolygonIndex::BucketsPolygonIndex(
+    const std::vector<Polygon> & polygons,
+    const std::vector<Float64> & splits)
+    : log(&Logger::get("BucketsPolygonIndex")),
+      sorted_x(splits)
+{
+    indexBuild(polygons);
+}
+
+BucketsPolygonIndex::BucketsPolygonIndex(
+    const std::vector<Polygon> & polygons)
+    : log(&Logger::get("BucketsPolygonIndex")),
+      sorted_x(uniqueX(polygons))
+{
+    indexBuild(polygons);
+}
+
+std::vector<Float64> BucketsPolygonIndex::uniqueX(const std::vector<Polygon> & polygons)
+{
+    std::vector<Float64> all_x;
+    for (size_t i = 0; i < polygons.size(); ++i)
+    {
+        for (auto & point : polygons[i].outer())
+        {
+            all_x.push_back(point.x());
+        }
+
+        for (auto & inner : polygons[i].inners())
+        {
+            for (auto & point : inner)
+            {
+                all_x.push_back(point.x());
+            }
+        }
+    }
+
+    /** making all_x sorted and distinct */
+    std::sort(all_x.begin(), all_x.end());
+    all_x.erase(std::unique(all_x.begin(), all_x.end()), all_x.end());
+
+    LOG_TRACE(log, "Found " << all_x.size() << " unique x coordinates");
+
+    return all_x;
+}
+
+void BucketsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
+{
+    for (size_t i = 0; i < polygons.size(); ++i)
+    {
+        indexAddRing(polygons[i].outer(), i);
+
+        for (auto & inner : polygons[i].inners())
+        {
+            indexAddRing(inner, i);
+        }
+    }
+
+    /** sorting edges consisting of (left_point, right_point, polygon_id) in that order */
+    std::sort(this->all_edges.begin(), this->all_edges.end(), Edge::compare1);
+
+    LOG_TRACE(log, "Just sorted " << all_edges.size() << " edges from all " << polygons.size() << " polygons");
+
+    /** using custom comparator for fetching edges in right_point order, like in scanline */
+    auto cmp = [](const Edge & a, const Edge & b)
+    {
+        return Edge::compare1(a, b);
+    };
+    std::set<Edge, decltype(cmp)> interesting_edges(cmp);
+
+    if (!this->sorted_x.empty())
+    {
+        this->edges_index.resize(this->sorted_x.size() - 1);
+    }
+
+    size_t total_index_edges = 0;
+    size_t edges_it = 0;
+    for (size_t l = 0, r = 1; r < this->sorted_x.size(); ++l, ++r)
+    {
+        const Float64 lx = this->sorted_x[l];
+        const Float64 rx = this->sorted_x[r];
+
+        /** removing edges where right_point.x < lx */
+        while (!interesting_edges.empty() && interesting_edges.begin()->r.x() < lx)
+        {
+            interesting_edges.erase(interesting_edges.begin());
+        }
+
+        /** adding edges where left_point.x <= rx */
+        for (; edges_it < this->all_edges.size() && this->all_edges[edges_it].l.x() <= rx; ++edges_it)
+        {
+            interesting_edges.insert(this->all_edges[edges_it]);
+        }
+
+        this->edges_index[l] = std::vector<Edge>(interesting_edges.begin(), interesting_edges.end());
+        total_index_edges += interesting_edges.size();
+
+        if (l % 1000 == 0 || r + 1 == this->sorted_x.size())
+        {
+            LOG_TRACE(log, "Iteration " << r << "/" << this->sorted_x.size() << ", total_index_edges="
+                    << total_index_edges << ", interesting_edges.size()=" << interesting_edges.size());
+        }
+    }
+}
+
+void BucketsPolygonIndex::indexAddRing(const Ring & ring, size_t polygon_id)
+{
+    for (size_t i = 0, prev = ring.size() - 1; i < ring.size(); prev = i, ++i)
+    {
+        Point a = ring[prev];
+        Point b = ring[i];
+
+        // making a.x <= b.x
+        if (a.x() > b.x())
+        {
+            std::swap(a, b);
+        }
+
+        if (a.x() == b.x() && a.y() > b.y())
+        {
+            std::swap(a, b);
+        }
+
+        this->all_edges.emplace_back(Edge{a, b, polygon_id});
+    }
+}
+
+bool BucketsPolygonIndex::Edge::compare1(const Edge & a, const Edge & b)
+{
+    /** comparing left point */
+    if (a.l.x() != b.l.x())
+    {
+        return a.l.x() < b.l.x();
+    }
+    if (a.l.y() != b.l.y())
+    {
+        return a.l.y() < b.l.y();
+    }
+
+    /** comparing right point */
+    if (a.r.x() != b.r.x())
+    {
+        return a.r.x() < b.r.x();
+    }
+    if (a.r.y() != b.r.y())
+    {
+        return a.r.y() < b.r.y();
+    }
+
+    return a.polygon_id < b.polygon_id;
+}
+
+bool BucketsPolygonIndex::Edge::compare2(const Edge & a, const Edge & b)
+{
+    /** comparing right point */
+    if (a.r.x() != b.r.x())
+    {
+        return a.r.x() < b.r.x();
+    }
+    if (a.r.y() != b.r.y())
+    {
+        return a.r.y() < b.r.y();
+    }
+
+    /** comparing left point */
+    if (a.l.x() != b.l.x())
+    {
+        return a.l.x() < b.l.x();
+    }
+    if (a.l.y() != b.l.y())
+    {
+        return a.l.y() < b.l.y();
+    }
+
+    return a.polygon_id < b.polygon_id;
+}
+
+bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
+{
+    /** TODO: maybe we should check for vertical line? */
+    if (this->sorted_x.size() < 2)
+    {
+        return false;
+    }
+
+    Float64 x = point.x();
+    Float64 y = point.y();
+
+    if (x < this->sorted_x[0] || x > this->sorted_x.back())
+    {
+        return false;
+    }
+
+    /** point is considired inside when ray down from point crosses odd number of edges */
+    std::map<size_t, bool> is_inside;
+    std::map<size_t, bool> on_the_edge;
+
+    size_t pos = std::upper_bound(this->sorted_x.begin() + 1, this->sorted_x.end() - 1, x) - this->sorted_x.begin() - 1;
+
+    /** iterating over interesting edges */
+    for (auto & edge : this->edges_index[pos])
+    {
+        const Point & l = edge.l;
+        const Point & r = edge.r;
+        size_t polygon_id = edge.polygon_id;
+
+        /** check for vertical edge, seem like never happens */
+        if (l.x() == r.x())
+        {
+            if (l.x() == x && y >= l.y() && y <= r.y())
+            {
+                on_the_edge[polygon_id] = true;
+            }
+            continue;
+        }
+
+        /** check if point outside of edge's x bounds */
+        if (x < l.x() || x >= r.x())
+        {
+            continue;
+        }
+
+        Float64 edge_y = l.y() + (r.y() - l.y()) / (r.x() - l.x()) * (x - l.x());
+        if (edge_y > y)
+        {
+            continue;
+        }
+        if (edge_y == y)
+        {
+            on_the_edge[polygon_id] = true;
+        }
+
+        is_inside[polygon_id] ^= true;
+    }
+
+    bool found = false;
+    for (auto & [polygon_id, inside] : is_inside)
+    {
+        if (inside)
+        {
+            found = true;
+            id = polygon_id;
+        }
+    }
+    for (auto & [polygon_id, is_edge] : on_the_edge)
+    {
+        if (is_edge)
+        {
+            found = true;
+            id = polygon_id;
+        }
+    }
+
+    return found;
+}
+
 }

@@ -3,10 +3,10 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/ParserRoleList.h>
+#include <Parsers/ParserGenericRoleSet.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTRoleList.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <ext/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -25,13 +25,10 @@ namespace
     using ResourceType = Quota::ResourceType;
     using ResourceAmount = Quota::ResourceAmount;
 
-    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_name, bool alter)
+    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_name)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!new_name.empty() || !alter)
-                return false;
-
             if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected))
                 return false;
 
@@ -43,9 +40,6 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (key_type)
-                return false;
-
             if (!ParserKeyword{"KEYED BY"}.ignore(pos, expected))
                 return false;
 
@@ -123,7 +117,7 @@ namespace
         });
     }
 
-    bool parseLimits(IParserBase::Pos & pos, Expected & expected, ASTCreateQuotaQuery::Limits & limits, bool alter)
+    bool parseLimits(IParserBase::Pos & pos, Expected & expected, bool alter, ASTCreateQuotaQuery::Limits & limits)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -173,15 +167,19 @@ namespace
         });
     }
 
-    bool parseAllLimits(IParserBase::Pos & pos, Expected & expected, std::vector<ASTCreateQuotaQuery::Limits> & all_limits, bool alter)
+    bool parseAllLimits(IParserBase::Pos & pos, Expected & expected, bool alter, std::vector<ASTCreateQuotaQuery::Limits> & all_limits)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
+            size_t old_size = all_limits.size();
             do
             {
                 ASTCreateQuotaQuery::Limits limits;
-                if (!parseLimits(pos, expected, limits, alter))
+                if (!parseLimits(pos, expected, alter, limits))
+                {
+                    all_limits.resize(old_size);
                     return false;
+                }
                 all_limits.push_back(limits);
             }
             while (ParserToken{TokenType::Comma}.ignore(pos, expected));
@@ -189,15 +187,15 @@ namespace
         });
     }
 
-    bool parseRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTRoleList> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTGenericRoleSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr node;
-            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected) || !ParserRoleList{}.parse(pos, node, expected))
+            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected) || !ParserGenericRoleSet{}.parse(pos, node, expected))
                 return false;
 
-            roles = std::static_pointer_cast<ASTRoleList>(node);
+            roles = std::static_pointer_cast<ASTGenericRoleSet>(node);
             return true;
         });
     }
@@ -237,11 +235,24 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     String new_name;
     std::optional<KeyType> key_type;
     std::vector<ASTCreateQuotaQuery::Limits> all_limits;
-    std::shared_ptr<ASTRoleList> roles;
+    std::shared_ptr<ASTGenericRoleSet> roles;
 
-    while (parseRenameTo(pos, expected, new_name, alter) || parseKeyType(pos, expected, key_type)
-           || parseAllLimits(pos, expected, all_limits, alter) || parseRoles(pos, expected, roles))
-        ;
+    while (true)
+    {
+        if (alter && new_name.empty() && parseRenameTo(pos, expected, new_name))
+            continue;
+
+        if (!key_type && parseKeyType(pos, expected, key_type))
+            continue;
+
+        if (parseAllLimits(pos, expected, alter, all_limits))
+            continue;
+
+        if (!roles && parseToRoles(pos, expected, roles))
+            continue;
+
+        break;
+    }
 
     auto query = std::make_shared<ASTCreateQuotaQuery>();
     node = query;

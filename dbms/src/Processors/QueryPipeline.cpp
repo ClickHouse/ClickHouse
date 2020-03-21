@@ -22,6 +22,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 void QueryPipeline::checkInitialized()
 {
@@ -62,6 +66,19 @@ void QueryPipeline::init(Pipes pipes)
 
     if (pipes.empty())
         throw Exception("Can't initialize pipeline with empty pipes list.", ErrorCodes::LOGICAL_ERROR);
+
+    /// Move locks from pipes to pipeline class.
+    for (auto & pipe : pipes)
+    {
+        for (auto & lock : pipe.getTableLocks())
+            table_locks.emplace_back(lock);
+
+        for (auto & context : pipe.getContexts())
+            interpreter_context.emplace_back(context);
+
+        for (auto & storage : pipe.getStorageHolders())
+            storage_holders.emplace_back(storage);
+    }
 
     std::vector<OutputPort *> totals;
 
@@ -477,7 +494,7 @@ void QueryPipeline::unitePipelines(
 
         table_locks.insert(table_locks.end(), std::make_move_iterator(pipeline.table_locks.begin()), std::make_move_iterator(pipeline.table_locks.end()));
         interpreter_context.insert(interpreter_context.end(), pipeline.interpreter_context.begin(), pipeline.interpreter_context.end());
-        storage_holder.insert(storage_holder.end(), pipeline.storage_holder.begin(), pipeline.storage_holder.end());
+        storage_holders.insert(storage_holders.end(), pipeline.storage_holders.begin(), pipeline.storage_holders.end());
 
         max_threads = std::max(max_threads, pipeline.max_threads);
     }
@@ -523,6 +540,8 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
 
 void QueryPipeline::setProcessListElement(QueryStatus * elem)
 {
+    process_list_element = elem;
+
     for (auto & processor : processors)
     {
         if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
@@ -582,11 +601,14 @@ void QueryPipeline::calcRowsBeforeLimit()
 
             if (auto * source = typeid_cast<SourceFromInputStream *>(processor))
             {
-                auto & info = source->getStream().getProfileInfo();
-                if (info.hasAppliedLimit())
+                if (auto & stream = source->getStream())
                 {
-                    has_limit = visited_limit = true;
-                    rows_before_limit_at_least += info.getRowsBeforeLimit();
+                    auto & info = stream->getProfileInfo();
+                    if (info.hasAppliedLimit())
+                    {
+                        has_limit = visited_limit = true;
+                        rows_before_limit_at_least += info.getRowsBeforeLimit();
+                    }
                 }
             }
         }
@@ -623,6 +645,26 @@ void QueryPipeline::calcRowsBeforeLimit()
         output_format->setRowsBeforeLimit(has_partial_sorting ? rows_before_limit : rows_before_limit_at_least);
 }
 
+Pipe QueryPipeline::getPipe() &&
+{
+    resize(1);
+    Pipe pipe(std::move(processors), streams.at(0), totals_having_port);
+
+    for (auto & lock : table_locks)
+        pipe.addTableLock(lock);
+
+    for (auto & context : interpreter_context)
+        pipe.addInterpreterContext(context);
+
+    for (auto & storage : storage_holders)
+        pipe.addStorageHolder(storage);
+
+    if (totals_having_port)
+        pipe.setTotalsPort(totals_having_port);
+
+    return pipe;
+}
+
 PipelineExecutorPtr QueryPipeline::execute()
 {
     checkInitialized();
@@ -630,7 +672,34 @@ PipelineExecutorPtr QueryPipeline::execute()
     if (!output_format)
         throw Exception("Cannot execute pipeline because it doesn't have output.", ErrorCodes::LOGICAL_ERROR);
 
-    return std::make_shared<PipelineExecutor>(processors);
+    return std::make_shared<PipelineExecutor>(processors, process_list_element);
+}
+
+QueryPipeline & QueryPipeline::operator= (QueryPipeline && rhs)
+{
+    /// Reset primitive fields
+    process_list_element = rhs.process_list_element;
+    rhs.process_list_element = nullptr;
+    max_threads = rhs.max_threads;
+    rhs.max_threads = 0;
+    output_format = rhs.output_format;
+    rhs.output_format = nullptr;
+    has_resize = rhs.has_resize;
+    rhs.has_resize = false;
+    extremes_port = rhs.extremes_port;
+    rhs.extremes_port = nullptr;
+    totals_having_port = rhs.totals_having_port;
+    rhs.totals_having_port = nullptr;
+
+    /// Move these fields in destruction order (it's important)
+    streams = std::move(rhs.streams);
+    processors = std::move(rhs.processors);
+    current_header = std::move(rhs.current_header);
+    table_locks = std::move(rhs.table_locks);
+    storage_holders = std::move(rhs.storage_holders);
+    interpreter_context = std::move(rhs.interpreter_context);
+
+    return *this;
 }
 
 }

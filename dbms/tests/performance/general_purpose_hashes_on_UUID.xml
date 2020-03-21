@@ -33,13 +33,25 @@
         <substitution>
            <name>value</name>
            <values>
-               <value>toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')</value>
-               <value>toDecimal128(number, 23)</value>
+               <value>materialize(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))</value>
                <value>generateUUIDv4()</value>
            </values>
         </substitution>
         <substitution>
+           <name>value_slow</name>
+           <values>
+               <value>toDecimal128(number, 23)</value>
+           </values>
+        </substitution>
+        <substitution>
            <name>table</name>
+           <values>
+               <value>numbers(100000000)</value>
+               <value>numbers_mt(1000000000)</value>
+           </values>
+        </substitution>
+        <substitution>
+           <name>table_slow</name>
            <values>
                <value>numbers(1000000)</value>
                <value>numbers_mt(10000000)</value>
@@ -48,4 +60,5 @@
     </substitutions>
 
     <query>SELECT count() from {table} where not ignore({hash_func}({value}))</query>
+    <query>SELECT count() from {table_slow} where not ignore({hash_func}({value_slow}))</query>
 </test>

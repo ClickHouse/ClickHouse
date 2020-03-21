@@ -119,4 +119,4 @@ SELECT * FROM odbc_t
 - [ODBC external dictionaries](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
 - [ODBC table function](../../query_language/table_functions/odbc.md)
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/odbc/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/odbc/) <!--hide-->

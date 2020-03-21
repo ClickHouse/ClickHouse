@@ -29,11 +29,12 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_TYPE_OF_FIELD;
+    extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int TYPE_MISMATCH;
-    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -316,7 +317,7 @@ void Join::setSampleBlock(const Block & block)
 
     ColumnRawPtrs key_columns = JoinCommon::extractKeysForJoin(key_names_right, block, right_table_keys, sample_block_with_columns_to_add);
 
-    initRightBlockStructure();
+    initRightBlockStructure(data->sample_block);
     initRequiredRightKeys();
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
@@ -481,13 +482,12 @@ void Join::initRequiredRightKeys()
     }
 }
 
-void Join::initRightBlockStructure()
+void Join::initRightBlockStructure(Block & saved_block_sample)
 {
-    auto & saved_block_sample = data->sample_block;
-
-    if (isRightOrFull(kind))
+    /// We could remove key columns for LEFT | INNER HashJoin but we should keep them for JoinSwitcher (if any).
+    bool save_key_columns = !table_join->forceHashJoin() || isRightOrFull(kind);
+    if (save_key_columns)
     {
-        /// Save keys for NonJoinedBlockInputStream
         saved_block_sample = right_table_keys.cloneEmpty();
     }
     else if (strictness == ASTTableJoin::Strictness::Asof)
@@ -518,7 +518,7 @@ Block Join::structureRightBlock(const Block & block) const
     return structured_block;
 }
 
-bool Join::addJoinedBlock(const Block & source_block)
+bool Join::addJoinedBlock(const Block & source_block, bool check_limits)
 {
     if (empty())
         throw Exception("Logical error: Join was not initialized", ErrorCodes::LOGICAL_ERROR);
@@ -564,6 +564,9 @@ bool Join::addJoinedBlock(const Block & source_block)
 
         if (save_nullmap)
             data->blocks_nullmaps.emplace_back(stored_block, null_map_holder);
+
+        if (!check_limits)
+            return true;
 
         /// TODO: Do not calculate them every time
         total_rows = getTotalRowCount();

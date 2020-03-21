@@ -14,7 +14,7 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
-
+#include <Poco/URI.h>
 
 namespace DB
 {
@@ -68,7 +68,15 @@ static FormatSettings getInputFormatSetting(const Settings & settings, const Con
     format_settings.custom.row_before_delimiter = settings.format_custom_row_before_delimiter;
     format_settings.custom.row_after_delimiter = settings.format_custom_row_after_delimiter;
     format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
-    format_settings.avro.schema_registry_url = settings.input_format_avro_schema_registry_url;
+
+    /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
+    if (context.hasGlobalContext() && (context.getGlobalContext().getApplicationType() == Context::ApplicationType::SERVER))
+    {
+        const Poco::URI & avro_schema_registry_url = settings.format_avro_schema_registry_url;
+        if (!avro_schema_registry_url.empty())
+            context.getRemoteHostFilter().checkURL(avro_schema_registry_url);
+    }
+    format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
 
     return format_settings;
 }
@@ -82,12 +90,14 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
+    format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.template_settings.resultset_format = settings.format_template_resultset;
     format_settings.template_settings.row_format = settings.format_template_row;
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
+    format_settings.tsv.crlf_end_of_line = settings.output_format_tsv_crlf_end_of_line;
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
     format_settings.schema.format_schema = settings.format_schema;
@@ -135,9 +145,19 @@ BlockInputStreamPtr FormatFactory::getInput(
 
     // Doesn't make sense to use parallel parsing with less than four threads
     // (segmentator + two parsers + reader).
-    if (settings.input_format_parallel_parsing
-        && file_segmentation_engine
-        && settings.max_threads >= 4)
+    bool parallel_parsing = settings.input_format_parallel_parsing && file_segmentation_engine && settings.max_threads >= 4;
+
+    if (parallel_parsing && name == "JSONEachRow")
+    {
+        /// FIXME ParallelParsingBlockInputStream doesn't support formats with non-trivial readPrefix() and readSuffix()
+
+        /// For JSONEachRow we can safely skip whitespace characters
+        skipWhitespaceIfAny(buf);
+        if (buf.eof() || *buf.position() == '[')
+            parallel_parsing = false; /// Disable it for JSONEachRow if data is in square brackets (see JSONEachRowRowInputFormat)
+    }
+
+    if (parallel_parsing)
     {
         const auto & input_getter = getCreators(name).input_processor_creator;
         if (!input_getter)

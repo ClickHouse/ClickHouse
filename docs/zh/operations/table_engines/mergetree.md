@@ -46,6 +46,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 请求参数的描述，参考 [请求描述](../../query_language/create.md) 。
 
+<a name="mergetree-query-clauses"></a>
+
 **子句**
 
 - `ENGINE` - 引擎名和参数。 `ENGINE = MergeTree()`. `MergeTree` 引擎没有参数。
@@ -270,7 +272,7 @@ SELECT count() FROM table WHERE s < 'z'
 SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 ```
 
-#### 索引的可用类型
+#### 索引的可用类型 {#table_engine-mergetree-data_skipping-indexes}
 
 * `minmax`
 存储指定表达式的极值（如果表达式是 `tuple` ，则存储 `tuple` 中每个元素的极值），这些信息用于跳过数据块，类似主键。
@@ -321,7 +323,7 @@ TTL date_time + INTERVAL 1 MONTH
 TTL date_time + INTERVAL 15 HOUR
 ```
 
-**列字段 TTL**
+### 列字段 TTL {#mergetree-column-ttl}
 
 当列字段中的值过期时, ClickHouse会将它们替换成数据类型的默认值。如果分区内，某一列的所有值均已过期，则ClickHouse会从文件系统中删除这个分区目录下的列文件。
 
@@ -360,7 +362,7 @@ ALTER TABLE example_table
     c String TTL d + INTERVAL 1 MONTH;
 ```
 
-**表 TTL**
+### 表 TTL {#mergetree-table-ttl}
 
 当表内的数据过期时, ClickHouse会删除所有对应的行。
 
@@ -400,4 +402,4 @@ ALTER TABLE example_table
 
 ### Configuration {#table_engine-mergetree-multiple-volumes_configure}
 
-[来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/mergetree/) <!--hide-->

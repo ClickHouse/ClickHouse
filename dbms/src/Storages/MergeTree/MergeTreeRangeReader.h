@@ -1,7 +1,6 @@
 #pragma once
 #include <Core/Block.h>
 #include <common/logger_useful.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/MarkRange.h>
 
 namespace DB
@@ -11,7 +10,7 @@ template <typename T>
 class ColumnVector;
 using ColumnUInt8 = ColumnVector<UInt8>;
 
-class MergeTreeReader;
+class IMergeTreeReader;
 class MergeTreeIndexGranularity;
 struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
@@ -23,7 +22,7 @@ class MergeTreeRangeReader
 {
 public:
     MergeTreeRangeReader(
-        MergeTreeReader * merge_tree_reader_,
+        IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
         const PrewhereInfoPtr & prewhere_,
         bool last_reader_in_chain_);
@@ -44,7 +43,7 @@ public:
     {
     public:
         DelayedStream() = default;
-        DelayedStream(size_t from_mark, MergeTreeReader * merge_tree_reader);
+        DelayedStream(size_t from_mark, IMergeTreeReader * merge_tree_reader);
 
         /// Read @num_rows rows from @from_mark starting from @offset row
         /// Returns the number of rows added to block.
@@ -65,7 +64,7 @@ public:
         size_t num_delayed_rows = 0;
 
         /// Actual reader of data from disk
-        MergeTreeReader * merge_tree_reader = nullptr;
+        IMergeTreeReader * merge_tree_reader = nullptr;
         const MergeTreeIndexGranularity * index_granularity = nullptr;
         bool continue_reading = false;
         bool is_finished = true;
@@ -81,7 +80,7 @@ public:
     {
     public:
         Stream() = default;
-        Stream(size_t from_mark, size_t to_mark, MergeTreeReader * merge_tree_reader);
+        Stream(size_t from_mark, size_t to_mark, IMergeTreeReader * merge_tree_reader);
 
         /// Returns the number of rows added to block.
         size_t read(Columns & columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
@@ -106,7 +105,7 @@ public:
 
         size_t last_mark = 0;
 
-        MergeTreeReader * merge_tree_reader = nullptr;
+        IMergeTreeReader * merge_tree_reader = nullptr;
         const MergeTreeIndexGranularity * index_granularity = nullptr;
 
         size_t current_mark_index_granularity = 0;
@@ -117,6 +116,7 @@ public:
         void checkEnoughSpaceInCurrentGranule(size_t num_rows) const;
         size_t readRows(Columns & columns, size_t num_rows);
         void toNextMark();
+        size_t ceilRowsToCompleteGranules(size_t rows_num) const;
     };
 
     /// Statistics after next reading step.
@@ -156,7 +156,7 @@ public:
         /// Set filter or replace old one. Filter must have more zeroes than previous.
         void setFilter(const ColumnPtr & new_filter);
         /// For each granule calculate the number of filtered rows at the end. Remove them and update filter.
-        void optimize();
+        void optimize(bool can_read_incomplete_granules);
         /// Remove all rows from granules.
         void clear();
 
@@ -198,7 +198,7 @@ public:
         const ColumnUInt8 * filter_original = nullptr;
 
         void collapseZeroTails(const IColumn::Filter & filter, IColumn::Filter & new_filter);
-        size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails) const;
+        size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules) const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
 
         std::map<const IColumn::Filter *, size_t> filter_bytes_map;
@@ -215,7 +215,7 @@ private:
     void executePrewhereActionsAndFilterColumns(ReadResult & result);
     void filterColumns(Columns & columns, const IColumn::Filter & filter) const;
 
-    MergeTreeReader * merge_tree_reader = nullptr;
+    IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
     MergeTreeRangeReader * prev_reader = nullptr; /// If not nullptr, read from prev_reader firstly.
     PrewhereInfoPtr prewhere;

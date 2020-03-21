@@ -69,4 +69,4 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123')
 - [The 'MySQL' table engine](../../operations/table_engines/mysql.md)
 - [Using MySQL as a source of external dictionary](../dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/table_functions/mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/mysql/) <!--hide-->

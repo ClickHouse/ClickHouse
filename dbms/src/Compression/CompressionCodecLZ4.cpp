@@ -19,13 +19,12 @@ namespace ErrorCodes
 {
 extern const int CANNOT_COMPRESS;
 extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
-extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
 
-UInt8 CompressionCodecLZ4::getMethodByte() const
+uint8_t CompressionCodecLZ4::getMethodByte() const
 {
-    return static_cast<UInt8>(CompressionMethodByte::LZ4);
+    return static_cast<uint8_t>(CompressionMethodByte::LZ4);
 }
 
 String CompressionCodecLZ4::getCodecDesc() const

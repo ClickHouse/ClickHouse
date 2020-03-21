@@ -31,9 +31,10 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_IS_DROPPED;
-    extern const int TABLE_WAS_NOT_DROPPED;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNEXPECTED_AST_STRUCTURE;
 }

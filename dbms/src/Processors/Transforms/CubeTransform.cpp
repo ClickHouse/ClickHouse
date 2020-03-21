@@ -3,6 +3,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 CubeTransform::CubeTransform(Block header, AggregatingTransformParamsPtr params_)
     : IAccumulatingTransform(std::move(header), params_->getHeader())

@@ -39,7 +39,7 @@ bool CachedCompressedReadBuffer::nextImpl()
     {
         /// If not, read it from the file.
         initInput();
-        file_in->seek(file_pos);
+        file_in->seek(file_pos, SEEK_SET);
 
         owned_cell = std::make_shared<UncompressedCacheCell>();
 

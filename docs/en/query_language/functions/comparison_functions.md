@@ -30,4 +30,4 @@ Note. Up until version 1.1.54134, signed and unsigned numbers were compared the 
 ## greaterOrEquals, `>= operator` {#function-greaterorequals}
 
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/comparison_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/comparison_functions/) <!--hide-->

@@ -87,4 +87,4 @@ SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
 - [Operators for working with dates and times](../query_language/operators.md#operators-datetime)
 - [The `Date` data type](date.md)
 
-[Original article](https://clickhouse.yandex/docs/en/data_types/datetime/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data_types/datetime/) <!--hide-->

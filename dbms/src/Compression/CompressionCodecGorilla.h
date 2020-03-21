@@ -93,7 +93,7 @@ class CompressionCodecGorilla : public ICompressionCodec
 public:
     CompressionCodecGorilla(UInt8 data_bytes_size_);
 
-    UInt8 getMethodByte() const override;
+    uint8_t getMethodByte() const override;
 
     String getCodecDesc() const override;
 

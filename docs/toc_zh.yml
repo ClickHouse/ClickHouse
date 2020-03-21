@@ -6,6 +6,7 @@ nav:
   - 'ClickHouse功能可被视为缺点': 'introduction/features_considered_disadvantages.md'
   - '性能': 'introduction/performance.md'
   - '历史': 'introduction/history.md'
+  - '使用者': 'introduction/adopters.md'
 
 - '入门指南':
   - 'hidden': 'getting_started/index.md'
@@ -25,6 +26,7 @@ nav:
   - '命令行客户端接口': 'interfaces/cli.md'
   - '原生客户端接口 (TCP)': 'interfaces/tcp.md'
   - 'HTTP 客户端接口': 'interfaces/http.md'
+  - 'MySQL 客户端接口': 'interfaces/mysql.md'
   - '输入输出格式': 'interfaces/formats.md'
   - 'JDBC 驱动': 'interfaces/jdbc.md'
   - 'ODBC 驱动': 'interfaces/odbc.md'
@@ -68,6 +70,7 @@ nav:
 - '数据库引擎':
     - '介绍': 'database_engines/index.md'
     - 'MySQL': 'database_engines/mysql.md'
+    - 'Lazy': 'database_engines/lazy.md'
 
 - '表引擎':
   - '介绍': 'operations/table_engines/index.md'
@@ -176,9 +179,14 @@ nav:
       - '字典的刷新策略': 'query_language/dicts/external_dicts_dict_lifetime.md'
       - '字典的外部数据源': 'query_language/dicts/external_dicts_dict_sources.md'
       - '字典的键和字段值': 'query_language/dicts/external_dicts_dict_structure.md'
+      - 'Hierarchical dictionaries': 'query_language/dicts/external_dicts_dict_hierarchical.md'
     - '内部字典': 'query_language/dicts/internal_dicts.md'
   - '操作符': 'query_language/operators.md'
   - '语法说明': 'query_language/syntax.md'
+
+- 'Guides':
+  - 'Overview': 'guides/index.md'
+  - 'Applying CatBoost Models': 'guides/apply_catboost_model.md'
 
 - '运维':
   - '介绍': 'operations/index.md'
@@ -192,7 +200,9 @@ nav:
   - '配置文件': 'operations/configuration_files.md'
   - '配额': 'operations/quotas.md'
   - '系统表': 'operations/system_tables.md'
-  - 'Testing Hardware': 'operations/performance_test.md'
+  - '优化性能':
+    - '查询分析': 'operations/performance/sampling_query_profiler.md'
+  - '测试硬件': 'operations/performance_test.md'
   - 'Server参数配置':
     - '介绍': 'operations/server_settings/index.md'
     - 'Server参数说明': 'operations/server_settings/settings.md'
@@ -221,6 +231,7 @@ nav:
   - '如何在Linux中编译ClickHouse': 'development/build.md'
   - '如何在Mac OS X中编译ClickHouse': 'development/build_osx.md'
   - '如何在Linux中编译Mac OS X ClickHouse': 'development/build_cross_osx.md'
+  - '如何在Linux中编译AARCH64 (ARM64) ClickHouse': 'development/build_cross_arm.md'
   - '如何编写C++代码': 'development/style.md'
   - '如何运行ClickHouse测试': 'development/tests.md'
   - '使用的第三方库': 'development/contrib.md'

@@ -34,7 +34,7 @@ The configuration looks like this:
 </yandex>
 ```
 
-in case of [DDL-query](../create.md#create-dictionary-query), equal configuration will looks like
+Corresponding [DDL-query](../create.md#create-dictionary-query):
 
 ```sql
 CREATE DICTIONARY (...)
@@ -366,4 +366,4 @@ Other types are not supported yet. The function returns the attribute for the pr
 
 Data is stored in a `trie`. It must completely fit into RAM.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

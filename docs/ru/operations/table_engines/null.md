@@ -4,4 +4,4 @@
 
 Тем не менее, есть возможность создать материализованное представление над таблицей типа Null. Тогда данные, записываемые в таблицу, будут попадать в представление.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/null/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/null/) <!--hide-->

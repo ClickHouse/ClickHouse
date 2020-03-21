@@ -18,6 +18,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 
+#include <Access/AccessFlags.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 
@@ -42,14 +44,13 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int DICTIONARIES_WAS_NOT_LOADED;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int UNSUPPORTED_METHOD;
     extern const int UNKNOWN_TYPE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TYPE_MISMATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
-    extern const int DICTIONARY_ACCESS_DENIED;
 }
 
 /** Functions that use plug-ins (external) dictionaries_loader.
@@ -127,12 +128,7 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-
-        if (!context.hasDictionaryAccessRights(dict_ptr->getFullName()))
-        {
-            throw Exception{"For function " + getName() + ", cannot access dictionary "
-                + dict->getFullName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
-        }
+        context.checkAccess(AccessType::dictHas, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatchSimple<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchSimple<HashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -141,7 +137,8 @@ private:
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<GridPolygonDictionary>(block, arguments, result, dict_ptr))
+            !executeDispatchComplex<GridPolygonDictionary>(block, arguments, result, dict_ptr)) &&
+            !executeDispatchComplex<SmartPolygonDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
@@ -304,12 +301,7 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-
-        if (!context.hasDictionaryAccessRights(dict_ptr->getFullName()))
-        {
-            throw Exception{"For function " + getName() + ", cannot access dictionary "
-                + dict->getFullName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
-        }
+        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -319,6 +311,7 @@ private:
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<GridPolygonDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<SmartPolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
@@ -492,12 +485,7 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-
-        if (!context.hasDictionaryAccessRights(dict_ptr->getFullName()))
-        {
-            throw Exception{"For function " + getName() + ", cannot access dictionary "
-                + dict->getFullName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
-        }
+        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -506,6 +494,7 @@ private:
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<GridPolygonDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<SmartPolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
@@ -836,12 +825,7 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-
-        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
-        {
-            throw Exception{"For function " + getName() + ", cannot access dictionary "
-                + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
-        }
+        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -851,6 +835,7 @@ private:
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<GridPolygonDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<SmartPolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
@@ -1102,12 +1087,7 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-
-        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
-        {
-            throw Exception{"For function " + getName() + ", cannot access dictionary "
-                + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
-        }
+        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -1116,6 +1096,7 @@ private:
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<GridPolygonDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<SmartPolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
@@ -1681,12 +1662,7 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-
-        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
-        {
-            throw Exception{"For function " + getName() + ", cannot access dictionary "
-                + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
-        }
+        context.checkAccess(AccessType::dictGetHierarchy, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -1850,12 +1826,7 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-
-        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
-        {
-            throw Exception{"For function " + getName() + ", cannot access dictionary "
-                + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
-        }
+        context.checkAccess(AccessType::dictIsIn, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr)
             && !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr)

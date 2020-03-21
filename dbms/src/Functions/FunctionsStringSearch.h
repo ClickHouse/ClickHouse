@@ -82,6 +82,15 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    bool useDefaultImplementationForConstants() const override { return Impl::use_default_implementation_for_constants; }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    {
+        return Impl::use_default_implementation_for_constants
+            ? ColumnNumbers{1, 2}
+            : ColumnNumbers{};
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
@@ -105,13 +114,16 @@ public:
         const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
         const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
 
-        if (col_haystack_const && col_needle_const)
+        if constexpr (!Impl::use_default_implementation_for_constants)
         {
-            ResultType res{};
-            Impl::constant_constant(col_haystack_const->getValue<String>(), col_needle_const->getValue<String>(), res);
-            block.getByPosition(result).column
-                = block.getByPosition(result).type->createColumnConst(col_haystack_const->size(), toField(res));
-            return;
+            if (col_haystack_const && col_needle_const)
+            {
+                ResultType res{};
+                Impl::constant_constant(col_haystack_const->getValue<String>(), col_needle_const->getValue<String>(), res);
+                block.getByPosition(result).column
+                    = block.getByPosition(result).type->createColumnConst(col_haystack_const->size(), toField(res));
+                return;
+            }
         }
 
         auto col_res = ColumnVector<ResultType>::create();

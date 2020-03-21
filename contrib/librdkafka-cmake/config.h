@@ -75,8 +75,18 @@
 #define HAVE_STRNDUP 1
 // strerror_r
 #define HAVE_STRERROR_R 1
+
+#ifdef __APPLE__
+// pthread_setname_np
+#define HAVE_PTHREAD_SETNAME_DARWIN 1
+#if (__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ <= 101400)
+#define _TTHREAD_EMULATE_TIMESPEC_GET_
+#endif
+
+#else
 // pthread_setname_gnu
 #define HAVE_PTHREAD_SETNAME_GNU 1
+#endif
 // python
 //#define HAVE_PYTHON 1
 // disable C11 threads for compatibility with old libc

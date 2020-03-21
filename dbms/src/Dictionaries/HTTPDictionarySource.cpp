@@ -17,6 +17,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 static const UInt64 max_block_size = 8192;
 
 

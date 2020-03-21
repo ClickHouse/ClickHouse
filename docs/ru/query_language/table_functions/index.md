@@ -27,4 +27,4 @@
 [odbc](odbc.md) | Создаёт таблицу с движком [ODBC](../../operations/table_engines/odbc.md).
 [hdfs](hdfs.md) | Создаёт таблицу с движком [HDFS](../../operations/table_engines/hdfs.md).
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/table_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/) <!--hide-->

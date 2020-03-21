@@ -4,6 +4,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/DDLWorker.h>
+#include <Access/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
 
 
@@ -36,19 +37,12 @@ struct RenameDescription
 
 BlockIO InterpreterRenameQuery::execute()
 {
-    const auto & rename = query_ptr->as<ASTRenameQuery &>();
+    const auto & rename = query_ptr->as<const ASTRenameQuery &>();
 
     if (!rename.cluster.empty())
-    {
-        NameSet databases;
-        for (const auto & elem : rename.elements)
-        {
-            databases.emplace(elem.from.database);
-            databases.emplace(elem.to.database);
-        }
+        return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccess());
 
-        return executeDDLQueryOnCluster(query_ptr, context, std::move(databases));
-    }
+    context.checkAccess(getRequiredAccess());
 
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();
@@ -81,9 +75,10 @@ BlockIO InterpreterRenameQuery::execute()
     for (const auto & elem : rename.elements)
     {
         descriptions.emplace_back(elem, current_database);
+        const auto & description = descriptions.back();
 
-        UniqueTableName from(descriptions.back().from_database_name, descriptions.back().from_table_name);
-        UniqueTableName to(descriptions.back().to_database_name, descriptions.back().to_table_name);
+        UniqueTableName from(description.from_database_name, description.from_table_name);
+        UniqueTableName to(description.to_database_name, description.to_table_name);
 
         table_guards[from];
         table_guards[to];
@@ -110,5 +105,16 @@ BlockIO InterpreterRenameQuery::execute()
     return {};
 }
 
+AccessRightsElements InterpreterRenameQuery::getRequiredAccess() const
+{
+    AccessRightsElements required_access;
+    const auto & rename = query_ptr->as<const ASTRenameQuery &>();
+    for (const auto & elem : rename.elements)
+    {
+        required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.from.database, elem.from.table);
+        required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.to.database, elem.to.table);
+    }
+    return required_access;
+}
 
 }

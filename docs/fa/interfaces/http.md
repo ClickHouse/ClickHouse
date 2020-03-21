@@ -281,4 +281,4 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
 
 </div>
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/http_interface/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/interfaces/http_interface/) <!--hide-->

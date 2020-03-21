@@ -6,6 +6,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
+#include <Poco/Logger.h>
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/multi_polygon.hpp>
 
@@ -179,9 +180,11 @@ public:
     void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
     /** A two-dimensional point in Euclidean coordinates. */
-    using Point = bg::model::point<Float64, 2, bg::cs::cartesian>;
+    using Point = bg::model::d2::point_xy<Float64, bg::cs::cartesian>;
     /** A polygon in boost is a an outer ring of points with zero or more cut out inner rings. */
     using Polygon = bg::model::polygon<Point>;
+    /** A ring in boost used for describing the polygons. */
+    using Ring = bg::model::ring<Point>;
 
 protected:
     /** Returns true if the given point can be found in the polygon dictionary.

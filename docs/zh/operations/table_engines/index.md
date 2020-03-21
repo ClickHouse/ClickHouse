@@ -12,51 +12,51 @@
 # 引擎类型
 ## MergeTree
 
-适用于高负载任务的最通用和功能最强大的表引擎。这些引擎的共同特点是可以快速插入数据并进行后续的后台数据处理。 MergeTree系列引擎支持数据复制（使用[Replicated*](https://clickhouse.yandex/docs/en/operations/table_engines/replication/) 的引擎版本），分区和一些其他引擎不支持的其他功能。
+适用于高负载任务的最通用和功能最强大的表引擎。这些引擎的共同特点是可以快速插入数据并进行后续的后台数据处理。 MergeTree系列引擎支持数据复制（使用[Replicated*](replication.md) 的引擎版本），分区和一些其他引擎不支持的其他功能。
 
 该类型的引擎：
-* [MergeTree](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/)
-* [ReplacingMergeTree](https://clickhouse.yandex/docs/en/operations/table_engines/replacingmergetree/)
-* [SummingMergeTree](https://clickhouse.yandex/docs/en/operations/table_engines/summingmergetree/)
-* [AggregatingMergeTree](https://clickhouse.yandex/docs/en/operations/table_engines/aggregatingmergetree/)
-* [CollapsingMergeTree](https://clickhouse.yandex/docs/en/operations/table_engines/collapsingmergetree/)
-* [VersionedCollapsingMergeTree](https://clickhouse.yandex/docs/en/operations/table_engines/versionedcollapsingmergetree/)
-* [GraphiteMergeTree](https://clickhouse.yandex/docs/en/operations/table_engines/graphitemergetree/)
+* [MergeTree](mergetree.md)
+* [ReplacingMergeTree](replacingmergetree.md)
+* [SummingMergeTree](summingmergetree.md)
+* [AggregatingMergeTree](aggregatingmergetree.md)
+* [CollapsingMergeTree](collapsingmergetree.md)
+* [VersionedCollapsingMergeTree](versionedcollapsingmergetree.md)
+* [GraphiteMergeTree](graphitemergetree.md)
 
 ## Log
-具有最小功能的[轻量级引擎](https://clickhouse.yandex/docs/en/operations/table_engines/log_family/)。当您需要快速写入许多小表（最多约100万行）并在以后整体读取它们时，该类型的引擎是最有效的。
+具有最小功能的[轻量级引擎](log_family.md)。当您需要快速写入许多小表（最多约100万行）并在以后整体读取它们时，该类型的引擎是最有效的。
 
 该类型的引擎：
 
-* [TinyLog](https://clickhouse.yandex/docs/en/operations/table_engines/tinylog/）
-* [StripeLog](https://clickhouse.yandex/docs/en/operations/table_engines/stripelog/）
-* [Log](https://clickhouse.yandex/docs/en/operations/table_engines/log/）
+* [TinyLog](tinylog/）
+* [StripeLog](stripelog/）
+* [Log](log/）
 
 ## Intergation engines
 用于与其他的数据存储与处理系统集成的引擎。
 该类型的引擎：
 
-* [Kafka](https://clickhouse.yandex/docs/en/operations/table_engines/kafka/)
-* [MySQL](https://clickhouse.yandex/docs/en/operations/table_engines/mysql/)
-* [ODBC](https://clickhouse.yandex/docs/en/operations/table_engines/odbc/)
-* [JDBC](https://clickhouse.yandex/docs/en/operations/table_engines/jdbc/)
-* [HDFS](https://clickhouse.yandex/docs/en/operations/table_engines/hdfs/)
+* [Kafka](kafka.md)
+* [MySQL](mysql.md)
+* [ODBC](odbc.md)
+* [JDBC](jdbc.md)
+* [HDFS](hdfs.md)
 
 ## 用于其他特定功能的引擎
 该类型的引擎：
 
-* [Distributed](https://clickhouse.yandex/docs/en/operations/table_engines/distributed/)
-* [MaterializedView](https://clickhouse.yandex/docs/en/operations/table_engines/materializedview/)
-* [Dictionary](https://clickhouse.yandex/docs/en/operations/table_engines/dictionary/)
-* [Merge](https://clickhouse.yandex/docs/en/operations/table_engines/merge/)
-* [File](https://clickhouse.yandex/docs/en/operations/table_engines/file/)
-* [Null](https://clickhouse.yandex/docs/en/operations/table_engines/null/)
-* [Set](https://clickhouse.yandex/docs/en/operations/table_engines/set/)
-* [Join](https://clickhouse.yandex/docs/en/operations/table_engines/join/)
-* [URL](https://clickhouse.yandex/docs/en/operations/table_engines/url/)
-* [View](https://clickhouse.yandex/docs/en/operations/table_engines/view/)
-* [Memory](https://clickhouse.yandex/docs/en/operations/table_engines/memory/)
-* [Buffer](https://clickhouse.yandex/docs/en/operations/table_engines/buffer/)
+* [Distributed](distributed.md)
+* [MaterializedView](materializedview.md)
+* [Dictionary](dictionary.md)
+* [Merge](merge.md)
+* [File](file.md)
+* [Null](null.md)
+* [Set](set.md)
+* [Join](join.md)
+* [URL](url.md)
+* [View](view.md)
+* [Memory](memory.md)
+* [Buffer](buffer.md)
 
 #虚拟列
 虚拟列是表引擎组成的一部分，它在对应的表引擎的源代码中定义。

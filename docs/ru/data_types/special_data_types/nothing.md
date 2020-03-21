@@ -14,4 +14,4 @@ SELECT toTypeName(Array())
 └─────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/special_data_types/nothing/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/special_data_types/nothing/) <!--hide-->

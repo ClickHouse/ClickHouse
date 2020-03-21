@@ -104,7 +104,7 @@ Defines storage time for values. Can be specified only for MergeTree-family tabl
 
 ### Column Compression Codecs {#codecs}
 
-By default, ClickHouse applies the compression method, defined in [server settings](../operations/server_settings/settings.md#compression), to columns. You can also define the compression method for each individual column in the `CREATE TABLE` query.
+By default, ClickHouse applies the compression method, defined in [server settings](../operations/server_settings/settings.md#server-settings-compression), to columns. You can also define the compression method for each individual column in the `CREATE TABLE` query.
 
 ```sql
 CREATE TABLE codec_example
@@ -246,7 +246,7 @@ SELECT a, b, c FROM (SELECT ...)
 
 没有单独的删除视图的语法。如果要删除视图，请使用`DROP TABLE`。
 
-[来源文章](https://clickhouse.yandex/docs/en/query_language/create/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/create/) <!--hide-->
 
 ## CREATE DICTIONARY {#create-dictionary-query}
 

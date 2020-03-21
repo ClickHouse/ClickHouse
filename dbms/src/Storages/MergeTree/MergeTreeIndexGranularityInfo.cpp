@@ -7,7 +7,14 @@
 
 namespace DB
 {
-std::optional<std::string> MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(const std::string & path_to_part) const
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_PART_TYPE;
+}
+
+std::optional<std::string> MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(const std::string & path_to_part)
 {
     if (Poco::File(path_to_part).exists())
     {
@@ -15,25 +22,31 @@ std::optional<std::string> MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(
         for (Poco::DirectoryIterator part_it(path_to_part); part_it != end; ++part_it)
         {
             const auto & ext = "." + part_it.path().getExtension();
-            if (ext == getNonAdaptiveMrkExtension() || ext == getAdaptiveMrkExtension())
+            if (ext == getNonAdaptiveMrkExtension()
+                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::WIDE)
+                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::COMPACT))
                 return ext;
         }
     }
     return {};
 }
 
-MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(
-    const MergeTreeData & storage)
+MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_)
+    : type(type_)
 {
     const auto storage_settings = storage.getSettings();
     fixed_index_granularity = storage_settings->index_granularity;
+
     /// Granularity is fixed
     if (!storage.canUseAdaptiveGranularity())
+    {
+        if (type != MergeTreeDataPartType::WIDE)
+            throw Exception("Only Wide parts can be used with non-adaptive granularity.", ErrorCodes::NOT_IMPLEMENTED);
         setNonAdaptive();
+    }
     else
         setAdaptive(storage_settings->index_granularity_bytes);
 }
-
 
 void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const std::string & path_to_part)
 {
@@ -45,17 +58,41 @@ void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const std::strin
 void MergeTreeIndexGranularityInfo::setAdaptive(size_t index_granularity_bytes_)
 {
     is_adaptive = true;
-    mark_size_in_bytes = getAdaptiveMrkSize();
-    marks_file_extension = getAdaptiveMrkExtension();
+    marks_file_extension = getAdaptiveMrkExtension(type);
     index_granularity_bytes = index_granularity_bytes_;
 }
 
 void MergeTreeIndexGranularityInfo::setNonAdaptive()
 {
     is_adaptive = false;
-    mark_size_in_bytes = getNonAdaptiveMrkSize();
     marks_file_extension = getNonAdaptiveMrkExtension();
     index_granularity_bytes = 0;
+}
+
+size_t MergeTreeIndexGranularityInfo::getMarkSizeInBytes(size_t columns_num) const
+{
+    if (type == MergeTreeDataPartType::WIDE)
+        return is_adaptive ? getAdaptiveMrkSizeWide() : getNonAdaptiveMrkSizeWide();
+    else if (type == MergeTreeDataPartType::COMPACT)
+        return getAdaptiveMrkSizeCompact(columns_num);
+    else
+        throw Exception("Unknown part type", ErrorCodes::UNKNOWN_PART_TYPE);
+}
+
+size_t getAdaptiveMrkSizeCompact(size_t columns_num)
+{
+    /// Each mark contains number of rows in granule and two offsets for every column.
+    return sizeof(UInt64) * (columns_num * 2 + 1);
+}
+
+std::string getAdaptiveMrkExtension(MergeTreeDataPartType part_type)
+{
+    if (part_type == MergeTreeDataPartType::WIDE)
+        return ".mrk2";
+    else if (part_type == MergeTreeDataPartType::COMPACT)
+        return ".mrk3";
+    else
+        throw Exception("Unknown part type", ErrorCodes::UNKNOWN_PART_TYPE);
 }
 
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -13,21 +14,21 @@ class StorageBlocks : public IStorage
  */
 public:
     StorageBlocks(const StorageID & table_id_,
-        const ColumnsDescription & columns_, BlockInputStreams streams_,
+        const ColumnsDescription & columns_, Pipes pipes_,
         QueryProcessingStage::Enum to_stage_)
-        : IStorage(table_id_), streams(streams_), to_stage(to_stage_)
+        : IStorage(table_id_), pipes(std::move(pipes_)), to_stage(to_stage_)
     {
         setColumns(columns_);
     }
     static StoragePtr createStorage(const StorageID & table_id,
-        const ColumnsDescription & columns, BlockInputStreams streams, QueryProcessingStage::Enum to_stage)
+        const ColumnsDescription & columns, Pipes pipes, QueryProcessingStage::Enum to_stage)
     {
-        return std::make_shared<StorageBlocks>(table_id, columns, streams, to_stage);
+        return std::make_shared<StorageBlocks>(table_id, columns, std::move(pipes), to_stage);
     }
     std::string getName() const override { return "Blocks"; }
     QueryProcessingStage::Enum getQueryProcessingStage(const Context & /*context*/) const override { return to_stage; }
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & /*column_names*/,
         const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
@@ -35,12 +36,12 @@ public:
         size_t /*max_block_size*/,
         unsigned /*num_streams*/) override
     {
-        return streams;
+        return std::move(pipes);
     }
 
 private:
     Block res_block;
-    BlockInputStreams streams;
+    Pipes pipes;
     QueryProcessingStage::Enum to_stage;
 };
 
