@@ -66,7 +66,7 @@ def create_table(cluster, additional_settings=None):
         ) ENGINE=MergeTree()
         PARTITION BY dt
         ORDER BY (dt, id)
-        SETTINGS 
+        SETTINGS
             old_parts_lifetime=0, index_granularity=512
         """
 
@@ -168,12 +168,22 @@ def test_alter_table_columns(cluster):
     assert node.query("SELECT sum(col1) FROM s3_test WHERE id > 0 FORMAT Values") == "(4096)"
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN
 
-    node.query("ALTER TABLE s3_test MODIFY COLUMN col1 String")
-    assert node.query("SELECT distinct(col1) FROM s3_test FORMAT Values") == "('1')"
-    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN
+    node.query("ALTER TABLE s3_test MODIFY COLUMN col1 String", settings={"mutations_sync": 2})
 
-    node.query("ALTER TABLE s3_test DROP COLUMN col1")
-    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
+    # Wait for old parts deletion
+    time.sleep(3)
+
+    assert node.query("SELECT distinct(col1) FROM s3_test FORMAT Values") == "('1')"
+    # and file with mutation
+    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == (FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN + 1)
+
+    node.query("ALTER TABLE s3_test DROP COLUMN col1", settings={"mutations_sync": 2})
+
+    # Wait for old parts deletion
+    time.sleep(3)
+
+    # and 2 files with mutations
+    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + 2
 
 
 def test_attach_detach_partition(cluster):
