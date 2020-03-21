@@ -1,8 +1,8 @@
-# Getting Started {#getting-started}
+# Primeros pasos {#getting-started}
 
-If you are new to ClickHouse and want to get a hands-on feeling of its performance, first of all, you need to go through the [installation process](install.md). After that you can:
+Si eres nuevo en ClickHouse y quieres tener una sensación práctica de su rendimiento, antes que nada, debes pasar por el [proceso de instalación](install.md). Después de eso puedes:
 
--   [Go through detailed tutorial](tutorial.md)
--   [Experiment with example datasets](example_datasets/ontime.md)
+-   [Ir a través de tutorial detallado](tutorial.md)
+-   [Experimente con conjuntos de datos de ejemplo](example_datasets/ontime.md)
 
-[Original article](https://clickhouse.tech/docs/es/getting_started/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/getting_started/) <!--hide-->

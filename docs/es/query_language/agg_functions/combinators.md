@@ -2,7 +2,7 @@
 
 El nombre de una función agregada puede tener un sufijo anexado. Esto cambia la forma en que funciona la función de agregado.
 
-## -Si {#agg-functions-combinator-if}
+## Nuestros servicios {#agg-functions-combinator-if}
 
 El sufijo -If se puede anexar al nombre de cualquier función agregada. En este caso, la función de agregado acepta un argumento adicional: una condición (tipo Uint8). La función de agregado procesa solo las filas que desencadenan la condición. Si la condición no se desencadenó ni una sola vez, devuelve un valor predeterminado (normalmente ceros o cadenas vacías).
 
@@ -18,7 +18,7 @@ Ejemplo 1: `sumArray(arr)` - Totales de todos los elementos de todos ‘arr’ m
 
 Ejemplo 2: `uniqArray(arr)` – Cuenta el número de elementos únicos ‘arr’ matriz. Esto podría hacerse de una manera más fácil: `uniq(arrayJoin(arr))` pero no siempre es posible añadir ‘arrayJoin’ a una consulta.
 
--If y -Array se pueden combinar. Obstante, ‘Array’ debe venir primero, entonces ‘If’. Ejemplos: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Debido a este pedido, el ‘cond’ el argumento no será una matriz.
+-Si y -Array se pueden combinar. Obstante, ‘Array’ debe venir primero, entonces ‘If’. Ejemplos: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Debido a este pedido, el ‘cond’ el argumento no será una matriz.
 
 ## -Estado {#agg-functions-combinator-state}
 

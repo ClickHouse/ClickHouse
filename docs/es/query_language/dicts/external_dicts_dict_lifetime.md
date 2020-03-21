@@ -1,10 +1,10 @@
-# Dictionary Updates {#dictionary-updates}
+# Actualizaciones del diccionario {#dictionary-updates}
 
-ClickHouse periodically updates the dictionaries. The update interval for fully downloaded dictionaries and the invalidation interval for cached dictionaries are defined in the `<lifetime>` tag in seconds.
+ClickHouse actualiza periódicamente los diccionarios. El intervalo de actualización para los diccionarios completamente descargados y el intervalo de invalidación para los diccionarios almacenados en caché se `<lifetime>` etiqueta en segundos.
 
-Dictionary updates (other than loading for first use) do not block queries. During updates, the old version of a dictionary is used. If an error occurs during an update, the error is written to the server log, and queries continue using the old version of dictionaries.
+Las actualizaciones del diccionario (aparte de la carga para el primer uso) no bloquean las consultas. Durante las actualizaciones, se utiliza la versión anterior de un diccionario. Si se produce un error durante una actualización, el error se escribe en el registro del servidor y las consultas continúan utilizando la versión anterior de los diccionarios.
 
-Example of settings:
+Ejemplo de configuración:
 
 ``` xml
 <dictionary>
@@ -21,11 +21,11 @@ LIFETIME(300)
 ...
 ```
 
-Setting `<lifetime>0</lifetime>` (`LIFETIME(0)`) prevents dictionaries from updating.
+Configuración `<lifetime>0</lifetime>` (`LIFETIME(0)`) impide que los diccionarios se actualicen.
 
-You can set a time interval for upgrades, and ClickHouse will choose a uniformly random time within this range. This is necessary in order to distribute the load on the dictionary source when upgrading on a large number of servers.
+Puede establecer un intervalo de tiempo para las actualizaciones, y ClickHouse elegirá un tiempo uniformemente aleatorio dentro de este rango. Esto es necesario para distribuir la carga en la fuente del diccionario cuando se actualiza en una gran cantidad de servidores.
 
-Example of settings:
+Ejemplo de configuración:
 
 ``` xml
 <dictionary>
@@ -38,24 +38,24 @@ Example of settings:
 </dictionary>
 ```
 
-or
+o
 
 ``` sql
 LIFETIME(MIN 300 MAX 360)
 ```
 
-When upgrading the dictionaries, the ClickHouse server applies different logic depending on the type of [source](external_dicts_dict_sources.md):
+Al actualizar los diccionarios, el servidor ClickHouse aplica una lógica diferente según el tipo de [fuente](external_dicts_dict_sources.md):
 
--   For a text file, it checks the time of modification. If the time differs from the previously recorded time, the dictionary is updated.
--   For MyISAM tables, the time of modification is checked using a `SHOW TABLE STATUS` query.
--   Dictionaries from other sources are updated every time by default.
+-   Para un archivo de texto, comprueba el tiempo de modificación. Si la hora difiere de la hora previamente grabada, el diccionario se actualiza.
+-   Para las tablas MyISAM, el tiempo de modificación se comprueba utilizando un `SHOW TABLE STATUS` consulta.
+-   Los diccionarios de otras fuentes se actualizan cada vez de forma predeterminada.
 
-For MySQL (InnoDB), ODBC and ClickHouse sources, you can set up a query that will update the dictionaries only if they really changed, rather than each time. To do this, follow these steps:
+Para fuentes MySQL (InnoDB), ODBC y ClickHouse, puede configurar una consulta que actualizará los diccionarios solo si realmente cambiaron, en lugar de cada vez. Para ello, siga estos pasos:
 
--   The dictionary table must have a field that always changes when the source data is updated.
--   The settings of the source must specify a query that retrieves the changing field. The ClickHouse server interprets the query result as a row, and if this row has changed relative to its previous state, the dictionary is updated. Specify the query in the `<invalidate_query>` field in the settings for the [source](external_dicts_dict_sources.md).
+-   La tabla del diccionario debe tener un campo que siempre cambie cuando se actualizan los datos de origen.
+-   La configuración del origen debe especificar una consulta que recupere el campo de cambio. El servidor ClickHouse interpreta el resultado de la consulta como una fila, y si esta fila ha cambiado en relación con su estado anterior, el diccionario se actualiza. Especifique la consulta en el `<invalidate_query>` en la configuración de la [fuente](external_dicts_dict_sources.md).
 
-Example of settings:
+Ejemplo de configuración:
 
 ``` xml
 <dictionary>
@@ -68,7 +68,7 @@ Example of settings:
 </dictionary>
 ```
 
-or
+o
 
 ``` sql
 ...
@@ -76,4 +76,4 @@ SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source wher
 ...
 ```
 
-[Original article](https://clickhouse.tech/docs/es/query_language/dicts/external_dicts_dict_lifetime/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/query_language/dicts/external_dicts_dict_lifetime/) <!--hide-->

@@ -29,11 +29,11 @@ Calcula la diferencia. El resultado siempre está firmado.
 
 También puede calcular números enteros a partir de una fecha o fecha con la hora. La idea es la misma – ver arriba para ‘plus’.
 
-## multiplicar(a, b) a \* b operador {#multiplya-b-a-b-operator}
+## ¿Cómo puedo hacerlo? {#multiplya-b-a-b-operator}
 
 Calcula el producto de los números.
 
-## divide (a, b), operador a / b {#dividea-b-a-b-operator}
+## divide (a, segundo), operador a / segundo {#dividea-b-a-b-operator}
 
 Calcula el cociente de los números. El tipo de resultado es siempre un tipo de punto flotante.
 No es una división entera. Para la división de enteros, use el ‘intDiv’ función.
@@ -59,7 +59,7 @@ Se produce una excepción al dividir por cero o al dividir un número negativo m
 
 Difiere de ‘modulo’ en que devuelve cero cuando el divisor es cero.
 
-## negate(a), -un operador {#negatea-a-operator}
+## ¿Cómo funciona? {#negatea-a-operator}
 
 Calcula un número con el signo inverso. El resultado siempre está firmado.
 
@@ -72,7 +72,7 @@ Calcula el valor absoluto del número (a). Es decir, si un \< 0, devuelve -a. Pa
 Devuelve el mayor divisor común de los números.
 Se produce una excepción al dividir por cero o al dividir un número negativo mínimo por menos uno.
 
-## Lcm(a, b) {#lcma-b}
+## Lcm (a, b) {#lcma-b}
 
 Devuelve el mínimo múltiplo común de los números.
 Se produce una excepción al dividir por cero o al dividir un número negativo mínimo por menos uno.

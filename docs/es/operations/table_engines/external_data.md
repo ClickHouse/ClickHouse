@@ -24,7 +24,7 @@ Los siguientes parámetros son opcionales: **–nombre**– Nombre de la tabla. 
 **–formato** – Formato de datos en el archivo. Si se omite, se utiliza TabSeparated.
 
 Se requiere uno de los siguientes parámetros:**–tipo** – Una lista de tipos de columnas separadas por comas. Por ejemplo: `UInt64,String`. Las columnas se llamarán \_1, \_2, …
-**–estructura**– La estructura de la tabla en el formato`UserID UInt64`, `URL String`. Define los nombres y tipos de columna.
+**–estructura**– La estructura de la tabla en el formato`UserID UInt64`, `URL String`. Definir los nombres y tipos de columna.
 
 Los archivos especificados en ‘file’ se analizará mediante el formato especificado en ‘format’ utilizando los tipos de datos especificados en ‘types’ o ‘structure’. La mesa será cargado en el servidor y accesibles, como una tabla temporal con el nombre de ‘name’.
 

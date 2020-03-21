@@ -1,88 +1,88 @@
-# Integration Libraries from Third-party Developers {#integration-libraries-from-third-party-developers}
+# Bibliotecas de integración de desarrolladores externos {#integration-libraries-from-third-party-developers}
 
-!!! warning "Disclaimer"
-    Yandex does **not** maintain the tools and libraries listed below and haven’t done any extensive testing to ensure their quality.
+!!! warning "Descargo"
+    Yandex hace **ni** mantenga las herramientas y bibliotecas que se enumeran a continuación y no haya realizado ninguna prueba extensa para garantizar su calidad.
 
-## Infrastructure Products {#infrastructure-products}
+## Productos de infraestructura {#infrastructure-products}
 
--   Relational database management systems
+-   Sistemas de gestión de bases de datos relacionales
     -   [MySQL](https://www.mysql.com)
-        -   [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
-        -   [clickhouse-mysql-data-reader](https://github.com/Altinity/clickhouse-mysql-data-reader)
-        -   [horgh-replicator](https://github.com/larsnovikov/horgh-replicator)
+        -   [Nombre de la red inalámbrica (SSID):](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
+        -   [Casa de clic-mysql-lector de datos](https://github.com/Altinity/clickhouse-mysql-data-reader)
+        -   [Horgh-replicador](https://github.com/larsnovikov/horgh-replicator)
     -   [PostgreSQL](https://www.postgresql.org)
-        -   [clickhousedb\_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
-        -   [infi.clickhouse\_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (uses [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
-        -   [pg2ch](https://github.com/mkabilov/pg2ch)
-        -   [clickhouse\_fdw](https://github.com/adjust/clickhouse_fdw)
+        -   [Haga clickhousedb\_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
+        -   [InformaciónSistema abierto.](https://github.com/Infinidat/infi.clickhouse_fdw) (utilizar [InformaciónSistema abierto.](https://github.com/Infinidat/infi.clickhouse_orm))
+        -   [Descripción](https://github.com/mkabilov/pg2ch)
+        -   [Sistema abierto.](https://github.com/adjust/clickhouse_fdw)
     -   [MSSQL](https://en.wikipedia.org/wiki/Microsoft_SQL_Server)
-        -   [ClickHouseMigrator](https://github.com/zlzforever/ClickHouseMigrator)
--   Message queues
+        -   [Método de codificación de datos:](https://github.com/zlzforever/ClickHouseMigrator)
+-   Colas de mensajes
     -   [Kafka](https://kafka.apache.org)
-        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (uses [Go client](https://github.com/kshvakov/clickhouse/))
--   Object storages
+        -   [Método de codificación de datos:](https://github.com/housepower/clickhouse_sinker) (utilizar [Ir cliente](https://github.com/kshvakov/clickhouse/))
+-   Almacenamiento de objetos
     -   [S3](https://en.wikipedia.org/wiki/Amazon_S3)
-        -   [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
--   Container orchestration
+        -   [Haga clic en el botón de copia de seguridad](https://github.com/AlexAkulov/clickhouse-backup)
+-   Orquestación de contenedores
     -   [Kubernetes](https://kubernetes.io)
-        -   [clickhouse-operator](https://github.com/Altinity/clickhouse-operator)
--   Configuration management
-    -   [puppet](https://puppet.com)
-        -   [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
-        -   [mfedotov/clickhouse](https://forge.puppet.com/mfedotov/clickhouse)
--   Monitoring
-    -   [Graphite](https://graphiteapp.org)
+        -   [Operador de clickhouse](https://github.com/Altinity/clickhouse-operator)
+-   Gestión de configuración
+    -   [marioneta](https://puppet.com)
+        -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://forge.puppet.com/innogames/clickhouse)
+        -   [Sistema abierto.](https://forge.puppet.com/mfedotov/clickhouse)
+-   Monitoreo
+    -   [Grafito](https://graphiteapp.org)
         -   [graphouse](https://github.com/yandex/graphouse)
-        -   [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
-        -   [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
-        -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md#graphitemergetree) if rules from [rollup configuration](../../operations/table_engines/graphitemergetree.md#rollup-configuration) could be applied
+        -   [de carbono-clickhouse](https://github.com/lomik/carbon-clickhouse) +
+        -   [Sistema abierto.](https://github.com/lomik/graphite-clickhouse)
+        -   [Grafito-ch-optimizador](https://github.com/innogames/graphite-ch-optimizer) - optimiza las particiones [\*GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md#graphitemergetree) reglas de [Configuración de rollup](../../operations/table_engines/graphitemergetree.md#rollup-configuration) podría ser aplicado
     -   [Grafana](https://grafana.com/)
-        -   [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
-    -   [Prometheus](https://prometheus.io/)
-        -   [clickhouse\_exporter](https://github.com/f1yegor/clickhouse_exporter)
-        -   [PromHouse](https://github.com/Percona-Lab/PromHouse)
-        -   [clickhouse\_exporter](https://github.com/hot-wifi/clickhouse_exporter) (uses [Go client](https://github.com/kshvakov/clickhouse/))
+        -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/Vertamedia/clickhouse-grafana)
+    -   [Prometeo](https://prometheus.io/)
+        -   [Sistema abierto.](https://github.com/f1yegor/clickhouse_exporter)
+        -   [Bienvenido](https://github.com/Percona-Lab/PromHouse)
+        -   [Sistema abierto.](https://github.com/hot-wifi/clickhouse_exporter) (utilizar [Ir cliente](https://github.com/kshvakov/clickhouse/))
     -   [Nagios](https://www.nagios.org/)
-        -   [check\_clickhouse](https://github.com/exogroup/check_clickhouse/)
+        -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/exogroup/check_clickhouse/)
     -   [Zabbix](https://www.zabbix.com)
-        -   [clickhouse-zabbix-template](https://github.com/Altinity/clickhouse-zabbix-template)
+        -   [Sistema abierto.](https://github.com/Altinity/clickhouse-zabbix-template)
     -   [Sematext](https://sematext.com/)
-        -   [clickhouse integration](https://github.com/sematext/sematext-agent-integrations/tree/master/clickhouse)
--   Logging
+        -   [integración clickhouse](https://github.com/sematext/sematext-agent-integrations/tree/master/clickhouse)
+-   Tala
     -   [rsyslog](https://www.rsyslog.com/)
-        -   [omclickhouse](https://www.rsyslog.com/doc/master/configuration/modules/omclickhouse.html)
+        -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://www.rsyslog.com/doc/master/configuration/modules/omclickhouse.html)
     -   [fluentd](https://www.fluentd.org)
-        -   [loghouse](https://github.com/flant/loghouse) (for [Kubernetes](https://kubernetes.io))
-    -   [logagent](https://www.sematext.com/logagent)
-        -   [logagent output-plugin-clickhouse](https://sematext.com/docs/logagent/output-plugin-clickhouse/)
+        -   [Casa de campo](https://github.com/flant/loghouse) (para [Kubernetes](https://kubernetes.io))
+    -   [Información](https://www.sematext.com/logagent)
+        -   [Sistema de tabiquería interior y exterior](https://sematext.com/docs/logagent/output-plugin-clickhouse/)
 -   Geo
     -   [MaxMind](https://dev.maxmind.com/geoip/)
-        -   [clickhouse-maxmind-geoip](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
+        -   [Para que usted pueda encontrar](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
 
-## Programming Language Ecosystems {#programming-language-ecosystems}
+## Programación de ecosistemas de lenguaje {#programming-language-ecosystems}
 
--   Python
+-   Película
     -   [SQLAlchemy](https://www.sqlalchemy.org)
-        -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (uses [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
+        -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (utilizar [InformaciónSistema abierto.](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [pandas](https://pandas.pydata.org)
-        -   [pandahouse](https://github.com/kszucs/pandahouse)
+        -   [Nuestros Servicios](https://github.com/kszucs/pandahouse)
 -   R
-    -   [dplyr](https://db.rstudio.com/dplyr/)
-        -   [RClickhouse](https://github.com/IMSMWU/RClickhouse) (uses [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
+    -   [Dplyr](https://db.rstudio.com/dplyr/)
+        -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/IMSMWU/RClickhouse) (utilizar [Bienvenidos](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
-        -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (uses [JDBC](../../query_language/table_functions/jdbc.md))
--   Scala
+        -   [Sistema abierto.](https://github.com/jaykelin/clickhouse-hdfs-loader) (utilizar [JDBC](../../query_language/table_functions/jdbc.md))
+-   Ciudad
     -   [Akka](https://akka.io)
-        -   [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
+        -   [Sistema abierto.](https://github.com/crobox/clickhouse-scala-client)
 -   C\#
-    -   [ADO.NET](https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/ado-net-overview)
-        -   [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
-        -   [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
-        -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
-        -   [ClickHouse.Net.Migrations](https://github.com/ilyabreev/ClickHouse.Net.Migrations)
+    -   [Nivel de Cifrado WEP](https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/ado-net-overview)
+        -   [Sistema abierto.Ado](https://github.com/killwort/ClickHouse-Net)
+        -   [Sistema abierto.Cliente](https://github.com/DarkWanderer/ClickHouse.Client)
+        -   [Sistema abierto.](https://github.com/ilyabreev/ClickHouse.Net)
+        -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/ilyabreev/ClickHouse.Net.Migrations)
 -   Elixir
     -   [Ecto](https://github.com/elixir-ecto/ecto)
-        -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
+        -   [Método de codificación de datos:](https://github.com/appodeal/clickhouse_ecto)
 
-[Original article](https://clickhouse.tech/docs/es/interfaces/third-party/integrations/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/interfaces/third-party/integrations/) <!--hide-->

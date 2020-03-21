@@ -36,7 +36,7 @@ Las operaciones binarias en Decimal dan como resultado un tipo de resultado más
 
 Reglas para la escala:
 
--   Sumar, restar: S = max(S1, S2).
+-   Sumar, restar: S = max (S1, S2).
 -   multuply: S = S1 + S2.
 -   división: S = S1.
 

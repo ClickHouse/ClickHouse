@@ -1,21 +1,21 @@
-# Nullable(TypeName) {#data-type-nullable}
+# Nombre de tipo) {#data-type-nullable}
 
-Allows to store special marker ([NULL](../query_language/syntax.md)) that denotes “missing value” alongside normal values allowed by `TypeName`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that don’t have a value will store `NULL`.
+Permite almacenar marcador especial ([NULO](../query_language/syntax.md)) que denota “missing value” con los valores normales permitidos por `TypeName`. Por ejemplo, un `Nullable(Int8)` Tipo columna puede almacenar `Int8` valores de tipo, y las filas que no tienen un valor almacenarán `NULL`.
 
-For a `TypeName`, you can’t use composite data types [Array](array.md) and [Tuple](tuple.md). Composite data types can contain `Nullable` type values, such as `Array(Nullable(Int8))`.
+Para un `TypeName`, no puede usar tipos de datos compuestos [Matriz](array.md) y [Tupla](tuple.md). Los tipos de datos compuestos pueden contener `Nullable` valores de tipo, como `Array(Nullable(Int8))`.
 
-A `Nullable` type field can’t be included in table indexes.
+Naciones `Nullable` no se puede incluir en los índices de tabla.
 
-`NULL` is the default value for any `Nullable` type, unless specified otherwise in the ClickHouse server configuration.
+`NULL` es el valor predeterminado para cualquier `Nullable` tipo, a menos que se especifique lo contrario en la configuración del servidor ClickHouse.
 
-## Storage features {#storage-features}
+## Características de almacenamiento {#storage-features}
 
-To store `Nullable` type values in a table column, ClickHouse uses a separate file with `NULL` masks in addition to normal file with values. Entries in masks file allow ClickHouse to distinguish between `NULL` and a default value of corresponding data type for each table row. Because of an additional file, `Nullable` column consumes additional storage space compared to a similar normal one.
+Almacenar `Nullable` es una columna de tabla, ClickHouse usa un archivo separado con `NULL` máscaras además del archivo normal con valores. Las entradas en el archivo de máscaras permiten ClickHouse distinguir entre `NULL` y un valor predeterminado del tipo de datos correspondiente para cada fila de la tabla. Debido a un archivo adicional, `Nullable` La columna consume espacio de almacenamiento adicional en comparación con una normal similar.
 
-!!! info "Note"
-    Using `Nullable` almost always negatively affects performance, keep this in mind when designing your databases.
+!!! info "Nota"
+    Utilizar `Nullable` casi siempre afecta negativamente al rendimiento, tenga esto en cuenta al diseñar sus bases de datos.
 
-## Usage example {#usage-example}
+## Ejemplo de uso {#usage-example}
 
 ``` sql
 CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog
@@ -36,4 +36,4 @@ SELECT x + y FROM t_null
 └────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/es/data_types/nullable/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/data_types/nullable/) <!--hide-->

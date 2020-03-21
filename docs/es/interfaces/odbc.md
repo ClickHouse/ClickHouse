@@ -1,5 +1,5 @@
-# ODBC Driver {#odbc-driver}
+# Conductor ODBC {#odbc-driver}
 
--   [Official driver](https://github.com/ClickHouse/clickhouse-odbc).
+-   [Conductor oficial](https://github.com/ClickHouse/clickhouse-odbc).
 
-[Original article](https://clickhouse.tech/docs/es/interfaces/odbc/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/interfaces/odbc/) <!--hide-->

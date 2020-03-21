@@ -29,7 +29,7 @@ $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/pat
 
 Parámetros:
 
--   `daemon` — Empezar `clickhouse-copier` en modo daemon.
+-   `daemon` — Empezar `clickhouse-copier` en modo demonio.
 -   `config` — El camino hacia el `zookeeper.xml` con los parámetros para la conexión a ZooKeeper.
 -   `task-path` — La ruta al nodo ZooKeeper. Este nodo se utiliza para la sincronización `clickhouse-copier` procesos y tareas de almacenamiento. Las tareas se almacenan en `$task-path/description`.
 -   `task-file` - Ruta opcional al archivo con la configuración de la tarea para la carga inicial a ZooKeeper.

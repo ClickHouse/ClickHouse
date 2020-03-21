@@ -35,7 +35,7 @@ Usted puede [configurar](external_dicts_dict.md) cualquier número de diccionari
 [Consultas DDL para diccionarios](../create.md#create-dictionary-query) no requiere ningún registro adicional en la configuración del servidor. Permiten trabajar con diccionarios como entidades de primera clase, como tablas o vistas.
 
 !!! attention "Atención"
-    Puede convertir valores para un diccionario pequeño describiéndolo en un `SELECT` consulta (ver el [transformar](../functions/other_functions.md) función). Esta funcionalidad no está relacionada con diccionarios externos.
+    Puede convertir valores para un diccionario pequeño describiéndolo en un `SELECT` Consulta (ver el [Ciudad](../functions/other_functions.md) función). Esta funcionalidad no está relacionada con diccionarios externos.
 
 ## Ver también {#ext-dicts-see-also}
 

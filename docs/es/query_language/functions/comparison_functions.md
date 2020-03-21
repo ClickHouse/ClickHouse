@@ -4,9 +4,9 @@ Las funciones de comparación siempre devuelven 0 o 1 (Uint8).
 
 Se pueden comparar los siguientes tipos:
 
--   numero
+-   número
 -   cuerdas y cuerdas fijas
--   fechas
+-   Fechas
 -   fechas con tiempos
 
 dentro de cada grupo, pero no entre diferentes grupos.
@@ -17,13 +17,13 @@ Las cadenas se comparan por bytes. Una cadena más corta es más pequeña que to
 
 Nota. Hasta la versión 1.1.54134, los números firmados y sin firmar se comparaban de la misma manera que en C ++. En otras palabras, podría obtener un resultado incorrecto en casos como SELECT 9223372036854775807 \> -1 . Este comportamiento cambió en la versión 1.1.54134 y ahora es matemáticamente correcto.
 
-## iguales, a = b y a == b operador {#function-equals}
+## Por ejemplo: {#function-equals}
 
 ## notEquals, un ! operador = b y a `<>` b {#function-notequals}
 
 ## menos, `< operator` {#function-less}
 
-## mayor, `> operator` {#function-greater}
+## alcalde, `> operator` {#function-greater}
 
 ## lessOrEquals, `<= operator` {#function-lessorequals}
 

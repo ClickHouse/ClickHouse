@@ -1,4 +1,4 @@
-# numero {#numbers}
+# número {#numbers}
 
 `numbers(N)` – Devuelve una tabla con el único ‘number’ columna (UInt64) que contiene enteros de 0 a N-1.
 `numbers(N, M)` - Devuelve una tabla con el único ‘number’ columna (UInt64) que contiene enteros de N a (N + M - 1).

@@ -68,7 +68,7 @@ ENGINE = SummingMergeTree()
 ORDER BY key
 ```
 
-Insertar datos:
+Inserte datos:
 
 ``` sql
 INSERT INTO summtt Values(1,1),(1,2),(2,1)
@@ -113,7 +113,7 @@ La tabla puede tener estructuras de datos anidadas que se procesan de una manera
 
 Si el nombre de una tabla anidada termina con `Map` y contiene al menos dos columnas que cumplen los siguientes criterios:
 
--   la primera columna es numérica `(*Int*, Date, DateTime)` o una cadena `(String, FixedString)`, vamos a llamarlo `key`,
+-   la primera columna es numérica `(*Int*, Date, DateTime)` O una cadena `(String, FixedString)`, vamos a llamarlo `key`,
 -   las otras columnas son aritméticas `(*Int*, Float32/64)`, vamos a llamarlo `(values...)`,
 
 entonces esta tabla anidada se interpreta como una asignación de `key => (values...)`, y al fusionar sus filas, los elementos de dos conjuntos de datos se fusionan por `key` con una suma de los correspondientes `(values...)`.
@@ -127,7 +127,7 @@ Ejemplos:
 [(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
 ```
 
-Al solicitar datos, utilice el [sumMap(clave, valor)](../../query_language/agg_functions/reference.md) función para la agregación de `Map`.
+Al solicitar datos, utilice el [SumMap (clave, valor)](../../query_language/agg_functions/reference.md) función para la agregación de `Map`.
 
 Para la estructura de datos anidados, no necesita especificar sus columnas en la tupla de columnas para la suma.
 

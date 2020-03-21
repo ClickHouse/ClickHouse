@@ -1,26 +1,26 @@
-# Domains {#domains}
+# Dominio {#domains}
 
-Domains are special-purpose types, that add some extra features atop of existing base type, leaving on-wire and on-disc format of underlying table intact. At the moment, ClickHouse does not support user-defined domains.
+Los dominios son tipos de propósito especial, que agregan algunas características adicionales encima del tipo base existente, dejando intacto el formato en cable y en disco de la tabla subyacente. Por el momento, ClickHouse no admite dominios definidos por el usuario.
 
-You can use domains anywhere corresponding base type can be used:
+Puede usar dominios en cualquier lugar que se pueda usar el tipo base correspondiente:
 
--   Create a column of domain type
--   Read/write values from/to domain column
--   Use it as index if base type can be used as index
--   Call functions with values of domain column
--   etc.
+-   Crear una columna de tipo de dominio
+-   Leer/escribir valores desde/a la columna de dominio
+-   Úselo como índice si el tipo base se puede usar como índice
+-   Funciones de llamada con valores de la columna de dominio
+-   sucesivamente.
 
-### Extra Features of Domains {#extra-features-of-domains}
+### Características adicionales de los dominios {#extra-features-of-domains}
 
--   Explicit column type name in `SHOW CREATE TABLE` or `DESCRIBE TABLE`
--   Input from human-friendly format with `INSERT INTO domain_table(domain_column) VALUES(...)`
--   Output to human-friendly format for `SELECT domain_column FROM domain_table`
--   Loading data from external source in human-friendly format: `INSERT INTO domain_table FORMAT CSV ...`
+-   Nombre de tipo de columna explícito en `SHOW CREATE TABLE` o `DESCRIBE TABLE`
+-   Entrada del formato humano-amistoso con `INSERT INTO domain_table(domain_column) VALUES(...)`
+-   Salida al formato humano-amistoso para `SELECT domain_column FROM domain_table`
+-   Carga de datos desde una fuente externa en un formato amigable para los humanos: `INSERT INTO domain_table FORMAT CSV ...`
 
-### Limitations {#limitations}
+### Limitación {#limitations}
 
--   Can’t convert index column of base type to domain type via `ALTER TABLE`.
--   Can’t implicitly convert string values into domain values when inserting data from another column or table.
--   Domain adds no constrains on stored values.
+-   No se puede convertir la columna de índice del tipo base al tipo de dominio a través de `ALTER TABLE`.
+-   No se pueden convertir implícitamente valores de cadena en valores de dominio al insertar datos de otra columna o tabla.
+-   Domain no agrega restricciones en los valores almacenados.
 
-[Original article](https://clickhouse.tech/docs/es/data_types/domains/overview) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/data_types/domains/overview) <!--hide-->

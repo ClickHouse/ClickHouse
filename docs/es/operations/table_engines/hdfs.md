@@ -1,7 +1,7 @@
 # HDFS {#table-engines-hdfs}
 
 Este motor proporciona integración con [Acerca de nosotros](https://en.wikipedia.org/wiki/Apache_Hadoop) permitiendo gestionar datos sobre [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)a través de ClickHouse. Este motor es similar
-a la [File](file.md) y [URL](url.md) motores, pero proporciona características específicas de Hadoop.
+Angeles [File](file.md) y [URL](url.md) motores, pero proporciona características específicas de Hadoop.
 
 ## Uso {#usage}
 
@@ -60,7 +60,7 @@ Múltiples componentes de ruta de acceso pueden tener globs. Para ser procesado,
 -   `{some_string,another_string,yet_another_one}` — Sustituye cualquiera de las cadenas `'some_string', 'another_string', 'yet_another_one'`.
 -   `{N..M}` — Sustituye cualquier número en el intervalo de N a M, incluidas ambas fronteras.
 
-Construcciones con `{}` son similares a la [remoto](../../query_language/table_functions/remote.md) función de la tabla.
+Construcciones con `{}` hijo similares a la [remoto](../../query_language/table_functions/remote.md) función de la tabla.
 
 **Ejemplo**
 
@@ -104,13 +104,13 @@ Crear tabla con archivos llamados `file000`, `file001`, … , `file999`:
 CREARE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
 ```
 
-## Virtual Columnas {#virtual-columns}
+## Columnas virtuales {#virtual-columns}
 
 -   `_path` — Ruta de acceso al archivo.
 -   `_file` — Nombre del expediente.
 
 **Ver también**
 
--   [Virtual columnas](https://clickhouse.tech/docs/es/operations/table_engines/#table_engines-virtual_columns)
+-   [Columnas virtuales](https://clickhouse.tech/docs/es/operations/table_engines/#table_engines-virtual_columns)
 
 [Artículo Original](https://clickhouse.tech/docs/es/operations/table_engines/hdfs/) <!--hide-->

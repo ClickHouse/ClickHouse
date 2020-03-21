@@ -2,7 +2,7 @@ La construcción de ClickHouse es compatible con Linux, FreeBSD y Mac OS X.
 
 # Si utiliza Windows {#if-you-use-windows}
 
-Si usa Windows, necesita crear una máquina virtual con Ubuntu. Para comenzar a trabajar con una máquina virtual, instale VirtualBox. Puede descargar Ubuntu desde el sitio web: https://www.ubuntu.com/\#download. Por favor, cree una máquina virtual a partir de la imagen descargada (debe reservar al menos 4 GB de RAM para ello). Para ejecutar un terminal de línea de comandos en Ubuntu, busque un programa que contenga la palabra “terminal” en su nombre (gnome-terminal, konsole etc.) o simplemente presione Ctrl + Alt + T.
+Si usa Windows, necesita crear una máquina virtual con Ubuntu. Para comenzar a trabajar con una máquina virtual, instale VirtualBox. Puede descargar Ubuntu desde el sitio web: https://www.ubuntu.com/\#download. Por favor, cree una máquina virtual a partir de la imagen descargada (debe reservar al menos 4 GB de RAM para ello). Para ejecutar un terminal de línea de comandos en Ubuntu, busque un programa que contenga la palabra “terminal” es su nombre (gnome-terminal, konsole, etc.) o simplemente presione Ctrl + Alt + T.
 
 # Si utiliza un sistema de 32 bits {#if-you-use-a-32-bit-system}
 
@@ -16,7 +16,7 @@ Probablemente ya tenga uno, pero si no lo hace, regístrese en https://github.co
 
 Cree una bifurcación del repositorio ClickHouse. Para hacerlo por favor haga clic en el “fork” botón en la esquina superior derecha en https://github.com/ClickHouse/ClickHouse . Se bifurcará su propia copia de ClickHouse/ClickHouse a su cuenta.
 
-El proceso de desarrollo consiste en comprometer primero los cambios previstos en su bifurcación de ClickHouse y luego crear un “pull request” para que estos cambios sean aceptados en el repositorio principal (ClickHouse / ClickHouse).
+El proceso de desarrollo consiste en comprometer primero los cambios previstos en su bifurcación de ClickHouse y luego crear un “pull request” Para que estos cambios sean aceptados en el repositorio principal (ClickHouse / ClickHouse).
 
 Para trabajar con repositorios git, instale `git`.
 
@@ -138,11 +138,11 @@ Compruebe la versión de gcc: `gcc --version`. Si está por debajo de 9, siga la
 
 La compilación de Mac OS X solo es compatible con Clang. Sólo tiene que ejecutar `brew install llvm`
 
-Si decide utilizar Clang, también puede instalar `libc++` y `lld` si usted sabe lo que es. Utilizar `ccache` también se recomienda.
+Si decide utilizar Clang, también puede instalar `libc++` y `lld` sabe lo que es. Utilizar `ccache` también se recomienda.
 
 # El proceso de construcción {#the-building-process}
 
-Ahora que está listo para construir ClickHouse, le recomendamos que cree un directorio separado `build` dentro `ClickHouse` que contendrá todos los de la generación de artefactos:
+Ahora que está listo para construir ClickHouse, le recomendamos que cree un directorio separado `build` Dentro `ClickHouse` que contendrá todos los de la generación de artefactos:
 
     mkdir build
     cd build
@@ -167,7 +167,7 @@ Para una construcción más rápida, puede recurrir al `debug` tipo de compilaci
 
     cmake -D CMAKE_BUILD_TYPE=Debug ..
 
-Puede cambiar el tipo de compilación ejecutando este comando en el `build` directorio.
+Puede cambiar el tipo de compilación ejecutando este comando en el `build` Directorio.
 
 Ejecutar ninja para construir:
 
@@ -217,7 +217,7 @@ Puede reemplazar la versión de producción del binario ClickHouse instalado en 
     sudo cp ClickHouse/build/dbms/programs/clickhouse /usr/bin/
     sudo service clickhouse-server start
 
-Tenga en cuenta que `clickhouse-client`, `clickhouse-server` y otros son enlaces simbólicos a los comúnmente compartidos `clickhouse` binario.
+Tenga en cuenta que `clickhouse-client`, `clickhouse-server` y otros son enlaces simbólicos a los comúnmente compartidos `clickhouse` Binario.
 
 También puede ejecutar su binario ClickHouse personalizado con el archivo de configuración del paquete ClickHouse instalado en su sistema:
 
@@ -273,6 +273,6 @@ Se puede crear una solicitud de extracción incluso si el trabajo aún no se ha 
 
 Las pruebas comenzarán tan pronto como los empleados de Yandex etiqueten su PR con una etiqueta “can be tested”. Los resultados de algunas primeras comprobaciones (por ejemplo, el estilo de código) llegarán en varios minutos. Los resultados de la comprobación de compilación llegarán dentro de media hora. Y el conjunto principal de pruebas se informará dentro de una hora.
 
-El sistema preparará compilaciones binarias ClickHouse para su solicitud de extracción individualmente. Para recuperar estas compilaciones, haga clic en “Details” junto al link “ClickHouse build check” en la lista de cheques. Allí encontrará enlaces directos a la construcción.deb paquetes de ClickHouse que puede implementar incluso en sus servidores de producción (si no tiene miedo).
+El sistema preparará compilaciones binarias ClickHouse para su solicitud de extracción individualmente. Para recuperar estas compilaciones, haga clic en “Details” junto al enlace “ClickHouse build check” en la lista de cheques. Allí encontrará enlaces directos a la construcción.deb paquetes de ClickHouse que puede implementar incluso en sus servidores de producción (si no tiene miedo).
 
 Lo más probable es que algunas de las compilaciones fallen las primeras veces. Esto se debe al hecho de que verificamos las compilaciones tanto con gcc como con clang, con casi todas las advertencias existentes (siempre con el `-Werror` bandera) habilitado para sonido. En esa misma página, puede encontrar todos los registros de compilación para que no tenga que compilar ClickHouse de todas las formas posibles.

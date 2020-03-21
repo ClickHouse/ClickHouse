@@ -81,7 +81,7 @@ Si es necesario, el operador se puede envolver a la siguiente línea. En este ca
 
 **11.** No utilice un espacio para separar los operadores unarios (`--`, `++`, `*`, `&`, …) del argumento.
 
-**12.** Pon un espacio después de una coma, pero no antes. La misma regla se aplica a un punto y coma dentro de un `for` expresion.
+**12.** Pon un espacio después de una coma, pero no antes. La misma regla se aplica a un punto y coma dentro de un `for` expresión.
 
 **13.** No utilice espacios para separar el `[]` operador.
 
@@ -93,7 +93,7 @@ struct AggregatedStatElement
 {}
 ```
 
-**15.** En clases y estructuras, escribe `public`, `private`, y `protected` en el mismo nivel que `class/struct`, y sangrar el resto del código.
+**15.** En clases y estructuras, escribe `public`, `private`, y `protected` es el mismo nivel que `class/struct`, y sangrar el resto del código.
 
 ``` cpp
 template <typename T>
@@ -598,11 +598,11 @@ Las bibliotecas pequeñas tampoco necesitan esto.
 
 Para bibliotecas medianas a grandes, coloque todo en un `namespace`.
 
-En la biblioteca `.h` archivo, se puede utilizar `namespace detail` para ocultar los detalles de implementación no necesarios para el código de la aplicación.
+En la biblioteca `.h` Archivo, se puede utilizar `namespace detail` para ocultar los detalles de implementación no necesarios para el código de la aplicación.
 
 En un `.cpp` archivo, puede usar un `static` o espacio de nombres anónimo para ocultar símbolos.
 
-Además, un `namespace` puede ser utilizado para un `enum` para evitar que los nombres correspondientes caigan en un `namespace` (pero es mejor usar un `enum class`).
+Además, un `namespace` Puede ser utilizado para un `enum` para evitar que los nombres correspondientes caigan en un `namespace` (pero es mejor usar un `enum class`).
 
 **16.** Inicialización diferida.
 
@@ -623,7 +623,7 @@ Si la clase no está destinada para uso polimórfico, no necesita hacer que las 
 
 **18.** Codificación.
 
-Usa UTF-8 en todas partes. Utilizar `std::string`y`char *`. No use `std::wstring`y`wchar_t`.
+Usa UTF-8 en todas partes. Utilizar `std::string`y`char *`. No uso `std::wstring`y`wchar_t`.
 
 **19.** Tala.
 
@@ -649,7 +649,7 @@ Utilice la codificación UTF-8 en el registro. En casos excepcionales, puede usa
 
 No utilice `iostreams` en ciclos internos que son críticos para el rendimiento de la aplicación (y nunca usan `stringstream`).
 
-Utilice el `DB/IO` biblioteca en su lugar.
+Descripción `DB/IO` biblioteca en su lugar.
 
 **21.** Fecha y hora.
 
@@ -663,7 +663,7 @@ Utilice siempre `#pragma once` en lugar de incluir guardias.
 
 `using namespace` no se utiliza. Usted puede utilizar `using` con algo específico. Pero hazlo local dentro de una clase o función.
 
-**24.** No use `trailing return type` para funciones a menos que sea necesario.
+**24.** No uso `trailing return type` para funciones a menos que sea necesario.
 
 ``` cpp
 [auto f() -&gt; void;]{.strike}
@@ -680,7 +680,7 @@ std::string s{"Hello"};
 auto s = std::string{"Hello"};
 ```
 
-**26.** Para funciones virtuales, escriba `virtual` en la clase base, pero escribe `override` en lugar de `virtual` en las clases descendientes.
+**26.** Para funciones virtuales, escriba `virtual` es la clase base, pero escribe `override` es lugar de `virtual` en las clases descendientes.
 
 ## Características no utilizadas de C ++ {#unused-features-of-c}
 
@@ -694,7 +694,7 @@ auto s = std::string{"Hello"};
 
 Pero en igualdad de condiciones, se prefiere el código multiplataforma o portátil.
 
-**2.** Idioma: C ++ 17.
+**2.** Idioma: hacer ++ 17.
 
 **3.** Compilación: `gcc`. En este momento (diciembre de 2017), el código se compila utilizando la versión 7.2. (También se puede compilar usando `clang 4`.)
 
@@ -718,7 +718,7 @@ El conjunto de instrucciones de CPU es el conjunto mínimo admitido entre nuestr
 
 **2.** Para la depuración, use `gdb`, `valgrind` (`memcheck`), `strace`, `-fsanitize=...`, o `tcmalloc_minimal_debug`.
 
-**3.** Para crear perfiles, use `Linux Perf`, `valgrind` (`callgrind`), o `strace -cf`.
+**3.** Para crear perfiles, uso `Linux Perf`, `valgrind` (`callgrind`Ciudad `strace -cf`.
 
 **4.** Las fuentes están en Git.
 
@@ -774,17 +774,17 @@ Si ya hay una buena solución disponible, úsela, incluso si eso significa que d
 
 **1.** Especificar explícitamente `std::` para tipos de `stddef.h`
 
-no se recomienda. En otras palabras, recomendamos escribir `size_t` en su lugar `std::size_t` porque es más corto.
+no se recomienda. En otras palabras, recomendamos escribir `size_t` es su lugar `std::size_t` porque es más corto.
 
 Es aceptable agregar `std::`.
 
 **2.** Especificar explícitamente `std::` para funciones de la biblioteca C estándar
 
-no se recomienda. En otras palabras, escribir `memcpy` en lugar de `std::memcpy`.
+no se recomienda. En otras palabras, escribir `memcpy` es lugar de `std::memcpy`.
 
 La razón es que hay funciones no estándar similares, tales como `memmem`. Utilizamos estas funciones en ocasiones. Estas funciones no existen en `namespace std`.
 
-Si usted escribe `std::memcpy` en lugar de `memcpy` en todas partes, entonces `memmem` sin `std::` se verá extraño.
+Si usted escribe `std::memcpy` es lugar de `memcpy` es todas partes, entonces `memmem` pecado `std::` se verá extraño.
 
 Sin embargo, todavía puedes usar `std::` si lo prefieres.
 
@@ -792,7 +792,7 @@ Sin embargo, todavía puedes usar `std::` si lo prefieres.
 
 Esto es aceptable si es más eficiente.
 
-Por ejemplo, use `memcpy` en lugar de `std::copy` para copiar grandes trozos de memoria.
+Por ejemplo, uso `memcpy` es lugar de `std::copy` para copiar grandes trozos de memoria.
 
 **4.** Argumentos de función multilínea.
 

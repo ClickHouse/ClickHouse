@@ -40,7 +40,7 @@ clickhouse-benchmark [keys] < queries_file
 -   `--confidence=N` — Nivel de confianza para la prueba T. Valores posibles: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99.5%). Valor predeterminado: 5. En el [modo de comparación](#clickhouse-benchmark-comparison-mode) `clickhouse-benchmark` realiza el [Examen t independiente de dos muestras para estudiantes](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) para determinar si las dos distribuciones no son diferentes con el nivel de confianza seleccionado.
 -   `--cumulative` — Impresión de datos acumulativos en lugar de datos por intervalo.
 -   `--database=DATABASE_NAME` — Nombre de base de datos ClickHouse. Valor predeterminado: `default`.
--   `--json=FILEPATH` — Salida JSON. Cuando se establece la clave, `clickhouse-benchmark` emite un informe al archivo JSON especificado.
+-   `--json=FILEPATH` — Salida JSON. Cuando se establece la clave, `clickhouse-benchmark` " resultados de la búsqueda relacionados
 -   `--user=USERNAME` — Nombre de usuario de ClickHouse. Valor predeterminado: `default`.
 -   `--password=PSWD` — Contraseña de usuario de ClickHouse. Valor predeterminado: cadena vacía.
 -   `--stacktrace` — Pila trazas de salida. Cuando se establece la clave, `clickhouse-bencmark` las salidas acumulan rastros de excepciones.
@@ -51,7 +51,7 @@ Si desea aplicar alguna [configuración](../../operations/settings/index.md) par
 
 ## Salida {#clickhouse-benchmark-output}
 
-Predeterminada, `clickhouse-benchmark` informes para cada `--delay` intervalo.
+Predeterminada, `clickhouse-benchmark` Informes para cada `--delay` intervalo.
 
 Ejemplo del informe:
 

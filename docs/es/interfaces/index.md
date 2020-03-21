@@ -1,21 +1,21 @@
-# Interfaces {#interfaces}
+# Interfaz {#interfaces}
 
-ClickHouse provides two network interfaces (both can be optionally wrapped in TLS for additional security):
+ClickHouse proporciona dos interfaces de red (ambas se pueden ajustar opcionalmente en TLS para mayor seguridad):
 
--   [HTTP](http.md), which is documented and easy to use directly.
--   [Native TCP](tcp.md), which has less overhead.
+-   [HTTP](http.md), que está documentado y fácil de usar directamente.
+-   [TCP nativo](tcp.md), que tiene menos sobrecarga.
 
-In most cases it is recommended to use appropriate tool or library instead of interacting with those directly. Officially supported by Yandex are the following:
+En la mayoría de los casos, se recomienda utilizar la herramienta o biblioteca apropiada en lugar de interactuar con ellos directamente. Oficialmente apoyados por Yandex son los siguientes:
 
--   [Command-line client](cli.md)
--   [JDBC driver](jdbc.md)
--   [ODBC driver](odbc.md)
--   [C++ client library](cpp.md)
+-   [Cliente de línea de comandos](cli.md)
+-   [Controlador JDBC](jdbc.md)
+-   [Controlador ODBC](odbc.md)
+-   [Biblioteca cliente de C++](cpp.md)
 
-There are also a wide range of third-party libraries for working with ClickHouse:
+También hay una amplia gama de bibliotecas de terceros para trabajar con ClickHouse:
 
--   [Client libraries](third-party/client_libraries.md)
--   [Integrations](third-party/integrations.md)
--   [Visual interfaces](third-party/gui.md)
+-   [Bibliotecas de clientes](third-party/client_libraries.md)
+-   [Integración](third-party/integrations.md)
+-   [Interfaces visuales](third-party/gui.md)
 
-[Original article](https://clickhouse.tech/docs/es/interfaces/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/interfaces/) <!--hide-->

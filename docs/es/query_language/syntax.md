@@ -1,126 +1,126 @@
-# Syntax {#syntax}
+# Sintaxis {#syntax}
 
-There are two types of parsers in the system: the full SQL parser (a recursive descent parser), and the data format parser (a fast stream parser).
-In all cases except the `INSERT` query, only the full SQL parser is used.
-The `INSERT` query uses both parsers:
+Hay dos tipos de analizadores en el sistema: el analizador SQL completo (un analizador de descenso recursivo) y el analizador de formato de datos (un analizador de flujo rápido).
+En todos los casos, excepto el `INSERT` consulta, sólo se utiliza el analizador SQL completo.
+El `INSERT` Consulta utiliza ambos analizadores:
 
 ``` sql
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
-The `INSERT INTO t VALUES` fragment is parsed by the full parser, and the data `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` is parsed by the fast stream parser. You can also turn on the full parser for the data by using the [input\_format\_values\_interpret\_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) setting. When `input_format_values_interpret_expressions = 1`, ClickHouse first tries to parse values with the fast stream parser. If it fails, ClickHouse tries to use the full parser for the data, treating it like an SQL [expression](#syntax-expressions).
+El `INSERT INTO t VALUES` fragmento es analizado por el analizador completo, y los datos `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` es analizado por el analizador de flujo rápido. También puede activar el analizador completo de los datos mediante el [input\_format\_values\_interpret\_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) configuración. Cuando `input_format_values_interpret_expressions = 1`, ClickHouse primero intenta analizar valores con el analizador de flujo rápido. Si falla, ClickHouse intenta usar el analizador completo para los datos, tratándolo como un SQL [expresión](#syntax-expressions).
 
-Data can have any format. When a query is received, the server calculates no more than [max\_query\_size](../operations/settings/settings.md#settings-max_query_size) bytes of the request in RAM (by default, 1 MB), and the rest is stream parsed.
-This means the system doesn’t have problems with large `INSERT` queries, like MySQL does.
+Los datos pueden tener cualquier formato. Cuando se recibe una consulta, el servidor no calcula más de [max\_query\_size](../operations/settings/settings.md#settings-max_query_size) bytes de la solicitud en RAM (por defecto, 1 MB), y el resto se analiza la secuencia.
+Esto significa que el sistema no tiene problemas con `INSERT` Consultas, como lo hace MySQL.
 
-When using the `Values` format in an `INSERT` query, it may seem that data is parsed the same as expressions in a `SELECT` query, but this is not true. The `Values` format is much more limited.
+Cuando se utiliza el `Values` formato en un `INSERT` consulta, puede parecer que los datos se analizan igual que las expresiones en un `SELECT` Consulta, pero esto no es cierto. El `Values` formato es mucho más limitado.
 
-Next we will cover the full parser. For more information about format parsers, see the [Formats](../interfaces/formats.md) section.
+A continuación cubriremos el analizador completo. Para obtener más información sobre los analizadores de formato, consulte [Formato](../interfaces/formats.md) apartado.
 
-## Spaces {#spaces}
+## Espacio {#spaces}
 
-There may be any number of space symbols between syntactical constructions (including the beginning and end of a query). Space symbols include the space, tab, line feed, CR, and form feed.
+Puede haber cualquier número de símbolos de espacio entre las construcciones sintácticas (incluidos el principio y el final de una consulta). Los símbolos de espacio incluyen el espacio, tabulación, avance de línea, CR y avance de formulario.
 
-## Comments {#comments}
+## Comentario {#comments}
 
-SQL-style and C-style comments are supported.
-SQL-style comments: from `--` to the end of the line. The space after `--` can be omitted.
-Comments in C-style: from `/*` to `*/`. These comments can be multiline. Spaces are not required here, either.
+Se admiten comentarios de estilo SQL y de estilo C.
+Comentarios de estilo SQL: desde `--` al final de la línea. El espacio después `--` se puede omitir.
+Comentarios en estilo C: de `/*` un `*/`. Estos comentarios pueden ser multilínea. Tampoco se requieren espacios aquí.
 
-## Keywords {#syntax-keywords}
+## Palabras clave {#syntax-keywords}
 
-Keywords are case-insensitive when they correspond to:
+Las palabras clave no distinguen entre mayúsculas y minúsculas cuando corresponden a:
 
--   SQL standard. For example, `SELECT`, `select` and `SeLeCt` are all valid.
--   Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime` is same as `datetime`.
+-   Estándar SQL. Por ejemplo, `SELECT`, `select` y `SeLeCt` son todos válidos.
+-   Implementación en algunos DBMS populares (MySQL o Postgres). Por ejemplo, `DateTime` es lo mismo que `datetime`.
 
-Whether data type name is case-sensitive can be checked in the `system.data_type_families` table.
+Si el nombre del tipo de datos distingue entre mayúsculas y minúsculas `system.data_type_families` tabla.
 
-In contrast to standard SQL all other keywords (including functions names) are **case-sensitive**.
+A diferencia del SQL estándar, todas las demás palabras clave (incluidos los nombres de las funciones) son **minúsculas**.
 
-Keywords are not reserved (they are just parsed as keywords in the corresponding context). If you use [identifiers](#syntax-identifiers) the same as the keywords, enclose them into quotes. For example, the query `SELECT "FROM" FROM table_name` is valid if the table `table_name` has column with the name `"FROM"`.
+Las palabras clave no están reservadas (simplemente se analizan como palabras clave en el contexto correspondiente). Si usted usa [identificador](#syntax-identifiers) lo mismo que las palabras clave, encerrarlas entre comillas. Por ejemplo, la consulta `SELECT "FROM" FROM table_name` es válido si la tabla `table_name` tetas grandes con el nombre `"FROM"`.
 
-## Identifiers {#syntax-identifiers}
+## Identificador {#syntax-identifiers}
 
-Identifiers are:
+Los identificadores hijo:
 
--   Cluster, database, table, partition and column names.
--   Functions.
--   Data types.
--   [Expression aliases](#syntax-expression_aliases).
+-   Nombres de clúster, base de datos, tabla, partición y columna.
+-   Función.
+-   Tipos de datos.
+-   [Alias de expresión](#syntax-expression_aliases).
 
-Identifiers can be quoted or non-quoted. It is recommended to use non-quoted identifiers.
+Los identificadores pueden ser citados o no citados. Se recomienda utilizar identificadores no citados.
 
-Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and can not be equal to [keywords](#syntax-keywords). Examples: `x, _1, X_y__Z123_.`
+Los identificadores no citados deben coincidir con la expresión regular `^[a-zA-Z_][0-9a-zA-Z_]*$` y no puede ser igual a [Palabras clave](#syntax-keywords). Ejemplos: `x, _1, X_y__Z123_.`
 
-If you want to use identifiers the same as keywords or you want to use other symbols in identifiers, quote it using double quotes or backticks, for example, `"id"`, `` `id` ``.
+Si desea utilizar identificadores iguales a las palabras clave o si desea utilizar otros símbolos en los identificadores, cítelo con comillas dobles o retrocesos, por ejemplo, `"id"`, `` `id` ``.
 
-## Literals {#literals}
+## Literal {#literals}
 
-There are: numeric, string, compound and `NULL` literals.
+Hay: numérico, cadena, compuesto y `NULL` literal.
 
-### Numeric {#numeric}
+### Numérico {#numeric}
 
-A numeric literal tries to be parsed:
+Un literal numérico, intenta ser analizado:
 
--   First as a 64-bit signed number, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
--   If unsuccessful, as a 64-bit unsigned number, using the [strtoll](https://en.cppreference.com/w/cpp/string/byte/strtol) function.
--   If unsuccessful, as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
--   Otherwise, an error is returned.
+-   Primero como un número firmado de 64 bits, usando el [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) función.
+-   Si no tiene éxito, como un número de 64 bits sin signo, [Sistema abierto.](https://en.cppreference.com/w/cpp/string/byte/strtol) función.
+-   Si no tiene éxito, como un número de punto flotante [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) función.
+-   De lo contrario, se devuelve un error.
 
-The corresponding value will have the smallest type that the value fits in.
-For example, 1 is parsed as `UInt8`, but 256 is parsed as `UInt16`. For more information, see [Data types](../data_types/index.md).
+El valor correspondiente tendrá el tipo más pequeño en el que se ajuste el valor.
+Por ejemplo, 1 se analiza como `UInt8` pero 256 se analiza como `UInt16`. Para obtener más información, consulte [Tipos de datos](../data_types/index.md).
 
-Examples: `1`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
+Ejemplos: `1`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
 
-### String {#syntax-string-literal}
+### Cadena {#syntax-string-literal}
 
-Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have a corresponding special value: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. In all other cases, escape sequences in the format `\c`, where `c` is any character, are converted to `c`. This means that you can use the sequences `\'`and`\\`. The value will have the [String](../data_types/string.md) type.
+Solo se admiten literales de cadena entre comillas simples. Los caracteres incluidos se pueden escapar de barra invertida. Las siguientes secuencias de escape tienen un valor especial correspondiente: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. En todos los demás casos, secuencias de escape en el formato `\c`, donde `c` cualquier carácter, se convierten a `c`. Esto significa que puedes usar las secuencias `\'`y`\\`. El valor tendrá el [Cadena](../data_types/string.md) tipo.
 
-The minimum set of characters that you need to escape in string literals: `'` and `\`. Single quote can be escaped with the single quote, literals `'It\'s'` and `'It''s'` are equal.
+El conjunto mínimo de caracteres que necesita para escapar en literales de cadena: `'` y `\`. La comilla simple se puede escapar con la comilla simple, literales `'It\'s'` y `'It''s'` hijo iguales.
 
-### Compound {#compound}
+### Compuesto {#compound}
 
-Constructions are supported for arrays: `[1, 2, 3]` and tuples: `(1, 'Hello, world!', 2)`..
-Actually, these are not literals, but expressions with the array creation operator and the tuple creation operator, respectively.
-An array must consist of at least one item, and a tuple must have at least two items.
-Tuples have a special purpose for use in the `IN` clause of a `SELECT` query. Tuples can be obtained as the result of a query, but they can’t be saved to a database (with the exception of [Memory](../operations/table_engines/memory.md) tables).
+Las construcciones son compatibles con las matrices: `[1, 2, 3]` y tuplas: `(1, 'Hello, world!', 2)`..
+En realidad, estos no son literales, sino expresiones con el operador de creación de matriz y el operador de creación de tuplas, respectivamente.
+Una matriz debe constar de al menos un elemento y una tupla debe tener al menos dos elementos.
+Las tuplas tienen un propósito especial para su uso en el `IN` cláusula de un `SELECT` consulta. Las tuplas se pueden obtener como resultado de una consulta, pero no se pueden guardar en una base de datos (con la excepción de [Memoria](../operations/table_engines/memory.md) tabla).
 
-### NULL {#null-literal}
+### NULO {#null-literal}
 
-Indicates that the value is missing.
+Indica que falta el valor.
 
-In order to store `NULL` in a table field, it must be of the [Nullable](../data_types/nullable.md) type.
+Para almacenar `NULL` es un campo de tabla, debe ser del [NULL](../data_types/nullable.md) tipo.
 
-Depending on the data format (input or output), `NULL` may have a different representation. For more information, see the documentation for [data formats](../interfaces/formats.md#formats).
+Dependiendo del formato de datos (entrada o salida), `NULL` puede tener una representación diferente. Para obtener más información, consulte la documentación de [Formatos de datos](../interfaces/formats.md#formats).
 
-There are many nuances to processing `NULL`. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation will also be `NULL`. The same is true for multiplication, addition, and other operations. For more information, read the documentation for each operation.
+Hay muchos matices para el procesamiento `NULL`. Por ejemplo, si al menos uno de los argumentos de una operación de comparación es `NULL` el resultado de esta operación también se `NULL`. Lo mismo es cierto para la multiplicación, la suma y otras operaciones. Para obtener más información, lea la documentación de cada operación.
 
-In queries, you can check `NULL` using the [IS NULL](operators.md#operator-is-null) and [IS NOT NULL](operators.md) operators and the related functions `isNull` and `isNotNull`.
+En las consultas, puede verificar `NULL` utilizando el [ES NULO](operators.md#operator-is-null) y [NO ES NULO](operators.md) operadores y las funciones relacionadas `isNull` y `isNotNull`.
 
-## Functions {#functions}
+## Función {#functions}
 
-Functions are written like an identifier with a list of arguments (possibly empty) in brackets. In contrast to standard SQL, the brackets are required, even for an empty arguments list. Example: `now()`.
-There are regular and aggregate functions (see the section “Aggregate functions”). Some aggregate functions can contain two lists of arguments in brackets. Example: `quantile (0.9) (x)`. These aggregate functions are called “parametric” functions, and the arguments in the first list are called “parameters”. The syntax of aggregate functions without parameters is the same as for regular functions.
+Las funciones se escriben como un identificador con una lista de argumentos (posiblemente vacíos) entre paréntesis. A diferencia de SQL estándar, los corchetes son necesarios, incluso para una lista de argumentos vacía. Ejemplo: `now()`.
+Hay funciones regulares y agregadas (ver la sección “Aggregate functions”). Algunas funciones agregadas pueden contener dos listas de argumentos entre paréntesis. Ejemplo: `quantile (0.9) (x)`. Estas funciones agregadas se llaman “parametric” funciones, y los argumentos en la primera lista se llaman “parameters”. La sintaxis de las funciones agregadas sin parámetros es la misma que para las funciones regulares.
 
-## Operators {#operators}
+## Operador {#operators}
 
-Operators are converted to their corresponding functions during query parsing, taking their priority and associativity into account.
-For example, the expression `1 + 2 * 3 + 4` is transformed to `plus(plus(1, multiply(2, 3)), 4)`.
+Los operadores se convierten a sus funciones correspondientes durante el análisis de consultas, teniendo en cuenta su prioridad y asociatividad.
+Por ejemplo, la expresión `1 + 2 * 3 + 4` se transforma a `plus(plus(1, multiply(2, 3)), 4)`.
 
-## Data Types and Database Table Engines {#data-types-and-database-table-engines}
+## Tipos de datos y motores de tabla de base de datos {#data-types-and-database-table-engines}
 
-Data types and table engines in the `CREATE` query are written the same way as identifiers or functions. In other words, they may or may not contain an arguments list in brackets. For more information, see the sections “Data types,” “Table engines,” and “CREATE”.
+Tipos de datos y motores de tablas en el `CREATE` las consultas se escriben de la misma manera que los identificadores o funciones. En otras palabras, pueden o no contener una lista de argumentos entre corchetes. Para obtener más información, consulte las secciones “Data types,” “Table engines,” y “CREATE”.
 
-## Expression Aliases {#syntax-expression-aliases}
+## Alias de expresión {#syntax-expression-aliases}
 
-An alias is a user-defined name for an expression in a query.
+Un alias es un nombre definido por el usuario para una expresión en una consulta.
 
 ``` sql
 expr AS alias
 ```
 
--   `AS` — The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.
+-   `AS` — The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` cláusula sin usar el `AS` palabra clave.
 
         For example, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
@@ -130,19 +130,19 @@ expr AS alias
 
         For example, `SELECT column_name * 2 AS double FROM some_table`.
 
--   `alias` — Name for `expr`. Aliases should comply with the [identifiers](#syntax-identifiers) syntax.
+-   `alias` — Name for `expr`. Los alias deben cumplir con el [identificador](#syntax-identifiers) sintaxis.
 
         For example, `SELECT "table t".column_name FROM table_name AS "table t"`.
 
-### Notes on Usage {#notes-on-usage}
+### Notas sobre el uso {#notes-on-usage}
 
-Aliases are global for a query or subquery and you can define an alias in any part of a query for any expression. For example, `SELECT (1 AS n) + 2, n`.
+Los alias son globales para una consulta o subconsulta y puede definir un alias en cualquier parte de una consulta para cualquier expresión. Por ejemplo, `SELECT (1 AS n) + 2, n`.
 
-Aliases are not visible in subqueries and between subqueries. For example, while executing the query `SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a` ClickHouse generates the exception `Unknown identifier: num`.
+Los alias no son visibles en subconsultas y entre subconsultas. Por ejemplo, al ejecutar la consulta `SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a` ClickHouse genera la excepción `Unknown identifier: num`.
 
-If an alias is defined for the result columns in the `SELECT` clause of a subquery, these columns are visible in the outer query. For example, `SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
+Si se define un alias para las columnas de resultados `SELECT` cláusula de una subconsulta, estas columnas son visibles en la consulta externa. Por ejemplo, `SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
 
-Be careful with aliases that are the same as column or table names. Let’s consider the following example:
+Tenga cuidado con los alias que son iguales a los nombres de columna o tabla. Consideremos el siguiente ejemplo:
 
 ``` sql
 CREATE TABLE t
@@ -165,16 +165,16 @@ Received exception from server (version 18.14.17):
 Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
 ```
 
-In this example, we declared table `t` with column `b`. Then, when selecting data, we defined the `sum(b) AS b` alias. As aliases are global, ClickHouse substituted the literal `b` in the expression `argMax(a, b)` with the expression `sum(b)`. This substitution caused the exception.
+En este ejemplo, declaramos tabla `t` con columna `b`. Luego, al seleccionar los datos, definimos el `sum(b) AS b` apodo. Como los alias son globales, ClickHouse sustituyó el literal `b` en la expresión `argMax(a, b)` con la expresión `sum(b)`. Esta sustitución causó la excepción.
 
-## Asterisk {#asterisk}
+## Asterisco {#asterisk}
 
-In a `SELECT` query, an asterisk can replace the expression. For more information, see the section “SELECT”.
+En un `SELECT` consulta, un asterisco puede reemplazar la expresión. Para obtener más información, consulte la sección “SELECT”.
 
-## Expressions {#syntax-expressions}
+## Expresiones {#syntax-expressions}
 
-An expression is a function, identifier, literal, application of an operator, expression in brackets, subquery, or asterisk. It can also contain an alias.
-A list of expressions is one or more expressions separated by commas.
-Functions and operators, in turn, can have expressions as arguments.
+Una expresión es una función, identificador, literal, aplicación de un operador, expresión entre paréntesis, subconsulta o asterisco. También puede contener un alias.
+Una lista de expresiones es una o más expresiones separadas por comas.
+Las funciones y los operadores, a su vez, pueden tener expresiones como argumentos.
 
-[Original article](https://clickhouse.tech/docs/es/query_language/syntax/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/query_language/syntax/) <!--hide-->

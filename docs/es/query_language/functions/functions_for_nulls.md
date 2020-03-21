@@ -95,7 +95,7 @@ coalesce(x,...)
 **Valores devueltos**
 
 -   El primer no-`NULL` argumento.
--   `NULL` si todos los argumentos son `NULL`.
+-   `NULL` si todos los argumentos hijo `NULL`.
 
 **Ejemplo**
 
@@ -138,8 +138,8 @@ ifNull(x,alt)
 
 **Valores devueltos**
 
--   Valor `x`, si `x` no es `NULL`.
--   Valor `alt`, si `x` ser `NULL`.
+-   Valor `x` si `x` no es `NULL`.
+-   Valor `alt` si `x` ser `NULL`.
 
 **Ejemplo**
 
@@ -204,7 +204,7 @@ SELECT nullIf(1, 2)
 
 ## assumeNotNull {#assumenotnull}
 
-Resultados en un valor de tipo [NULL](../../data_types/nullable.md) para un no- `Nullable` si el valor no es `NULL`.
+Resultados en un valor de tipo [NULO](../../data_types/nullable.md) para un no- `Nullable` si el valor no es `NULL`.
 
 ``` sql
 assumeNotNull(x)

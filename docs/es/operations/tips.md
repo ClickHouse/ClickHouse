@@ -19,7 +19,7 @@ Para pequeñas cantidades de datos (hasta ~200 GB comprimidos), es mejor usar ta
 Para grandes cantidades de datos y al procesar consultas interactivas (en línea), debe usar una cantidad razonable de RAM (128 GB o más) para que el subconjunto de datos en caliente quepa en la memoria caché de páginas.
 Incluso para volúmenes de datos de ~ 50 TB por servidor, el uso de 128 GB de RAM mejora significativamente el rendimiento de las consultas en comparación con 64 GB.
 
-No deshabilite el sobrecompromiso. Valor `cat /proc/sys/vm/overcommit_memory` debe ser 0 o 1. Ejecutar
+No deshabilite el sobrecompromiso. Valor `cat /proc/sys/vm/overcommit_memory` Ser debe 0 la 1. Ejecutar
 
 ``` bash
 $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
@@ -38,7 +38,7 @@ Las páginas enormes permanentes tampoco necesitan ser asignadas.
 
 ## Subsistema de almacenamiento {#storage-subsystem}
 
-Si su presupuesto le permite usar SSD, use SSD.
+Si su presupuesto le permite usar SSD, utilizar SSD.
 Si no, use HDD. Los discos duros SATA 7200 RPM servirán.
 
 Dar preferencia a una gran cantidad de servidores con discos duros locales sobre un número menor de servidores con estantes de discos conectados.
@@ -79,7 +79,7 @@ La mayoría de los otros sistemas de archivos también deberían funcionar bien.
 
 No utilice un kernel de Linux obsoleto.
 
-## Red {#network}
+## Rojo {#network}
 
 Si está utilizando IPv6, aumente el tamaño de la caché de ruta.
 El kernel de Linux anterior a 3.2 tenía una multitud de problemas con la implementación de IPv6.

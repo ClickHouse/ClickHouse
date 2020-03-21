@@ -74,7 +74,7 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 
 ### Selección e inserción de datos {#selecting-and-inserting-data}
 
-Usted puede utilizar `INSERT` consultas para agregar datos al `Join`-mesas de motor. Si la tabla se creó con el `ANY` estricta, se ignoran los datos de las claves duplicadas. Con el `ALL` estricta, se agregan todas las filas.
+Usted puede utilizar `INSERT` Consultas para agregar datos al `Join`-mesas de motor. Si la tabla se creó con el `ANY` estricta, se ignoran los datos de las claves duplicadas. Con el `ALL` estricta, se agregan todas las filas.
 
 No se puede realizar una `SELECT` consulta directamente desde la tabla. En su lugar, use uno de los siguientes métodos:
 
@@ -93,7 +93,7 @@ Al crear una tabla, se aplican los siguientes valores:
 
 El `Join`-las tablas del motor no se pueden utilizar adentro `GLOBAL JOIN` operación.
 
-El `Join`-motor permite el uso [Sistema abierto.](../settings/settings.md#join_use_nulls) ajuste en el `CREATE TABLE` instrucción. Y [SELECCIONAR](../../query_language/select.md) consulta permite el uso `join_use_nulls` demasiado. Si tienes diferentes `join_use_nulls` configuración, puede obtener un error al unirse a la tabla. Depende del tipo de JOIN. Cuando se utiliza [joinGet](../../query_language/functions/other_functions.md#joinget) función, usted tiene que utilizar el mismo `join_use_nulls` ajuste en `CRATE TABLE` y `SELECT` instrucción.
+El `Join`-motor permite el uso [Sistema abierto.](../settings/settings.md#join_use_nulls) ajuste en el `CREATE TABLE` instrucción. Y [SELECCIONAR](../../query_language/select.md) Consulta permite el uso `join_use_nulls` demasiado. Si tienes diferentes `join_use_nulls` configuración, puede obtener un error al unirse a la tabla. Depende del tipo de JOIN. Cuando se utiliza [joinGet](../../query_language/functions/other_functions.md#joinget) función, usted tiene que utilizar el mismo `join_use_nulls` ajuste en `CRATE TABLE` y `SELECT` instrucción.
 
 ## Almacenamiento de datos {#data-storage}
 

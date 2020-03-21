@@ -2,7 +2,7 @@
 
 Este motor está diseñado para el adelgazamiento y la agregación / promedio (rollup) [Grafito](http://graphite.readthedocs.io/en/latest/index.html) datos. Puede ser útil para los desarrolladores que desean usar ClickHouse como almacén de datos para Graphite.
 
-Puede utilizar cualquier motor de tabla ClickHouse para almacenar los datos de grafito si no necesita un paquete acumulativo, pero si necesita un paquete acumulativo, use `GraphiteMergeTree`. El motor reduce el volumen de almacenamiento y aumenta la eficiencia de las consultas de Graphite.
+Puede utilizar cualquier motor de tabla ClickHouse para almacenar los datos de grafito si no necesita un paquete acumulativo, pero si necesita un paquete acumulativo, use `GraphiteMergeTree`. El motor reduce el volumen de almacenamiento y aumenta la eficiencia de las consultas de Grafito.
 
 El motor hereda propiedades de [Método de codificación de datos:](mergetree.md).
 

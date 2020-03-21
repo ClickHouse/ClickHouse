@@ -1,39 +1,39 @@
-# Proxy Servers from Third-party Developers {#proxy-servers-from-third-party-developers}
+# Servidores proxy de desarrolladores de terceros {#proxy-servers-from-third-party-developers}
 
 ## chproxy {#chproxy}
 
-[chproxy](https://github.com/Vertamedia/chproxy), is an HTTP proxy and load balancer for ClickHouse database.
+[chproxy](https://github.com/Vertamedia/chproxy), es un proxy HTTP y equilibrador de carga para la base de datos ClickHouse.
 
-Features:
+Función:
 
--   Per-user routing and response caching.
--   Flexible limits.
--   Automatic SSL certificate renewal.
+-   Enrutamiento por usuario y almacenamiento en caché de respuestas.
+-   Flexible límites.
+-   Renovación automática del certificado SSL.
 
-Implemented in Go.
+Implementado en Go.
 
-## KittenHouse {#kittenhouse}
+## Bienvenido a WordPress. {#kittenhouse}
 
-[KittenHouse](https://github.com/VKCOM/kittenhouse) is designed to be a local proxy between ClickHouse and application server in case it’s impossible or inconvenient to buffer INSERT data on your application side.
+[Bienvenido a WordPress.](https://github.com/VKCOM/kittenhouse) está diseñado para ser un proxy local entre ClickHouse y el servidor de aplicaciones en caso de que sea imposible o inconveniente almacenar los datos INSERT en el lado de su aplicación.
 
-Features:
+Función:
 
--   In-memory and on-disk data buffering.
--   Per-table routing.
--   Load-balancing and health checking.
+-   Almacenamiento en búfer de datos en memoria y en disco.
+-   Enrutamiento por tabla.
+-   Equilibrio de carga y comprobación de estado.
 
-Implemented in Go.
+Implementado en Go.
 
-## ClickHouse-Bulk {#clickhouse-bulk}
+## Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica {#clickhouse-bulk}
 
-[ClickHouse-Bulk](https://github.com/nikepan/clickhouse-bulk) is a simple ClickHouse insert collector.
+[Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/nikepan/clickhouse-bulk) es un simple colector de insertos ClickHouse.
 
-Features:
+Función:
 
--   Group requests and send by threshold or interval.
--   Multiple remote servers.
--   Basic authentication.
+-   Agrupe las solicitudes y envíe por umbral o intervalo.
+-   Múltiples servidores remotos.
+-   Autenticación básica.
 
-Implemented in Go.
+Implementado en Go.
 
-[Original article](https://clickhouse.tech/docs/es/interfaces/third-party/proxy/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/interfaces/third-party/proxy/) <!--hide-->

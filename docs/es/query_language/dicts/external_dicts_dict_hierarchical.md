@@ -1,8 +1,8 @@
-# Hierarchical Dictionaries {#hierarchical-dictionaries}
+# Diccionarios jerárquicos {#hierarchical-dictionaries}
 
-ClickHouse supports hierarchical dictionaries with a [numeric key](external_dicts_dict_structure.md#ext_dict-numeric-key).
+ClickHouse soporta diccionarios jerárquicos con un [llave numérica](external_dicts_dict_structure.md#ext_dict-numeric-key).
 
-Look at the following hierarchical structure:
+Mira la siguiente estructura jerárquica:
 
 ``` text
 0 (Common parent)
@@ -18,23 +18,23 @@ Look at the following hierarchical structure:
     └── 5 (London)
 ```
 
-This hierarchy can be expressed as the following dictionary table.
+Esta jerarquía se puede expresar como la siguiente tabla de diccionario.
 
-| region\_id | parent\_region | region\_name  |
-|------------|----------------|---------------|
-| 1          | 0              | Russia        |
-| 2          | 1              | Moscow        |
-| 3          | 2              | Center        |
-| 4          | 0              | Great Britain |
-| 5          | 4              | London        |
+| region\_id | parent\_region | nombre\_región |
+|------------|----------------|----------------|
+| Uno        | Cero           | Rusia          |
+| Cómo hacer | Uno            | Moscu          |
+| Cómo hacer | Cómo hacer     | Centrar        |
+| Cuatro     | Cero           | Gran Bretaña   |
+| Cinco      | Cuatro         | Londres        |
 
-This table contains a column `parent_region` that contains the key of the nearest parent for the element.
+Esta tabla contiene una columna `parent_region` que contiene la clave del padre más cercano para el elemento.
 
-ClickHouse supports the [hierarchical](external_dicts_dict_structure.md#hierarchical-dict-attr) property for [external dictionary](index.md) attributes. This property allows you to configure the hierarchical dictionary similar to described above.
+ClickHouse soporta el [jerárquica](external_dicts_dict_structure.md#hierarchical-dict-attr) propiedad para [diccionario externo](index.md) atributo. Esta propiedad le permite configurar el diccionario jerárquico similar al descrito anteriormente.
 
-The [dictGetHierarchy](../functions/ext_dict_functions.md#dictgethierarchy) function allows you to get the parent chain of an element.
+El [dictGetHierarchy](../functions/ext_dict_functions.md#dictgethierarchy) función le permite obtener la cadena principal de un elemento.
 
-For our example, the structure of dictionary can be the following:
+Para nuestro ejemplo, la estructura del diccionario puede ser la siguiente:
 
 ``` xml
 <dictionary>
@@ -60,4 +60,4 @@ For our example, the structure of dictionary can be the following:
 </dictionary>
 ```
 
-[Original article](https://clickhouse.tech/docs/es/query_language/dicts/external_dicts_dict_hierarchical/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/query_language/dicts/external_dicts_dict_hierarchical/) <!--hide-->

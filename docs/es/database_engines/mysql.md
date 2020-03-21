@@ -1,6 +1,6 @@
 # MySQL {#mysql}
 
-Permite conectarse a bases de datos en un servidor MySQL remoto y realizar `INSERT` y `SELECT` consultas para intercambiar datos entre ClickHouse y MySQL.
+Permite conectarse a bases de datos en un servidor MySQL remoto y realizar `INSERT` y `SELECT` Consultas para intercambiar datos entre ClickHouse y MySQL.
 
 El `MySQL` motor de base de datos traducir consultas al servidor MySQL para que pueda realizar operaciones tales como `SHOW TABLES` o `SHOW CREATE TABLE`.
 
@@ -44,7 +44,7 @@ ENGINE = MySQL('host:port', 'database', 'user', 'password')
 
 Todos los demás tipos de datos MySQL se convierten en [Cadena](../data_types/string.md).
 
-[NULL](../data_types/nullable.md) se admite.
+[NULO](../data_types/nullable.md) se admite.
 
 ## Ejemplos de uso {#examples-of-use}
 

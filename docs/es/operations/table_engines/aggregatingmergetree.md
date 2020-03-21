@@ -51,10 +51,10 @@ Todos los parámetros tienen el mismo significado que en `MergeTree`.
 
 ## SELECCIONAR e INSERTAR {#select-and-insert}
 
-Para insertar datos, utilice [INSERTAR SELECCIONAR](../../query_language/insert_into.md) consulta con funciones agregadas -State-.
+Para insertar datos, utilice [INSERTAR SELECCIONAR](../../query_language/insert_into.md) Consulta con funciones agregadas -State-.
 Al seleccionar datos de `AggregatingMergeTree` mesa, uso `GROUP BY` cláusula y las mismas funciones agregadas que al insertar datos, pero usando `-Merge` sufijo.
 
-En los resultados de `SELECT` consulta, los valores de `AggregateFunction` tipo tiene representación binaria específica de la implementación para todos los formatos de salida de ClickHouse. Si volcar datos en, por ejemplo, `TabSeparated` formato con `SELECT` consulta entonces este volcado se puede cargar de nuevo usando `INSERT` consulta.
+En los resultados de `SELECT` consulta, los valores de `AggregateFunction` tipo tiene representación binaria específica de la implementación para todos los formatos de salida de ClickHouse. Si volcar datos en, por ejemplo, `TabSeparated` Formato con `SELECT` Consulta entonces este volcado se puede cargar de nuevo usando `INSERT` consulta.
 
 ## Ejemplo de una vista materializada agregada {#example-of-an-aggregated-materialized-view}
 

@@ -100,7 +100,7 @@ Tipo: `UInt8`.
 <a name="sequence-function-pattern-syntax"></a>
 **Sintaxis de patrón**
 
--   `(?N)` — Hace coincidir el argumento de condición en la posición `N`. Las condiciones están numeradas en el `[1, 32]` gama. Por ejemplo, `(?1)` coincide con el argumento pasado al `cond1` parámetro.
+-   `(?N)` — Hace coincidir el argumento de condición en la posición `N`. Las condiciones están numeradas en el `[1, 32]` Gama. Por ejemplo, `(?1)` coincide con el argumento pasado al `cond1` parámetro.
 
 -   `.*` — Coincide con cualquier número de eventos. No necesita argumentos condicionales para hacer coincidir este elemento del patrón.
 
@@ -463,7 +463,7 @@ Donde:
 -   `r2`- el número de visitantes únicos que visitaron el sitio durante un período de tiempo específico entre 2020-01-01 y 2020-01-02 (`cond1` y `cond2` condición).
 -   `r3`- el número de visitantes únicos que visitaron el sitio durante un período de tiempo específico entre 2020-01-01 y 2020-01-03 (`cond1` y `cond3` condición).
 
-## UniqUpTo(N)(x) {#uniquptonx}
+## UniqUpTo (N) (x) {#uniquptonx}
 
 Calcula el número de diferentes valores de argumento si es menor o igual a N. Si el número de diferentes valores de argumento es mayor que N, devuelve N + 1.
 
@@ -485,6 +485,6 @@ Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >=
 
 [Artículo Original](https://clickhouse.tech/docs/es/query_language/agg_functions/parametric_functions/) <!--hide-->
 
-## sumMapFiltered(keys\_to\_keep)(claves, valores) {#summapfilteredkeys-to-keepkeys-values}
+## Por ejemplo, en el caso de que el usuario no tenga ningún problema.) {#summapfilteredkeys-to-keepkeys-values}
 
 El mismo comportamiento que [sumMap](reference.md#agg_functions-summap) excepto que una matriz de claves se pasa como un parámetro. Esto puede ser especialmente útil cuando se trabaja con una alta cardinalidad de claves.

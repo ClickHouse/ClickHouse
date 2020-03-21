@@ -2,7 +2,7 @@
 
 ## CONECTAR {#attach}
 
-Esta consulta es exactamente la misma que `CREATE`, pero
+Esta consulta es exactamente la misma que `CREATE` pero
 
 -   En lugar de la palabra `CREATE` utiliza la palabra `ATTACH`.
 -   La consulta no crea datos en el disco, pero supone que los datos ya están en los lugares apropiados, y simplemente agrega información sobre la tabla al servidor.
@@ -27,7 +27,7 @@ CHECK TABLE [db.]name
 El `CHECK TABLE` query compara los tamaños de archivo reales con los valores esperados que se almacenan en el servidor. Si los tamaños de archivo no coinciden con los valores almacenados, significa que los datos están dañados. Esto puede deberse, por ejemplo, a un bloqueo del sistema durante la ejecución de la consulta.
 
 La respuesta de consulta contiene el `result` columna con una sola fila. La fila tiene un valor de
-[Booleana](../data_types/boolean.md) tipo:
+[Booleana](../data_types/boolean.md) Tipo:
 
 -   0 - Los datos de la tabla están dañados.
 -   1 - Los datos mantienen la integridad.
@@ -60,7 +60,7 @@ Si la tabla está dañada, puede copiar los datos no dañados a otra tabla. Para
 DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Devuelve lo siguiente `String` tipo columnas:
+Devuelve lo siguiente `String` Tipo columnas:
 
 -   `name` — Nombre de la columna.
 -   `type`— Tipo de columna.
@@ -182,7 +182,7 @@ Los cambios ya realizados por la mutación no se revierten.
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL] [DEDUPLICATE]
 ```
 
-Esta consulta intenta inicializar una combinación no programada de partes de datos para tablas con un motor de tablas [Método de codificación de datos:](../operations/table_engines/mergetree.md) familia.
+Esta consulta intenta inicializar una combinación no programada de partes de datos para tablas con un motor de tablas [Método de codificación de datos:](../operations/table_engines/mergetree.md) Familia.
 
 El `OPTMIZE` consulta también es compatible con el [Método de codificación de datos:](../operations/table_engines/materializedview.md) y el [Búfer](../operations/table_engines/buffer.md) motor. No se admiten otros motores de tabla.
 
@@ -212,7 +212,7 @@ Todas las tablas se renombran bajo bloqueo global. Cambiar el nombre de las tabl
 SET param = value
 ```
 
-Asignar `value` a la `param` [configuración](../operations/settings/index.md) para la sesión actual. No se puede cambiar [configuración del servidor](../operations/server_settings/index.md) de esta manera.
+Asignar `value` Angeles `param` [configuración](../operations/settings/index.md) para la sesión actual. No se puede cambiar [configuración del servidor](../operations/server_settings/index.md) de esta manera.
 
 También puede establecer todos los valores del perfil de configuración especificado en una sola consulta.
 

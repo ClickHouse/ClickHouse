@@ -1,8 +1,8 @@
-# Dictionary Key and Fields {#dictionary-key-and-fields}
+# Clave y campos del diccionario {#dictionary-key-and-fields}
 
-The `<structure>` clause describes the dictionary key and fields available for queries.
+El `<structure>` cláusula describe la clave del diccionario y los campos disponibles para consultas.
 
-XML description:
+Descripción XML:
 
 ``` xml
 <dictionary>
@@ -21,12 +21,12 @@ XML description:
 </dictionary>
 ```
 
-Attributes are described in the elements:
+Los atributos se describen en los elementos:
 
--   `<id>` — [Key column](external_dicts_dict_structure.md#ext_dict_structure-key).
--   `<attribute>` — [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes). There can be a multiple number of attributes.
+-   `<id>` — [Columna clave](external_dicts_dict_structure.md#ext_dict_structure-key).
+-   `<attribute>` — [Columna de datos](external_dicts_dict_structure.md#ext_dict_structure-attributes). Puede haber un número múltiple de atributos.
 
-DDL query:
+Consulta DDL:
 
 ``` sql
 CREATE DICTIONARY dict_name (
@@ -37,28 +37,28 @@ PRIMARY KEY Id
 ...
 ```
 
-Attributes are described in the query body:
+Los atributos se describen en el cuerpo de la consulta:
 
--   `PRIMARY KEY` — [Key column](external_dicts_dict_structure.md#ext_dict_structure-key)
--   `AttrName AttrType` — [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes). There can be a multiple number of attributes.
+-   `PRIMARY KEY` — [Columna clave](external_dicts_dict_structure.md#ext_dict_structure-key)
+-   `AttrName AttrType` — [Columna de datos](external_dicts_dict_structure.md#ext_dict_structure-attributes). Puede haber un número múltiple de atributos.
 
-## Key {#ext-dict-structure-key}
+## Clave {#ext-dict-structure-key}
 
-ClickHouse supports the following types of keys:
+ClickHouse admite los siguientes tipos de claves:
 
--   Numeric key. `UInt64`. Defined in the `<id>` tag or using `PRIMARY KEY` keyword.
--   Composite key. Set of values of different types. Defined in the tag `<key>` or `PRIMARY KEY` keyword.
+-   Tecla numérica. `UInt64`. Definido en el `<id>` etiqueta o usando `PRIMARY KEY` palabra clave.
+-   Clave compuesta. Conjunto de valores de diferentes tipos. Definido en la etiqueta `<key>` o `PRIMARY KEY` palabra clave.
 
-An xml structure can contain either `<id>` or `<key>`. DDL-query must contain single `PRIMARY KEY`.
+Una estructura xml puede contener `<id>` o `<key>`. La consulta DDL debe contener `PRIMARY KEY`.
 
-!!! warning "Warning"
-    You must not describe key as an attribute.
+!!! warning "Advertencia"
+    No debe describir la clave como un atributo.
 
-### Numeric Key {#ext-dict-numeric-key}
+### Tecla numérica {#ext-dict-numeric-key}
 
-Type: `UInt64`.
+Tipo: `UInt64`.
 
-Configuration example:
+Ejemplo de configuración:
 
 ``` xml
 <id>
@@ -66,11 +66,11 @@ Configuration example:
 </id>
 ```
 
-Configuration fields:
+Campos de configuración:
 
 -   `name` – The name of the column with keys.
 
-For DDL-query:
+Para consulta DDL:
 
 ``` sql
 CREATE DICTIONARY (
@@ -83,14 +83,14 @@ PRIMARY KEY Id
 
 -   `PRIMARY KEY` – The name of the column with keys.
 
-### Composite Key {#composite-key}
+### Clave compuesta {#composite-key}
 
-The key can be a `tuple` from any types of fields. The [layout](external_dicts_dict_layout.md) in this case must be `complex_key_hashed` or `complex_key_cache`.
+La clave puede ser un `tuple` de cualquier tipo de campo. El [diseño](external_dicts_dict_layout.md) es este caso debe ser `complex_key_hashed` o `complex_key_cache`.
 
-!!! tip "Tip"
-    A composite key can consist of a single element. This makes it possible to use a string as the key, for instance.
+!!! tip "Consejo"
+    Una clave compuesta puede consistir en un solo elemento. Esto hace posible usar una cadena como clave, por ejemplo.
 
-The key structure is set in the element `<key>`. Key fields are specified in the same format as the dictionary [attributes](external_dicts_dict_structure.md). Example:
+La estructura clave se establece en el elemento `<key>`. Los campos clave se especifican en el mismo formato que el diccionario [Atributo](external_dicts_dict_structure.md). Ejemplo:
 
 ``` xml
 <structure>
@@ -108,7 +108,7 @@ The key structure is set in the element `<key>`. Key fields are specified in the
 ...
 ```
 
-or
+o
 
 ``` sql
 CREATE DICTIONARY (
@@ -120,11 +120,11 @@ PRIMARY KEY field1, field2
 ...
 ```
 
-For a query to the `dictGet*` function, a tuple is passed as the key. Example: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
+Para una consulta al `dictGet*` función, una tupla se pasa como la clave. Ejemplo: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
-## Attributes {#ext-dict-structure-attributes}
+## Atributo {#ext-dict-structure-attributes}
 
-Configuration example:
+Ejemplo de configuración:
 
 ``` xml
 <structure>
@@ -141,7 +141,7 @@ Configuration example:
 </structure>
 ```
 
-or
+o
 
 ``` sql
 CREATE DICTIONARY somename (
@@ -149,20 +149,20 @@ CREATE DICTIONARY somename (
 )
 ```
 
-Configuration fields:
+Campos de configuración:
 
-| Tag                                                  | Description                                                                                                                                                                                                                                                                                                                                     | Required |
-|------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|
-| `name`                                               | Column name.                                                                                                                                                                                                                                                                                                                                    | Yes      |
-| `type`                                               | ClickHouse data type.<br/>ClickHouse tries to cast value from dictionary to the specified data type. For example, for MySQL, the field might be `TEXT`, `VARCHAR`, or `BLOB` in the MySQL source table, but it can be uploaded as `String` in ClickHouse.<br/>[Nullable](../../data_types/nullable.md) is not supported.                        | Yes      |
-| `null_value`                                         | Default value for a non-existing element.<br/>In the example, it is an empty string. You cannot use `NULL` in this field.                                                                                                                                                                                                                       | Yes      |
-| `expression`                                         | [Expression](../syntax.md#syntax-expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it to create an alias for the remote column.<br/><br/>Default value: no expression.                                                                                  | No       |
-| <a name="hierarchical-dict-attr"></a> `hierarchical` | If `true`, the attribute contains the value of a parent key for the current key. See [Hierarchical Dictionaries](external_dicts_dict_hierarchical.md).<br/><br/>Default value: `false`.                                                                                                                                                         | No       |
-| `injective`                                          | Flag that shows whether the `id -> attribute` image is [injective](https://en.wikipedia.org/wiki/Injective_function).<br/>If `true`, ClickHouse can automatically place after the `GROUP BY` clause the requests to dictionaries with injection. Usually it significantly reduces the amount of such requests.<br/><br/>Default value: `false`. | No       |
-| `is_object_id`                                       | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`.<br/><br/>Default value: `false`.                                                                                                                                                                                                                            | No       |
+| Etiqueta                                             | Descripción                                                                                                                                                                                                                                                                                                                                                                               | Requerir |
+|------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|
+| `name`                                               | Nombre de columna.                                                                                                                                                                                                                                                                                                                                                                        | Sí       |
+| `type`                                               | Tipo de datos ClickHouse.<br/>ClickHouse intenta convertir el valor del diccionario al tipo de datos especificado. Por ejemplo, para MySQL, el campo podría ser `TEXT`, `VARCHAR`, o `BLOB` es la tabla fuente de MySQL, pero se puede cargar como `String` es ClickHouse.<br/>[NULL](../../data_types/nullable.md) no es compatible.                                                     | Sí       |
+| `null_value`                                         | Valor predeterminado para un elemento no existente.<br/>En el ejemplo, es una cadena vacía. No se puede utilizar `NULL` en este campo.                                                                                                                                                                                                                                                    | Sí       |
+| `expression`                                         | [Expresion](../syntax.md#syntax-expressions) que ClickHouse ejecuta en el valor.<br/>La expresión puede ser un nombre de columna en la base de datos SQL remota. Por lo tanto, puede usarlo para crear un alias para la columna remota.<br/><br/>Valor predeterminado: sin expresión.                                                                                                     | No       |
+| <a name="hierarchical-dict-attr"></a> `hierarchical` | Si `true` el atributo contiene el valor de una clave primaria para la clave actual. Ver [Diccionarios jerárquicos](external_dicts_dict_hierarchical.md).<br/><br/>Valor predeterminado: `false`.                                                                                                                                                                                          | No       |
+| `injective`                                          | Indicador que muestra si el `id -> attribute` la imagen es [inyectivo](https://en.wikipedia.org/wiki/Injective_function).<br/>Si `true`, ClickHouse puede colocar automáticamente después de la `GROUP BY` cláusula las solicitudes a los diccionarios con inyección. Por lo general, reduce significativamente la cantidad de tales solicitudes.<br/><br/>Valor predeterminado: `false`. | No       |
+| `is_object_id`                                       | Indicador que muestra si la consulta se ejecuta para un documento MongoDB mediante `ObjectID`.<br/><br/>Valor predeterminado: `false`.                                                                                                                                                                                                                                                    | No       |
 
-## See Also {#see-also}
+## Ver también {#see-also}
 
--   [Functions for working with external dictionaries](../functions/ext_dict_functions.md).
+-   [Funciones para trabajar con diccionarios externos](../functions/ext_dict_functions.md).
 
-[Original article](https://clickhouse.tech/docs/es/query_language/dicts/external_dicts_dict_structure/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

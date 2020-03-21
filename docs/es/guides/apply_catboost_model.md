@@ -22,7 +22,7 @@ Si usted no tiene el [Acoplador](https://docs.docker.com/install/) sin embargo, 
 
 Antes de aplicar un modelo CatBoost:
 
-**1.** Tire de la [Imagen de acoplador](https://hub.docker.com/r/yandex/tutorial-catboost-clickhouse) del registro:
+**1.** Neumático de la [Imagen de acoplador](https://hub.docker.com/r/yandex/tutorial-catboost-clickhouse) del registro:
 
 ``` bash
 $ docker pull yandex/tutorial-catboost-clickhouse
@@ -227,6 +227,6 @@ FROM
 ```
 
 !!! note "Nota"
-    Más información sobre [avg()](../query_language/agg_functions/reference.md#agg_function-avg) y [registro()](../query_language/functions/math_functions.md) función.
+    Más información sobre [avg()](../query_language/agg_functions/reference.md#agg_function-avg) y [Registro()](../query_language/functions/math_functions.md) función.
 
 [Artículo Original](https://clickhouse.tech/docs/es/guides/apply_catboost_model/) <!--hide-->

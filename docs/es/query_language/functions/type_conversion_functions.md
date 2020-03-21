@@ -4,7 +4,7 @@
 
 Cuando convierte un valor de uno a otro tipo de datos, debe recordar que, en un caso común, es una operación insegura que puede provocar una pérdida de datos. Puede producirse una pérdida de datos si intenta ajustar el valor de un tipo de datos más grande a un tipo de datos más pequeño, o si convierte valores entre diferentes tipos de datos.
 
-ClickHouse tiene el [mismo comportamiento que los programas de C++](https://en.cppreference.com/w/cpp/language/implicit_conversion).
+Haga clic en Casa tiene el [mismo comportamiento que los programas de C++](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
 ## ¿Cómo puedo obtener más información?) {#toint8163264}
 
@@ -23,7 +23,7 @@ Convierte un valor de entrada en el [En](../../data_types/int_uint.md) tipo de d
 
 Valor entero en el `Int8`, `Int16`, `Int32`, o `Int64` tipo de datos.
 
-Funciones de uso [redondeando hacia cero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), lo que significa que truncan dígitos fraccionarios de números.
+Funciones de uso [Tetas grandes](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), lo que significa que truncan dígitos fraccionarios de números.
 
 El comportamiento de las funciones [NaN y Inf](../../data_types/float.md#data_type-float-nan-inf) los argumentos no están definidos. Recuerde acerca de [problemas de conversión numérica](#numeric-conversion-issues), al usar las funciones.
 
@@ -88,7 +88,7 @@ Convierte un valor de entrada en el [UInt](../../data_types/int_uint.md) tipo de
 
 Valor entero en el `UInt8`, `UInt16`, `UInt32`, o `UInt64` tipo de datos.
 
-Funciones de uso [redondeando hacia cero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), lo que significa que truncan dígitos fraccionarios de números.
+Funciones de uso [Tetas grandes](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), lo que significa que truncan dígitos fraccionarios de números.
 
 El comportamiento de las funciones para los instrumentos negativos y para [NaN y Inf](../../data_types/float.md#data_type-float-nan-inf) los argumentos no están definidos. Si pasa una cadena con un número negativo, por ejemplo `'-32'`, ClickHouse genera una excepción. Recuerde acerca de [problemas de conversión numérica](#numeric-conversion-issues), al usar las funciones.
 
@@ -128,7 +128,7 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 
 ## toDecimal(32/64/128) {#todecimal3264128}
 
-Convertir `value` a la [Decimal](../../data_types/decimal.md) tipo de datos con precisión de `S`. El `value` puede ser un número o una cadena. El `S` (escala) parámetro especifica el número de decimales.
+Convertir `value` Angeles [Decimal](../../data_types/decimal.md) tipo de datos con precisión de `S`. El `value` puede ser un número o una cadena. El `S` (escala) parámetro especifica el número de decimales.
 
 -   `toDecimal32(value, S)`
 -   `toDecimal64(value, S)`
@@ -314,7 +314,7 @@ Esta función acepta un número o fecha o fecha con hora, y devuelve un FixedStr
 
 ## CAST(x, t) {#type-conversion-function-cast}
 
-Convertir ‘x’ a la ‘t’ tipo de datos. La sintaxis CAST(x AS t) también es compatible.
+Convertir ‘x’ Angeles ‘t’ tipo de datos. La sintaxis CAST(x AS t) también es compatible.
 
 Ejemplo:
 
@@ -335,7 +335,7 @@ SELECT
 
 La conversión a FixedString(N) solo funciona para argumentos de tipo String o FixedString(N).
 
-Conversión de tipo a [NULL](../../data_types/nullable.md) y la espalda es compatible. Ejemplo:
+Conversión de tipo a [NULO](../../data_types/nullable.md) y la espalda es compatible. Ejemplo:
 
 ``` sql
 SELECT toTypeName(x) FROM t_null
@@ -414,6 +414,6 @@ Lo mismo que para [parseDateTimeBestEffort](#type_conversion_functions-parsedate
 
 ## parseDateTimeBestEffortOrZero {#parsedatetimebesteffortorzero}
 
-Lo mismo que para [parseDateTimeBestEffort](#type_conversion_functions-parsedatetimebesteffort) excepto que devuelve una fecha cero o una fecha cero cuando encuentra un formato de fecha que no se puede procesar.
+Lo mismo que para [parseDateTimeBestEffort](#type_conversion_functions-parsedatetimebesteffort) que devuelve una fecha cero o una fecha cero cuando encuentra un formato de fecha que no se puede procesar.
 
 [Artículo Original](https://clickhouse.tech/docs/es/query_language/functions/type_conversion_functions/) <!--hide-->

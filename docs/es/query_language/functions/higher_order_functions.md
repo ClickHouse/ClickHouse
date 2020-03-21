@@ -238,7 +238,7 @@ Para obtener más información sobre el `arraySort` método, véase el [Funcione
 
 ### ¿Cómo puedo hacerlo?, …) {#arrayreversesortfunc-arr1}
 
-Devuelve una matriz como resultado de ordenar los elementos de `arr1` en orden descendente. Si el `func` se especifica la función, el orden de clasificación se determina por el resultado de la función `func` aplicado a los elementos de la matriz (arrays).
+Devuelve una matriz como resultado de ordenar los elementos de `arr1` en orden descendente. Si el `func` se especifica la función, el orden de clasificación se determina por el resultado de la función `func` Aplicado a los elementos de la matriz (arrays).
 
 Ejemplo:
 

@@ -8,7 +8,7 @@ En un “normal” DBMS orientado a filas, los datos se almacenan en este orden:
 |--------|------------------------------------|------------|---------------------------|-----------|-----------------------------------|
 | \#0    | Sistema abierto.                   | Uno        | Relaciones con inversores | Uno       | ¿Qué puedes encontrar en Neodigit |
 | \#1    | Sistema abierto.                   | Cero       | Contáctenos               | Uno       | ¿Qué puedes encontrar en Neodigit |
-| Nombre | MÃ©todo de codificaciÃ³n de datos: | Uno        | Mision                    | Uno       | ¿Qué puedes encontrar en Neodigit |
+| Nombre | MÃ©todo de codificaciÃ³n de datos: | Uno        | Misión                    | Uno       | ¿Qué puedes encontrar en Neodigit |
 | \#Y    | …                                  | …          | …                         | …         | …                                 |
 
 En otras palabras, todos los valores relacionados con una fila se almacenan físicamente uno junto al otro.
@@ -21,7 +21,7 @@ En un DBMS orientado a columnas, los datos se almacenan así:
 |-------------|-----------------------------------|-----------------------------------|------------------------------------|-----|
 | Argumento:  | Sistema abierto.                  | Sistema abierto.                  | MÃ©todo de codificaciÃ³n de datos: | …   |
 | JavaEnable: | Uno                               | Cero                              | Uno                                | …   |
-| Titular:    | Relaciones con inversores         | Contáctenos                       | Mision                             | …   |
+| Titular:    | Relaciones con inversores         | Contáctenos                       | Misión                             | …   |
 | GoodEvent:  | Uno                               | Uno                               | Uno                                | …   |
 | EventTime:  | ¿Qué puedes encontrar en Neodigit | ¿Qué puedes encontrar en Neodigit | ¿Qué puedes encontrar en Neodigit  | …   |
 
@@ -39,7 +39,7 @@ Cuanto mayor sea la carga en el sistema, más importante es personalizar el sist
 -   Los datos se actualizan en lotes bastante grandes (\> 1000 filas), no por filas individuales; o no se actualiza en absoluto.
 -   Los datos se agregan a la base de datos pero no se modifican.
 -   Para las lecturas, se extrae un número bastante grande de filas de la base de datos, pero solo un pequeño subconjunto de columnas.
--   Las tablas son “wide,” lo que significa que contienen un gran número de columnas.
+-   Las tablas hijo “wide,” lo que significa que contienen un gran número de columnas.
 -   Las consultas son relativamente raras (generalmente cientos de consultas por servidor o menos por segundo).
 -   Para consultas simples, se permiten latencias de alrededor de 50 ms.
 -   Los valores de columna son bastante pequeños: números y cadenas cortas (por ejemplo, 60 bytes por URL).
@@ -71,7 +71,7 @@ Ver la diferencia?
 2.  Dado que los datos se leen en paquetes, es más fácil de comprimir. Los datos en columnas también son más fáciles de comprimir. Esto reduce aún más el volumen de E/S.
 3.  Debido a la reducción de E / S, más datos se ajustan a la memoria caché del sistema.
 
-Por ejemplo, la consulta “count the number of records for each advertising platform” requiere leer uno “advertising platform ID” columna, que ocupa 1 byte sin comprimir. Si la mayor parte del tráfico no proviene de plataformas publicitarias, puede esperar al menos una compresión de 10 veces de esta columna. Cuando se utiliza un algoritmo de compresión rápida, la descompresión de datos es posible a una velocidad de al menos varios gigabytes de datos sin comprimir por segundo. En otras palabras, esta consulta se puede procesar a una velocidad de aproximadamente varios miles de millones de filas por segundo en un único servidor. Esta velocidad se logra realmente en la práctica.
+Por ejemplo, la consulta “count the number of records for each advertising platform” más caliente “advertising platform ID” columna, que ocupa 1 byte sin comprimir. Si la mayor parte del tráfico no proviene de plataformas publicitarias, puede esperar al menos una compresión de 10 veces de esta columna. Cuando se utiliza un algoritmo de compresión rápida, la descompresión de datos es posible a una velocidad de al menos varios gigabytes de datos sin comprimir por segundo. En otras palabras, esta consulta se puede procesar a una velocidad de aproximadamente varios miles de millones de filas por segundo en un único servidor. Esta velocidad se logra realmente en la práctica.
 
 <details markdown="1">
 

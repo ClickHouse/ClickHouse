@@ -9,7 +9,7 @@ Por ejemplo, `'id UInt32, name String'`.
 Esta función sólo se puede utilizar en `INSERT SELECT` consulta y sólo una vez, pero por lo demás se comporta como función de tabla ordinaria
 (por ejemplo, se puede usar en subconsulta, etc.).
 
-Los datos se pueden enviar de cualquier manera como para ordinario `INSERT` consulta y pasado en cualquier disponible [formato](../../interfaces/formats.md#formats)
+Los datos se pueden enviar de cualquier manera como para ordinario `INSERT` Consulta y pasado en cualquier disponible [Formato](../../interfaces/formats.md#formats)
 que debe especificarse al final de la consulta (a diferencia de lo ordinario `INSERT SELECT`).
 
 La característica principal de esta función es que cuando el servidor recibe datos del cliente, los convierte simultáneamente
@@ -19,8 +19,8 @@ con todos los datos transferidos no se crea.
 **Ejemplos**
 
 -   Deje que el `test` tiene la siguiente estructura `(a String, b String)`
-    y datos en `data.csv` tiene una estructura diferente `(col1 String, col2 Date, col3 Int32)`. Consulta de inserción
-    datos de la `data.csv` en el `test` con conversión simultánea se ve así:
+    y datos en `data.csv` Tiene una estructura diferente `(col1 String, col2 Date, col3 Int32)`. Consulta de inserción
+    datos de la `data.csv` es el `test` con conversión simultánea se ve así:
 
 <!-- -->
 

@@ -1,6 +1,6 @@
 # Funciones para trabajar con cadenas {#functions-for-working-with-strings}
 
-## vaciar {#empty}
+## Vaciar {#empty}
 
 Devuelve 1 para una cadena vacía o 0 para una cadena no vacía.
 El tipo de resultado es UInt8.
@@ -49,7 +49,7 @@ No detecta el idioma. Entonces, para el turco, el resultado podría no ser exact
 Si la longitud de la secuencia de bytes UTF-8 es diferente para mayúsculas y minúsculas de un punto de código, el resultado puede ser incorrecto para este punto de código.
 Si la cadena contiene un conjunto de bytes que no es UTF-8, entonces el comportamiento no está definido.
 
-## superiorUTF8 {#upperutf8}
+## Todos los derechos reservados. {#upperutf8}
 
 Convierte una cadena en mayúsculas, suponiendo que la cadena contiene un conjunto de bytes que componen un texto codificado en UTF-8.
 No detecta el idioma. Entonces, para el turco, el resultado podría no ser exactamente correcto.
@@ -123,7 +123,7 @@ Resultado:
 └────────────────────────────────┘
 ```
 
-## inverso {#reverse}
+## Inverso {#reverse}
 
 Invierte la cadena (como una secuencia de bytes).
 
@@ -268,7 +268,7 @@ Devuelve la cadena ‘s’ que se convirtió de la codificación en ‘from’ a
 
 Codificar ‘s’ cadena en base64
 
-## base64Decode(s)) {#base64decode}
+## base64Decode(s)))) {#base64decode}
 
 Decodificar cadena codificada en base64 ‘s’ en la cadena original. En caso de fallo plantea una excepción.
 
@@ -276,11 +276,11 @@ Decodificar cadena codificada en base64 ‘s’ en la cadena original. En caso d
 
 Similar a base64Decode, pero en caso de error se devolverá una cadena vacía.
 
-## endsWith(s, sufijo) {#endswith}
+## terminaCon(s, sufijo) {#endswith}
 
 Devuelve si se debe terminar con el sufijo especificado. Devuelve 1 si la cadena termina con el sufijo especificado, de lo contrario devuelve 0.
 
-## startsWith(str, prefijo) {#startswith}
+## Comienza con (str, prefijo) {#startswith}
 
 Devuelve 1 si la cadena comienza con el prefijo especificado, de lo contrario devuelve 0.
 
@@ -461,7 +461,7 @@ Resultado:
 └─────────────────────────────────────┘
 ```
 
-## CRC32(s)) {#crc32}
+## CRC32(s)))) {#crc32}
 
 Devuelve la suma de comprobación CRC32 de una cadena, utilizando el polinomio CRC-32-IEEE 802.3 y el valor inicial `0xffffffff` (implementación zlib).
 
@@ -473,7 +473,7 @@ Devuelve la suma de comprobación CRC32 de una cadena, utilizando el polinomio C
 
 El tipo de resultado es UInt32.
 
-## CRC64(s)) {#crc64}
+## CRC64(s)))) {#crc64}
 
 Devuelve la suma de comprobación CRC64 de una cadena, utilizando el polinomio CRC-64-ECMA.
 

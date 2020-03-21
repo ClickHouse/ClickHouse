@@ -1,10 +1,10 @@
-# AMPLab Big Data Benchmark {#amplab-big-data-benchmark}
+# Referencia de Big Data de AMPLab {#amplab-big-data-benchmark}
 
-See https://amplab.cs.berkeley.edu/benchmark/
+Ver https://amplab.cs.berkeley.edu/benchmark/
 
-Sign up for a free account at https://aws.amazon.com. You will need a credit card, email and phone number. Get a new access key at https://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential
+Regístrese para obtener una cuenta gratuita en https://aws.amazon.com. Necesitará una tarjeta de crédito, correo electrónico y número de teléfono. Obtenga una nueva clave de acceso en https://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential
 
-Run the following in the console:
+Ejecute lo siguiente en la consola:
 
 ``` bash
 $ sudo apt-get install s3cmd
@@ -19,7 +19,7 @@ $ s3cmd sync s3://big-data-benchmark/pavlo/text-deflate/5nodes/ .
 $ cd ..
 ```
 
-Run the following ClickHouse queries:
+Ejecute las siguientes consultas de ClickHouse:
 
 ``` sql
 CREATE TABLE rankings_tiny
@@ -83,7 +83,7 @@ CREATE TABLE uservisits_5nodes_on_single
 ) ENGINE = MergeTree(visitDate, visitDate, 8192);
 ```
 
-Go back to the console:
+Volver a la consola:
 
 ``` bash
 $ for i in tiny/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_tiny FORMAT CSV"; done
@@ -94,7 +94,7 @@ $ for i in 5nodes/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | 
 $ for i in 5nodes/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_5nodes_on_single FORMAT CSV"; done
 ```
 
-Queries for obtaining data samples:
+Consultas para obtener muestras de datos:
 
 ``` sql
 SELECT pageURL, pageRank FROM rankings_1node WHERE pageRank > 1000
@@ -119,4 +119,4 @@ ORDER BY totalRevenue DESC
 LIMIT 1
 ```
 
-[Original article](https://clickhouse.tech/docs/es/getting_started/example_datasets/amplab_benchmark/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/getting_started/example_datasets/amplab_benchmark/) <!--hide-->

@@ -1,19 +1,19 @@
 # Enum {#enum}
 
-Enumerated type consisting of named values.
+Tipo enumerado que consta de valores con nombre.
 
-Named values must be declared as `'string' = integer` pairs. ClickHouse stores only numbers, but supports operations with the values through their names.
+Los valores con nombre deben declararse como `'string' = integer` par. ClickHouse almacena solo números, pero admite operaciones con los valores a través de sus nombres.
 
-ClickHouse supports:
+Soporta ClickHouse:
 
--   8-bit `Enum`. It can contain up to 256 values enumerated in the `[-128, 127]` range.
--   16-bit `Enum`. It can contain up to 65536 values enumerated in the `[-32768, 32767]` range.
+-   de 8 bits `Enum`. Puede contener hasta 256 valores enumerados en el `[-128, 127]` gama.
+-   de 16 bits `Enum`. Puede contener hasta 65536 valores enumerados en el `[-32768, 32767]` gama.
 
-ClickHouse automatically chooses the type of `Enum` when data is inserted. You can also use `Enum8` or `Enum16` types to be sure in the size of storage.
+ClickHouse elige automáticamente el tipo de `Enum` cuando se insertan datos. También puede utilizar `Enum8` o `Enum16` para estar seguro en el tamaño de almacenamiento.
 
-## Usage examples {#usage-examples}
+## Ejemplos de uso {#usage-examples}
 
-Here we create a table with an `Enum8('hello' = 1, 'world' = 2)` type column:
+Aquí creamos una tabla con un `Enum8('hello' = 1, 'world' = 2)` tipo columna:
 
 ``` sql
 CREATE TABLE t_enum
@@ -23,7 +23,7 @@ CREATE TABLE t_enum
 ENGINE = TinyLog
 ```
 
-Column `x` can only store values that are listed in the type definition: `'hello'` or `'world'`. If you try to save any other value, ClickHouse will raise an exception. 8-bit size for this `Enum` is chosen automatically.
+Columna `x` sólo puede almacenar valores que se enumeran en la definición de tipo: `'hello'` o `'world'`. Si intenta guardar cualquier otro valor, ClickHouse generará una excepción. Tamaño de 8 bits para esto `Enum` se elige automáticamente.
 
 ``` sql
 INSERT INTO t_enum VALUES ('hello'), ('world'), ('hello')
@@ -42,7 +42,7 @@ Exception on client:
 Code: 49. DB::Exception: Unknown element 'a' for type Enum('hello' = 1, 'world' = 2)
 ```
 
-When you query data from the table, ClickHouse outputs the string values from `Enum`.
+Al consultar datos de la tabla, ClickHouse genera los valores de cadena de `Enum`.
 
 ``` sql
 SELECT * FROM t_enum
@@ -56,7 +56,7 @@ SELECT * FROM t_enum
 └───────┘
 ```
 
-If you need to see the numeric equivalents of the rows, you must cast the `Enum` value to integer type.
+Si necesita ver los equivalentes numéricos de las filas, debe `Enum` valor a tipo entero.
 
 ``` sql
 SELECT CAST(x, 'Int8') FROM t_enum
@@ -70,7 +70,7 @@ SELECT CAST(x, 'Int8') FROM t_enum
 └─────────────────┘
 ```
 
-To create an Enum value in a query, you also need to use `CAST`.
+Para crear un valor Enum en una consulta, también debe usar `CAST`.
 
 ``` sql
 SELECT toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))
@@ -82,13 +82,13 @@ SELECT toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))
 └─────────────────────────────────────────────────────┘
 ```
 
-## General rules and usage {#general-rules-and-usage}
+## Reglas generales y uso {#general-rules-and-usage}
 
-Each of the values is assigned a number in the range `-128 ... 127` for `Enum8` or in the range `-32768 ... 32767` for `Enum16`. All the strings and numbers must be different. An empty string is allowed. If this type is specified (in a table definition), numbers can be in an arbitrary order. However, the order does not matter.
+A cada uno de los valores se le asigna un número en el rango `-128 ... 127` para `Enum8` o en el rango `-32768 ... 32767` para `Enum16`. Todas las cadenas y números deben ser diferentes. Se permite una cadena vacía. Si se especifica este tipo (en una definición de tabla), los números pueden estar en un orden arbitrario. Sin embargo, el orden no importa.
 
-Neither the string nor the numeric value in an `Enum` can be [NULL](../query_language/syntax.md).
+Ni la cadena ni el valor numérico en un `Enum` puede ser [NULO](../query_language/syntax.md).
 
-An `Enum` can be contained in [Nullable](nullable.md) type. So if you create a table using the query
+Un `Enum` puede estar contenido en [NULL](nullable.md) tipo. Entonces, si crea una tabla usando la consulta
 
 ``` sql
 CREATE TABLE t_enum_nullable
@@ -98,28 +98,28 @@ CREATE TABLE t_enum_nullable
 ENGINE = TinyLog
 ```
 
-it can store not only `'hello'` and `'world'`, but `NULL`, as well.
+puede almacenar no sólo `'hello'` y `'world'`, pero `NULL`, también.
 
 ``` sql
 INSERT INTO t_enum_nullable Values('hello'),('world'),(NULL)
 ```
 
-In RAM, an `Enum` column is stored in the same way as `Int8` or `Int16` of the corresponding numerical values.
+En RAM, un `Enum` columna se almacena de la misma manera que `Int8` o `Int16` de los valores numéricos correspondientes.
 
-When reading in text form, ClickHouse parses the value as a string and searches for the corresponding string from the set of Enum values. If it is not found, an exception is thrown. When reading in text format, the string is read and the corresponding numeric value is looked up. An exception will be thrown if it is not found.
-When writing in text form, it writes the value as the corresponding string. If column data contains garbage (numbers that are not from the valid set), an exception is thrown. When reading and writing in binary form, it works the same way as for Int8 and Int16 data types.
-The implicit default value is the value with the lowest number.
+Al leer en forma de texto, ClickHouse analiza el valor como una cadena y busca la cadena correspondiente del conjunto de valores Enum. Si no se encuentra, se lanza una excepción. Al leer en formato de texto, se lee la cadena y se busca el valor numérico correspondiente. Se lanzará una excepción si no se encuentra.
+Al escribir en forma de texto, escribe el valor como la cadena correspondiente. Si los datos de columna contienen elementos no utilizados (números que no son del conjunto válido), se produce una excepción. Al leer y escribir en forma binaria, funciona de la misma manera que para los tipos de datos Int8 e Int16.
+El valor predeterminado es el valor con el número más bajo.
 
-During `ORDER BY`, `GROUP BY`, `IN`, `DISTINCT` and so on, Enums behave the same way as the corresponding numbers. For example, ORDER BY sorts them numerically. Equality and comparison operators work the same way on Enums as they do on the underlying numeric values.
+Durante `ORDER BY`, `GROUP BY`, `IN`, `DISTINCT` y así sucesivamente, las enumeraciones se comportan de la misma manera que los números correspondientes. Por ejemplo, ORDER BY los ordena numéricamente. Los operadores de igualdad y comparación funcionan de la misma manera en enumeraciones que en los valores numéricos subyacentes.
 
-Enum values cannot be compared with numbers. Enums can be compared to a constant string. If the string compared to is not a valid value for the Enum, an exception will be thrown. The IN operator is supported with the Enum on the left-hand side and a set of strings on the right-hand side. The strings are the values of the corresponding Enum.
+Los valores de Enum no se pueden comparar con los números. Las enumeraciones se pueden comparar con una cadena constante. Si la cadena en comparación con no es un valor válido para el Enum, se lanzará una excepción. El operador IN es compatible con el Enum en el lado izquierdo y un conjunto de cadenas en el lado derecho. Las cadenas son los valores del Enum correspondiente.
 
 Most numeric and string operations are not defined for Enum values, e.g. adding a number to an Enum or concatenating a string to an Enum.
-However, the Enum has a natural `toString` function that returns its string value.
+Sin embargo, el Enum tiene un `toString` función que devuelve su valor de cadena.
 
-Enum values are also convertible to numeric types using the `toT` function, where T is a numeric type. When T corresponds to the enum’s underlying numeric type, this conversion is zero-cost.
-The Enum type can be changed without cost using ALTER, if only the set of values is changed. It is possible to both add and remove members of the Enum using ALTER (removing is safe only if the removed value has never been used in the table). As a safeguard, changing the numeric value of a previously defined Enum member will throw an exception.
+Los valores de Enum también se pueden convertir a tipos numéricos utilizando el `toT` función, donde T es un tipo numérico. Cuando T corresponde al tipo numérico subyacente de la enumeración, esta conversión es de costo cero.
+El tipo Enum se puede cambiar sin costo usando ALTER, si solo se cambia el conjunto de valores. Es posible agregar y eliminar miembros del Enum usando ALTER (eliminar es seguro solo si el valor eliminado nunca se ha usado en la tabla). Como salvaguardia, al cambiar el valor numérico de un miembro Enum definido previamente se producirá una excepción.
 
-Using ALTER, it is possible to change an Enum8 to an Enum16 or vice versa, just like changing an Int8 to Int16.
+Usando ALTER, es posible cambiar un Enum8 a un Enum16 o viceversa, al igual que cambiar un Int8 a Int16.
 
-[Original article](https://clickhouse.tech/docs/es/data_types/enum/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/data_types/enum/) <!--hide-->
