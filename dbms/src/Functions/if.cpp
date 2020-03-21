@@ -156,15 +156,15 @@ template <typename A, typename B>
 struct NumIfImpl<A, B, NumberTraits::Error>
 {
 private:
-    [[noreturn]] static void throw_error()
+    [[noreturn]] static void throwError()
     {
         throw Exception("Internal logic error: invalid types of arguments 2 and 3 of if", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 public:
-    template <typename... Args> static void vectorVector(Args &&...) { throw_error(); }
-    template <typename... Args> static void vectorConstant(Args &&...) { throw_error(); }
-    template <typename... Args> static void constantVector(Args &&...) { throw_error(); }
-    template <typename... Args> static void constantConstant(Args &&...) { throw_error(); }
+    template <typename... Args> static void vectorVector(Args &&...) { throwError(); }
+    template <typename... Args> static void vectorConstant(Args &&...) { throwError(); }
+    template <typename... Args> static void constantVector(Args &&...) { throwError(); }
+    template <typename... Args> static void constantConstant(Args &&...) { throwError(); }
 };
 
 

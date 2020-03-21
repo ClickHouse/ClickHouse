@@ -344,7 +344,7 @@ struct MultiSearchImpl
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = false;
-    static auto ReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
+    static auto getReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
 
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
@@ -381,7 +381,7 @@ struct MultiSearchFirstPositionImpl
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = false;
-    static auto ReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
+    static auto getReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
 
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
@@ -428,7 +428,7 @@ struct MultiSearchFirstIndexImpl
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = false;
-    static auto ReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
+    static auto getReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
 
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,

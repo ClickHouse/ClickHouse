@@ -269,7 +269,7 @@ struct MultiMatchAnyImpl
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = false;
-    static auto ReturnType()
+    static auto getReturnType()
     {
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
@@ -372,7 +372,7 @@ struct MultiMatchAllIndicesImpl
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = true;
-    static auto ReturnType()
+    static auto getReturnType()
     {
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
@@ -652,7 +652,7 @@ struct ReplaceRegexpImpl
         }
     }
 
-    static void vector_fixed(
+    static void vectorFixed(
         const ColumnString::Chars & data,
         size_t n,
         const std::string & needle,
@@ -763,7 +763,7 @@ struct ReplaceStringImpl
 
     /// Note: this function converts fixed-length strings to variable-length strings
     ///       and each variable-length string should ends with zero byte.
-    static void vector_fixed(
+    static void vectorFixed(
         const ColumnString::Chars & data,
         size_t n,
         const std::string & needle,
@@ -910,7 +910,7 @@ public:
         else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_src.get()))
         {
             auto col_res = ColumnString::create();
-            Impl::vector_fixed(col_fixed->getChars(), col_fixed->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
+            Impl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
             block.getByPosition(result).column = std::move(col_res);
         }
         else

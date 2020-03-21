@@ -244,7 +244,7 @@ private:
 };
 
 template<typename TimeT = std::chrono::milliseconds>
-struct measure
+struct Measure
 {
     template<typename F, typename ...Args>
     static typename TimeT::rep execution(F&& func, Args&&... args)
@@ -307,14 +307,14 @@ try
         executor.execute(num_threads);
     };
 
-    auto even_time_single = measure<>::execution(execute_chain, "Even distribution single thread", 0, 1, 2, 1);
-    auto even_time_mt = measure<>::execution(execute_chain, "Even distribution multiple threads", 0, 1, 2, 4);
+    auto even_time_single = Measure<>::execution(execute_chain, "Even distribution single thread", 0, 1, 2, 1);
+    auto even_time_mt = Measure<>::execution(execute_chain, "Even distribution multiple threads", 0, 1, 2, 4);
 
-    auto half_time_single = measure<>::execution(execute_chain, "Half distribution single thread", 0, 31, 62, 1);
-    auto half_time_mt = measure<>::execution(execute_chain, "Half distribution multiple threads", 0, 31, 62, 4);
+    auto half_time_single = Measure<>::execution(execute_chain, "Half distribution single thread", 0, 31, 62, 1);
+    auto half_time_mt = Measure<>::execution(execute_chain, "Half distribution multiple threads", 0, 31, 62, 4);
 
-    auto ordered_time_single = measure<>::execution(execute_chain, "Ordered distribution single thread", 0, 61, 122, 1);
-    auto ordered_time_mt = measure<>::execution(execute_chain, "Ordered distribution multiple threads", 0, 61, 122, 4);
+    auto ordered_time_single = Measure<>::execution(execute_chain, "Ordered distribution single thread", 0, 61, 122, 1);
+    auto ordered_time_mt = Measure<>::execution(execute_chain, "Ordered distribution multiple threads", 0, 61, 122, 4);
 
     std::cout << "Single Thread [0:60:3] [1:60:3] [2:60:3] time: " << even_time_single << " ms.\n";
     std::cout << "Multiple Threads [0:60:3] [1:60:3] [2:60:3] time:" << even_time_mt << " ms.\n";
