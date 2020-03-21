@@ -14,7 +14,7 @@ nav:
     - A tiempo: getting_started/example_datasets/ontime.md
     - Datos de taxis de Nueva York: getting_started/example_datasets/nyc_taxi.md
     - Referencia de Big Data de AMPLab: getting_started/example_datasets/amplab_benchmark.md
-    - "Nombre de la red inal\xE1mbrica (SSID):": getting_started/example_datasets/wikistat.md
+    - "Nombre de la red inal\xE1mbrica (SSID)": getting_started/example_datasets/wikistat.md
     - Registros de clics de Terabyte de Criteo: getting_started/example_datasets/criteo.md
     - Estrella Schema Benchmark: getting_started/example_datasets/star_schema.md
     - El Yandex.Metrica Datos: getting_started/example_datasets/metrica.md
@@ -37,7 +37,7 @@ nav:
   - Motores de mesa:
     - "Implantaci\xF3n": operations/table_engines/index.md
     - Familia MergeTree:
-      - "M\xE9todo de codificaci\xF3n de datos:": operations/table_engines/mergetree.md
+      - "M\xE9todo de codificaci\xF3n de datos": operations/table_engines/mergetree.md
       - "Replicaci\xF3n de datos": operations/table_engines/replication.md
       - "Clave de partici\xF3n personalizada": operations/table_engines/custom_partitioning_key.md
       - ReplacingMergeTree: operations/table_engines/replacingmergetree.md
@@ -68,7 +68,7 @@ nav:
       - Unir: operations/table_engines/join.md
       - URL: operations/table_engines/url.md
       - Vista: operations/table_engines/view.md
-      - "M\xE9todo de codificaci\xF3n de datos:": operations/table_engines/materializedview.md
+      - "M\xE9todo de codificaci\xF3n de datos": operations/table_engines/materializedview.md
       - Memoria: operations/table_engines/memory.md
       - "B\xFAfer": operations/table_engines/buffer.md
       - GenerateRandom: operations/table_engines/generate.md
@@ -211,7 +211,7 @@ nav:
     - "Configuraci\xF3n del usuario": operations/settings/settings_users.md
   - Utilidad:
     - "Descripci\xF3n": operations/utils/index.md
-    - "M\xE9todo de codificaci\xF3n de datos:": operations/utils/clickhouse-copier.md
+    - "M\xE9todo de codificaci\xF3n de datos": operations/utils/clickhouse-copier.md
     - Sistema abierto.: operations/utils/clickhouse-local.md
     - Sistema abierto.: operations/utils/clickhouse-benchmark.md
   - Recomendaciones de uso: operations/tips.md

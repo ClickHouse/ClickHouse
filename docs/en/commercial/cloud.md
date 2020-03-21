@@ -12,3 +12,5 @@
 -   Replicas in different availability zones
 -   Encryption and isolation
 -   Automated maintenance
+
+{## [Original article](https://clickhouse.tech/docs/en/commercial/cloud/) #}}
