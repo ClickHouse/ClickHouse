@@ -8,7 +8,6 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/Stopwatch.h>
 #include <Core/Defines.h>
-#include "AvalancheTest.h"  /// Taken from SMHasher.
 
 
 static void setAffinity()
@@ -252,21 +251,6 @@ static inline void test(size_t n, const UInt64 * data, const char * name)
 
         std::cerr << "Latency of ";
         report(name, n, watch.elapsedSeconds(), tsc_diff, res);
-    }
-
-    /// quality. Methods are taken from SMHasher.
-    {
-        auto wrapper = [](const void * blob, const int, const uint32_t, void * out)
-        {
-            *reinterpret_cast<UInt32*>(out) = Func(*reinterpret_cast<const UInt64 *>(blob));
-        };
-
-        std::cerr << "Avalanche: " << std::endl;
-        AvalancheTest<UInt64, UInt32>(wrapper, 300000);
-    //    std::cerr << "Bit Independence Criteria: " << std::endl;
-    //    BicTest3<UInt64, UInt32>(wrapper, 2000000);
-
-        std::cerr << std::endl;
     }
 }
 

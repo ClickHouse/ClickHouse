@@ -162,7 +162,7 @@ void TCPHandler::runImpl()
         std::optional<DB::Exception> exception;
         bool network_error = false;
 
-        bool send_exception_with_stack_trace = connection_context.getSettingsRef().calculate_text_stack_trace;
+        bool send_exception_with_stack_trace = true;
 
         try
         {
@@ -1030,7 +1030,7 @@ void TCPHandler::receiveUnexpectedData()
             last_block_in.header,
             client_revision);
 
-    Block skip_block = skip_block_in->read();
+    skip_block_in->read();
     throw NetException("Unexpected packet Data received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 }
 

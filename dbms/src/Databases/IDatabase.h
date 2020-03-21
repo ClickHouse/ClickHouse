@@ -44,7 +44,7 @@ public:
 };
 
 /// Copies list of tables and iterates through such snapshot.
-class DatabaseTablesSnapshotIterator : public IDatabaseTablesIterator
+class DatabaseTablesSnapshotIterator final : public IDatabaseTablesIterator
 {
 private:
     Tables tables;

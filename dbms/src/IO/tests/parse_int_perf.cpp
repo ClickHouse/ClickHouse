@@ -41,6 +41,8 @@ int main(int argc, char ** argv)
         using T = UInt8;
 
         size_t n = std::stol(argv[1]);
+        assert(n > 0);
+
         std::vector<T> data(n);
         std::vector<T> data2(n);
 

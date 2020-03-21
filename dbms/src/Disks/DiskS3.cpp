@@ -147,7 +147,7 @@ namespace
     };
 
     /// Reads data from S3 using stored paths in metadata.
-    class ReadIndirectBufferFromS3 : public ReadBufferFromFileBase
+    class ReadIndirectBufferFromS3 final : public ReadBufferFromFileBase
     {
     public:
         ReadIndirectBufferFromS3(
@@ -260,7 +260,7 @@ namespace
     };
 
     /// Stores data in S3 and adds the object key (S3 path) and object size to metadata file on local FS.
-    class WriteIndirectBufferFromS3 : public WriteBufferFromFileBase
+    class WriteIndirectBufferFromS3 final : public WriteBufferFromFileBase
     {
     public:
         WriteIndirectBufferFromS3(
@@ -333,7 +333,7 @@ namespace
 }
 
 
-class DiskS3DirectoryIterator : public IDiskDirectoryIterator
+class DiskS3DirectoryIterator final : public IDiskDirectoryIterator
 {
 public:
     DiskS3DirectoryIterator(const String & full_path, const String & folder_path_) : iter(full_path), folder_path(folder_path_) {}
@@ -360,7 +360,7 @@ private:
 
 using DiskS3Ptr = std::shared_ptr<DiskS3>;
 
-class DiskS3Reservation : public IReservation
+class DiskS3Reservation final : public IReservation
 {
 public:
     DiskS3Reservation(const DiskS3Ptr & disk_, UInt64 size_)

@@ -15,7 +15,7 @@ class DatabaseLazyIterator;
   * Works like DatabaseOrdinary, but stores in memory only cache.
   * Can be used only with *Log engines.
   */
-class DatabaseLazy : public DatabaseOnDisk
+class DatabaseLazy final : public DatabaseOnDisk
 {
 public:
     DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context_);

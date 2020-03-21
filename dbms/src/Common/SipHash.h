@@ -151,8 +151,8 @@ public:
     void get128(char * out)
     {
         finalize();
-        reinterpret_cast<UInt64 *>(out)[0] = v0 ^ v1;
-        reinterpret_cast<UInt64 *>(out)[1] = v2 ^ v3;
+        unalignedStore<UInt64>(out, v0 ^ v1);
+        unalignedStore<UInt64>(out + 8, v2 ^ v3);
     }
 
     /// template for avoiding 'unsigned long long' vs 'unsigned long' problem on old poco in macos

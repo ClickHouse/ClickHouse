@@ -10,7 +10,7 @@ namespace DB
 class Context;
 
 
-class StorageSystemDictionaries : public ext::shared_ptr_helper<StorageSystemDictionaries>, public IStorageSystemOneBlock<StorageSystemDictionaries>
+class StorageSystemDictionaries final : public ext::shared_ptr_helper<StorageSystemDictionaries>, public IStorageSystemOneBlock<StorageSystemDictionaries>
 {
     friend struct ext::shared_ptr_helper<StorageSystemDictionaries>;
 public:

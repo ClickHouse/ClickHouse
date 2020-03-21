@@ -444,7 +444,7 @@ void HashedDictionary::addAttributeSize(const Attribute & attribute)
         bucket_count = map_ref->bucket_count();
 
         /** TODO: more accurate calculation */
-        bytes_allocated += sizeof(CollectionType<T>);
+        bytes_allocated += sizeof(SparseCollectionType<T>);
         bytes_allocated += bucket_count;
         bytes_allocated += map_ref->size() * (sizeof(Key) + sizeof(T));
     }

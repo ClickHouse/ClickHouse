@@ -1,10 +1,14 @@
 #pragma once
+
 #include <common/logger_useful.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Core/SortDescription.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
 #include <queue>
+#include <cassert>
+#include <boost/intrusive_ptr.hpp>
+
 
 namespace DB
 {
@@ -12,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
 }
+
 
 /// Collapses the same rows with the opposite sign roughly like CollapsingSortedBlockInputStream.
 /// Outputs the rows in random order (the input streams must still be ordered).
@@ -37,10 +42,7 @@ public:
 
     Block getHeader() const override { return children.at(0)->getHeader(); }
 
-protected:
-    Block readImpl() override;
 
-private:
     struct MergingBlock;
     using BlockPlainPtrs = std::vector<MergingBlock*>;
 
@@ -95,74 +97,11 @@ private:
         BlockPlainPtrs * output_blocks;
     };
 
+private:
+    Block readImpl() override;
+
     /// When deleting the last block reference, adds a block to `output_blocks`.
-    class MergingBlockPtr
-    {
-    public:
-        MergingBlockPtr() : ptr() {}
-
-        explicit MergingBlockPtr(MergingBlock * ptr_) : ptr(ptr_)
-        {
-            if (ptr)
-                ++ptr->refcount;
-        }
-
-        MergingBlockPtr(const MergingBlockPtr & rhs) : ptr(rhs.ptr)
-        {
-            if (ptr)
-                ++ptr->refcount;
-        }
-
-        MergingBlockPtr & operator=(const MergingBlockPtr & rhs)
-        {
-            destroy();
-            ptr = rhs.ptr;
-            if (ptr)
-                ++ptr->refcount;
-            return *this;
-        }
-
-        ~MergingBlockPtr()
-        {
-            destroy();
-        }
-
-        /// Zero the pointer and do not add a block to output_blocks.
-        void cancel()
-        {
-            if (ptr)
-            {
-                --ptr->refcount;
-                if (!ptr->refcount)
-                    delete ptr;
-                ptr = nullptr;
-            }
-        }
-
-        MergingBlock & operator*() const { return *ptr; }
-        MergingBlock * operator->() const { return ptr; }
-        operator bool() const { return !!ptr; }
-        bool operator!() const { return !ptr; }
-
-    private:
-        MergingBlock * ptr;
-
-        void destroy()
-        {
-            if (ptr)
-            {
-                --ptr->refcount;
-                if (!ptr->refcount)
-                {
-                    if (std::uncaught_exceptions())
-                        delete ptr;
-                    else
-                        ptr->output_blocks->push_back(ptr);
-                }
-                ptr = nullptr;
-            }
-        }
-    };
+    using MergingBlockPtr = boost::intrusive_ptr<MergingBlock>;
 
     struct Cursor
     {
@@ -256,5 +195,17 @@ private:
     void reportBadCounts();
     void reportBadSign(Int8 sign);
 };
+
+
+inline void intrusive_ptr_add_ref(CollapsingFinalBlockInputStream::MergingBlock * ptr)
+{
+    ++ptr->refcount;
+}
+
+inline void intrusive_ptr_release(CollapsingFinalBlockInputStream::MergingBlock * ptr)
+{
+    if (0 == --ptr->refcount)
+        ptr->output_blocks->push_back(ptr);
+}
 
 }

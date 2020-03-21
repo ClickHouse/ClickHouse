@@ -253,7 +253,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         metadata_version = metadata_stat.version;
 
         createReplica();
-
     }
     else
     {
@@ -298,7 +297,6 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         return;
 
     zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
-
 
     std::set<String> inactive_replicas;
     for (const String & replica : replicas)
@@ -4518,18 +4516,18 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
 
 void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t mutations_sync) const
 {
-    auto zookeeper = getZooKeeper();
-    /// we have to wait
-    if (mutations_sync != 0)
-    {
-        Strings replicas;
-        if (mutations_sync == 2) /// wait for all replicas
-            replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
-        else if (mutations_sync == 1) /// just wait for ourself
-            replicas.push_back(replica_name);
+    if (!mutations_sync)
+        return;
 
-        waitMutationToFinishOnReplicas(replicas, znode_name);
-    }
+    /// we have to wait
+    auto zookeeper = getZooKeeper();
+    Strings replicas;
+    if (mutations_sync == 2) /// wait for all replicas
+        replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+    else if (mutations_sync == 1) /// just wait for ourself
+        replicas.push_back(replica_name);
+
+    waitMutationToFinishOnReplicas(replicas, znode_name);
 }
 
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
@@ -5051,7 +5049,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                         getStorageID().getNameForLogs() + ": " + dest_table_storage->getStoragePolicy()->getName(), ErrorCodes::LOGICAL_ERROR);
 
     Stopwatch watch;
-    MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(this);
+    MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this);
     auto src_data_id = src_data.getStorageID();
     String partition_id = getPartitionIDFromQuery(partition, context);
 

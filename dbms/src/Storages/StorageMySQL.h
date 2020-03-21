@@ -17,7 +17,7 @@ namespace DB
   * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
   * Read only.
   */
-class StorageMySQL : public ext::shared_ptr_helper<StorageMySQL>, public IStorage
+class StorageMySQL final : public ext::shared_ptr_helper<StorageMySQL>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageMySQL>;
 public:

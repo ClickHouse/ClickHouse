@@ -82,6 +82,7 @@ static void aggregate12(Map & map, Source::const_iterator begin, Source::const_i
     {
         if (prev_it != end && *it == *prev_it)
         {
+            assert(found != nullptr);
             ++found->getMapped();
             continue;
         }
@@ -89,6 +90,7 @@ static void aggregate12(Map & map, Source::const_iterator begin, Source::const_i
 
         bool inserted;
         map.emplace(*it, found, inserted);
+        assert(found != nullptr);
         ++found->getMapped();
     }
 }
@@ -107,6 +109,7 @@ static void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source:
     {
         if (*it == *prev_it)
         {
+            assert(found != nullptr);
             ++found->getMapped();
             continue;
         }
@@ -114,6 +117,7 @@ static void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source:
 
         bool inserted;
         map.emplace(*it, found, inserted);
+        assert(found != nullptr);
         ++found->getMapped();
     }
 }

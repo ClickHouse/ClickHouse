@@ -64,7 +64,8 @@ namespace
 
         StringRef query_id = CurrentThread::getQueryId();
         query_id_size = std::min(query_id.size, max_query_id_size);
-        memcpy(query_id_data, query_id.data, query_id_size);
+        if (query_id.data && query_id.size)
+            memcpy(query_id_data, query_id.data, query_id_size);
 
         int notification_num = info->si_value.sival_int;
         ssize_t res = ::write(notification_pipe.fds_rw[1], &notification_num, sizeof(notification_num));
